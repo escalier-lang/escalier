@@ -42,6 +42,18 @@ func TestParsingMulAdd(t *testing.T) {
 	snaps.MatchSnapshot(t, expr)
 }
 
+func TestParsingMulDiv(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a / b * c",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
 func TestParsingUnaryOps(t *testing.T) {
 	source := Source{
 		path:     "input.esc",

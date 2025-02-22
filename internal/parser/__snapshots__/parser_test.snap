@@ -275,3 +275,25 @@
     },
 }
 ---
+
+[TestParsingMulDiv - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Op:    3,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+            },
+        },
+        Op:    2,
+        Right: &parser.Expr{
+            Kind: &parser.Identifier{Name:"c"},
+        },
+    },
+}
+---
