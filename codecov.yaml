@@ -1,0 +1,3 @@
+ignore:
+  - "internal/parser/ast.go"
+  - "internal/parser/token.go"
