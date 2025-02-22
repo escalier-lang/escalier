@@ -39,20 +39,6 @@ func (lexer *Lexer) nextCodePoint() rune {
 	return codePoint
 }
 
-func (lexer *Lexer) peekToken() Token {
-	offset := lexer.offset
-	column := lexer.column
-	line := lexer.line
-
-	token := lexer.nextToken()
-
-	lexer.offset = offset
-	lexer.column = column
-	lexer.line = line
-
-	return token
-}
-
 // We need a way to look at the next token without consume it
 func (lexer *Lexer) nextToken() Token {
 	codePoint := lexer.nextCodePoint()
