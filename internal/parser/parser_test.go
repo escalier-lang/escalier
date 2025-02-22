@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParsingAddition(t *testing.T) {
@@ -81,7 +82,19 @@ func TestParsingParens(t *testing.T) {
 func TestParsingCall(t *testing.T) {
 	source := Source{
 		path:     "input.esc",
-		Contents: "-foo(a, b, c)",
+		Contents: "foo(a, b, c)",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
+func TestParsingCallPrecedence(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + foo(b)",
 	}
 
 	parser := NewParser(source)
@@ -138,10 +151,48 @@ func TestParsingMember(t *testing.T) {
 	snaps.MatchSnapshot(t, expr)
 }
 
+func TestParsingMemberPrecedence(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + b.c",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
+func TestParsingIncompleteMember(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + b.",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 1)
+	snaps.MatchSnapshot(t, parser.errors[0])
+}
+
 func TestParsingIndex(t *testing.T) {
 	source := Source{
 		path:     "input.esc",
 		Contents: "a[base + offset]",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
+func TestParsingIndexPrecedence(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + b[c]",
 	}
 
 	parser := NewParser(source)

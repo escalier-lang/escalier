@@ -1,12 +1,14 @@
 package parser
 
 type Parser struct {
-	lexer *Lexer
+	lexer  *Lexer
+	errors []*Error
 }
 
 func NewParser(source Source) *Parser {
 	return &Parser{
-		lexer: NewLexer(source),
+		lexer:  NewLexer(source),
+		errors: []*Error{},
 	}
 }
 
@@ -89,22 +91,38 @@ loop:
 					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
+		// TODO: dedupe with *TQuestionDot case
 		case *TDot:
 			prop := parser.lexer.nextToken()
 			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
-				value := values.Pop()
+				obj := values.Pop()
 				prop := &Identifier{Name: t.Value, Span: prop.Span}
 				values.Push(
 					&Expr{
-						Kind: &EMember{Object: value, Prop: prop, OptChain: false},
-						Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
 					},
 				)
 			default:
-				panic("parseExpr - expected an identifier")
+				obj := values.Pop()
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				values.Push(
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
+					},
+				)
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after .",
+				})
 			}
+		// TODO: dedupe with *TDot case
 		case *TQuestionDot:
 			prop := parser.lexer.nextToken()
 			lastToken = &prop
@@ -119,7 +137,21 @@ loop:
 					},
 				)
 			default:
-				panic("parseExpr - expected an identifier")
+				obj := values.Pop()
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				values.Push(
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
+					},
+				)
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after ?.",
+				})
 			}
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
