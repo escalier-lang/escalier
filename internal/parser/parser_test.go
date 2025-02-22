@@ -7,6 +7,30 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestParsingStringLiteral(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "\"hello\"",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
+func TestParsingNumberLiteral(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "5",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
 func TestParsingAddition(t *testing.T) {
 	source := Source{
 		path:     "input.esc",
@@ -221,6 +245,20 @@ func TestParsingIncompleteMember(t *testing.T) {
 	source := Source{
 		path:     "input.esc",
 		Contents: "a + b.",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 1)
+	snaps.MatchSnapshot(t, parser.errors[0])
+}
+
+func TestParsingIncompleteMemberOptChain(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + b?.",
 	}
 
 	parser := NewParser(source)

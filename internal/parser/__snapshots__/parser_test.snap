@@ -917,3 +917,75 @@
     Message: "Unexpected token",
 }
 ---
+
+[TestParsingStringLiteral - 1]
+&parser.Expr{
+    Kind: &parser.EString{Value:"\"hello"},
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:7},
+    },
+}
+---
+
+[TestParsingNumberLiteral - 1]
+&parser.Expr{
+    Kind: &parser.ENumber{Value:5},
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:2},
+    },
+}
+---
+
+[TestParsingIncompleteMemberOptChain - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.EMember{
+                Object: &parser.Expr{
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:5},
+                        End:   parser.Location{Line:1, Column:6},
+                    },
+                },
+                Prop: &parser.Identifier{
+                    Name: "",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:8},
+                        End:   parser.Location{Line:1, Column:8},
+                    },
+                },
+                OptChain: true,
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:5},
+                End:   parser.Location{Line:1, Column:9},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:9},
+    },
+}
+---
+
+[TestParsingIncompleteMemberOptChain - 2]
+&parser.Error{
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:5},
+        End:   parser.Location{Line:1, Column:8},
+    },
+    Message: "expected an identifier after ?.",
+}
+---
