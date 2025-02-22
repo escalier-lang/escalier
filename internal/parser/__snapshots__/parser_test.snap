@@ -275,3 +275,41 @@
     },
 }
 ---
+
+[TestParsingMulDiv - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Op:    3,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+            },
+        },
+        Op:    2,
+        Right: &parser.Expr{
+            Kind: &parser.Identifier{Name:"c"},
+        },
+    },
+}
+---
+
+[TestParsingOptChainCall - 1]
+&parser.Expr{
+    Kind: &parser.ECall{
+        Callee: &parser.Expr{
+            Kind: &parser.Identifier{Name:"foo"},
+        },
+        Args: {
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"bar"},
+            },
+        },
+        OptChain: true,
+    },
+}
+---
