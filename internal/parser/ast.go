@@ -2,12 +2,12 @@ package parser
 
 type Identifier struct {
 	Name string
-	// TODO: include location information
+	Span Span
 }
 
 type Expr struct {
 	Kind E
-	// TODO: include location information
+	Span Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -94,11 +94,13 @@ type EString struct {
 	Value string
 }
 
-type EIdentifier = Identifier
+type EIdentifier struct {
+	Name string
+}
 
 type Decl struct {
 	Kind D
-	// TODO: include location information
+	Span Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -128,7 +130,7 @@ type DFunction struct {
 
 type Stmt struct {
 	Kind S
-	// TODO: include location information
+	Span Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
