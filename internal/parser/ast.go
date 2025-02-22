@@ -51,10 +51,17 @@ type EArray struct {
 type BinaryOp int
 
 const (
-	Plus   BinaryOp = iota // +
-	Minus                  // -
-	Times                  // *
-	Divide                 // /
+	Plus             BinaryOp = iota // +
+	Minus                            // -
+	Times                            // *
+	Divide                           // /
+	Modulo                           // %
+	LessThan                         // <
+	LessThanEqual                    // <=
+	GreaterThan                      // >
+	GreaterThanEqual                 // >=
+	Equal                            // ==
+	NotEqual                         // !=
 )
 
 type EBinary struct {

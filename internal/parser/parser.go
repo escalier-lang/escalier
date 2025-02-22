@@ -11,10 +11,17 @@ func NewParser(source Source) *Parser {
 }
 
 var precedence = map[BinaryOp]int{
-	Plus:   1,
-	Minus:  1,
-	Times:  2,
-	Divide: 2,
+	Times:            12,
+	Divide:           12,
+	Modulo:           12,
+	Plus:             11,
+	Minus:            11,
+	LessThan:         9,
+	LessThanEqual:    9,
+	GreaterThan:      9,
+	GreaterThanEqual: 9,
+	Equal:            8,
+	NotEqual:         8,
 }
 
 func (parser *Parser) parseExpr() (*Expr, *Token) {
