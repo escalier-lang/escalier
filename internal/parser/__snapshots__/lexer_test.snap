@@ -1,0 +1,82 @@
+
+[TestLexingKeywords - 1]
+[]parser.Token{
+    {
+        Data: &parser.TFn{},
+    },
+    {
+        Data: &parser.TVar{},
+    },
+    {
+        Data: &parser.TVal{},
+    },
+}
+---
+
+[TestLexingOperators - 1]
+[]parser.Token{
+    {
+        Data: &parser.TPlus{},
+    },
+    {
+        Data: &parser.TMinus{},
+    },
+    {
+        Data: &parser.TAsterisk{},
+    },
+    {
+        Data: &parser.TSlash{},
+    },
+    {
+        Data: &parser.TEquals{},
+    },
+}
+---
+
+[TestLexingIdentifiers - 1]
+[]parser.Token{
+    {
+        Data: &parser.TIdentifier{Value:"foo"},
+    },
+    {
+        Data: &parser.TIdentifier{Value:"bar"},
+    },
+}
+---
+
+[TestLexingLiterals - 1]
+[]parser.Token{
+    {
+        Data: &parser.TString{Value:"hello"},
+    },
+    {
+        Data: &parser.TString{},
+    },
+}
+---
+
+[TestLexingParens - 1]
+[]parser.Token{
+    {
+        Data: &parser.TIdentifier{Value:"a"},
+    },
+    {
+        Data: &parser.TAsterisk{},
+    },
+    {
+        Data: &parser.TOpenParen{},
+    },
+    {
+        Data: &parser.TIdentifier{Value:"b"},
+    },
+    {
+        Data: &parser.TPlus{},
+    },
+    {
+        Data: &parser.TIdentifier{Value:"c"},
+    },
+    {
+        Data: &parser.TCloseParen{},
+    },
+}
+---
