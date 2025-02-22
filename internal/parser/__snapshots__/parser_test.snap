@@ -1,0 +1,277 @@
+
+[TestParsingAddition - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.Identifier{Name:"a"},
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.Identifier{Name:"b"},
+        },
+    },
+}
+---
+
+[TestParsingAddSub - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Op:    1,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+            },
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.Identifier{Name:"c"},
+        },
+    },
+}
+---
+
+[TestParsingMulAdd - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Op:    2,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+            },
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"c"},
+                },
+                Op:    2,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"d"},
+                },
+            },
+        },
+    },
+}
+---
+
+[TestParsingUnaryOps - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EUnary{
+                Op:  0,
+                Arg: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+            },
+        },
+        Op:    1,
+        Right: &parser.Expr{
+            Kind: &parser.EUnary{
+                Op:  1,
+                Arg: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+            },
+        },
+    },
+}
+---
+
+[TestParsingParens - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.Identifier{Name:"a"},
+        },
+        Op:    2,
+        Right: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"b"},
+                },
+                Op:    0,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"c"},
+                },
+            },
+        },
+    },
+}
+---
+
+[TestParsingIndex - 1]
+&parser.Expr{
+    Kind: &parser.EIndex{
+        Object: &parser.Expr{
+            Kind: &parser.Identifier{Name:"a"},
+        },
+        Index: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"base"},
+                },
+                Op:    0,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"offset"},
+                },
+            },
+        },
+        OptChain: false,
+    },
+}
+---
+
+[TestParsingOptChainIndex - 1]
+&parser.Expr{
+    Kind: &parser.EIndex{
+        Object: &parser.Expr{
+            Kind: &parser.Identifier{Name:"a"},
+        },
+        Index: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"base"},
+                },
+                Op:    0,
+                Right: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"offset"},
+                },
+            },
+        },
+        OptChain: true,
+    },
+}
+---
+
+[TestParsingCall - 1]
+&parser.Expr{
+    Kind: &parser.ECall{
+        Callee: &parser.Expr{
+            Kind: &parser.EUnary{
+                Op:  1,
+                Arg: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"foo"},
+                },
+            },
+        },
+        Args: {
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"a"},
+            },
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"b"},
+            },
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"c"},
+            },
+        },
+        OptChain: false,
+    },
+}
+---
+
+[TestParsingArrayLiteral - 1]
+&parser.Expr{
+    Kind: &parser.EArray{
+        Elems: {
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:1},
+            },
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:2},
+            },
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:3},
+            },
+        },
+    },
+}
+---
+
+[TestParsingCurriedCall - 1]
+&parser.Expr{
+    Kind: &parser.ECall{
+        Callee: &parser.Expr{
+            Kind: &parser.ECall{
+                Callee: &parser.Expr{
+                    Kind: &parser.ECall{
+                        Callee: &parser.Expr{
+                            Kind: &parser.Identifier{Name:"foo"},
+                        },
+                        Args: {
+                            &parser.Expr{
+                                Kind: &parser.Identifier{Name:"a"},
+                            },
+                        },
+                        OptChain: false,
+                    },
+                },
+                Args: {
+                    &parser.Expr{
+                        Kind: &parser.Identifier{Name:"b"},
+                    },
+                },
+                OptChain: false,
+            },
+        },
+        Args: {
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"c"},
+            },
+        },
+        OptChain: false,
+    },
+}
+---
+
+[TestParsingMember - 1]
+&parser.Expr{
+    Kind: &parser.EMember{
+        Object: &parser.Expr{
+            Kind: &parser.EMember{
+                Object: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Prop:     &parser.Identifier{Name:"b"},
+                OptChain: false,
+            },
+        },
+        Prop:     &parser.Identifier{Name:"c"},
+        OptChain: true,
+    },
+}
+---
+
+[TestParsingMultipleIndexes - 1]
+&parser.Expr{
+    Kind: &parser.EIndex{
+        Object: &parser.Expr{
+            Kind: &parser.EIndex{
+                Object: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"a"},
+                },
+                Index: &parser.Expr{
+                    Kind: &parser.Identifier{Name:"i"},
+                },
+                OptChain: false,
+            },
+        },
+        Index: &parser.Expr{
+            Kind: &parser.Identifier{Name:"j"},
+        },
+        OptChain: false,
+    },
+}
+---
