@@ -102,6 +102,18 @@ func TestParsingCurriedCall(t *testing.T) {
 	snaps.MatchSnapshot(t, expr)
 }
 
+func TestParsingOptChainCall(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "foo?(bar)",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+}
+
 func TestParsingArrayLiteral(t *testing.T) {
 	source := Source{
 		path:     "input.esc",

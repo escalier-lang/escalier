@@ -44,6 +44,12 @@ loop:
 			values.Push(
 				&Expr{Kind: &ECall{Callee: value, Args: args, OptChain: false}},
 			)
+		case *TQuestionOpenParen:
+			args := parser.parseSeq()
+			value := values.Pop()
+			values.Push(
+				&Expr{Kind: &ECall{Callee: value, Args: args, OptChain: true}},
+			)
 		case *TOpenBracket:
 			index, _ := parser.parseExpr()
 			value := values.Pop()

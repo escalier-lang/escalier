@@ -297,3 +297,19 @@
     },
 }
 ---
+
+[TestParsingOptChainCall - 1]
+&parser.Expr{
+    Kind: &parser.ECall{
+        Callee: &parser.Expr{
+            Kind: &parser.Identifier{Name:"foo"},
+        },
+        Args: {
+            &parser.Expr{
+                Kind: &parser.Identifier{Name:"bar"},
+            },
+        },
+        OptChain: true,
+    },
+}
+---
