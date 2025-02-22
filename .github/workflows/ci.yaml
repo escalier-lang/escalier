@@ -10,12 +10,21 @@ jobs:
   code_coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-      - run: go version
-      - name: Run coverage
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
-      - name: Upload coverage to Codecov
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./... -coverprofile=coverage.txt
+
+      - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
