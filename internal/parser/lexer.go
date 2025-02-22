@@ -41,63 +41,120 @@ func (lexer *Lexer) nextCodePoint() rune {
 
 // We need a way to look at the next token without consume it
 func (lexer *Lexer) nextToken() Token {
+	start := Location{Line: lexer.line, Column: lexer.column}
 	codePoint := lexer.nextCodePoint()
 
 	// skip whitespace
 	for codePoint == ' ' || codePoint == '\n' {
+		start = Location{Line: lexer.line, Column: lexer.column}
 		codePoint = lexer.nextCodePoint()
 	}
 
+	end := Location{Line: lexer.line, Column: lexer.column}
+
 	switch codePoint {
 	case '+':
-		return Token{Data: &TPlus{}}
+		return Token{
+			Data: &TPlus{},
+			Span: Span{Start: start, End: end},
+		}
 	case '-':
-		return Token{Data: &TMinus{}}
+		return Token{
+			Data: &TMinus{},
+			Span: Span{Start: start, End: end},
+		}
 	case '*':
-		return Token{Data: &TAsterisk{}}
+		return Token{
+			Data: &TAsterisk{},
+			Span: Span{Start: start, End: end},
+		}
 	case '/':
-		return Token{Data: &TSlash{}}
+		return Token{
+			Data: &TSlash{},
+			Span: Span{Start: start, End: end},
+		}
 	case '=':
-		return Token{Data: &TEquals{}}
+		return Token{
+			Data: &TEquals{},
+			Span: Span{Start: start, End: end},
+		}
 	case ',':
-		return Token{Data: &TComma{}}
+		return Token{
+			Data: &TComma{},
+			Span: Span{Start: start, End: end},
+		}
 	case '(':
-		return Token{Data: &TOpenParen{}}
+		return Token{
+			Data: &TOpenParen{},
+			Span: Span{Start: start, End: end},
+		}
 	case ')':
-		return Token{Data: &TCloseParen{}}
+		return Token{
+			Data: &TCloseParen{},
+			Span: Span{Start: start, End: end},
+		}
 	case '{':
-		return Token{Data: &TOpenBrace{}}
+		return Token{
+			Data: &TOpenBrace{},
+			Span: Span{Start: start, End: end},
+		}
 	case '}':
-		return Token{Data: &TCloseBrace{}}
+		return Token{
+			Data: &TCloseBrace{},
+			Span: Span{Start: start, End: end},
+		}
 	case '[':
-		return Token{Data: &TOpenBracket{}}
+		return Token{
+			Data: &TOpenBracket{},
+			Span: Span{Start: start, End: end},
+		}
 	case ']':
-		return Token{Data: &TCloseBracket{}}
+		return Token{
+			Data: &TCloseBracket{},
+			Span: Span{Start: start, End: end},
+		}
 	case '.':
-		return Token{Data: &TDot{}}
+		return Token{
+			Data: &TDot{},
+			Span: Span{Start: start, End: end},
+		}
 	case '?':
 		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[lexer.offset:])
 		switch nextCodePoint {
 		case '.':
 			lexer.offset += width
 			lexer.column++
-			return Token{Data: &TQuestionDot{}}
+			end := Location{Line: lexer.line, Column: lexer.column}
+			return Token{
+				Data: &TQuestionDot{},
+				Span: Span{Start: start, End: end},
+			}
 		case '(':
 			lexer.offset += width
 			lexer.column++
-			return Token{Data: &TQuestionOpenParen{}}
+			end := Location{Line: lexer.line, Column: lexer.column}
+			return Token{
+				Data: &TQuestionOpenParen{},
+				Span: Span{Start: start, End: end},
+			}
 		case '[':
 			lexer.offset += width
 			lexer.column++
-			return Token{Data: &TQuestionOpenBracket{}}
+			end := Location{Line: lexer.line, Column: lexer.column}
+			return Token{
+				Data: &TQuestionOpenBracket{},
+				Span: Span{Start: start, End: end},
+			}
 		default:
-			return Token{Data: &TInvalid{}}
+			return Token{
+				Data: &TInvalid{}, // TODO: include the character in the token
+				Span: Span{Start: start, End: end},
+			}
 		}
 	case '"':
 		contents := lexer.source.Contents
 		n := len(contents)
-		start := lexer.offset
-		i := start
+		i := lexer.offset
 		for i < n {
 			c := contents[i]
 			if c == '"' {
@@ -105,14 +162,18 @@ func (lexer *Lexer) nextToken() Token {
 			}
 			i++
 		}
-		str := contents[start:i]
+		str := contents[lexer.offset-1 : i]
+		lexer.column += i - lexer.offset
 		lexer.offset = i
-		return Token{Data: &TString{Value: str}}
+		end := Location{Line: lexer.line, Column: lexer.column}
+		return Token{
+			Data: &TString{Value: str},
+			Span: Span{Start: start, End: end},
+		}
 	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		contents := lexer.source.Contents
 		n := len(contents)
-		start := lexer.offset - 1
-		i := start
+		i := lexer.offset
 		for i < n {
 			c := contents[i]
 			if c < '0' || c > '9' {
@@ -121,9 +182,14 @@ func (lexer *Lexer) nextToken() Token {
 			i++
 		}
 		// TODO: handle parsing errors
-		num, _ := strconv.ParseFloat(contents[start:i], 64)
+		num, _ := strconv.ParseFloat(contents[lexer.offset-1:i], 64)
+		lexer.column += i - lexer.offset
 		lexer.offset = i
-		return Token{Data: &TNumber{Value: num}}
+		end := Location{Line: lexer.line, Column: lexer.column}
+		return Token{
+			Data: &TNumber{Value: num},
+			Span: Span{Start: start, End: end},
+		}
 	case '_', '$',
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
 		'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
@@ -132,8 +198,7 @@ func (lexer *Lexer) nextToken() Token {
 
 		contents := lexer.source.Contents
 		n := len(contents)
-		start := lexer.offset - 1
-		i := start
+		i := lexer.offset
 		for i < n {
 			c := contents[i]
 			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '$' {
@@ -141,23 +206,39 @@ func (lexer *Lexer) nextToken() Token {
 			}
 			i++
 		}
-		ident := contents[start:i]
+		ident := contents[lexer.offset-1 : i]
+		lexer.column += i - lexer.offset
 		lexer.offset = i
+		end := Location{Line: lexer.line, Column: lexer.column}
+		span := Span{Start: start, End: end}
+
 		switch ident {
 		case "fn":
-			return Token{Data: &TFn{}}
+			return Token{
+				Data: &TFn{},
+				Span: span,
+			}
 		case "var":
-			return Token{Data: &TVar{}}
+			return Token{
+				Data: &TVar{},
+				Span: span,
+			}
 		case "val":
-			return Token{Data: &TVal{}}
+			return Token{
+				Data: &TVal{},
+				Span: span,
+			}
 		default:
-			return Token{Data: &TIdentifier{Value: contents[start:i]}}
+			return Token{
+				Data: &TIdentifier{Value: ident},
+				Span: span,
+			}
 		}
 	default:
 		if lexer.offset >= len(lexer.source.Contents) {
-			return Token{Data: &TEOF{}}
+			return Token{Data: &TEOF{}} // TODO: include the character in the token
 		}
-		return Token{Data: &TInvalid{}}
+		return Token{Data: &TInvalid{}} // TODO: include the character in the token
 	}
 }
 

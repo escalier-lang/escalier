@@ -3,12 +3,24 @@
 &parser.Expr{
     Kind: &parser.EBinary{
         Left: &parser.Expr{
-            Kind: &parser.Identifier{Name:"a"},
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
         },
         Op:    0,
         Right: &parser.Expr{
-            Kind: &parser.Identifier{Name:"b"},
+            Kind: &parser.EIdentifier{Name:"b"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:5},
+                End:   parser.Location{Line:1, Column:6},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:6},
     },
 }
 ---
@@ -19,18 +31,38 @@
         Left: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
                 },
                 Op:    1,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"b"},
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:5},
+                        End:   parser.Location{Line:1, Column:6},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:6},
             },
         },
         Op:    0,
         Right: &parser.Expr{
-            Kind: &parser.Identifier{Name:"c"},
+            Kind: &parser.EIdentifier{Name:"c"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:9},
+                End:   parser.Location{Line:1, Column:10},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:10},
     },
 }
 ---
@@ -41,26 +73,54 @@
         Left: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
                 },
                 Op:    2,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"b"},
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:5},
+                        End:   parser.Location{Line:1, Column:6},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:6},
             },
         },
         Op:    0,
         Right: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"c"},
+                    Kind: &parser.EIdentifier{Name:"c"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:9},
+                        End:   parser.Location{Line:1, Column:10},
+                    },
                 },
                 Op:    2,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"d"},
+                    Kind: &parser.EIdentifier{Name:"d"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:13},
+                        End:   parser.Location{Line:1, Column:14},
+                    },
                 },
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:9},
+                End:   parser.Location{Line:1, Column:14},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:14},
     },
 }
 ---
@@ -72,8 +132,16 @@
             Kind: &parser.EUnary{
                 Op:  0,
                 Arg: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:2},
+                        End:   parser.Location{Line:1, Column:3},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:2},
+                End:   parser.Location{Line:1, Column:3},
             },
         },
         Op:    1,
@@ -81,10 +149,22 @@
             Kind: &parser.EUnary{
                 Op:  1,
                 Arg: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"b"},
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:7},
+                        End:   parser.Location{Line:1, Column:8},
+                    },
                 },
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:7},
+                End:   parser.Location{Line:1, Column:8},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:2},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -93,20 +173,40 @@
 &parser.Expr{
     Kind: &parser.EBinary{
         Left: &parser.Expr{
-            Kind: &parser.Identifier{Name:"a"},
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
         },
         Op:    2,
         Right: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"b"},
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:6},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
                 },
                 Op:    0,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"c"},
+                    Kind: &parser.EIdentifier{Name:"c"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:10},
+                        End:   parser.Location{Line:1, Column:11},
+                    },
                 },
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:6},
+                End:   parser.Location{Line:1, Column:11},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:11},
     },
 }
 ---
@@ -115,20 +215,40 @@
 &parser.Expr{
     Kind: &parser.EIndex{
         Object: &parser.Expr{
-            Kind: &parser.Identifier{Name:"a"},
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
         },
         Index: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"base"},
+                    Kind: &parser.EIdentifier{Name:"base"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:3},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
                 },
                 Op:    0,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"offset"},
+                    Kind: &parser.EIdentifier{Name:"offset"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:10},
+                        End:   parser.Location{Line:1, Column:16},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:3},
+                End:   parser.Location{Line:1, Column:16},
             },
         },
         OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:17},
     },
 }
 ---
@@ -137,20 +257,40 @@
 &parser.Expr{
     Kind: &parser.EIndex{
         Object: &parser.Expr{
-            Kind: &parser.Identifier{Name:"a"},
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
         },
         Index: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"base"},
+                    Kind: &parser.EIdentifier{Name:"base"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:4},
+                        End:   parser.Location{Line:1, Column:8},
+                    },
                 },
                 Op:    0,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"offset"},
+                    Kind: &parser.EIdentifier{Name:"offset"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:11},
+                        End:   parser.Location{Line:1, Column:17},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:4},
+                End:   parser.Location{Line:1, Column:17},
             },
         },
         OptChain: true,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:18},
     },
 }
 ---
@@ -162,22 +302,46 @@
             Kind: &parser.EUnary{
                 Op:  1,
                 Arg: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"foo"},
+                    Kind: &parser.EIdentifier{Name:"foo"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:2},
+                        End:   parser.Location{Line:1, Column:5},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:2},
+                End:   parser.Location{Line:1, Column:5},
             },
         },
         Args: {
             &parser.Expr{
-                Kind: &parser.Identifier{Name:"a"},
+                Kind: &parser.EIdentifier{Name:"a"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:6},
+                    End:   parser.Location{Line:1, Column:7},
+                },
             },
             &parser.Expr{
-                Kind: &parser.Identifier{Name:"b"},
+                Kind: &parser.EIdentifier{Name:"b"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:9},
+                    End:   parser.Location{Line:1, Column:10},
+                },
             },
             &parser.Expr{
-                Kind: &parser.Identifier{Name:"c"},
+                Kind: &parser.EIdentifier{Name:"c"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:12},
+                    End:   parser.Location{Line:1, Column:13},
+                },
             },
         },
         OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:2},
+        End:   parser.Location{Line:1, Column:14},
     },
 }
 ---
@@ -188,14 +352,30 @@
         Elems: {
             &parser.Expr{
                 Kind: &parser.ENumber{Value:1},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:2},
+                    End:   parser.Location{Line:1, Column:3},
+                },
             },
             &parser.Expr{
                 Kind: &parser.ENumber{Value:2},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:5},
+                    End:   parser.Location{Line:1, Column:6},
+                },
             },
             &parser.Expr{
                 Kind: &parser.ENumber{Value:3},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:8},
+                    End:   parser.Location{Line:1, Column:9},
+                },
             },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:10},
     },
 }
 ---
@@ -208,30 +388,58 @@
                 Callee: &parser.Expr{
                     Kind: &parser.ECall{
                         Callee: &parser.Expr{
-                            Kind: &parser.Identifier{Name:"foo"},
+                            Kind: &parser.EIdentifier{Name:"foo"},
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:1},
+                                End:   parser.Location{Line:1, Column:4},
+                            },
                         },
                         Args: {
                             &parser.Expr{
-                                Kind: &parser.Identifier{Name:"a"},
+                                Kind: &parser.EIdentifier{Name:"a"},
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:1, Column:5},
+                                    End:   parser.Location{Line:1, Column:6},
+                                },
                             },
                         },
                         OptChain: false,
                     },
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
                 },
                 Args: {
                     &parser.Expr{
-                        Kind: &parser.Identifier{Name:"b"},
+                        Kind: &parser.EIdentifier{Name:"b"},
+                        Span: parser.Span{
+                            Start: parser.Location{Line:1, Column:8},
+                            End:   parser.Location{Line:1, Column:9},
+                        },
                     },
                 },
                 OptChain: false,
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:10},
+            },
         },
         Args: {
             &parser.Expr{
-                Kind: &parser.Identifier{Name:"c"},
+                Kind: &parser.EIdentifier{Name:"c"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:11},
+                    End:   parser.Location{Line:1, Column:12},
+                },
             },
         },
         OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:13},
     },
 }
 ---
@@ -242,14 +450,38 @@
         Object: &parser.Expr{
             Kind: &parser.EMember{
                 Object: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
                 },
-                Prop:     &parser.Identifier{Name:"b"},
+                Prop: &parser.Identifier{
+                    Name: "b",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:3},
+                        End:   parser.Location{Line:1, Column:4},
+                    },
+                },
                 OptChain: false,
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:4},
+            },
         },
-        Prop:     &parser.Identifier{Name:"c"},
+        Prop: &parser.Identifier{
+            Name: "c",
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:4},
+                End:   parser.Location{Line:1, Column:6},
+            },
+        },
         OptChain: true,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:6},
     },
 }
 ---
@@ -260,18 +492,38 @@
         Object: &parser.Expr{
             Kind: &parser.EIndex{
                 Object: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
                 },
                 Index: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"i"},
+                    Kind: &parser.EIdentifier{Name:"i"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:3},
+                        End:   parser.Location{Line:1, Column:4},
+                    },
                 },
                 OptChain: false,
             },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:5},
+            },
         },
         Index: &parser.Expr{
-            Kind: &parser.Identifier{Name:"j"},
+            Kind: &parser.EIdentifier{Name:"j"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:6},
+                End:   parser.Location{Line:1, Column:7},
+            },
         },
         OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -282,18 +534,38 @@
         Left: &parser.Expr{
             Kind: &parser.EBinary{
                 Left: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"a"},
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
                 },
                 Op:    3,
                 Right: &parser.Expr{
-                    Kind: &parser.Identifier{Name:"b"},
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:5},
+                        End:   parser.Location{Line:1, Column:6},
+                    },
                 },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:6},
             },
         },
         Op:    2,
         Right: &parser.Expr{
-            Kind: &parser.Identifier{Name:"c"},
+            Kind: &parser.EIdentifier{Name:"c"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:9},
+                End:   parser.Location{Line:1, Column:10},
+            },
         },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:10},
     },
 }
 ---
@@ -302,14 +574,26 @@
 &parser.Expr{
     Kind: &parser.ECall{
         Callee: &parser.Expr{
-            Kind: &parser.Identifier{Name:"foo"},
+            Kind: &parser.EIdentifier{Name:"foo"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:4},
+            },
         },
         Args: {
             &parser.Expr{
-                Kind: &parser.Identifier{Name:"bar"},
+                Kind: &parser.EIdentifier{Name:"bar"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:6},
+                    End:   parser.Location{Line:1, Column:9},
+                },
             },
         },
         OptChain: true,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:10},
     },
 }
 ---

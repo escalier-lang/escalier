@@ -2,7 +2,7 @@ package parser
 
 type Token struct {
 	Data T
-	// TODO: include location information
+	Span Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in

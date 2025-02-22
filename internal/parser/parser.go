@@ -32,11 +32,12 @@ func (parser *Parser) parseExpr() (*Expr, *Token) {
 	ops := NewStack[BinaryOp]()
 
 	values = append(values, parser.parsePrimary())
-	var terminator *Token
+	var lastToken *Token
 
 loop:
 	for {
 		token := parser.lexer.nextToken()
+		lastToken = &token
 		var nextOp BinaryOp = -1
 
 		switch token.Data.(type) {
@@ -49,41 +50,56 @@ loop:
 		case *TSlash:
 			nextOp = Divide
 		case *TOpenParen:
-			args := parser.parseSeq()
+			args, t := parser.parseSeq()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
-				&Expr{Kind: &ECall{Callee: value, Args: args, OptChain: false}},
+				&Expr{
+					Kind: &ECall{Callee: value, Args: args, OptChain: false},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
+				},
 			)
 		case *TQuestionOpenParen:
-			args := parser.parseSeq()
+			args, t := parser.parseSeq()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
-				&Expr{Kind: &ECall{Callee: value, Args: args, OptChain: true}},
+				&Expr{
+					Kind: &ECall{Callee: value, Args: args, OptChain: true},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
+				},
 			)
 		case *TOpenBracket:
-			index, _ := parser.parseExpr()
+			index, t := parser.parseExpr()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &EIndex{Object: value, Index: index, OptChain: false},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TQuestionOpenBracket:
-			index, _ := parser.parseExpr()
+			index, t := parser.parseExpr()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &EIndex{Object: value, Index: index, OptChain: true},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TDot:
 			prop := parser.lexer.nextToken()
+			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				value := values.Pop()
+				prop := &Identifier{Name: t.Value, Span: prop.Span}
 				values.Push(
 					&Expr{
-						Kind: &EMember{Object: value, Prop: &Identifier{Name: t.Value}, OptChain: false},
+						Kind: &EMember{Object: value, Prop: prop, OptChain: false},
+						Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 					},
 				)
 			default:
@@ -91,24 +107,21 @@ loop:
 			}
 		case *TQuestionDot:
 			prop := parser.lexer.nextToken()
+			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				value := values.Pop()
+				prop := &Identifier{Name: t.Value, Span: token.Span}
 				values.Push(
 					&Expr{
-						Kind: &EMember{Object: value, Prop: &Identifier{Name: t.Value}, OptChain: true},
+						Kind: &EMember{Object: value, Prop: prop, OptChain: true},
+						Span: Span{Start: value.Span.Start, End: prop.Span.End},
 					},
 				)
 			default:
 				panic("parseExpr - expected an identifier")
 			}
-		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma:
-			// TODO: report if there were mismatched parentheses
-			// we can ignore extra closing parens so that we can continue
-			// parsing the rest of the expression
-			terminator = &token
-			break loop
-		case *TEOF:
+		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
 			// If there was a newline then we can treat this as being the end
@@ -131,6 +144,7 @@ loop:
 
 				values.Push(&Expr{
 					Kind: &EBinary{Left: left, Op: op, Right: right},
+					Span: Span{Start: left.Span.Start, End: right.Span.End},
 				})
 			}
 		}
@@ -146,10 +160,11 @@ loop:
 
 		values.Push(&Expr{
 			Kind: &EBinary{Left: left, Op: op, Right: right},
+			Span: Span{Start: left.Span.Start, End: right.Span.End},
 		})
 	}
 
-	return values.Pop(), terminator
+	return values.Pop(), lastToken
 }
 
 func (parser *Parser) parsePrimary() *Expr {
@@ -174,18 +189,30 @@ loop:
 
 	switch t := token.Data.(type) {
 	case *TNumber:
-		expr = &Expr{Kind: &ENumber{Value: t.Value}}
+		expr = &Expr{
+			Kind: &ENumber{Value: t.Value},
+			Span: token.Span,
+		}
 	case *TString:
-		expr = &Expr{Kind: &EString{Value: t.Value}}
+		expr = &Expr{
+			Kind: &EString{Value: t.Value},
+			Span: token.Span,
+		}
 	case *TIdentifier:
-		expr = &Expr{Kind: &EIdentifier{Name: t.Value}}
+		expr = &Expr{
+			Kind: &EIdentifier{Name: t.Value},
+			Span: token.Span,
+		}
 	case *TOpenParen:
 		// parseExpr handles the closing paren for us
 		expr, _ = parser.parseExpr()
 	case *TOpenBracket:
 		// parseExpr handles the closing bracket for us
-		elems := parser.parseSeq()
-		expr = &Expr{Kind: &EArray{Elems: elems}}
+		elems, final := parser.parseSeq()
+		expr = &Expr{
+			Kind: &EArray{Elems: elems},
+			Span: Span{Start: token.Span.Start, End: final.Span.End},
+		}
 	default:
 		// TODO: in this case we probably want to return an error since the
 		// parent function will probably be able to handle it better
@@ -194,32 +221,28 @@ loop:
 
 	for !ops.IsEmpty() {
 		op := ops.Pop()
-		expr = &Expr{Kind: &EUnary{Op: op, Arg: expr}}
+		expr = &Expr{
+			Kind: &EUnary{Op: op, Arg: expr},
+			Span: Span{Start: token.Span.Start, End: expr.Span.End},
+		}
 	}
 
 	return expr
 }
 
-func (parser *Parser) parseSeq() []*Expr {
+func (parser *Parser) parseSeq() ([]*Expr, *Token) {
 	exprs := []*Expr{}
 
-	expr, terminator := parser.parseExpr()
+	expr, lastToken := parser.parseExpr()
 	exprs = append(exprs, expr)
 
-	// TODO: inside the loop do the following:
-	// - if the terminator is a comma, parse another expression
-	// - if the terminator is a closing paren, bracket, or brace, return the
-	//   list of expressions
-
 	for {
-		switch terminator.Data.(type) {
+		switch lastToken.Data.(type) {
 		case *TComma:
-			expr, terminator = parser.parseExpr()
+			expr, lastToken = parser.parseExpr()
 			exprs = append(exprs, expr)
-		case *TCloseParen, *TCloseBracket, *TCloseBrace:
-			return exprs
-		case *TEOF:
-			return exprs
+		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TEOF:
+			return exprs, lastToken
 		default:
 			panic("parseSeq - unexpected token")
 		}
