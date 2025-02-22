@@ -1,6 +1,10 @@
 name: Test and coverage
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -10,6 +14,6 @@ jobs:
       - uses: actions/setup-go@v5
       - run: go version
       - name: Run coverage
-        run: go test -race -coverprofile=coverage.out -covermode=atomic
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
