@@ -27,7 +27,7 @@ func (*ECall) isExpr()       {}
 func (*EIndex) isExpr()      {}
 func (*EMember) isExpr()     {}
 func (*EArray) isExpr()      {}
-func (*EEmpty) isExpr()      {}
+func (*EIgnore) isExpr()     {}
 
 type EMember struct {
 	Object   *Expr
@@ -101,7 +101,9 @@ type EIdentifier struct {
 	Name string
 }
 
-type EEmpty struct{}
+type EIgnore struct {
+	Token *Token
+}
 
 type Decl struct {
 	Kind D

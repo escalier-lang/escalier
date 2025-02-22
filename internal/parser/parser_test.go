@@ -29,6 +29,35 @@ func TestParsingAddSub(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
+}
+
+func TestParsingIncompleteBinaryExpr(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a - b +",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 1)
+	snaps.MatchSnapshot(t, parser.errors[0])
+}
+
+func TestParsingExtraOperatorsInBinaryExpr(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "a + * b",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 1)
+	snaps.MatchSnapshot(t, parser.errors[0])
 }
 
 func TestParsingMulAdd(t *testing.T) {
@@ -41,6 +70,7 @@ func TestParsingMulAdd(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingMulDiv(t *testing.T) {
@@ -53,6 +83,7 @@ func TestParsingMulDiv(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingUnaryOps(t *testing.T) {
@@ -65,6 +96,7 @@ func TestParsingUnaryOps(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingParens(t *testing.T) {
@@ -77,6 +109,7 @@ func TestParsingParens(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingCall(t *testing.T) {
@@ -89,6 +122,21 @@ func TestParsingCall(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
+}
+
+func TestParsingIncompleteCall(t *testing.T) {
+	source := Source{
+		path:     "input.esc",
+		Contents: "foo(a,",
+	}
+
+	parser := NewParser(source)
+	expr, _ := parser.parseExpr()
+
+	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 1)
+	snaps.MatchSnapshot(t, parser.errors[0])
 }
 
 func TestParsingCallPrecedence(t *testing.T) {
@@ -101,6 +149,7 @@ func TestParsingCallPrecedence(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingCurriedCall(t *testing.T) {
@@ -113,6 +162,7 @@ func TestParsingCurriedCall(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingOptChainCall(t *testing.T) {
@@ -125,6 +175,7 @@ func TestParsingOptChainCall(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingArrayLiteral(t *testing.T) {
@@ -137,6 +188,7 @@ func TestParsingArrayLiteral(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingMember(t *testing.T) {
@@ -149,6 +201,7 @@ func TestParsingMember(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingMemberPrecedence(t *testing.T) {
@@ -161,6 +214,7 @@ func TestParsingMemberPrecedence(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingIncompleteMember(t *testing.T) {
@@ -187,6 +241,7 @@ func TestParsingIndex(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingIndexPrecedence(t *testing.T) {
@@ -199,6 +254,7 @@ func TestParsingIndexPrecedence(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingMultipleIndexes(t *testing.T) {
@@ -211,6 +267,7 @@ func TestParsingMultipleIndexes(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }
 
 func TestParsingOptChainIndex(t *testing.T) {
@@ -223,4 +280,5 @@ func TestParsingOptChainIndex(t *testing.T) {
 	expr, _ := parser.parseExpr()
 
 	snaps.MatchSnapshot(t, expr)
+	assert.Len(t, parser.errors, 0)
 }

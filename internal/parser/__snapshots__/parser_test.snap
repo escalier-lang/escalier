@@ -620,13 +620,13 @@
             },
             Span: parser.Span{
                 Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{},
+                End:   parser.Location{Line:1, Column:8},
             },
         },
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -766,5 +766,154 @@
         End:   parser.Location{Line:1, Column:7},
     },
     Message: "expected an identifier after .",
+}
+---
+
+[TestParsingIncompleteBinaryExpr - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.EIdentifier{Name:"a"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:1},
+                        End:   parser.Location{Line:1, Column:2},
+                    },
+                },
+                Op:    1,
+                Right: &parser.Expr{
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:5},
+                        End:   parser.Location{Line:1, Column:6},
+                    },
+                },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:6},
+            },
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.EIgnore{
+                Token: &parser.Token{
+                    Data: &parser.TEOF{},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:9},
+                        End:   parser.Location{Line:1, Column:9},
+                    },
+                },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:9},
+                End:   parser.Location{Line:1, Column:9},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:9},
+    },
+}
+---
+
+[TestParsingExtraOperatorsInBinaryExpr - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
+        },
+        Op:    0,
+        Right: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"b"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:7},
+                End:   parser.Location{Line:1, Column:8},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:8},
+    },
+}
+---
+
+[TestParsingExtraOperatorsInBinaryExpr - 2]
+&parser.Error{
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:5},
+        End:   parser.Location{Line:1, Column:6},
+    },
+    Message: "Unexpected token",
+}
+---
+
+[TestParsingIncompleteBinaryExpr - 2]
+&parser.Error{
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:9},
+        End:   parser.Location{Line:1, Column:9},
+    },
+    Message: "Unexpected token",
+}
+---
+
+[TestParsingIncompleteCall - 1]
+&parser.Expr{
+    Kind: &parser.ECall{
+        Callee: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"foo"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:4},
+            },
+        },
+        Args: {
+            &parser.Expr{
+                Kind: &parser.EIdentifier{Name:"a"},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:5},
+                    End:   parser.Location{Line:1, Column:6},
+                },
+            },
+            &parser.Expr{
+                Kind: &parser.EIgnore{
+                    Token: &parser.Token{
+                        Data: &parser.TEOF{},
+                        Span: parser.Span{
+                            Start: parser.Location{Line:1, Column:8},
+                            End:   parser.Location{Line:1, Column:8},
+                        },
+                    },
+                },
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:8},
+                    End:   parser.Location{Line:1, Column:8},
+                },
+            },
+        },
+        OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:9},
+    },
+}
+---
+
+[TestParsingIncompleteCall - 2]
+&parser.Error{
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:8},
+        End:   parser.Location{Line:1, Column:8},
+    },
+    Message: "Unexpected token",
 }
 ---

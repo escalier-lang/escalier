@@ -156,11 +156,11 @@ loop:
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
-			// If there was a newline then we can treat this as being the end
-			// of the expression.
-			// If there wasn't a newline
-			// TODO: report and error and recover
-			panic("parseExpr - unexpected token")
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+			continue
 		}
 
 		if nextOp == -1 {
@@ -182,7 +182,15 @@ loop:
 		}
 
 		ops.Push(nextOp)
-		values.Push(parser.parsePrimary())
+		// If we couldn't parse a primary expression, keep trying until we can
+		var expr *Expr
+		for {
+			expr = parser.parsePrimary()
+			if expr != nil {
+				break
+			}
+		}
+		values.Push(expr)
 	}
 
 	for !ops.IsEmpty() {
@@ -245,10 +253,21 @@ loop:
 			Kind: &EArray{Elems: elems},
 			Span: Span{Start: token.Span.Start, End: final.Span.End},
 		}
+	case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
+		expr = &Expr{
+			Kind: &EIgnore{Token: &token},
+			Span: token.Span,
+		}
+		parser.errors = append(parser.errors, &Error{
+			Span:    token.Span,
+			Message: "Unexpected token",
+		})
 	default:
-		// TODO: in this case we probably want to return an error since the
-		// parent function will probably be able to handle it better
-		panic("parsePrimary - unexpected token")
+		parser.errors = append(parser.errors, &Error{
+			Span:    token.Span,
+			Message: "Unexpected token",
+		})
+		return nil
 	}
 
 	for !ops.IsEmpty() {
