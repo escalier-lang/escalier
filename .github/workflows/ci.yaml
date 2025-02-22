@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  build:
+  code_coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
