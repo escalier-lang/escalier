@@ -32,11 +32,12 @@ func (parser *Parser) parseExpr() (*Expr, *Token) {
 	ops := NewStack[BinaryOp]()
 
 	values = append(values, parser.parsePrimary())
-	var terminator *Token
+	var lastToken *Token
 
 loop:
 	for {
 		token := parser.lexer.nextToken()
+		lastToken = &token
 		var nextOp BinaryOp = -1
 
 		switch token.Data.(type) {
@@ -49,43 +50,48 @@ loop:
 		case *TSlash:
 			nextOp = Divide
 		case *TOpenParen:
-			args, final := parser.parseSeq()
+			args, t := parser.parseSeq()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &ECall{Callee: value, Args: args, OptChain: false},
-					Span: Span{Start: value.Span.Start, End: final.Span.End},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TQuestionOpenParen:
-			args, final := parser.parseSeq()
+			args, t := parser.parseSeq()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &ECall{Callee: value, Args: args, OptChain: true},
-					Span: Span{Start: value.Span.Start, End: final.Span.End},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TOpenBracket:
-			index, final := parser.parseExpr()
+			index, t := parser.parseExpr()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &EIndex{Object: value, Index: index, OptChain: false},
-					Span: Span{Start: value.Span.Start, End: final.Span.End},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TQuestionOpenBracket:
-			index, final := parser.parseExpr()
+			index, t := parser.parseExpr()
+			lastToken = t
 			value := values.Pop()
 			values.Push(
 				&Expr{
 					Kind: &EIndex{Object: value, Index: index, OptChain: true},
-					Span: Span{Start: value.Span.Start, End: final.Span.End},
+					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
 		case *TDot:
 			prop := parser.lexer.nextToken()
+			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				value := values.Pop()
@@ -93,7 +99,7 @@ loop:
 				values.Push(
 					&Expr{
 						Kind: &EMember{Object: value, Prop: prop, OptChain: false},
-						Span: Span{Start: value.Span.Start, End: prop.Span.End},
+						Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 					},
 				)
 			default:
@@ -101,6 +107,7 @@ loop:
 			}
 		case *TQuestionDot:
 			prop := parser.lexer.nextToken()
+			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				value := values.Pop()
@@ -114,13 +121,7 @@ loop:
 			default:
 				panic("parseExpr - expected an identifier")
 			}
-		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma:
-			// TODO: report if there were mismatched parentheses
-			// we can ignore extra closing parens so that we can continue
-			// parsing the rest of the expression
-			terminator = &token
-			break loop
-		case *TEOF:
+		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
 			// If there was a newline then we can treat this as being the end
@@ -133,8 +134,6 @@ loop:
 		if nextOp == -1 {
 			continue
 		}
-
-		terminator = nil
 
 		if !ops.IsEmpty() {
 			if precedence[ops.Peek()] >= precedence[nextOp] {
@@ -165,7 +164,7 @@ loop:
 		})
 	}
 
-	return values.Pop(), terminator
+	return values.Pop(), lastToken
 }
 
 func (parser *Parser) parsePrimary() *Expr {
@@ -234,21 +233,16 @@ loop:
 func (parser *Parser) parseSeq() ([]*Expr, *Token) {
 	exprs := []*Expr{}
 
-	expr, terminator := parser.parseExpr()
+	expr, lastToken := parser.parseExpr()
 	exprs = append(exprs, expr)
 
-	// TODO: inside the loop do the following:
-	// - if the terminator is a comma, parse another expression
-	// - if the terminator is a closing paren, bracket, or brace, return the
-	//   list of expressions
-
 	for {
-		switch terminator.Data.(type) {
+		switch lastToken.Data.(type) {
 		case *TComma:
-			expr, terminator = parser.parseExpr()
+			expr, lastToken = parser.parseExpr()
 			exprs = append(exprs, expr)
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TEOF:
-			return exprs, terminator
+			return exprs, lastToken
 		default:
 			panic("parseSeq - unexpected token")
 		}
