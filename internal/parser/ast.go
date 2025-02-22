@@ -1,5 +1,7 @@
 package parser
 
+// If `Name` is an empty string it means that the identifier is missing in
+// the expression.
 type Identifier struct {
 	Name string
 	Span Span
@@ -25,6 +27,7 @@ func (*ECall) isExpr()       {}
 func (*EIndex) isExpr()      {}
 func (*EMember) isExpr()     {}
 func (*EArray) isExpr()      {}
+func (*EIgnore) isExpr()     {}
 
 type EMember struct {
 	Object   *Expr
@@ -96,6 +99,10 @@ type EString struct {
 
 type EIdentifier struct {
 	Name string
+}
+
+type EIgnore struct {
+	Token *Token
 }
 
 type Decl struct {

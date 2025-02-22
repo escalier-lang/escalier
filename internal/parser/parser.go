@@ -1,12 +1,14 @@
 package parser
 
 type Parser struct {
-	lexer *Lexer
+	lexer  *Lexer
+	errors []*Error
 }
 
 func NewParser(source Source) *Parser {
 	return &Parser{
-		lexer: NewLexer(source),
+		lexer:  NewLexer(source),
+		errors: []*Error{},
 	}
 }
 
@@ -89,22 +91,38 @@ loop:
 					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
 				},
 			)
+		// TODO: dedupe with *TQuestionDot case
 		case *TDot:
 			prop := parser.lexer.nextToken()
 			lastToken = &prop
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
-				value := values.Pop()
+				obj := values.Pop()
 				prop := &Identifier{Name: t.Value, Span: prop.Span}
 				values.Push(
 					&Expr{
-						Kind: &EMember{Object: value, Prop: prop, OptChain: false},
-						Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
 					},
 				)
 			default:
-				panic("parseExpr - expected an identifier")
+				obj := values.Pop()
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				values.Push(
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
+					},
+				)
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after .",
+				})
 			}
+		// TODO: dedupe with *TDot case
 		case *TQuestionDot:
 			prop := parser.lexer.nextToken()
 			lastToken = &prop
@@ -119,16 +137,30 @@ loop:
 					},
 				)
 			default:
-				panic("parseExpr - expected an identifier")
+				obj := values.Pop()
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				values.Push(
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
+						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
+					},
+				)
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after ?.",
+				})
 			}
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
-			// If there was a newline then we can treat this as being the end
-			// of the expression.
-			// If there wasn't a newline
-			// TODO: report and error and recover
-			panic("parseExpr - unexpected token")
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+			continue
 		}
 
 		if nextOp == -1 {
@@ -150,7 +182,8 @@ loop:
 		}
 
 		ops.Push(nextOp)
-		values.Push(parser.parsePrimary())
+		expr := parser.parsePrimary()
+		values.Push(expr)
 	}
 
 	for !ops.IsEmpty() {
@@ -167,9 +200,8 @@ loop:
 	return values.Pop(), lastToken
 }
 
-func (parser *Parser) parsePrimary() *Expr {
+func (parser *Parser) parsePrefix() (Token, Stack[UnaryOp]) {
 	token := parser.lexer.nextToken()
-
 	ops := NewStack[UnaryOp]()
 
 loop:
@@ -185,38 +217,65 @@ loop:
 		token = parser.lexer.nextToken()
 	}
 
+	return token, ops
+}
+
+func (parser *Parser) parsePrimary() *Expr {
+	token, ops := parser.parsePrefix()
+
 	var expr *Expr
 
-	switch t := token.Data.(type) {
-	case *TNumber:
-		expr = &Expr{
-			Kind: &ENumber{Value: t.Value},
-			Span: token.Span,
+loop:
+	for {
+		switch t := token.Data.(type) {
+		case *TNumber:
+			expr = &Expr{
+				Kind: &ENumber{Value: t.Value},
+				Span: token.Span,
+			}
+			break loop
+		case *TString:
+			expr = &Expr{
+				Kind: &EString{Value: t.Value},
+				Span: token.Span,
+			}
+			break loop
+		case *TIdentifier:
+			expr = &Expr{
+				Kind: &EIdentifier{Name: t.Value},
+				Span: token.Span,
+			}
+			break loop
+		case *TOpenParen:
+			// parseExpr handles the closing paren for us
+			expr, _ = parser.parseExpr()
+			break loop
+		case *TOpenBracket:
+			// parseExpr handles the closing bracket for us
+			elems, final := parser.parseSeq()
+			expr = &Expr{
+				Kind: &EArray{Elems: elems},
+				Span: Span{Start: token.Span.Start, End: final.Span.End},
+			}
+			break loop
+		case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
+			expr = &Expr{
+				Kind: &EIgnore{Token: &token},
+				Span: token.Span,
+			}
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+			break loop
+		default:
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+			// Loop until we parse a primary expression
+			token = parser.lexer.nextToken()
 		}
-	case *TString:
-		expr = &Expr{
-			Kind: &EString{Value: t.Value},
-			Span: token.Span,
-		}
-	case *TIdentifier:
-		expr = &Expr{
-			Kind: &EIdentifier{Name: t.Value},
-			Span: token.Span,
-		}
-	case *TOpenParen:
-		// parseExpr handles the closing paren for us
-		expr, _ = parser.parseExpr()
-	case *TOpenBracket:
-		// parseExpr handles the closing bracket for us
-		elems, final := parser.parseSeq()
-		expr = &Expr{
-			Kind: &EArray{Elems: elems},
-			Span: Span{Start: token.Span.Start, End: final.Span.End},
-		}
-	default:
-		// TODO: in this case we probably want to return an error since the
-		// parent function will probably be able to handle it better
-		panic("parsePrimary - unexpected token")
 	}
 
 	for !ops.IsEmpty() {

@@ -236,7 +236,11 @@ func (lexer *Lexer) nextToken() Token {
 		}
 	default:
 		if lexer.offset >= len(lexer.source.Contents) {
-			return Token{Data: &TEOF{}} // TODO: include the character in the token
+			loc := Location{Line: lexer.line, Column: lexer.column}
+			return Token{
+				Data: &TEOF{},
+				Span: Span{Start: loc, End: loc},
+			}
 		}
 		return Token{Data: &TInvalid{}} // TODO: include the character in the token
 	}
