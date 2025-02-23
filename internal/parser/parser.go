@@ -38,7 +38,7 @@ func (parser *Parser) parseExpr() (*Expr, *Token) {
 
 loop:
 	for {
-		token := parser.lexer.nextToken()
+		token := parser.lexer.next()
 		lastToken = &token
 		var nextOp BinaryOp
 
@@ -104,7 +104,7 @@ type TokenAndOp struct {
 }
 
 func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
-	token := parser.lexer.peekToken()
+	token := parser.lexer.peek()
 	result := NewStack[TokenAndOp]()
 
 loop:
@@ -117,21 +117,21 @@ loop:
 		default:
 			break loop
 		}
-		parser.lexer.nextToken() // consume the token
-		token = parser.lexer.peekToken()
+		parser.lexer.consume()
+		token = parser.lexer.peek()
 	}
 
 	return result
 }
 
 func (parser *Parser) parseSuffix(expr *Expr) *Expr {
-	token := parser.lexer.peekToken()
+	token := parser.lexer.peek()
 
 loop3:
 	for {
 		switch token.Data.(type) {
 		case *TOpenParen:
-			parser.lexer.nextToken() // consumes the next token
+			parser.lexer.consume()
 			args, terminator := parser.parseSeq()
 			callee := expr
 			expr =
@@ -140,7 +140,7 @@ loop3:
 					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
 				}
 		case *TQuestionOpenParen:
-			parser.lexer.nextToken() // consumes the next token
+			parser.lexer.consume()
 			args, terminator := parser.parseSeq()
 			callee := expr
 			expr =
@@ -149,7 +149,7 @@ loop3:
 					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
 				}
 		case *TOpenBracket:
-			parser.lexer.nextToken() // consumes the next token
+			parser.lexer.consume()
 			index, terminator := parser.parseExpr()
 			obj := expr
 			expr =
@@ -158,7 +158,7 @@ loop3:
 					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
 				}
 		case *TQuestionOpenBracket:
-			parser.lexer.nextToken() // consumes the next token
+			parser.lexer.consume()
 			index, terminator := parser.parseExpr()
 			obj := expr
 			expr =
@@ -168,8 +168,8 @@ loop3:
 				}
 		// TODO: dedupe with *TQuestionDot case
 		case *TDot:
-			parser.lexer.nextToken() // consumes the next token
-			prop := parser.lexer.nextToken()
+			parser.lexer.consume()
+			prop := parser.lexer.next()
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				obj := expr
@@ -197,8 +197,8 @@ loop3:
 			}
 		// TODO: dedupe with *TDot case
 		case *TQuestionDot:
-			parser.lexer.nextToken() // consumes the next token
-			prop := parser.lexer.nextToken()
+			parser.lexer.consume()
+			prop := parser.lexer.next()
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				obj := expr
@@ -227,7 +227,7 @@ loop3:
 		default:
 			break loop3
 		}
-		token = parser.lexer.peekToken()
+		token = parser.lexer.peek()
 	}
 
 	return expr
@@ -235,7 +235,7 @@ loop3:
 
 func (parser *Parser) parsePrimary() *Expr {
 	ops := parser.parsePrefix()
-	token := parser.lexer.nextToken()
+	token := parser.lexer.next()
 
 	var expr *Expr
 
@@ -281,7 +281,7 @@ func (parser *Parser) parsePrimary() *Expr {
 				Span:    token.Span,
 				Message: "Unexpected token",
 			})
-			token = parser.lexer.nextToken()
+			token = parser.lexer.next()
 		}
 	}
 
@@ -298,6 +298,7 @@ func (parser *Parser) parsePrimary() *Expr {
 	return expr
 }
 
+// TODO: detect and recover from mismatched parens, e.g. foo(bar]
 func (parser *Parser) parseSeq() ([]*Expr, *Token) {
 	exprs := []*Expr{}
 

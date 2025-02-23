@@ -11,24 +11,28 @@ type Source struct {
 }
 
 type Lexer struct {
-	source Source
-	offset int
-	column int
-	line   int
+	source            Source
+	currentOffset     int
+	currentLocation   Location
+	afterPeekOffset   int
+	afterPeakLocation Location
 }
 
 func NewLexer(source Source) *Lexer {
 	return &Lexer{
-		source: source,
-		offset: 0,
-		line:   1,
-		column: 1,
+		source:          source,
+		currentOffset:   0,
+		currentLocation: Location{Line: 1, Column: 1},
+		// The peek state is invalid until the first call to peekToken.
+		afterPeekOffset:   -1,
+		afterPeakLocation: Location{Line: 0, Column: 0},
 	}
 }
 
-func (lexer *Lexer) _peekToken(consume bool) Token {
-	startOffset := lexer.offset
-	start := Location{Line: lexer.line, Column: lexer.column}
+func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
+	startOffset := lexer.currentOffset
+	start := lexer.currentLocation
+
 	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 
 	// Skip over whitespace
@@ -44,7 +48,6 @@ func (lexer *Lexer) _peekToken(consume bool) Token {
 	}
 
 	endOffset := startOffset + width
-
 	end := Location{Line: start.Line, Column: start.Column + 1}
 
 	var token Token
@@ -231,28 +234,44 @@ func (lexer *Lexer) _peekToken(consume bool) Token {
 		}
 	}
 
-	if consume {
-		lexer.offset = endOffset
-		lexer.column = end.Column
-		lexer.line = end.Line
+	if !consume {
+		lexer.afterPeekOffset = endOffset
+		lexer.afterPeakLocation = end
+	} else {
+		lexer.afterPeekOffset = -1
+		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
+
+		lexer.currentOffset = endOffset
+		lexer.currentLocation = end
 	}
 
 	return token
 }
 
-func (lexer *Lexer) peekToken() Token {
-	return lexer._peekToken(false)
+func (lexer *Lexer) peek() Token {
+	return lexer.peekAndMaybeConsume(false)
 }
 
-func (lexer *Lexer) nextToken() Token {
-	return lexer._peekToken(true)
+func (lexer *Lexer) next() Token {
+	return lexer.peekAndMaybeConsume(true)
+}
+
+func (lexer *Lexer) consume() {
+	if lexer.afterPeekOffset != -1 {
+		lexer.currentOffset = lexer.afterPeekOffset
+		lexer.currentLocation = lexer.afterPeakLocation
+
+		// Reset the peek state
+		lexer.afterPeekOffset = -1
+		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
+	}
 }
 
 func (lexer *Lexer) Lex() []Token {
 	var tokens []Token
 
-	for lexer.offset < len(lexer.source.Contents) {
-		tokens = append(tokens, lexer.nextToken())
+	for lexer.currentOffset < len(lexer.source.Contents) {
+		tokens = append(tokens, lexer.next())
 	}
 
 	return tokens
