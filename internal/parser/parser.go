@@ -38,9 +38,9 @@ func (parser *Parser) parseExpr() (*Expr, *Token) {
 
 loop:
 	for {
-		token := parser.lexer.nextToken()
+		token := parser.lexer.next()
 		lastToken = &token
-		var nextOp BinaryOp = -1
+		var nextOp BinaryOp
 
 		switch token.Data.(type) {
 		case *TPlus:
@@ -51,108 +51,6 @@ loop:
 			nextOp = Times
 		case *TSlash:
 			nextOp = Divide
-		case *TOpenParen:
-			args, t := parser.parseSeq()
-			lastToken = t
-			value := values.Pop()
-			values.Push(
-				&Expr{
-					Kind: &ECall{Callee: value, Args: args, OptChain: false},
-					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
-				},
-			)
-		case *TQuestionOpenParen:
-			args, t := parser.parseSeq()
-			lastToken = t
-			value := values.Pop()
-			values.Push(
-				&Expr{
-					Kind: &ECall{Callee: value, Args: args, OptChain: true},
-					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
-				},
-			)
-		case *TOpenBracket:
-			index, t := parser.parseExpr()
-			lastToken = t
-			value := values.Pop()
-			values.Push(
-				&Expr{
-					Kind: &EIndex{Object: value, Index: index, OptChain: false},
-					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
-				},
-			)
-		case *TQuestionOpenBracket:
-			index, t := parser.parseExpr()
-			lastToken = t
-			value := values.Pop()
-			values.Push(
-				&Expr{
-					Kind: &EIndex{Object: value, Index: index, OptChain: true},
-					Span: Span{Start: value.Span.Start, End: lastToken.Span.End},
-				},
-			)
-		// TODO: dedupe with *TQuestionDot case
-		case *TDot:
-			prop := parser.lexer.nextToken()
-			lastToken = &prop
-			switch t := prop.Data.(type) {
-			case *TIdentifier:
-				obj := values.Pop()
-				prop := &Identifier{Name: t.Value, Span: prop.Span}
-				values.Push(
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
-						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
-					},
-				)
-			default:
-				obj := values.Pop()
-				prop := &Identifier{
-					Name: "",
-					Span: Span{Start: token.Span.End, End: token.Span.End},
-				}
-				values.Push(
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
-						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
-					},
-				)
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after .",
-				})
-			}
-		// TODO: dedupe with *TDot case
-		case *TQuestionDot:
-			prop := parser.lexer.nextToken()
-			lastToken = &prop
-			switch t := prop.Data.(type) {
-			case *TIdentifier:
-				value := values.Pop()
-				prop := &Identifier{Name: t.Value, Span: token.Span}
-				values.Push(
-					&Expr{
-						Kind: &EMember{Object: value, Prop: prop, OptChain: true},
-						Span: Span{Start: value.Span.Start, End: prop.Span.End},
-					},
-				)
-			default:
-				obj := values.Pop()
-				prop := &Identifier{
-					Name: "",
-					Span: Span{Start: token.Span.End, End: token.Span.End},
-				}
-				values.Push(
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
-						Span: Span{Start: obj.Span.Start, End: lastToken.Span.End},
-					},
-				)
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: obj.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after ?.",
-				})
-			}
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
@@ -200,56 +98,168 @@ loop:
 	return values.Pop(), lastToken
 }
 
-func (parser *Parser) parsePrefix() (Token, Stack[UnaryOp]) {
-	token := parser.lexer.nextToken()
-	ops := NewStack[UnaryOp]()
+type TokenAndOp struct {
+	Token *Token
+	Op    UnaryOp
+}
+
+func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
+	token := parser.lexer.peek()
+	result := NewStack[TokenAndOp]()
 
 loop:
 	for {
 		switch token.Data.(type) {
 		case *TPlus:
-			ops.Push(UnaryPlus)
+			result.Push(TokenAndOp{Token: &token, Op: UnaryPlus})
 		case *TMinus:
-			ops.Push(UnaryMinus)
+			result.Push(TokenAndOp{Token: &token, Op: UnaryMinus})
 		default:
 			break loop
 		}
-		token = parser.lexer.nextToken()
+		parser.lexer.consume()
+		token = parser.lexer.peek()
 	}
 
-	return token, ops
+	return result
+}
+
+func (parser *Parser) parseSuffix(expr *Expr) *Expr {
+	token := parser.lexer.peek()
+
+loop3:
+	for {
+		switch token.Data.(type) {
+		case *TOpenParen:
+			parser.lexer.consume()
+			args, terminator := parser.parseSeq()
+			callee := expr
+			expr =
+				&Expr{
+					Kind: &ECall{Callee: callee, Args: args, OptChain: false},
+					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
+				}
+		case *TQuestionOpenParen:
+			parser.lexer.consume()
+			args, terminator := parser.parseSeq()
+			callee := expr
+			expr =
+				&Expr{
+					Kind: &ECall{Callee: callee, Args: args, OptChain: true},
+					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
+				}
+		case *TOpenBracket:
+			parser.lexer.consume()
+			index, terminator := parser.parseExpr()
+			obj := expr
+			expr =
+				&Expr{
+					Kind: &EIndex{Object: obj, Index: index, OptChain: false},
+					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
+				}
+		case *TQuestionOpenBracket:
+			parser.lexer.consume()
+			index, terminator := parser.parseExpr()
+			obj := expr
+			expr =
+				&Expr{
+					Kind: &EIndex{Object: obj, Index: index, OptChain: true},
+					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
+				}
+		// TODO: dedupe with *TQuestionDot case
+		case *TDot:
+			parser.lexer.consume()
+			prop := parser.lexer.next()
+			switch t := prop.Data.(type) {
+			case *TIdentifier:
+				obj := expr
+				prop := &Identifier{Name: t.Value, Span: prop.Span}
+				expr =
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+					}
+			default:
+				obj := expr
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				expr =
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+					}
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: token.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after .",
+				})
+			}
+		// TODO: dedupe with *TDot case
+		case *TQuestionDot:
+			parser.lexer.consume()
+			prop := parser.lexer.next()
+			switch t := prop.Data.(type) {
+			case *TIdentifier:
+				obj := expr
+				prop := &Identifier{Name: t.Value, Span: token.Span}
+				expr =
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
+						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+					}
+			default:
+				obj := expr
+				prop := &Identifier{
+					Name: "",
+					Span: Span{Start: token.Span.End, End: token.Span.End},
+				}
+				expr =
+					&Expr{
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
+						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+					}
+				parser.errors = append(parser.errors, &Error{
+					Span:    Span{Start: token.Span.Start, End: token.Span.End},
+					Message: "expected an identifier after ?.",
+				})
+			}
+		default:
+			break loop3
+		}
+		token = parser.lexer.peek()
+	}
+
+	return expr
 }
 
 func (parser *Parser) parsePrimary() *Expr {
-	token, ops := parser.parsePrefix()
+	ops := parser.parsePrefix()
+	token := parser.lexer.next()
 
 	var expr *Expr
 
-loop:
-	for {
+	// Loop until we parse a primary expression.
+	for expr == nil {
 		switch t := token.Data.(type) {
 		case *TNumber:
 			expr = &Expr{
 				Kind: &ENumber{Value: t.Value},
 				Span: token.Span,
 			}
-			break loop
 		case *TString:
 			expr = &Expr{
 				Kind: &EString{Value: t.Value},
 				Span: token.Span,
 			}
-			break loop
 		case *TIdentifier:
 			expr = &Expr{
 				Kind: &EIdentifier{Name: t.Value},
 				Span: token.Span,
 			}
-			break loop
 		case *TOpenParen:
 			// parseExpr handles the closing paren for us
 			expr, _ = parser.parseExpr()
-			break loop
 		case *TOpenBracket:
 			// parseExpr handles the closing bracket for us
 			elems, final := parser.parseSeq()
@@ -257,7 +267,6 @@ loop:
 				Kind: &EArray{Elems: elems},
 				Span: Span{Start: token.Span.Start, End: final.Span.End},
 			}
-			break loop
 		case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
 			expr = &Expr{
 				Kind: &EIgnore{Token: &token},
@@ -267,28 +276,29 @@ loop:
 				Span:    token.Span,
 				Message: "Unexpected token",
 			})
-			break loop
 		default:
 			parser.errors = append(parser.errors, &Error{
 				Span:    token.Span,
 				Message: "Unexpected token",
 			})
-			// Loop until we parse a primary expression
-			token = parser.lexer.nextToken()
+			token = parser.lexer.next()
 		}
 	}
 
+	expr = parser.parseSuffix(expr)
+
 	for !ops.IsEmpty() {
-		op := ops.Pop()
+		tokenAndOp := ops.Pop()
 		expr = &Expr{
-			Kind: &EUnary{Op: op, Arg: expr},
-			Span: Span{Start: token.Span.Start, End: expr.Span.End},
+			Kind: &EUnary{Op: tokenAndOp.Op, Arg: expr},
+			Span: Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span.End},
 		}
 	}
 
 	return expr
 }
 
+// TODO: detect and recover from mismatched parens, e.g. foo(bar]
 func (parser *Parser) parseSeq() ([]*Expr, *Token) {
 	exprs := []*Expr{}
 

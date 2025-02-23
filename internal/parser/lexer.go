@@ -11,142 +11,135 @@ type Source struct {
 }
 
 type Lexer struct {
-	source Source
-	offset int
-	column int
-	line   int
+	source            Source
+	currentOffset     int
+	currentLocation   Location
+	afterPeekOffset   int
+	afterPeakLocation Location
 }
 
 func NewLexer(source Source) *Lexer {
 	return &Lexer{
-		source: source,
-		offset: 0,
-		line:   1,
-		column: 1,
+		source:          source,
+		currentOffset:   0,
+		currentLocation: Location{Line: 1, Column: 1},
+		// The peek state is invalid until the first call to peekToken.
+		afterPeekOffset:   -1,
+		afterPeakLocation: Location{Line: 0, Column: 0},
 	}
 }
 
-func (lexer *Lexer) nextCodePoint() rune {
-	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[lexer.offset:])
-	lexer.offset += width
-	lexer.column++
+func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
+	startOffset := lexer.currentOffset
+	start := lexer.currentLocation
 
-	if codePoint == '\n' {
-		lexer.line++
-		lexer.column = 1
-	}
+	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 
-	return codePoint
-}
-
-// We need a way to look at the next token without consume it
-func (lexer *Lexer) nextToken() Token {
-	start := Location{Line: lexer.line, Column: lexer.column}
-	codePoint := lexer.nextCodePoint()
-
-	// skip whitespace
+	// Skip over whitespace
 	for codePoint == ' ' || codePoint == '\n' {
-		start = Location{Line: lexer.line, Column: lexer.column}
-		codePoint = lexer.nextCodePoint()
+		startOffset += width
+		if codePoint == '\n' {
+			start.Line++
+			start.Column = 1
+		} else {
+			start.Column++
+		}
+		codePoint, width = utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 	}
 
-	end := Location{Line: lexer.line, Column: lexer.column}
+	endOffset := startOffset + width
+	end := Location{Line: start.Line, Column: start.Column + 1}
 
+	var token Token
 	switch codePoint {
 	case '+':
-		return Token{
+		token = Token{
 			Data: &TPlus{},
 			Span: Span{Start: start, End: end},
 		}
 	case '-':
-		return Token{
+		token = Token{
 			Data: &TMinus{},
 			Span: Span{Start: start, End: end},
 		}
 	case '*':
-		return Token{
+		token = Token{
 			Data: &TAsterisk{},
 			Span: Span{Start: start, End: end},
 		}
 	case '/':
-		return Token{
+		token = Token{
 			Data: &TSlash{},
 			Span: Span{Start: start, End: end},
 		}
 	case '=':
-		return Token{
+		token = Token{
 			Data: &TEquals{},
 			Span: Span{Start: start, End: end},
 		}
 	case ',':
-		return Token{
+		token = Token{
 			Data: &TComma{},
 			Span: Span{Start: start, End: end},
 		}
 	case '(':
-		return Token{
+		token = Token{
 			Data: &TOpenParen{},
 			Span: Span{Start: start, End: end},
 		}
 	case ')':
-		return Token{
+		token = Token{
 			Data: &TCloseParen{},
 			Span: Span{Start: start, End: end},
 		}
 	case '{':
-		return Token{
+		token = Token{
 			Data: &TOpenBrace{},
 			Span: Span{Start: start, End: end},
 		}
 	case '}':
-		return Token{
+		token = Token{
 			Data: &TCloseBrace{},
 			Span: Span{Start: start, End: end},
 		}
 	case '[':
-		return Token{
+		token = Token{
 			Data: &TOpenBracket{},
 			Span: Span{Start: start, End: end},
 		}
 	case ']':
-		return Token{
+		token = Token{
 			Data: &TCloseBracket{},
 			Span: Span{Start: start, End: end},
 		}
 	case '.':
-		return Token{
+		token = Token{
 			Data: &TDot{},
 			Span: Span{Start: start, End: end},
 		}
 	case '?':
-		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[lexer.offset:])
+		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+width:])
+		endOffset += width
+		end.Column++
+
 		switch nextCodePoint {
 		case '.':
-			lexer.offset += width
-			lexer.column++
-			end := Location{Line: lexer.line, Column: lexer.column}
-			return Token{
+			token = Token{
 				Data: &TQuestionDot{},
 				Span: Span{Start: start, End: end},
 			}
 		case '(':
-			lexer.offset += width
-			lexer.column++
-			end := Location{Line: lexer.line, Column: lexer.column}
-			return Token{
+			token = Token{
 				Data: &TQuestionOpenParen{},
 				Span: Span{Start: start, End: end},
 			}
 		case '[':
-			lexer.offset += width
-			lexer.column++
-			end := Location{Line: lexer.line, Column: lexer.column}
-			return Token{
+			token = Token{
 				Data: &TQuestionOpenBracket{},
 				Span: Span{Start: start, End: end},
 			}
 		default:
-			return Token{
+			token = Token{
 				Data: &TInvalid{}, // TODO: include the character in the token
 				Span: Span{Start: start, End: end},
 			}
@@ -154,7 +147,7 @@ func (lexer *Lexer) nextToken() Token {
 	case '"':
 		contents := lexer.source.Contents
 		n := len(contents)
-		i := lexer.offset
+		i := startOffset + 1
 		for i < n {
 			c := contents[i]
 			if c == '"' {
@@ -162,18 +155,17 @@ func (lexer *Lexer) nextToken() Token {
 			}
 			i++
 		}
-		str := contents[lexer.offset-1 : i]
-		lexer.column += i - lexer.offset
-		lexer.offset = i
-		end := Location{Line: lexer.line, Column: lexer.column}
-		return Token{
+		endOffset = i + 1                  // + 1 to include the closing quote
+		str := contents[startOffset+1 : i] // without the quotes
+		end.Column = start.Column + (i - startOffset)
+		token = Token{
 			Data: &TString{Value: str},
 			Span: Span{Start: start, End: end},
 		}
 	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		contents := lexer.source.Contents
 		n := len(contents)
-		i := lexer.offset
+		i := startOffset + 1
 		for i < n {
 			c := contents[i]
 			if c < '0' || c > '9' {
@@ -181,12 +173,10 @@ func (lexer *Lexer) nextToken() Token {
 			}
 			i++
 		}
-		// TODO: handle parsing errors
-		num, _ := strconv.ParseFloat(contents[lexer.offset-1:i], 64)
-		lexer.column += i - lexer.offset
-		lexer.offset = i
-		end := Location{Line: lexer.line, Column: lexer.column}
-		return Token{
+		endOffset = i
+		num, _ := strconv.ParseFloat(contents[startOffset:i], 64) // TODO: handle parsing errors
+		end.Column = start.Column + (i - startOffset)
+		token = Token{
 			Data: &TNumber{Value: num},
 			Span: Span{Start: start, End: end},
 		}
@@ -198,7 +188,7 @@ func (lexer *Lexer) nextToken() Token {
 
 		contents := lexer.source.Contents
 		n := len(contents)
-		i := lexer.offset
+		i := startOffset + 1
 		for i < n {
 			c := contents[i]
 			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '$' {
@@ -206,51 +196,82 @@ func (lexer *Lexer) nextToken() Token {
 			}
 			i++
 		}
-		ident := contents[lexer.offset-1 : i]
-		lexer.column += i - lexer.offset
-		lexer.offset = i
-		end := Location{Line: lexer.line, Column: lexer.column}
+		endOffset = i
+		ident := contents[startOffset:i]
+		end.Column = start.Column + i - startOffset
 		span := Span{Start: start, End: end}
 
 		switch ident {
 		case "fn":
-			return Token{
+			token = Token{
 				Data: &TFn{},
 				Span: span,
 			}
 		case "var":
-			return Token{
+			token = Token{
 				Data: &TVar{},
 				Span: span,
 			}
 		case "val":
-			return Token{
+			token = Token{
 				Data: &TVal{},
 				Span: span,
 			}
 		default:
-			return Token{
+			token = Token{
 				Data: &TIdentifier{Value: ident},
 				Span: span,
 			}
 		}
 	default:
-		if lexer.offset >= len(lexer.source.Contents) {
-			loc := Location{Line: lexer.line, Column: lexer.column}
-			return Token{
+		if startOffset >= len(lexer.source.Contents) {
+			token = Token{
 				Data: &TEOF{},
-				Span: Span{Start: loc, End: loc},
+				Span: Span{Start: start, End: start},
 			}
+		} else {
+			token = Token{Data: &TInvalid{}} // TODO: include the character in the token
 		}
-		return Token{Data: &TInvalid{}} // TODO: include the character in the token
+	}
+
+	if !consume {
+		lexer.afterPeekOffset = endOffset
+		lexer.afterPeakLocation = end
+	} else {
+		lexer.afterPeekOffset = -1
+		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
+
+		lexer.currentOffset = endOffset
+		lexer.currentLocation = end
+	}
+
+	return token
+}
+
+func (lexer *Lexer) peek() Token {
+	return lexer.peekAndMaybeConsume(false)
+}
+
+func (lexer *Lexer) next() Token {
+	return lexer.peekAndMaybeConsume(true)
+}
+
+func (lexer *Lexer) consume() {
+	if lexer.afterPeekOffset != -1 {
+		lexer.currentOffset = lexer.afterPeekOffset
+		lexer.currentLocation = lexer.afterPeakLocation
+
+		// Reset the peek state
+		lexer.afterPeekOffset = -1
+		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
 	}
 }
 
 func (lexer *Lexer) Lex() []Token {
 	var tokens []Token
 
-	for lexer.offset < len(lexer.source.Contents) {
-		tokens = append(tokens, lexer.nextToken())
+	for lexer.currentOffset < len(lexer.source.Contents) {
+		tokens = append(tokens, lexer.next())
 	}
 
 	return tokens
