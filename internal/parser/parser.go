@@ -347,6 +347,11 @@ func (parser *Parser) parseDecl() *Decl {
 
 	switch token.Data.(type) {
 	case *TVal, *TVar:
+		kind := ValKind
+		if _, ok := token.Data.(*TVar); ok {
+			kind = VarKind
+		}
+
 		token := parser.lexer.next()
 		_ident, ok := token.Data.(*TIdentifier)
 		if !ok {
@@ -380,6 +385,7 @@ func (parser *Parser) parseDecl() *Decl {
 			// TODO: differentiate between 'var' and 'val'
 			Kind: &DVariable{
 				Name: ident,
+				Kind: kind,
 				Init: init,
 			},
 			Declare: declare,

@@ -995,6 +995,7 @@
     Kind: &parser.SDecl{
         Decl: &parser.Decl{
             Kind: &parser.DVariable{
+                Kind: 0,
                 Name: &parser.Identifier{
                     Name: "x",
                     Span: parser.Span{
@@ -1030,6 +1031,7 @@
     Kind: &parser.SDecl{
         Decl: &parser.Decl{
             Kind: &parser.DVariable{
+                Kind: 1,
                 Name: &parser.Identifier{
                     Name: "x",
                     Span: parser.Span{
@@ -1065,6 +1067,7 @@
     Kind: &parser.SDecl{
         Decl: &parser.Decl{
             Kind: &parser.DVariable{
+                Kind: 0,
                 Name: &parser.Identifier{
                     Name: "x",
                     Span: parser.Span{
@@ -1094,6 +1097,7 @@
     Kind: &parser.SDecl{
         Decl: &parser.Decl{
             Kind: &parser.DVariable{
+                Kind: 0,
                 Name: &parser.Identifier{
                     Name: "x",
                     Span: parser.Span{
@@ -1123,6 +1127,7 @@
     Kind: &parser.SDecl{
         Decl: &parser.Decl{
             Kind: &parser.DVariable{
+                Kind: 0,
                 Name: &parser.Identifier{
                     Name: "x",
                     Span: parser.Span{

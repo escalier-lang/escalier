@@ -121,7 +121,15 @@ type D interface{ isDecl() }
 func (*DVariable) isDecl() {}
 func (*DFunction) isDecl() {}
 
+type VariableKind int
+
+const (
+	ValKind VariableKind = iota
+	VarKind
+)
+
 type DVariable struct {
+	Kind VariableKind
 	Name *Identifier // TODO: replace with Pattern
 	Init *Expr
 }
