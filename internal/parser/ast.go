@@ -106,8 +106,10 @@ type EIgnore struct {
 }
 
 type Decl struct {
-	Kind D
-	Span Span
+	Kind    D
+	Export  bool
+	Declare bool
+	Span    Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -119,9 +121,17 @@ type D interface{ isDecl() }
 func (*DVariable) isDecl() {}
 func (*DFunction) isDecl() {}
 
+type VariableKind int
+
+const (
+	ValKind VariableKind = iota
+	VarKind
+)
+
 type DVariable struct {
+	Kind VariableKind
 	Name *Identifier // TODO: replace with Pattern
-	Init E
+	Init *Expr
 }
 
 type Param struct {
@@ -132,7 +142,7 @@ type Param struct {
 type DFunction struct {
 	Name   *Identifier
 	Params []*Param
-	Body   []Stmt
+	Body   []*Stmt
 }
 
 type Stmt struct {
@@ -161,6 +171,3 @@ type SDecl struct {
 type SReturn struct {
 	Expr *Expr
 }
-
-// TODO: add more statement types
-// - for loops

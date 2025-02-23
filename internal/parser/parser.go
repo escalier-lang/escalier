@@ -1,5 +1,11 @@
 package parser
 
+import (
+	"fmt"
+	"os"
+	"runtime"
+)
+
 type Parser struct {
 	lexer  *Lexer
 	errors []*Error
@@ -54,10 +60,7 @@ loop:
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Unexpected token",
-			})
+			parser.reportError(token.Span, "Unexpected token")
 			continue
 		}
 
@@ -190,10 +193,7 @@ loop3:
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: token.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after .",
-				})
+				parser.reportError(token.Span, "expected an identifier after .")
 			}
 		// TODO: dedupe with *TDot case
 		case *TQuestionDot:
@@ -219,10 +219,7 @@ loop3:
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: token.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after ?.",
-				})
+				parser.reportError(token.Span, "expected an identifier after ?.")
 			}
 		default:
 			break loop3
@@ -272,15 +269,9 @@ func (parser *Parser) parsePrimary() *Expr {
 				Kind: &EIgnore{Token: &token},
 				Span: token.Span,
 			}
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Unexpected token",
-			})
+			parser.reportError(token.Span, "Unexpected token")
 		default:
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Unexpected token",
-			})
+			parser.reportError(token.Span, "Unexpected token")
 			token = parser.lexer.next()
 		}
 	}
@@ -316,4 +307,121 @@ func (parser *Parser) parseSeq() ([]*Expr, *Token) {
 			panic("parseSeq - unexpected token")
 		}
 	}
+}
+
+func (parser *Parser) parseDecl() *Decl {
+	// can start with `var`, `val`, or `fn` (and in the future `class`, `type`, `enum`, etc.)
+	// we also need to be able to account `declare` and `export` modifiers in the future
+
+	export := false
+	declare := false
+
+	token := parser.lexer.next()
+	start := token.Span.Start
+	if _, ok := token.Data.(*TExport); ok {
+		export = true
+		token = parser.lexer.next()
+	}
+
+	if _, ok := token.Data.(*TDeclare); ok {
+		declare = true
+		token = parser.lexer.next()
+	}
+
+	switch token.Data.(type) {
+	case *TVal, *TVar:
+		kind := ValKind
+		if _, ok := token.Data.(*TVar); ok {
+			kind = VarKind
+		}
+
+		token := parser.lexer.next()
+		_ident, ok := token.Data.(*TIdentifier)
+		if !ok {
+			parser.reportError(token.Span, "Expected identifier")
+			return nil
+		}
+		ident := &Identifier{Name: _ident.Value, Span: token.Span}
+		end := token.Span.End
+
+		token = parser.lexer.peek()
+		var init *Expr
+		if !declare {
+			_, ok = token.Data.(*TEquals)
+			if !ok {
+				// TODO: lex tokens until we find an equals sign
+				parser.reportError(token.Span, "Expected equals sign")
+				return nil
+			}
+			parser.lexer.consume()
+			init, _ = parser.parseExpr()
+			end = init.Span.End
+		}
+
+		return &Decl{
+			// TODO: differentiate between 'var' and 'val'
+			Kind: &DVariable{
+				Name: ident,
+				Kind: kind,
+				Init: init,
+			},
+			Declare: declare,
+			Export:  export,
+			Span:    Span{Start: start, End: end},
+		}
+	// case *TFn:
+	// 	token := parser.lexer.next()
+	// 	_ident, ok := token.Data.(*TIdentifier)
+	// 	if !ok {
+	//      parser.reportError(token.Span, "Expected identifier")
+	// 		return nil
+	// 	}
+	// 	ident := &Identifier{Name: _ident.Value, Span: token.Span}
+
+	// 	return &Decl{
+	// 		Kind: &DFunction{
+	// 			Name:   ident,
+	// 			Params: []*Param{},
+	// 			Body:   []*Stmt{},
+	// 		},
+	// 		Declare: declare,
+	// 		Export:  export,
+	// 		Span:    Span{Start: start, End: ident.Span.End},
+	// 	}
+	default:
+		parser.reportError(token.Span, "Unexpected token")
+		return nil
+	}
+}
+
+func (parser *Parser) parseStmt() *Stmt {
+	token := parser.lexer.peek()
+
+	switch token.Data.(type) {
+	case *TFn, *TVar, *TVal, *TDeclare, *TExport:
+		decl := parser.parseDecl()
+		if decl == nil {
+			return nil
+		}
+		return &Stmt{
+			Kind: &SDecl{Decl: decl},
+			Span: decl.Span,
+		}
+	// TODO: case *TReturn:
+	// 	return nil
+	default:
+		parser.reportError(token.Span, "Unexpected token")
+		return nil
+	}
+}
+
+func (parser *Parser) reportError(span Span, message string) {
+	_, _, line, _ := runtime.Caller(1)
+	if os.Getenv("DEBUG") == "true" {
+		message = fmt.Sprintf("%s:%d", message, line)
+	}
+	parser.errors = append(parser.errors, &Error{
+		Span:    span,
+		Message: message,
+	})
 }

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -122,6 +123,49 @@ func TestParseExprErrorHandling(t *testing.T) {
 			snaps.MatchSnapshot(t, expr)
 			assert.Len(t, parser.errors, 1)
 			snaps.MatchSnapshot(t, parser.errors[0])
+		})
+	}
+}
+
+func TestParseStmtNoErrors(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"VarDecl": {
+			input: "var x = 5",
+		},
+		"ValDecl": {
+			input: "val x = 5",
+		},
+		"ExportValDecl": {
+			input: "export val x = 5",
+		},
+		"DeclareValDecl": {
+			input: "declare val x",
+		},
+		"ExportDeclareValDecl": {
+			input: "export declare val x",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := Source{
+				path:     "input.esc",
+				Contents: test.input,
+			}
+
+			parser := NewParser(source)
+			stmt := parser.parseStmt()
+
+			snaps.MatchSnapshot(t, stmt)
+			assert.Len(t, parser.errors, 0)
+
+			// print each error
+			for i, err := range parser.errors {
+				fmt.Printf("errors[%d] = %#v", i, err)
+			}
 		})
 	}
 }

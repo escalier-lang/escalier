@@ -11,17 +11,57 @@ type Token struct {
 //sumtype:decl
 type T interface{ isToken() }
 
+// literals
 func (*TNumber) isToken()     {}
 func (*TString) isToken()     {}
 func (*TIdentifier) isToken() {}
-func (*TFn) isToken()         {}
-func (*TVar) isToken()        {}
-func (*TVal) isToken()        {}
-func (*TPlus) isToken()       {}
-func (*TMinus) isToken()      {}
-func (*TAsterisk) isToken()   {}
-func (*TSlash) isToken()      {}
-func (*TEquals) isToken()     {}
+
+type TNumber struct{ Value float64 }
+type TString struct{ Value string }
+type TIdentifier struct{ Value string }
+
+// keywords
+func (*TFn) isToken()      {}
+func (*TVar) isToken()     {}
+func (*TVal) isToken()     {}
+func (*TReturn) isToken()  {}
+func (*TImport) isToken()  {}
+func (*TExport) isToken()  {}
+func (*TDeclare) isToken() {}
+
+type TFn struct{}
+type TVar struct{}
+type TVal struct{}
+type TReturn struct{}
+type TImport struct{}
+type TExport struct{}
+type TDeclare struct{}
+
+// operators
+func (*TPlus) isToken()     {}
+func (*TMinus) isToken()    {}
+func (*TAsterisk) isToken() {}
+func (*TSlash) isToken()    {}
+func (*TEquals) isToken()   {}
+func (*TDot) isToken()      {}
+func (*TComma) isToken()    {}
+
+type TPlus struct{}
+type TMinus struct{}
+type TAsterisk struct{}
+type TSlash struct{}
+type TEquals struct{}
+type TDot struct{}
+type TComma struct{}
+
+// optional chaining
+func (*TQuestionOpenParen) isToken()   {}
+func (*TQuestionDot) isToken()         {}
+func (*TQuestionOpenBracket) isToken() {}
+
+type TQuestionOpenParen struct{}
+type TQuestionDot struct{}
+type TQuestionOpenBracket struct{}
 
 // grouping
 func (*TOpenParen) isToken()    {}
@@ -31,48 +71,15 @@ func (*TCloseBrace) isToken()   {}
 func (*TOpenBracket) isToken()  {}
 func (*TCloseBracket) isToken() {}
 
-// optional chaining
-func (*TQuestionOpenParen) isToken()   {}
-func (*TQuestionDot) isToken()         {}
-func (*TQuestionOpenBracket) isToken() {}
-
-func (*TDot) isToken()   {}
-func (*TComma) isToken() {}
-
-func (*TEOF) isToken()     {}
-func (*TInvalid) isToken() {}
-
-type TNumber struct {
-	Value float64
-}
-
-type TString struct {
-	Value string
-}
-
-type TIdentifier struct {
-	Value string
-}
-
-type TFn struct{}
-type TVar struct{}
-type TVal struct{}
-type TPlus struct{}
-type TMinus struct{}
-type TAsterisk struct{}
-type TSlash struct{}
-type TEquals struct{}
 type TOpenParen struct{}
 type TCloseParen struct{}
 type TOpenBrace struct{}
 type TCloseBrace struct{}
 type TOpenBracket struct{}
 type TCloseBracket struct{}
-type TDot struct{}
-type TQuestionOpenParen struct{}
-type TQuestionDot struct{}
-type TQuestionOpenBracket struct{}
-type TComma struct{}
+
+func (*TEOF) isToken()     {}
+func (*TInvalid) isToken() {}
 
 type TEOF struct{}
 type TInvalid struct{}
