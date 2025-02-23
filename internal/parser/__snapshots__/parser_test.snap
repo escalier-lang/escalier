@@ -801,20 +801,20 @@
                 Token: &parser.Token{
                     Data: &parser.TEOF{},
                     Span: parser.Span{
-                        Start: parser.Location{Line:1, Column:9},
-                        End:   parser.Location{Line:1, Column:9},
+                        Start: parser.Location{Line:1, Column:8},
+                        End:   parser.Location{Line:1, Column:8},
                     },
                 },
             },
             Span: parser.Span{
-                Start: parser.Location{Line:1, Column:9},
-                End:   parser.Location{Line:1, Column:9},
+                Start: parser.Location{Line:1, Column:8},
+                End:   parser.Location{Line:1, Column:8},
             },
         },
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:9},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -858,8 +858,8 @@
 [TestParsingIncompleteBinaryExpr - 2]
 &parser.Error{
     Span: parser.Span{
-        Start: parser.Location{Line:1, Column:9},
-        End:   parser.Location{Line:1, Column:9},
+        Start: parser.Location{Line:1, Column:8},
+        End:   parser.Location{Line:1, Column:8},
     },
     Message: "Unexpected token",
 }
@@ -888,14 +888,14 @@
                     Token: &parser.Token{
                         Data: &parser.TEOF{},
                         Span: parser.Span{
-                            Start: parser.Location{Line:1, Column:8},
-                            End:   parser.Location{Line:1, Column:8},
+                            Start: parser.Location{Line:1, Column:7},
+                            End:   parser.Location{Line:1, Column:7},
                         },
                     },
                 },
                 Span: parser.Span{
-                    Start: parser.Location{Line:1, Column:8},
-                    End:   parser.Location{Line:1, Column:8},
+                    Start: parser.Location{Line:1, Column:7},
+                    End:   parser.Location{Line:1, Column:7},
                 },
             },
         },
@@ -903,7 +903,7 @@
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:9},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -911,8 +911,8 @@
 [TestParsingIncompleteCall - 2]
 &parser.Error{
     Span: parser.Span{
-        Start: parser.Location{Line:1, Column:8},
-        End:   parser.Location{Line:1, Column:8},
+        Start: parser.Location{Line:1, Column:7},
+        End:   parser.Location{Line:1, Column:7},
     },
     Message: "Unexpected token",
 }

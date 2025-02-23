@@ -103,8 +103,8 @@ type TokenAndOp struct {
 	Op    UnaryOp
 }
 
-func (parser *Parser) parsePrefix() (Token, Stack[TokenAndOp]) {
-	token := parser.lexer.nextToken()
+func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
+	token := parser.lexer.peekToken()
 	result := NewStack[TokenAndOp]()
 
 loop:
@@ -117,10 +117,11 @@ loop:
 		default:
 			break loop
 		}
-		token = parser.lexer.nextToken()
+		parser.lexer.nextToken() // consume the token
+		token = parser.lexer.peekToken()
 	}
 
-	return token, result
+	return result
 }
 
 func (parser *Parser) parseSuffix(expr *Expr) *Expr {
@@ -233,7 +234,8 @@ loop3:
 }
 
 func (parser *Parser) parsePrimary() *Expr {
-	token, ops := parser.parsePrefix()
+	ops := parser.parsePrefix()
+	token := parser.lexer.nextToken()
 
 	var expr *Expr
 
