@@ -59,11 +59,7 @@ loop:
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
 			break loop
 		default:
-			_, _, line, _ := runtime.Caller(0)
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: fmt.Sprintf("Unexpected token: %d", line),
-			})
+			parser.reportError(token.Span, "Unexpected token")
 			continue
 		}
 
@@ -196,10 +192,7 @@ loop3:
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: token.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after .",
-				})
+				parser.reportError(token.Span, "expected an identifier after .")
 			}
 		// TODO: dedupe with *TDot case
 		case *TQuestionDot:
@@ -225,10 +218,7 @@ loop3:
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				parser.errors = append(parser.errors, &Error{
-					Span:    Span{Start: token.Span.Start, End: token.Span.End},
-					Message: "expected an identifier after ?.",
-				})
+				parser.reportError(token.Span, "expected an identifier after ?.")
 			}
 		default:
 			break loop3
@@ -278,17 +268,9 @@ func (parser *Parser) parsePrimary() *Expr {
 				Kind: &EIgnore{Token: &token},
 				Span: token.Span,
 			}
-			_, _, line, _ := runtime.Caller(0)
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: fmt.Sprintf("Unexpected token: %d", line),
-			})
+			parser.reportError(token.Span, "Unexpected token")
 		default:
-			_, _, line, _ := runtime.Caller(0)
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: fmt.Sprintf("Unexpected token: %d", line),
-			})
+			parser.reportError(token.Span, "Unexpected token")
 			token = parser.lexer.next()
 		}
 	}
@@ -355,10 +337,7 @@ func (parser *Parser) parseDecl() *Decl {
 		token := parser.lexer.next()
 		_ident, ok := token.Data.(*TIdentifier)
 		if !ok {
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Expected identifier",
-			})
+			parser.reportError(token.Span, "Expected identifier")
 			return nil
 		}
 		ident := &Identifier{Name: _ident.Value, Span: token.Span}
@@ -369,11 +348,8 @@ func (parser *Parser) parseDecl() *Decl {
 		if !declare {
 			_, ok = token.Data.(*TEquals)
 			if !ok {
-				// TODO: lexer tokens until we find an equals sign
-				parser.errors = append(parser.errors, &Error{
-					Span:    token.Span,
-					Message: "Expected equals sign",
-				})
+				// TODO: lex tokens until we find an equals sign
+				parser.reportError(token.Span, "Expected equals sign")
 				return nil
 			}
 			parser.lexer.consume()
@@ -392,34 +368,27 @@ func (parser *Parser) parseDecl() *Decl {
 			Export:  export,
 			Span:    Span{Start: start, End: end},
 		}
-	case *TFn:
-		token := parser.lexer.next()
-		_ident, ok := token.Data.(*TIdentifier)
-		if !ok {
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Expected identifier",
-			})
-			return nil
-		}
-		ident := &Identifier{Name: _ident.Value, Span: token.Span}
+	// case *TFn:
+	// 	token := parser.lexer.next()
+	// 	_ident, ok := token.Data.(*TIdentifier)
+	// 	if !ok {
+	//      parser.reportError(token.Span, "Expected identifier")
+	// 		return nil
+	// 	}
+	// 	ident := &Identifier{Name: _ident.Value, Span: token.Span}
 
-		return &Decl{
-			Kind: &DFunction{
-				Name:   ident,
-				Params: []*Param{},
-				Body:   []*Stmt{},
-			},
-			Declare: declare,
-			Export:  export,
-			Span:    Span{Start: start, End: ident.Span.End},
-		}
+	// 	return &Decl{
+	// 		Kind: &DFunction{
+	// 			Name:   ident,
+	// 			Params: []*Param{},
+	// 			Body:   []*Stmt{},
+	// 		},
+	// 		Declare: declare,
+	// 		Export:  export,
+	// 		Span:    Span{Start: start, End: ident.Span.End},
+	// 	}
 	default:
-		_, _, line, _ := runtime.Caller(0)
-		parser.errors = append(parser.errors, &Error{
-			Span:    token.Span,
-			Message: fmt.Sprintf("Unexpected token: %d", line),
-		})
+		parser.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
@@ -437,15 +406,18 @@ func (parser *Parser) parseStmt() *Stmt {
 			Kind: &SDecl{Decl: decl},
 			Span: decl.Span,
 		}
-	case *TReturn:
-		// TODO
-		return nil
+	// TODO: case *TReturn:
+	// 	return nil
 	default:
-		_, _, line, _ := runtime.Caller(0)
-		parser.errors = append(parser.errors, &Error{
-			Span:    token.Span,
-			Message: fmt.Sprintf("Unexpected token: %d", line),
-		})
+		parser.reportError(token.Span, "Unexpected token")
 		return nil
 	}
+}
+
+func (parser *Parser) reportError(span Span, message string) {
+	_, _, line, _ := runtime.Caller(1)
+	parser.errors = append(parser.errors, &Error{
+		Span:    span,
+		Message: fmt.Sprintf("%s: %d", message, line),
+	})
 }
