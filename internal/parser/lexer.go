@@ -29,6 +29,16 @@ func NewLexer(source Source) *Lexer {
 	}
 }
 
+var KEYWORDS = map[string]T{
+	"fn":      &TFn{},
+	"var":     &TVar{},
+	"val":     &TVal{},
+	"return":  &TReturn{},
+	"import":  &TImport{},
+	"export":  &TExport{},
+	"declare": &TDeclare{},
+}
+
 func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
@@ -201,23 +211,12 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		end.Column = start.Column + i - startOffset
 		span := Span{Start: start, End: end}
 
-		switch ident {
-		case "fn":
+		if keyword, ok := KEYWORDS[ident]; ok {
 			token = Token{
-				Data: &TFn{},
+				Data: keyword,
 				Span: span,
 			}
-		case "var":
-			token = Token{
-				Data: &TVar{},
-				Span: span,
-			}
-		case "val":
-			token = Token{
-				Data: &TVal{},
-				Span: span,
-			}
-		default:
+		} else {
 			token = Token{
 				Data: &TIdentifier{Value: ident},
 				Span: span,
@@ -255,6 +254,16 @@ func (lexer *Lexer) peek() Token {
 func (lexer *Lexer) next() Token {
 	return lexer.peekAndMaybeConsume(true)
 }
+
+// func expect[V T](lexer *Lexer) (V, error) {
+// 	token := lexer.next()
+// 	t, ok := token.Data.(V)
+// 	if !ok {
+// 		var zero V
+// 		return zero, fmt.Errorf("unexpected token")
+// 	}
+// 	return t, nil
+// }
 
 func (lexer *Lexer) consume() {
 	if lexer.afterPeekOffset != -1 {
