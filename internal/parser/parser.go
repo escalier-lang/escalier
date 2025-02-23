@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 )
 
@@ -416,8 +417,11 @@ func (parser *Parser) parseStmt() *Stmt {
 
 func (parser *Parser) reportError(span Span, message string) {
 	_, _, line, _ := runtime.Caller(1)
+	if os.Getenv("DEBUG") == "true" {
+		message = fmt.Sprintf("%s:%d", message, line)
+	}
 	parser.errors = append(parser.errors, &Error{
 		Span:    span,
-		Message: fmt.Sprintf("%s: %d", message, line),
+		Message: message,
 	})
 }
