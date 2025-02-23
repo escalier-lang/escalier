@@ -107,7 +107,7 @@ func (parser *Parser) parsePrefix() (Token, Stack[TokenAndOp]) {
 	token := parser.lexer.nextToken()
 	result := NewStack[TokenAndOp]()
 
-loop1:
+loop:
 	for {
 		switch token.Data.(type) {
 		case *TPlus:
@@ -115,7 +115,7 @@ loop1:
 		case *TMinus:
 			result.Push(TokenAndOp{Token: &token, Op: UnaryMinus})
 		default:
-			break loop1
+			break loop
 		}
 		token = parser.lexer.nextToken()
 	}
@@ -123,65 +123,8 @@ loop1:
 	return token, result
 }
 
-func (parser *Parser) parsePrimary() *Expr {
-	token, ops := parser.parsePrefix()
-
-	var expr *Expr
-
-loop2:
-	for {
-		switch t := token.Data.(type) {
-		case *TNumber:
-			expr = &Expr{
-				Kind: &ENumber{Value: t.Value},
-				Span: token.Span,
-			}
-			break loop2
-		case *TString:
-			expr = &Expr{
-				Kind: &EString{Value: t.Value},
-				Span: token.Span,
-			}
-			break loop2
-		case *TIdentifier:
-			expr = &Expr{
-				Kind: &EIdentifier{Name: t.Value},
-				Span: token.Span,
-			}
-			break loop2
-		case *TOpenParen:
-			// parseExpr handles the closing paren for us
-			expr, _ = parser.parseExpr()
-			break loop2
-		case *TOpenBracket:
-			// parseExpr handles the closing bracket for us
-			elems, final := parser.parseSeq()
-			expr = &Expr{
-				Kind: &EArray{Elems: elems},
-				Span: Span{Start: token.Span.Start, End: final.Span.End},
-			}
-			break loop2
-		case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
-			expr = &Expr{
-				Kind: &EIgnore{Token: &token},
-				Span: token.Span,
-			}
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Unexpected token",
-			})
-			break loop2
-		default:
-			parser.errors = append(parser.errors, &Error{
-				Span:    token.Span,
-				Message: "Unexpected token",
-			})
-			// Loop until we parse a primary expression
-			token = parser.lexer.nextToken()
-		}
-	}
-
-	token = parser.lexer.peekToken()
+func (parser *Parser) parseSuffix(expr *Expr) *Expr {
+	token := parser.lexer.peekToken()
 
 loop3:
 	for {
@@ -285,6 +228,62 @@ loop3:
 		}
 		token = parser.lexer.peekToken()
 	}
+
+	return expr
+}
+
+func (parser *Parser) parsePrimary() *Expr {
+	token, ops := parser.parsePrefix()
+
+	var expr *Expr
+
+	// Loop until we parse a primary expression.
+	for expr == nil {
+		switch t := token.Data.(type) {
+		case *TNumber:
+			expr = &Expr{
+				Kind: &ENumber{Value: t.Value},
+				Span: token.Span,
+			}
+		case *TString:
+			expr = &Expr{
+				Kind: &EString{Value: t.Value},
+				Span: token.Span,
+			}
+		case *TIdentifier:
+			expr = &Expr{
+				Kind: &EIdentifier{Name: t.Value},
+				Span: token.Span,
+			}
+		case *TOpenParen:
+			// parseExpr handles the closing paren for us
+			expr, _ = parser.parseExpr()
+		case *TOpenBracket:
+			// parseExpr handles the closing bracket for us
+			elems, final := parser.parseSeq()
+			expr = &Expr{
+				Kind: &EArray{Elems: elems},
+				Span: Span{Start: token.Span.Start, End: final.Span.End},
+			}
+		case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
+			expr = &Expr{
+				Kind: &EIgnore{Token: &token},
+				Span: token.Span,
+			}
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+		default:
+			parser.errors = append(parser.errors, &Error{
+				Span:    token.Span,
+				Message: "Unexpected token",
+			})
+			token = parser.lexer.nextToken()
+		}
+	}
+
+	expr = parser.parseSuffix(expr)
 
 	for !ops.IsEmpty() {
 		tokenAndOp := ops.Pop()
