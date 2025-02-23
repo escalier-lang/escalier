@@ -620,13 +620,13 @@
             },
             Span: parser.Span{
                 Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:8},
+                End:   parser.Location{Line:1, Column:7},
             },
         },
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+        End:   parser.Location{Line:1, Column:7},
     },
 }
 ---
@@ -762,7 +762,7 @@
 [TestParsingIncompleteMember - 2]
 &parser.Error{
     Span: parser.Span{
-        Start: parser.Location{Line:1, Column:5},
+        Start: parser.Location{Line:1, Column:6},
         End:   parser.Location{Line:1, Column:7},
     },
     Message: "expected an identifier after .",
@@ -920,7 +920,7 @@
 
 [TestParsingStringLiteral - 1]
 &parser.Expr{
-    Kind: &parser.EString{Value:"\"hello"},
+    Kind: &parser.EString{Value:"hello"},
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
         End:   parser.Location{Line:1, Column:7},
@@ -969,13 +969,13 @@
             },
             Span: parser.Span{
                 Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:9},
+                End:   parser.Location{Line:1, Column:8},
             },
         },
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:9},
+        End:   parser.Location{Line:1, Column:8},
     },
 }
 ---
@@ -983,7 +983,7 @@
 [TestParsingIncompleteMemberOptChain - 2]
 &parser.Error{
     Span: parser.Span{
-        Start: parser.Location{Line:1, Column:5},
+        Start: parser.Location{Line:1, Column:6},
         End:   parser.Location{Line:1, Column:8},
     },
     Message: "expected an identifier after ?.",

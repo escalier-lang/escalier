@@ -87,17 +87,10 @@
 [TestLexingLiterals - 1]
 []parser.Token{
     {
-        Data: &parser.TString{Value:"\"hello"},
+        Data: &parser.TString{Value:"hello"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:7},
-        },
-    },
-    {
-        Data: &parser.TString{Value:"\""},
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:7},
-            End:   parser.Location{Line:1, Column:8},
         },
     },
 }
