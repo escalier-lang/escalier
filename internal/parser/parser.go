@@ -247,8 +247,7 @@ loop:
 
 func (parser *Parser) parsePrimary() *Expr {
 	ops := parser.parsePrefix()
-	// TODO: switch to peek() here
-	token := parser.lexer.next()
+	token := parser.lexer.peek()
 
 	var expr *Expr
 
@@ -256,27 +255,37 @@ func (parser *Parser) parsePrimary() *Expr {
 	for expr == nil {
 		switch t := token.Data.(type) {
 		case *TNumber:
+			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &ENumber{Value: t.Value},
 				Span: token.Span,
 			}
 		case *TString:
+			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &EString{Value: t.Value},
 				Span: token.Span,
 			}
 		case *TIdentifier:
+			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &EIdentifier{Name: t.Value},
 				Span: token.Span,
 			}
 		case *TOpenParen:
-			// parseExpr handles the closing paren for us
+			parser.lexer.consume()
 			expr = parser.parseExpr()
+			final := parser.lexer.next() // consume the closing paren
+			if _, ok := final.Data.(*TCloseParen); !ok {
+				parser.reportError(token.Span, "Expected a closing paren")
+			}
 		case *TOpenBracket:
-			// parseExpr handles the closing bracket for us
+			parser.lexer.consume()
 			elems := parser.parseSeq()
 			final := parser.lexer.next() // consume the closing bracket
+			if _, ok := final.Data.(*TCloseBracket); !ok {
+				parser.reportError(token.Span, "Expected a closing bracket")
+			}
 			expr = &Expr{
 				Kind: &EArray{Elems: elems},
 				Span: Span{Start: token.Span.Start, End: final.Span.End},
@@ -288,8 +297,9 @@ func (parser *Parser) parsePrimary() *Expr {
 			}
 			parser.reportError(token.Span, "Unexpected token")
 		default:
+			parser.lexer.consume()
 			parser.reportError(token.Span, "Unexpected token")
-			token = parser.lexer.next()
+			token = parser.lexer.peek()
 		}
 	}
 
