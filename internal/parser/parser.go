@@ -132,7 +132,7 @@ func (parser *Parser) parseSuffix(expr *Expr) *Expr {
 loop:
 	for {
 		switch token.Data.(type) {
-		case *TOpenParen:
+		case *TOpenParen, *TQuestionOpenParen:
 			parser.lexer.consume()
 			args := parser.parseSeq()
 			terminator := parser.lexer.next()
@@ -140,25 +140,16 @@ loop:
 				parser.reportError(token.Span, "Expected a closing paren")
 			}
 			callee := expr
-			expr =
-				&Expr{
-					Kind: &ECall{Callee: callee, Args: args, OptChain: false},
-					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
-				}
-		case *TQuestionOpenParen:
-			parser.lexer.consume()
-			args := parser.parseSeq()
-			terminator := parser.lexer.next()
-			if _, ok := terminator.Data.(*TCloseParen); !ok {
-				parser.reportError(token.Span, "Expected a closing paren")
+			optChain := false
+			if _, ok := token.Data.(*TQuestionOpenParen); ok {
+				optChain = true
 			}
-			callee := expr
 			expr =
 				&Expr{
-					Kind: &ECall{Callee: callee, Args: args, OptChain: true},
+					Kind: &ECall{Callee: callee, Args: args, OptChain: optChain},
 					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
 				}
-		case *TOpenBracket:
+		case *TOpenBracket, *TQuestionOpenBracket:
 			parser.lexer.consume()
 			index := parser.parseExpr()
 			terminator := parser.lexer.next()
@@ -166,35 +157,29 @@ loop:
 				parser.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := expr
-			expr =
-				&Expr{
-					Kind: &EIndex{Object: obj, Index: index, OptChain: false},
-					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
-				}
-		case *TQuestionOpenBracket:
-			parser.lexer.consume()
-			index := parser.parseExpr()
-			terminator := parser.lexer.next()
-			if _, ok := terminator.Data.(*TCloseBracket); !ok {
-				parser.reportError(token.Span, "Expected a closing bracket")
+			optChain := false
+			if _, ok := token.Data.(*TQuestionOpenBracket); ok {
+				optChain = true
 			}
-			obj := expr
 			expr =
 				&Expr{
-					Kind: &EIndex{Object: obj, Index: index, OptChain: true},
+					Kind: &EIndex{Object: obj, Index: index, OptChain: optChain},
 					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
 				}
-		// TODO: dedupe with *TQuestionDot case
-		case *TDot:
+		case *TDot, *TQuestionDot:
 			parser.lexer.consume()
 			prop := parser.lexer.next()
+			optChain := false
+			if _, ok := token.Data.(*TQuestionDot); ok {
+				optChain = true
+			}
 			switch t := prop.Data.(type) {
 			case *TIdentifier:
 				obj := expr
 				prop := &Identifier{Name: t.Value, Span: prop.Span}
 				expr =
 					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
 			default:
@@ -205,36 +190,14 @@ loop:
 				}
 				expr =
 					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: false},
+						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				parser.reportError(token.Span, "expected an identifier after .")
-			}
-		// TODO: dedupe with *TDot case
-		case *TQuestionDot:
-			parser.lexer.consume()
-			prop := parser.lexer.next()
-			switch t := prop.Data.(type) {
-			case *TIdentifier:
-				obj := expr
-				prop := &Identifier{Name: t.Value, Span: token.Span}
-				expr =
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
-						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
-					}
-			default:
-				obj := expr
-				prop := &Identifier{
-					Name: "",
-					Span: Span{Start: token.Span.End, End: token.Span.End},
+				if _, ok := token.Data.(*TDot); ok {
+					parser.reportError(token.Span, "expected an identifier after .")
+				} else {
+					parser.reportError(token.Span, "expected an identifier after ?.")
 				}
-				expr =
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: true},
-						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
-					}
-				parser.reportError(token.Span, "expected an identifier after ?.")
 			}
 		default:
 			break loop
@@ -316,7 +279,6 @@ func (parser *Parser) parsePrimary() *Expr {
 	return expr
 }
 
-// TODO: detect and recover from mismatched parens, e.g. foo(bar]
 func (parser *Parser) parseSeq() []*Expr {
 	exprs := []*Expr{}
 
@@ -339,9 +301,6 @@ func (parser *Parser) parseSeq() []*Expr {
 }
 
 func (parser *Parser) parseDecl() *Decl {
-	// can start with `var`, `val`, or `fn` (and in the future `class`, `type`, `enum`, etc.)
-	// we also need to be able to account `declare` and `export` modifiers in the future
-
 	export := false
 	declare := false
 
