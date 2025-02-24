@@ -279,7 +279,6 @@ func (parser *Parser) parsePrimary() *Expr {
 	return expr
 }
 
-// TODO: detect and recover from mismatched parens, e.g. foo(bar]
 func (parser *Parser) parseSeq() []*Expr {
 	exprs := []*Expr{}
 
@@ -302,9 +301,6 @@ func (parser *Parser) parseSeq() []*Expr {
 }
 
 func (parser *Parser) parseDecl() *Decl {
-	// can start with `var`, `val`, or `fn` (and in the future `class`, `type`, `enum`, etc.)
-	// we also need to be able to account `declare` and `export` modifiers in the future
-
 	export := false
 	declare := false
 
