@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -107,6 +106,15 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"IncompleteMemberOptChain": {
 			input: "a + b?.",
 		},
+		"MismatchedParens": {
+			input: "a * (b + c]",
+		},
+		"MismatchedBracketsArrayLiteral": {
+			input: "[1, 2, 3)",
+		},
+		"MismatchedBracketsIndex": {
+			input: "foo[bar)",
+		},
 	}
 
 	for name, test := range tests {
@@ -161,11 +169,36 @@ func TestParseStmtNoErrors(t *testing.T) {
 
 			snaps.MatchSnapshot(t, stmt)
 			assert.Len(t, parser.errors, 0)
+		})
+	}
+}
 
-			// print each error
-			for i, err := range parser.errors {
-				fmt.Printf("errors[%d] = %#v", i, err)
+func TestParseStmtErrorHandling(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"VarDeclMissingIdent": {
+			input: "var = 5",
+		},
+		"VarDeclMissingEquals": {
+			input: "var x 5",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := Source{
+				path:     "input.esc",
+				Contents: test.input,
 			}
+
+			parser := NewParser(source)
+			stmt := parser.parseStmt()
+
+			snaps.MatchSnapshot(t, stmt)
+			assert.Greater(t, len(parser.errors), 0)
+			snaps.MatchSnapshot(t, parser.errors)
 		})
 	}
 }
