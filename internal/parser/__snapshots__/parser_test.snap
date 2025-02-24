@@ -784,7 +784,7 @@
             &parser.Expr{
                 Kind: &parser.EIgnore{
                     Token: &parser.Token{
-                        Data: &parser.TEOF{},
+                        Data: &parser.TEndOfFile{},
                         Span: parser.Span{
                             Start: parser.Location{Line:1, Column:7},
                             End:   parser.Location{Line:1, Column:7},
@@ -890,7 +890,7 @@
         Right: &parser.Expr{
             Kind: &parser.EIgnore{
                 Token: &parser.Token{
-                    Data: &parser.TEOF{},
+                    Data: &parser.TEndOfFile{},
                     Span: parser.Span{
                         Start: parser.Location{Line:1, Column:8},
                         End:   parser.Location{Line:1, Column:8},

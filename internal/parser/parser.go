@@ -55,7 +55,7 @@ loop:
 			nextOp = Times
 		case *TSlash:
 			nextOp = Divide
-		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEOF:
+		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEndOfFile:
 			break loop
 		default:
 			parser.reportError(token.Span, "Unexpected token")
@@ -290,7 +290,7 @@ func (parser *Parser) parsePrimary() *Expr {
 				Kind: &EArray{Elems: elems},
 				Span: Span{Start: token.Span.Start, End: final.Span.End},
 			}
-		case *TCloseBrace, *TComma, *TCloseParen, *TEOF:
+		case *TEndOfFile:
 			expr = &Expr{
 				Kind: &EIgnore{Token: &token},
 				Span: token.Span,

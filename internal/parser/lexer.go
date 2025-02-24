@@ -225,7 +225,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	default:
 		if startOffset >= len(lexer.source.Contents) {
 			token = Token{
-				Data: &TEOF{},
+				Data: &TEndOfFile{},
 				Span: Span{Start: start, End: start},
 			}
 		} else {
