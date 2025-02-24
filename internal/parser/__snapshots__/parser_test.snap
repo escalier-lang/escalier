@@ -1344,3 +1344,294 @@
     },
 }
 ---
+
+[TestParseStmtNoErrors/FunctionDecl - 1]
+&parser.Stmt{
+    Kind: &parser.SDecl{
+        Decl: &parser.Decl{
+            Kind: &parser.DFunction{
+                Name: &parser.Identifier{
+                    Name: "foo",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:4},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
+                },
+                Params: {
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "a",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:8},
+                                End:   parser.Location{Line:1, Column:9},
+                            },
+                        },
+                    },
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "b",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:11},
+                                End:   parser.Location{Line:1, Column:12},
+                            },
+                        },
+                    },
+                },
+                Body: {
+                    &parser.Stmt{
+                        Kind: &parser.SExpr{
+                            Expr: &parser.Expr{
+                                Kind: &parser.EBinary{
+                                    Left: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"a"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:1, Column:16},
+                                            End:   parser.Location{Line:1, Column:17},
+                                        },
+                                    },
+                                    Op:    0,
+                                    Right: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"b"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:1, Column:20},
+                                            End:   parser.Location{Line:1, Column:21},
+                                        },
+                                    },
+                                },
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:1, Column:16},
+                                    End:   parser.Location{Line:1, Column:21},
+                                },
+                            },
+                        },
+                        Span: parser.Span{
+                            Start: parser.Location{Line:1, Column:16},
+                            End:   parser.Location{Line:1, Column:21},
+                        },
+                    },
+                },
+            },
+            Export:  false,
+            Declare: false,
+            Span:    parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:7},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:7},
+    },
+}
+---
+
+[TestParseStmtNoErrors/FunctionDeclWithReturn - 1]
+&parser.Stmt{
+    Kind: &parser.SDecl{
+        Decl: &parser.Decl{
+            Kind: &parser.DFunction{
+                Name: &parser.Identifier{
+                    Name: "foo",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:4},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
+                },
+                Params: {
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "a",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:8},
+                                End:   parser.Location{Line:1, Column:9},
+                            },
+                        },
+                    },
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "b",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:11},
+                                End:   parser.Location{Line:1, Column:12},
+                            },
+                        },
+                    },
+                },
+                Body: {
+                    &parser.Stmt{
+                        Kind: &parser.SReturn{
+                            Expr: &parser.Expr{
+                                Kind: &parser.EBinary{
+                                    Left: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"a"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:1, Column:23},
+                                            End:   parser.Location{Line:1, Column:24},
+                                        },
+                                    },
+                                    Op:    0,
+                                    Right: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"b"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:1, Column:27},
+                                            End:   parser.Location{Line:1, Column:28},
+                                        },
+                                    },
+                                },
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:1, Column:23},
+                                    End:   parser.Location{Line:1, Column:28},
+                                },
+                            },
+                        },
+                        Span: parser.Span{
+                            Start: parser.Location{Line:1, Column:16},
+                            End:   parser.Location{Line:1, Column:28},
+                        },
+                    },
+                },
+            },
+            Export:  false,
+            Declare: false,
+            Span:    parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:7},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:7},
+    },
+}
+---
+
+[TestParseStmtNoErrors/FunctionDeclWithMultipleStmts - 1]
+&parser.Stmt{
+    Kind: &parser.SDecl{
+        Decl: &parser.Decl{
+            Kind: &parser.DFunction{
+                Name: &parser.Identifier{
+                    Name: "foo",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:4},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
+                },
+                Params: {
+                },
+                Body: {
+                    &parser.Stmt{
+                        Kind: &parser.SDecl{
+                            Decl: &parser.Decl{
+                                Kind: &parser.DVariable{
+                                    Kind: 0,
+                                    Name: &parser.Identifier{
+                                        Name: "a",
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:2, Column:9},
+                                            End:   parser.Location{Line:2, Column:10},
+                                        },
+                                    },
+                                    Init: &parser.Expr{
+                                        Kind: &parser.ENumber{Value:5},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:2, Column:13},
+                                            End:   parser.Location{Line:2, Column:14},
+                                        },
+                                    },
+                                },
+                                Export:  false,
+                                Declare: false,
+                                Span:    parser.Span{
+                                    Start: parser.Location{Line:2, Column:5},
+                                    End:   parser.Location{Line:2, Column:14},
+                                },
+                            },
+                        },
+                        Span: parser.Span{
+                            Start: parser.Location{Line:2, Column:5},
+                            End:   parser.Location{Line:2, Column:14},
+                        },
+                    },
+                    &parser.Stmt{
+                        Kind: &parser.SDecl{
+                            Decl: &parser.Decl{
+                                Kind: &parser.DVariable{
+                                    Kind: 0,
+                                    Name: &parser.Identifier{
+                                        Name: "b",
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:3, Column:9},
+                                            End:   parser.Location{Line:3, Column:10},
+                                        },
+                                    },
+                                    Init: &parser.Expr{
+                                        Kind: &parser.ENumber{Value:10},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:3, Column:13},
+                                            End:   parser.Location{Line:3, Column:15},
+                                        },
+                                    },
+                                },
+                                Export:  false,
+                                Declare: false,
+                                Span:    parser.Span{
+                                    Start: parser.Location{Line:3, Column:5},
+                                    End:   parser.Location{Line:3, Column:15},
+                                },
+                            },
+                        },
+                        Span: parser.Span{
+                            Start: parser.Location{Line:3, Column:5},
+                            End:   parser.Location{Line:3, Column:15},
+                        },
+                    },
+                    &parser.Stmt{
+                        Kind: &parser.SReturn{
+                            Expr: &parser.Expr{
+                                Kind: &parser.EBinary{
+                                    Left: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"a"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:4, Column:12},
+                                            End:   parser.Location{Line:4, Column:13},
+                                        },
+                                    },
+                                    Op:    0,
+                                    Right: &parser.Expr{
+                                        Kind: &parser.EIdentifier{Name:"b"},
+                                        Span: parser.Span{
+                                            Start: parser.Location{Line:4, Column:16},
+                                            End:   parser.Location{Line:4, Column:17},
+                                        },
+                                    },
+                                },
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:4, Column:12},
+                                    End:   parser.Location{Line:4, Column:17},
+                                },
+                            },
+                        },
+                        Span: parser.Span{
+                            Start: parser.Location{Line:4, Column:5},
+                            End:   parser.Location{Line:4, Column:17},
+                        },
+                    },
+                },
+            },
+            Export:  false,
+            Declare: false,
+            Span:    parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:7},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:7},
+    },
+}
+---

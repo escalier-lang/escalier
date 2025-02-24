@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -154,6 +155,19 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ExportDeclareValDecl": {
 			input: "export declare val x",
 		},
+		"FunctionDecl": {
+			input: "fn foo(a, b) { a + b }",
+		},
+		"FunctionDeclWithReturn": {
+			input: "fn foo(a, b) { return a + b }",
+		},
+		"FunctionDeclWithMultipleStmts": {
+			input: `fn foo() {
+				val a = 5
+				val b = 10
+				return a + b
+			}`,
+		},
 	}
 
 	for name, test := range tests {
@@ -168,6 +182,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)
+			if len(parser.errors) > 0 {
+				fmt.Printf("Error[0]: %#v", parser.errors[0])
+			}
 			assert.Len(t, parser.errors, 0)
 		})
 	}
