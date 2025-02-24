@@ -78,8 +78,8 @@ type TCloseBrace struct{}
 type TOpenBracket struct{}
 type TCloseBracket struct{}
 
-func (*TEOF) isToken()     {}
-func (*TInvalid) isToken() {}
+func (*TEndOfFile) isToken() {}
+func (*TInvalid) isToken()   {}
 
-type TEOF struct{}
+type TEndOfFile struct{}
 type TInvalid struct{}

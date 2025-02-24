@@ -784,7 +784,7 @@
             &parser.Expr{
                 Kind: &parser.EIgnore{
                     Token: &parser.Token{
-                        Data: &parser.TEOF{},
+                        Data: &parser.TEndOfFile{},
                         Span: parser.Span{
                             Start: parser.Location{Line:1, Column:7},
                             End:   parser.Location{Line:1, Column:7},
@@ -801,7 +801,7 @@
     },
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+        End:   parser.Location{Line:1, Column:7},
     },
 }
 ---
@@ -849,12 +849,14 @@
 ---
 
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:5},
-        End:   parser.Location{Line:1, Column:6},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:5},
+            End:   parser.Location{Line:1, Column:6},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
 }
 ---
 
@@ -888,7 +890,7 @@
         Right: &parser.Expr{
             Kind: &parser.EIgnore{
                 Token: &parser.Token{
-                    Data: &parser.TEOF{},
+                    Data: &parser.TEndOfFile{},
                     Span: parser.Span{
                         Start: parser.Location{Line:1, Column:8},
                         End:   parser.Location{Line:1, Column:8},
@@ -909,32 +911,45 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteCall - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:7},
-        End:   parser.Location{Line:1, Column:7},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:7},
+            End:   parser.Location{Line:1, Column:7},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:4},
+            End:   parser.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing paren",
+    },
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:6},
-        End:   parser.Location{Line:1, Column:8},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:6},
+            End:   parser.Location{Line:1, Column:8},
+        },
+        Message: "expected an identifier after ?.",
     },
-    Message: "expected an identifier after ?.",
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:8},
-        End:   parser.Location{Line:1, Column:8},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:8},
+            End:   parser.Location{Line:1, Column:8},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
 }
 ---
 
@@ -981,12 +996,14 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteMember - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:6},
-        End:   parser.Location{Line:1, Column:7},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:6},
+            End:   parser.Location{Line:1, Column:7},
+        },
+        Message: "expected an identifier after .",
     },
-    Message: "expected an identifier after .",
 }
 ---
 
@@ -1154,6 +1171,176 @@
     Span: parser.Span{
         Start: parser.Location{Line:1, Column:1},
         End:   parser.Location{Line:1, Column:17},
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedParens - 1]
+&parser.Expr{
+    Kind: &parser.EBinary{
+        Left: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"a"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:2},
+            },
+        },
+        Op:    2,
+        Right: &parser.Expr{
+            Kind: &parser.EBinary{
+                Left: &parser.Expr{
+                    Kind: &parser.EIdentifier{Name:"b"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:6},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
+                },
+                Op:    0,
+                Right: &parser.Expr{
+                    Kind: &parser.EIdentifier{Name:"c"},
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:10},
+                        End:   parser.Location{Line:1, Column:11},
+                    },
+                },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:6},
+                End:   parser.Location{Line:1, Column:11},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:11},
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedParens - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:5},
+            End:   parser.Location{Line:1, Column:6},
+        },
+        Message: "Expected a closing paren",
+    },
+}
+---
+
+[TestParseStmtErrorHandling/VarDeclMissingIdent - 1]
+(*parser.Stmt)(nil)
+---
+
+[TestParseStmtErrorHandling/VarDeclMissingIdent - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:5},
+            End:   parser.Location{Line:1, Column:6},
+        },
+        Message: "Expected identifier",
+    },
+}
+---
+
+[TestParseStmtErrorHandling/VarDeclMissingEquals - 1]
+(*parser.Stmt)(nil)
+---
+
+[TestParseStmtErrorHandling/VarDeclMissingEquals - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:7},
+            End:   parser.Location{Line:1, Column:8},
+        },
+        Message: "Expected equals sign",
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 1]
+&parser.Expr{
+    Kind: &parser.EArray{
+        Elems: {
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:1},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:2},
+                    End:   parser.Location{Line:1, Column:3},
+                },
+            },
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:2},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:5},
+                    End:   parser.Location{Line:1, Column:6},
+                },
+            },
+            &parser.Expr{
+                Kind: &parser.ENumber{Value:3},
+                Span: parser.Span{
+                    Start: parser.Location{Line:1, Column:8},
+                    End:   parser.Location{Line:1, Column:9},
+                },
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:10},
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:1},
+            End:   parser.Location{Line:1, Column:2},
+        },
+        Message: "Expected a closing bracket",
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsIndex - 1]
+&parser.Expr{
+    Kind: &parser.EIndex{
+        Object: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"foo"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:4},
+            },
+        },
+        Index: &parser.Expr{
+            Kind: &parser.EIdentifier{Name:"bar"},
+            Span: parser.Span{
+                Start: parser.Location{Line:1, Column:5},
+                End:   parser.Location{Line:1, Column:8},
+            },
+        },
+        OptChain: false,
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:9},
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:4},
+            End:   parser.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing bracket",
     },
 }
 ---
