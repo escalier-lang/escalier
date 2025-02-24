@@ -80,7 +80,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			}
 
 			parser := NewParser(source)
-			expr, _ := parser.parseExpr()
+			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Len(t, parser.errors, 0)
@@ -118,11 +118,11 @@ func TestParseExprErrorHandling(t *testing.T) {
 			}
 
 			parser := NewParser(source)
-			expr, _ := parser.parseExpr()
+			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Len(t, parser.errors, 1)
-			snaps.MatchSnapshot(t, parser.errors[0])
+			assert.Greater(t, len(parser.errors), 0)
+			snaps.MatchSnapshot(t, parser.errors)
 		})
 	}
 }

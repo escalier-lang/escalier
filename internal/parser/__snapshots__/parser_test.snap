@@ -849,12 +849,14 @@
 ---
 
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:5},
-        End:   parser.Location{Line:1, Column:6},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:5},
+            End:   parser.Location{Line:1, Column:6},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
 }
 ---
 
@@ -909,32 +911,45 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteCall - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:7},
-        End:   parser.Location{Line:1, Column:7},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:7},
+            End:   parser.Location{Line:1, Column:7},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:4},
+            End:   parser.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing paren",
+    },
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:6},
-        End:   parser.Location{Line:1, Column:8},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:6},
+            End:   parser.Location{Line:1, Column:8},
+        },
+        Message: "expected an identifier after ?.",
     },
-    Message: "expected an identifier after ?.",
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:8},
-        End:   parser.Location{Line:1, Column:8},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:8},
+            End:   parser.Location{Line:1, Column:8},
+        },
+        Message: "Unexpected token",
     },
-    Message: "Unexpected token",
 }
 ---
 
@@ -981,12 +996,14 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteMember - 2]
-&parser.Error{
-    Span: parser.Span{
-        Start: parser.Location{Line:1, Column:6},
-        End:   parser.Location{Line:1, Column:7},
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:6},
+            End:   parser.Location{Line:1, Column:7},
+        },
+        Message: "expected an identifier after .",
     },
-    Message: "expected an identifier after .",
 }
 ---
 
