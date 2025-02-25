@@ -1,7 +1,7 @@
 package parser
 
 type Token struct {
-	Data T
+	Kind TokenKind
 	Span Span
 }
 
@@ -9,7 +9,7 @@ type Token struct {
 // Go's type system.
 //
 //sumtype:decl
-type T interface{ isToken() }
+type TokenKind interface{ isToken() }
 
 // literals
 func (*TNumber) isToken()     {}

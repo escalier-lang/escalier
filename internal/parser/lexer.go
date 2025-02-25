@@ -29,7 +29,7 @@ func NewLexer(source Source) *Lexer {
 	}
 }
 
-var KEYWORDS = map[string]T{
+var KEYWORDS = map[string]TokenKind{
 	"fn":      &TFn{},
 	"var":     &TVar{},
 	"val":     &TVal{},
@@ -64,67 +64,67 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	switch codePoint {
 	case '+':
 		token = Token{
-			Data: &TPlus{},
+			Kind: &TPlus{},
 			Span: Span{Start: start, End: end},
 		}
 	case '-':
 		token = Token{
-			Data: &TMinus{},
+			Kind: &TMinus{},
 			Span: Span{Start: start, End: end},
 		}
 	case '*':
 		token = Token{
-			Data: &TAsterisk{},
+			Kind: &TAsterisk{},
 			Span: Span{Start: start, End: end},
 		}
 	case '/':
 		token = Token{
-			Data: &TSlash{},
+			Kind: &TSlash{},
 			Span: Span{Start: start, End: end},
 		}
 	case '=':
 		token = Token{
-			Data: &TEquals{},
+			Kind: &TEquals{},
 			Span: Span{Start: start, End: end},
 		}
 	case ',':
 		token = Token{
-			Data: &TComma{},
+			Kind: &TComma{},
 			Span: Span{Start: start, End: end},
 		}
 	case '(':
 		token = Token{
-			Data: &TOpenParen{},
+			Kind: &TOpenParen{},
 			Span: Span{Start: start, End: end},
 		}
 	case ')':
 		token = Token{
-			Data: &TCloseParen{},
+			Kind: &TCloseParen{},
 			Span: Span{Start: start, End: end},
 		}
 	case '{':
 		token = Token{
-			Data: &TOpenBrace{},
+			Kind: &TOpenBrace{},
 			Span: Span{Start: start, End: end},
 		}
 	case '}':
 		token = Token{
-			Data: &TCloseBrace{},
+			Kind: &TCloseBrace{},
 			Span: Span{Start: start, End: end},
 		}
 	case '[':
 		token = Token{
-			Data: &TOpenBracket{},
+			Kind: &TOpenBracket{},
 			Span: Span{Start: start, End: end},
 		}
 	case ']':
 		token = Token{
-			Data: &TCloseBracket{},
+			Kind: &TCloseBracket{},
 			Span: Span{Start: start, End: end},
 		}
 	case '.':
 		token = Token{
-			Data: &TDot{},
+			Kind: &TDot{},
 			Span: Span{Start: start, End: end},
 		}
 	case '?':
@@ -135,22 +135,22 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		switch nextCodePoint {
 		case '.':
 			token = Token{
-				Data: &TQuestionDot{},
+				Kind: &TQuestionDot{},
 				Span: Span{Start: start, End: end},
 			}
 		case '(':
 			token = Token{
-				Data: &TQuestionOpenParen{},
+				Kind: &TQuestionOpenParen{},
 				Span: Span{Start: start, End: end},
 			}
 		case '[':
 			token = Token{
-				Data: &TQuestionOpenBracket{},
+				Kind: &TQuestionOpenBracket{},
 				Span: Span{Start: start, End: end},
 			}
 		default:
 			token = Token{
-				Data: &TInvalid{}, // TODO: include the character in the token
+				Kind: &TInvalid{}, // TODO: include the character in the token
 				Span: Span{Start: start, End: end},
 			}
 		}
@@ -169,7 +169,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		str := contents[startOffset+1 : i] // without the quotes
 		end.Column = start.Column + (i - startOffset)
 		token = Token{
-			Data: &TString{Value: str},
+			Kind: &TString{Value: str},
 			Span: Span{Start: start, End: end},
 		}
 	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
@@ -187,7 +187,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		num, _ := strconv.ParseFloat(contents[startOffset:i], 64) // TODO: handle parsing errors
 		end.Column = start.Column + (i - startOffset)
 		token = Token{
-			Data: &TNumber{Value: num},
+			Kind: &TNumber{Value: num},
 			Span: Span{Start: start, End: end},
 		}
 	case '_', '$',
@@ -213,24 +213,24 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 
 		if keyword, ok := KEYWORDS[ident]; ok {
 			token = Token{
-				Data: keyword,
+				Kind: keyword,
 				Span: span,
 			}
 		} else {
 			token = Token{
-				Data: &TIdentifier{Value: ident},
+				Kind: &TIdentifier{Value: ident},
 				Span: span,
 			}
 		}
 	default:
 		if startOffset >= len(lexer.source.Contents) {
 			token = Token{
-				Data: &TEndOfFile{},
+				Kind: &TEndOfFile{},
 				Span: Span{Start: start, End: start},
 			}
 		} else {
 			token = Token{
-				Data: &TInvalid{},
+				Kind: &TInvalid{},
 				Span: Span{Start: start, End: start},
 			}
 		}

@@ -2,21 +2,21 @@
 [TestLexingKeywords - 1]
 []parser.Token{
     {
-        Data: &parser.TFn{},
+        Kind: &parser.TFn{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:3},
         },
     },
     {
-        Data: &parser.TVar{},
+        Kind: &parser.TVar{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:4},
             End:   parser.Location{Line:1, Column:7},
         },
     },
     {
-        Data: &parser.TVal{},
+        Kind: &parser.TVal{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:8},
             End:   parser.Location{Line:1, Column:11},
@@ -28,35 +28,35 @@
 [TestLexingOperators - 1]
 []parser.Token{
     {
-        Data: &parser.TPlus{},
+        Kind: &parser.TPlus{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:2},
         },
     },
     {
-        Data: &parser.TMinus{},
+        Kind: &parser.TMinus{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:3},
             End:   parser.Location{Line:1, Column:4},
         },
     },
     {
-        Data: &parser.TAsterisk{},
+        Kind: &parser.TAsterisk{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:5},
             End:   parser.Location{Line:1, Column:6},
         },
     },
     {
-        Data: &parser.TSlash{},
+        Kind: &parser.TSlash{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:7},
             End:   parser.Location{Line:1, Column:8},
         },
     },
     {
-        Data: &parser.TEquals{},
+        Kind: &parser.TEquals{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:9},
             End:   parser.Location{Line:1, Column:10},
@@ -68,14 +68,14 @@
 [TestLexingIdentifiers - 1]
 []parser.Token{
     {
-        Data: &parser.TIdentifier{Value:"foo"},
+        Kind: &parser.TIdentifier{Value:"foo"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:4},
         },
     },
     {
-        Data: &parser.TIdentifier{Value:"bar"},
+        Kind: &parser.TIdentifier{Value:"bar"},
         Span: parser.Span{
             Start: parser.Location{Line:2, Column:1},
             End:   parser.Location{Line:2, Column:4},
@@ -87,7 +87,7 @@
 [TestLexingLiterals - 1]
 []parser.Token{
     {
-        Data: &parser.TString{Value:"hello"},
+        Kind: &parser.TString{Value:"hello"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:7},
@@ -99,49 +99,49 @@
 [TestLexingParens - 1]
 []parser.Token{
     {
-        Data: &parser.TIdentifier{Value:"a"},
+        Kind: &parser.TIdentifier{Value:"a"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:1},
             End:   parser.Location{Line:1, Column:2},
         },
     },
     {
-        Data: &parser.TAsterisk{},
+        Kind: &parser.TAsterisk{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:3},
             End:   parser.Location{Line:1, Column:4},
         },
     },
     {
-        Data: &parser.TOpenParen{},
+        Kind: &parser.TOpenParen{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:5},
             End:   parser.Location{Line:1, Column:6},
         },
     },
     {
-        Data: &parser.TIdentifier{Value:"b"},
+        Kind: &parser.TIdentifier{Value:"b"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:6},
             End:   parser.Location{Line:1, Column:7},
         },
     },
     {
-        Data: &parser.TPlus{},
+        Kind: &parser.TPlus{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:8},
             End:   parser.Location{Line:1, Column:9},
         },
     },
     {
-        Data: &parser.TIdentifier{Value:"c"},
+        Kind: &parser.TIdentifier{Value:"c"},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:10},
             End:   parser.Location{Line:1, Column:11},
         },
     },
     {
-        Data: &parser.TCloseParen{},
+        Kind: &parser.TCloseParen{},
         Span: parser.Span{
             Start: parser.Location{Line:1, Column:11},
             End:   parser.Location{Line:1, Column:12},

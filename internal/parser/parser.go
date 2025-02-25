@@ -46,7 +46,7 @@ loop:
 		token := parser.lexer.peek()
 		var nextOp BinaryOp
 
-		switch token.Data.(type) {
+		switch token.Kind.(type) {
 		case *TPlus:
 			nextOp = Plus
 		case *TMinus:
@@ -111,7 +111,7 @@ func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
 
 loop:
 	for {
-		switch token.Data.(type) {
+		switch token.Kind.(type) {
 		case *TPlus:
 			result.Push(TokenAndOp{Token: &token, Op: UnaryPlus})
 		case *TMinus:
@@ -131,17 +131,17 @@ func (parser *Parser) parseSuffix(expr *Expr) *Expr {
 
 loop:
 	for {
-		switch token.Data.(type) {
+		switch token.Kind.(type) {
 		case *TOpenParen, *TQuestionOpenParen:
 			parser.lexer.consume()
 			args := parser.parseExprSeq()
 			terminator := parser.lexer.next()
-			if _, ok := terminator.Data.(*TCloseParen); !ok {
+			if _, ok := terminator.Kind.(*TCloseParen); !ok {
 				parser.reportError(token.Span, "Expected a closing paren")
 			}
 			callee := expr
 			optChain := false
-			if _, ok := token.Data.(*TQuestionOpenParen); ok {
+			if _, ok := token.Kind.(*TQuestionOpenParen); ok {
 				optChain = true
 			}
 			expr =
@@ -153,12 +153,12 @@ loop:
 			parser.lexer.consume()
 			index := parser.parseExpr()
 			terminator := parser.lexer.next()
-			if _, ok := terminator.Data.(*TCloseBracket); !ok {
+			if _, ok := terminator.Kind.(*TCloseBracket); !ok {
 				parser.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := expr
 			optChain := false
-			if _, ok := token.Data.(*TQuestionOpenBracket); ok {
+			if _, ok := token.Kind.(*TQuestionOpenBracket); ok {
 				optChain = true
 			}
 			expr =
@@ -170,10 +170,10 @@ loop:
 			parser.lexer.consume()
 			prop := parser.lexer.next()
 			optChain := false
-			if _, ok := token.Data.(*TQuestionDot); ok {
+			if _, ok := token.Kind.(*TQuestionDot); ok {
 				optChain = true
 			}
-			switch t := prop.Data.(type) {
+			switch t := prop.Kind.(type) {
 			case *TIdentifier:
 				obj := expr
 				prop := &Identifier{Name: t.Value, Span: prop.Span}
@@ -193,7 +193,7 @@ loop:
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
 						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
 					}
-				if _, ok := token.Data.(*TDot); ok {
+				if _, ok := token.Kind.(*TDot); ok {
 					parser.reportError(token.Span, "expected an identifier after .")
 				} else {
 					parser.reportError(token.Span, "expected an identifier after ?.")
@@ -216,7 +216,7 @@ func (parser *Parser) parsePrimary() *Expr {
 
 	// Loop until we parse a primary expression.
 	for expr == nil {
-		switch t := token.Data.(type) {
+		switch t := token.Kind.(type) {
 		case *TNumber:
 			parser.lexer.consume()
 			expr = &Expr{
@@ -239,14 +239,14 @@ func (parser *Parser) parsePrimary() *Expr {
 			parser.lexer.consume()
 			expr = parser.parseExpr()
 			final := parser.lexer.next() // consume the closing paren
-			if _, ok := final.Data.(*TCloseParen); !ok {
+			if _, ok := final.Kind.(*TCloseParen); !ok {
 				parser.reportError(token.Span, "Expected a closing paren")
 			}
 		case *TOpenBracket:
 			parser.lexer.consume()
 			elems := parser.parseExprSeq()
 			final := parser.lexer.next() // consume the closing bracket
-			if _, ok := final.Data.(*TCloseBracket); !ok {
+			if _, ok := final.Kind.(*TCloseBracket); !ok {
 				parser.reportError(token.Span, "Expected a closing bracket")
 			}
 			expr = &Expr{
@@ -293,7 +293,7 @@ func (parser *Parser) parseExprSeq() []*Expr {
 	lastToken := parser.lexer.peek()
 
 	for {
-		switch lastToken.Data.(type) {
+		switch lastToken.Kind.(type) {
 		case *TComma:
 			parser.lexer.consume()
 			expr = parser.parseExpr()
@@ -309,7 +309,7 @@ func (parser *Parser) parseParamSeq() []*Param {
 	params := []*Param{}
 
 	token := parser.lexer.peek()
-	_ident, ok := token.Data.(*TIdentifier)
+	_ident, ok := token.Kind.(*TIdentifier)
 	if !ok {
 		return params
 	}
@@ -320,11 +320,11 @@ func (parser *Parser) parseParamSeq() []*Param {
 	token = parser.lexer.peek()
 
 	for {
-		switch token.Data.(type) {
+		switch token.Kind.(type) {
 		case *TComma:
 			parser.lexer.consume()
 			token = parser.lexer.peek()
-			_ident, ok := token.Data.(*TIdentifier)
+			_ident, ok := token.Kind.(*TIdentifier)
 			if !ok {
 				return params
 			}
@@ -341,14 +341,14 @@ func (parser *Parser) parseBlock() []*Stmt {
 	stmts := []*Stmt{}
 
 	token := parser.lexer.next()
-	if _, ok := token.Data.(*TOpenBrace); !ok {
+	if _, ok := token.Kind.(*TOpenBrace); !ok {
 		parser.reportError(token.Span, "Expected an opening brace")
 		return stmts
 	}
 
 	token = parser.lexer.peek()
 	for {
-		switch token.Data.(type) {
+		switch token.Kind.(type) {
 		case *TCloseBrace:
 			parser.lexer.consume()
 			return stmts
@@ -366,25 +366,25 @@ func (parser *Parser) parseDecl() *Decl {
 
 	token := parser.lexer.next()
 	start := token.Span.Start
-	if _, ok := token.Data.(*TExport); ok {
+	if _, ok := token.Kind.(*TExport); ok {
 		export = true
 		token = parser.lexer.next()
 	}
 
-	if _, ok := token.Data.(*TDeclare); ok {
+	if _, ok := token.Kind.(*TDeclare); ok {
 		declare = true
 		token = parser.lexer.next()
 	}
 
-	switch token.Data.(type) {
+	switch token.Kind.(type) {
 	case *TVal, *TVar:
 		kind := ValKind
-		if _, ok := token.Data.(*TVar); ok {
+		if _, ok := token.Kind.(*TVar); ok {
 			kind = VarKind
 		}
 
 		token := parser.lexer.peek()
-		_ident, ok := token.Data.(*TIdentifier)
+		_ident, ok := token.Kind.(*TIdentifier)
 		var ident *Identifier
 		if ok {
 			parser.lexer.consume()
@@ -401,7 +401,7 @@ func (parser *Parser) parseDecl() *Decl {
 		token = parser.lexer.peek()
 		var init *Expr
 		if !declare {
-			_, ok = token.Data.(*TEquals)
+			_, ok = token.Kind.(*TEquals)
 			if !ok {
 				parser.reportError(token.Span, "Expected equals sign")
 				return nil
@@ -423,7 +423,7 @@ func (parser *Parser) parseDecl() *Decl {
 		}
 	case *TFn:
 		token := parser.lexer.peek()
-		_ident, ok := token.Data.(*TIdentifier)
+		_ident, ok := token.Kind.(*TIdentifier)
 		var ident *Identifier
 		if ok {
 			parser.lexer.consume()
@@ -437,13 +437,13 @@ func (parser *Parser) parseDecl() *Decl {
 		}
 
 		token = parser.lexer.next()
-		if _, ok := token.Data.(*TOpenParen); !ok {
+		if _, ok := token.Kind.(*TOpenParen); !ok {
 			parser.reportError(token.Span, "Expected an opening paren")
 			return nil
 		}
 		params := parser.parseParamSeq()
 		token = parser.lexer.next()
-		if _, ok := token.Data.(*TCloseParen); !ok {
+		if _, ok := token.Kind.(*TCloseParen); !ok {
 			parser.reportError(token.Span, "Expected a closing paren")
 			return nil
 		}
@@ -472,7 +472,7 @@ func (parser *Parser) parseDecl() *Decl {
 func (parser *Parser) parseStmt() *Stmt {
 	token := parser.lexer.peek()
 
-	switch token.Data.(type) {
+	switch token.Kind.(type) {
 	case *TFn, *TVar, *TVal, *TDeclare, *TExport:
 		decl := parser.parseDecl()
 		if decl == nil {

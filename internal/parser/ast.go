@@ -8,7 +8,7 @@ type Identifier struct {
 }
 
 type Expr struct {
-	Kind E
+	Kind ExprKind
 	Span Span
 }
 
@@ -16,7 +16,7 @@ type Expr struct {
 // Go's type system.
 //
 //sumtype:decl
-type E interface{ isExpr() }
+type ExprKind interface{ isExpr() }
 
 func (*EBinary) isExpr()     {}
 func (*ENumber) isExpr()     {}
@@ -109,7 +109,7 @@ type EIgnore struct {
 type EEmpty struct{}
 
 type Decl struct {
-	Kind    D
+	Kind    DeclKind
 	Export  bool
 	Declare bool
 	Span    Span
@@ -119,7 +119,7 @@ type Decl struct {
 // Go's type system.
 //
 //sumtype:decl
-type D interface{ isDecl() }
+type DeclKind interface{ isDecl() }
 
 func (*DVariable) isDecl() {}
 func (*DFunction) isDecl() {}
@@ -149,7 +149,7 @@ type DFunction struct {
 }
 
 type Stmt struct {
-	Kind S
+	Kind StmtKind
 	Span Span
 }
 
@@ -157,7 +157,7 @@ type Stmt struct {
 // Go's type system.
 //
 //sumtype:decl
-type S interface{ isStmt() }
+type StmtKind interface{ isStmt() }
 
 func (*SExpr) isStmt()   {}
 func (*SDecl) isStmt()   {}
