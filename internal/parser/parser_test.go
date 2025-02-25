@@ -212,6 +212,9 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		"FunctionDeclMissingIdent": {
 			input: `fn () {return 5}`,
 		},
+		"FunctionDeclMissingBoyd": {
+			input: "fn foo(a, b)",
+		},
 		"FunctionDeclWithIncompleteStmts": {
 			input: `fn foo() {
 				val a = 

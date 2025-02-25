@@ -2039,3 +2039,65 @@
     },
 }
 ---
+
+[TestParseStmtErrorHandling/FunctionDeclMissingBoyd - 1]
+&parser.Stmt{
+    Kind: &parser.SDecl{
+        Decl: &parser.Decl{
+            Kind: &parser.DFunction{
+                Name: &parser.Identifier{
+                    Name: "foo",
+                    Span: parser.Span{
+                        Start: parser.Location{Line:1, Column:4},
+                        End:   parser.Location{Line:1, Column:7},
+                    },
+                },
+                Params: {
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "a",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:8},
+                                End:   parser.Location{Line:1, Column:9},
+                            },
+                        },
+                    },
+                    &parser.Param{
+                        Name: &parser.Identifier{
+                            Name: "b",
+                            Span: parser.Span{
+                                Start: parser.Location{Line:1, Column:11},
+                                End:   parser.Location{Line:1, Column:12},
+                            },
+                        },
+                    },
+                },
+                Body: {
+                },
+            },
+            Export:  false,
+            Declare: false,
+            Span:    parser.Span{
+                Start: parser.Location{Line:1, Column:1},
+                End:   parser.Location{Line:1, Column:7},
+            },
+        },
+    },
+    Span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:7},
+    },
+}
+---
+
+[TestParseStmtErrorHandling/FunctionDeclMissingBoyd - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: parser.Span{
+            Start: parser.Location{Line:1, Column:13},
+            End:   parser.Location{Line:1, Column:13},
+        },
+        Message: "Expected an opening brace",
+    },
+}
+---
