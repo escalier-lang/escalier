@@ -498,6 +498,22 @@ func (parser *Parser) parseStmt() *Stmt {
 	}
 }
 
+func (parser *Parser) parseModule() *Module {
+	stmts := []*Stmt{}
+
+	token := parser.lexer.peek()
+	for {
+		switch token.Kind.(type) {
+		case *TEndOfFile:
+			return &Module{Stmts: stmts}
+		default:
+			stmt := parser.parseStmt()
+			stmts = append(stmts, stmt)
+			token = parser.lexer.peek()
+		}
+	}
+}
+
 func (parser *Parser) reportError(span Span, message string) {
 	_, _, line, _ := runtime.Caller(1)
 	if os.Getenv("DEBUG") == "true" {

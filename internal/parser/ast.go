@@ -174,3 +174,8 @@ type SDecl struct {
 type SReturn struct {
 	Expr *Expr
 }
+
+// TODO add support for imports and exports
+type Module struct {
+	Stmts []*Stmt
+}
