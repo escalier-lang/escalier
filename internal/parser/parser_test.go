@@ -168,6 +168,15 @@ func TestParseStmtNoErrors(t *testing.T) {
 				return a + b
 			}`,
 		},
+		"ExportFunctionDecl": {
+			input: "export fn foo(a, b) { a + b }",
+		},
+		"DeclareFunctionDecl": {
+			input: "declare fn foo(a, b)",
+		},
+		"ExportDeclareFunctionDecl": {
+			input: "export declare fn foo(a, b)",
+		},
 	}
 
 	for name, test := range tests {
@@ -199,6 +208,9 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		},
 		"VarDeclMissingEquals": {
 			input: "var x 5",
+		},
+		"FunctionDeclMissingIdent": {
+			input: `fn () {return 5}`,
 		},
 		"FunctionDeclWithIncompleteStmts": {
 			input: `fn foo() {

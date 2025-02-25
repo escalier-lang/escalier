@@ -422,14 +422,19 @@ func (parser *Parser) parseDecl() *Decl {
 			Span:    Span{Start: start, End: end},
 		}
 	case *TFn:
-		token := parser.lexer.next()
+		token := parser.lexer.peek()
 		_ident, ok := token.Data.(*TIdentifier)
-		if !ok {
+		var ident *Identifier
+		if ok {
+			parser.lexer.consume()
+			ident = &Identifier{Name: _ident.Value, Span: token.Span}
+		} else {
 			parser.reportError(token.Span, "Expected identifier")
-			return nil
+			ident = &Identifier{
+				Name: "",
+				Span: Span{Start: token.Span.Start, End: token.Span.Start},
+			}
 		}
-
-		ident := &Identifier{Name: _ident.Value, Span: token.Span}
 
 		token = parser.lexer.next()
 		if _, ok := token.Data.(*TOpenParen); !ok {
@@ -443,7 +448,10 @@ func (parser *Parser) parseDecl() *Decl {
 			return nil
 		}
 
-		body := parser.parseBlock()
+		body := []*Stmt{}
+		if !declare {
+			body = parser.parseBlock()
+		}
 
 		return &Decl{
 			Kind: &DFunction{
