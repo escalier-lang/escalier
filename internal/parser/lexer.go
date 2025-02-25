@@ -46,7 +46,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 
 	// Skip over whitespace
-	for codePoint == ' ' || codePoint == '\n' {
+	for codePoint == ' ' || codePoint == '\n' || codePoint == '\t' {
 		startOffset += width
 		if codePoint == '\n' {
 			start.Line++
@@ -229,7 +229,10 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 				Span: Span{Start: start, End: start},
 			}
 		} else {
-			token = Token{Data: &TInvalid{}} // TODO: include the character in the token
+			token = Token{
+				Data: &TInvalid{},
+				Span: Span{Start: start, End: start},
+			}
 		}
 	}
 

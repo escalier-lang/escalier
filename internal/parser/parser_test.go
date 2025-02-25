@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -154,6 +155,28 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ExportDeclareValDecl": {
 			input: "export declare val x",
 		},
+		"FunctionDecl": {
+			input: "fn foo(a, b) { a + b }",
+		},
+		"FunctionDeclWithReturn": {
+			input: "fn foo(a, b) { return a + b }",
+		},
+		"FunctionDeclWithMultipleStmts": {
+			input: `fn foo() {
+				val a = 5
+				val b = 10
+				return a + b
+			}`,
+		},
+		"ExportFunctionDecl": {
+			input: "export fn foo(a, b) { a + b }",
+		},
+		"DeclareFunctionDecl": {
+			input: "declare fn foo(a, b)",
+		},
+		"ExportDeclareFunctionDecl": {
+			input: "export declare fn foo(a, b)",
+		},
 	}
 
 	for name, test := range tests {
@@ -168,6 +191,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)
+			if len(parser.errors) > 0 {
+				fmt.Printf("Error[0]: %#v", parser.errors[0])
+			}
 			assert.Len(t, parser.errors, 0)
 		})
 	}
@@ -182,6 +208,19 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		},
 		"VarDeclMissingEquals": {
 			input: "var x 5",
+		},
+		"FunctionDeclMissingIdent": {
+			input: `fn () {return 5}`,
+		},
+		"FunctionDeclMissingBoyd": {
+			input: "fn foo(a, b)",
+		},
+		"FunctionDeclWithIncompleteStmts": {
+			input: `fn foo() {
+				val a = 
+				val b = 5
+				return a +
+			}`,
 		},
 	}
 
