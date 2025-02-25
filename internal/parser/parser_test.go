@@ -241,3 +241,46 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestParseModuleNoErrors(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"VarDecls": {
+			input: `
+				val a = 5
+				val b = 10
+				val sum = a + b
+			`,
+		},
+		"FuncDecls": {
+			input: `
+				fn add(a, b) {
+					return a + b
+				}
+				fn sub(a, b) {
+					return a - b
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := Source{
+				path:     "input.esc",
+				Contents: test.input,
+			}
+
+			parser := NewParser(source)
+			module := parser.parseModule()
+
+			snaps.MatchSnapshot(t, module)
+			if len(parser.errors) > 0 {
+				fmt.Printf("Error[0]: %#v", parser.errors[0])
+			}
+			assert.Len(t, parser.errors, 0)
+		})
+	}
+}
