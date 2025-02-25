@@ -253,12 +253,16 @@ func (parser *Parser) parsePrimary() *Expr {
 				Kind: &EArray{Elems: elems},
 				Span: Span{Start: token.Span.Start, End: final.Span.End},
 			}
-		case *TEndOfFile:
+		case
+			*TVal, *TVar, *TFn, *TReturn,
+			*TCloseBrace, *TCloseParen, *TCloseBracket,
+			*TEndOfFile:
 			expr = &Expr{
-				Kind: &EIgnore{Token: &token},
+				Kind: &EEmpty{},
 				Span: token.Span,
 			}
-			parser.reportError(token.Span, "Unexpected token")
+			parser.reportError(token.Span, "Expected an expression")
+			return expr
 		default:
 			parser.lexer.consume()
 			parser.reportError(token.Span, "Unexpected token")
@@ -379,13 +383,19 @@ func (parser *Parser) parseDecl() *Decl {
 			kind = VarKind
 		}
 
-		token := parser.lexer.next()
+		token := parser.lexer.peek()
 		_ident, ok := token.Data.(*TIdentifier)
-		if !ok {
+		var ident *Identifier
+		if ok {
+			parser.lexer.consume()
+			ident = &Identifier{Name: _ident.Value, Span: token.Span}
+		} else {
 			parser.reportError(token.Span, "Expected identifier")
-			return nil
+			ident = &Identifier{
+				Name: "",
+				Span: Span{Start: token.Span.Start, End: token.Span.Start},
+			}
 		}
-		ident := &Identifier{Name: _ident.Value, Span: token.Span}
 		end := token.Span.End
 
 		token = parser.lexer.peek()
@@ -393,7 +403,6 @@ func (parser *Parser) parseDecl() *Decl {
 		if !declare {
 			_, ok = token.Data.(*TEquals)
 			if !ok {
-				// TODO: lex tokens until we find an equals sign
 				parser.reportError(token.Span, "Expected equals sign")
 				return nil
 			}
@@ -403,7 +412,6 @@ func (parser *Parser) parseDecl() *Decl {
 		}
 
 		return &Decl{
-			// TODO: differentiate between 'var' and 'val'
 			Kind: &DVariable{
 				Name: ident,
 				Kind: kind,

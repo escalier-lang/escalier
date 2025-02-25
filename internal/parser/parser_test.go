@@ -200,6 +200,13 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		"VarDeclMissingEquals": {
 			input: "var x 5",
 		},
+		"FunctionDeclWithIncompleteStmts": {
+			input: `fn foo() {
+				val a = 
+				val b = 5
+				return a +
+			}`,
+		},
 	}
 
 	for name, test := range tests {
