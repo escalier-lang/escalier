@@ -10,9 +10,6 @@
 	"engines": {
 		"vscode": "^1.75.0"
 	},
-	"activationEvents": [
-		"onLanguage:escalier"
-	],
 	"main": "./out/extension",
 	"contributes": {
         "languages": [
