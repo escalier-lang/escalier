@@ -2386,3 +2386,76 @@
     },
 }
 ---
+
+[TestParseModuleNoErrors/ExprStmts - 1]
+&parser.Module{
+    Stmts: {
+        &parser.Stmt{
+            Kind: &parser.SExpr{
+                Expr: &parser.Expr{
+                    Kind: &parser.ECall{
+                        Callee: &parser.Expr{
+                            Kind: &parser.EIdentifier{Name:"foo"},
+                            Span: parser.Span{
+                                Start: parser.Location{Line:2, Column:5},
+                                End:   parser.Location{Line:2, Column:8},
+                            },
+                        },
+                        Args: {
+                            &parser.Expr{
+                                Kind: &parser.EEmpty{},
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:2, Column:9},
+                                    End:   parser.Location{Line:2, Column:10},
+                                },
+                            },
+                        },
+                        OptChain: false,
+                    },
+                    Span: parser.Span{
+                        Start: parser.Location{Line:2, Column:5},
+                        End:   parser.Location{Line:2, Column:10},
+                    },
+                },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:2, Column:5},
+                End:   parser.Location{Line:2, Column:10},
+            },
+        },
+        &parser.Stmt{
+            Kind: &parser.SExpr{
+                Expr: &parser.Expr{
+                    Kind: &parser.ECall{
+                        Callee: &parser.Expr{
+                            Kind: &parser.EIdentifier{Name:"bar"},
+                            Span: parser.Span{
+                                Start: parser.Location{Line:3, Column:5},
+                                End:   parser.Location{Line:3, Column:8},
+                            },
+                        },
+                        Args: {
+                            &parser.Expr{
+                                Kind: &parser.EEmpty{},
+                                Span: parser.Span{
+                                    Start: parser.Location{Line:3, Column:9},
+                                    End:   parser.Location{Line:3, Column:10},
+                                },
+                            },
+                        },
+                        OptChain: false,
+                    },
+                    Span: parser.Span{
+                        Start: parser.Location{Line:3, Column:5},
+                        End:   parser.Location{Line:3, Column:10},
+                    },
+                },
+            },
+            Span: parser.Span{
+                Start: parser.Location{Line:3, Column:5},
+                End:   parser.Location{Line:3, Column:10},
+            },
+        },
+    },
+}
+---

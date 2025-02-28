@@ -8,13 +8,13 @@ import (
 
 type Parser struct {
 	lexer  *Lexer
-	errors []*Error
+	Errors []*Error
 }
 
 func NewParser(source Source) *Parser {
 	return &Parser{
 		lexer:  NewLexer(source),
-		errors: []*Error{},
+		Errors: []*Error{},
 	}
 }
 
@@ -58,8 +58,9 @@ loop:
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEndOfFile, *TVar, *TVal, *TFn, *TReturn:
 			break loop
 		default:
-			parser.reportError(token.Span, "Unexpected token")
-			continue
+			return values.Pop()
+			// parser.reportError(token.Span, "Unexpected token")
+			// continue
 		}
 
 		parser.lexer.consume()
@@ -498,7 +499,7 @@ func (parser *Parser) parseStmt() *Stmt {
 	}
 }
 
-func (parser *Parser) parseModule() *Module {
+func (parser *Parser) ParseModule() *Module {
 	stmts := []*Stmt{}
 
 	token := parser.lexer.peek()
@@ -519,7 +520,7 @@ func (parser *Parser) reportError(span Span, message string) {
 	if os.Getenv("DEBUG") == "true" {
 		message = fmt.Sprintf("%s:%d", message, line)
 	}
-	parser.errors = append(parser.errors, &Error{
+	parser.Errors = append(parser.Errors, &Error{
 		Span:    span,
 		Message: message,
 	})

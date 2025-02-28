@@ -30,7 +30,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.esc",
-				"match": "\\b(if|while|for|return|await)\\b"
+				"match": "\\b(if|while|for|return|await|val|var)\\b"
 			}]
 		},
 		"numbers": {
