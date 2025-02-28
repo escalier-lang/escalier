@@ -1,0 +1,27 @@
+{
+	"name": "escalier",
+	"workspaces": ["packages/*"],
+	"license": "MIT",
+	"version": "0.0.1",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/escalier-lang/escalier"
+	},
+	"categories": [],
+	"keywords": [
+		"multi-root ready"
+	],
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "go build -o bin/lsp-server cmd/lsp-server/main.go && tsc -b",
+		"watch": "tsc -b -w",
+		"lint": "eslint"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@types/node": "^20",
+		"eslint": "^9.13.0",
+		"typescript": "^5.7.2",
+		"typescript-eslint": "^8.16.0"
+	}
+}

@@ -1,0 +1,44 @@
+{
+	"name": "vscode-escalier",
+	"description": "Escalier language support",
+	"license": "MIT",
+	"version": "0.0.1",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/escalier-lang/escalier"
+	},
+	"engines": {
+		"vscode": "^1.75.0"
+	},
+	"main": "./out/extension",
+	"contributes": {
+        "languages": [
+            {
+                "id": "escalier",
+                "aliases": [
+                    "Escalier",
+                    "escalier"
+                ],
+				"configuration": "./language-configuration.json",
+                "extensions": [
+                    ".esc"
+                ]
+            }
+        ],
+		"grammars": [
+			{
+			  "language": "escalier",
+			  "scopeName": "source.esc",
+			  "path": "./syntaxes/escalier.tmLanguage.json"
+			}
+		  ]
+	},
+	"dependencies": {
+		"glob": "^11.0.0",
+		"vscode-languageclient": "^9.0.1"
+	},
+	"devDependencies": {
+		"@types/vscode": "^1.75.1",
+		"@vscode/test-electron": "^2.3.9"
+	}
+}
