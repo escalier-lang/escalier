@@ -1,63 +1,115 @@
 package main
 
 import (
-	"context"
-	"flag"
 	"fmt"
-	"log"
 	"os"
 
-	"github.com/TobiasYin/go-lsp/logs"
-	"github.com/TobiasYin/go-lsp/lsp"
-	"github.com/TobiasYin/go-lsp/lsp/defines"
+	"github.com/tliron/glsp"
+	protocol "github.com/tliron/glsp/protocol_3_16"
+	"github.com/tliron/glsp/server"
+
+	"github.com/escalier-lang/escalier/internal/parser"
 )
 
-var logPath *string
+const lsName = "escalier"
 
-func init() {
-	var logger *log.Logger
-	defer func() {
-		logs.Init(logger)
-	}()
-	logPath = flag.String("logs", "", "logs file path")
-	if logPath == nil || *logPath == "" {
-		logger = log.New(os.Stderr, "", 0)
-		return
-	}
-	p := *logPath
-	f, err := os.Open(p)
-	if err == nil {
-		logger = log.New(f, "", 0)
-		return
-	}
-	f, err = os.Create(p)
-	if err == nil {
-		logger = log.New(f, "", 0)
-		return
-	}
-	panic(fmt.Sprintf("logs init error: %v", *logPath))
-}
+var (
+	version string = "0.0.1"
+	handler protocol.Handler
+)
 
 func main() {
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
-	// Create a new server
-	server := lsp.NewServer(&lsp.Options{})
+	handler = protocol.Handler{
+		Initialize:            initialize,
+		Initialized:           initialized,
+		Shutdown:              shutdown,
+		SetTrace:              setTrace,
+		TextDocumentDidChange: textDocumentDidChange,
+	}
 
-	server.OnDidChangeTextDocument(func(
-		ctx context.Context,
-		req *defines.DidChangeTextDocumentParams) (err error) {
+	server := server.NewServer(&handler, lsName, false)
 
-		uri := req.TextDocument.Uri
-		fmt.Fprintf(os.Stderr, "file changed: %s\n", uri)
-		fmt.Fprintf(os.Stderr, "changes: %v\n", req.ContentChanges)
+	err := server.RunStdio()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		os.Exit(1)
+	}
+}
 
-		// TODO:
-		// - parse files when they change
-		// - publish diagnostics if there are any errors
+func initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
+	capabilities := handler.CreateServerCapabilities()
+	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
 
-		return nil
-	})
+	return protocol.InitializeResult{
+		Capabilities: capabilities,
+		ServerInfo: &protocol.InitializeResultServerInfo{
+			Name:    lsName,
+			Version: &version,
+		},
+	}, nil
+}
 
-	server.Run()
+func initialized(context *glsp.Context, params *protocol.InitializedParams) error {
+	return nil
+}
+
+func shutdown(context *glsp.Context) error {
+	protocol.SetTraceValue(protocol.TraceValueOff)
+	return nil
+}
+
+func setTrace(context *glsp.Context, params *protocol.SetTraceParams) error {
+	protocol.SetTraceValue(params.Value)
+	return nil
+}
+
+func textDocumentDidChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
+	for _, _change := range params.ContentChanges {
+		change := _change.(protocol.TextDocumentContentChangeEventWhole)
+		fmt.Fprintf(os.Stderr, "file changed: %s\n", params.TextDocument.URI)
+		fmt.Fprintf(os.Stderr, "change.Text: %s\n", change.Text)
+
+		p := parser.NewParser(parser.Source{
+			Contents: change.Text,
+		})
+		p.ParseModule()
+
+		diagnotics := []protocol.Diagnostic{}
+		documentUri := params.TextDocument.URI
+		for _, err := range p.Errors {
+			fmt.Fprintf(os.Stderr, "error: %#v\n", err)
+			severity := protocol.DiagnosticSeverityError
+			source := "escalier"
+			diagnotics = append(diagnotics, protocol.Diagnostic{
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      protocol.UInteger(err.Span.Start.Line - 1),
+						Character: protocol.UInteger(err.Span.Start.Column - 1),
+					},
+					End: protocol.Position{
+						Line:      protocol.UInteger(err.Span.End.Line - 1),
+						Character: protocol.UInteger(err.Span.End.Column - 1),
+					},
+				},
+				Severity:           &severity,
+				Code:               nil,
+				CodeDescription:    nil,
+				Source:             &source,
+				Message:            err.Message,
+				Tags:               nil,
+				RelatedInformation: nil,
+				Data:               nil,
+			})
+		}
+
+		go context.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+			URI:         documentUri,
+			Diagnostics: diagnotics,
+			Version:     nil,
+		})
+	}
+
+	return nil
 }

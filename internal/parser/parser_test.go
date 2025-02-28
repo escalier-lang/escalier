@@ -83,7 +83,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Len(t, parser.errors, 0)
+			assert.Len(t, parser.Errors, 0)
 		})
 	}
 }
@@ -130,8 +130,8 @@ func TestParseExprErrorHandling(t *testing.T) {
 			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Greater(t, len(parser.errors), 0)
-			snaps.MatchSnapshot(t, parser.errors)
+			assert.Greater(t, len(parser.Errors), 0)
+			snaps.MatchSnapshot(t, parser.Errors)
 		})
 	}
 }
@@ -191,10 +191,10 @@ func TestParseStmtNoErrors(t *testing.T) {
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)
-			if len(parser.errors) > 0 {
-				fmt.Printf("Error[0]: %#v", parser.errors[0])
+			if len(parser.Errors) > 0 {
+				fmt.Printf("Error[0]: %#v", parser.Errors[0])
 			}
-			assert.Len(t, parser.errors, 0)
+			assert.Len(t, parser.Errors, 0)
 		})
 	}
 }
@@ -236,8 +236,8 @@ func TestParseStmtErrorHandling(t *testing.T) {
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)
-			assert.Greater(t, len(parser.errors), 0)
-			snaps.MatchSnapshot(t, parser.errors)
+			assert.Greater(t, len(parser.Errors), 0)
+			snaps.MatchSnapshot(t, parser.Errors)
 		})
 	}
 }
@@ -263,6 +263,12 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"ExprStmts": {
+			input: `
+				foo()
+				bar()
+			`,
+		},
 	}
 
 	for name, test := range tests {
@@ -274,13 +280,15 @@ func TestParseModuleNoErrors(t *testing.T) {
 			}
 
 			parser := NewParser(source)
-			module := parser.parseModule()
+			module := parser.ParseModule()
 
 			snaps.MatchSnapshot(t, module)
-			if len(parser.errors) > 0 {
-				fmt.Printf("Error[0]: %#v", parser.errors[0])
+			if len(parser.Errors) > 0 {
+				for i, err := range parser.Errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
 			}
-			assert.Len(t, parser.errors, 0)
+			assert.Len(t, parser.Errors, 0)
 		})
 	}
 }

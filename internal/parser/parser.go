@@ -8,13 +8,13 @@ import (
 
 type Parser struct {
 	lexer  *Lexer
-	errors []*Error
+	Errors []*Error
 }
 
 func NewParser(source Source) *Parser {
 	return &Parser{
 		lexer:  NewLexer(source),
-		errors: []*Error{},
+		Errors: []*Error{},
 	}
 }
 
@@ -58,8 +58,9 @@ loop:
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEndOfFile, *TVar, *TVal, *TFn, *TReturn:
 			break loop
 		default:
-			parser.reportError(token.Span, "Unexpected token")
-			continue
+			return values.Pop()
+			// parser.reportError(token.Span, "Unexpected token")
+			// continue
 		}
 
 		parser.lexer.consume()
@@ -283,22 +284,30 @@ func (parser *Parser) parsePrimary() *Expr {
 	return expr
 }
 
-// TODO: handle an empty sequence
 func (parser *Parser) parseExprSeq() []*Expr {
 	exprs := []*Expr{}
+
+	// handles empty sequences
+	token := parser.lexer.peek()
+	switch token.Kind.(type) {
+	case *TCloseBracket, *TCloseParen, *TCloseBrace:
+		return exprs
+	default:
+	}
 
 	expr := parser.parseExpr()
 	exprs = append(exprs, expr)
 
-	lastToken := parser.lexer.peek()
+	token = parser.lexer.peek()
 
 	for {
-		switch lastToken.Kind.(type) {
+		switch token.Kind.(type) {
 		case *TComma:
+			// TODO: handle trailing comma
 			parser.lexer.consume()
 			expr = parser.parseExpr()
 			exprs = append(exprs, expr)
-			lastToken = parser.lexer.peek()
+			token = parser.lexer.peek()
 		default:
 			return exprs
 		}
@@ -498,7 +507,7 @@ func (parser *Parser) parseStmt() *Stmt {
 	}
 }
 
-func (parser *Parser) parseModule() *Module {
+func (parser *Parser) ParseModule() *Module {
 	stmts := []*Stmt{}
 
 	token := parser.lexer.peek()
@@ -519,7 +528,7 @@ func (parser *Parser) reportError(span Span, message string) {
 	if os.Getenv("DEBUG") == "true" {
 		message = fmt.Sprintf("%s:%d", message, line)
 	}
-	parser.errors = append(parser.errors, &Error{
+	parser.Errors = append(parser.Errors, &Error{
 		Span:    span,
 		Message: message,
 	})
