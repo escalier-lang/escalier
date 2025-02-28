@@ -284,22 +284,30 @@ func (parser *Parser) parsePrimary() *Expr {
 	return expr
 }
 
-// TODO: handle an empty sequence
 func (parser *Parser) parseExprSeq() []*Expr {
 	exprs := []*Expr{}
+
+	// handles empty sequences
+	token := parser.lexer.peek()
+	switch token.Kind.(type) {
+	case *TCloseBracket, *TCloseParen, *TCloseBrace:
+		return exprs
+	default:
+	}
 
 	expr := parser.parseExpr()
 	exprs = append(exprs, expr)
 
-	lastToken := parser.lexer.peek()
+	token = parser.lexer.peek()
 
 	for {
-		switch lastToken.Kind.(type) {
+		switch token.Kind.(type) {
 		case *TComma:
+			// TODO: handle trailing comma
 			parser.lexer.consume()
 			expr = parser.parseExpr()
 			exprs = append(exprs, expr)
-			lastToken = parser.lexer.peek()
+			token = parser.lexer.peek()
 		default:
 			return exprs
 		}

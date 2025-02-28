@@ -284,7 +284,9 @@ func TestParseModuleNoErrors(t *testing.T) {
 
 			snaps.MatchSnapshot(t, module)
 			if len(parser.Errors) > 0 {
-				fmt.Printf("Error[0]: %#v", parser.Errors[0])
+				for i, err := range parser.Errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
 			}
 			assert.Len(t, parser.Errors, 0)
 		})
