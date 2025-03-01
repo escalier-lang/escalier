@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "monaco-editor": "^0.52.2",
+    "monaco-editor-core": "^0.52.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
