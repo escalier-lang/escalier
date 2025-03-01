@@ -1,13 +1,12 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2020",
-    "lib": ["es2020"],
-    "outDir": "out",
-    "rootDir": "src",
-    "sourceMap": true
+    "sourceMap": true,
+    "emitDeclarationOnly": true,
+    "composite": true,
   },
-  "include": ["src"],
-  "exclude": ["node_modules"],
-  "references": [{ "path": "./packages/vscode-escalier" }]
+  "files": [],
+  "references": [
+    { "path": "./packages/vscode-escalier" },
+    { "path": "./playground" }
+  ]
 }

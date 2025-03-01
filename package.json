@@ -1,6 +1,9 @@
 {
 	"name": "escalier",
-	"workspaces": ["packages/*"],
+	"workspaces": [
+		"packages/*",
+		"playground"
+	],
 	"license": "MIT",
 	"version": "0.0.1",
 	"repository": {
@@ -15,7 +18,8 @@
 		"vscode:prepublish": "npm run compile",
 		"compile": "go build -o bin/lsp-server cmd/lsp-server/main.go && tsc -b",
 		"watch": "tsc -b -w",
-		"lint": "eslint"
+		"lint": "eslint",
+		"typecheck": "tsc -b"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",
