@@ -9,5 +9,8 @@
   },
   "include": ["src"],
   "exclude": ["node_modules"],
-  "references": [{ "path": "./packages/vscode-escalier" }]
+  "references": [
+    { "path": "./packages/vscode-escalier" },
+    { "path": "./playground" }
+  ]
 }
