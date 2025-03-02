@@ -39,9 +39,28 @@ jobs:
 
       - name: Install Node.js
         uses: actions/setup-node@v2
+        with:
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install
 
       - name: Run TypeScript
         run: npm run typecheck
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build lsp-server
+        run: go build -o ./bin/lsp-server ./cmd/lsp-server
+
+      - name: Run Tests
+        run: npm run coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
