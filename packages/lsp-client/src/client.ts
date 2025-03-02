@@ -11,7 +11,7 @@ export class Client {
     process: ChildProcessWithoutNullStreams;
 
     constructor() {
-        this.process = spawn(path.join(__dirname, '../../../bin/lsp-server'), ['--stdio'])
+        this.process = spawn(path.join(__dirname, '../../../bin/lsp-server'), [])
         this.endpoint = new JSONRPCEndpoint(this.process.stdin, this.process.stdout);
         this.endpoint.on('error', (err) => {
             console.error(err);

@@ -17,7 +17,7 @@ export function activate(context: ExtensionContext) {
 
   const executable = {
     command: serverModule,
-    args: ["--stdio"],
+    args: [],
     transport: TransportKind.stdio,
   };
 
