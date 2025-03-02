@@ -45,3 +45,11 @@ jobs:
 
       - name: Run TypeScript
         run: npm run typecheck
+
+      - name: Run Tests
+        run: npm coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
