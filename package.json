@@ -16,7 +16,7 @@
 	],
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
-		"compile": "go build -o bin/lsp-server cmd/lsp-server/main.go && tsc -b",
+		"compile": "go build -o ./bin/lsp-server ./cmd/lsp-server && tsc -b",
 		"watch": "tsc -b -w",
 		"lint": "eslint",
 		"test": "vitest run",
