@@ -23,7 +23,7 @@ export class Client {
             const value = await this.endpoint.send('initialize', params);
             return Result.Ok(value);
         } catch (e) {
-            return Result.Err(e);
+            return Result.Err(e as Error);
         }
     }
 
@@ -32,7 +32,7 @@ export class Client {
             const value = await this.endpoint.send('textDocument/didOpen', params);
             return Result.Ok(value);
         } catch (e) {
-            return Result.Err(e);
+            return Result.Err(e as Error);
         }
     }
 
@@ -41,7 +41,7 @@ export class Client {
             const value = await this.endpoint.send('textDocument/didChange', params);
             return Result.Ok(value);
         } catch (e) {
-            return Result.Err(e);
+            return Result.Err(e as Error);
         }
     }
 
