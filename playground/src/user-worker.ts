@@ -1,31 +1,10 @@
 import * as monaco from 'monaco-editor';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
-import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
-import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
-import escalierWorker from './languages/escalier/escalier-worker?worker';
 
-console.log("monaco", monaco);
-
+// The editor worker is what runs the non-language specific parts of the editor.
+// We need to provide monaco-editor an instance of it when it asks for it.
 self.MonacoEnvironment = {
-	getWorker(_: string, label: string) {
-        console.log("label =", label);
-		if (label === 'json') {
-			return new jsonWorker();
-		}
-		if (label === 'css' || label === 'scss' || label === 'less') {
-			return new cssWorker();
-		}
-		if (label === 'html' || label === 'handlebars' || label === 'razor') {
-			return new htmlWorker();
-		}
-		if (label === 'typescript' || label === 'javascript') {
-			return new tsWorker();
-		}
-        if (label === 'escalier') {
-            return new escalierWorker();
-        }
+	getWorker(_moduleId: string, _label: string) {
 		return new editorWorker();
 	}
 };
