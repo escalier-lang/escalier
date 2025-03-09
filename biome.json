@@ -7,7 +7,7 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "ignore": ["**/out/**", "*.json", ".vscode/**", "**/node_modules/**"]
+        "ignore": ["**/out/**", "*.json", ".vscode/**", "**/node_modules/**", "wasm_exec.js", "web-assembly.d.ts", "wasm-client.ts"]
     },
     "formatter": {
         "enabled": true,
@@ -20,7 +20,10 @@
     "linter": {
         "enabled": true,
         "rules": {
-            "recommended": true
+            "recommended": true,
+            "suspicious": {
+                "noExplicitAny": "off"
+            }
         }
     },
     "javascript": {
