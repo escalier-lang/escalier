@@ -6,7 +6,6 @@
   },
   "files": [],
   "references": [
-    { "path": "./packages/lsp-client" },
     { "path": "./packages/vscode-escalier" },
     { "path": "./playground" }
   ]
