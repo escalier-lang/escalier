@@ -4,8 +4,8 @@ import { useEffect, useRef } from 'react';
 import styles from './editor.module.css';
 
 import { initialCode } from './examples';
-import { createModel } from './model';
 import { languageID } from './language';
+import { createModel } from './model';
 
 export const Editor = () => {
     const divRef = useRef(null);
