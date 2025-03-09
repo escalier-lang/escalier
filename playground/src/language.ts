@@ -1,10 +1,53 @@
 import * as monaco from 'monaco-editor-core';
+import type * as lsp from 'vscode-languageserver-protocol';
 
+import wasmUrl from '../../bin/lsp-server.wasm?url';
+
+import { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
 export const languageID = 'escalier';
 
 monaco.languages.register({ id: languageID });
+monaco.languages.onLanguage(languageID, async () => {
+    console.log(`onLanguage called for ${languageID}`);
+    console.log('Client = ', Client);
+    console.log('wasmUrl = ', wasmUrl);
+
+    const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
+    const client = new Client(wasmBuffer);
+
+    client.run();
+    client.on(
+        'textDocument/publishDiagnostics',
+        (params: lsp.PublishDiagnosticsParams) => {
+            console.log('textDocument/publishDiagnostics', params);
+        },
+    );
+
+    const initParams: lsp.InitializeParams = {
+        processId: process.pid,
+        rootUri: 'file:///home/user/project',
+        capabilities: {},
+    };
+    const initResponse = await client.sendRequest('initialize', initParams);
+    console.log('initialize response', initResponse);
+
+    const didChangeParams: lsp.DidChangeTextDocumentParams = {
+        textDocument: {
+            uri: 'file:///home/user/project/foo.esc',
+            version: 2,
+        },
+        contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
+    };
+    const didChangeResponse = await client.sendRequest(
+        'textDocument/didChange',
+        didChangeParams,
+    );
+    console.log('textDocument/didChange response', didChangeResponse);
+
+    await client.stop();
+});
 monaco.languages.setMonarchTokensProvider(languageID, monarchLanguage);
 monaco.languages.setLanguageConfiguration(languageID, {
     brackets: [

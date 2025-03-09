@@ -2,3 +2,5 @@ ignore:
   - "internal/parser/ast.go"
   - "internal/parser/token.go"
   - "cmd/**/*.go"
+  - "packages/lsp-client/wasm_exec.js"
+  - "packages/lsp-client/src/index.ts"

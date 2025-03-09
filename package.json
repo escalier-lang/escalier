@@ -17,7 +17,11 @@
 	"scripts": {
 		"vscode:prepublish": "npm run compile",
 		"compile": "go build -o ./bin/lsp-server ./cmd/lsp-server && tsc -b",
+		"build": "tsc -b",
 		"watch": "tsc -b -w",
+		"lsp-server": "go build -o ./bin/lsp-server ./cmd/lsp-server",
+		"lsp-server:wasm": "GOOS=js GOARCH=wasm go build -o ./bin/lsp-server.wasm ./cmd/lsp-server",
+		"lsp-client": "npm run build && node ./packages/lsp-client/out/index.js",
 		"lint": "biome lint .",
 		"format": "biome format .",
 		"check": "biome check .",
