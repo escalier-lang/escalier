@@ -1,7 +1,7 @@
-import { expect, test, vi, beforeEach, afterEach } from 'vitest'
-import * as lsp from 'vscode-languageserver-protocol'
+import { expect, test, vi, beforeEach, afterEach } from 'vitest';
+import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client } from './client'
+import { Client } from './client';
 
 let client: Client;
 
@@ -32,7 +32,7 @@ test('initialize', async () => {
       },
     },
   }
-`)
+`);
 });
 
 test('textDocument/didOpen', async () => {
@@ -47,9 +47,7 @@ test('textDocument/didOpen', async () => {
             uri: 'file:///home/user/project/foo.esc',
             version: 2,
         },
-        contentChanges: [
-            { text: 'console.log("Hello, world!")\nval x =\n' }
-        ]
+        contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
     });
 
     await client.initialize({
@@ -64,18 +62,18 @@ test('textDocument/didOpen', async () => {
             languageId: 'escalier',
             version: 1,
             text: 'console.log("Hello, world!")\n',
-        }
+        },
     });
 
     expect(result).toMatchInlineSnapshot(`
   Err {
     "error": [Error: method not supported: textDocument/didOpen],
   }
-`)
+`);
 });
 
 test('textDocument/didChange', async () => {
-    let diagnostics: lsp.PublishDiagnosticsParams["diagnostics"] | null = null;
+    let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
 
     client.onPublishDiagnostics((params) => {
         console.log('Received diagnostics');
@@ -93,9 +91,7 @@ test('textDocument/didChange', async () => {
             uri: 'file:///home/user/project/foo.esc',
             version: 2,
         },
-        contentChanges: [
-            { text: 'console.log("Hello, world!")\nval x =\n' }
-        ]
+        contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
     });
 
     await vi.waitFor(() => {
