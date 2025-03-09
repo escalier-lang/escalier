@@ -48,6 +48,9 @@ jobs:
       - name: Run TypeScript
         run: npm run typecheck
 
+      - name: Biome check
+        run: npm run check
+
       - name: Set up Go
         uses: actions/setup-go@v5
 
