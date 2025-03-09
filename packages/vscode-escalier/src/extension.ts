@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { workspace, type ExtensionContext } from 'vscode';
+import { type ExtensionContext, workspace } from 'vscode';
 
 import {
     LanguageClient,

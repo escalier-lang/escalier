@@ -1,10 +1,10 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import * as path from 'node:path';
 
-import type * as lsp from 'vscode-languageserver-protocol';
 import { JSONRPCEndpoint } from 'ts-lsp-client';
+import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Result, type AsyncResult } from './result';
+import { type AsyncResult, Result } from './result';
 
 export class Client {
     endpoint: JSONRPCEndpoint;

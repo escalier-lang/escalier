@@ -1,4 +1,4 @@
-import { expect, test, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
 import { Client } from './client';

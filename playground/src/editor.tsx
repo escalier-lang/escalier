@@ -1,8 +1,8 @@
-import { useRef, useState, useEffect } from 'react';
 import * as monaco from 'monaco-editor-core';
+import { useEffect, useRef, useState } from 'react';
 
-import { monarchLanguage } from './monarch-language';
 import styles from './editor.module.css';
+import { monarchLanguage } from './monarch-language';
 
 const languageID = 'escalier';
 
