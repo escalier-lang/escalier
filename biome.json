@@ -7,7 +7,15 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "ignore": ["**/out/**", "*.json", ".vscode/**", "**/node_modules/**", "wasm_exec.js", "web-assembly.d.ts", "wasm-client.ts"]
+        "ignore": [
+            "**/out/**",
+            "*.json",
+            ".vscode/**",
+            "**/node_modules/**",
+            "wasm_exec.js",
+            "web-assembly.d.ts",
+            "wasm-client.ts"
+        ]
     },
     "formatter": {
         "enabled": true,

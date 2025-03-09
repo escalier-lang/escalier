@@ -4,7 +4,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 
 import '../wasm_exec'; // run for side-effects
 
-import type { Result, AsyncResult } from './result';
+import type { AsyncResult, Result } from './result';
 
 const Go = globalThis.Go;
 
