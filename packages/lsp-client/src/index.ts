@@ -37,7 +37,11 @@ async function main() {
         },
         contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
     };
-    await client.sendRequest('textDocument/didChange', didChangeParams);
+    const result = await client.sendRequest(
+        'textDocument/didChange',
+        didChangeParams,
+    );
+    console.log('textDocument/didChang RESULT =', result);
 
     await client.stop();
 }

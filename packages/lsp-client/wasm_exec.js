@@ -555,10 +555,9 @@
 		}
 
 		_resume() {
-			if (this.exited) {
-				throw new Error("Go program has already exited");
+			if (!this.exited) {
+				this._inst.exports.resume();
 			}
-			this._inst.exports.resume();
 			if (this.exited) {
 				this._resolveExitPromise();
 			}

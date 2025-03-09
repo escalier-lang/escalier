@@ -4,7 +4,8 @@ import type * as lsp from 'vscode-languageserver-protocol';
 
 import '../wasm_exec'; // run for side-effects
 
-import type { AsyncResult, Result } from './result';
+import { Deferred } from './deferred';
+import { type AsyncResult, Result } from './result';
 
 const Go = globalThis.Go;
 
@@ -24,7 +25,6 @@ class SimpleStream {
     }
 
     write(chunk: Buffer) {
-        console.log(`[${this.name}:write] ${chunk.toString('utf-8')}`);
         this.chunks.push(chunk);
         this.emitter.emit('data', chunk);
     }
@@ -39,7 +39,7 @@ export class Client {
     private stdin: SimpleStream;
     private stdout: SimpleStream;
     private emitter: EventEmitter;
-    private resolvers: Map<number, (value: Result<unknown, Error>) => void>;
+    private deferreds: Map<number, Deferred<any, Error>>;
     private requestID: number;
     private wasmBuf: Buffer;
 
@@ -47,7 +47,7 @@ export class Client {
         this.stdin = new SimpleStream('stdin');
         this.stdout = new SimpleStream('stdout');
         this.emitter = new EventEmitter();
-        this.resolvers = new Map();
+        this.deferreds = new Map();
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
 
@@ -59,9 +59,14 @@ export class Client {
 
             // TODO: validate the the object being returned is a valid RPC JSON response
             if (object.id != null) {
-                const resolver = this.resolvers.get(object.id);
-                if (resolver) {
-                    resolver(object.result);
+                const defferred = this.deferreds.get(object.id);
+                if (defferred) {
+                    if (object.error) {
+                        defferred.resolve(Result.Err(object.error));
+                    }
+                    if ('result' in object) {
+                        defferred.resolve(Result.Ok(object.result));
+                    }
                 }
             } else {
                 this.emitter.emit(object.method, object.params);
@@ -172,9 +177,16 @@ export class Client {
         const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
 
         this.stdin.write(Buffer.from(message, 'utf-8'));
-        return new Promise((resolve) => {
-            this.resolvers.set(id, resolve);
-        });
+
+        // Some methods don't have a response so we don't need to wait for them
+        if (method === 'textDocument/didChange') {
+            return Promise.resolve(Result.Ok(null));
+        }
+
+        const deferred = new Deferred<any, Error>();
+        this.deferreds.set(id, deferred);
+
+        return deferred.promise;
     }
 
     on(
