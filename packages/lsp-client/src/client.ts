@@ -105,16 +105,7 @@ export class Client {
                     });
                     return;
                 }
-                fs.read(
-                    fd,
-                    buffer,
-                    offset,
-                    length,
-                    position,
-                    (err, bytesRead, buffer) => {
-                        callback(err, bytesRead, buffer);
-                    },
-                );
+                fs.read(fd, buffer, offset, length, position, callback);
             },
 
             write: (
