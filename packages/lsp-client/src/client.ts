@@ -4,7 +4,6 @@ import type * as lsp from 'vscode-languageserver-protocol';
 
 import '../wasm_exec'; // run for side-effects
 
-import { Deferred } from './deferred';
 import { type AsyncResult, Result } from './result';
 
 const Go = globalThis.Go;
@@ -39,7 +38,7 @@ export class Client {
     private stdin: SimpleStream;
     private stdout: SimpleStream;
     private emitter: EventEmitter;
-    private deferreds: Map<number, Deferred<any, Error>>;
+    private resolvers: Map<number, (value: Result<any, Error>) => void>;
     private requestID: number;
     private wasmBuf: Buffer;
 
@@ -47,7 +46,7 @@ export class Client {
         this.stdin = new SimpleStream('stdin');
         this.stdout = new SimpleStream('stdout');
         this.emitter = new EventEmitter();
-        this.deferreds = new Map();
+        this.resolvers = new Map();
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
 
@@ -59,16 +58,18 @@ export class Client {
 
             // TODO: validate the the object being returned is a valid RPC JSON response
             if (object.id != null) {
-                const defferred = this.deferreds.get(object.id);
-                if (defferred) {
+                // Handle response to a client request
+                const resolve = this.resolvers.get(object.id);
+                if (resolve) {
                     if (object.error) {
-                        defferred.resolve(Result.Err(object.error));
+                        resolve(Result.Err(object.error));
                     }
                     if ('result' in object) {
-                        defferred.resolve(Result.Ok(object.result));
+                        resolve(Result.Ok(object.result));
                     }
                 }
             } else {
+                // Handle server initiated message
                 this.emitter.emit(object.method, object.params);
             }
         });
@@ -183,10 +184,9 @@ export class Client {
             return Promise.resolve(Result.Ok(null));
         }
 
-        const deferred = new Deferred<any, Error>();
-        this.deferreds.set(id, deferred);
-
-        return deferred.promise;
+        return new Promise((resolve) => {
+            this.resolvers.set(id, resolve);
+        });
     }
 
     on(

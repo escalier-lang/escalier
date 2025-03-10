@@ -26,6 +26,7 @@ test('initialize', async () => {
         rootUri: 'file:///home/user/project',
         capabilities: {},
     });
+
     expect(initResult).toMatchInlineSnapshot(`
       Ok {
         "value": {
