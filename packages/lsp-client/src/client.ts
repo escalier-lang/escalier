@@ -97,6 +97,11 @@ export class Client {
                         return;
                     }
 
+                    // We use setImmediate before calling the callback so that
+                    // other async code can run before we call the callback.
+                    // Calling the callback immediately prevents all promises
+                    // from running because the server immediately tries to read
+                    // again.
                     setImmediate(() => {
                         const error = new Error();
                         // @ts-ignore
