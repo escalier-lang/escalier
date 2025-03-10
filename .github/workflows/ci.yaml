@@ -50,3 +50,20 @@ jobs:
 
       - name: Biome check
         run: npm run check
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build lsp-server
+        run: npm run lsp-server:wasm
+
+      - name: Run Tests
+        run: npm run coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
