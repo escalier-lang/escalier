@@ -58,7 +58,7 @@ jobs:
         run: go mod download
 
       - name: Build lsp-server
-        run: num run lsp-server:wasm
+        run: npm run lsp-server:wasm
 
       - name: Run Tests
         run: npm run coverage
