@@ -21,6 +21,7 @@ var (
 func main() {
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
+	//nolint:exhaustruct
 	handler = protocol.Handler{
 		Initialize:            initialize,
 		Initialized:           initialized,
