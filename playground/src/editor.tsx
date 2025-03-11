@@ -23,6 +23,7 @@ export const Editor = () => {
                 },
                 model: model,
                 fontSize: 14,
+                automaticLayout: true,
                 'semanticHighlighting.enabled': true,
             });
 
