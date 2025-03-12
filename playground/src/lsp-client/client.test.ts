@@ -28,17 +28,18 @@ test('initialize', async () => {
     });
 
     expect(initResult).toMatchInlineSnapshot(`
-  {
-    "capabilities": {
-      "definitionProvider": true,
-      "textDocumentSync": 1,
-    },
-    "serverInfo": {
-      "name": "escalier",
-      "version": "0.0.1",
-    },
-  }
-`);
+      {
+        "capabilities": {
+          "declarationProvider": true,
+          "definitionProvider": true,
+          "textDocumentSync": 1,
+        },
+        "serverInfo": {
+          "name": "escalier",
+          "version": "0.0.1",
+        },
+      }
+    `);
 });
 
 test('foo/bar', async () => {
