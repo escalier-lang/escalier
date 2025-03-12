@@ -21,50 +21,41 @@ afterEach(() => {
 });
 
 test('initialize', async () => {
-    const initResult = await client.sendRequest('initialize', {
+    const initResult = await client.initialize({
         processId: process.pid,
         rootUri: 'file:///home/user/project',
         capabilities: {},
     });
 
     expect(initResult).toMatchInlineSnapshot(`
-      Ok {
-        "value": {
-          "capabilities": {
-            "textDocumentSync": 1,
-          },
-          "serverInfo": {
-            "name": "escalier",
-            "version": "0.0.1",
-          },
+      {
+        "capabilities": {
+          "declarationProvider": true,
+          "definitionProvider": true,
+          "textDocumentSync": 1,
+        },
+        "serverInfo": {
+          "name": "escalier",
+          "version": "0.0.1",
         },
       }
     `);
 });
 
-test('textDocument/didOpen', async () => {
-    await client.sendRequest('initialize', {
+test('foo/bar', async () => {
+    await client.initialize({
         processId: process.pid,
         rootUri: 'file:///home/user/project',
         capabilities: {},
     });
 
-    // @ts-expect-error: method not supported
-    const result = await client.sendRequest('textDocument/didOpen', {
-        textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
-            languageId: 'escalier',
-            version: 1,
-            text: 'console.log("Hello, world!")\n',
-        },
-    });
+    // @ts-expect-error: sendRequest is private
+    const promise = client.sendRequest('foo/bar', null);
 
-    expect(result).toMatchInlineSnapshot(`
-  Err {
-    "error": {
-      "code": -32601,
-      "message": "method not supported: textDocument/didOpen",
-    },
+    expect(promise).rejects.toMatchInlineSnapshot(`
+  {
+    "code": -32601,
+    "message": "method not supported: foo/bar",
   }
 `);
 });
@@ -72,25 +63,24 @@ test('textDocument/didOpen', async () => {
 test('textDocument/didChange', async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
 
-    client.on('textDocument/publishDiagnostics', (params) => {
+    client.onTextDocumentPublishDiagnostics((params) => {
         console.log('Received diagnostics');
         diagnostics = params.diagnostics;
     });
 
-    await client.sendRequest('initialize', {
+    await client.initialize({
         processId: process.pid,
         rootUri: 'file:///home/user/project',
         capabilities: {},
     });
 
-    const didChangeParams: lsp.DidChangeTextDocumentParams = {
+    client.textDocumentDidChange({
         textDocument: {
             uri: 'file:///home/user/project/foo.esc',
             version: 2,
         },
         contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
-    };
-    await client.sendRequest('textDocument/didChange', didChangeParams);
+    });
 
     await vi.waitFor(() => {
         expect(diagnostics).not.toBeNull();

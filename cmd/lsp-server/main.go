@@ -23,11 +23,14 @@ func main() {
 
 	//nolint:exhaustruct
 	handler = protocol.Handler{
-		Initialize:            initialize,
-		Initialized:           initialized,
-		Shutdown:              shutdown,
-		SetTrace:              setTrace,
-		TextDocumentDidChange: textDocumentDidChange,
+		Initialize:              initialize,
+		Initialized:             initialized,
+		Shutdown:                shutdown,
+		SetTrace:                setTrace,
+		TextDocumentDidOpen:     textDocumentDidOpen,
+		TextDocumentDidChange:   textDocumentDidChange,
+		TextDocumentDeclaration: textDocumentDeclaration,
+		TextDocumentDefinition:  textDocumentDefinition,
 	}
 
 	server := server.NewServer(&handler, lsName, false)
@@ -42,6 +45,8 @@ func main() {
 func initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	capabilities := handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
+	capabilities.DeclarationProvider = true
+	capabilities.DefinitionProvider = true
 
 	return protocol.InitializeResult{
 		Capabilities: capabilities,
@@ -66,51 +71,66 @@ func setTrace(context *glsp.Context, params *protocol.SetTraceParams) error {
 	return nil
 }
 
-func textDocumentDidChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
-	for _, _change := range params.ContentChanges {
-		change := _change.(protocol.TextDocumentContentChangeEventWhole)
-		fmt.Fprintf(os.Stderr, "file changed: %s\n", params.TextDocument.URI)
-		fmt.Fprintf(os.Stderr, "change.Text: %s\n", change.Text)
+func validate(context *glsp.Context, uri protocol.DocumentUri, contents string) {
+	p := parser.NewParser(parser.Source{
+		Contents: contents,
+	})
+	p.ParseModule()
 
-		p := parser.NewParser(parser.Source{
-			Contents: change.Text,
-		})
-		p.ParseModule()
-
-		diagnotics := []protocol.Diagnostic{}
-		documentUri := params.TextDocument.URI
-		for _, err := range p.Errors {
-			fmt.Fprintf(os.Stderr, "error: %#v\n", err)
-			severity := protocol.DiagnosticSeverityError
-			source := "escalier"
-			diagnotics = append(diagnotics, protocol.Diagnostic{
-				Range: protocol.Range{
-					Start: protocol.Position{
-						Line:      protocol.UInteger(err.Span.Start.Line - 1),
-						Character: protocol.UInteger(err.Span.Start.Column - 1),
-					},
-					End: protocol.Position{
-						Line:      protocol.UInteger(err.Span.End.Line - 1),
-						Character: protocol.UInteger(err.Span.End.Column - 1),
-					},
+	diagnotics := []protocol.Diagnostic{}
+	for _, err := range p.Errors {
+		severity := protocol.DiagnosticSeverityError
+		source := "escalier"
+		diagnotics = append(diagnotics, protocol.Diagnostic{
+			Range: protocol.Range{
+				Start: protocol.Position{
+					Line:      protocol.UInteger(err.Span.Start.Line - 1),
+					Character: protocol.UInteger(err.Span.Start.Column - 1),
 				},
-				Severity:           &severity,
-				Code:               nil,
-				CodeDescription:    nil,
-				Source:             &source,
-				Message:            err.Message,
-				Tags:               nil,
-				RelatedInformation: nil,
-				Data:               nil,
-			})
-		}
-
-		go context.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
-			URI:         documentUri,
-			Diagnostics: diagnotics,
-			Version:     nil,
+				End: protocol.Position{
+					Line:      protocol.UInteger(err.Span.End.Line - 1),
+					Character: protocol.UInteger(err.Span.End.Column - 1),
+				},
+			},
+			Severity:           &severity,
+			Code:               nil,
+			CodeDescription:    nil,
+			Source:             &source,
+			Message:            err.Message,
+			Tags:               nil,
+			RelatedInformation: nil,
+			Data:               nil,
 		})
 	}
 
+	go context.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+		URI:         uri,
+		Diagnostics: diagnotics,
+		Version:     nil,
+	})
+}
+
+func textDocumentDidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
+	validate(context, params.TextDocument.URI, params.TextDocument.Text)
 	return nil
+}
+
+func textDocumentDidChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
+	for _, _change := range params.ContentChanges {
+		change := _change.(protocol.TextDocumentContentChangeEventWhole)
+		validate(context, params.TextDocument.URI, change.Text)
+	}
+	return nil
+}
+
+func textDocumentDeclaration(context *glsp.Context, params *protocol.DeclarationParams) (any, error) {
+	fmt.Fprintf(os.Stderr, "textDocumentDeclaration - uri = %s\n", params.TextDocument.URI)
+	err := fmt.Errorf("textDocument/declaration not implemented yet")
+	return nil, err
+}
+
+func textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
+	fmt.Fprintf(os.Stderr, "textDocumentDefinition - uri = %s\n", params.TextDocument.URI)
+	err := fmt.Errorf("textDocument/definition not implemented yet")
+	return nil, err
 }

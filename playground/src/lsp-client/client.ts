@@ -1,9 +1,8 @@
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 
+import { Deferred } from './deferred';
 import './wasm_exec'; // run for side-effects
-
-import { type AsyncResult, Result } from './result';
 
 const Go = globalThis.Go;
 
@@ -38,7 +37,7 @@ export class Client {
     private stdin: SimpleStream;
     private stdout: SimpleStream;
     private emitter: EventEmitter;
-    private resolvers: Map<number, (value: Result<any, Error>) => void>;
+    private deferreds: Map<number, Deferred>;
     private requestID: number;
     private wasmBuf: ArrayBuffer;
 
@@ -46,7 +45,7 @@ export class Client {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
-        this.resolvers = new Map();
+        this.deferreds = new Map();
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
 
@@ -59,13 +58,13 @@ export class Client {
             // TODO: validate the the object being returned is a valid RPC JSON response
             if (object.id != null) {
                 // Handle response to a client request
-                const resolve = this.resolvers.get(object.id);
-                if (resolve) {
+                const deferred = this.deferreds.get(object.id);
+                if (deferred) {
                     if (object.error) {
-                        resolve(Result.Err(object.error));
+                        deferred.reject(object.error);
                     }
                     if ('result' in object) {
-                        resolve(Result.Ok(object.result));
+                        deferred.resolve(object.result);
                     }
                 }
             } else {
@@ -137,7 +136,7 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else if (fd === 2) {
-                    console.log('[Escalier LSP] -', decoder.decode(buffer));
+                    console.warn('[Escalier LSP] -', decoder.decode(buffer));
                     setTimeout(() => {
                         callback(null, length, buffer);
                     }, 0);
@@ -234,53 +233,107 @@ export class Client {
         return this.go.run(instance);
     }
 
-    async stop() {
-        await this.sendRequest('shutdown', null);
-        await this.sendRequest('exit', null);
+    //
+    // Lifecycle methods
+    //
+
+    async initialize(params: lsp.InitializeParams) {
+        return this.sendRequest('initialize', params);
     }
 
-    async sendRequest(
-        method: 'initialize',
-        params: lsp.InitializeParams,
-    ): AsyncResult<lsp.InitializeResult, Error>;
-    async sendRequest(
-        method: '$/setTrace',
-        params: lsp.SetTraceParams,
-    ): AsyncResult<lsp.InitializeResult, Error>;
-    async sendRequest(
-        method: 'shutdown',
-        params: null,
-    ): AsyncResult<void, Error>;
-    async sendRequest(method: 'exit', params: null): AsyncResult<void, Error>;
-    async sendRequest(
-        method: 'textDocument/didChange',
-        params: lsp.DidChangeTextDocumentParams,
-    ): AsyncResult<void, Error>;
-    async sendRequest(method: string, params: any): AsyncResult<any, Error> {
+    async setTrace(params: lsp.SetTraceParams) {
+        return this.sendRequest('$/setTrace', params);
+    }
+
+    async shutdown() {
+        return this.fireAndForget('shutdown', null);
+    }
+
+    async stop() {
+        await this.shutdown();
+        await this.exit();
+    }
+
+    async exit() {
+        return this.fireAndForget('exit', null);
+    }
+
+    //
+    // Document Synchronization methods
+    //
+
+    textDocumentDidOpen(params: lsp.DidOpenTextDocumentParams) {
+        return this.fireAndForget('textDocument/didOpen', params);
+    }
+
+    textDocumentDidChange(params: lsp.DidChangeTextDocumentParams) {
+        return this.fireAndForget('textDocument/didChange', params);
+    }
+
+    textDocumentWillSave(params: lsp.WillSaveTextDocumentParams) {
+        return this.fireAndForget('textDocument/willSave', params);
+    }
+
+    // textDocumentWillSaveWaitUntil
+
+    textDocumentDidSave(params: lsp.DidSaveTextDocumentParams) {
+        return this.fireAndForget('textDocument/didSave', params);
+    }
+
+    textDocumentDidClose(params: lsp.DidCloseTextDocumentParams) {
+        return this.fireAndForget('textDocument/didClose', params);
+    }
+
+    //
+    // Language Features
+    //
+
+    textDocumentDeclaration(
+        params: lsp.DeclarationParams,
+    ): Promise<lsp.Location | lsp.Location[] | lsp.LocationLink[] | null> {
+        return this.sendRequest('textDocument/declaration', params);
+    }
+
+    textDocumentDefinition(
+        params: lsp.DefinitionParams,
+    ): Promise<lsp.Location | lsp.Location[] | lsp.LocationLink[] | null> {
+        return this.sendRequest('textDocument/definition', params);
+    }
+
+    // Go to type definition
+
+    // Go to implementation
+
+    private fireAndForget(method: string, params: any) {
+        const id = this.requestID++;
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+        const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
+        this.stdin.write(encoder.encode(message));
+    }
+
+    private async sendRequest(method: string, params: any): Promise<any> {
         const id = this.requestID++;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
         const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
         this.stdin.write(encoder.encode(message));
 
-        // Some methods don't have a response so we don't need to wait for them
-        if (method === 'textDocument/didChange') {
-            return Promise.resolve(Result.Ok(null));
-        }
+        const deferred = new Deferred();
+        this.deferreds.set(id, deferred);
 
-        return new Promise((resolve) => {
-            this.resolvers.set(id, resolve);
-        });
+        return deferred.promise;
     }
 
-    on(
-        method: 'textDocument/publishDiagnostics',
+    onTextDocumentPublishDiagnostics(
         callback: (params: lsp.PublishDiagnosticsParams) => void,
-    ): void;
-    on(
-        method: 'window/logMessage',
-        callback: (params: lsp.LogMessageParams) => void,
-    ): void;
-    on(method: string, callback: (params: any) => void) {
+    ) {
+        this.on('textDocument/publishDiagnostics', callback);
+    }
+
+    onWindowLogMessage(callback: (params: lsp.LogMessageParams) => void) {
+        this.on('window/logMessage', callback);
+    }
+
+    private on(method: string, callback: (params: any) => void) {
         this.emitter.on(method, callback);
     }
 }

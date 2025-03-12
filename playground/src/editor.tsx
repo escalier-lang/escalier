@@ -5,7 +5,6 @@ import styles from './editor.module.css';
 
 import { initialCode } from './examples';
 import { languageID } from './language';
-import { createModel } from './model';
 
 export const Editor = () => {
     const divRef = useRef(null);
@@ -13,7 +12,12 @@ export const Editor = () => {
     useEffect(() => {
         const monacoEl = divRef.current;
         if (monacoEl) {
-            const model = createModel(initialCode);
+            const model = monaco.editor.createModel(
+                initialCode,
+                languageID,
+                monaco.Uri.parse('file:///home/user/project/foo.esc'),
+            );
+
             const editor = monaco.editor.create(monacoEl, {
                 language: languageID,
                 value: initialCode,
@@ -28,6 +32,7 @@ export const Editor = () => {
             });
 
             return () => {
+                model.dispose();
                 editor.dispose();
             };
         }
