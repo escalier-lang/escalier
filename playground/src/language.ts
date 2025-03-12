@@ -1,211 +1,325 @@
 import * as monaco from 'monaco-editor-core';
-import type * as lsp from 'vscode-languageserver-protocol';
+import * as lsp from 'vscode-languageserver-protocol';
 
-import wasmUrl from '../../bin/lsp-server.wasm?url';
-
-import { Client } from './lsp-client/client';
+import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
 export const languageID = 'escalier';
 
-monaco.languages.register({ id: languageID });
-monaco.languages.onLanguage(languageID, async () => {
-    console.log(`onLanguage called for ${languageID}`);
-    console.log('Client = ', Client);
-    console.log('wasmUrl = ', wasmUrl);
+function convertSeverity(
+    severity?: lsp.DiagnosticSeverity,
+): monaco.MarkerSeverity {
+    switch (severity) {
+        case lsp.DiagnosticSeverity.Error:
+            return monaco.MarkerSeverity.Error;
+        case lsp.DiagnosticSeverity.Warning:
+            return monaco.MarkerSeverity.Warning;
+        case lsp.DiagnosticSeverity.Information:
+            return monaco.MarkerSeverity.Info;
+        case lsp.DiagnosticSeverity.Hint:
+            return monaco.MarkerSeverity.Hint;
+        default:
+            return monaco.MarkerSeverity.Error;
+    }
+}
 
-    const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
-    const client = new Client(wasmBuffer);
+export function setupLanguage(client: Client) {
+    monaco.languages.register({ id: languageID });
 
-    client.run();
-    client.on(
-        'textDocument/publishDiagnostics',
+    client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
-            console.log('textDocument/publishDiagnostics', params);
-        },
-    );
+            const models = monaco.editor.getModels();
+            const model = models.find(
+                (model) => model.uri.toString() === params.uri,
+            );
 
-    const initParams: lsp.InitializeParams = {
-        processId: process.pid,
-        rootUri: 'file:///home/user/project',
-        capabilities: {},
-    };
-    const initResponse = await client.sendRequest('initialize', initParams);
-    console.log('initialize response', initResponse);
-
-    const didChangeParams: lsp.DidChangeTextDocumentParams = {
-        textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
-            version: 2,
-        },
-        contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
-    };
-    const didChangeResponse = await client.sendRequest(
-        'textDocument/didChange',
-        didChangeParams,
-    );
-    console.log('textDocument/didChange response', didChangeResponse);
-
-    await client.stop();
-});
-monaco.languages.setMonarchTokensProvider(languageID, monarchLanguage);
-monaco.languages.setLanguageConfiguration(languageID, {
-    brackets: [
-        ['(', ')'],
-        ['{', '}'],
-    ],
-});
-monaco.languages.registerHoverProvider(languageID, {
-    provideHover(_model, _position, _token, _context) {
-        return {
-            contents: [
-                { value: 'This should show the type of the hovered item' },
-            ],
-        };
-    },
-});
-
-const legend: monaco.languages.SemanticTokensLegend = {
-    tokenTypes: [
-        'comment',
-        'string',
-        'keyword',
-        'number',
-        'regexp',
-        'operator',
-        'namespace',
-        'type',
-        'struct',
-        'class',
-        'interface',
-        'enum',
-        'typeParameter',
-        'function',
-        'member',
-        'macro',
-        'variable',
-        'parameter',
-        'property',
-        'label',
-    ],
-    tokenModifiers: [
-        'declaration',
-        'documentation',
-        'readonly',
-        'static',
-        'abstract',
-        'deprecated',
-        'modification',
-        'async',
-    ],
-};
-
-function getType(type: string) {
-    return legend.tokenTypes.indexOf(type);
-}
-
-function getModifier(modifiers: string | string[]) {
-    if (typeof modifiers === 'string') {
-        // biome-ignore lint:
-        modifiers = [modifiers];
-    }
-    if (Array.isArray(modifiers)) {
-        let nModifiers = 0;
-        for (const modifier of modifiers) {
-            const nModifier = legend.tokenModifiers.indexOf(modifier);
-            if (nModifier > -1) {
-                nModifiers |= (1 << nModifier) >>> 0;
+            if (!model) {
+                return;
             }
-        }
-        return nModifiers;
-    }
-    return 0;
-}
 
-const tokenPattern = /([a-zA-Z]+)((?:\.[a-zA-Z]+)*)/g;
+            const markers: monaco.editor.IMarkerData[] = params.diagnostics.map(
+                (diagnostic): monaco.editor.IMarkerData => {
+                    return {
+                        severity: convertSeverity(diagnostic.severity),
+                        startLineNumber: diagnostic.range.start.line + 1,
+                        startColumn: diagnostic.range.start.character + 1,
+                        endLineNumber: diagnostic.range.end.line + 1,
+                        endColumn: diagnostic.range.end.character + 1,
+                        message: diagnostic.message,
+                    };
+                },
+            );
+            monaco.editor.setModelMarkers(model, languageID, markers);
+        },
+    );
 
-monaco.languages.registerDocumentSemanticTokensProvider(languageID, {
-    getLegend() {
-        return legend;
-    },
-    provideDocumentSemanticTokens(
-        model,
-        _lastResultId,
-        _token,
-    ): monaco.languages.ProviderResult<
-        monaco.languages.SemanticTokens | monaco.languages.SemanticTokensEdits
-    > {
-        const lines = model.getLinesContent();
+    monaco.editor.onDidCreateModel((model) => {
+        console.log('onDidCreateModel', model.uri.toString());
 
-        const data: number[] = [];
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: model.uri.toString(),
+                languageId: languageID,
+                version: model.getVersionId(),
+                text: model.getValue(),
+            },
+        });
 
-        let prevLine = 0;
-        let prevChar = 0;
+        model.onDidChangeContent(() => {
+            client.textDocumentDidChange({
+                textDocument: {
+                    uri: model.uri.toString(),
+                    version: model.getVersionId(),
+                },
+                contentChanges: [
+                    {
+                        text: model.getValue(),
+                    },
+                ],
+            });
+        });
+    });
 
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            line.matchAll(tokenPattern);
+    monaco.editor.onWillDisposeModel((model) => {
+        console.log('onWillDisposeModel', model.uri.toString());
 
-            for (const match of line.matchAll(tokenPattern)) {
-                // translate token and modifiers to number representations
-                const type = getType(match[1]);
-                if (type === -1) {
-                    continue;
+        client.textDocumentDidClose({
+            textDocument: {
+                uri: model.uri.toString(),
+            },
+        });
+    });
+
+    monaco.languages.onLanguage(languageID, async () => {
+        console.log(`onLanguage called for ${languageID}`);
+    });
+
+    monaco.languages.registerDeclarationProvider(languageID, {
+        async provideDeclaration(model, position, _token) {
+            try {
+                const decl = await client.textDocumentDeclaration({
+                    textDocument: {
+                        uri: model.uri.toString(),
+                    },
+                    position: {
+                        line: position.lineNumber,
+                        character: position.column,
+                    },
+                });
+
+                if (lsp.Location.is(decl)) {
+                    return {
+                        uri: monaco.Uri.parse(decl.uri),
+                        range: {
+                            startLineNumber: decl.range.start.line,
+                            startColumn: decl.range.start.character,
+                            endLineNumber: decl.range.end.line,
+                            endColumn: decl.range.end.character,
+                        },
+                    };
                 }
-                const modifier = match[2].length
-                    ? getModifier(match[2].split('.').slice(1))
-                    : 0;
 
-                data.push(
-                    // translate line to deltaLine
-                    i - prevLine,
-                    // for the same line, translate start to deltaStart
-                    prevLine === i ? match.index - prevChar : match.index,
-                    match[0].length,
-                    type,
-                    modifier,
-                );
-
-                prevLine = i;
-                prevChar = match.index;
+                throw new Error('TODO: handle Location[] and LocationLink[]');
+            } catch (e) {
+                console.error(e);
             }
+        },
+    });
+
+    monaco.languages.registerDefinitionProvider(languageID, {
+        async provideDefinition(model, position, _token) {
+            try {
+                console.log('provideDefinition called');
+                const def = await client.textDocumentDefinition({
+                    textDocument: {
+                        uri: model.uri.toString(),
+                    },
+                    position: {
+                        line: position.lineNumber,
+                        character: position.column,
+                    },
+                });
+                console.log('def = ', def);
+
+                if (lsp.Location.is(def)) {
+                    return {
+                        uri: monaco.Uri.parse(def.uri),
+                        range: {
+                            startLineNumber: def.range.start.line,
+                            startColumn: def.range.start.character,
+                            endLineNumber: def.range.end.line,
+                            endColumn: def.range.end.character,
+                        },
+                    };
+                }
+
+                throw new Error('TODO: handle Location[] and LocationLink[]');
+            } catch (e) {
+                console.error(e);
+            }
+        },
+    });
+
+    monaco.languages.setMonarchTokensProvider(languageID, monarchLanguage);
+    monaco.languages.setLanguageConfiguration(languageID, {
+        brackets: [
+            ['(', ')'],
+            ['{', '}'],
+        ],
+    });
+    monaco.languages.registerHoverProvider(languageID, {
+        provideHover(_model, _position, _token, _context) {
+            return {
+                contents: [
+                    { value: 'This should show the type of the hovered item' },
+                ],
+            };
+        },
+    });
+
+    const legend: monaco.languages.SemanticTokensLegend = {
+        tokenTypes: [
+            'comment',
+            'string',
+            'keyword',
+            'number',
+            'regexp',
+            'operator',
+            'namespace',
+            'type',
+            'struct',
+            'class',
+            'interface',
+            'enum',
+            'typeParameter',
+            'function',
+            'member',
+            'macro',
+            'variable',
+            'parameter',
+            'property',
+            'label',
+        ],
+        tokenModifiers: [
+            'declaration',
+            'documentation',
+            'readonly',
+            'static',
+            'abstract',
+            'deprecated',
+            'modification',
+            'async',
+        ],
+    };
+
+    function getType(type: string) {
+        return legend.tokenTypes.indexOf(type);
+    }
+
+    function getModifier(modifiers: string | string[]) {
+        if (typeof modifiers === 'string') {
+            // biome-ignore lint:
+            modifiers = [modifiers];
         }
-        return {
-            data: new Uint32Array(data),
-            resultId: undefined,
-        };
-    },
-    releaseDocumentSemanticTokens(_resultId: string | undefined) {},
-});
+        if (Array.isArray(modifiers)) {
+            let nModifiers = 0;
+            for (const modifier of modifiers) {
+                const nModifier = legend.tokenModifiers.indexOf(modifier);
+                if (nModifier > -1) {
+                    nModifiers |= (1 << nModifier) >>> 0;
+                }
+            }
+            return nModifiers;
+        }
+        return 0;
+    }
 
-monaco.editor.defineTheme('escalier-theme', {
-    base: 'vs-dark',
-    inherit: true,
-    colors: {},
-    rules: [
-        { token: 'comment', foreground: 'aaaaaa', fontStyle: 'italic' },
-        { token: 'keyword', foreground: 'ce63eb' },
-        { token: 'operator', foreground: 'FFFFFF' },
-        { token: 'namespace', foreground: '66afce' },
+    const tokenPattern = /([a-zA-Z]+)((?:\.[a-zA-Z]+)*)/g;
 
-        { token: 'string', foreground: 'DD9933' },
-        { token: 'number', foreground: '00CC00' },
-        { token: 'type', foreground: '1db010' },
-        { token: 'struct', foreground: '0000ff' },
-        { token: 'class', foreground: '0000ff', fontStyle: 'italic bold' },
-        { token: 'interface', foreground: '007700', fontStyle: 'bold' },
-        { token: 'enum', foreground: '0077ff', fontStyle: 'bold' },
-        { token: 'typeParameter', foreground: '1db010' },
-        { token: 'function', foreground: '94763a' },
+    monaco.languages.registerDocumentSemanticTokensProvider(languageID, {
+        getLegend() {
+            return legend;
+        },
+        provideDocumentSemanticTokens(
+            model,
+            _lastResultId,
+            _token,
+        ): monaco.languages.ProviderResult<
+            | monaco.languages.SemanticTokens
+            | monaco.languages.SemanticTokensEdits
+        > {
+            const lines = model.getLinesContent();
 
-        { token: 'member', foreground: '94763a' },
-        { token: 'macro', foreground: '615a60' },
-        { token: 'variable', foreground: '3e5bbf' },
-        { token: 'parameter', foreground: '3e5bbf' },
-        { token: 'property', foreground: '3e5bbf' },
-        { token: 'label', foreground: '615a60' },
+            const data: number[] = [];
 
-        { token: 'type.static', fontStyle: 'bold' },
-        { token: 'class.static', foreground: 'ff0000', fontStyle: 'bold' },
-    ],
-});
+            let prevLine = 0;
+            let prevChar = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                line.matchAll(tokenPattern);
+
+                for (const match of line.matchAll(tokenPattern)) {
+                    // translate token and modifiers to number representations
+                    const type = getType(match[1]);
+                    if (type === -1) {
+                        continue;
+                    }
+                    const modifier = match[2].length
+                        ? getModifier(match[2].split('.').slice(1))
+                        : 0;
+
+                    data.push(
+                        // translate line to deltaLine
+                        i - prevLine,
+                        // for the same line, translate start to deltaStart
+                        prevLine === i ? match.index - prevChar : match.index,
+                        match[0].length,
+                        type,
+                        modifier,
+                    );
+
+                    prevLine = i;
+                    prevChar = match.index;
+                }
+            }
+            return {
+                data: new Uint32Array(data),
+                resultId: undefined,
+            };
+        },
+        releaseDocumentSemanticTokens(_resultId: string | undefined) {},
+    });
+
+    monaco.editor.defineTheme('escalier-theme', {
+        base: 'vs-dark',
+        inherit: true,
+        colors: {},
+        rules: [
+            { token: 'comment', foreground: 'aaaaaa', fontStyle: 'italic' },
+            // { token: 'keyword', foreground: 'ce63eb' },
+            { token: 'operator', foreground: 'FFFFFF' },
+            { token: 'namespace', foreground: '66afce' },
+
+            { token: 'string', foreground: 'DD9933' },
+            // { token: 'number', foreground: '00CC00' },
+            { token: 'type', foreground: '1db010' },
+            { token: 'struct', foreground: '0000ff' },
+            { token: 'class', foreground: '0000ff', fontStyle: 'italic bold' },
+            { token: 'interface', foreground: '007700', fontStyle: 'bold' },
+            { token: 'enum', foreground: '0077ff', fontStyle: 'bold' },
+            { token: 'typeParameter', foreground: '1db010' },
+            { token: 'function', foreground: '94763a' },
+
+            { token: 'member', foreground: '94763a' },
+            { token: 'macro', foreground: '615a60' },
+            { token: 'variable', foreground: '3e5bbf' },
+            { token: 'parameter', foreground: '3e5bbf' },
+            { token: 'property', foreground: '3e5bbf' },
+            { token: 'label', foreground: '615a60' },
+
+            { token: 'type.static', fontStyle: 'bold' },
+            { token: 'class.static', foreground: 'ff0000', fontStyle: 'bold' },
+        ],
+    });
+}

@@ -1,10 +1,37 @@
 import ReactDOM from 'react-dom/client';
+
+import wasmUrl from '../../bin/lsp-server.wasm?url';
+
 import { Editor } from './editor';
+import { setupLanguage } from './language';
+import { Client } from './lsp-client/client';
 import './user-worker';
 
-const root = document.getElementById('root');
+async function main() {
+    const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
 
-if (!root) {
-    throw new Error('Root element not found');
+    // Create a new client for the language server and
+    // initialize it with the process ID and root URI.
+    const client = new Client(wasmBuffer);
+    client.run();
+    const initResponse = await client.initialize({
+        processId: process.pid,
+        rootUri: 'file:///home/user/project',
+        capabilities: {},
+    });
+    console.log('initialize response', initResponse);
+
+    setupLanguage(client);
+
+    const root = document.getElementById('root');
+
+    if (!root) {
+        throw new Error('Root element not found');
+    }
+
+    ReactDOM.createRoot(root).render(<Editor />);
 }
-ReactDOM.createRoot(root).render(<Editor />);
+
+main().then(() => {
+    console.log('App loaded');
+});
