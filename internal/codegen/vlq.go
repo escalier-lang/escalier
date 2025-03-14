@@ -28,20 +28,17 @@ func VLQEncode(value int) string {
 		if first {
 			chunk = (value & 0xF) << 1 // Get the 4-bit value chunk
 			value >>= 4
-			if value > 0 {
-				// If there are more bits to encode, set the continuation bit
-				chunk |= 0x20
-			}
 			if negative {
 				chunk |= 0x01
 			}
 		} else {
 			chunk = value & 0x1F // Get the 6-bit value chunk
 			value >>= 5
-			if value > 0 {
-				// If there are more bits to encode, set the continuation bit
-				chunk |= 0x20
-			}
+		}
+
+		if value > 0 {
+			// If there are more bits to encode, set the continuation bit
+			chunk |= 0x20
 		}
 
 		// Append the chunk to the result
