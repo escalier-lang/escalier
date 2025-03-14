@@ -1,8 +1,11 @@
 package codegen
 
-import "testing"
+import (
+	"testing"
 
-// To test this could have a generated file like:
+	"github.com/gkampitakis/go-snaps/snaps"
+)
+
 // GENERATED: var foo=5;var bar=\n'hello';var baz=true
 // SOURCE: let foo = 5;\nlet bar = 'hello';\nlet baz = true;
 
@@ -98,4 +101,18 @@ func TestEncodeSegments(t *testing.T) {
 	if encoded != expected {
 		t.Errorf("EncodeSegments() = %s; want %s", encoded, expected)
 	}
+
+	sourcemap := SourceMap{
+		Version:        3,
+		File:           "output.js",
+		Sources:        []string{"input.esc"},
+		SourcesContent: []string{"let foo = 5;\nlet bar = 'hello';\nlet baz = true;"},
+		Names:          []string{},
+		Mappings:       "AAAA,IAAI,IAAM,EACV,IAAI;AAAM,QACV,IAAI,IAAM",
+	}
+	json, err := GenerateSourceMap(sourcemap)
+	if err != nil {
+		t.Errorf("GenerateSourceMap() = %s; want nil", err)
+	}
+	snaps.MatchSnapshot(t, json)
 }

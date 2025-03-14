@@ -10,7 +10,7 @@ func TestVLQEncode(t *testing.T) {
 		value    int
 		expected string
 	}{
-		{0, ""}, // edge case: encoding zero (should be empty string)
+		{0, "A"}, // edge case: encoding zero (should be empty string)
 		{17, "iB"},
 		{-17, "jB"},
 	}

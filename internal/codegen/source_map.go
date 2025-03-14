@@ -1,22 +1,22 @@
 package codegen
 
-// type Mapping struct {
-// 	GeneratedLine   int32 // 0-based
-// 	GeneratedColumn int32 // 0-based count of UTF-16 code units
-
-// 	SourceIndex    int32       // 0-based
-// 	OriginalLine   int32       // 0-based
-// 	OriginalColumn int32       // 0-based count of UTF-16 code units
-// 	OriginalName   ast.Index32 // 0-based, optional
-// }
+import "encoding/json"
 
 type SourceMap struct {
-	Version        int    // this should always be the number 3
-	File           string `json:"omitempty"` //
-	Sources        []string
-	SourcesContent []string
-	Names          []string
-	Mappings       string
+	Version        int      `json:"version"`        // this should always be the number 3
+	File           string   `json:"file"`           // the generated file
+	Sources        []string `json:"sources"`        // the original files
+	SourcesContent []string `json:"sourcesContent"` // TODO: check that omitting this works
+	Names          []string `json:"names"`          // TODO: investigate using this
+	Mappings       string   `json:"mappings"`
+}
+
+func GenerateSourceMap(sourcemap SourceMap) (string, error) {
+	bytes, err := json.Marshal(sourcemap)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 // represents a single segment of a generated line
@@ -35,12 +35,14 @@ type Segment struct {
 
 func EncodeSegments(groups [][]*Segment) string {
 	output := ""
-	prevGenStartCol := -1  // TODO: reset after each line
-	prevSrcStartLine := -1 // TODO: don't reset after each line
-	prevSrcStartCol := -1  // TODO: don't reset after each line
+	prevGenStartCol := -1
+	prevSrcStartLine := -1
+	prevSrcStartCol := -1
 
 	for j, g := range groups {
 		if j > 0 {
+			// This is the only field that is suppoed to be reset after each
+			// line in the generated code.
 			prevGenStartCol = -1
 			output += ";"
 		}
