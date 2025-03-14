@@ -14,7 +14,9 @@
             "**/node_modules/**",
             "wasm_exec.js",
             "web-assembly.d.ts",
-            "wasm-client.ts"
+            "wasm-client.ts",
+            "**/examples/**",
+            "**/dist/**"
         ]
     },
     "formatter": {

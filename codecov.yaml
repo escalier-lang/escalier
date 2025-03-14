@@ -3,3 +3,4 @@ ignore:
   - "internal/parser/token.go"
   - "cmd/**/*.go"
   - "wasm_exec.js"
+  - "**/examples/**"

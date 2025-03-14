@@ -1,0 +1,10 @@
+{
+    "version": 3,
+    "file": "bundle.js",
+    "sourceRoot": "",
+    "sources": ["test.js"],
+    "sourcesContent": ["let foo = 5;\nlet bar = 'hello';\nlet baz = true;\n"],
+    "names": [],
+    "mappings": "AAAA,IAAI,IAAM,EACV,IAAI;AAAM,QACV,IAAI,IAAM",
+    "ignoreList": []
+}
