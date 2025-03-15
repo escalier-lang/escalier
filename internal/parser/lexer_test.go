@@ -15,7 +15,7 @@ func TestMain(m *testing.M) {
 
 func TestLexingKeywords(t *testing.T) {
 	source := Source{
-		path:     "input.esc",
+		Path:     "input.esc",
 		Contents: "fn var val",
 	}
 
@@ -26,7 +26,7 @@ func TestLexingKeywords(t *testing.T) {
 
 func TestLexingOperators(t *testing.T) {
 	source := Source{
-		path:     "input.esc",
+		Path:     "input.esc",
 		Contents: "+ - * / =",
 	}
 
@@ -37,7 +37,7 @@ func TestLexingOperators(t *testing.T) {
 
 func TestLexingIdentifiers(t *testing.T) {
 	source := Source{
-		path:     "input.esc",
+		Path:     "input.esc",
 		Contents: "foo\nbar",
 	}
 
@@ -48,7 +48,7 @@ func TestLexingIdentifiers(t *testing.T) {
 
 func TestLexingLiterals(t *testing.T) {
 	source := Source{
-		path:     "input.esc",
+		Path:     "input.esc",
 		Contents: "\"hello\"",
 	}
 
@@ -59,7 +59,7 @@ func TestLexingLiterals(t *testing.T) {
 
 func TestLexingParens(t *testing.T) {
 	source := Source{
-		path:     "input.esc",
+		Path:     "input.esc",
 		Contents: "a * (b + c)",
 	}
 

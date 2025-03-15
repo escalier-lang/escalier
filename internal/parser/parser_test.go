@@ -75,12 +75,12 @@ func TestParseExprNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := Source{
-				path:     "input.esc",
+				Path:     "input.esc",
 				Contents: test.input,
 			}
 
 			parser := NewParser(source)
-			expr := parser.parseExpr()
+			expr := parser.ParseExpr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Len(t, parser.Errors, 0)
@@ -122,12 +122,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := Source{
-				path:     "input.esc",
+				Path:     "input.esc",
 				Contents: test.input,
 			}
 
 			parser := NewParser(source)
-			expr := parser.parseExpr()
+			expr := parser.ParseExpr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Greater(t, len(parser.Errors), 0)
@@ -183,7 +183,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := Source{
-				path:     "input.esc",
+				Path:     "input.esc",
 				Contents: test.input,
 			}
 
@@ -228,7 +228,7 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := Source{
-				path:     "input.esc",
+				Path:     "input.esc",
 				Contents: test.input,
 			}
 
@@ -275,7 +275,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := Source{
-				path:     "input.esc",
+				Path:     "input.esc",
 				Contents: test.input,
 			}
 

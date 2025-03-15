@@ -6,7 +6,7 @@ import (
 )
 
 type Source struct {
-	path     string
+	Path     string
 	Contents string
 }
 

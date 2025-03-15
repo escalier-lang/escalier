@@ -1,0 +1,1 @@
+{"version":3,"file":"output3.js","sources":["input3.esc"],"sourcesContent":["fn add(a, b) {\n  return a + b\n}\nfn sub(a, b) { return a - b }\n"],"names":[],"mappings":"AAAA;EACE,OAAO;;AAET;EAAe,OAAO"}
