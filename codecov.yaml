@@ -1,7 +1,6 @@
 ignore:
-  - "internal/parser/ast.go"
+  - "**/ast.go"
   - "internal/parser/token.go"
   - "cmd/**/*.go"
   - "wasm_exec.js"
   - "**/examples/**"
-  - "ast.go"
