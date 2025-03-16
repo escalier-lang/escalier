@@ -1,16 +1,20 @@
 package compiler
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
 )
 
-func Compile(input string) string {
+type CompilerOutput struct {
+	Errors    []*parser.Error
+	JS        string
+	SourceMap string
+}
 
-	source := parser.Source{
-		Path:     "input.esc",
-		Contents: input,
-	}
+func Compile(source parser.Source) CompilerOutput {
 	p1 := parser.NewParser(source)
 	escMod := p1.ParseModule()
 	jsMod := codegen.TransformModule(escMod)
@@ -20,9 +24,14 @@ func Compile(input string) string {
 
 	output := p2.Output
 
-	// TODO: generate sourcemap
+	outfile := strings.TrimSuffix(source.Path, filepath.Ext(source.Path)) + ".js"
+	sourceMap := codegen.GenerateSourceMap(source, jsMod, outfile)
 
-	return output
+	return CompilerOutput{
+		Errors:    p1.Errors,
+		JS:        output,
+		SourceMap: sourceMap,
+	}
 }
 
 type SourceMapGenerator struct {

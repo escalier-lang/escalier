@@ -15,12 +15,12 @@ type SourceMap struct {
 	Mappings       string   `json:"mappings"`
 }
 
-func SerializeSourceMap(sourcemap SourceMap) (string, error) {
+func SerializeSourceMap(sourcemap SourceMap) string {
 	bytes, err := json.Marshal(sourcemap)
 	if err != nil {
-		return "", err
+		panic(err)
 	}
-	return string(bytes), nil
+	return string(bytes)
 }
 
 // represents a single segment of a generated line
@@ -158,7 +158,7 @@ func (s *SourceMapGenerator) TraverseExpr(expr *Expr) {
 	s.AddSegmentForNode(expr)
 }
 
-func GenerateSourceMap(source parser.Source, jsMod *Module, outName string) (string, error) {
+func GenerateSourceMap(source parser.Source, jsMod *Module, outName string) string {
 	s := &SourceMapGenerator{
 		groups: [][]*Segment{},
 	}

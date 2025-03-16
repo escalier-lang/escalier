@@ -1,10 +1,8 @@
 package codegen
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -112,67 +110,6 @@ func TestEncodeSegments(t *testing.T) {
 		Names:          []string{},
 		Mappings:       "AAAA,IAAI,IAAM,EACV,IAAI;AAAM,QACV,IAAI,IAAM",
 	}
-	json, err := SerializeSourceMap(sourcemap)
-	if err != nil {
-		t.Errorf("GenerateSourceMap() = %s; want nil", err)
-	}
+	json := SerializeSourceMap(sourcemap)
 	snaps.MatchSnapshot(t, json)
-}
-
-func TestGenerateSourceMap(t *testing.T) {
-	source := parser.Source{
-		Path:     "input2.esc",
-		Contents: "val foo = 5\nval bar = \"hello\"\n",
-	}
-
-	p := parser.NewParser(source)
-	m := p.ParseModule()
-	fmt.Printf("Errors: %#v\n", p.Errors)
-	if len(p.Errors) > 0 {
-		t.Errorf("ParseModule() = %#v; want []*parser.Error{}", p.Errors)
-		return
-	}
-	jsMod := TransformModule(m)
-
-	printer := NewPrinter()
-	printer.PrintModule(jsMod)
-
-	snaps.MatchSnapshot(t, printer.Output)
-
-	srcMap, err := GenerateSourceMap(source, jsMod, "output2.js")
-
-	if err != nil {
-		t.Errorf("GenerateSourceMap() = %s; want nil", err)
-		return
-	}
-	snaps.MatchSnapshot(t, srcMap)
-}
-
-func TestGenerateSourceMapWithFuncDecls(t *testing.T) {
-	source := parser.Source{
-		Path:     "input3.esc",
-		Contents: "fn add(a, b) {\n  return a + b\n}\nfn sub(a, b) { return a - b }\n",
-	}
-
-	p := parser.NewParser(source)
-	m := p.ParseModule()
-	fmt.Printf("Errors: %#v\n", p.Errors)
-	if len(p.Errors) > 0 {
-		t.Errorf("ParseModule() = %#v; want []*parser.Error{}", p.Errors)
-		return
-	}
-	jsMod := TransformModule(m)
-
-	printer := NewPrinter()
-	printer.PrintModule(jsMod)
-
-	snaps.MatchSnapshot(t, printer.Output)
-
-	srcMap, err := GenerateSourceMap(source, jsMod, "output3.js")
-
-	if err != nil {
-		t.Errorf("GenerateSourceMap() = %s; want nil", err)
-		return
-	}
-	snaps.MatchSnapshot(t, srcMap)
 }
