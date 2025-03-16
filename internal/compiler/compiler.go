@@ -99,13 +99,3 @@ func (s *SourceMapGenerator) TraverseDecl(decl *codegen.Decl) {
 func (s *SourceMapGenerator) TraverseExpr(expr *codegen.Expr) {
 	s.AddSegmentForNode(expr)
 }
-
-func GenerateSourceMap(jsMod *codegen.Module) string {
-
-	// TODO:
-	// - traverse the AST
-	// - output a bunch of Segment objects
-	// - we'll need to keep track of the grouping of the segments
-
-	return ""
-}
