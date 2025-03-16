@@ -110,9 +110,6 @@ func TestEncodeSegments(t *testing.T) {
 		Names:          []string{},
 		Mappings:       "AAAA,IAAI,IAAM,EACV,IAAI;AAAM,QACV,IAAI,IAAM",
 	}
-	json, err := GenerateSourceMap(sourcemap)
-	if err != nil {
-		t.Errorf("GenerateSourceMap() = %s; want nil", err)
-	}
+	json := SerializeSourceMap(sourcemap)
 	snaps.MatchSnapshot(t, json)
 }

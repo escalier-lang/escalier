@@ -1,0 +1,39 @@
+
+[TestPrintExpr - 1]
+&codegen.Expr{
+    Kind: &codegen.EBinary{
+        Left: &codegen.Expr{
+            Kind: &codegen.ENumber{Value:0.1},
+            span: &codegen.Span{
+                Start: codegen.Location{Line:1, Column:1},
+                End:   codegen.Location{Line:1, Column:4},
+            },
+            source: nil,
+        },
+        Op:    0,
+        Right: &codegen.Expr{
+            Kind: &codegen.ENumber{Value:0.2},
+            span: &codegen.Span{
+                Start: codegen.Location{Line:1, Column:7},
+                End:   codegen.Location{Line:1, Column:10},
+            },
+            source: nil,
+        },
+    },
+    span: &codegen.Span{
+        Start: codegen.Location{Line:1, Column:1},
+        End:   codegen.Location{Line:1, Column:10},
+    },
+    source: nil,
+}
+---
+
+[TestPrintModule - 1]
+function add(a, b) {
+  return a + b;
+}
+function sub(a, b) {
+  return a - b;
+}
+
+---

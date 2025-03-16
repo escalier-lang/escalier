@@ -6,7 +6,7 @@ import (
 )
 
 type Source struct {
-	path     string
+	Path     string
 	Contents string
 }
 
@@ -172,16 +172,18 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 			Kind: &TString{Value: str},
 			Span: Span{Start: start, End: end},
 		}
-	case '1', '2', '3', '4', '5', '6', '7', '8', '9':
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		contents := lexer.source.Contents
 		n := len(contents)
 		i := startOffset + 1
-		for i < n {
-			c := contents[i]
-			if c < '0' || c > '9' {
-				break
+		if codePoint != '0' {
+			for i < n {
+				c := contents[i]
+				if c < '0' || c > '9' {
+					break
+				}
+				i++
 			}
-			i++
 		}
 		endOffset = i
 		num, _ := strconv.ParseFloat(contents[startOffset:i], 64) // TODO: handle parsing errors

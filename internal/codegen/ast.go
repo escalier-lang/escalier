@@ -1,32 +1,42 @@
-package parser
+package codegen
+
+import "github.com/escalier-lang/escalier/internal/parser"
 
 type Node interface {
-	Span() Span
+	Span() *Span
+	Source() parser.Node
 }
 
 // If `Name` is an empty string it means that the identifier is missing in
 // the expression.
 type Identifier struct {
-	Name string
-	span Span
+	Name   string
+	span   *Span // gets filled in by the printer
+	source parser.Node
 }
 
-func (i *Identifier) Span() Span {
+func (i *Identifier) Span() *Span {
 	return i.span
 }
 
-type Expr struct {
-	Kind ExprKind
-	span Span
+func (i *Identifier) Source() parser.Node {
+	return i.source
 }
 
-func (e *Expr) Span() Span {
+type Expr struct {
+	Kind   ExprKind
+	span   *Span // gets filled in by the printer
+	source parser.Node
+}
+
+func (e *Expr) Span() *Span {
 	return e.span
 }
 
-// This interface is never called. Its purpose is to encode a variant type in
-// Go's type system.
-//
+func (e *Expr) Source() parser.Node {
+	return e.source
+}
+
 //sumtype:decl
 type ExprKind interface{ isExpr() }
 
@@ -39,8 +49,9 @@ func (*ECall) isExpr()       {}
 func (*EIndex) isExpr()      {}
 func (*EMember) isExpr()     {}
 func (*EArray) isExpr()      {}
-func (*EIgnore) isExpr()     {}
-func (*EEmpty) isExpr()      {}
+
+// func (*EIgnore) isExpr()     {}
+// func (*EEmpty) isExpr()      {}
 
 type EMember struct {
 	Object   *Expr
@@ -114,21 +125,20 @@ type EIdentifier struct {
 	Name string
 }
 
-type EIgnore struct {
-	Token *Token
-}
-
-type EEmpty struct{}
-
 type Decl struct {
 	Kind    DeclKind
 	Export  bool
 	Declare bool
-	span    Span
+	span    *Span
+	source  parser.Node
 }
 
-func (e *Decl) Span() Span {
-	return e.span
+func (d *Decl) Span() *Span {
+	return d.span
+}
+
+func (d *Decl) Source() parser.Node {
+	return d.source
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -147,6 +157,7 @@ const (
 	VarKind
 )
 
+// TODO: support multiple declarators
 type DVariable struct {
 	Kind VariableKind
 	Name *Identifier // TODO: replace with Pattern
@@ -165,12 +176,17 @@ type DFunction struct {
 }
 
 type Stmt struct {
-	Kind StmtKind
-	span Span
+	Kind   StmtKind
+	span   *Span
+	source parser.Node
 }
 
-func (e *Stmt) Span() Span {
-	return e.span
+func (s *Stmt) Span() *Span {
+	return s.span
+}
+
+func (s *Stmt) Source() parser.Node {
+	return s.source
 }
 
 // This interface is never called. Its purpose is to encode a variant type in

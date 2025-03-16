@@ -35,7 +35,7 @@ var precedence = map[BinaryOp]int{
 	NullishCoalescing: 3,
 }
 
-func (parser *Parser) parseExpr() *Expr {
+func (parser *Parser) ParseExpr() *Expr {
 	values := NewStack[*Expr]()
 	ops := NewStack[BinaryOp]()
 
@@ -74,7 +74,7 @@ loop:
 
 				values.Push(&Expr{
 					Kind: &EBinary{Left: left, Op: op, Right: right},
-					Span: Span{Start: left.Span.Start, End: right.Span.End},
+					span: Span{Start: left.span.Start, End: right.span.End},
 				})
 			}
 		}
@@ -91,7 +91,7 @@ loop:
 
 		values.Push(&Expr{
 			Kind: &EBinary{Left: left, Op: op, Right: right},
-			Span: Span{Start: left.Span.Start, End: right.Span.End},
+			span: Span{Start: left.span.Start, End: right.span.End},
 		})
 	}
 
@@ -148,11 +148,11 @@ loop:
 			expr =
 				&Expr{
 					Kind: &ECall{Callee: callee, Args: args, OptChain: optChain},
-					Span: Span{Start: callee.Span.Start, End: terminator.Span.End},
+					span: Span{Start: callee.span.Start, End: terminator.Span.End},
 				}
 		case *TOpenBracket, *TQuestionOpenBracket:
 			parser.lexer.consume()
-			index := parser.parseExpr()
+			index := parser.ParseExpr()
 			terminator := parser.lexer.next()
 			if _, ok := terminator.Kind.(*TCloseBracket); !ok {
 				parser.reportError(token.Span, "Expected a closing bracket")
@@ -165,7 +165,7 @@ loop:
 			expr =
 				&Expr{
 					Kind: &EIndex{Object: obj, Index: index, OptChain: optChain},
-					Span: Span{Start: obj.Span.Start, End: terminator.Span.End},
+					span: Span{Start: obj.span.Start, End: terminator.Span.End},
 				}
 		case *TDot, *TQuestionDot:
 			parser.lexer.consume()
@@ -177,22 +177,22 @@ loop:
 			switch t := prop.Kind.(type) {
 			case *TIdentifier:
 				obj := expr
-				prop := &Identifier{Name: t.Value, Span: prop.Span}
+				prop := &Identifier{Name: t.Value, span: prop.Span}
 				expr =
 					&Expr{
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
-						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+						span: Span{Start: obj.span.Start, End: prop.span.End},
 					}
 			default:
 				obj := expr
 				prop := &Identifier{
 					Name: "",
-					Span: Span{Start: token.Span.End, End: token.Span.End},
+					span: Span{Start: token.Span.End, End: token.Span.End},
 				}
 				expr =
 					&Expr{
 						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
-						Span: Span{Start: obj.Span.Start, End: prop.Span.End},
+						span: Span{Start: obj.span.Start, End: prop.span.End},
 					}
 				if _, ok := token.Kind.(*TDot); ok {
 					parser.reportError(token.Span, "expected an identifier after .")
@@ -222,23 +222,23 @@ func (parser *Parser) parsePrimary() *Expr {
 			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &ENumber{Value: t.Value},
-				Span: token.Span,
+				span: token.Span,
 			}
 		case *TString:
 			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &EString{Value: t.Value},
-				Span: token.Span,
+				span: token.Span,
 			}
 		case *TIdentifier:
 			parser.lexer.consume()
 			expr = &Expr{
 				Kind: &EIdentifier{Name: t.Value},
-				Span: token.Span,
+				span: token.Span,
 			}
 		case *TOpenParen:
 			parser.lexer.consume()
-			expr = parser.parseExpr()
+			expr = parser.ParseExpr()
 			final := parser.lexer.next() // consume the closing paren
 			if _, ok := final.Kind.(*TCloseParen); !ok {
 				parser.reportError(token.Span, "Expected a closing paren")
@@ -252,7 +252,7 @@ func (parser *Parser) parsePrimary() *Expr {
 			}
 			expr = &Expr{
 				Kind: &EArray{Elems: elems},
-				Span: Span{Start: token.Span.Start, End: final.Span.End},
+				span: Span{Start: token.Span.Start, End: final.Span.End},
 			}
 		case
 			*TVal, *TVar, *TFn, *TReturn,
@@ -260,7 +260,7 @@ func (parser *Parser) parsePrimary() *Expr {
 			*TEndOfFile:
 			expr = &Expr{
 				Kind: &EEmpty{},
-				Span: token.Span,
+				span: token.Span,
 			}
 			parser.reportError(token.Span, "Expected an expression")
 			return expr
@@ -277,7 +277,7 @@ func (parser *Parser) parsePrimary() *Expr {
 		tokenAndOp := ops.Pop()
 		expr = &Expr{
 			Kind: &EUnary{Op: tokenAndOp.Op, Arg: expr},
-			Span: Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span.End},
+			span: Span{Start: tokenAndOp.Token.Span.Start, End: expr.span.End},
 		}
 	}
 
@@ -295,7 +295,7 @@ func (parser *Parser) parseExprSeq() []*Expr {
 	default:
 	}
 
-	expr := parser.parseExpr()
+	expr := parser.ParseExpr()
 	exprs = append(exprs, expr)
 
 	token = parser.lexer.peek()
@@ -305,7 +305,7 @@ func (parser *Parser) parseExprSeq() []*Expr {
 		case *TComma:
 			// TODO: handle trailing comma
 			parser.lexer.consume()
-			expr = parser.parseExpr()
+			expr = parser.ParseExpr()
 			exprs = append(exprs, expr)
 			token = parser.lexer.peek()
 		default:
@@ -322,7 +322,7 @@ func (parser *Parser) parseParamSeq() []*Param {
 	if !ok {
 		return params
 	}
-	param := &Param{Name: &Identifier{Name: _ident.Value, Span: token.Span}}
+	param := &Param{Name: &Identifier{Name: _ident.Value, span: token.Span}}
 	params = append(params, param)
 	parser.lexer.consume()
 
@@ -337,7 +337,7 @@ func (parser *Parser) parseParamSeq() []*Param {
 			if !ok {
 				return params
 			}
-			param := &Param{Name: &Identifier{Name: _ident.Value, Span: token.Span}}
+			param := &Param{Name: &Identifier{Name: _ident.Value, span: token.Span}}
 			params = append(params, param)
 			parser.lexer.consume()
 		default:
@@ -397,12 +397,12 @@ func (parser *Parser) parseDecl() *Decl {
 		var ident *Identifier
 		if ok {
 			parser.lexer.consume()
-			ident = &Identifier{Name: _ident.Value, Span: token.Span}
+			ident = &Identifier{Name: _ident.Value, span: token.Span}
 		} else {
 			parser.reportError(token.Span, "Expected identifier")
 			ident = &Identifier{
 				Name: "",
-				Span: Span{Start: token.Span.Start, End: token.Span.Start},
+				span: Span{Start: token.Span.Start, End: token.Span.Start},
 			}
 		}
 		end := token.Span.End
@@ -416,8 +416,8 @@ func (parser *Parser) parseDecl() *Decl {
 				return nil
 			}
 			parser.lexer.consume()
-			init = parser.parseExpr()
-			end = init.Span.End
+			init = parser.ParseExpr()
+			end = init.span.End
 		}
 
 		return &Decl{
@@ -428,7 +428,7 @@ func (parser *Parser) parseDecl() *Decl {
 			},
 			Declare: declare,
 			Export:  export,
-			Span:    Span{Start: start, End: end},
+			span:    Span{Start: start, End: end},
 		}
 	case *TFn:
 		token := parser.lexer.peek()
@@ -436,12 +436,12 @@ func (parser *Parser) parseDecl() *Decl {
 		var ident *Identifier
 		if ok {
 			parser.lexer.consume()
-			ident = &Identifier{Name: _ident.Value, Span: token.Span}
+			ident = &Identifier{Name: _ident.Value, span: token.Span}
 		} else {
 			parser.reportError(token.Span, "Expected identifier")
 			ident = &Identifier{
 				Name: "",
-				Span: Span{Start: token.Span.Start, End: token.Span.Start},
+				span: Span{Start: token.Span.Start, End: token.Span.Start},
 			}
 		}
 
@@ -470,7 +470,7 @@ func (parser *Parser) parseDecl() *Decl {
 			},
 			Declare: declare,
 			Export:  export,
-			Span:    Span{Start: start, End: ident.Span.End},
+			span:    Span{Start: start, End: ident.span.End},
 		}
 	default:
 		parser.reportError(token.Span, "Unexpected token")
@@ -489,20 +489,20 @@ func (parser *Parser) parseStmt() *Stmt {
 		}
 		return &Stmt{
 			Kind: &SDecl{Decl: decl},
-			Span: decl.Span,
+			span: decl.span,
 		}
 	case *TReturn:
 		parser.lexer.consume()
-		expr := parser.parseExpr()
+		expr := parser.ParseExpr()
 		return &Stmt{
 			Kind: &SReturn{Expr: expr},
-			Span: Span{Start: token.Span.Start, End: expr.Span.End},
+			span: Span{Start: token.Span.Start, End: expr.span.End},
 		}
 	default:
-		expr := parser.parseExpr()
+		expr := parser.ParseExpr()
 		return &Stmt{
 			Kind: &SExpr{Expr: expr},
-			Span: expr.Span,
+			span: expr.span,
 		}
 	}
 }
