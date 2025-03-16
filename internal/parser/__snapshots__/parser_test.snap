@@ -2445,3 +2445,22 @@
     },
 }
 ---
+
+[TestParseExprNoErrors/SingleUnaryOp - 1]
+&parser.Expr{
+    Kind: &parser.EUnary{
+        Op:  1,
+        Arg: &parser.Expr{
+            Kind: &parser.ENumber{Value:5},
+            span: parser.Span{
+                Start: parser.Location{Line:1, Column:2},
+                End:   parser.Location{Line:1, Column:3},
+            },
+        },
+    },
+    span: parser.Span{
+        Start: parser.Location{Line:1, Column:2},
+        End:   parser.Location{Line:1, Column:3},
+    },
+}
+---

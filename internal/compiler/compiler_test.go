@@ -7,19 +7,37 @@ import (
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
-func TestGenerateSourceMap(t *testing.T) {
+func TestVarDecls(t *testing.T) {
 	source := parser.Source{
 		Path:     "input.esc",
-		Contents: "val foo = 5\nval bar = \"hello\"\n",
+		Contents: "val foo = 5\nvar bar = \"hello\"\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, output)
 }
 
-func TestGenerateSourceMapWithFuncDecls(t *testing.T) {
+func TestFuncDecls(t *testing.T) {
 	source := parser.Source{
 		Path:     "input.esc",
-		Contents: "fn add(a, b) {\n  return a + b\n}\nfn sub(a, b) { return a - b }\n",
+		Contents: "fn add(a, b) {\n  return a + b\n}\nfn sub(a, b) { return a - b }\nval sum = add(1, 2)\n",
+	}
+	output := Compile(source)
+	snaps.MatchSnapshot(t, output)
+}
+
+func TestArrays(t *testing.T) {
+	source := parser.Source{
+		Path:     "input.esc",
+		Contents: "val nums = [1, 2, 3]\nval first = nums[0]\n",
+	}
+	output := Compile(source)
+	snaps.MatchSnapshot(t, output)
+}
+
+func TestMemberAccess(t *testing.T) {
+	source := parser.Source{
+		Path:     "input.esc",
+		Contents: "console.log(\"x =\", -5)\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, output)

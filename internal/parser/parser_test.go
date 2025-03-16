@@ -33,6 +33,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"UnaryOps": {
 			input: "+a - -b",
 		},
+		"SingleUnaryOp": {
+			input: "-5",
+		},
 		"Parens": {
 			input: "a * (b + c)",
 		},
