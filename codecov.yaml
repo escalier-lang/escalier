@@ -4,3 +4,4 @@ ignore:
   - "cmd/**/*.go"
   - "wasm_exec.js"
   - "**/examples/**"
+  - "ast.go"
