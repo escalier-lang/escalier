@@ -3,7 +3,7 @@
 compiler.CompilerOutput{
     Errors: {
     },
-    JS:        "const foo = 5;\nlet bar = \"hello\";\n",
+    JS:        "const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=input.esc.map\n",
     SourceMap: "{\"version\":3,\"file\":\"input.js\",\"sources\":[\"input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"AAAA,YAAU;AACV,UAAU\"}",
 }
 ---
@@ -12,7 +12,7 @@ compiler.CompilerOutput{
 compiler.CompilerOutput{
     Errors: {
     },
-    JS:        "function add(a, b) {\n  return a + b;\n}\nfunction sub(a, b) {\n  return a - b;\n}\nconst sum = add(1, 2);\n",
+    JS:        "function add(a, b) {\n  return a + b;\n}\nfunction sub(a, b) {\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=input.esc.map\n",
     SourceMap: "{\"version\":3,\"file\":\"input.js\",\"sources\":[\"input.esc\"],\"sourcesContent\":[\"fn add(a, b) {\\n  return a + b\\n}\\nfn sub(a, b) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,OAAO;;AAET;EAAe,OAAO;;AACtB,YAAU\"}",
 }
 ---
@@ -21,7 +21,7 @@ compiler.CompilerOutput{
 compiler.CompilerOutput{
     Errors: {
     },
-    JS:        "const nums = [1, 2, 3];\nconst first = nums[0];\n",
+    JS:        "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=input.esc.map\n",
     SourceMap: "{\"version\":3,\"file\":\"input.js\",\"sources\":[\"input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAW;AACX,cAAY\"}",
 }
 ---
@@ -30,7 +30,7 @@ compiler.CompilerOutput{
 compiler.CompilerOutput{
     Errors: {
     },
-    JS:        "console.log(\"x =\", -5);\n",
+    JS:        "console.log(\"x =\", -5);\n//# sourceMappingURL=input.esc.map\n",
     SourceMap: "{\"version\":3,\"file\":\"input.js\",\"sources\":[\"input.esc\"],\"sourcesContent\":[\"console.log(\\\"x =\\\", -5)\\n\"],\"names\":[],\"mappings\":\"AAAA\"}",
 }
 ---
