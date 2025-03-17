@@ -2464,3 +2464,33 @@
     },
 }
 ---
+
+[TestParseExprNoErrors/NumberLiteralTrailingDecimal - 1]
+&parser.Expr{
+    Kind: &parser.ENumber{Value:1},
+    span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:3},
+    },
+}
+---
+
+[TestParseExprNoErrors/NumberLiteralDecimal - 1]
+&parser.Expr{
+    Kind: &parser.ENumber{Value:1.5},
+    span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:4},
+    },
+}
+---
+
+[TestParseExprNoErrors/NumberLiteralLeadingDecimal - 1]
+&parser.Expr{
+    Kind: &parser.ENumber{Value:0.5},
+    span: parser.Span{
+        Start: parser.Location{Line:1, Column:1},
+        End:   parser.Location{Line:1, Column:3},
+    },
+}
+---
