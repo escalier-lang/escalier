@@ -122,11 +122,6 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 			Kind: &TCloseBracket{},
 			Span: Span{Start: start, End: end},
 		}
-	case '.':
-		token = Token{
-			Kind: &TDot{},
-			Span: Span{Start: start, End: end},
-		}
 	case '?':
 		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+width:])
 		endOffset += width
@@ -172,25 +167,48 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 			Kind: &TString{Value: str},
 			Span: Span{Start: start, End: end},
 		}
-	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
 		n := len(contents)
-		i := startOffset + 1
-		if codePoint != '0' {
-			for i < n {
-				c := contents[i]
-				if c < '0' || c > '9' {
-					break
-				}
-				i++
-			}
+		i := startOffset
+		isDecimal := false
+
+		if codePoint == '.' {
+			isDecimal = true
+			i++
+		} else {
+			i++
 		}
+
+		for i < n {
+			c := contents[i]
+			if c == '.' && !isDecimal {
+				isDecimal = true
+				i++
+				continue
+			}
+			if c < '0' || c > '9' {
+				break
+			}
+			i++
+		}
+
 		endOffset = i
-		num, _ := strconv.ParseFloat(contents[startOffset:i], 64) // TODO: handle parsing errors
-		end.Column = start.Column + (i - startOffset)
-		token = Token{
-			Kind: &TNumber{Value: num},
-			Span: Span{Start: start, End: end},
+		if isDecimal && i == startOffset+1 {
+			token = Token{
+				Kind: &TDot{},
+				Span: Span{Start: start, End: end},
+			}
+		} else {
+			num, err := strconv.ParseFloat(contents[startOffset:i], 64)
+			if err != nil {
+				// TODO: handle parsing errors
+			}
+			end.Column = start.Column + (i - startOffset)
+			token = Token{
+				Kind: &TNumber{Value: num},
+				Span: Span{Start: start, End: end},
+			}
 		}
 	case '_', '$',
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',

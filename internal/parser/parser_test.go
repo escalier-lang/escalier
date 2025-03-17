@@ -18,6 +18,15 @@ func TestParseExprNoErrors(t *testing.T) {
 		"NumberLiteral": {
 			input: "5",
 		},
+		"NumberLiteralDecimal": {
+			input: "1.5",
+		},
+		"NumberLiteralTrailingDecimal": {
+			input: "1.",
+		},
+		"NumberLiteralLeadingDecimal": {
+			input: ".5",
+		},
 		"Addition": {
 			input: "a + b",
 		},
