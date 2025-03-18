@@ -6,6 +6,8 @@ export default defineConfig({
         coverage: {
             exclude: [
                 '**/node_modules/**',
+                '**/examples/**',
+                '**/fixtures/**',
                 '**/*.test.ts',
                 'playground/**',
                 'packages/vscode-escalier/**',
