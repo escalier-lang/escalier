@@ -1,6 +1,8 @@
 ignore:
   - "**/ast.go"
+  - "cmd/escalier/main.go"
+  - "cmd/lsp-server/*.go"
   - "internal/parser/token.go"
-  - "cmd/**/*.go"
   - "wasm_exec.js"
   - "**/examples/**"
+  - "**/fixtures/**"
