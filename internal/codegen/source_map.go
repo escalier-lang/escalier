@@ -2,17 +2,15 @@ package codegen
 
 import (
 	"encoding/json"
-
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 type SourceMap struct {
-	Version        int      `json:"version"`        // this should always be the number 3
-	File           string   `json:"file"`           // the generated file
-	Sources        []string `json:"sources"`        // the original files
-	SourcesContent []string `json:"sourcesContent"` // TODO: check that omitting this works
-	Names          []string `json:"names"`          // TODO: investigate using this
-	Mappings       string   `json:"mappings"`
+	Version        int       `json:"version"`        // this should always be the number 3
+	File           string    `json:"file"`           // the generated file
+	Sources        []string  `json:"sources"`        // the original files
+	SourcesContent []*string `json:"sourcesContent"` // TODO: check that omitting this works
+	Names          []string  `json:"names"`          // TODO: investigate using this
+	Mappings       string    `json:"mappings"`
 }
 
 func SerializeSourceMap(sourcemap SourceMap) string {
@@ -158,7 +156,7 @@ func (s *SourceMapGenerator) TraverseExpr(expr *Expr) {
 	s.AddSegmentForNode(expr)
 }
 
-func GenerateSourceMap(source parser.Source, jsMod *Module, outName string) string {
+func GenerateSourceMap(srcPath string, jsMod *Module, outName string) string {
 	s := &SourceMapGenerator{
 		groups: [][]*Segment{},
 	}
@@ -168,8 +166,8 @@ func GenerateSourceMap(source parser.Source, jsMod *Module, outName string) stri
 	sm := SourceMap{
 		Version:        3,
 		File:           outName,
-		Sources:        []string{source.Path},
-		SourcesContent: []string{source.Contents},
+		Sources:        []string{srcPath},
+		SourcesContent: []*string{nil},
 		Names:          []string{},
 		Mappings:       EncodeSegments(s.groups),
 	}
