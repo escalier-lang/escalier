@@ -106,7 +106,7 @@ func TestEncodeSegments(t *testing.T) {
 		Version:        3,
 		File:           "output.js",
 		Sources:        []string{"input.esc"},
-		SourcesContent: []string{"let foo = 5;\nlet bar = 'hello';\nlet baz = true;"},
+		SourcesContent: []*string{nil},
 		Names:          []string{},
 		Mappings:       "AAAA,IAAI,IAAM,EACV,IAAI;AAAM,QACV,IAAI,IAAM",
 	}

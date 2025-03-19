@@ -16,6 +16,7 @@
             "web-assembly.d.ts",
             "wasm-client.ts",
             "**/examples/**",
+            "**/fixtures/**",
             "**/dist/**"
         ]
     },
