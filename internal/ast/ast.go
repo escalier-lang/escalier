@@ -1,4 +1,4 @@
-package parser
+package ast
 
 type Node interface {
 	Span() Span
@@ -11,6 +11,10 @@ type Identifier struct {
 	span Span
 }
 
+func NewIdentifier(name string, span Span) *Identifier {
+	return &Identifier{Name: name, span: span}
+}
+
 func (i *Identifier) Span() Span {
 	return i.span
 }
@@ -18,6 +22,10 @@ func (i *Identifier) Span() Span {
 type Expr struct {
 	Kind ExprKind
 	span Span
+}
+
+func NewExpr(kind ExprKind, span Span) *Expr {
+	return &Expr{Kind: kind, span: span}
 }
 
 func (e *Expr) Span() Span {
@@ -114,9 +122,7 @@ type EIdentifier struct {
 	Name string
 }
 
-type EIgnore struct {
-	Token *Token
-}
+type EIgnore struct{}
 
 type EEmpty struct{}
 
@@ -125,6 +131,10 @@ type Decl struct {
 	Export  bool
 	Declare bool
 	span    Span
+}
+
+func NewDecl(kind DeclKind, export bool, declare bool, span Span) *Decl {
+	return &Decl{Kind: kind, Export: export, Declare: declare, span: span}
 }
 
 func (e *Decl) Span() Span {
@@ -167,6 +177,10 @@ type DFunction struct {
 type Stmt struct {
 	Kind StmtKind
 	span Span
+}
+
+func NewStmt(kind StmtKind, span Span) *Stmt {
+	return &Stmt{Kind: kind, span: span}
 }
 
 func (e *Stmt) Span() Span {

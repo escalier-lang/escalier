@@ -1,841 +1,841 @@
 
 [TestParseExprNoErrors/StringLiteral - 1]
-&parser.Expr{
-    Kind: &parser.EString{Value:"hello"},
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+&ast.Expr{
+    Kind: &ast.EString{Value:"hello"},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseExprNoErrors/AddSub - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
                 Op:    1,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:6},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:6},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"c"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:9},
-                End:   parser.Location{Line:1, Column:10},
+        Right: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"c"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:9},
+                End:   ast.Location{Line:1, Column:10},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseExprNoErrors/IndexPrecedence - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EIndex{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+        Right: &ast.Expr{
+            Kind: &ast.EIndex{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Index: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"c"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:7},
-                        End:   parser.Location{Line:1, Column:8},
+                Index: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"c"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:9},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:9},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:9},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:9},
     },
 }
 ---
 
 [TestParseExprNoErrors/MultipleIndexes - 1]
-&parser.Expr{
-    Kind: &parser.EIndex{
-        Object: &parser.Expr{
-            Kind: &parser.EIndex{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EIndex{
+        Object: &ast.Expr{
+            Kind: &ast.EIndex{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
-                Index: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"i"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:3},
-                        End:   parser.Location{Line:1, Column:4},
+                Index: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"i"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:3},
+                        End:   ast.Location{Line:1, Column:4},
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:5},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:5},
             },
         },
-        Index: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"j"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:6},
-                End:   parser.Location{Line:1, Column:7},
+        Index: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"j"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:6},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
 
 [TestParseExprNoErrors/OptChainIndex - 1]
-&parser.Expr{
-    Kind: &parser.EIndex{
-        Object: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EIndex{
+        Object: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
-        Index: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"base"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:8},
+        Index: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"base"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
                 Op:    0,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"offset"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:11},
-                        End:   parser.Location{Line:1, Column:17},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"offset"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:11},
+                        End:   ast.Location{Line:1, Column:17},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:4},
-                End:   parser.Location{Line:1, Column:17},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:4},
+                End:   ast.Location{Line:1, Column:17},
             },
         },
         OptChain: true,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:18},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:18},
     },
 }
 ---
 
 [TestParseExprNoErrors/MemberPrecedence - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EMember{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+        Right: &ast.Expr{
+            Kind: &ast.EMember{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Prop: &parser.Identifier{
+                Prop: &ast.Identifier{
                     Name: "c",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:7},
-                        End:   parser.Location{Line:1, Column:8},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:8},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
 
 [TestParseExprNoErrors/Parens - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    2,
-        Right: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:6},
-                        End:   parser.Location{Line:1, Column:7},
+        Right: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Op:    0,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"c"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:10},
-                        End:   parser.Location{Line:1, Column:11},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"c"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:10},
+                        End:   ast.Location{Line:1, Column:11},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:6},
-                End:   parser.Location{Line:1, Column:11},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:6},
+                End:   ast.Location{Line:1, Column:11},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:11},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:11},
     },
 }
 ---
 
 [TestParseExprNoErrors/NumberLiteral - 1]
-&parser.Expr{
-    Kind: &parser.ENumber{Value:5},
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.ENumber{Value:5},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:2},
     },
 }
 ---
 
 [TestParseExprNoErrors/Index - 1]
-&parser.Expr{
-    Kind: &parser.EIndex{
-        Object: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EIndex{
+        Object: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
-        Index: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"base"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:3},
-                        End:   parser.Location{Line:1, Column:7},
+        Index: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"base"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:3},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Op:    0,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"offset"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:10},
-                        End:   parser.Location{Line:1, Column:16},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"offset"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:10},
+                        End:   ast.Location{Line:1, Column:16},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:3},
-                End:   parser.Location{Line:1, Column:16},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:3},
+                End:   ast.Location{Line:1, Column:16},
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:17},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:17},
     },
 }
 ---
 
 [TestParseExprNoErrors/Addition - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"b"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:6},
+        Right: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"b"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:6},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:6},
     },
 }
 ---
 
 [TestParseExprNoErrors/Call - 1]
-&parser.Expr{
-    Kind: &parser.ECall{
-        Callee: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"foo"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.ECall{
+        Callee: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"foo"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
         Args: {
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"a"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:5},
-                    End:   parser.Location{Line:1, Column:6},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"a"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"b"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:8},
-                    End:   parser.Location{Line:1, Column:9},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"b"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"c"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:11},
-                    End:   parser.Location{Line:1, Column:12},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"c"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:11},
+                    End:   ast.Location{Line:1, Column:12},
                 },
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:13},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:13},
     },
 }
 ---
 
 [TestParseExprNoErrors/UnaryOps - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EUnary{
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EUnary{
                 Op:  0,
-                Arg: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:2},
-                        End:   parser.Location{Line:1, Column:3},
+                Arg: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:2},
+                        End:   ast.Location{Line:1, Column:3},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:2},
-                End:   parser.Location{Line:1, Column:3},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
             },
         },
         Op:    1,
-        Right: &parser.Expr{
-            Kind: &parser.EUnary{
+        Right: &ast.Expr{
+            Kind: &ast.EUnary{
                 Op:  1,
-                Arg: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:7},
-                        End:   parser.Location{Line:1, Column:8},
+                Arg: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:7},
-                End:   parser.Location{Line:1, Column:8},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:7},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:2},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:2},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
 
 [TestParseExprNoErrors/Member - 1]
-&parser.Expr{
-    Kind: &parser.EMember{
-        Object: &parser.Expr{
-            Kind: &parser.EMember{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EMember{
+        Object: &ast.Expr{
+            Kind: &ast.EMember{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
-                Prop: &parser.Identifier{
+                Prop: &ast.Identifier{
                     Name: "b",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:3},
-                        End:   parser.Location{Line:1, Column:4},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:3},
+                        End:   ast.Location{Line:1, Column:4},
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
-        Prop: &parser.Identifier{
+        Prop: &ast.Identifier{
             Name: "c",
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:6},
-                End:   parser.Location{Line:1, Column:7},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:6},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
         OptChain: true,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseExprNoErrors/OptChainCall - 1]
-&parser.Expr{
-    Kind: &parser.ECall{
-        Callee: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"foo"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.ECall{
+        Callee: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"foo"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
         Args: {
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"bar"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:6},
-                    End:   parser.Location{Line:1, Column:9},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"bar"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:6},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
         },
         OptChain: true,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseExprNoErrors/MulAdd - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
                 Op:    2,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:6},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:6},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"c"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:9},
-                        End:   parser.Location{Line:1, Column:10},
+        Right: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"c"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:9},
+                        End:   ast.Location{Line:1, Column:10},
                     },
                 },
                 Op:    2,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"d"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:13},
-                        End:   parser.Location{Line:1, Column:14},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"d"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:13},
+                        End:   ast.Location{Line:1, Column:14},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:9},
-                End:   parser.Location{Line:1, Column:14},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:9},
+                End:   ast.Location{Line:1, Column:14},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:14},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:14},
     },
 }
 ---
 
 [TestParseExprNoErrors/ArrayLiteral - 1]
-&parser.Expr{
-    Kind: &parser.EArray{
+&ast.Expr{
+    Kind: &ast.EArray{
         Elems: {
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:1},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:2},
-                    End:   parser.Location{Line:1, Column:3},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:1},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:2},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:5},
-                    End:   parser.Location{Line:1, Column:6},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:2},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:3},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:8},
-                    End:   parser.Location{Line:1, Column:9},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:3},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseExprNoErrors/CallPrecedence - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.ECall{
-                Callee: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"foo"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:8},
+        Right: &ast.Expr{
+            Kind: &ast.ECall{
+                Callee: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"foo"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
                 Args: {
-                    &parser.Expr{
-                        Kind: &parser.EIdentifier{Name:"b"},
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:9},
-                            End:   parser.Location{Line:1, Column:10},
+                    &ast.Expr{
+                        Kind: &ast.EIdentifier{Name:"b"},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:9},
+                            End:   ast.Location{Line:1, Column:10},
                         },
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:11},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:11},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:11},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:11},
     },
 }
 ---
 
 [TestParseExprNoErrors/MulDiv - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
                 Op:    3,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:6},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:6},
             },
         },
         Op:    2,
-        Right: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"c"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:9},
-                End:   parser.Location{Line:1, Column:10},
+        Right: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"c"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:9},
+                End:   ast.Location{Line:1, Column:10},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseExprNoErrors/CurriedCall - 1]
-&parser.Expr{
-    Kind: &parser.ECall{
-        Callee: &parser.Expr{
-            Kind: &parser.ECall{
-                Callee: &parser.Expr{
-                    Kind: &parser.ECall{
-                        Callee: &parser.Expr{
-                            Kind: &parser.EIdentifier{Name:"foo"},
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:1},
-                                End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.ECall{
+        Callee: &ast.Expr{
+            Kind: &ast.ECall{
+                Callee: &ast.Expr{
+                    Kind: &ast.ECall{
+                        Callee: &ast.Expr{
+                            Kind: &ast.EIdentifier{Name:"foo"},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:1},
+                                End:   ast.Location{Line:1, Column:4},
                             },
                         },
                         Args: {
-                            &parser.Expr{
-                                Kind: &parser.EIdentifier{Name:"a"},
-                                span: parser.Span{
-                                    Start: parser.Location{Line:1, Column:5},
-                                    End:   parser.Location{Line:1, Column:6},
+                            &ast.Expr{
+                                Kind: &ast.EIdentifier{Name:"a"},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:5},
+                                    End:   ast.Location{Line:1, Column:6},
                                 },
                             },
                         },
                         OptChain: false,
                     },
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Args: {
-                    &parser.Expr{
-                        Kind: &parser.EIdentifier{Name:"b"},
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:8},
-                            End:   parser.Location{Line:1, Column:9},
+                    &ast.Expr{
+                        Kind: &ast.EIdentifier{Name:"b"},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:8},
+                            End:   ast.Location{Line:1, Column:9},
                         },
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:10},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:10},
             },
         },
         Args: {
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"c"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:11},
-                    End:   parser.Location{Line:1, Column:12},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"c"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:11},
+                    End:   ast.Location{Line:1, Column:12},
                 },
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:13},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:13},
     },
 }
 ---
 
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"b"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:7},
-                End:   parser.Location{Line:1, Column:8},
+        Right: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"b"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:7},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteCall - 1]
-&parser.Expr{
-    Kind: &parser.ECall{
-        Callee: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"foo"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.ECall{
+        Callee: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"foo"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
         Args: {
-            &parser.Expr{
-                Kind: &parser.EIdentifier{Name:"a"},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:5},
-                    End:   parser.Location{Line:1, Column:6},
+            &ast.Expr{
+                Kind: &ast.EIdentifier{Name:"a"},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.EEmpty{},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:7},
-                    End:   parser.Location{Line:1, Column:7},
+            &ast.Expr{
+                Kind: &ast.EEmpty{},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:7},
+                    End:   ast.Location{Line:1, Column:7},
                 },
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EMember{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+        Right: &ast.Expr{
+            Kind: &ast.EMember{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Prop: &parser.Identifier{
+                Prop: &ast.Identifier{
                     Name: "",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:8},
-                        End:   parser.Location{Line:1, Column:8},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:8},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
                 OptChain: true,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:8},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
@@ -843,9 +843,9 @@
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:5},
-            End:   parser.Location{Line:1, Column:6},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:6},
         },
         Message: "Unexpected token",
     },
@@ -853,43 +853,43 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"a"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:1},
-                        End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"a"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:1},
+                        End:   ast.Location{Line:1, Column:2},
                     },
                 },
                 Op:    1,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:6},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:6},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EEmpty{},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:8},
-                End:   parser.Location{Line:1, Column:8},
+        Right: &ast.Expr{
+            Kind: &ast.EEmpty{},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:8},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
@@ -897,16 +897,16 @@
 [TestParseExprErrorHandling/IncompleteCall - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:7},
-            End:   parser.Location{Line:1, Column:7},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:7},
         },
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:4},
-            End:   parser.Location{Line:1, Column:5},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
         },
         Message: "Expected a closing paren",
     },
@@ -916,9 +916,9 @@
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:6},
-            End:   parser.Location{Line:1, Column:8},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:8},
         },
         Message: "expected an identifier after ?.",
     },
@@ -928,9 +928,9 @@
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:8},
-            End:   parser.Location{Line:1, Column:8},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:8},
+            End:   ast.Location{Line:1, Column:8},
         },
         Message: "Expected an expression",
     },
@@ -938,43 +938,43 @@
 ---
 
 [TestParseExprErrorHandling/IncompleteMember - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    0,
-        Right: &parser.Expr{
-            Kind: &parser.EMember{
-                Object: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+        Right: &ast.Expr{
+            Kind: &ast.EMember{
+                Object: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Prop: &parser.Identifier{
+                Prop: &ast.Identifier{
                     Name: "",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:7},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 OptChain: false,
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:7},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
@@ -982,9 +982,9 @@
 [TestParseExprErrorHandling/IncompleteMember - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:6},
-            End:   parser.Location{Line:1, Column:7},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:7},
         },
         Message: "expected an identifier after .",
     },
@@ -992,211 +992,211 @@
 ---
 
 [TestParseStmtNoErrors/ValDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 0,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "x",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Init: &parser.Expr{
-                    Kind: &parser.ENumber{Value:5},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:9},
-                        End:   parser.Location{Line:1, Column:10},
+                Init: &ast.Expr{
+                    Kind: &ast.ENumber{Value:5},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:9},
+                        End:   ast.Location{Line:1, Column:10},
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:10},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:10},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseStmtNoErrors/VarDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 1,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "x",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:6},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:6},
                     },
                 },
-                Init: &parser.Expr{
-                    Kind: &parser.ENumber{Value:5},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:9},
-                        End:   parser.Location{Line:1, Column:10},
+                Init: &ast.Expr{
+                    Kind: &ast.ENumber{Value:5},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:9},
+                        End:   ast.Location{Line:1, Column:10},
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:10},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:10},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
 
 [TestParseStmtNoErrors/DeclareValDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 0,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "x",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:13},
-                        End:   parser.Location{Line:1, Column:14},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:13},
+                        End:   ast.Location{Line:1, Column:14},
                     },
                 },
-                Init: (*parser.Expr)(nil),
+                Init: (*ast.Expr)(nil),
             },
-            Export:  false,
-            Declare: true,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:14},
+            Export:  true,
+            Declare: false,
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:14},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:14},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:14},
     },
 }
 ---
 
 [TestParseStmtNoErrors/ExportDeclareValDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 0,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "x",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:20},
-                        End:   parser.Location{Line:1, Column:21},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:20},
+                        End:   ast.Location{Line:1, Column:21},
                     },
                 },
-                Init: (*parser.Expr)(nil),
+                Init: (*ast.Expr)(nil),
             },
             Export:  true,
             Declare: true,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:21},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:21},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:21},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:21},
     },
 }
 ---
 
 [TestParseStmtNoErrors/ExportValDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 0,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "x",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:12},
-                        End:   parser.Location{Line:1, Column:13},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:12},
+                        End:   ast.Location{Line:1, Column:13},
                     },
                 },
-                Init: &parser.Expr{
-                    Kind: &parser.ENumber{Value:5},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:16},
-                        End:   parser.Location{Line:1, Column:17},
+                Init: &ast.Expr{
+                    Kind: &ast.ENumber{Value:5},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:16},
+                        End:   ast.Location{Line:1, Column:17},
                     },
                 },
             },
-            Export:  true,
-            Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:17},
+            Export:  false,
+            Declare: true,
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:17},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:17},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:17},
     },
 }
 ---
 
 [TestParseExprErrorHandling/MismatchedParens - 1]
-&parser.Expr{
-    Kind: &parser.EBinary{
-        Left: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"a"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:2},
+&ast.Expr{
+    Kind: &ast.EBinary{
+        Left: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"a"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
             },
         },
         Op:    2,
-        Right: &parser.Expr{
-            Kind: &parser.EBinary{
-                Left: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"b"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:6},
-                        End:   parser.Location{Line:1, Column:7},
+        Right: &ast.Expr{
+            Kind: &ast.EBinary{
+                Left: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"b"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Op:    0,
-                Right: &parser.Expr{
-                    Kind: &parser.EIdentifier{Name:"c"},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:10},
-                        End:   parser.Location{Line:1, Column:11},
+                Right: &ast.Expr{
+                    Kind: &ast.EIdentifier{Name:"c"},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:10},
+                        End:   ast.Location{Line:1, Column:11},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:6},
-                End:   parser.Location{Line:1, Column:11},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:6},
+                End:   ast.Location{Line:1, Column:11},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:11},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:11},
     },
 }
 ---
@@ -1204,9 +1204,9 @@
 [TestParseExprErrorHandling/MismatchedParens - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:5},
-            End:   parser.Location{Line:1, Column:6},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:6},
         },
         Message: "Expected a closing paren",
     },
@@ -1214,35 +1214,35 @@
 ---
 
 [TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 1]
-&parser.Expr{
-    Kind: &parser.EArray{
+&ast.Expr{
+    Kind: &ast.EArray{
         Elems: {
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:1},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:2},
-                    End:   parser.Location{Line:1, Column:3},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:1},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:2},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:5},
-                    End:   parser.Location{Line:1, Column:6},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:2},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
                 },
             },
-            &parser.Expr{
-                Kind: &parser.ENumber{Value:3},
-                span: parser.Span{
-                    Start: parser.Location{Line:1, Column:8},
-                    End:   parser.Location{Line:1, Column:9},
+            &ast.Expr{
+                Kind: &ast.ENumber{Value:3},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:10},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
     },
 }
 ---
@@ -1250,9 +1250,9 @@
 [TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:1},
-            End:   parser.Location{Line:1, Column:2},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
         },
         Message: "Expected a closing bracket",
     },
@@ -1260,27 +1260,27 @@
 ---
 
 [TestParseExprErrorHandling/MismatchedBracketsIndex - 1]
-&parser.Expr{
-    Kind: &parser.EIndex{
-        Object: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"foo"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.EIndex{
+        Object: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"foo"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
-        Index: &parser.Expr{
-            Kind: &parser.EIdentifier{Name:"bar"},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:5},
-                End:   parser.Location{Line:1, Column:8},
+        Index: &ast.Expr{
+            Kind: &ast.EIdentifier{Name:"bar"},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
         OptChain: false,
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:9},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:9},
     },
 }
 ---
@@ -1288,9 +1288,9 @@
 [TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:4},
-            End:   parser.Location{Line:1, Column:5},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
         },
         Message: "Expected a closing bracket",
     },
@@ -1298,421 +1298,421 @@
 ---
 
 [TestParseStmtNoErrors/FunctionDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:8},
-                                End:   parser.Location{Line:1, Column:9},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:11},
-                                End:   parser.Location{Line:1, Column:12},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
                             },
                         },
                     },
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SExpr{
-                            Expr: &parser.Expr{
-                                Kind: &parser.EBinary{
-                                    Left: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"a"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:16},
-                                            End:   parser.Location{Line:1, Column:17},
+                    &ast.Stmt{
+                        Kind: &ast.SExpr{
+                            Expr: &ast.Expr{
+                                Kind: &ast.EBinary{
+                                    Left: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"a"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:16},
+                                            End:   ast.Location{Line:1, Column:17},
                                         },
                                     },
                                     Op:    0,
-                                    Right: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"b"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:20},
-                                            End:   parser.Location{Line:1, Column:21},
+                                    Right: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"b"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:20},
+                                            End:   ast.Location{Line:1, Column:21},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:1, Column:16},
-                                    End:   parser.Location{Line:1, Column:21},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:16},
+                                    End:   ast.Location{Line:1, Column:21},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:16},
-                            End:   parser.Location{Line:1, Column:21},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:16},
+                            End:   ast.Location{Line:1, Column:21},
                         },
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:7},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseStmtNoErrors/FunctionDeclWithReturn - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:8},
-                                End:   parser.Location{Line:1, Column:9},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:11},
-                                End:   parser.Location{Line:1, Column:12},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
                             },
                         },
                     },
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SReturn{
-                            Expr: &parser.Expr{
-                                Kind: &parser.EBinary{
-                                    Left: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"a"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:23},
-                                            End:   parser.Location{Line:1, Column:24},
+                    &ast.Stmt{
+                        Kind: &ast.SReturn{
+                            Expr: &ast.Expr{
+                                Kind: &ast.EBinary{
+                                    Left: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"a"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:23},
+                                            End:   ast.Location{Line:1, Column:24},
                                         },
                                     },
                                     Op:    0,
-                                    Right: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"b"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:27},
-                                            End:   parser.Location{Line:1, Column:28},
+                                    Right: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"b"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:27},
+                                            End:   ast.Location{Line:1, Column:28},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:1, Column:23},
-                                    End:   parser.Location{Line:1, Column:28},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:23},
+                                    End:   ast.Location{Line:1, Column:28},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:16},
-                            End:   parser.Location{Line:1, Column:28},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:16},
+                            End:   ast.Location{Line:1, Column:28},
                         },
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:7},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseStmtNoErrors/FunctionDeclWithMultipleStmts - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Params: {
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SDecl{
-                            Decl: &parser.Decl{
-                                Kind: &parser.DVariable{
+                    &ast.Stmt{
+                        Kind: &ast.SDecl{
+                            Decl: &ast.Decl{
+                                Kind: &ast.DVariable{
                                     Kind: 0,
-                                    Name: &parser.Identifier{
+                                    Name: &ast.Identifier{
                                         Name: "a",
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:2, Column:9},
-                                            End:   parser.Location{Line:2, Column:10},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:2, Column:9},
+                                            End:   ast.Location{Line:2, Column:10},
                                         },
                                     },
-                                    Init: &parser.Expr{
-                                        Kind: &parser.ENumber{Value:5},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:2, Column:13},
-                                            End:   parser.Location{Line:2, Column:14},
+                                    Init: &ast.Expr{
+                                        Kind: &ast.ENumber{Value:5},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:2, Column:13},
+                                            End:   ast.Location{Line:2, Column:14},
                                         },
                                     },
                                 },
                                 Export:  false,
                                 Declare: false,
-                                span:    parser.Span{
-                                    Start: parser.Location{Line:2, Column:5},
-                                    End:   parser.Location{Line:2, Column:14},
+                                span:    ast.Span{
+                                    Start: ast.Location{Line:2, Column:5},
+                                    End:   ast.Location{Line:2, Column:14},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:2, Column:5},
-                            End:   parser.Location{Line:2, Column:14},
+                        span: ast.Span{
+                            Start: ast.Location{Line:2, Column:5},
+                            End:   ast.Location{Line:2, Column:14},
                         },
                     },
-                    &parser.Stmt{
-                        Kind: &parser.SDecl{
-                            Decl: &parser.Decl{
-                                Kind: &parser.DVariable{
+                    &ast.Stmt{
+                        Kind: &ast.SDecl{
+                            Decl: &ast.Decl{
+                                Kind: &ast.DVariable{
                                     Kind: 0,
-                                    Name: &parser.Identifier{
+                                    Name: &ast.Identifier{
                                         Name: "b",
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:9},
-                                            End:   parser.Location{Line:3, Column:10},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:9},
+                                            End:   ast.Location{Line:3, Column:10},
                                         },
                                     },
-                                    Init: &parser.Expr{
-                                        Kind: &parser.ENumber{Value:10},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:13},
-                                            End:   parser.Location{Line:3, Column:15},
+                                    Init: &ast.Expr{
+                                        Kind: &ast.ENumber{Value:10},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:13},
+                                            End:   ast.Location{Line:3, Column:15},
                                         },
                                     },
                                 },
                                 Export:  false,
                                 Declare: false,
-                                span:    parser.Span{
-                                    Start: parser.Location{Line:3, Column:5},
-                                    End:   parser.Location{Line:3, Column:15},
+                                span:    ast.Span{
+                                    Start: ast.Location{Line:3, Column:5},
+                                    End:   ast.Location{Line:3, Column:15},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:3, Column:5},
-                            End:   parser.Location{Line:3, Column:15},
+                        span: ast.Span{
+                            Start: ast.Location{Line:3, Column:5},
+                            End:   ast.Location{Line:3, Column:15},
                         },
                     },
-                    &parser.Stmt{
-                        Kind: &parser.SReturn{
-                            Expr: &parser.Expr{
-                                Kind: &parser.EBinary{
-                                    Left: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"a"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:4, Column:12},
-                                            End:   parser.Location{Line:4, Column:13},
+                    &ast.Stmt{
+                        Kind: &ast.SReturn{
+                            Expr: &ast.Expr{
+                                Kind: &ast.EBinary{
+                                    Left: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"a"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:4, Column:12},
+                                            End:   ast.Location{Line:4, Column:13},
                                         },
                                     },
                                     Op:    0,
-                                    Right: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"b"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:4, Column:16},
-                                            End:   parser.Location{Line:4, Column:17},
+                                    Right: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"b"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:4, Column:16},
+                                            End:   ast.Location{Line:4, Column:17},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:4, Column:12},
-                                    End:   parser.Location{Line:4, Column:17},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:4, Column:12},
+                                    End:   ast.Location{Line:4, Column:17},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:4, Column:5},
-                            End:   parser.Location{Line:4, Column:17},
+                        span: ast.Span{
+                            Start: ast.Location{Line:4, Column:5},
+                            End:   ast.Location{Line:4, Column:17},
                         },
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:7},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
 
 [TestParseStmtErrorHandling/FunctionDeclWithIncompleteStmts - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Params: {
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SDecl{
-                            Decl: &parser.Decl{
-                                Kind: &parser.DVariable{
+                    &ast.Stmt{
+                        Kind: &ast.SDecl{
+                            Decl: &ast.Decl{
+                                Kind: &ast.DVariable{
                                     Kind: 0,
-                                    Name: &parser.Identifier{
+                                    Name: &ast.Identifier{
                                         Name: "a",
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:2, Column:9},
-                                            End:   parser.Location{Line:2, Column:10},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:2, Column:9},
+                                            End:   ast.Location{Line:2, Column:10},
                                         },
                                     },
-                                    Init: &parser.Expr{
-                                        Kind: &parser.EEmpty{},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:5},
-                                            End:   parser.Location{Line:3, Column:8},
+                                    Init: &ast.Expr{
+                                        Kind: &ast.EEmpty{},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:5},
+                                            End:   ast.Location{Line:3, Column:8},
                                         },
                                     },
                                 },
                                 Export:  false,
                                 Declare: false,
-                                span:    parser.Span{
-                                    Start: parser.Location{Line:2, Column:5},
-                                    End:   parser.Location{Line:3, Column:8},
+                                span:    ast.Span{
+                                    Start: ast.Location{Line:2, Column:5},
+                                    End:   ast.Location{Line:3, Column:8},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:2, Column:5},
-                            End:   parser.Location{Line:3, Column:8},
+                        span: ast.Span{
+                            Start: ast.Location{Line:2, Column:5},
+                            End:   ast.Location{Line:3, Column:8},
                         },
                     },
-                    &parser.Stmt{
-                        Kind: &parser.SDecl{
-                            Decl: &parser.Decl{
-                                Kind: &parser.DVariable{
+                    &ast.Stmt{
+                        Kind: &ast.SDecl{
+                            Decl: &ast.Decl{
+                                Kind: &ast.DVariable{
                                     Kind: 0,
-                                    Name: &parser.Identifier{
+                                    Name: &ast.Identifier{
                                         Name: "b",
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:9},
-                                            End:   parser.Location{Line:3, Column:10},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:9},
+                                            End:   ast.Location{Line:3, Column:10},
                                         },
                                     },
-                                    Init: &parser.Expr{
-                                        Kind: &parser.ENumber{Value:5},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:13},
-                                            End:   parser.Location{Line:3, Column:14},
+                                    Init: &ast.Expr{
+                                        Kind: &ast.ENumber{Value:5},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:13},
+                                            End:   ast.Location{Line:3, Column:14},
                                         },
                                     },
                                 },
                                 Export:  false,
                                 Declare: false,
-                                span:    parser.Span{
-                                    Start: parser.Location{Line:3, Column:5},
-                                    End:   parser.Location{Line:3, Column:14},
+                                span:    ast.Span{
+                                    Start: ast.Location{Line:3, Column:5},
+                                    End:   ast.Location{Line:3, Column:14},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:3, Column:5},
-                            End:   parser.Location{Line:3, Column:14},
+                        span: ast.Span{
+                            Start: ast.Location{Line:3, Column:5},
+                            End:   ast.Location{Line:3, Column:14},
                         },
                     },
-                    &parser.Stmt{
-                        Kind: &parser.SReturn{
-                            Expr: &parser.Expr{
-                                Kind: &parser.EBinary{
-                                    Left: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"a"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:4, Column:12},
-                                            End:   parser.Location{Line:4, Column:13},
+                    &ast.Stmt{
+                        Kind: &ast.SReturn{
+                            Expr: &ast.Expr{
+                                Kind: &ast.EBinary{
+                                    Left: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"a"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:4, Column:12},
+                                            End:   ast.Location{Line:4, Column:13},
                                         },
                                     },
                                     Op:    0,
-                                    Right: &parser.Expr{
-                                        Kind: &parser.EEmpty{},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:5, Column:4},
-                                            End:   parser.Location{Line:5, Column:5},
+                                    Right: &ast.Expr{
+                                        Kind: &ast.EEmpty{},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:5, Column:4},
+                                            End:   ast.Location{Line:5, Column:5},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:4, Column:12},
-                                    End:   parser.Location{Line:5, Column:5},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:4, Column:12},
+                                    End:   ast.Location{Line:5, Column:5},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:4, Column:5},
-                            End:   parser.Location{Line:5, Column:5},
+                        span: ast.Span{
+                            Start: ast.Location{Line:4, Column:5},
+                            End:   ast.Location{Line:5, Column:5},
                         },
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:7},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
@@ -1720,16 +1720,16 @@
 [TestParseStmtErrorHandling/FunctionDeclWithIncompleteStmts - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:3, Column:5},
-            End:   parser.Location{Line:3, Column:8},
+        Span: ast.Span{
+            Start: ast.Location{Line:3, Column:5},
+            End:   ast.Location{Line:3, Column:8},
         },
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:5, Column:4},
-            End:   parser.Location{Line:5, Column:5},
+        Span: ast.Span{
+            Start: ast.Location{Line:5, Column:4},
+            End:   ast.Location{Line:5, Column:5},
         },
         Message: "Expected an expression",
     },
@@ -1737,41 +1737,41 @@
 ---
 
 [TestParseStmtErrorHandling/VarDeclMissingEquals - 1]
-(*parser.Stmt)(nil)
+(*ast.Stmt)(nil)
 ---
 
 [TestParseStmtErrorHandling/VarDeclMissingIdent - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DVariable{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DVariable{
                 Kind: 1,
-                Name: &parser.Identifier{
+                Name: &ast.Identifier{
                     Name: "",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:5},
-                        End:   parser.Location{Line:1, Column:5},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:5},
+                        End:   ast.Location{Line:1, Column:5},
                     },
                 },
-                Init: &parser.Expr{
-                    Kind: &parser.ENumber{Value:5},
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:7},
-                        End:   parser.Location{Line:1, Column:8},
+                Init: &ast.Expr{
+                    Kind: &ast.ENumber{Value:5},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:8},
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:8},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:8},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
     },
 }
 ---
@@ -1779,9 +1779,9 @@
 [TestParseStmtErrorHandling/VarDeclMissingEquals - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:7},
-            End:   parser.Location{Line:1, Column:8},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:8},
         },
         Message: "Expected equals sign",
     },
@@ -1791,9 +1791,9 @@
 [TestParseStmtErrorHandling/VarDeclMissingIdent - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:5},
-            End:   parser.Location{Line:1, Column:6},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:6},
         },
         Message: "Expected identifier",
     },
@@ -1801,48 +1801,48 @@
 ---
 
 [TestParseStmtErrorHandling/FunctionDeclMissingIdent - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:4},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:4},
                     },
                 },
                 Params: {
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SReturn{
-                            Expr: &parser.Expr{
-                                Kind: &parser.ENumber{Value:5},
-                                span: parser.Span{
-                                    Start: parser.Location{Line:1, Column:15},
-                                    End:   parser.Location{Line:1, Column:16},
+                    &ast.Stmt{
+                        Kind: &ast.SReturn{
+                            Expr: &ast.Expr{
+                                Kind: &ast.ENumber{Value:5},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:15},
+                                    End:   ast.Location{Line:1, Column:16},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:8},
-                            End:   parser.Location{Line:1, Column:16},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:8},
+                            End:   ast.Location{Line:1, Column:16},
                         },
                     },
                 },
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:4},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:4},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:4},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:4},
     },
 }
 ---
@@ -1850,9 +1850,9 @@
 [TestParseStmtErrorHandling/FunctionDeclMissingIdent - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:4},
-            End:   parser.Location{Line:1, Column:5},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
         },
         Message: "Expected identifier",
     },
@@ -1860,33 +1860,33 @@
 ---
 
 [TestParseStmtNoErrors/DeclareFunctionDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:12},
-                        End:   parser.Location{Line:1, Column:15},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:12},
+                        End:   ast.Location{Line:1, Column:15},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:16},
-                                End:   parser.Location{Line:1, Column:17},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:16},
+                                End:   ast.Location{Line:1, Column:17},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:19},
-                                End:   parser.Location{Line:1, Column:20},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:19},
+                                End:   ast.Location{Line:1, Column:20},
                             },
                         },
                     },
@@ -1894,49 +1894,49 @@
                 Body: {
                 },
             },
-            Export:  false,
-            Declare: true,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:15},
+            Export:  true,
+            Declare: false,
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:15},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:15},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:15},
     },
 }
 ---
 
 [TestParseStmtNoErrors/ExportDeclareFunctionDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:19},
-                        End:   parser.Location{Line:1, Column:22},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:19},
+                        End:   ast.Location{Line:1, Column:22},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:23},
-                                End:   parser.Location{Line:1, Column:24},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:23},
+                                End:   ast.Location{Line:1, Column:24},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:26},
-                                End:   parser.Location{Line:1, Column:27},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:26},
+                                End:   ast.Location{Line:1, Column:27},
                             },
                         },
                     },
@@ -1946,128 +1946,128 @@
             },
             Export:  true,
             Declare: true,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:22},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:22},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:22},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:22},
     },
 }
 ---
 
 [TestParseStmtNoErrors/ExportFunctionDecl - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:11},
-                        End:   parser.Location{Line:1, Column:14},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:11},
+                        End:   ast.Location{Line:1, Column:14},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:15},
-                                End:   parser.Location{Line:1, Column:16},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:15},
+                                End:   ast.Location{Line:1, Column:16},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:18},
-                                End:   parser.Location{Line:1, Column:19},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:18},
+                                End:   ast.Location{Line:1, Column:19},
                             },
                         },
                     },
                 },
                 Body: {
-                    &parser.Stmt{
-                        Kind: &parser.SExpr{
-                            Expr: &parser.Expr{
-                                Kind: &parser.EBinary{
-                                    Left: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"a"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:23},
-                                            End:   parser.Location{Line:1, Column:24},
+                    &ast.Stmt{
+                        Kind: &ast.SExpr{
+                            Expr: &ast.Expr{
+                                Kind: &ast.EBinary{
+                                    Left: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"a"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:23},
+                                            End:   ast.Location{Line:1, Column:24},
                                         },
                                     },
                                     Op:    0,
-                                    Right: &parser.Expr{
-                                        Kind: &parser.EIdentifier{Name:"b"},
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:1, Column:27},
-                                            End:   parser.Location{Line:1, Column:28},
+                                    Right: &ast.Expr{
+                                        Kind: &ast.EIdentifier{Name:"b"},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:1, Column:27},
+                                            End:   ast.Location{Line:1, Column:28},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:1, Column:23},
-                                    End:   parser.Location{Line:1, Column:28},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:23},
+                                    End:   ast.Location{Line:1, Column:28},
                                 },
                             },
                         },
-                        span: parser.Span{
-                            Start: parser.Location{Line:1, Column:23},
-                            End:   parser.Location{Line:1, Column:28},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:23},
+                            End:   ast.Location{Line:1, Column:28},
                         },
                     },
                 },
             },
-            Export:  true,
-            Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:14},
+            Export:  false,
+            Declare: true,
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:14},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:14},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:14},
     },
 }
 ---
 
 [TestParseStmtErrorHandling/FunctionDeclMissingBoyd - 1]
-&parser.Stmt{
-    Kind: &parser.SDecl{
-        Decl: &parser.Decl{
-            Kind: &parser.DFunction{
-                Name: &parser.Identifier{
+&ast.Stmt{
+    Kind: &ast.SDecl{
+        Decl: &ast.Decl{
+            Kind: &ast.DFunction{
+                Name: &ast.Identifier{
                     Name: "foo",
-                    span: parser.Span{
-                        Start: parser.Location{Line:1, Column:4},
-                        End:   parser.Location{Line:1, Column:7},
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:4},
+                        End:   ast.Location{Line:1, Column:7},
                     },
                 },
                 Params: {
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:8},
-                                End:   parser.Location{Line:1, Column:9},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
                             },
                         },
                     },
-                    &parser.Param{
-                        Name: &parser.Identifier{
+                    &ast.Param{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:1, Column:11},
-                                End:   parser.Location{Line:1, Column:12},
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
                             },
                         },
                     },
@@ -2077,15 +2077,15 @@
             },
             Export:  false,
             Declare: false,
-            span:    parser.Span{
-                Start: parser.Location{Line:1, Column:1},
-                End:   parser.Location{Line:1, Column:7},
+            span:    ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:7},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:7},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
     },
 }
 ---
@@ -2093,9 +2093,9 @@
 [TestParseStmtErrorHandling/FunctionDeclMissingBoyd - 2]
 []*parser.Error{
     &parser.Error{
-        Span: parser.Span{
-            Start: parser.Location{Line:1, Column:13},
-            End:   parser.Location{Line:1, Column:13},
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:13},
+            End:   ast.Location{Line:1, Column:13},
         },
         Message: "Expected an opening brace",
     },
@@ -2103,58 +2103,58 @@
 ---
 
 [TestParseModuleNoErrors/ExprStmts - 1]
-&parser.Module{
+&ast.Module{
     Stmts: {
-        &parser.Stmt{
-            Kind: &parser.SExpr{
-                Expr: &parser.Expr{
-                    Kind: &parser.ECall{
-                        Callee: &parser.Expr{
-                            Kind: &parser.EIdentifier{Name:"foo"},
-                            span: parser.Span{
-                                Start: parser.Location{Line:2, Column:5},
-                                End:   parser.Location{Line:2, Column:8},
+        &ast.Stmt{
+            Kind: &ast.SExpr{
+                Expr: &ast.Expr{
+                    Kind: &ast.ECall{
+                        Callee: &ast.Expr{
+                            Kind: &ast.EIdentifier{Name:"foo"},
+                            span: ast.Span{
+                                Start: ast.Location{Line:2, Column:5},
+                                End:   ast.Location{Line:2, Column:8},
                             },
                         },
                         Args: {
                         },
                         OptChain: false,
                     },
-                    span: parser.Span{
-                        Start: parser.Location{Line:2, Column:5},
-                        End:   parser.Location{Line:2, Column:10},
+                    span: ast.Span{
+                        Start: ast.Location{Line:2, Column:5},
+                        End:   ast.Location{Line:2, Column:10},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:2, Column:5},
-                End:   parser.Location{Line:2, Column:10},
+            span: ast.Span{
+                Start: ast.Location{Line:2, Column:5},
+                End:   ast.Location{Line:2, Column:10},
             },
         },
-        &parser.Stmt{
-            Kind: &parser.SExpr{
-                Expr: &parser.Expr{
-                    Kind: &parser.ECall{
-                        Callee: &parser.Expr{
-                            Kind: &parser.EIdentifier{Name:"bar"},
-                            span: parser.Span{
-                                Start: parser.Location{Line:3, Column:5},
-                                End:   parser.Location{Line:3, Column:8},
+        &ast.Stmt{
+            Kind: &ast.SExpr{
+                Expr: &ast.Expr{
+                    Kind: &ast.ECall{
+                        Callee: &ast.Expr{
+                            Kind: &ast.EIdentifier{Name:"bar"},
+                            span: ast.Span{
+                                Start: ast.Location{Line:3, Column:5},
+                                End:   ast.Location{Line:3, Column:8},
                             },
                         },
                         Args: {
                         },
                         OptChain: false,
                     },
-                    span: parser.Span{
-                        Start: parser.Location{Line:3, Column:5},
-                        End:   parser.Location{Line:3, Column:10},
+                    span: ast.Span{
+                        Start: ast.Location{Line:3, Column:5},
+                        End:   ast.Location{Line:3, Column:10},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:3, Column:5},
-                End:   parser.Location{Line:3, Column:10},
+            span: ast.Span{
+                Start: ast.Location{Line:3, Column:5},
+                End:   ast.Location{Line:3, Column:10},
             },
         },
     },
@@ -2162,121 +2162,121 @@
 ---
 
 [TestParseModuleNoErrors/VarDecls - 1]
-&parser.Module{
+&ast.Module{
     Stmts: {
-        &parser.Stmt{
-            Kind: &parser.SDecl{
-                Decl: &parser.Decl{
-                    Kind: &parser.DVariable{
+        &ast.Stmt{
+            Kind: &ast.SDecl{
+                Decl: &ast.Decl{
+                    Kind: &ast.DVariable{
                         Kind: 0,
-                        Name: &parser.Identifier{
+                        Name: &ast.Identifier{
                             Name: "a",
-                            span: parser.Span{
-                                Start: parser.Location{Line:2, Column:9},
-                                End:   parser.Location{Line:2, Column:10},
+                            span: ast.Span{
+                                Start: ast.Location{Line:2, Column:9},
+                                End:   ast.Location{Line:2, Column:10},
                             },
                         },
-                        Init: &parser.Expr{
-                            Kind: &parser.ENumber{Value:5},
-                            span: parser.Span{
-                                Start: parser.Location{Line:2, Column:13},
-                                End:   parser.Location{Line:2, Column:14},
+                        Init: &ast.Expr{
+                            Kind: &ast.ENumber{Value:5},
+                            span: ast.Span{
+                                Start: ast.Location{Line:2, Column:13},
+                                End:   ast.Location{Line:2, Column:14},
                             },
                         },
                     },
                     Export:  false,
                     Declare: false,
-                    span:    parser.Span{
-                        Start: parser.Location{Line:2, Column:5},
-                        End:   parser.Location{Line:2, Column:14},
+                    span:    ast.Span{
+                        Start: ast.Location{Line:2, Column:5},
+                        End:   ast.Location{Line:2, Column:14},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:2, Column:5},
-                End:   parser.Location{Line:2, Column:14},
+            span: ast.Span{
+                Start: ast.Location{Line:2, Column:5},
+                End:   ast.Location{Line:2, Column:14},
             },
         },
-        &parser.Stmt{
-            Kind: &parser.SDecl{
-                Decl: &parser.Decl{
-                    Kind: &parser.DVariable{
+        &ast.Stmt{
+            Kind: &ast.SDecl{
+                Decl: &ast.Decl{
+                    Kind: &ast.DVariable{
                         Kind: 0,
-                        Name: &parser.Identifier{
+                        Name: &ast.Identifier{
                             Name: "b",
-                            span: parser.Span{
-                                Start: parser.Location{Line:3, Column:9},
-                                End:   parser.Location{Line:3, Column:10},
+                            span: ast.Span{
+                                Start: ast.Location{Line:3, Column:9},
+                                End:   ast.Location{Line:3, Column:10},
                             },
                         },
-                        Init: &parser.Expr{
-                            Kind: &parser.ENumber{Value:10},
-                            span: parser.Span{
-                                Start: parser.Location{Line:3, Column:13},
-                                End:   parser.Location{Line:3, Column:15},
+                        Init: &ast.Expr{
+                            Kind: &ast.ENumber{Value:10},
+                            span: ast.Span{
+                                Start: ast.Location{Line:3, Column:13},
+                                End:   ast.Location{Line:3, Column:15},
                             },
                         },
                     },
                     Export:  false,
                     Declare: false,
-                    span:    parser.Span{
-                        Start: parser.Location{Line:3, Column:5},
-                        End:   parser.Location{Line:3, Column:15},
+                    span:    ast.Span{
+                        Start: ast.Location{Line:3, Column:5},
+                        End:   ast.Location{Line:3, Column:15},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:3, Column:5},
-                End:   parser.Location{Line:3, Column:15},
+            span: ast.Span{
+                Start: ast.Location{Line:3, Column:5},
+                End:   ast.Location{Line:3, Column:15},
             },
         },
-        &parser.Stmt{
-            Kind: &parser.SDecl{
-                Decl: &parser.Decl{
-                    Kind: &parser.DVariable{
+        &ast.Stmt{
+            Kind: &ast.SDecl{
+                Decl: &ast.Decl{
+                    Kind: &ast.DVariable{
                         Kind: 0,
-                        Name: &parser.Identifier{
+                        Name: &ast.Identifier{
                             Name: "sum",
-                            span: parser.Span{
-                                Start: parser.Location{Line:4, Column:9},
-                                End:   parser.Location{Line:4, Column:12},
+                            span: ast.Span{
+                                Start: ast.Location{Line:4, Column:9},
+                                End:   ast.Location{Line:4, Column:12},
                             },
                         },
-                        Init: &parser.Expr{
-                            Kind: &parser.EBinary{
-                                Left: &parser.Expr{
-                                    Kind: &parser.EIdentifier{Name:"a"},
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:4, Column:15},
-                                        End:   parser.Location{Line:4, Column:16},
+                        Init: &ast.Expr{
+                            Kind: &ast.EBinary{
+                                Left: &ast.Expr{
+                                    Kind: &ast.EIdentifier{Name:"a"},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:4, Column:15},
+                                        End:   ast.Location{Line:4, Column:16},
                                     },
                                 },
                                 Op:    0,
-                                Right: &parser.Expr{
-                                    Kind: &parser.EIdentifier{Name:"b"},
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:4, Column:19},
-                                        End:   parser.Location{Line:4, Column:20},
+                                Right: &ast.Expr{
+                                    Kind: &ast.EIdentifier{Name:"b"},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:4, Column:19},
+                                        End:   ast.Location{Line:4, Column:20},
                                     },
                                 },
                             },
-                            span: parser.Span{
-                                Start: parser.Location{Line:4, Column:15},
-                                End:   parser.Location{Line:4, Column:20},
+                            span: ast.Span{
+                                Start: ast.Location{Line:4, Column:15},
+                                End:   ast.Location{Line:4, Column:20},
                             },
                         },
                     },
                     Export:  false,
                     Declare: false,
-                    span:    parser.Span{
-                        Start: parser.Location{Line:4, Column:5},
-                        End:   parser.Location{Line:4, Column:20},
+                    span:    ast.Span{
+                        Start: ast.Location{Line:4, Column:5},
+                        End:   ast.Location{Line:4, Column:20},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:4, Column:5},
-                End:   parser.Location{Line:4, Column:20},
+            span: ast.Span{
+                Start: ast.Location{Line:4, Column:5},
+                End:   ast.Location{Line:4, Column:20},
             },
         },
     },
@@ -2284,162 +2284,162 @@
 ---
 
 [TestParseModuleNoErrors/FuncDecls - 1]
-&parser.Module{
+&ast.Module{
     Stmts: {
-        &parser.Stmt{
-            Kind: &parser.SDecl{
-                Decl: &parser.Decl{
-                    Kind: &parser.DFunction{
-                        Name: &parser.Identifier{
+        &ast.Stmt{
+            Kind: &ast.SDecl{
+                Decl: &ast.Decl{
+                    Kind: &ast.DFunction{
+                        Name: &ast.Identifier{
                             Name: "add",
-                            span: parser.Span{
-                                Start: parser.Location{Line:2, Column:8},
-                                End:   parser.Location{Line:2, Column:11},
+                            span: ast.Span{
+                                Start: ast.Location{Line:2, Column:8},
+                                End:   ast.Location{Line:2, Column:11},
                             },
                         },
                         Params: {
-                            &parser.Param{
-                                Name: &parser.Identifier{
+                            &ast.Param{
+                                Name: &ast.Identifier{
                                     Name: "a",
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:2, Column:12},
-                                        End:   parser.Location{Line:2, Column:13},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:2, Column:12},
+                                        End:   ast.Location{Line:2, Column:13},
                                     },
                                 },
                             },
-                            &parser.Param{
-                                Name: &parser.Identifier{
+                            &ast.Param{
+                                Name: &ast.Identifier{
                                     Name: "b",
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:2, Column:15},
-                                        End:   parser.Location{Line:2, Column:16},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:2, Column:15},
+                                        End:   ast.Location{Line:2, Column:16},
                                     },
                                 },
                             },
                         },
                         Body: {
-                            &parser.Stmt{
-                                Kind: &parser.SReturn{
-                                    Expr: &parser.Expr{
-                                        Kind: &parser.EBinary{
-                                            Left: &parser.Expr{
+                            &ast.Stmt{
+                                Kind: &ast.SReturn{
+                                    Expr: &ast.Expr{
+                                        Kind: &ast.EBinary{
+                                            Left: &ast.Expr{
                                                 Kind: &!%v(DEPTH EXCEEDED),
-                                                span: parser.Span{
-                                                    Start: parser.Location{Line:3, Column:13},
-                                                    End:   parser.Location{Line:3, Column:14},
+                                                span: ast.Span{
+                                                    Start: ast.Location{Line:3, Column:13},
+                                                    End:   ast.Location{Line:3, Column:14},
                                                 },
                                             },
                                             Op:    0,
-                                            Right: &parser.Expr{
+                                            Right: &ast.Expr{
                                                 Kind: &!%v(DEPTH EXCEEDED),
-                                                span: parser.Span{
-                                                    Start: parser.Location{Line:3, Column:17},
-                                                    End:   parser.Location{Line:3, Column:18},
+                                                span: ast.Span{
+                                                    Start: ast.Location{Line:3, Column:17},
+                                                    End:   ast.Location{Line:3, Column:18},
                                                 },
                                             },
                                         },
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:3, Column:13},
-                                            End:   parser.Location{Line:3, Column:18},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:13},
+                                            End:   ast.Location{Line:3, Column:18},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:3, Column:6},
-                                    End:   parser.Location{Line:3, Column:18},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:3, Column:6},
+                                    End:   ast.Location{Line:3, Column:18},
                                 },
                             },
                         },
                     },
                     Export:  false,
                     Declare: false,
-                    span:    parser.Span{
-                        Start: parser.Location{Line:2, Column:5},
-                        End:   parser.Location{Line:2, Column:11},
+                    span:    ast.Span{
+                        Start: ast.Location{Line:2, Column:5},
+                        End:   ast.Location{Line:2, Column:11},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:2, Column:5},
-                End:   parser.Location{Line:2, Column:11},
+            span: ast.Span{
+                Start: ast.Location{Line:2, Column:5},
+                End:   ast.Location{Line:2, Column:11},
             },
         },
-        &parser.Stmt{
-            Kind: &parser.SDecl{
-                Decl: &parser.Decl{
-                    Kind: &parser.DFunction{
-                        Name: &parser.Identifier{
+        &ast.Stmt{
+            Kind: &ast.SDecl{
+                Decl: &ast.Decl{
+                    Kind: &ast.DFunction{
+                        Name: &ast.Identifier{
                             Name: "sub",
-                            span: parser.Span{
-                                Start: parser.Location{Line:5, Column:8},
-                                End:   parser.Location{Line:5, Column:11},
+                            span: ast.Span{
+                                Start: ast.Location{Line:5, Column:8},
+                                End:   ast.Location{Line:5, Column:11},
                             },
                         },
                         Params: {
-                            &parser.Param{
-                                Name: &parser.Identifier{
+                            &ast.Param{
+                                Name: &ast.Identifier{
                                     Name: "a",
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:5, Column:12},
-                                        End:   parser.Location{Line:5, Column:13},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:5, Column:12},
+                                        End:   ast.Location{Line:5, Column:13},
                                     },
                                 },
                             },
-                            &parser.Param{
-                                Name: &parser.Identifier{
+                            &ast.Param{
+                                Name: &ast.Identifier{
                                     Name: "b",
-                                    span: parser.Span{
-                                        Start: parser.Location{Line:5, Column:15},
-                                        End:   parser.Location{Line:5, Column:16},
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:5, Column:15},
+                                        End:   ast.Location{Line:5, Column:16},
                                     },
                                 },
                             },
                         },
                         Body: {
-                            &parser.Stmt{
-                                Kind: &parser.SReturn{
-                                    Expr: &parser.Expr{
-                                        Kind: &parser.EBinary{
-                                            Left: &parser.Expr{
+                            &ast.Stmt{
+                                Kind: &ast.SReturn{
+                                    Expr: &ast.Expr{
+                                        Kind: &ast.EBinary{
+                                            Left: &ast.Expr{
                                                 Kind: &!%v(DEPTH EXCEEDED),
-                                                span: parser.Span{
-                                                    Start: parser.Location{Line:6, Column:13},
-                                                    End:   parser.Location{Line:6, Column:14},
+                                                span: ast.Span{
+                                                    Start: ast.Location{Line:6, Column:13},
+                                                    End:   ast.Location{Line:6, Column:14},
                                                 },
                                             },
                                             Op:    1,
-                                            Right: &parser.Expr{
+                                            Right: &ast.Expr{
                                                 Kind: &!%v(DEPTH EXCEEDED),
-                                                span: parser.Span{
-                                                    Start: parser.Location{Line:6, Column:17},
-                                                    End:   parser.Location{Line:6, Column:18},
+                                                span: ast.Span{
+                                                    Start: ast.Location{Line:6, Column:17},
+                                                    End:   ast.Location{Line:6, Column:18},
                                                 },
                                             },
                                         },
-                                        span: parser.Span{
-                                            Start: parser.Location{Line:6, Column:13},
-                                            End:   parser.Location{Line:6, Column:18},
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:6, Column:13},
+                                            End:   ast.Location{Line:6, Column:18},
                                         },
                                     },
                                 },
-                                span: parser.Span{
-                                    Start: parser.Location{Line:6, Column:6},
-                                    End:   parser.Location{Line:6, Column:18},
+                                span: ast.Span{
+                                    Start: ast.Location{Line:6, Column:6},
+                                    End:   ast.Location{Line:6, Column:18},
                                 },
                             },
                         },
                     },
                     Export:  false,
                     Declare: false,
-                    span:    parser.Span{
-                        Start: parser.Location{Line:5, Column:5},
-                        End:   parser.Location{Line:5, Column:11},
+                    span:    ast.Span{
+                        Start: ast.Location{Line:5, Column:5},
+                        End:   ast.Location{Line:5, Column:11},
                     },
                 },
             },
-            span: parser.Span{
-                Start: parser.Location{Line:5, Column:5},
-                End:   parser.Location{Line:5, Column:11},
+            span: ast.Span{
+                Start: ast.Location{Line:5, Column:5},
+                End:   ast.Location{Line:5, Column:11},
             },
         },
     },
@@ -2447,50 +2447,50 @@
 ---
 
 [TestParseExprNoErrors/SingleUnaryOp - 1]
-&parser.Expr{
-    Kind: &parser.EUnary{
+&ast.Expr{
+    Kind: &ast.EUnary{
         Op:  1,
-        Arg: &parser.Expr{
-            Kind: &parser.ENumber{Value:5},
-            span: parser.Span{
-                Start: parser.Location{Line:1, Column:2},
-                End:   parser.Location{Line:1, Column:3},
+        Arg: &ast.Expr{
+            Kind: &ast.ENumber{Value:5},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
             },
         },
     },
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:2},
-        End:   parser.Location{Line:1, Column:3},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:2},
+        End:   ast.Location{Line:1, Column:3},
     },
 }
 ---
 
 [TestParseExprNoErrors/NumberLiteralTrailingDecimal - 1]
-&parser.Expr{
-    Kind: &parser.ENumber{Value:1},
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:3},
+&ast.Expr{
+    Kind: &ast.ENumber{Value:1},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:3},
     },
 }
 ---
 
 [TestParseExprNoErrors/NumberLiteralDecimal - 1]
-&parser.Expr{
-    Kind: &parser.ENumber{Value:1.5},
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:4},
+&ast.Expr{
+    Kind: &ast.ENumber{Value:1.5},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:4},
     },
 }
 ---
 
 [TestParseExprNoErrors/NumberLiteralLeadingDecimal - 1]
-&parser.Expr{
-    Kind: &parser.ENumber{Value:0.5},
-    span: parser.Span{
-        Start: parser.Location{Line:1, Column:1},
-        End:   parser.Location{Line:1, Column:3},
+&ast.Expr{
+    Kind: &ast.ENumber{Value:0.5},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:3},
     },
 }
 ---

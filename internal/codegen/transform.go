@@ -1,8 +1,10 @@
 package codegen
 
-import "github.com/escalier-lang/escalier/internal/parser"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+)
 
-func TransformExprs(exprs []*parser.Expr) []*Expr {
+func TransformExprs(exprs []*ast.Expr) []*Expr {
 	var res []*Expr
 	for _, e := range exprs {
 		res = append(res, TransformExpr(e))
@@ -10,7 +12,7 @@ func TransformExprs(exprs []*parser.Expr) []*Expr {
 	return res
 }
 
-func TransformIdentifier(ident *parser.Identifier) *Identifier {
+func TransformIdentifier(ident *ast.Identifier) *Identifier {
 	if ident == nil {
 		return nil
 	}
@@ -21,19 +23,19 @@ func TransformIdentifier(ident *parser.Identifier) *Identifier {
 	}
 }
 
-func TransformStmt(stmt *parser.Stmt) *Stmt {
+func TransformStmt(stmt *ast.Stmt) *Stmt {
 	var kind StmtKind
 
 	switch s := stmt.Kind.(type) {
-	case *parser.SExpr:
+	case *ast.SExpr:
 		kind = &SExpr{
 			Expr: TransformExpr(s.Expr),
 		}
-	case *parser.SDecl:
+	case *ast.SDecl:
 		kind = &SDecl{
 			Decl: TransformDecl(s.Decl),
 		}
-	case *parser.SReturn:
+	case *ast.SReturn:
 		kind = &SReturn{
 			Expr: TransformExpr(s.Expr),
 		}
@@ -46,7 +48,7 @@ func TransformStmt(stmt *parser.Stmt) *Stmt {
 	}
 }
 
-func TransformModule(mod *parser.Module) *Module {
+func TransformModule(mod *ast.Module) *Module {
 	var stmts []*Stmt
 	for _, s := range mod.Stmts {
 		stmts = append(stmts, TransformStmt(s))
@@ -56,7 +58,7 @@ func TransformModule(mod *parser.Module) *Module {
 	}
 }
 
-func TransformStmts(stmts []*parser.Stmt) []*Stmt {
+func TransformStmts(stmts []*ast.Stmt) []*Stmt {
 	var res []*Stmt
 	for _, s := range stmts {
 		res = append(res, TransformStmt(s))
@@ -64,17 +66,17 @@ func TransformStmts(stmts []*parser.Stmt) []*Stmt {
 	return res
 }
 
-func TransformDecl(decl *parser.Decl) *Decl {
+func TransformDecl(decl *ast.Decl) *Decl {
 	var kind DeclKind
 
 	switch d := decl.Kind.(type) {
-	case *parser.DVariable:
+	case *ast.DVariable:
 		kind = &DVariable{
 			Kind: VariableKind(d.Kind),
 			Name: TransformIdentifier(d.Name),
 			Init: TransformExpr(d.Init),
 		}
-	case *parser.DFunction:
+	case *ast.DFunction:
 		var params []*Param
 		for _, p := range d.Params {
 			params = append(params, &Param{
@@ -97,56 +99,56 @@ func TransformDecl(decl *parser.Decl) *Decl {
 	}
 }
 
-func TransformExpr(expr *parser.Expr) *Expr {
+func TransformExpr(expr *ast.Expr) *Expr {
 	var kind ExprKind
 
 	switch e := expr.Kind.(type) {
-	case *parser.ENumber:
+	case *ast.ENumber:
 		kind = &ENumber{Value: e.Value}
-	case *parser.EBinary:
+	case *ast.EBinary:
 		kind = &EBinary{
 			Left:  TransformExpr(e.Left),
 			Op:    BinaryOp(e.Op),
 			Right: TransformExpr(e.Right),
 		}
-	case *parser.EUnary:
+	case *ast.EUnary:
 		kind = &EUnary{
 			Op:  UnaryOp(e.Op),
 			Arg: TransformExpr(e.Arg),
 		}
-	case *parser.EString:
+	case *ast.EString:
 		kind = &EString{
 			Value: e.Value,
 		}
-	case *parser.EIdentifier:
+	case *ast.EIdentifier:
 		kind = &EIdentifier{
 			Name: e.Name,
 		}
-	case *parser.ECall:
+	case *ast.ECall:
 		kind = &ECall{
 			Callee:   TransformExpr(e.Callee),
 			Args:     TransformExprs(e.Args),
 			OptChain: e.OptChain,
 		}
-	case *parser.EIndex:
+	case *ast.EIndex:
 		kind = &EIndex{
 			Object:   TransformExpr(e.Object),
 			Index:    TransformExpr(e.Index),
 			OptChain: e.OptChain,
 		}
-	case *parser.EMember:
+	case *ast.EMember:
 		kind = &EMember{
 			Object:   TransformExpr(e.Object),
 			Prop:     TransformIdentifier(e.Prop),
 			OptChain: e.OptChain,
 		}
-	case *parser.EArray:
+	case *ast.EArray:
 		kind = &EArray{
 			Elems: TransformExprs(e.Elems),
 		}
-	case *parser.EIgnore:
+	case *ast.EIgnore:
 		panic("TODO")
-	case *parser.EEmpty:
+	case *ast.EEmpty:
 		panic("TODO")
 	}
 
