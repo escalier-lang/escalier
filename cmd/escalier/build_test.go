@@ -11,19 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuild(t *testing.T) {
+func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	tmpDir := t.TempDir()
+	shouldUpdate := os.Getenv("UPDATE_FIXTURES") == "true"
 
 	err := os.Chdir(tmpDir)
 	require.NoError(t, err)
-	err = os.Mkdir("fixtures", 0755)
-	require.NoError(t, err)
 
-	_, currentFile, _, _ := runtime.Caller(0)
-	rootDir := filepath.Join(filepath.Dir(currentFile), "..", "..")
-
-	srcFile := filepath.Join(rootDir, "fixtures/test.esc")
-	destFile := filepath.Join(tmpDir, "fixtures/test.esc")
+	srcFile := filepath.Join(fixtureDir, fixtureName+".esc")
+	destFile := filepath.Join(tmpDir, fixtureName+".esc")
 
 	input, err := os.ReadFile(srcFile)
 	require.NoError(t, err)
@@ -32,28 +28,60 @@ func TestBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	out := bytes.NewBuffer(nil)
-	build(out, []string{"./fixtures/test.esc"})
+	build(out, []string{fixtureName + ".esc"})
+	fmt.Println("stdout =", out.String())
 
-	stdout := out.String()
-
-	fmt.Println("stdout =", stdout)
-
-	_, err = os.Stat("fixtures/test.js")
+	actualJs, err := os.ReadFile(fixtureName + ".js")
 	require.NoError(t, err)
 
-	expectedJs, err := os.ReadFile(filepath.Join(rootDir, "fixtures/test.js"))
+	if shouldUpdate {
+		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".js"), actualJs, 0644)
+		require.NoError(t, err)
+	} else {
+		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".js"))
+		require.NoError(t, err)
+		require.Equal(t, string(expectedJs), string(actualJs))
+	}
+
+	actualMap, err := os.ReadFile(fixtureName + ".esc.map")
 	require.NoError(t, err)
 
-	actualJs, err := os.ReadFile("fixtures/test.js")
+	if shouldUpdate {
+		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".esc.map"), actualMap, 0644)
+		require.NoError(t, err)
+	} else {
+		expectedMap, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".esc.map"))
+		require.NoError(t, err)
+		require.Equal(t, string(expectedMap), string(actualMap))
+	}
+}
+
+func TestBuild(t *testing.T) {
+	_, currentFile, _, _ := runtime.Caller(0)
+	rootDir := filepath.Join(filepath.Dir(currentFile), "..", "..")
+
+	groups, err := os.ReadDir(filepath.Join(rootDir, "fixtures"))
 	require.NoError(t, err)
 
-	require.Equal(t, string(expectedJs), string(actualJs))
+	for _, group := range groups {
+		if !group.IsDir() {
+			continue
+		}
 
-	expectedMap, err := os.ReadFile(filepath.Join(rootDir, "fixtures/test.esc.map"))
-	require.NoError(t, err)
+		fixtures, err := os.ReadDir(filepath.Join(rootDir, "fixtures", group.Name()))
+		require.NoError(t, err)
 
-	actualMap, err := os.ReadFile("fixtures/test.esc.map")
-	require.NoError(t, err)
-
-	require.Equal(t, string(expectedMap), string(actualMap))
+		for _, fixture := range fixtures {
+			name := group.Name() + "/" + fixture.Name()
+			t.Run(name, func(t *testing.T) {
+				fixtureDir := filepath.Join(rootDir, "fixtures", group.Name(), fixture.Name())
+				fixtureName := fixture.Name()
+				checkFixture(
+					t,
+					fixtureDir,
+					fixtureName,
+				)
+			})
+		}
+	}
 }
