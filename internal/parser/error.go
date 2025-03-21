@@ -1,6 +1,8 @@
 package parser
 
+import "github.com/escalier-lang/escalier/internal/ast"
+
 type Error struct {
-	Span    Span
+	Span    ast.Span
 	Message string
 }

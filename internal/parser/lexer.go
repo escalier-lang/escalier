@@ -3,6 +3,8 @@ package parser
 import (
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/escalier-lang/escalier/internal/ast"
 )
 
 type Source struct {
@@ -13,19 +15,19 @@ type Source struct {
 type Lexer struct {
 	source            Source
 	currentOffset     int
-	currentLocation   Location
+	currentLocation   ast.Location
 	afterPeekOffset   int
-	afterPeakLocation Location
+	afterPeakLocation ast.Location
 }
 
 func NewLexer(source Source) *Lexer {
 	return &Lexer{
 		source:          source,
 		currentOffset:   0,
-		currentLocation: Location{Line: 1, Column: 1},
+		currentLocation: ast.Location{Line: 1, Column: 1},
 		// The peek state is invalid until the first call to peekToken.
 		afterPeekOffset:   -1,
-		afterPeakLocation: Location{Line: 0, Column: 0},
+		afterPeakLocation: ast.Location{Line: 0, Column: 0},
 	}
 }
 
@@ -58,69 +60,69 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	}
 
 	endOffset := startOffset + width
-	end := Location{Line: start.Line, Column: start.Column + 1}
+	end := ast.Location{Line: start.Line, Column: start.Column + 1}
 
 	var token Token
 	switch codePoint {
 	case '+':
 		token = Token{
 			Kind: &TPlus{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '-':
 		token = Token{
 			Kind: &TMinus{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '*':
 		token = Token{
 			Kind: &TAsterisk{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '/':
 		token = Token{
 			Kind: &TSlash{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '=':
 		token = Token{
 			Kind: &TEquals{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case ',':
 		token = Token{
 			Kind: &TComma{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '(':
 		token = Token{
 			Kind: &TOpenParen{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case ')':
 		token = Token{
 			Kind: &TCloseParen{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '{':
 		token = Token{
 			Kind: &TOpenBrace{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '}':
 		token = Token{
 			Kind: &TCloseBrace{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '[':
 		token = Token{
 			Kind: &TOpenBracket{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case ']':
 		token = Token{
 			Kind: &TCloseBracket{},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '?':
 		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+width:])
@@ -131,22 +133,22 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		case '.':
 			token = Token{
 				Kind: &TQuestionDot{},
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		case '(':
 			token = Token{
 				Kind: &TQuestionOpenParen{},
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		case '[':
 			token = Token{
 				Kind: &TQuestionOpenBracket{},
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		default:
 			token = Token{
 				Kind: &TInvalid{}, // TODO: include the character in the token
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		}
 	case '"':
@@ -165,7 +167,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		end.Column = start.Column + (i - startOffset)
 		token = Token{
 			Kind: &TString{Value: str},
-			Span: Span{Start: start, End: end},
+			Span: ast.Span{Start: start, End: end},
 		}
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
@@ -197,7 +199,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		if isDecimal && i == startOffset+1 {
 			token = Token{
 				Kind: &TDot{},
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		} else {
 			num, err := strconv.ParseFloat(contents[startOffset:i], 64)
@@ -207,7 +209,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 			end.Column = start.Column + (i - startOffset)
 			token = Token{
 				Kind: &TNumber{Value: num},
-				Span: Span{Start: start, End: end},
+				Span: ast.Span{Start: start, End: end},
 			}
 		}
 	case '_', '$',
@@ -229,7 +231,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		endOffset = i
 		ident := contents[startOffset:i]
 		end.Column = start.Column + i - startOffset
-		span := Span{Start: start, End: end}
+		span := ast.Span{Start: start, End: end}
 
 		if keyword, ok := KEYWORDS[ident]; ok {
 			token = Token{
@@ -246,12 +248,12 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		if startOffset >= len(lexer.source.Contents) {
 			token = Token{
 				Kind: &TEndOfFile{},
-				Span: Span{Start: start, End: start},
+				Span: ast.Span{Start: start, End: start},
 			}
 		} else {
 			token = Token{
 				Kind: &TInvalid{},
-				Span: Span{Start: start, End: start},
+				Span: ast.Span{Start: start, End: start},
 			}
 		}
 	}
@@ -261,7 +263,7 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		lexer.afterPeakLocation = end
 	} else {
 		lexer.afterPeekOffset = -1
-		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
+		lexer.afterPeakLocation = ast.Location{Line: 0, Column: 0}
 
 		lexer.currentOffset = endOffset
 		lexer.currentLocation = end
@@ -295,7 +297,7 @@ func (lexer *Lexer) consume() {
 
 		// Reset the peek state
 		lexer.afterPeekOffset = -1
-		lexer.afterPeakLocation = Location{Line: 0, Column: 0}
+		lexer.afterPeakLocation = ast.Location{Line: 0, Column: 0}
 	}
 }
 
