@@ -6,7 +6,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:7},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -19,7 +19,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    1,
         Right: &ast.IdentExpr{
@@ -28,13 +28,13 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.IdentExpr{
@@ -43,13 +43,13 @@
             Start: ast.Location{Line:1, Column:9},
             End:   ast.Location{Line:1, Column:10},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -61,7 +61,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.IndexExpr{
@@ -71,7 +71,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Index: &ast.IdentExpr{
             Name: "c",
@@ -79,20 +79,20 @@
                 Start: ast.Location{Line:1, Column:7},
                 End:   ast.Location{Line:1, Column:8},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         OptChain: false,
         span:     ast.Span{
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:9},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:9},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -105,7 +105,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Index: &ast.IdentExpr{
             Name: "i",
@@ -113,14 +113,14 @@
                 Start: ast.Location{Line:1, Column:3},
                 End:   ast.Location{Line:1, Column:4},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         OptChain: false,
         span:     ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:5},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Index: &ast.IdentExpr{
         Name: "j",
@@ -128,14 +128,14 @@
             Start: ast.Location{Line:1, Column:6},
             End:   ast.Location{Line:1, Column:7},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     OptChain: false,
     span:     ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -147,7 +147,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Index: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
@@ -156,7 +156,7 @@
                 Start: ast.Location{Line:1, Column:4},
                 End:   ast.Location{Line:1, Column:8},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    0,
         Right: &ast.IdentExpr{
@@ -165,20 +165,20 @@
                 Start: ast.Location{Line:1, Column:11},
                 End:   ast.Location{Line:1, Column:17},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:4},
             End:   ast.Location{Line:1, Column:17},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     OptChain: true,
     span:     ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:18},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -190,7 +190,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.MemberExpr{
@@ -200,7 +200,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Prop: &ast.Ident{
             Name: "c",
@@ -214,13 +214,13 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -232,7 +232,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    2,
     Right: &ast.BinaryExpr{
@@ -242,7 +242,7 @@
                 Start: ast.Location{Line:1, Column:6},
                 End:   ast.Location{Line:1, Column:7},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    0,
         Right: &ast.IdentExpr{
@@ -251,19 +251,19 @@
                 Start: ast.Location{Line:1, Column:10},
                 End:   ast.Location{Line:1, Column:11},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:6},
             End:   ast.Location{Line:1, Column:11},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:11},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -274,7 +274,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -286,7 +286,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Index: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
@@ -295,7 +295,7 @@
                 Start: ast.Location{Line:1, Column:3},
                 End:   ast.Location{Line:1, Column:7},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    0,
         Right: &ast.IdentExpr{
@@ -304,20 +304,20 @@
                 Start: ast.Location{Line:1, Column:10},
                 End:   ast.Location{Line:1, Column:16},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:3},
             End:   ast.Location{Line:1, Column:16},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     OptChain: false,
     span:     ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:17},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -329,7 +329,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.IdentExpr{
@@ -338,13 +338,13 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:6},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -356,7 +356,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Args: {
         &ast.IdentExpr{
@@ -365,7 +365,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.IdentExpr{
             Name: "b",
@@ -373,7 +373,7 @@
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.IdentExpr{
             Name: "c",
@@ -381,7 +381,7 @@
                 Start: ast.Location{Line:1, Column:11},
                 End:   ast.Location{Line:1, Column:12},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     OptChain: false,
@@ -389,7 +389,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:13},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -403,13 +403,13 @@
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:2},
             End:   ast.Location{Line:1, Column:3},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    1,
     Right: &ast.UnaryExpr{
@@ -420,19 +420,19 @@
                 Start: ast.Location{Line:1, Column:7},
                 End:   ast.Location{Line:1, Column:8},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:7},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:2},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -445,7 +445,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Prop: &ast.Ident{
             Name: "b",
@@ -459,7 +459,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Prop: &ast.Ident{
         Name: "c",
@@ -473,7 +473,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:7},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -485,7 +485,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Args: {
         &ast.IdentExpr{
@@ -494,7 +494,7 @@
                 Start: ast.Location{Line:1, Column:6},
                 End:   ast.Location{Line:1, Column:9},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     OptChain: true,
@@ -502,7 +502,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -515,7 +515,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    2,
         Right: &ast.IdentExpr{
@@ -524,13 +524,13 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.BinaryExpr{
@@ -540,7 +540,7 @@
                 Start: ast.Location{Line:1, Column:9},
                 End:   ast.Location{Line:1, Column:10},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    2,
         Right: &ast.IdentExpr{
@@ -549,19 +549,19 @@
                 Start: ast.Location{Line:1, Column:13},
                 End:   ast.Location{Line:1, Column:14},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:9},
             End:   ast.Location{Line:1, Column:14},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:14},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -574,7 +574,7 @@
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:2},
@@ -582,7 +582,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:3},
@@ -590,14 +590,14 @@
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -609,7 +609,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.CallExpr{
@@ -619,7 +619,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:8},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Args: {
             &ast.IdentExpr{
@@ -628,7 +628,7 @@
                     Start: ast.Location{Line:1, Column:9},
                     End:   ast.Location{Line:1, Column:10},
                 },
-                inferredType: (*ast.Type)(nil),
+                inferredType: nil,
             },
         },
         OptChain: false,
@@ -636,13 +636,13 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:11},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:11},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -655,7 +655,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    3,
         Right: &ast.IdentExpr{
@@ -664,13 +664,13 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    2,
     Right: &ast.IdentExpr{
@@ -679,13 +679,13 @@
             Start: ast.Location{Line:1, Column:9},
             End:   ast.Location{Line:1, Column:10},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -699,7 +699,7 @@
                     Start: ast.Location{Line:1, Column:1},
                     End:   ast.Location{Line:1, Column:4},
                 },
-                inferredType: (*ast.Type)(nil),
+                inferredType: nil,
             },
             Args: {
                 &ast.IdentExpr{
@@ -708,7 +708,7 @@
                         Start: ast.Location{Line:1, Column:5},
                         End:   ast.Location{Line:1, Column:6},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
             },
             OptChain: false,
@@ -716,7 +716,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:7},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Args: {
             &ast.IdentExpr{
@@ -725,7 +725,7 @@
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
-                inferredType: (*ast.Type)(nil),
+                inferredType: nil,
             },
         },
         OptChain: false,
@@ -733,7 +733,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:10},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Args: {
         &ast.IdentExpr{
@@ -742,7 +742,7 @@
                 Start: ast.Location{Line:1, Column:11},
                 End:   ast.Location{Line:1, Column:12},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     OptChain: false,
@@ -750,7 +750,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:13},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -762,7 +762,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.IdentExpr{
@@ -771,13 +771,13 @@
             Start: ast.Location{Line:1, Column:7},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -789,7 +789,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Args: {
         &ast.IdentExpr{
@@ -798,14 +798,14 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.EmptyExpr{
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:7},
                 End:   ast.Location{Line:1, Column:7},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     OptChain: false,
@@ -813,7 +813,7 @@
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:7},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -825,7 +825,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.MemberExpr{
@@ -835,7 +835,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Prop: &ast.Ident{
             Name: "",
@@ -849,13 +849,13 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -880,7 +880,7 @@
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:2},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    1,
         Right: &ast.IdentExpr{
@@ -889,13 +889,13 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.EmptyExpr{
@@ -903,13 +903,13 @@
             Start: ast.Location{Line:1, Column:8},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -964,7 +964,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    0,
     Right: &ast.MemberExpr{
@@ -974,7 +974,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Prop: &ast.Ident{
             Name: "",
@@ -988,13 +988,13 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:7},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:7},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -1027,7 +1027,7 @@
                 Start: ast.Location{Line:1, Column:9},
                 End:   ast.Location{Line:1, Column:10},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -1060,7 +1060,7 @@
                 Start: ast.Location{Line:1, Column:9},
                 End:   ast.Location{Line:1, Column:10},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -1145,7 +1145,7 @@
                 Start: ast.Location{Line:1, Column:16},
                 End:   ast.Location{Line:1, Column:17},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         export:  false,
         declare: true,
@@ -1169,7 +1169,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Op:    2,
     Right: &ast.BinaryExpr{
@@ -1179,7 +1179,7 @@
                 Start: ast.Location{Line:1, Column:6},
                 End:   ast.Location{Line:1, Column:7},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         Op:    0,
         Right: &ast.IdentExpr{
@@ -1188,19 +1188,19 @@
                 Start: ast.Location{Line:1, Column:10},
                 End:   ast.Location{Line:1, Column:11},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:6},
             End:   ast.Location{Line:1, Column:11},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:11},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -1225,7 +1225,7 @@
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:2},
@@ -1233,7 +1233,7 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:3},
@@ -1241,14 +1241,14 @@
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -1272,7 +1272,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     Index: &ast.IdentExpr{
         Name: "bar",
@@ -1280,14 +1280,14 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:8},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     OptChain: false,
     span:     ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:9},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -1342,7 +1342,7 @@
                             Start: ast.Location{Line:1, Column:16},
                             End:   ast.Location{Line:1, Column:17},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.IdentExpr{
@@ -1351,13 +1351,13 @@
                             Start: ast.Location{Line:1, Column:20},
                             End:   ast.Location{Line:1, Column:21},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:16},
                         End:   ast.Location{Line:1, Column:21},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:16},
@@ -1418,7 +1418,7 @@
                             Start: ast.Location{Line:1, Column:23},
                             End:   ast.Location{Line:1, Column:24},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.IdentExpr{
@@ -1427,13 +1427,13 @@
                             Start: ast.Location{Line:1, Column:27},
                             End:   ast.Location{Line:1, Column:28},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:23},
                         End:   ast.Location{Line:1, Column:28},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:16},
@@ -1484,7 +1484,7 @@
                             Start: ast.Location{Line:2, Column:13},
                             End:   ast.Location{Line:2, Column:14},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     export:  false,
                     declare: false,
@@ -1514,7 +1514,7 @@
                             Start: ast.Location{Line:3, Column:13},
                             End:   ast.Location{Line:3, Column:15},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     export:  false,
                     declare: false,
@@ -1536,7 +1536,7 @@
                             Start: ast.Location{Line:4, Column:12},
                             End:   ast.Location{Line:4, Column:13},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.IdentExpr{
@@ -1545,13 +1545,13 @@
                             Start: ast.Location{Line:4, Column:16},
                             End:   ast.Location{Line:4, Column:17},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:4, Column:12},
                         End:   ast.Location{Line:4, Column:17},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:4, Column:5},
@@ -1601,7 +1601,7 @@
                             Start: ast.Location{Line:3, Column:5},
                             End:   ast.Location{Line:3, Column:8},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     export:  false,
                     declare: false,
@@ -1631,7 +1631,7 @@
                             Start: ast.Location{Line:3, Column:13},
                             End:   ast.Location{Line:3, Column:14},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     export:  false,
                     declare: false,
@@ -1653,7 +1653,7 @@
                             Start: ast.Location{Line:4, Column:12},
                             End:   ast.Location{Line:4, Column:13},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.EmptyExpr{
@@ -1661,13 +1661,13 @@
                             Start: ast.Location{Line:5, Column:4},
                             End:   ast.Location{Line:5, Column:5},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:4, Column:12},
                         End:   ast.Location{Line:5, Column:5},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:4, Column:5},
@@ -1729,7 +1729,7 @@ nil
                 Start: ast.Location{Line:1, Column:7},
                 End:   ast.Location{Line:1, Column:8},
             },
-            inferredType: (*ast.Type)(nil),
+            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -1789,7 +1789,7 @@ nil
                         Start: ast.Location{Line:1, Column:15},
                         End:   ast.Location{Line:1, Column:16},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:8},
@@ -1954,7 +1954,7 @@ nil
                             Start: ast.Location{Line:1, Column:23},
                             End:   ast.Location{Line:1, Column:24},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.IdentExpr{
@@ -1963,13 +1963,13 @@ nil
                             Start: ast.Location{Line:1, Column:27},
                             End:   ast.Location{Line:1, Column:28},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:23},
                         End:   ast.Location{Line:1, Column:28},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:23},
@@ -2060,7 +2060,7 @@ nil
                         Start: ast.Location{Line:2, Column:5},
                         End:   ast.Location{Line:2, Column:8},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 Args: {
                 },
@@ -2069,7 +2069,7 @@ nil
                     Start: ast.Location{Line:2, Column:5},
                     End:   ast.Location{Line:2, Column:10},
                 },
-                inferredType: (*ast.Type)(nil),
+                inferredType: nil,
             },
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:5},
@@ -2084,7 +2084,7 @@ nil
                         Start: ast.Location{Line:3, Column:5},
                         End:   ast.Location{Line:3, Column:8},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 Args: {
                 },
@@ -2093,7 +2093,7 @@ nil
                     Start: ast.Location{Line:3, Column:5},
                     End:   ast.Location{Line:3, Column:10},
                 },
-                inferredType: (*ast.Type)(nil),
+                inferredType: nil,
             },
             span: ast.Span{
                 Start: ast.Location{Line:3, Column:5},
@@ -2123,7 +2123,7 @@ nil
                         Start: ast.Location{Line:2, Column:13},
                         End:   ast.Location{Line:2, Column:14},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 export:  false,
                 declare: false,
@@ -2153,7 +2153,7 @@ nil
                         Start: ast.Location{Line:3, Column:13},
                         End:   ast.Location{Line:3, Column:15},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 export:  false,
                 declare: false,
@@ -2184,7 +2184,7 @@ nil
                             Start: ast.Location{Line:4, Column:15},
                             End:   ast.Location{Line:4, Column:16},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     Op:    0,
                     Right: &ast.IdentExpr{
@@ -2193,13 +2193,13 @@ nil
                             Start: ast.Location{Line:4, Column:19},
                             End:   ast.Location{Line:4, Column:20},
                         },
-                        inferredType: (*ast.Type)(nil),
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:4, Column:15},
                         End:   ast.Location{Line:4, Column:20},
                     },
-                    inferredType: (*ast.Type)(nil),
+                    inferredType: nil,
                 },
                 export:  false,
                 declare: false,
@@ -2258,7 +2258,7 @@ nil
                                     Start: ast.Location{Line:3, Column:13},
                                     End:   ast.Location{Line:3, Column:14},
                                 },
-                                inferredType: (*ast.Type)(nil),
+                                inferredType: nil,
                             },
                             Op:    0,
                             Right: &ast.IdentExpr{
@@ -2267,13 +2267,13 @@ nil
                                     Start: ast.Location{Line:3, Column:17},
                                     End:   ast.Location{Line:3, Column:18},
                                 },
-                                inferredType: (*ast.Type)(nil),
+                                inferredType: nil,
                             },
                             span: ast.Span{
                                 Start: ast.Location{Line:3, Column:13},
                                 End:   ast.Location{Line:3, Column:18},
                             },
-                            inferredType: (*ast.Type)(nil),
+                            inferredType: nil,
                         },
                         span: ast.Span{
                             Start: ast.Location{Line:3, Column:6},
@@ -2331,7 +2331,7 @@ nil
                                     Start: ast.Location{Line:6, Column:13},
                                     End:   ast.Location{Line:6, Column:14},
                                 },
-                                inferredType: (*ast.Type)(nil),
+                                inferredType: nil,
                             },
                             Op:    1,
                             Right: &ast.IdentExpr{
@@ -2340,13 +2340,13 @@ nil
                                     Start: ast.Location{Line:6, Column:17},
                                     End:   ast.Location{Line:6, Column:18},
                                 },
-                                inferredType: (*ast.Type)(nil),
+                                inferredType: nil,
                             },
                             span: ast.Span{
                                 Start: ast.Location{Line:6, Column:13},
                                 End:   ast.Location{Line:6, Column:18},
                             },
-                            inferredType: (*ast.Type)(nil),
+                            inferredType: nil,
                         },
                         span: ast.Span{
                             Start: ast.Location{Line:6, Column:6},
@@ -2379,13 +2379,13 @@ nil
             Start: ast.Location{Line:1, Column:2},
             End:   ast.Location{Line:1, Column:3},
         },
-        inferredType: (*ast.Type)(nil),
+        inferredType: nil,
     },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:2},
         End:   ast.Location{Line:1, Column:3},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -2396,7 +2396,7 @@ nil
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:3},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -2407,7 +2407,7 @@ nil
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:4},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
 
@@ -2418,6 +2418,6 @@ nil
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:3},
     },
-    inferredType: (*ast.Type)(nil),
+    inferredType: nil,
 }
 ---
