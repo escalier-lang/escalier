@@ -7,26 +7,45 @@ type Type interface {
 	SetProvenance(*Provenance)
 }
 
-type TVar struct {
+func (*TypeVarType) isType()      {}
+func (*TypeRefType) isType()      {}
+func (*PrimType) isType()         {}
+func (*LitType) isType()          {}
+func (*UniqueSymbolType) isType() {}
+func (*KeywordType) isType()      {}
+func (*FuncType) isType()         {}
+func (*ObjectType) isType()       {}
+func (*TupleType) isType()        {}
+func (*RestSpreadType) isType()   {}
+func (*UnionType) isType()        {}
+func (*IntersectionType) isType() {}
+func (*KeyOfType) isType()        {}
+func (*IndexType) isType()        {}
+func (*CondType) isType()         {}
+func (*InferType) isType()        {}
+func (*WildcardType) isType()     {}
+func (*ExtractType) isType()      {}
+func (*TemplateLitType) isType()  {}
+func (*IntrinsicType) isType()    {}
+
+type TypeVarType struct {
 	ID         int
 	Instance   Type
 	provenance *Provenance
 }
 
-func (*TVar) isType()                       {}
-func (t *TVar) Provenance() *Provenance     { return t.provenance }
-func (t *TVar) SetProvenance(p *Provenance) { t.provenance = p }
+func (t *TypeVarType) Provenance() *Provenance     { return t.provenance }
+func (t *TypeVarType) SetProvenance(p *Provenance) { t.provenance = p }
 
-type TypeRef struct {
+type TypeRefType struct {
 	Name       string // TODO: Make this a qualified identifier
 	TypeArgs   []Type
 	TypeAlias  Type // resolved type alias (definition)
 	provenance *Provenance
 }
 
-func (*TypeRef) isType()                       {}
-func (t *TypeRef) Provenance() *Provenance     { return t.provenance }
-func (t *TypeRef) SetProvenance(p *Provenance) { t.provenance = p }
+func (t *TypeRefType) Provenance() *Provenance     { return t.provenance }
+func (t *TypeRefType) SetProvenance(p *Provenance) { t.provenance = p }
 
 type Prim string
 
@@ -43,7 +62,6 @@ type PrimType struct {
 	provenance *Provenance
 }
 
-func (*PrimType) isType()                       {}
 func (t *PrimType) Provenance() *Provenance     { return t.provenance }
 func (t *PrimType) SetProvenance(p *Provenance) { t.provenance = p }
 
@@ -52,9 +70,16 @@ type LitType struct {
 	provenance *Provenance
 }
 
-func (*LitType) isType()                       {}
 func (t *LitType) Provenance() *Provenance     { return t.provenance }
 func (t *LitType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type UniqueSymbolType struct {
+	Value      int
+	provenance *Provenance
+}
+
+func (t *UniqueSymbolType) Provenance() *Provenance     { return t.provenance }
+func (t *UniqueSymbolType) SetProvenance(p *Provenance) { t.provenance = p }
 
 type Keyword string
 
@@ -70,7 +95,6 @@ type KeywordType struct {
 	provenance *Provenance
 }
 
-func (*KeywordType) isType()                       {}
 func (t *KeywordType) Provenance() *Provenance     { return t.provenance }
 func (t *KeywordType) SetProvenance(p *Provenance) { t.provenance = p }
 
@@ -91,12 +115,11 @@ type FuncType struct {
 	TypeParams []*TypeParam
 	Self       Type
 	Params     []*FuncParam
-	Ret        Type
+	Return     Type
 	Throws     Type
 	provenance *Provenance
 }
 
-func (*FuncType) isType()                       {}
 func (t *FuncType) Provenance() *Provenance     { return t.provenance }
 func (t *FuncType) SetProvenance(p *Provenance) { t.provenance = p }
 
@@ -110,60 +133,6 @@ type StrPropName struct{ Value string }
 type NumPropName struct{ Value float64 }
 type SymbolPropName struct{ Value int }
 
-type ObjTypeElem interface{ isObjTypeElem() }
-
-func (*Callable) isObjTypeElem()    {}
-func (*Constructor) isObjTypeElem() {}
-func (*Method) isObjTypeElem()      {}
-func (*Getter) isObjTypeElem()      {}
-func (*Setter) isObjTypeElem()      {}
-func (*Mapped) isObjTypeElem()      {}
-func (*Property) isObjTypeElem()    {}
-func (*RestSpread) isObjTypeElem()  {}
-
-type Callable struct{ Fn FuncType }
-type Constructor struct{ Fn FuncType }
-type Method struct {
-	Name string // TODO: use PropName
-	Fn   FuncType
-}
-type Getter struct {
-	Name string // TODO: use PropName
-	Fn   FuncType
-}
-type Setter struct {
-	Name string // TODO: use PropName
-	Fn   FuncType
-}
-type IndexParam struct {
-	Name       string
-	Constraint Type
-}
-
-type MappedModifier string
-
-const (
-	MMAdd    MappedModifier = "add"
-	MMRemove MappedModifier = "remove"
-)
-
-type Mapped struct {
-	TypeParam *IndexParam
-	NameType  Type
-	TypeAnn   Type
-	Optional  *MappedModifier
-	ReadOnly  *MappedModifier
-}
-type Property struct {
-	Name     string // TODO: use PropName
-	Optional bool
-	Readonly bool
-	Type     Type
-}
-type RestSpread struct {
-	Type Type
-}
-
 type ObjectType struct {
 	Elems      []*ObjTypeElem
 	Exact      bool // Can't be true if any of Interface, Implements, or Extends are true
@@ -171,12 +140,11 @@ type ObjectType struct {
 	Mutable    bool // true for `mut {...}`, false for `{...}`
 	Nomimal    bool // true for classes
 	Interface  bool
-	Extends    *[]*TypeRef
-	Implements *[]*TypeRef
+	Extends    *[]*TypeRefType
+	Implements *[]*TypeRefType
 	provenance *Provenance
 }
 
-func (*ObjectType) isType()                       {}
 func (t *ObjectType) Provenance() *Provenance     { return t.provenance }
 func (t *ObjectType) SetProvenance(p *Provenance) { t.provenance = p }
 
@@ -185,9 +153,101 @@ type TupleType struct {
 	provenance *Provenance
 }
 
-func (*TupleType) isType()                       {}
 func (t *TupleType) Provenance() *Provenance     { return t.provenance }
 func (t *TupleType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type RestSpreadType struct {
+	Type       Type
+	provenance *Provenance
+}
+
+func (t *RestSpreadType) Provenance() *Provenance     { return t.provenance }
+func (t *RestSpreadType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type UnionType struct {
+	Types      []Type
+	provenance *Provenance
+}
+
+func (t *UnionType) Provenance() *Provenance     { return t.provenance }
+func (t *UnionType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type IntersectionType struct {
+	Types      []Type
+	provenance *Provenance
+}
+
+func (t *IntersectionType) Provenance() *Provenance     { return t.provenance }
+func (t *IntersectionType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type KeyOfType struct {
+	Type       Type
+	provenance *Provenance
+}
+
+func (t *KeyOfType) Provenance() *Provenance     { return t.provenance }
+func (t *KeyOfType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type IndexType struct {
+	Target     Type
+	Index      Type
+	provenance *Provenance
+}
+
+func (t *IndexType) Provenance() *Provenance     { return t.provenance }
+func (t *IndexType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type CondType struct {
+	Check      Type
+	Extends    Type
+	Cons       Type
+	Alt        Type
+	provenance *Provenance
+}
+
+func (t *CondType) Provenance() *Provenance     { return t.provenance }
+func (t *CondType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type InferType struct {
+	Name       string
+	provenance *Provenance
+}
+
+func (t *InferType) Provenance() *Provenance     { return t.provenance }
+func (t *InferType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type WildcardType struct {
+	provenance *Provenance
+}
+
+func (t *WildcardType) Provenance() *Provenance     { return t.provenance }
+func (t *WildcardType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type ExtractType struct {
+	Extractor  Type
+	Args       []Type
+	provenance *Provenance
+}
+
+func (t *ExtractType) Provenance() *Provenance     { return t.provenance }
+func (t *ExtractType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type TemplateLitType struct {
+	Quasis     []*Quasi
+	Types      []Type
+	provenance *Provenance
+}
+
+func (t *TemplateLitType) Provenance() *Provenance     { return t.provenance }
+func (t *TemplateLitType) SetProvenance(p *Provenance) { t.provenance = p }
+
+type IntrinsicType struct {
+	Name       string
+	provenance *Provenance
+}
+
+func (t *IntrinsicType) Provenance() *Provenance     { return t.provenance }
+func (t *IntrinsicType) SetProvenance(p *Provenance) { t.provenance = p }
 
 //sumtype:decl
 type Provenance interface{ isProvenance() }

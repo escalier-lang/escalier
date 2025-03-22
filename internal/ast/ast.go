@@ -5,8 +5,8 @@ type Node interface {
 }
 
 type Inferrable interface {
-	InferredType() *Type
-	SetInferredType(*Type)
+	InferredType() Type
+	SetInferredType(Type)
 }
 
 // If `Name` is an empty string it means that the identifier is missing in
