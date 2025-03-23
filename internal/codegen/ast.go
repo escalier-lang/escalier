@@ -1,10 +1,10 @@
 package codegen
 
-import "github.com/escalier-lang/escalier/internal/parser"
+import "github.com/escalier-lang/escalier/internal/ast"
 
 type Node interface {
 	Span() *Span
-	Source() parser.Node
+	Source() ast.Node
 }
 
 // If `Name` is an empty string it means that the identifier is missing in
@@ -12,28 +12,28 @@ type Node interface {
 type Identifier struct {
 	Name   string
 	span   *Span // gets filled in by the printer
-	source parser.Node
+	source ast.Node
 }
 
 func (i *Identifier) Span() *Span {
 	return i.span
 }
 
-func (i *Identifier) Source() parser.Node {
+func (i *Identifier) Source() ast.Node {
 	return i.source
 }
 
 type Expr struct {
 	Kind   ExprKind
 	span   *Span // gets filled in by the printer
-	source parser.Node
+	source ast.Node
 }
 
 func (e *Expr) Span() *Span {
 	return e.span
 }
 
-func (e *Expr) Source() parser.Node {
+func (e *Expr) Source() ast.Node {
 	return e.source
 }
 
@@ -130,14 +130,14 @@ type Decl struct {
 	Export  bool
 	Declare bool
 	span    *Span
-	source  parser.Node
+	source  ast.Node
 }
 
 func (d *Decl) Span() *Span {
 	return d.span
 }
 
-func (d *Decl) Source() parser.Node {
+func (d *Decl) Source() ast.Node {
 	return d.source
 }
 
@@ -178,14 +178,14 @@ type DFunction struct {
 type Stmt struct {
 	Kind   StmtKind
 	span   *Span
-	source parser.Node
+	source ast.Node
 }
 
 func (s *Stmt) Span() *Span {
 	return s.span
 }
 
-func (s *Stmt) Source() parser.Node {
+func (s *Stmt) Source() ast.Node {
 	return s.source
 }
 

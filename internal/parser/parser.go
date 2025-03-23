@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+
+	"github.com/escalier-lang/escalier/internal/ast"
 )
 
 type Parser struct {
@@ -18,43 +20,43 @@ func NewParser(source Source) *Parser {
 	}
 }
 
-var precedence = map[BinaryOp]int{
-	Times:             12,
-	Divide:            12,
-	Modulo:            12,
-	Plus:              11,
-	Minus:             11,
-	LessThan:          9,
-	LessThanEqual:     9,
-	GreaterThan:       9,
-	GreaterThanEqual:  9,
-	Equal:             8,
-	NotEqual:          8,
-	LogicalAnd:        4,
-	LogicalOr:         3,
-	NullishCoalescing: 3,
+var precedence = map[ast.BinaryOp]int{
+	ast.Times:             12,
+	ast.Divide:            12,
+	ast.Modulo:            12,
+	ast.Plus:              11,
+	ast.Minus:             11,
+	ast.LessThan:          9,
+	ast.LessThanEqual:     9,
+	ast.GreaterThan:       9,
+	ast.GreaterThanEqual:  9,
+	ast.Equal:             8,
+	ast.NotEqual:          8,
+	ast.LogicalAnd:        4,
+	ast.LogicalOr:         3,
+	ast.NullishCoalescing: 3,
 }
 
-func (parser *Parser) ParseExpr() *Expr {
-	values := NewStack[*Expr]()
-	ops := NewStack[BinaryOp]()
+func (parser *Parser) ParseExpr() ast.Expr {
+	values := NewStack[ast.Expr]()
+	ops := NewStack[ast.BinaryOp]()
 
 	values = append(values, parser.parsePrimary())
 
 loop:
 	for {
 		token := parser.lexer.peek()
-		var nextOp BinaryOp
+		var nextOp ast.BinaryOp
 
 		switch token.Kind.(type) {
 		case *TPlus:
-			nextOp = Plus
+			nextOp = ast.Plus
 		case *TMinus:
-			nextOp = Minus
+			nextOp = ast.Minus
 		case *TAsterisk:
-			nextOp = Times
+			nextOp = ast.Times
 		case *TSlash:
-			nextOp = Divide
+			nextOp = ast.Divide
 		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEndOfFile, *TVar, *TVal, *TFn, *TReturn:
 			break loop
 		default:
@@ -72,10 +74,7 @@ loop:
 				right := values.Pop()
 				left := values.Pop()
 
-				values.Push(&Expr{
-					Kind: &EBinary{Left: left, Op: op, Right: right},
-					span: Span{Start: left.span.Start, End: right.span.End},
-				})
+				values.Push(ast.NewBinary(left, right, op, ast.Span{Start: left.Span().Start, End: right.Span().End}))
 			}
 		}
 
@@ -89,10 +88,7 @@ loop:
 		right := values.Pop()
 		left := values.Pop()
 
-		values.Push(&Expr{
-			Kind: &EBinary{Left: left, Op: op, Right: right},
-			span: Span{Start: left.span.Start, End: right.span.End},
-		})
+		values.Push(ast.NewBinary(left, right, op, ast.Span{Start: left.Span().Start, End: right.Span().End}))
 	}
 
 	if len(values) != 1 {
@@ -103,7 +99,7 @@ loop:
 
 type TokenAndOp struct {
 	Token *Token
-	Op    UnaryOp
+	Op    ast.UnaryOp
 }
 
 func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
@@ -114,9 +110,9 @@ loop:
 	for {
 		switch token.Kind.(type) {
 		case *TPlus:
-			result.Push(TokenAndOp{Token: &token, Op: UnaryPlus})
+			result.Push(TokenAndOp{Token: &token, Op: ast.UnaryPlus})
 		case *TMinus:
-			result.Push(TokenAndOp{Token: &token, Op: UnaryMinus})
+			result.Push(TokenAndOp{Token: &token, Op: ast.UnaryMinus})
 		default:
 			break loop
 		}
@@ -127,7 +123,7 @@ loop:
 	return result
 }
 
-func (parser *Parser) parseSuffix(expr *Expr) *Expr {
+func (parser *Parser) parseSuffix(expr ast.Expr) ast.Expr {
 	token := parser.lexer.peek()
 
 loop:
@@ -145,11 +141,7 @@ loop:
 			if _, ok := token.Kind.(*TQuestionOpenParen); ok {
 				optChain = true
 			}
-			expr =
-				&Expr{
-					Kind: &ECall{Callee: callee, Args: args, OptChain: optChain},
-					span: Span{Start: callee.span.Start, End: terminator.Span.End},
-				}
+			expr = ast.NewCall(callee, args, optChain, ast.Span{Start: callee.Span().Start, End: terminator.Span.End})
 		case *TOpenBracket, *TQuestionOpenBracket:
 			parser.lexer.consume()
 			index := parser.ParseExpr()
@@ -162,11 +154,7 @@ loop:
 			if _, ok := token.Kind.(*TQuestionOpenBracket); ok {
 				optChain = true
 			}
-			expr =
-				&Expr{
-					Kind: &EIndex{Object: obj, Index: index, OptChain: optChain},
-					span: Span{Start: obj.span.Start, End: terminator.Span.End},
-				}
+			expr = ast.NewIndex(obj, index, optChain, ast.Span{Start: obj.Span().Start, End: terminator.Span.End})
 		case *TDot, *TQuestionDot:
 			parser.lexer.consume()
 			prop := parser.lexer.next()
@@ -177,23 +165,15 @@ loop:
 			switch t := prop.Kind.(type) {
 			case *TIdentifier:
 				obj := expr
-				prop := &Identifier{Name: t.Value, span: prop.Span}
-				expr =
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
-						span: Span{Start: obj.span.Start, End: prop.span.End},
-					}
+				prop := ast.NewIdentifier(t.Value, prop.Span)
+				expr = ast.NewMember(obj, prop, optChain, ast.Span{Start: obj.Span().Start, End: prop.Span().End})
 			default:
 				obj := expr
-				prop := &Identifier{
-					Name: "",
-					span: Span{Start: token.Span.End, End: token.Span.End},
-				}
-				expr =
-					&Expr{
-						Kind: &EMember{Object: obj, Prop: prop, OptChain: optChain},
-						span: Span{Start: obj.span.Start, End: prop.span.End},
-					}
+				prop := ast.NewIdentifier(
+					"",
+					ast.Span{Start: token.Span.End, End: token.Span.End},
+				)
+				expr = ast.NewMember(obj, prop, optChain, ast.Span{Start: obj.Span().Start, End: prop.Span().End})
 				if _, ok := token.Kind.(*TDot); ok {
 					parser.reportError(token.Span, "expected an identifier after .")
 				} else {
@@ -209,33 +189,24 @@ loop:
 	return expr
 }
 
-func (parser *Parser) parsePrimary() *Expr {
+func (parser *Parser) parsePrimary() ast.Expr {
 	ops := parser.parsePrefix()
 	token := parser.lexer.peek()
 
-	var expr *Expr
+	var expr ast.Expr
 
 	// Loop until we parse a primary expression.
 	for expr == nil {
 		switch t := token.Kind.(type) {
 		case *TNumber:
 			parser.lexer.consume()
-			expr = &Expr{
-				Kind: &ENumber{Value: t.Value},
-				span: token.Span,
-			}
+			expr = ast.NewNumber(t.Value, token.Span)
 		case *TString:
 			parser.lexer.consume()
-			expr = &Expr{
-				Kind: &EString{Value: t.Value},
-				span: token.Span,
-			}
+			expr = ast.NewString(t.Value, token.Span)
 		case *TIdentifier:
 			parser.lexer.consume()
-			expr = &Expr{
-				Kind: &EIdentifier{Name: t.Value},
-				span: token.Span,
-			}
+			expr = ast.NewIdent(t.Value, token.Span)
 		case *TOpenParen:
 			parser.lexer.consume()
 			expr = parser.ParseExpr()
@@ -250,18 +221,12 @@ func (parser *Parser) parsePrimary() *Expr {
 			if _, ok := final.Kind.(*TCloseBracket); !ok {
 				parser.reportError(token.Span, "Expected a closing bracket")
 			}
-			expr = &Expr{
-				Kind: &EArray{Elems: elems},
-				span: Span{Start: token.Span.Start, End: final.Span.End},
-			}
+			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
 		case
 			*TVal, *TVar, *TFn, *TReturn,
 			*TCloseBrace, *TCloseParen, *TCloseBracket,
 			*TEndOfFile:
-			expr = &Expr{
-				Kind: &EEmpty{},
-				span: token.Span,
-			}
+			expr = ast.NewEmpty(token.Span)
 			parser.reportError(token.Span, "Expected an expression")
 			return expr
 		default:
@@ -275,17 +240,14 @@ func (parser *Parser) parsePrimary() *Expr {
 
 	for !ops.IsEmpty() {
 		tokenAndOp := ops.Pop()
-		expr = &Expr{
-			Kind: &EUnary{Op: tokenAndOp.Op, Arg: expr},
-			span: Span{Start: tokenAndOp.Token.Span.Start, End: expr.span.End},
-		}
+		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End})
 	}
 
 	return expr
 }
 
-func (parser *Parser) parseExprSeq() []*Expr {
-	exprs := []*Expr{}
+func (parser *Parser) parseExprSeq() []ast.Expr {
+	exprs := []ast.Expr{}
 
 	// handles empty sequences
 	token := parser.lexer.peek()
@@ -314,15 +276,15 @@ func (parser *Parser) parseExprSeq() []*Expr {
 	}
 }
 
-func (parser *Parser) parseParamSeq() []*Param {
-	params := []*Param{}
+func (parser *Parser) parseParamSeq() []*ast.Param {
+	params := []*ast.Param{}
 
 	token := parser.lexer.peek()
 	_ident, ok := token.Kind.(*TIdentifier)
 	if !ok {
 		return params
 	}
-	param := &Param{Name: &Identifier{Name: _ident.Value, span: token.Span}}
+	param := &ast.Param{Name: ast.NewIdentifier(_ident.Value, token.Span)}
 	params = append(params, param)
 	parser.lexer.consume()
 
@@ -337,7 +299,7 @@ func (parser *Parser) parseParamSeq() []*Param {
 			if !ok {
 				return params
 			}
-			param := &Param{Name: &Identifier{Name: _ident.Value, span: token.Span}}
+			param := &ast.Param{Name: ast.NewIdentifier(_ident.Value, token.Span)}
 			params = append(params, param)
 			parser.lexer.consume()
 		default:
@@ -346,13 +308,13 @@ func (parser *Parser) parseParamSeq() []*Param {
 	}
 }
 
-func (parser *Parser) parseBlock() []*Stmt {
-	stmts := []*Stmt{}
+func (parser *Parser) parseBlock() ast.Block {
+	stmts := []ast.Stmt{}
 
 	token := parser.lexer.next()
 	if _, ok := token.Kind.(*TOpenBrace); !ok {
 		parser.reportError(token.Span, "Expected an opening brace")
-		return stmts
+		return ast.Block{Stmts: stmts}
 	}
 
 	token = parser.lexer.peek()
@@ -360,7 +322,7 @@ func (parser *Parser) parseBlock() []*Stmt {
 		switch token.Kind.(type) {
 		case *TCloseBrace:
 			parser.lexer.consume()
-			return stmts
+			return ast.Block{Stmts: stmts}
 		default:
 			stmt := parser.parseStmt()
 			stmts = append(stmts, stmt)
@@ -369,7 +331,7 @@ func (parser *Parser) parseBlock() []*Stmt {
 	}
 }
 
-func (parser *Parser) parseDecl() *Decl {
+func (parser *Parser) parseDecl() ast.Decl {
 	export := false
 	declare := false
 
@@ -387,28 +349,28 @@ func (parser *Parser) parseDecl() *Decl {
 
 	switch token.Kind.(type) {
 	case *TVal, *TVar:
-		kind := ValKind
+		kind := ast.ValKind
 		if _, ok := token.Kind.(*TVar); ok {
-			kind = VarKind
+			kind = ast.VarKind
 		}
 
 		token := parser.lexer.peek()
 		_ident, ok := token.Kind.(*TIdentifier)
-		var ident *Identifier
+		var ident *ast.Ident
 		if ok {
 			parser.lexer.consume()
-			ident = &Identifier{Name: _ident.Value, span: token.Span}
+			ident = ast.NewIdentifier(_ident.Value, token.Span)
 		} else {
 			parser.reportError(token.Span, "Expected identifier")
-			ident = &Identifier{
-				Name: "",
-				span: Span{Start: token.Span.Start, End: token.Span.Start},
-			}
+			ident = ast.NewIdentifier(
+				"",
+				ast.Span{Start: token.Span.Start, End: token.Span.Start},
+			)
 		}
 		end := token.Span.End
 
 		token = parser.lexer.peek()
-		var init *Expr
+		var init ast.Expr
 		if !declare {
 			_, ok = token.Kind.(*TEquals)
 			if !ok {
@@ -417,32 +379,23 @@ func (parser *Parser) parseDecl() *Decl {
 			}
 			parser.lexer.consume()
 			init = parser.ParseExpr()
-			end = init.span.End
+			end = init.Span().End
 		}
 
-		return &Decl{
-			Kind: &DVariable{
-				Name: ident,
-				Kind: kind,
-				Init: init,
-			},
-			Declare: declare,
-			Export:  export,
-			span:    Span{Start: start, End: end},
-		}
+		return ast.NewVarDecl(kind, ident, init, declare, export, ast.Span{Start: start, End: end})
 	case *TFn:
 		token := parser.lexer.peek()
 		_ident, ok := token.Kind.(*TIdentifier)
-		var ident *Identifier
+		var ident *ast.Ident
 		if ok {
 			parser.lexer.consume()
-			ident = &Identifier{Name: _ident.Value, span: token.Span}
+			ident = ast.NewIdentifier(_ident.Value, token.Span)
 		} else {
 			parser.reportError(token.Span, "Expected identifier")
-			ident = &Identifier{
-				Name: "",
-				span: Span{Start: token.Span.Start, End: token.Span.Start},
-			}
+			ident = ast.NewIdentifier(
+				"",
+				ast.Span{Start: token.Span.Start, End: token.Span.Start},
+			)
 		}
 
 		token = parser.lexer.next()
@@ -457,28 +410,19 @@ func (parser *Parser) parseDecl() *Decl {
 			return nil
 		}
 
-		body := []*Stmt{}
+		body := ast.Block{}
 		if !declare {
 			body = parser.parseBlock()
 		}
 
-		return &Decl{
-			Kind: &DFunction{
-				Name:   ident,
-				Params: params,
-				Body:   body,
-			},
-			Declare: declare,
-			Export:  export,
-			span:    Span{Start: start, End: ident.span.End},
-		}
+		return ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: ident.Span().End})
 	default:
 		parser.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
 
-func (parser *Parser) parseStmt() *Stmt {
+func (parser *Parser) parseStmt() ast.Stmt {
 	token := parser.lexer.peek()
 
 	switch token.Kind.(type) {
@@ -487,34 +431,25 @@ func (parser *Parser) parseStmt() *Stmt {
 		if decl == nil {
 			return nil
 		}
-		return &Stmt{
-			Kind: &SDecl{Decl: decl},
-			span: decl.span,
-		}
+		return ast.NewDeclStmt(decl, decl.Span())
 	case *TReturn:
 		parser.lexer.consume()
 		expr := parser.ParseExpr()
-		return &Stmt{
-			Kind: &SReturn{Expr: expr},
-			span: Span{Start: token.Span.Start, End: expr.span.End},
-		}
+		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
 		expr := parser.ParseExpr()
-		return &Stmt{
-			Kind: &SExpr{Expr: expr},
-			span: expr.span,
-		}
+		return ast.NewExprStmt(expr, expr.Span())
 	}
 }
 
-func (parser *Parser) ParseModule() *Module {
-	stmts := []*Stmt{}
+func (parser *Parser) ParseModule() *ast.Module {
+	stmts := []ast.Stmt{}
 
 	token := parser.lexer.peek()
 	for {
 		switch token.Kind.(type) {
 		case *TEndOfFile:
-			return &Module{Stmts: stmts}
+			return &ast.Module{Stmts: stmts}
 		default:
 			stmt := parser.parseStmt()
 			stmts = append(stmts, stmt)
@@ -523,7 +458,7 @@ func (parser *Parser) ParseModule() *Module {
 	}
 }
 
-func (parser *Parser) reportError(span Span, message string) {
+func (parser *Parser) reportError(span ast.Span, message string) {
 	_, _, line, _ := runtime.Caller(1)
 	if os.Getenv("DEBUG") == "true" {
 		message = fmt.Sprintf("%s:%d", message, line)

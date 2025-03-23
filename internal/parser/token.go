@@ -1,8 +1,10 @@
 package parser
 
+import "github.com/escalier-lang/escalier/internal/ast"
+
 type Token struct {
 	Kind TokenKind
-	Span Span
+	Span ast.Span
 }
 
 // This interface is never called. Its purpose is to encode a variant type in

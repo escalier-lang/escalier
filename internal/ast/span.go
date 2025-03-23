@@ -1,4 +1,4 @@
-package parser
+package ast
 
 type Location struct {
 	Line   int
