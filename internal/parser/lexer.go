@@ -45,6 +45,10 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
 
+	if startOffset >= len(lexer.source.Contents) {
+		return NewEndOfFile(ast.Span{Start: start, End: start})
+	}
+
 	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 
 	// Skip over whitespace
@@ -234,46 +238,49 @@ func (lexer *Lexer) consume() {
 	}
 }
 
-// func (lexer *Lexer) lexQuasi() *TQuasi {
-// 	startOffset := lexer.currentOffset
-// 	start := lexer.currentLocation
-// 	end := start
+func (lexer *Lexer) lexQuasi() *TQuasi {
+	startOffset := lexer.currentOffset
+	start := lexer.currentLocation
+	end := start
 
-// 	contents := lexer.source.Contents
-// 	n := len(contents)
-// 	i := startOffset
-// 	for i < n {
-// 		c := contents[i]
-// 		if c == '$' {
-// 			if i+1 < n && contents[i+1] == '{' {
-// 				break
-// 			}
-// 		}
-// 		if c == '`' {
-// 			break
-// 		}
-// 		if c == '\n' {
-// 			end.Line++
-// 			end.Column = 1
-// 		} else {
-// 			end.Column++
-// 		}
-// 		i++
-// 	}
-// 	endOffset := i + 2
-// 	end.Column += 2
+	contents := lexer.source.Contents
+	n := len(contents)
+	i := startOffset
+	last := false
+	for i < n {
+		c := contents[i]
+		if c == '$' {
+			if i+1 < n && contents[i+1] == '{' {
+				break
+			}
+		}
+		if c == '`' {
+			last = true
+			break
+		}
+		if c == '\n' {
+			end.Line++
+			end.Column = 1
+		} else {
+			end.Column++
+		}
+		i++
+	}
+	endOffset := i + 2
+	end.Column += 2
+	if last {
+		endOffset--
+		end.Column--
+	}
 
-// 	lexer.currentOffset = endOffset
-// 	lexer.currentLocation = end
-// 	lexer.afterPeekOffset = endOffset
-// 	lexer.afterPeakLocation = end
+	lexer.currentOffset = endOffset
+	lexer.currentLocation = end
+	lexer.afterPeekOffset = endOffset
+	lexer.afterPeakLocation = end
 
-// 	// TODO differentiate between quasi ending with '${' and '`'
-// 	return Token{
-// 		Kind: &TQuasi{Value: contents[startOffset+1 : i]},
-// 		Span: ast.Span{Start: start, End: end},
-// 	}
-// }
+	// TODO differentiate between quasi ending with '${' and '`'
+	return NewQuasi(contents[startOffset:i], last, ast.Span{Start: start, End: end})
+}
 
 func (lexer *Lexer) Lex() []Token {
 	var tokens []Token

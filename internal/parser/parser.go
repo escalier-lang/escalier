@@ -180,6 +180,8 @@ loop:
 					parser.reportError(token.Span(), "expected an identifier after ?.")
 				}
 			}
+		case *TBackTick:
+			expr = parser.parseTemplateLitExpr(token, expr)
 		default:
 			break loop
 		}
@@ -222,12 +224,8 @@ func (parser *Parser) parsePrimary() ast.Expr {
 				parser.reportError(token.Span(), "Expected a closing bracket")
 			}
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span().Start, End: final.Span().End})
-		// case *TBackTick:
-		// 	parser.lexer.consume()
-		// 	var quasis []*ast.Quasi
-		// 	quasi := parser.lexer.lexQuasi()
-		// 	quasis = append(quasis, &ast.Quasi{Value: quasi.Value, Span: quasi.Span})
-		// 	expr = ast.NewTemplateLit()
+		case *TBackTick:
+			expr = parser.parseTemplateLitExpr(token, nil)
 		case
 			*TVal, *TVar, *TFn, *TReturn,
 			*TCloseBrace, *TCloseParen, *TCloseBracket,
@@ -314,21 +312,49 @@ func (parser *Parser) parseParamSeq() []*ast.Param {
 	}
 }
 
+func (parser *Parser) parseTemplateLitExpr(token Token, tag ast.Expr) ast.Expr {
+	parser.lexer.consume()
+	var quasis []*ast.Quasi
+	var exprs []ast.Expr
+	for {
+		quasi := parser.lexer.lexQuasi()
+		quasis = append(quasis, &ast.Quasi{Value: quasi.Value, Span: quasi.Span()})
+
+		if quasi.Last {
+			break
+		} else {
+			expr := parser.ParseExpr()
+			exprs = append(exprs, expr)
+			parser.lexer.consume() // consumes the closing brace
+		}
+	}
+	if tag != nil {
+		span := ast.Span{Start: tag.Span().Start, End: parser.lexer.currentLocation}
+		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
+	}
+	span := ast.Span{Start: token.Span().Start, End: parser.lexer.currentLocation}
+	return ast.NewTemplateLit(quasis, exprs, span)
+}
+
 func (parser *Parser) parseBlock() ast.Block {
 	stmts := []ast.Stmt{}
+	var start ast.Location
 
 	token := parser.lexer.next()
-	if _, ok := token.(*TOpenBrace); !ok {
+	if t, ok := token.(*TOpenBrace); !ok {
 		parser.reportError(token.Span(), "Expected an opening brace")
+		// TODO: include Span
 		return ast.Block{Stmts: stmts}
+	} else {
+		start = t.Span().Start
 	}
 
 	token = parser.lexer.peek()
 	for {
-		switch token.(type) {
+		switch t := token.(type) {
 		case *TCloseBrace:
 			parser.lexer.consume()
-			return ast.Block{Stmts: stmts}
+			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: t.Span().End}}
 		default:
 			stmt := parser.parseStmt()
 			stmts = append(stmts, stmt)
@@ -416,7 +442,7 @@ func (parser *Parser) parseDecl() ast.Decl {
 			return nil
 		}
 
-		body := ast.Block{}
+		var body ast.Block
 		if !declare {
 			body = parser.parseBlock()
 		}

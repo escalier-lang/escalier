@@ -35,11 +35,14 @@ func (t *TString) Span() ast.Span                    { return t.span }
 
 type TQuasi struct {
 	Value string
+	Last  bool
 	span  ast.Span
 }
 
-func NewQuasi(value string, span ast.Span) *TQuasi { return &TQuasi{Value: value, span: span} }
-func (t *TQuasi) Span() ast.Span                   { return t.span }
+func NewQuasi(value string, last bool, span ast.Span) *TQuasi {
+	return &TQuasi{Value: value, Last: last, span: span}
+}
+func (t *TQuasi) Span() ast.Span { return t.span }
 
 type TIdentifier struct {
 	Value string

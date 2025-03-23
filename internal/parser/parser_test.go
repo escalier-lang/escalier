@@ -15,6 +15,18 @@ func TestParseExprNoErrors(t *testing.T) {
 		"StringLiteral": {
 			input: "\"hello\"",
 		},
+		"TemplateStringLiteralWithExprs": {
+			input: "`hello ${name}`",
+		},
+		"TemplateStringLiteralWithMultipleExprs": {
+			input: "`a${b}c${d}e`",
+		},
+		"NestedTemplateStringLiteral": {
+			input: "`a${`b${c}d`}e`",
+		},
+		"TaggedTemplateStringLiteral": {
+			input: "gql`query userId { user { id } }`",
+		},
 		"NumberLiteral": {
 			input: "5",
 		},
