@@ -86,7 +86,7 @@ func TransformDecl(decl ast.Decl) *Decl {
 		kind = &DFunction{
 			Name:   TransformIdentifier(d.Name),
 			Params: params,
-			Body:   TransformStmts(d.Body),
+			Body:   TransformStmts(d.Body.Stmts),
 		}
 	}
 
@@ -151,7 +151,7 @@ func TransformExpr(expr ast.Expr) *Expr {
 			Prop:     TransformIdentifier(e.Prop),
 			OptChain: e.OptChain,
 		}
-	case *ast.EArray:
+	case *ast.TupleExpr:
 		kind = &EArray{
 			Elems: TransformExprs(e.Elems),
 		}

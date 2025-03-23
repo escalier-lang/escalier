@@ -44,13 +44,13 @@ type Param struct {
 type FuncDecl struct {
 	Name    *Ident
 	Params  []*Param
-	Body    []Stmt
+	Body    Block
 	export  bool
 	declare bool
 	span    Span
 }
 
-func NewFuncDecl(name *Ident, params []*Param, body []Stmt, export, declare bool, span Span) *FuncDecl {
+func NewFuncDecl(name *Ident, params []*Param, body Block, export, declare bool, span Span) *FuncDecl {
 	return &FuncDecl{Name: name, Params: params, Body: body, export: export, declare: declare, span: span}
 }
 func (*FuncDecl) isDecl()         {}

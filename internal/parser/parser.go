@@ -308,13 +308,13 @@ func (parser *Parser) parseParamSeq() []*ast.Param {
 	}
 }
 
-func (parser *Parser) parseBlock() []ast.Stmt {
+func (parser *Parser) parseBlock() ast.Block {
 	stmts := []ast.Stmt{}
 
 	token := parser.lexer.next()
 	if _, ok := token.Kind.(*TOpenBrace); !ok {
 		parser.reportError(token.Span, "Expected an opening brace")
-		return stmts
+		return ast.Block{Stmts: stmts}
 	}
 
 	token = parser.lexer.peek()
@@ -322,7 +322,7 @@ func (parser *Parser) parseBlock() []ast.Stmt {
 		switch token.Kind.(type) {
 		case *TCloseBrace:
 			parser.lexer.consume()
-			return stmts
+			return ast.Block{Stmts: stmts}
 		default:
 			stmt := parser.parseStmt()
 			stmts = append(stmts, stmt)
@@ -410,7 +410,7 @@ func (parser *Parser) parseDecl() ast.Decl {
 			return nil
 		}
 
-		body := []ast.Stmt{}
+		body := ast.Block{}
 		if !declare {
 			body = parser.parseBlock()
 		}

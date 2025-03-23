@@ -140,8 +140,8 @@ type ObjectType struct {
 	Mutable    bool // true for `mut {...}`, false for `{...}`
 	Nomimal    bool // true for classes
 	Interface  bool
-	Extends    *[]*TypeRefType
-	Implements *[]*TypeRefType
+	Extends    []*TypeRefType
+	Implements []*TypeRefType
 	provenance *Provenance
 }
 

@@ -11,6 +11,7 @@ func (*ObjectPat) isPat()   {}
 func (*TuplePat) isPat()    {}
 func (*ExtractPat) isPat()  {}
 func (*LitPat) isPat()      {}
+func (*IsPat) isPat()       {}
 func (*WildcardPat) isPat() {}
 
 type IdentPat struct {
@@ -120,6 +121,20 @@ func NewLitPat(lit *Lit, span Span) *LitPat {
 func (p *LitPat) Span() Span             { return p.span }
 func (p *LitPat) InferredType() Type     { return p.inferredType }
 func (p *LitPat) SetInferredType(t Type) { p.inferredType = t }
+
+type IsPat struct {
+	Name         *Ident
+	Type         TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewIsPat(name *Ident, typ TypeAnn, span Span) *IsPat {
+	return &IsPat{Name: name, Type: typ, span: span, inferredType: nil}
+}
+func (p *IsPat) Span() Span             { return p.span }
+func (p *IsPat) InferredType() Type     { return p.inferredType }
+func (p *IsPat) SetInferredType(t Type) { p.inferredType = t }
 
 type WildcardPat struct {
 	span         Span
