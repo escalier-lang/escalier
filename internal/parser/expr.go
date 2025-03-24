@@ -229,16 +229,20 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 			start := token.Span().Start
 
-			token = parser.lexer.next()
+			token = parser.lexer.peek()
 			if _, ok := token.(*TOpenParen); !ok {
 				parser.reportError(token.Span(), "Expected an opening paren")
-				return nil
+			} else {
+				parser.lexer.consume()
 			}
+
 			params := parser.parseParamSeq()
-			token = parser.lexer.next()
+
+			token = parser.lexer.peek()
 			if _, ok := token.(*TCloseParen); !ok {
 				parser.reportError(token.Span(), "Expected a closing paren")
-				return nil
+			} else {
+				parser.lexer.consume()
 			}
 
 			body := parser.parseBlock()

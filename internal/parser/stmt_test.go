@@ -94,6 +94,12 @@ func TestParseStmtErrorHandling(t *testing.T) {
 				return a +
 			}`,
 		},
+		"ParamsMissingOpeningParen": {
+			input: "fn foo a, b) { a + b }",
+		},
+		"ParamsMissingClosingParen": {
+			input: "fn foo (a, b { a + b }",
+		},
 	}
 
 	for name, test := range tests {

@@ -148,6 +148,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"IncompleteTaggedTemplateLiteral": {
 			input: "foo`bar",
 		},
+		"ParamsMissingOpeningParen": {
+			input: "fn a, b) { a + b }",
+		},
+		"ParamsMissingClosingParen": {
+			input: "fn (a, b { a + b }",
+		},
 	}
 
 	for name, test := range tests {
