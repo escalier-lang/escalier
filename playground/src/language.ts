@@ -165,6 +165,10 @@ export function setupLanguage(client: Client) {
         brackets: [
             ['(', ')'],
             ['{', '}'],
+            ['[', ']'],
+            ['<', '>'],
+            ['`', '`'],
+            ['"', '"'],
         ],
     });
     monaco.languages.registerHoverProvider(languageID, {

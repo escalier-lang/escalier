@@ -94,6 +94,7 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
             // strings
             [/"([^"\\]|\\.)*$/, 'string.invalid'], // non-teminated string
             [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],
+            [/`/, 'string', '@string_backtick'],
 
             // characters
             [/'[^\\']'/, 'string'],
@@ -113,6 +114,20 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
             [/@escapes/, 'string.escape'],
             [/\\./, 'string.escape.invalid'],
             [/"/, { token: 'string.quote', bracket: '@close', next: '@pop' }],
+        ],
+
+        string_backtick: [
+            [/\$\{/, { token: 'delimiter.bracket', next: '@bracketCounting' }],
+            [/[^\\`$]+/, 'string'],
+            [/@escapes/, 'string.escape'],
+            [/\\./, 'string.escape.invalid'],
+            [/`/, 'string', '@pop'],
+        ],
+
+        bracketCounting: [
+            [/\{/, 'delimiter.bracket', '@bracketCounting'],
+            [/\}/, 'delimiter.bracket', '@pop'],
+            // { include: 'common' },
         ],
 
         whitespace: [
