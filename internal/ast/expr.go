@@ -179,7 +179,7 @@ type FuncExpr struct {
 	inferredType Type
 }
 
-func NewFunc(params []*Param, ret TypeAnn, throws TypeAnn, body Block, span Span) *FuncExpr {
+func NewFuncExpr(params []*Param, ret TypeAnn, throws TypeAnn, body Block, span Span) *FuncExpr {
 	return &FuncExpr{Params: params, Return: ret, Throws: throws, Body: body, span: span, inferredType: nil}
 }
 func (e *FuncExpr) Span() Span             { return e.span }
