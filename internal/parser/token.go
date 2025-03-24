@@ -34,13 +34,14 @@ func NewString(value string, span ast.Span) *TString { return &TString{Value: va
 func (t *TString) Span() ast.Span                    { return t.span }
 
 type TQuasi struct {
-	Value string
-	Last  bool
-	span  ast.Span
+	Value      string
+	Last       bool
+	Incomplete bool
+	span       ast.Span
 }
 
-func NewQuasi(value string, last bool, span ast.Span) *TQuasi {
-	return &TQuasi{Value: value, Last: last, span: span}
+func NewQuasi(value string, last bool, incomplete bool, span ast.Span) *TQuasi {
+	return &TQuasi{Value: value, Last: last, Incomplete: incomplete, span: span}
 }
 func (t *TQuasi) Span() ast.Span { return t.span }
 

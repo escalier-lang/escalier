@@ -321,6 +321,10 @@ func (parser *Parser) parseTemplateLitExpr(token Token, tag ast.Expr) ast.Expr {
 		quasis = append(quasis, &ast.Quasi{Value: quasi.Value, Span: quasi.Span()})
 
 		if quasi.Last {
+			if quasi.Incomplete {
+				span := ast.Span{Start: token.Span().Start, End: quasi.Span().End}
+				parser.reportError(span, "Expected a closing backtick")
+			}
 			break
 		} else {
 			expr := parser.ParseExpr()

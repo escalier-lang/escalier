@@ -278,8 +278,18 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 	lexer.afterPeekOffset = endOffset
 	lexer.afterPeakLocation = end
 
-	// TODO differentiate between quasi ending with '${' and '`'
-	return NewQuasi(contents[startOffset:i], last, ast.Span{Start: start, End: end})
+	incomplete := false
+	var value string
+	if i >= n {
+		last = true
+		incomplete = true
+		value = contents[startOffset:]
+		// TODO: report an error
+	} else {
+		value = contents[startOffset:i]
+	}
+
+	return NewQuasi(value, last, incomplete, ast.Span{Start: start, End: end})
 }
 
 func (lexer *Lexer) Lex() []Token {

@@ -140,6 +140,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"MismatchedBracketsIndex": {
 			input: "foo[bar)",
 		},
+		"IncompleteTemplateLiteral": {
+			input: "`foo",
+		},
+		"IncompleteTaggedTemplateLiteral": {
+			input: "foo`bar",
+		},
 	}
 
 	for name, test := range tests {

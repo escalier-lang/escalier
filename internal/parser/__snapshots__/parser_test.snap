@@ -2646,3 +2646,75 @@ nil
     inferredType: nil,
 }
 ---
+
+[TestParseExprErrorHandling/IncompleteTemplateLiteral - 1]
+&ast.TemplateLitExpr{
+    Quasis: {
+        &ast.Quasi{
+            Value: "foo",
+            Span:  ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:7},
+            },
+        },
+    },
+    Exprs: nil,
+    span:  ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteTemplateLiteral - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        Message: "Expected a closing backtick",
+    },
+}
+---
+
+[TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 1]
+&ast.TaggedTemplateLitExpr{
+    Tag: &ast.IdentExpr{
+        Name: "foo",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:4},
+        },
+        inferredType: nil,
+    },
+    Quasis: {
+        &ast.Quasi{
+            Value: "bar",
+            Span:  ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:10},
+            },
+        },
+    },
+    Exprs: nil,
+    span:  ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:10},
+        },
+        Message: "Expected a closing backtick",
+    },
+}
+---
