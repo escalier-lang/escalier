@@ -250,6 +250,8 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 			// TODO: parse return and throws types
 			return ast.NewFuncExpr(params, nil, nil, body, ast.Span{Start: start, End: end})
+		case *TLessThan:
+			return parser.parseJSXElement()
 		case
 			*TVal, *TVar, *TReturn,
 			*TCloseBrace, *TCloseParen, *TCloseBracket,

@@ -2,12 +2,12 @@ package ast
 
 type JSXOpening struct {
 	Name      string
-	Attrs     []JSXAttr
+	Attrs     []*JSXAttr
 	SelfClose bool
 	span      Span
 }
 
-func NewJSXOpening(name string, attrs []JSXAttr, selfClose bool, span Span) *JSXOpening {
+func NewJSXOpening(name string, attrs []*JSXAttr, selfClose bool, span Span) *JSXOpening {
 	return &JSXOpening{Name: name, Attrs: attrs, SelfClose: selfClose, span: span}
 }
 func (n *JSXOpening) Span() Span { return n.span }

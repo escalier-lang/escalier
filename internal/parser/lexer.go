@@ -75,8 +75,20 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 	case '*':
 		token = NewAsterisk(ast.Span{Start: start, End: end})
 	case '/':
-		token = NewSlash(ast.Span{Start: start, End: end})
+		if startOffset+1 < len(lexer.source.Contents) {
+			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
+			if nextCodePoint == '>' {
+				endOffset++
+				end.Column++
+				token = NewSlashGreaterThan(ast.Span{Start: start, End: end})
+			} else {
+				token = NewSlash(ast.Span{Start: start, End: end})
+			}
+		} else {
+			token = NewSlash(ast.Span{Start: start, End: end})
+		}
 	case '=':
+		// TODO: handle ==, =>, etc.
 		token = NewEquals(ast.Span{Start: start, End: end})
 	case ',':
 		token = NewComma(ast.Span{Start: start, End: end})
@@ -92,6 +104,27 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		token = NewOpenBracket(ast.Span{Start: start, End: end})
 	case ']':
 		token = NewCloseBracket(ast.Span{Start: start, End: end})
+	case '<':
+		if startOffset+1 < len(lexer.source.Contents) {
+			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
+			switch nextCodePoint {
+			case '=':
+				endOffset++
+				end.Column++
+				token = NewLessThanEqual(ast.Span{Start: start, End: end})
+			case '/':
+				endOffset++
+				end.Column++
+				token = NewLessThanSlash(ast.Span{Start: start, End: end})
+			default:
+				token = NewLessThan(ast.Span{Start: start, End: end})
+			}
+		} else {
+			token = NewLessThan(ast.Span{Start: start, End: end})
+		}
+	case '>':
+		// TODO: handle >=
+		token = NewGreaterThan(ast.Span{Start: start, End: end})
 	case '`':
 		token = NewBackTick(ast.Span{Start: start, End: end})
 	case '?':
@@ -290,6 +323,39 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 	}
 
 	return NewQuasi(value, last, incomplete, ast.Span{Start: start, End: end})
+}
+
+func (lexer *Lexer) lexJSXText() *TJSXText {
+	startOffset := lexer.currentOffset
+	start := lexer.currentLocation
+	end := start
+
+	contents := lexer.source.Contents
+	n := len(contents)
+	i := startOffset
+
+	for i < n {
+		c := contents[i]
+		if c == '<' || c == '{' {
+			break
+		}
+		if c == '\n' {
+			end.Line++
+			end.Column = 1
+		} else {
+			end.Column++
+		}
+		i++
+	}
+	endOffset := i
+
+	lexer.currentOffset = endOffset
+	lexer.currentLocation = end
+	lexer.afterPeekOffset = endOffset
+	lexer.afterPeakLocation = end
+
+	value := contents[startOffset:endOffset]
+	return NewJSXText(value, ast.Span{Start: start, End: end})
 }
 
 func (lexer *Lexer) Lex() []Token {
