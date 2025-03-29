@@ -533,3 +533,60 @@
     },
 }
 ---
+
+[TestParseJSXNoErrors/MultipleLines - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name:  "Foo",
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit:  &ast.NumLit{Value:5},
+                        span: ast.Span{
+                            Start: ast.Location{Line:2, Column:8},
+                            End:   ast.Location{Line:2, Column:9},
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:2, Column:7},
+                        End:   ast.Location{Line:2, Column:8},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:2, Column:9},
+                    End:   ast.Location{Line:2, Column:10},
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "baz",
+                Value: &&ast.JSXString{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start: ast.Location{Line:3, Column:7},
+                        End:   ast.Location{Line:3, Column:13},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:3, Column:7},
+                    End:   ast.Location{Line:3, Column:13},
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:4, Column:3},
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: nil,
+    span:     ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:4, Column:3},
+    },
+    inferredType: nil,
+}
+---

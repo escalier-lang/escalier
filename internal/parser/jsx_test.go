@@ -17,6 +17,9 @@ func TestParseJSXNoErrors(t *testing.T) {
 		"SelfClosingAttrs": {
 			input: "<Foo bar={5} baz=\"hello\" />",
 		},
+		"MultipleLines": {
+			input: "<Foo\n  bar={5}\n  baz=\"hello\"\n/>",
+		},
 		"NoAttrsNoChildren": {
 			input: "<Foo></Foo>",
 		},

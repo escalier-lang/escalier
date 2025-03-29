@@ -265,23 +265,26 @@ func (lexer *Lexer) lexQuasi() *Token {
 		if c == '$' {
 			if i+1 < n && contents[i+1] == '{' {
 				i += 2
+				end.Column += 2
 				break
 			}
 		}
 		if c == '`' {
 			i++
+			end.Column++
 			break
 		}
+
 		if c == '\n' {
 			end.Line++
 			end.Column = 1
 		} else {
 			end.Column++
 		}
+
 		i++
 	}
 	endOffset := i
-	end.Column = endOffset
 
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
