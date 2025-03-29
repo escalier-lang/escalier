@@ -7,20 +7,21 @@ func (parser *Parser) parseBlock() ast.Block {
 	var start ast.Location
 
 	token := parser.lexer.next()
-	if t, ok := token.(*TOpenBrace); !ok {
-		parser.reportError(token.Span(), "Expected an opening brace")
+	if token.Type != OpenBrace {
+		parser.reportError(token.Span, "Expected an opening brace")
 		// TODO: include Span
 		return ast.Block{Stmts: stmts}
 	} else {
-		start = t.Span().Start
+		start = token.Span.Start
 	}
 
 	token = parser.lexer.peek()
 	for {
-		switch t := token.(type) {
-		case *TCloseBrace:
+		//nolint: exhaustive
+		switch token.Type {
+		case CloseBrace:
 			parser.lexer.consume()
-			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: t.Span().End}}
+			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
 		default:
 			stmt := parser.parseStmt()
 			stmts = append(stmts, stmt)
@@ -32,17 +33,18 @@ func (parser *Parser) parseBlock() ast.Block {
 func (parser *Parser) parseStmt() ast.Stmt {
 	token := parser.lexer.peek()
 
-	switch token.(type) {
-	case *TFn, *TVar, *TVal, *TDeclare, *TExport:
+	//nolint: exhaustive
+	switch token.Type {
+	case Fn, Var, Val, Declare, Export:
 		decl := parser.parseDecl()
 		if decl == nil {
 			return nil
 		}
 		return ast.NewDeclStmt(decl, decl.Span())
-	case *TReturn:
+	case Return:
 		parser.lexer.consume()
 		expr := parser.ParseExpr()
-		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span().Start, End: expr.Span().End})
+		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
 		expr := parser.ParseExpr()
 		return ast.NewExprStmt(expr, expr.Span())

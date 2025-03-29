@@ -1,6 +1,9 @@
 package parser
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
@@ -32,20 +35,21 @@ loop:
 		token := parser.lexer.peek()
 		var nextOp ast.BinaryOp
 
-		switch token.(type) {
-		case *TPlus:
+		//nolint: exhaustive
+		switch token.Type {
+		case Plus:
 			nextOp = ast.Plus
-		case *TMinus:
+		case Minus:
 			nextOp = ast.Minus
-		case *TAsterisk:
+		case Asterisk:
 			nextOp = ast.Times
-		case *TSlash:
+		case Slash:
 			nextOp = ast.Divide
-		case *TCloseParen, *TCloseBracket, *TCloseBrace, *TComma, *TEndOfFile, *TVar, *TVal, *TFn, *TReturn:
+		case CloseParen, CloseBracket, CloseBrace, Comma, EndOfFile, Var, Val, Fn, Return:
 			break loop
 		default:
 			return values.Pop()
-			// parser.reportError(token.Span(), "Unexpected token")
+			// parser.reportError(token.Span, "Unexpected token")
 			// continue
 		}
 
@@ -82,7 +86,7 @@ loop:
 }
 
 type TokenAndOp struct {
-	Token Token
+	Token *Token
 	Op    ast.UnaryOp
 }
 
@@ -92,10 +96,11 @@ func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
 
 loop:
 	for {
-		switch token.(type) {
-		case *TPlus:
+		//nolint: exhaustive
+		switch token.Type {
+		case Plus:
 			result.Push(TokenAndOp{Token: token, Op: ast.UnaryPlus})
-		case *TMinus:
+		case Minus:
 			result.Push(TokenAndOp{Token: token, Op: ast.UnaryMinus})
 		default:
 			break loop
@@ -112,59 +117,73 @@ func (parser *Parser) parseSuffix(expr ast.Expr) ast.Expr {
 
 loop:
 	for {
-		switch token.(type) {
-		case *TOpenParen, *TQuestionOpenParen:
+		//nolint: exhaustive
+		switch token.Type {
+		case OpenParen, QuestionOpenParen:
 			parser.lexer.consume()
 			args := parser.parseExprSeq()
 			terminator := parser.lexer.next()
-			if _, ok := terminator.(*TCloseParen); !ok {
-				parser.reportError(token.Span(), "Expected a closing paren")
+			if terminator.Type != CloseParen {
+				parser.reportError(token.Span, "Expected a closing paren")
 			}
 			callee := expr
 			optChain := false
-			if _, ok := token.(*TQuestionOpenParen); ok {
+			if token.Type == QuestionOpenParen {
 				optChain = true
 			}
-			expr = ast.NewCall(callee, args, optChain, ast.Span{Start: callee.Span().Start, End: terminator.Span().End})
-		case *TOpenBracket, *TQuestionOpenBracket:
+			expr = ast.NewCall(
+				callee, args, optChain,
+				ast.Span{Start: callee.Span().Start, End: terminator.Span.End},
+			)
+		case OpenBracket, QuestionOpenBracket:
 			parser.lexer.consume()
 			index := parser.ParseExpr()
 			terminator := parser.lexer.next()
-			if _, ok := terminator.(*TCloseBracket); !ok {
-				parser.reportError(token.Span(), "Expected a closing bracket")
+			if terminator.Type != CloseBracket {
+				parser.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := expr
 			optChain := false
-			if _, ok := token.(*TQuestionOpenBracket); ok {
+			if token.Type == QuestionOpenBracket {
 				optChain = true
 			}
-			expr = ast.NewIndex(obj, index, optChain, ast.Span{Start: obj.Span().Start, End: terminator.Span().End})
-		case *TDot, *TQuestionDot:
+			expr = ast.NewIndex(
+				obj, index, optChain,
+				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
+			)
+		case Dot, QuestionDot:
 			parser.lexer.consume()
 			prop := parser.lexer.next()
 			optChain := false
-			if _, ok := token.(*TQuestionDot); ok {
+			if token.Type == QuestionDot {
 				optChain = true
 			}
-			switch t := prop.(type) {
-			case *TIdentifier:
+			//nolint: exhaustive
+			switch prop.Type {
+			case Identifier:
 				obj := expr
-				prop := ast.NewIdentifier(t.Value, prop.Span())
-				expr = ast.NewMember(obj, prop, optChain, ast.Span{Start: obj.Span().Start, End: prop.Span().End})
+				prop := ast.NewIdentifier(prop.Value, prop.Span)
+				expr = ast.NewMember(
+					obj, prop, optChain,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
 			default:
 				obj := expr
 				prop := ast.NewIdentifier(
 					"",
-					ast.Span{Start: token.Span().End, End: token.Span().End},
+					ast.Span{Start: token.Span.End, End: token.Span.End},
 				)
-				expr = ast.NewMember(obj, prop, optChain, ast.Span{Start: obj.Span().Start, End: prop.Span().End})
-				if _, ok := token.(*TDot); ok {
-					parser.reportError(token.Span(), "expected an identifier after .")
+				expr = ast.NewMember(
+					obj, prop, optChain,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
+				if token.Type == Dot {
+					parser.reportError(token.Span, "expected an identifier after .")
 				} else {
-					parser.reportError(token.Span(), "expected an identifier after ?.")
+					parser.reportError(token.Span, "expected an identifier after ?.")
 				}
 			}
-		case *TBackTick:
+		case BackTick:
 			expr = parser.parseTemplateLitExpr(token, expr)
 		default:
 			break loop
@@ -183,55 +202,60 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 	// Loop until we parse a primary expression.
 	for expr == nil {
-		switch t := token.(type) {
-		case *TNumber:
+		//nolint: exhaustive
+		switch token.Type {
+		case Number:
 			parser.lexer.consume()
-			expr = ast.NewNumber(t.Value, token.Span())
-		case *TString:
+			value, err := strconv.ParseFloat(token.Value, 64)
+			if err != nil {
+				// TODO: handle parsing errors
+			}
+			expr = ast.NewNumber(value, token.Span)
+		case String:
 			parser.lexer.consume()
-			expr = ast.NewString(t.Value, token.Span())
-		case *TIdentifier:
+			expr = ast.NewString(token.Value, token.Span)
+		case Identifier:
 			parser.lexer.consume()
-			expr = ast.NewIdent(t.Value, token.Span())
-		case *TOpenParen:
+			expr = ast.NewIdent(token.Value, token.Span)
+		case OpenParen:
 			parser.lexer.consume()
 			expr = parser.ParseExpr()
 			final := parser.lexer.next() // consume the closing paren
-			if _, ok := final.(*TCloseParen); !ok {
-				parser.reportError(token.Span(), "Expected a closing paren")
+			if final.Type != CloseParen {
+				parser.reportError(token.Span, "Expected a closing paren")
 			}
-		case *TOpenBracket:
+		case OpenBracket:
 			parser.lexer.consume()
 			elems := parser.parseExprSeq()
 			final := parser.lexer.next() // consume the closing bracket
-			if _, ok := final.(*TCloseBracket); !ok {
-				parser.reportError(token.Span(), "Expected a closing bracket")
+			if final.Type != CloseBracket {
+				parser.reportError(token.Span, "Expected a closing bracket")
 			}
-			expr = ast.NewArray(elems, ast.Span{Start: token.Span().Start, End: final.Span().End})
-		case *TBackTick:
+			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
+		case BackTick:
 			expr = parser.parseTemplateLitExpr(token, nil)
-		case *TFn:
+		case Fn:
 			// TODO: allow an optional identifier
 			// token := parser.lexer.peek()
 			// _ident, ok := token.(*TIdentifier)
 			// var ident *ast.Ident
 			// if ok {
 			// 	parser.lexer.consume()
-			// 	ident = ast.NewIdentifier(_ident.Value, token.Span())
+			// 	ident = ast.NewIdentifier(_ident.Value, token.Span)
 			// } else {
-			// 	parser.reportError(token.Span(), "Expected identifier")
+			// 	parser.reportError(token.Span, "Expected identifier")
 			// 	ident = ast.NewIdentifier(
 			// 		"",
-			// 		ast.Span{Start: token.Span().Start, End: token.Span().Start},
+			// 		ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			// 	)
 			// }
 			parser.lexer.consume() // consume the fn keyword
 
-			start := token.Span().Start
+			start := token.Span.Start
 
 			token = parser.lexer.peek()
-			if _, ok := token.(*TOpenParen); !ok {
-				parser.reportError(token.Span(), "Expected an opening paren")
+			if token.Type != OpenParen {
+				parser.reportError(token.Span, "Expected an opening paren")
 			} else {
 				parser.lexer.consume()
 			}
@@ -239,8 +263,8 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			params := parser.parseParamSeq()
 
 			token = parser.lexer.peek()
-			if _, ok := token.(*TCloseParen); !ok {
-				parser.reportError(token.Span(), "Expected a closing paren")
+			if token.Type != CloseParen {
+				parser.reportError(token.Span, "Expected a closing paren")
 			} else {
 				parser.lexer.consume()
 			}
@@ -250,18 +274,18 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 			// TODO: parse return and throws types
 			return ast.NewFuncExpr(params, nil, nil, body, ast.Span{Start: start, End: end})
-		case *TLessThan:
+		case LessThan:
 			return parser.parseJSXElement()
 		case
-			*TVal, *TVar, *TReturn,
-			*TCloseBrace, *TCloseParen, *TCloseBracket,
-			*TEndOfFile:
-			expr = ast.NewEmpty(token.Span())
-			parser.reportError(token.Span(), "Expected an expression")
+			Val, Var, Return,
+			CloseBrace, CloseParen, CloseBracket,
+			EndOfFile:
+			expr = ast.NewEmpty(token.Span)
+			parser.reportError(token.Span, "Expected an expression")
 			return expr
 		default:
 			parser.lexer.consume()
-			parser.reportError(token.Span(), "Unexpected token")
+			parser.reportError(token.Span, "Unexpected token")
 			token = parser.lexer.peek()
 		}
 	}
@@ -270,7 +294,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 	for !ops.IsEmpty() {
 		tokenAndOp := ops.Pop()
-		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span().Start, End: expr.Span().End})
+		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End})
 	}
 
 	return expr
@@ -281,8 +305,10 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 
 	// handles empty sequences
 	token := parser.lexer.peek()
-	switch token.(type) {
-	case *TCloseBracket, *TCloseParen, *TCloseBrace:
+
+	//nolint: exhaustive
+	switch token.Type {
+	case CloseBracket, CloseParen, CloseBrace:
 		return exprs
 	default:
 	}
@@ -293,8 +319,9 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 	token = parser.lexer.peek()
 
 	for {
-		switch token.(type) {
-		case *TComma:
+		//nolint: exhaustive
+		switch token.Type {
+		case Comma:
 			// TODO: handle trailing comma
 			parser.lexer.consume()
 			expr = parser.ParseExpr()
@@ -310,26 +337,25 @@ func (parser *Parser) parseParamSeq() []*ast.Param {
 	params := []*ast.Param{}
 
 	token := parser.lexer.peek()
-	_ident, ok := token.(*TIdentifier)
-	if !ok {
+	if token.Type != Identifier {
 		return params
 	}
-	param := &ast.Param{Name: ast.NewIdentifier(_ident.Value, token.Span())}
+	param := &ast.Param{Name: ast.NewIdentifier(token.Value, token.Span)}
 	params = append(params, param)
 	parser.lexer.consume()
 
 	token = parser.lexer.peek()
 
 	for {
-		switch token.(type) {
-		case *TComma:
+		//nolint: exhaustive
+		switch token.Type {
+		case Comma:
 			parser.lexer.consume()
 			token = parser.lexer.peek()
-			_ident, ok := token.(*TIdentifier)
-			if !ok {
+			if token.Type != Identifier {
 				return params
 			}
-			param := &ast.Param{Name: ast.NewIdentifier(_ident.Value, token.Span())}
+			param := &ast.Param{Name: ast.NewIdentifier(token.Value, token.Span)}
 			params = append(params, param)
 			parser.lexer.consume()
 		default:
@@ -338,30 +364,38 @@ func (parser *Parser) parseParamSeq() []*ast.Param {
 	}
 }
 
-func (parser *Parser) parseTemplateLitExpr(token Token, tag ast.Expr) ast.Expr {
+func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 	parser.lexer.consume()
 	var quasis []*ast.Quasi
 	var exprs []ast.Expr
 	for {
 		quasi := parser.lexer.lexQuasi()
-		quasis = append(quasis, &ast.Quasi{Value: quasi.Value, Span: quasi.Span()})
 
-		if quasi.Last {
-			if quasi.Incomplete {
-				span := ast.Span{Start: token.Span().Start, End: quasi.Span().End}
-				parser.reportError(span, "Expected a closing backtick")
-			}
+		var raw string
+		if strings.HasSuffix(quasi.Value, "`") {
+			raw = quasi.Value[:len(quasi.Value)-1]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
 			break
-		} else {
+		} else if strings.HasSuffix(quasi.Value, "${") {
+			raw = quasi.Value[:len(quasi.Value)-2]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
 			expr := parser.ParseExpr()
 			exprs = append(exprs, expr)
 			parser.lexer.consume() // consumes the closing brace
+		} else {
+			// This case happens when the template literal is not closed which
+			// means we've reached the end of the file.
+			raw = quasi.Value
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
+			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End}
+			parser.reportError(span, "Expected a closing backtick")
+			break
 		}
 	}
 	if tag != nil {
 		span := ast.Span{Start: tag.Span().Start, End: parser.lexer.currentLocation}
 		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 	}
-	span := ast.Span{Start: token.Span().Start, End: parser.lexer.currentLocation}
+	span := ast.Span{Start: token.Span.Start, End: parser.lexer.currentLocation}
 	return ast.NewTemplateLit(quasis, exprs, span)
 }

@@ -17,6 +17,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"TemplateStringLiteralWithExprs": {
 			input: "`hello ${name}`",
 		},
+		"TemplateStringMultipleLines": {
+			input: "`hello\nworld`",
+		},
 		"TemplateStringLiteralWithMultipleExprs": {
 			input: "`a${b}c${d}e`",
 		},

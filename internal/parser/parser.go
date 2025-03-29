@@ -25,8 +25,9 @@ func (parser *Parser) ParseModule() *ast.Module {
 
 	token := parser.lexer.peek()
 	for {
-		switch token.(type) {
-		case *TEndOfFile:
+		//nolint: exhaustive
+		switch token.Type {
+		case EndOfFile:
 			return &ast.Module{Stmts: stmts}
 		default:
 			stmt := parser.parseStmt()

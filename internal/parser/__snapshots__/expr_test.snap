@@ -1059,14 +1059,14 @@
             Value: "foo",
             Span:  ast.Span{
                 Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:7},
+                End:   ast.Location{Line:1, Column:5},
             },
         },
     },
     Exprs: nil,
     span:  ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:7},
+        End:   ast.Location{Line:1, Column:5},
     },
     inferredType: nil,
 }
@@ -1451,7 +1451,7 @@
     &parser.Error{
         Span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:5},
         },
         Message: "Expected a closing backtick",
     },
@@ -1497,14 +1497,14 @@
             Value: "bar",
             Span:  ast.Span{
                 Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:10},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
     },
     Exprs: nil,
     span:  ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
+        End:   ast.Location{Line:1, Column:8},
     },
     inferredType: nil,
 }
@@ -1515,7 +1515,7 @@
     &parser.Error{
         Span: ast.Span{
             Start: ast.Location{Line:1, Column:4},
-            End:   ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:8},
         },
         Message: "Expected a closing backtick",
     },
@@ -1683,5 +1683,25 @@
         },
         Message: "Expected an opening paren",
     },
+}
+---
+
+[TestParseExprNoErrors/TemplateStringMultipleLines - 1]
+&ast.TemplateLitExpr{
+    Quasis: {
+        &ast.Quasi{
+            Value: "hello\nworld",
+            Span:  ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:2, Column:7},
+            },
+        },
+    },
+    Exprs: nil,
+    span:  ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:2, Column:7},
+    },
+    inferredType: nil,
 }
 ---

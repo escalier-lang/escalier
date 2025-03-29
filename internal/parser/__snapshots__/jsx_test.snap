@@ -7,14 +7,14 @@
         },
         SelfClose: true,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:6},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:8},
         },
     },
     Closing:  (*ast.JSXClosing)(nil),
     Children: nil,
     span:     ast.Span{
-        Start: ast.Location{Line:1, Column:6},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:8},
     },
     inferredType: nil,
@@ -29,21 +29,21 @@
         },
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "Foo",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:11},
+            Start: ast.Location{Line:1, Column:6},
             End:   ast.Location{Line:1, Column:12},
         },
     },
     Children: {
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:12},
     },
     inferredType: nil,
@@ -93,14 +93,14 @@
         },
         SelfClose: true,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:25},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:27},
         },
     },
     Closing:  (*ast.JSXClosing)(nil),
     Children: nil,
     span:     ast.Span{
-        Start: ast.Location{Line:1, Column:25},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:27},
     },
     inferredType: nil,
@@ -150,21 +150,21 @@
         },
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:24},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:25},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "Foo",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:30},
+            Start: ast.Location{Line:1, Column:25},
             End:   ast.Location{Line:1, Column:31},
         },
     },
     Children: {
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:24},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:31},
     },
     inferredType: nil,
@@ -179,14 +179,14 @@
         },
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "div",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:34},
+            Start: ast.Location{Line:1, Column:29},
             End:   ast.Location{Line:1, Column:35},
         },
     },
@@ -198,14 +198,14 @@
                 },
                 SelfClose: false,
                 span:      ast.Span{
-                    Start: ast.Location{Line:1, Column:11},
+                    Start: ast.Location{Line:1, Column:6},
                     End:   ast.Location{Line:1, Column:12},
                 },
             },
             Closing: &ast.JSXClosing{
                 Name: "span",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:23},
+                    Start: ast.Location{Line:1, Column:17},
                     End:   ast.Location{Line:1, Column:24},
                 },
             },
@@ -219,7 +219,7 @@
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:11},
+                Start: ast.Location{Line:1, Column:6},
                 End:   ast.Location{Line:1, Column:24},
             },
             inferredType: nil,
@@ -233,7 +233,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:35},
     },
     inferredType: nil,
@@ -248,14 +248,14 @@
         },
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "div",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:23},
+            Start: ast.Location{Line:1, Column:18},
             End:   ast.Location{Line:1, Column:24},
         },
     },
@@ -283,7 +283,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:24},
     },
     inferredType: nil,
@@ -298,14 +298,14 @@
         },
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:6},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "div",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:31},
+            Start: ast.Location{Line:1, Column:26},
             End:   ast.Location{Line:1, Column:32},
         },
     },
@@ -318,14 +318,14 @@
                     },
                     SelfClose: false,
                     span:      ast.Span{
-                        Start: ast.Location{Line:1, Column:12},
+                        Start: ast.Location{Line:1, Column:7},
                         End:   ast.Location{Line:1, Column:13},
                     },
                 },
                 Closing: &ast.JSXClosing{
                     Name: "span",
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:24},
+                        Start: ast.Location{Line:1, Column:18},
                         End:   ast.Location{Line:1, Column:25},
                     },
                 },
@@ -346,7 +346,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:12},
+                    Start: ast.Location{Line:1, Column:7},
                     End:   ast.Location{Line:1, Column:25},
                 },
                 inferredType: nil,
@@ -358,7 +358,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:32},
     },
     inferredType: nil,
@@ -372,14 +372,14 @@
         Attrs:     nil,
         SelfClose: false,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:2},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:3},
         },
     },
     Closing: &ast.JSXClosing{
         Name: "",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:19},
+            Start: ast.Location{Line:1, Column:17},
             End:   ast.Location{Line:1, Column:20},
         },
     },
@@ -391,14 +391,14 @@
                 },
                 SelfClose: true,
                 span:      ast.Span{
-                    Start: ast.Location{Line:1, Column:8},
+                    Start: ast.Location{Line:1, Column:3},
                     End:   ast.Location{Line:1, Column:10},
                 },
             },
             Closing:  (*ast.JSXClosing)(nil),
             Children: nil,
             span:     ast.Span{
-                Start: ast.Location{Line:1, Column:8},
+                Start: ast.Location{Line:1, Column:3},
                 End:   ast.Location{Line:1, Column:10},
             },
             inferredType: nil,
@@ -410,21 +410,21 @@
                 },
                 SelfClose: true,
                 span:      ast.Span{
-                    Start: ast.Location{Line:1, Column:15},
+                    Start: ast.Location{Line:1, Column:10},
                     End:   ast.Location{Line:1, Column:17},
                 },
             },
             Closing:  (*ast.JSXClosing)(nil),
             Children: nil,
             span:     ast.Span{
-                Start: ast.Location{Line:1, Column:15},
+                Start: ast.Location{Line:1, Column:10},
                 End:   ast.Location{Line:1, Column:17},
             },
             inferredType: nil,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:2},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:20},
     },
     inferredType: nil,
@@ -453,14 +453,14 @@
         },
         SelfClose: true,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:17},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:19},
         },
     },
     Closing:  (*ast.JSXClosing)(nil),
     Children: nil,
     span:     ast.Span{
-        Start: ast.Location{Line:1, Column:17},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:19},
     },
     inferredType: nil,
@@ -496,14 +496,14 @@
         },
         SelfClose: true,
         span:      ast.Span{
-            Start: ast.Location{Line:1, Column:14},
+            Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:16},
         },
     },
     Closing:  (*ast.JSXClosing)(nil),
     Children: nil,
     span:     ast.Span{
-        Start: ast.Location{Line:1, Column:14},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:16},
     },
     inferredType: nil,
@@ -531,5 +531,62 @@
         },
         Message: "Expected '='",
     },
+}
+---
+
+[TestParseJSXNoErrors/MultipleLines - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name:  "Foo",
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit:  &ast.NumLit{Value:5},
+                        span: ast.Span{
+                            Start: ast.Location{Line:2, Column:8},
+                            End:   ast.Location{Line:2, Column:9},
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:2, Column:7},
+                        End:   ast.Location{Line:2, Column:8},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:2, Column:9},
+                    End:   ast.Location{Line:2, Column:10},
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "baz",
+                Value: &&ast.JSXString{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start: ast.Location{Line:3, Column:7},
+                        End:   ast.Location{Line:3, Column:13},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:3, Column:7},
+                    End:   ast.Location{Line:3, Column:13},
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:4, Column:3},
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: nil,
+    span:     ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:4, Column:3},
+    },
+    inferredType: nil,
 }
 ---
