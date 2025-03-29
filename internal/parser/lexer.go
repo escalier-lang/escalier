@@ -25,22 +25,22 @@ func NewLexer(source Source) *Lexer {
 	}
 }
 
-var KEYWORDS = map[string](func(span ast.Span) Token){
-	"fn":      NewFn,
-	"var":     NewVar,
-	"val":     NewVal,
-	"return":  NewReturn,
-	"import":  NewImport,
-	"export":  NewExport,
-	"declare": NewDeclare,
-}
+// var KEYWORDS = map[string](func(span ast.Span) Token){
+// 	"fn":      NewToken,
+// 	"var":     NewVar,
+// 	"val":     NewVal,
+// 	"return":  NewReturn,
+// 	"import":  NewImport,
+// 	"export":  NewExport,
+// 	"declare": NewDeclare,
+// }
 
-func (lexer *Lexer) next() Token {
+func (lexer *Lexer) next() *Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
 
 	if startOffset >= len(lexer.source.Contents) {
-		return NewEndOfFile(ast.Span{Start: start, End: start})
+		return NewToken(EndOfFile, "", ast.Span{Start: start, End: start})
 	}
 
 	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
@@ -60,44 +60,44 @@ func (lexer *Lexer) next() Token {
 	endOffset := startOffset + width
 	end := ast.Location{Line: start.Line, Column: start.Column + 1}
 
-	var token Token
+	var token *Token
 	switch codePoint {
 	case '+':
-		token = NewPlus(ast.Span{Start: start, End: end})
+		token = NewToken(Plus, "+", ast.Span{Start: start, End: end})
 	case '-':
-		token = NewMinus(ast.Span{Start: start, End: end})
+		token = NewToken(Minus, "-", ast.Span{Start: start, End: end})
 	case '*':
-		token = NewAsterisk(ast.Span{Start: start, End: end})
+		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end})
 	case '/':
 		if startOffset+1 < len(lexer.source.Contents) {
 			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
 			if nextCodePoint == '>' {
 				endOffset++
 				end.Column++
-				token = NewSlashGreaterThan(ast.Span{Start: start, End: end})
+				token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end})
 			} else {
-				token = NewSlash(ast.Span{Start: start, End: end})
+				token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
 			}
 		} else {
-			token = NewSlash(ast.Span{Start: start, End: end})
+			token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
 		}
 	case '=':
 		// TODO: handle ==, =>, etc.
-		token = NewEquals(ast.Span{Start: start, End: end})
+		token = NewToken(Equals, "=", ast.Span{Start: start, End: end})
 	case ',':
-		token = NewComma(ast.Span{Start: start, End: end})
+		token = NewToken(Comma, ",", ast.Span{Start: start, End: end})
 	case '(':
-		token = NewOpenParen(ast.Span{Start: start, End: end})
+		token = NewToken(OpenParen, "(", ast.Span{Start: start, End: end})
 	case ')':
-		token = NewCloseParen(ast.Span{Start: start, End: end})
+		token = NewToken(CloseParen, ")", ast.Span{Start: start, End: end})
 	case '{':
-		token = NewOpenBrace(ast.Span{Start: start, End: end})
+		token = NewToken(OpenBrace, "{", ast.Span{Start: start, End: end})
 	case '}':
-		token = NewCloseBrace(ast.Span{Start: start, End: end})
+		token = NewToken(CloseBrace, "}", ast.Span{Start: start, End: end})
 	case '[':
-		token = NewOpenBracket(ast.Span{Start: start, End: end})
+		token = NewToken(OpenBracket, "[", ast.Span{Start: start, End: end})
 	case ']':
-		token = NewCloseBracket(ast.Span{Start: start, End: end})
+		token = NewToken(CloseBracket, "]", ast.Span{Start: start, End: end})
 	case '<':
 		if startOffset+1 < len(lexer.source.Contents) {
 			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
@@ -105,22 +105,22 @@ func (lexer *Lexer) next() Token {
 			case '=':
 				endOffset++
 				end.Column++
-				token = NewLessThanEqual(ast.Span{Start: start, End: end})
+				token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end})
 			case '/':
 				endOffset++
 				end.Column++
-				token = NewLessThanSlash(ast.Span{Start: start, End: end})
+				token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end})
 			default:
-				token = NewLessThan(ast.Span{Start: start, End: end})
+				token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
 			}
 		} else {
-			token = NewLessThan(ast.Span{Start: start, End: end})
+			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
 		}
 	case '>':
 		// TODO: handle >=
-		token = NewGreaterThan(ast.Span{Start: start, End: end})
+		token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
 	case '`':
-		token = NewBackTick(ast.Span{Start: start, End: end})
+		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})
 	case '?':
 		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+width:])
 		endOffset += width
@@ -128,13 +128,13 @@ func (lexer *Lexer) next() Token {
 
 		switch nextCodePoint {
 		case '.':
-			token = NewQuestionDot(ast.Span{Start: start, End: end})
+			token = NewToken(QuestionDot, ".", ast.Span{Start: start, End: end})
 		case '(':
-			token = NewQuestionOpenParen(ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenParen, "(", ast.Span{Start: start, End: end})
 		case '[':
-			token = NewQuestionOpenBracket(ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenBracket, "[", ast.Span{Start: start, End: end})
 		default:
-			token = NewInvalid(ast.Span{Start: start, End: end})
+			token = NewToken(Invalid, "", ast.Span{Start: start, End: end})
 		}
 	case '"':
 		contents := lexer.source.Contents
@@ -150,7 +150,7 @@ func (lexer *Lexer) next() Token {
 		endOffset = i + 1                    // + 1 to include the closing quote
 		value := contents[startOffset+1 : i] // without the quotes
 		end.Column = start.Column + (i - startOffset)
-		token = NewString(value, ast.Span{Start: start, End: end})
+		token = NewToken(String, value, ast.Span{Start: start, End: end})
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -179,10 +179,10 @@ func (lexer *Lexer) next() Token {
 
 		endOffset = i
 		if isDecimal && i == startOffset+1 {
-			token = NewDot(ast.Span{Start: start, End: end})
+			token = NewToken(Dot, ".", ast.Span{Start: start, End: end})
 		} else {
 			end.Column = start.Column + (i - startOffset)
-			token = NewNumber(contents[startOffset:i], ast.Span{Start: start, End: end})
+			token = NewToken(Number, contents[startOffset:i], ast.Span{Start: start, End: end})
 		}
 	case '_', '$',
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -205,16 +205,29 @@ func (lexer *Lexer) next() Token {
 		end.Column = start.Column + i - startOffset
 		span := ast.Span{Start: start, End: end}
 
-		if keyword, ok := KEYWORDS[value]; ok {
-			token = keyword(span)
-		} else {
-			token = NewIdentifier(value, span)
+		switch value {
+		case "fn":
+			token = NewToken(Fn, "fn", span)
+		case "var":
+			token = NewToken(Var, "var", span)
+		case "val":
+			token = NewToken(Val, "val", span)
+		case "return":
+			token = NewToken(Return, "return", span)
+		case "import":
+			token = NewToken(Import, "import", span)
+		case "export":
+			token = NewToken(Export, "export", span)
+		case "declare":
+			token = NewToken(Declare, "declare", span)
+		default:
+			token = NewToken(Identifier, value, span)
 		}
 	default:
 		if startOffset >= len(lexer.source.Contents) {
-			token = NewEndOfFile(ast.Span{Start: start, End: start})
+			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start})
 		} else {
-			token = NewInvalid(ast.Span{Start: start, End: start})
+			token = NewToken(Invalid, "", ast.Span{Start: start, End: start})
 		}
 	}
 
@@ -224,7 +237,7 @@ func (lexer *Lexer) next() Token {
 	return token
 }
 
-func (lexer *Lexer) peek() Token {
+func (lexer *Lexer) peek() *Token {
 	// save the lexer state
 	offset := lexer.currentOffset
 	location := lexer.currentLocation
@@ -239,7 +252,7 @@ func (lexer *Lexer) consume() {
 	lexer.next()
 }
 
-func (lexer *Lexer) lexQuasi() *TQuasi {
+func (lexer *Lexer) lexQuasi() *Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
 	end := start
@@ -281,10 +294,10 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 		value = contents[startOffset:i]
 	}
 
-	return NewQuasi(value, ast.Span{Start: start, End: end})
+	return NewToken(Quasi, value, ast.Span{Start: start, End: end})
 }
 
-func (lexer *Lexer) lexJSXText() *TJSXText {
+func (lexer *Lexer) lexJSXText() *Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
 	end := start
@@ -312,11 +325,11 @@ func (lexer *Lexer) lexJSXText() *TJSXText {
 	lexer.currentLocation = end
 
 	value := contents[startOffset:endOffset]
-	return NewJSXText(value, ast.Span{Start: start, End: end})
+	return NewToken(JSXText, value, ast.Span{Start: start, End: end})
 }
 
-func (lexer *Lexer) Lex() []Token {
-	var tokens []Token
+func (lexer *Lexer) Lex() []*Token {
+	var tokens []*Token
 
 	for lexer.currentOffset < len(lexer.source.Contents) {
 		tokens = append(tokens, lexer.next())
