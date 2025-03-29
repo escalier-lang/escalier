@@ -252,16 +252,16 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 	contents := lexer.source.Contents
 	n := len(contents)
 	i := startOffset
-	last := false
 	for i < n {
 		c := contents[i]
 		if c == '$' {
 			if i+1 < n && contents[i+1] == '{' {
+				i += 2
 				break
 			}
 		}
 		if c == '`' {
-			last = true
+			i++
 			break
 		}
 		if c == '\n' {
@@ -272,28 +272,21 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 		}
 		i++
 	}
-	endOffset := i + 2
-	end.Column += 2
-	if last {
-		endOffset--
-		end.Column--
-	}
+	endOffset := i
+	end.Column = endOffset
 
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
 
-	incomplete := false
 	var value string
 	if i >= n {
-		last = true
-		incomplete = true
 		value = contents[startOffset:]
 		// TODO: report an error
 	} else {
 		value = contents[startOffset:i]
 	}
 
-	return NewQuasi(value, last, incomplete, ast.Span{Start: start, End: end})
+	return NewQuasi(value, ast.Span{Start: start, End: end})
 }
 
 func (lexer *Lexer) lexJSXText() *TJSXText {

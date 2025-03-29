@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
@@ -344,18 +346,26 @@ func (parser *Parser) parseTemplateLitExpr(token Token, tag ast.Expr) ast.Expr {
 	var exprs []ast.Expr
 	for {
 		quasi := parser.lexer.lexQuasi()
-		quasis = append(quasis, &ast.Quasi{Value: quasi.Value, Span: quasi.Span()})
 
-		if quasi.Last {
-			if quasi.Incomplete {
-				span := ast.Span{Start: token.Span().Start, End: quasi.Span().End}
-				parser.reportError(span, "Expected a closing backtick")
-			}
+		var raw string
+		if strings.HasSuffix(quasi.Value, "`") {
+			raw = quasi.Value[:len(quasi.Value)-1]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span()})
 			break
-		} else {
+		} else if strings.HasSuffix(quasi.Value, "${") {
+			raw = quasi.Value[:len(quasi.Value)-2]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span()})
 			expr := parser.ParseExpr()
 			exprs = append(exprs, expr)
 			parser.lexer.consume() // consumes the closing brace
+		} else {
+			// This case happens when the template literal is not closed which
+			// means we've reached the end of the file.
+			raw = quasi.Value
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span()})
+			span := ast.Span{Start: token.Span().Start, End: quasi.Span().End}
+			parser.reportError(span, "Expected a closing backtick")
+			break
 		}
 	}
 	if tag != nil {
