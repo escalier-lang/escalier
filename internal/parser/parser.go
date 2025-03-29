@@ -9,14 +9,23 @@ import (
 )
 
 type Parser struct {
-	lexer  *Lexer
-	Errors []*Error
+	lexer   *Lexer
+	markers Stack[Marker]
+	Errors  []*Error
 }
+
+type Marker int
+
+const (
+	MarkerExpr Marker = iota
+	MarkerDelim
+)
 
 func NewParser(source Source) *Parser {
 	return &Parser{
-		lexer:  NewLexer(source),
-		Errors: []*Error{},
+		lexer:   NewLexer(source),
+		markers: Stack[Marker]{},
+		Errors:  []*Error{},
 	}
 }
 

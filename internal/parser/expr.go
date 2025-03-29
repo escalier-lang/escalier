@@ -24,6 +24,12 @@ var precedence = map[ast.BinaryOp]int{
 	ast.NullishCoalescing: 3,
 }
 
+func (parser *Parser) ParseExprWithMarker(marker Marker) ast.Expr {
+	parser.markers.Push(marker)
+	defer parser.markers.Pop()
+	return parser.ParseExpr()
+}
+
 func (parser *Parser) ParseExpr() ast.Expr {
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
@@ -51,6 +57,12 @@ loop:
 			return values.Pop()
 			// parser.reportError(token.Span, "Unexpected token")
 			// continue
+		}
+
+		if token.Span.Start.Line != parser.lexer.currentLocation.Line {
+			if len(parser.markers) == 0 || parser.markers.Peek() != MarkerDelim {
+				return values.Pop()
+			}
 		}
 
 		parser.lexer.consume()
@@ -137,7 +149,7 @@ loop:
 			)
 		case OpenBracket, QuestionOpenBracket:
 			parser.lexer.consume()
-			index := parser.ParseExpr()
+			index := parser.ParseExprWithMarker(MarkerDelim)
 			terminator := parser.lexer.next()
 			if terminator.Type != CloseBracket {
 				parser.reportError(token.Span, "Expected a closing bracket")
@@ -219,7 +231,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
 			parser.lexer.consume()
-			expr = parser.ParseExpr()
+			expr = parser.ParseExprWithMarker(MarkerDelim)
 			final := parser.lexer.next() // consume the closing paren
 			if final.Type != CloseParen {
 				parser.reportError(token.Span, "Expected a closing paren")
@@ -313,7 +325,7 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 	default:
 	}
 
-	expr := parser.ParseExpr()
+	expr := parser.ParseExprWithMarker(MarkerDelim)
 	exprs = append(exprs, expr)
 
 	token = parser.lexer.peek()
@@ -324,7 +336,7 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 		case Comma:
 			// TODO: handle trailing comma
 			parser.lexer.consume()
-			expr = parser.ParseExpr()
+			expr = parser.ParseExprWithMarker(MarkerDelim)
 			exprs = append(exprs, expr)
 			token = parser.lexer.peek()
 		default:
@@ -379,7 +391,7 @@ func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr 
 		} else if strings.HasSuffix(quasi.Value, "${") {
 			raw = quasi.Value[:len(quasi.Value)-2]
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
-			expr := parser.ParseExpr()
+			expr := parser.ParseExprWithMarker(MarkerDelim)
 			exprs = append(exprs, expr)
 			parser.lexer.consume() // consumes the closing brace
 		} else {
