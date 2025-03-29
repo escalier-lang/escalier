@@ -48,7 +48,9 @@ func (parser *Parser) parseDecl() ast.Decl {
 				return nil
 			}
 			parser.lexer.consume()
+			parser.markers.Push(MarkerExpr)
 			init = parser.ParseExpr()
+			parser.markers.Pop()
 			end = init.Span().End
 		}
 

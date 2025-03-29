@@ -53,6 +53,12 @@ loop:
 			// continue
 		}
 
+		if token.Span.Start.Line != parser.lexer.currentLocation.Line {
+			if len(parser.markers) == 0 || parser.markers.Peek() != MarkerDelim {
+				return values.Pop()
+			}
+		}
+
 		parser.lexer.consume()
 
 		if !ops.IsEmpty() {
@@ -137,7 +143,9 @@ loop:
 			)
 		case OpenBracket, QuestionOpenBracket:
 			parser.lexer.consume()
+			parser.markers.Push(MarkerDelim)
 			index := parser.ParseExpr()
+			parser.markers.Pop()
 			terminator := parser.lexer.next()
 			if terminator.Type != CloseBracket {
 				parser.reportError(token.Span, "Expected a closing bracket")
@@ -219,7 +227,9 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
 			parser.lexer.consume()
+			parser.markers.Push(MarkerDelim)
 			expr = parser.ParseExpr()
+			parser.markers.Pop()
 			final := parser.lexer.next() // consume the closing paren
 			if final.Type != CloseParen {
 				parser.reportError(token.Span, "Expected a closing paren")
@@ -313,7 +323,9 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 	default:
 	}
 
+	parser.markers.Push(MarkerDelim)
 	expr := parser.ParseExpr()
+	parser.markers.Pop()
 	exprs = append(exprs, expr)
 
 	token = parser.lexer.peek()
@@ -379,7 +391,9 @@ func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr 
 		} else if strings.HasSuffix(quasi.Value, "${") {
 			raw = quasi.Value[:len(quasi.Value)-2]
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
+			parser.markers.Push(MarkerDelim)
 			expr := parser.ParseExpr()
+			parser.markers.Pop()
 			exprs = append(exprs, expr)
 			parser.lexer.consume() // consumes the closing brace
 		} else {

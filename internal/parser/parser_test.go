@@ -35,6 +35,34 @@ func TestParseModuleNoErrors(t *testing.T) {
 				bar()
 			`,
 		},
+		"SplitExprOnNewline": {
+			input: `
+				var a = x
+				-y
+			`,
+		},
+		"MultilineExprInParens": {
+			input: `
+				var a = (x
+				-y)
+			`,
+		},
+		"MultilineExprInBrackets": {
+			input: `
+				a[base
+				+offset]
+			`,
+		},
+		"SplitExprInNewScope": {
+			input: `
+				val funcs = [
+					fn() {
+						var a = x
+						-y
+					}		
+				]
+			`,
+		},
 	}
 
 	for name, test := range tests {
@@ -48,7 +76,9 @@ func TestParseModuleNoErrors(t *testing.T) {
 			parser := NewParser(source)
 			module := parser.ParseModule()
 
-			snaps.MatchSnapshot(t, module)
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
 			if len(parser.Errors) > 0 {
 				for i, err := range parser.Errors {
 					fmt.Printf("Error[%d]: %#v\n", i, err)
