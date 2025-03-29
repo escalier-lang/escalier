@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"strconv"
 	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -182,12 +181,8 @@ func (lexer *Lexer) next() Token {
 		if isDecimal && i == startOffset+1 {
 			token = NewDot(ast.Span{Start: start, End: end})
 		} else {
-			value, err := strconv.ParseFloat(contents[startOffset:i], 64)
-			if err != nil {
-				// TODO: handle parsing errors
-			}
 			end.Column = start.Column + (i - startOffset)
-			token = NewNumber(value, ast.Span{Start: start, End: end})
+			token = NewNumber(contents[startOffset:i], ast.Span{Start: start, End: end})
 		}
 	case '_', '$',
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',

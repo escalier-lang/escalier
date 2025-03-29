@@ -19,12 +19,12 @@ func (*TJSXText) isToken()    {}
 func (*TIdentifier) isToken() {}
 
 type TNumber struct {
-	Value float64
+	Value string
 	span  ast.Span
 }
 
-func NewNumber(value float64, span ast.Span) *TNumber { return &TNumber{Value: value, span: span} }
-func (t *TNumber) Span() ast.Span                     { return t.span }
+func NewNumber(value string, span ast.Span) *TNumber { return &TNumber{Value: value, span: span} }
+func (t *TNumber) Span() ast.Span                    { return t.span }
 
 type TString struct {
 	Value string

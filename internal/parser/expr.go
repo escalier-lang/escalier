@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -188,7 +189,11 @@ func (parser *Parser) parsePrimary() ast.Expr {
 		switch t := token.(type) {
 		case *TNumber:
 			parser.lexer.consume()
-			expr = ast.NewNumber(t.Value, token.Span())
+			value, err := strconv.ParseFloat(t.Value, 64)
+			if err != nil {
+				// TODO: handle parsing errors
+			}
+			expr = ast.NewNumber(value, token.Span())
 		case *TString:
 			parser.lexer.consume()
 			expr = ast.NewString(t.Value, token.Span())
