@@ -364,3 +364,172 @@
     inferredType: nil,
 }
 ---
+
+[TestParseJSXNoErrors/Fragment - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name:      "",
+        Attrs:     nil,
+        SelfClose: false,
+        span:      ast.Span{
+            Start: ast.Location{Line:1, Column:2},
+            End:   ast.Location{Line:1, Column:3},
+        },
+    },
+    Closing: &ast.JSXClosing{
+        Name: "",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:19},
+            End:   ast.Location{Line:1, Column:20},
+        },
+    },
+    Children: {
+        &ast.JSXElementExpr{
+            Opening: &ast.JSXOpening{
+                Name:  "Foo",
+                Attrs: {
+                },
+                SelfClose: true,
+                span:      ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:10},
+                },
+            },
+            Closing:  (*ast.JSXClosing)(nil),
+            Children: nil,
+            span:     ast.Span{
+                Start: ast.Location{Line:1, Column:8},
+                End:   ast.Location{Line:1, Column:10},
+            },
+            inferredType: nil,
+        },
+        &ast.JSXElementExpr{
+            Opening: &ast.JSXOpening{
+                Name:  "Bar",
+                Attrs: {
+                },
+                SelfClose: true,
+                span:      ast.Span{
+                    Start: ast.Location{Line:1, Column:15},
+                    End:   ast.Location{Line:1, Column:17},
+                },
+            },
+            Closing:  (*ast.JSXClosing)(nil),
+            Children: nil,
+            span:     ast.Span{
+                Start: ast.Location{Line:1, Column:15},
+                End:   ast.Location{Line:1, Column:17},
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:2},
+        End:   ast.Location{Line:1, Column:20},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXErrors/MissingEqualsInStringAttr - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name:  "Foo",
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXString{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:10},
+                        End:   ast.Location{Line:1, Column:16},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:10},
+                    End:   ast.Location{Line:1, Column:16},
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start: ast.Location{Line:1, Column:17},
+            End:   ast.Location{Line:1, Column:19},
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: nil,
+    span:     ast.Span{
+        Start: ast.Location{Line:1, Column:17},
+        End:   ast.Location{Line:1, Column:19},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXErrors/MissingEqualsInExprAttr - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name:  "Foo",
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit:  &ast.NumLit{Value:5},
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:11},
+                            End:   ast.Location{Line:1, Column:12},
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:10},
+                        End:   ast.Location{Line:1, Column:11},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:12},
+                    End:   ast.Location{Line:1, Column:13},
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start: ast.Location{Line:1, Column:14},
+            End:   ast.Location{Line:1, Column:16},
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: nil,
+    span:     ast.Span{
+        Start: ast.Location{Line:1, Column:14},
+        End:   ast.Location{Line:1, Column:16},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXErrors/MissingEqualsInStringAttr - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:16},
+        },
+        Message: "Expected '='",
+    },
+}
+---
+
+[TestParseJSXErrors/MissingEqualsInExprAttr - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:11},
+        },
+        Message: "Expected '='",
+    },
+}
+---

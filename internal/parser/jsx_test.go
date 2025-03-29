@@ -32,6 +32,9 @@ func TestParseJSXNoErrors(t *testing.T) {
 		"Nesting": {
 			input: "<div>{<span>{foo}</span>}</div>",
 		},
+		"Fragment": {
+			input: "<><Foo /><Bar /></>",
+		},
 	}
 
 	for name, test := range tests {
@@ -43,10 +46,40 @@ func TestParseJSXNoErrors(t *testing.T) {
 			}
 
 			parser := NewParser(source)
-			expr := parser.parseJSXElement()
+			jsx := parser.parseJSXElement()
 
-			snaps.MatchSnapshot(t, expr)
+			snaps.MatchSnapshot(t, jsx)
 			assert.Len(t, parser.Errors, 0)
+		})
+	}
+}
+
+func TestParseJSXErrors(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"MissingEqualsInExprAttr": {
+			input: "<Foo bar {5} />",
+		},
+		"MissingEqualsInStringAttr": {
+			input: "<Foo bar \"hello\" />",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := Source{
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			parser := NewParser(source)
+			jsx := parser.parseJSXElement()
+
+			snaps.MatchSnapshot(t, jsx)
+			assert.Greater(t, len(parser.Errors), 0)
+			snaps.MatchSnapshot(t, parser.Errors)
 		})
 	}
 }

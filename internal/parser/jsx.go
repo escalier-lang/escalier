@@ -32,11 +32,15 @@ func (p *Parser) parseJSXOpening() *ast.JSXOpening {
 
 	var name string
 	token = p.lexer.next()
-	if ident, ok := token.(*TIdentifier); ok {
+	switch t := token.(type) {
+	case *TIdentifier:
 		p.lexer.consume() // consume identifier
-		name = ident.Value
-	} else {
-		p.reportError(token.Span(), "Expected an identifier")
+		name = t.Value
+	case *TGreaterThan:
+		p.lexer.consume() // consume '>'
+		return ast.NewJSXOpening("", nil, false, token.Span())
+	default:
+		p.reportError(token.Span(), "Expected an identifier or '>'")
 	}
 
 	attrs := p.parseJSXAttrs()
@@ -114,11 +118,15 @@ func (p *Parser) parseJSXClosing() *ast.JSXClosing {
 
 	var name string
 	token = p.lexer.next()
-	if ident, ok := token.(*TIdentifier); ok {
+	switch token.(type) {
+	case *TIdentifier:
 		p.lexer.consume() // consume identifier
-		name = ident.Value
-	} else {
-		p.reportError(token.Span(), "Expected an identifier")
+		name = token.(*TIdentifier).Value
+	case *TGreaterThan:
+		p.lexer.consume() // consume '>'
+		return ast.NewJSXClosing("", token.Span())
+	default:
+		p.reportError(token.Span(), "Expected an identifier or '>'")
 	}
 
 	token = p.lexer.next()
