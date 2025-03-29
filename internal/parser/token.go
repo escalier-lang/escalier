@@ -15,6 +15,7 @@ type Token interface {
 func (*TNumber) isToken()     {}
 func (*TString) isToken()     {}
 func (*TQuasi) isToken()      {}
+func (*TJSXText) isToken()    {}
 func (*TIdentifier) isToken() {}
 
 type TNumber struct {
@@ -44,6 +45,14 @@ func NewQuasi(value string, last bool, incomplete bool, span ast.Span) *TQuasi {
 	return &TQuasi{Value: value, Last: last, Incomplete: incomplete, span: span}
 }
 func (t *TQuasi) Span() ast.Span { return t.span }
+
+type TJSXText struct {
+	Value string
+	span  ast.Span
+}
+
+func NewJSXText(value string, span ast.Span) *TJSXText { return &TJSXText{Value: value, span: span} }
+func (t *TJSXText) Span() ast.Span                     { return t.span }
 
 type TIdentifier struct {
 	Value string
@@ -100,14 +109,19 @@ func NewDeclare(span ast.Span) Token { return &TDeclare{span: span} }
 func (t *TDeclare) Span() ast.Span   { return t.span }
 
 // operators
-func (*TPlus) isToken()     {}
-func (*TMinus) isToken()    {}
-func (*TAsterisk) isToken() {}
-func (*TSlash) isToken()    {}
-func (*TEquals) isToken()   {}
-func (*TDot) isToken()      {}
-func (*TComma) isToken()    {}
-func (*TBackTick) isToken() {}
+func (*TPlus) isToken()             {}
+func (*TMinus) isToken()            {}
+func (*TAsterisk) isToken()         {}
+func (*TSlash) isToken()            {}
+func (*TSlashGreaterThan) isToken() {}
+func (*TEquals) isToken()           {}
+func (*TDot) isToken()              {}
+func (*TComma) isToken()            {}
+func (*TBackTick) isToken()         {}
+func (*TLessThan) isToken()         {}
+func (*TLessThanEqual) isToken()    {}
+func (*TLessThanSlash) isToken()    {}
+func (*TGreaterThan) isToken()      {}
 
 type TPlus struct{ span ast.Span }
 
@@ -129,6 +143,11 @@ type TSlash struct{ span ast.Span }
 func NewSlash(span ast.Span) *TSlash { return &TSlash{span: span} }
 func (t *TSlash) Span() ast.Span     { return t.span }
 
+type TSlashGreaterThan struct{ span ast.Span }
+
+func NewSlashGreaterThan(span ast.Span) *TSlashGreaterThan { return &TSlashGreaterThan{span: span} }
+func (t *TSlashGreaterThan) Span() ast.Span                { return t.span }
+
 type TEquals struct{ span ast.Span }
 
 func NewEquals(span ast.Span) *TEquals { return &TEquals{span: span} }
@@ -148,6 +167,26 @@ type TBackTick struct{ span ast.Span }
 
 func NewBackTick(span ast.Span) *TBackTick { return &TBackTick{span: span} }
 func (t *TBackTick) Span() ast.Span        { return t.span }
+
+type TLessThan struct{ span ast.Span }
+
+func NewLessThan(span ast.Span) *TLessThan { return &TLessThan{span: span} }
+func (t *TLessThan) Span() ast.Span        { return t.span }
+
+type TLessThanEqual struct{ span ast.Span }
+
+func NewLessThanEqual(span ast.Span) *TLessThanEqual { return &TLessThanEqual{span: span} }
+func (t *TLessThanEqual) Span() ast.Span             { return t.span }
+
+type TLessThanSlash struct{ span ast.Span }
+
+func NewLessThanSlash(span ast.Span) *TLessThanSlash { return &TLessThanSlash{span: span} }
+func (t *TLessThanSlash) Span() ast.Span             { return t.span }
+
+type TGreaterThan struct{ span ast.Span }
+
+func NewGreaterThan(span ast.Span) *TGreaterThan { return &TGreaterThan{span: span} }
+func (t *TGreaterThan) Span() ast.Span           { return t.span }
 
 // optional chaining
 func (*TQuestionOpenParen) isToken()   {}
