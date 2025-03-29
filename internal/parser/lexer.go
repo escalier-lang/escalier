@@ -13,11 +13,9 @@ type Source struct {
 }
 
 type Lexer struct {
-	source            Source
-	currentOffset     int
-	currentLocation   ast.Location
-	afterPeekOffset   int
-	afterPeakLocation ast.Location
+	source          Source
+	currentOffset   int
+	currentLocation ast.Location
 }
 
 func NewLexer(source Source) *Lexer {
@@ -25,9 +23,6 @@ func NewLexer(source Source) *Lexer {
 		source:          source,
 		currentOffset:   0,
 		currentLocation: ast.Location{Line: 1, Column: 1},
-		// The peek state is invalid until the first call to peekToken.
-		afterPeekOffset:   -1,
-		afterPeakLocation: ast.Location{Line: 0, Column: 0},
 	}
 }
 
@@ -41,7 +36,7 @@ var KEYWORDS = map[string](func(span ast.Span) Token){
 	"declare": NewDeclare,
 }
 
-func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
+func (lexer *Lexer) next() Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
 
@@ -228,47 +223,25 @@ func (lexer *Lexer) peekAndMaybeConsume(consume bool) Token {
 		}
 	}
 
-	if !consume {
-		lexer.afterPeekOffset = endOffset
-		lexer.afterPeakLocation = end
-	} else {
-		lexer.afterPeekOffset = -1
-		lexer.afterPeakLocation = ast.Location{Line: 0, Column: 0}
-
-		lexer.currentOffset = endOffset
-		lexer.currentLocation = end
-	}
+	lexer.currentOffset = endOffset
+	lexer.currentLocation = end
 
 	return token
 }
 
 func (lexer *Lexer) peek() Token {
-	return lexer.peekAndMaybeConsume(false)
+	// save the lexer state
+	offset := lexer.currentOffset
+	location := lexer.currentLocation
+	token := lexer.next()
+	// restore the lexer state
+	lexer.currentOffset = offset
+	lexer.currentLocation = location
+	return token
 }
-
-func (lexer *Lexer) next() Token {
-	return lexer.peekAndMaybeConsume(true)
-}
-
-// func expect[V T](lexer *Lexer) (V, error) {
-// 	token := lexer.next()
-// 	t, ok := token.Data.(V)
-// 	if !ok {
-// 		var zero V
-// 		return zero, fmt.Errorf("unexpected token")
-// 	}
-// 	return t, nil
-// }
 
 func (lexer *Lexer) consume() {
-	if lexer.afterPeekOffset != -1 {
-		lexer.currentOffset = lexer.afterPeekOffset
-		lexer.currentLocation = lexer.afterPeakLocation
-
-		// Reset the peek state
-		lexer.afterPeekOffset = -1
-		lexer.afterPeakLocation = ast.Location{Line: 0, Column: 0}
-	}
+	lexer.next()
 }
 
 func (lexer *Lexer) lexQuasi() *TQuasi {
@@ -308,8 +281,6 @@ func (lexer *Lexer) lexQuasi() *TQuasi {
 
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
-	lexer.afterPeekOffset = endOffset
-	lexer.afterPeakLocation = end
 
 	incomplete := false
 	var value string
@@ -351,8 +322,6 @@ func (lexer *Lexer) lexJSXText() *TJSXText {
 
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
-	lexer.afterPeekOffset = endOffset
-	lexer.afterPeakLocation = end
 
 	value := contents[startOffset:endOffset]
 	return NewJSXText(value, ast.Span{Start: start, End: end})

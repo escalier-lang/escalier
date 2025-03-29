@@ -30,15 +30,20 @@ func (p *Parser) parseJSXOpening() *ast.JSXOpening {
 		p.reportError(token.Span(), "Expected '<'")
 	}
 
+	start := token.Span().Start
+
 	var name string
 	token = p.lexer.next()
 	switch t := token.(type) {
 	case *TIdentifier:
-		p.lexer.consume() // consume identifier
 		name = t.Value
 	case *TGreaterThan:
-		p.lexer.consume() // consume '>'
-		return ast.NewJSXOpening("", nil, false, token.Span())
+		end := token.Span().End
+		span := ast.Span{
+			Start: start,
+			End:   end,
+		}
+		return ast.NewJSXOpening("", nil, false, span)
 	default:
 		p.reportError(token.Span(), "Expected an identifier or '>'")
 	}
@@ -57,7 +62,14 @@ func (p *Parser) parseJSXOpening() *ast.JSXOpening {
 		p.reportError(token.Span(), "Expected '/' or '/>'")
 	}
 
-	return ast.NewJSXOpening(name, attrs, selfClosing, token.Span())
+	end := token.Span().End
+
+	span := ast.Span{
+		Start: start,
+		End:   end,
+	}
+
+	return ast.NewJSXOpening(name, attrs, selfClosing, span)
 }
 
 func (p *Parser) parseJSXAttrs() []*ast.JSXAttr {
@@ -116,15 +128,20 @@ func (p *Parser) parseJSXClosing() *ast.JSXClosing {
 		p.reportError(token.Span(), "Expected '</'")
 	}
 
+	start := token.Span().Start
+
 	var name string
 	token = p.lexer.next()
-	switch token.(type) {
+	switch t := token.(type) {
 	case *TIdentifier:
-		p.lexer.consume() // consume identifier
-		name = token.(*TIdentifier).Value
+		name = t.Value
 	case *TGreaterThan:
-		p.lexer.consume() // consume '>'
-		return ast.NewJSXClosing("", token.Span())
+		end := token.Span().End
+		span := ast.Span{
+			Start: start,
+			End:   end,
+		}
+		return ast.NewJSXClosing("", span)
 	default:
 		p.reportError(token.Span(), "Expected an identifier or '>'")
 	}
@@ -134,7 +151,13 @@ func (p *Parser) parseJSXClosing() *ast.JSXClosing {
 		p.reportError(token.Span(), "Expected '>'")
 	}
 
-	return ast.NewJSXClosing(name, token.Span())
+	end := token.Span().End
+	span := ast.Span{
+		Start: start,
+		End:   end,
+	}
+
+	return ast.NewJSXClosing(name, span)
 }
 
 func (p *Parser) parseJSXChildren() []ast.JSXChild {
