@@ -109,7 +109,7 @@ func (p *Parser) parseJSXAttrs() []*ast.JSXAttr {
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
-			expr := p.ParseExpr()
+			expr := p.ParseExprWithMarker(MarkerDelim)
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
@@ -183,7 +183,7 @@ func (p *Parser) parseJSXChildren() []ast.JSXChild {
 			children = append(children, jsxElement)
 		case OpenBrace:
 			p.lexer.consume()
-			expr := p.ParseExpr()
+			expr := p.ParseExprWithMarker(MarkerDelim)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume()

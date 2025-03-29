@@ -43,14 +43,10 @@ func (parser *Parser) parseStmt() ast.Stmt {
 		return ast.NewDeclStmt(decl, decl.Span())
 	case Return:
 		parser.lexer.consume()
-		parser.markers.Push(MarkerExpr)
-		expr := parser.ParseExpr()
-		parser.markers.Pop()
+		expr := parser.ParseExprWithMarker(MarkerExpr)
 		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
-		parser.markers.Push(MarkerExpr)
-		expr := parser.ParseExpr()
-		parser.markers.Pop()
+		expr := parser.ParseExprWithMarker(MarkerExpr)
 		return ast.NewExprStmt(expr, expr.Span())
 	}
 }
