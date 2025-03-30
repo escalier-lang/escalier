@@ -91,7 +91,7 @@ func (p *Parser) parseJSXAttrs() []*ast.JSXAttr {
 
 		// parse attribute value
 		token = p.lexer.peek()
-		if token.Type == Equals {
+		if token.Type == Equal {
 			p.lexer.consume() // consume equals
 		} else {
 			p.reportError(token.Span, "Expected '='")

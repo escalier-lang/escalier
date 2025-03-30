@@ -286,6 +286,8 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 			// TODO: parse return and throws types
 			return ast.NewFuncExpr(params, nil, nil, body, ast.Span{Start: start, End: end})
+		case If:
+			return parser.parseIfElse()
 		case LessThan:
 			return parser.parseJSXElement()
 		case
@@ -410,4 +412,53 @@ func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr 
 	}
 	span := ast.Span{Start: token.Span.Start, End: parser.lexer.currentLocation}
 	return ast.NewTemplateLit(quasis, exprs, span)
+}
+
+func (p *Parser) parseIfElse() ast.Expr {
+	start := p.lexer.currentLocation
+
+	token := p.lexer.next() // consume 'if'
+	cond := p.ParseExprWithMarker(MarkerDelim)
+	if cond == nil {
+		p.reportError(token.Span, "Expected an expression")
+	}
+	token = p.lexer.peek()
+	if token.Type != OpenBrace {
+		p.reportError(token.Span, "Expected an opening brace")
+	}
+	body := p.parseBlock()
+	token = p.lexer.peek()
+	if token.Type == Else {
+		p.lexer.consume()
+		token = p.lexer.peek()
+		//nolint: exhaustive
+		switch token.Type {
+		case If:
+			expr := p.parseIfElse()
+			alt := ast.BlockOrExpr{
+				Expr:  expr,
+				Block: nil,
+			}
+			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: expr.Span().End})
+		case OpenBrace:
+			block := p.parseBlock()
+			alt := ast.BlockOrExpr{
+				Expr:  nil,
+				Block: &block,
+			}
+			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: block.Span.End})
+		default:
+			p.reportError(token.Span, "Expected an if or an opening brace")
+			alt := ast.BlockOrExpr{
+				Expr:  nil,
+				Block: nil,
+			}
+			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: token.Span.Start})
+		}
+	}
+	alt := ast.BlockOrExpr{
+		Expr:  nil,
+		Block: nil,
+	}
+	return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: token.Span.Start})
 }

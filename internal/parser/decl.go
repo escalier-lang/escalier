@@ -43,7 +43,7 @@ func (parser *Parser) parseDecl() ast.Decl {
 		token = parser.lexer.peek()
 		var init ast.Expr
 		if !declare {
-			if token.Type != Equals {
+			if token.Type != Equal {
 				parser.reportError(token.Span, "Expected equals sign")
 				return nil
 			}
