@@ -1,9 +1,9 @@
 
 [TestParsePatternNoErrors/BooleanLiteralFalse - 1]
-&ast.IdentPat{
-    Name: "false",
+&ast.LitPat{
+    Lit:  &ast.BoolLit{},
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:6},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:6},
     },
     inferredType: nil,
@@ -125,10 +125,10 @@
 ---
 
 [TestParsePatternNoErrors/BooleanLiteralTrue - 1]
-&ast.IdentPat{
-    Name: "true",
+&ast.LitPat{
+    Lit:  &ast.BoolLit{Value:true},
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:5},
     },
     inferredType: nil,
@@ -136,10 +136,10 @@
 ---
 
 [TestParsePatternNoErrors/NullLiteral - 1]
-&ast.IdentPat{
-    Name: "null",
+&ast.LitPat{
+    Lit:  &ast.NullLit{},
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:5},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:5},
     },
     inferredType: nil,
@@ -169,10 +169,10 @@
 ---
 
 [TestParsePatternNoErrors/UndefinedLiteral - 1]
-&ast.IdentPat{
-    Name: "undefined",
+&ast.LitPat{
+    Lit:  &ast.UndefinedLit{},
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:10},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:10},
     },
     inferredType: nil,
@@ -262,6 +262,17 @@
     span: ast.Span{
         Start: ast.Location{Line:1, Column:22},
         End:   ast.Location{Line:1, Column:23},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/WildcardPattern - 1]
+&ast.IdentPat{
+    Name: "_",
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:2},
+        End:   ast.Location{Line:1, Column:2},
     },
     inferredType: nil,
 }

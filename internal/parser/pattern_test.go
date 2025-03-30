@@ -47,6 +47,9 @@ func TestParsePatternNoErrors(t *testing.T) {
 		"ExtractPattern": {
 			input: "Foo(a, b)",
 		},
+		"WildcardPattern": {
+			input: "_",
+		},
 	}
 
 	for name, test := range tests {
