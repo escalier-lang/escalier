@@ -6,7 +6,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:3},
         },
-        Type:  5,
+        Type:  11,
         Value: "fn",
     },
     &parser.Token{
@@ -14,7 +14,7 @@
             Start: ast.Location{Line:1, Column:4},
             End:   ast.Location{Line:1, Column:7},
         },
-        Type:  6,
+        Type:  12,
         Value: "var",
     },
     &parser.Token{
@@ -22,7 +22,7 @@
             Start: ast.Location{Line:1, Column:8},
             End:   ast.Location{Line:1, Column:11},
         },
-        Type:  7,
+        Type:  13,
         Value: "val",
     },
 }
@@ -35,7 +35,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        Type:  23,
+        Type:  29,
         Value: "+",
     },
     &parser.Token{
@@ -43,7 +43,7 @@
             Start: ast.Location{Line:1, Column:3},
             End:   ast.Location{Line:1, Column:4},
         },
-        Type:  24,
+        Type:  30,
         Value: "-",
     },
     &parser.Token{
@@ -51,7 +51,7 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Type:  25,
+        Type:  31,
         Value: "*",
     },
     &parser.Token{
@@ -59,7 +59,7 @@
             Start: ast.Location{Line:1, Column:7},
             End:   ast.Location{Line:1, Column:8},
         },
-        Type:  26,
+        Type:  32,
         Value: "/",
     },
     &parser.Token{
@@ -67,7 +67,7 @@
             Start: ast.Location{Line:1, Column:9},
             End:   ast.Location{Line:1, Column:10},
         },
-        Type:  31,
+        Type:  37,
         Value: "=",
     },
 }
@@ -80,7 +80,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:4},
         },
-        Type:  4,
+        Type:  0,
         Value: "foo",
     },
     &parser.Token{
@@ -88,7 +88,7 @@
             Start: ast.Location{Line:2, Column:1},
             End:   ast.Location{Line:2, Column:4},
         },
-        Type:  4,
+        Type:  0,
         Value: "bar",
     },
 }
@@ -101,7 +101,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:7},
         },
-        Type:  1,
+        Type:  2,
         Value: "hello",
     },
 }
@@ -114,7 +114,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        Type:  4,
+        Type:  0,
         Value: "a",
     },
     &parser.Token{
@@ -122,7 +122,7 @@
             Start: ast.Location{Line:1, Column:3},
             End:   ast.Location{Line:1, Column:4},
         },
-        Type:  25,
+        Type:  31,
         Value: "*",
     },
     &parser.Token{
@@ -130,7 +130,7 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Type:  42,
+        Type:  49,
         Value: "(",
     },
     &parser.Token{
@@ -138,7 +138,7 @@
             Start: ast.Location{Line:1, Column:6},
             End:   ast.Location{Line:1, Column:7},
         },
-        Type:  4,
+        Type:  0,
         Value: "b",
     },
     &parser.Token{
@@ -146,7 +146,7 @@
             Start: ast.Location{Line:1, Column:8},
             End:   ast.Location{Line:1, Column:9},
         },
-        Type:  23,
+        Type:  29,
         Value: "+",
     },
     &parser.Token{
@@ -154,7 +154,7 @@
             Start: ast.Location{Line:1, Column:10},
             End:   ast.Location{Line:1, Column:11},
         },
-        Type:  4,
+        Type:  0,
         Value: "c",
     },
     &parser.Token{
@@ -162,7 +162,7 @@
             Start: ast.Location{Line:1, Column:11},
             End:   ast.Location{Line:1, Column:12},
         },
-        Type:  43,
+        Type:  50,
         Value: ")",
     },
 }

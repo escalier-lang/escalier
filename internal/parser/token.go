@@ -5,12 +5,21 @@ import "github.com/escalier-lang/escalier/internal/ast"
 type TokenType int
 
 const (
-	// Token types
-	Number TokenType = iota
+	Identifier TokenType = iota
+
+	// literals
+	Number
 	String
+	True
+	False
+	Null
+	Undefined
+
+	// misc
 	Quasi
 	JSXText
-	Identifier
+	Underscore
+	Colon
 
 	// keywords
 	Fn
@@ -49,6 +58,7 @@ const (
 	GreaterThan
 	GreaterThanEqual
 	LessThanSlash // Used for JSX
+	DotDotDot
 
 	// optional chaining
 	QuestionOpenParen

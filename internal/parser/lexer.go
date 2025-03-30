@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -35,6 +36,15 @@ var keywords = map[string]TokenType{
 	"declare": Declare,
 	"if":      If,
 	"else":    Else,
+	"match":   Match,
+	"try":     Try,
+	"catch":   Catch,
+	"finally": Finally,
+	"throw":   Throw,
+	"async":   Async,
+	"await":   Await,
+	"gen":     Gen,
+	"yield":   Yield,
 }
 
 func (lexer *Lexer) next() *Token {
@@ -138,6 +148,8 @@ func (lexer *Lexer) next() *Token {
 		default:
 			token = NewToken(Invalid, "", ast.Span{Start: start, End: end})
 		}
+	case ':':
+		token = NewToken(Colon, ":", ast.Span{Start: start, End: end})
 	case '"':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -181,7 +193,13 @@ func (lexer *Lexer) next() *Token {
 
 		endOffset = i
 		if isDecimal && i == startOffset+1 {
-			token = NewToken(Dot, ".", ast.Span{Start: start, End: end})
+			if strings.HasPrefix(contents[startOffset:], "...") {
+				endOffset += 2
+				end.Column += 2
+				token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end})
+			} else {
+				token = NewToken(Dot, ".", ast.Span{Start: start, End: end})
+			}
 		} else {
 			end.Column = start.Column + (i - startOffset)
 			token = NewToken(Number, contents[startOffset:i], ast.Span{Start: start, End: end})

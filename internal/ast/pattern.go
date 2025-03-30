@@ -29,11 +29,11 @@ func (p *IdentPat) SetInferredType(t Type) { p.inferredType = t }
 
 type ObjPatElem interface{ isObjPatElem() }
 
-func (*KeyValuePat) isObjPatElem()  {}
-func (*ShorthandPat) isObjPatElem() {}
-func (*RestPat) isObjPatElem()      {}
+func (*ObjKeyValuePat) isObjPatElem()  {}
+func (*ObjShorthandPat) isObjPatElem() {}
+func (*ObjRestPat) isObjPatElem()      {}
 
-type KeyValuePat struct {
+type ObjKeyValuePat struct {
 	Key          string
 	Value        Pat
 	Default      Expr // optional
@@ -41,31 +41,31 @@ type KeyValuePat struct {
 	inferredType Type
 }
 
-func NewKeyValuePat(key string, value Pat, span Span) *KeyValuePat {
-	return &KeyValuePat{Key: key, Value: value, Default: nil, span: span, inferredType: nil}
+func NewObjKeyValuePat(key string, value Pat, span Span) *ObjKeyValuePat {
+	return &ObjKeyValuePat{Key: key, Value: value, Default: nil, span: span, inferredType: nil}
 }
-func (p *KeyValuePat) Span() Span { return p.span }
+func (p *ObjKeyValuePat) Span() Span { return p.span }
 
-type ShorthandPat struct {
+type ObjShorthandPat struct {
 	Key     string
 	Default Expr // optional
 	span    Span
 }
 
-func NewShorthandPat(key string, span Span) *ShorthandPat {
-	return &ShorthandPat{Key: key, Default: nil, span: span}
+func NewObjShorthandPat(key string, span Span) *ObjShorthandPat {
+	return &ObjShorthandPat{Key: key, Default: nil, span: span}
 }
-func (p *ShorthandPat) Span() Span { return p.span }
+func (p *ObjShorthandPat) Span() Span { return p.span }
 
-type RestPat struct {
+type ObjRestPat struct {
 	Pattern Pat
 	span    Span
 }
 
-func NewRestPat(pattern Pat, span Span) *RestPat {
-	return &RestPat{Pattern: pattern, span: span}
+func NewObjRestPat(pattern Pat, span Span) *ObjRestPat {
+	return &ObjRestPat{Pattern: pattern, span: span}
 }
-func (p *RestPat) Span() Span { return p.span }
+func (p *ObjRestPat) Span() Span { return p.span }
 
 type ObjectPat struct {
 	Elems        []ObjPatElem
@@ -80,15 +80,39 @@ func (p *ObjectPat) Span() Span             { return p.span }
 func (p *ObjectPat) InferredType() Type     { return p.inferredType }
 func (p *ObjectPat) SetInferredType(t Type) { p.inferredType = t }
 
-// type PObjectElem interface{ isPObjectElem() }
+type TuplePatElem interface{ isTuplePatElem() }
+
+func (*TupleElemPat) isTuplePatElem() {}
+func (*TupleRestPat) isTuplePatElem() {}
+
+type TupleElemPat struct {
+	Pattern Pat
+	Default Expr // optional
+	span    Span
+}
+
+func NewTupleElemPat(pattern Pat, span Span) *TupleElemPat {
+	return &TupleElemPat{Pattern: pattern, Default: nil, span: span}
+}
+func (p *TupleElemPat) Span() Span { return p.span }
+
+type TupleRestPat struct {
+	Pattern Pat
+	span    Span
+}
+
+func NewTupleRestPat(pattern Pat, span Span) *TupleRestPat {
+	return &TupleRestPat{Pattern: pattern, span: span}
+}
+func (p *TupleRestPat) Span() Span { return p.span }
 
 type TuplePat struct {
-	Elems        []Pat
+	Elems        []TuplePatElem
 	span         Span
 	inferredType Type
 }
 
-func NewTuplePat(elems []Pat, span Span) *TuplePat {
+func NewTuplePat(elems []TuplePatElem, span Span) *TuplePat {
 	return &TuplePat{Elems: elems, span: span, inferredType: nil}
 }
 func (p *TuplePat) Span() Span             { return p.span }
@@ -110,12 +134,12 @@ func (p *ExtractPat) InferredType() Type     { return p.inferredType }
 func (p *ExtractPat) SetInferredType(t Type) { p.inferredType = t }
 
 type LitPat struct {
-	Lit          *Lit
+	Lit          Lit
 	span         Span
 	inferredType Type
 }
 
-func NewLitPat(lit *Lit, span Span) *LitPat {
+func NewLitPat(lit Lit, span Span) *LitPat {
 	return &LitPat{Lit: lit, span: span, inferredType: nil}
 }
 func (p *LitPat) Span() Span             { return p.span }
