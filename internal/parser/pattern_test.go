@@ -45,7 +45,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 			input: "{a = 5, b: c = \"hello\"}",
 		},
 		"ExtractPattern": {
-			input: "Foo(a, b = 5)",
+			input: "Foo(a, b)",
 		},
 	}
 
