@@ -163,6 +163,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"ParamsMissingClosingParen": {
 			input: "fn (a, b { a + b }",
 		},
+		"IfElseMissingOpeningBraces": {
+			input: "if cond a } else b }",
+		},
+		"IfElseMissingCondition": {
+			input: "if { a } else { b }",
+		},
 	}
 
 	for name, test := range tests {

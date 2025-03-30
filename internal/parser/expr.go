@@ -417,11 +417,19 @@ func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr 
 func (p *Parser) parseIfElse() ast.Expr {
 	start := p.lexer.currentLocation
 
-	token := p.lexer.next() // consume 'if'
-	cond := p.ParseExprWithMarker(MarkerDelim)
-	if cond == nil {
-		p.reportError(token.Span, "Expected an expression")
+	p.lexer.consume() // consume 'if'
+
+	token := p.lexer.peek()
+	var cond ast.Expr
+	if token.Type == OpenBrace {
+		p.reportError(token.Span, "Expected a condition")
+	} else {
+		cond = p.ParseExprWithMarker(MarkerDelim)
+		if cond == nil {
+			p.reportError(token.Span, "Expected a condition")
+		}
 	}
+
 	token = p.lexer.peek()
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected an opening brace")
