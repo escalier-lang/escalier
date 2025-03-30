@@ -15,25 +15,31 @@ func (p *Parser) parsePattern() ast.Pat {
 	case Identifier:
 		p.lexer.consume()
 		name := token.Value // TODO: support qualified identifiers
+		span := token.Span
+
 		token = p.lexer.peek()
 		if token.Type == OpenParen {
-			p.lexer.consume()
+			p.lexer.consume() // consume '('
+
 			pats := p.parsePatternSeq()
 			token = p.lexer.peek()
 			if token.Type != CloseParen {
 				msg := fmt.Sprintf("Expected ')', got '%s'", token.Value)
 				p.reportError(token.Span, msg)
 			} else {
-				p.lexer.consume()
+				p.lexer.consume() // consume ')'
 			}
-			return ast.NewExtractPat(name, pats, ast.Span{Start: token.Span.Start, End: token.Span.End})
+			span = ast.MergeSpans(span, token.Span)
+
+			// TODO: support for default values
+			return ast.NewExtractPat(name, pats, span)
 		} else {
 			return ast.NewIdentPat(name, token.Span)
 		}
-	case Underscore:
+	case Underscore: // Wildcard
 		p.lexer.consume()
 		return ast.NewWildcardPat(token.Span)
-	case OpenBracket:
+	case OpenBracket: // Object
 		p.lexer.consume()
 		patElems := []ast.TuplePatElem{}
 		first := true
@@ -52,18 +58,37 @@ func (p *Parser) parsePattern() ast.Pat {
 				token = p.lexer.peek()
 			}
 			if token.Type == DotDotDot {
-				// TODO: only try to parse an identifier after the ...
 				p.lexer.consume()
-				pat := p.parsePattern()
-				patElems = append(patElems, ast.NewTupleRestPat(pat, token.Span))
+				span := token.Span
+
+				var identPat *ast.IdentPat
+				token = p.lexer.peek()
+				if token.Type == Identifier {
+					p.lexer.consume()
+					identPat = ast.NewIdentPat(token.Value, token.Span)
+					span = ast.MergeSpans(span, identPat.Span())
+				} else {
+					p.reportError(token.Span, "Expected identifier")
+					identPat = ast.NewIdentPat("", token.Span)
+				}
+				patElems = append(patElems, ast.NewTupleRestPat(identPat, span))
 			} else {
 				pat := p.parsePattern()
-				patElems = append(patElems, ast.NewTupleElemPat(pat, token.Span))
+				span := pat.Span()
+
+				var init ast.Expr
+				token = p.lexer.peek()
+				if token.Type == Equal {
+					p.lexer.consume()
+					init = p.ParseExprWithMarker(MarkerDelim)
+					span = ast.MergeSpans(span, init.Span())
+				}
+				patElems = append(patElems, ast.NewTupleElemPat(pat, init, span))
 			}
 			first = false
 		}
 		return ast.NewTuplePat(patElems, ast.Span{Start: token.Span.Start, End: token.Span.End})
-	case OpenBrace:
+	case OpenBrace: // Tuple
 		p.lexer.consume()
 		patElems := []ast.ObjPatElem{}
 		first := true
@@ -82,21 +107,42 @@ func (p *Parser) parsePattern() ast.Pat {
 				token = p.lexer.peek()
 			}
 			if token.Type == Identifier {
-				key := token.Value
 				p.lexer.consume()
+				key := token.Value
+				span := token.Span
+
 				token = p.lexer.peek()
 				if token.Type == Colon {
-					// TODO: handle optional initializers
 					p.lexer.consume()
 					value := p.parsePattern()
-					patElems = append(patElems, ast.NewObjKeyValuePat(key, value, token.Span))
+					span = ast.MergeSpans(span, value.Span())
+
+					var init ast.Expr
+					token = p.lexer.peek()
+					if token.Type == Equal {
+						p.lexer.consume()
+						init := p.ParseExprWithMarker(MarkerDelim)
+						span = ast.MergeSpans(span, init.Span())
+					}
+
+					patElems = append(patElems, ast.NewObjKeyValuePat(key, value, init, span))
 				} else {
-					patElems = append(patElems, ast.NewObjShorthandPat(key, token.Span))
+					var init ast.Expr
+					token = p.lexer.peek()
+					if token.Type == Equal {
+						p.lexer.consume()
+						init := p.ParseExprWithMarker(MarkerDelim)
+						span = ast.MergeSpans(span, init.Span())
+					}
+
+					patElems = append(patElems, ast.NewObjShorthandPat(key, init, span))
 				}
 			} else if token.Type == DotDotDot {
 				p.lexer.consume()
+
 				pat := p.parsePattern()
-				patElems = append(patElems, ast.NewObjRestPat(pat, token.Span))
+				span := ast.MergeSpans(token.Span, pat.Span())
+				patElems = append(patElems, ast.NewObjRestPat(pat, span))
 			} else {
 				p.reportError(token.Span, "Expected identifier or '...'")
 			}

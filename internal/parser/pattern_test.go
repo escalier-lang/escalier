@@ -36,13 +36,16 @@ func TestParsePatternNoErrors(t *testing.T) {
 			input: "_",
 		},
 		"TuplePatternWithRest": {
-			input: "[a, b, ...rest]",
+			input: "[a, b = 5, ...rest]",
 		},
 		"ObjectPatternWithRest": {
 			input: "{a, b: c, ...rest}",
 		},
+		"ObjectPatternWithDefaults": {
+			input: "{a = 5, b: c = \"hello\"}",
+		},
 		"ExtractPattern": {
-			input: "Foo(a, b)",
+			input: "Foo(a, b = 5)",
 		},
 	}
 

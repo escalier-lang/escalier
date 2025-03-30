@@ -41,8 +41,8 @@ type ObjKeyValuePat struct {
 	inferredType Type
 }
 
-func NewObjKeyValuePat(key string, value Pat, span Span) *ObjKeyValuePat {
-	return &ObjKeyValuePat{Key: key, Value: value, Default: nil, span: span, inferredType: nil}
+func NewObjKeyValuePat(key string, value Pat, _default Expr, span Span) *ObjKeyValuePat {
+	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, span: span, inferredType: nil}
 }
 func (p *ObjKeyValuePat) Span() Span { return p.span }
 
@@ -52,8 +52,8 @@ type ObjShorthandPat struct {
 	span    Span
 }
 
-func NewObjShorthandPat(key string, span Span) *ObjShorthandPat {
-	return &ObjShorthandPat{Key: key, Default: nil, span: span}
+func NewObjShorthandPat(key string, _default Expr, span Span) *ObjShorthandPat {
+	return &ObjShorthandPat{Key: key, Default: _default, span: span}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }
 
@@ -91,8 +91,8 @@ type TupleElemPat struct {
 	span    Span
 }
 
-func NewTupleElemPat(pattern Pat, span Span) *TupleElemPat {
-	return &TupleElemPat{Pattern: pattern, Default: nil, span: span}
+func NewTupleElemPat(pattern Pat, _default Expr, span Span) *TupleElemPat {
+	return &TupleElemPat{Pattern: pattern, Default: _default, span: span}
 }
 func (p *TupleElemPat) Span() Span { return p.span }
 
