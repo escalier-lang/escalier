@@ -1988,3 +1988,56 @@
     },
 }
 ---
+
+[TestParseExprErrorHandling/IncompleteElse - 1]
+&ast.IfElseExpr{
+    Cond: nil,
+    Cons: ast.Block{
+        Stmts: {
+            &ast.ExprStmt{
+                Expr: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:7},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:6},
+                    End:   ast.Location{Line:1, Column:7},
+                },
+            },
+        },
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:9},
+        },
+    },
+    Alt:  ast.BlockOrExpr{},
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:14},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteElse - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        Message: "Expected a condition",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:14},
+            End:   ast.Location{Line:1, Column:14},
+        },
+        Message: "Expected an if or an opening brace",
+    },
+}
+---

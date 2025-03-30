@@ -169,6 +169,9 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"IfElseMissingCondition": {
 			input: "if { a } else { b }",
 		},
+		"IncompleteElse": {
+			input: "if { a } else",
+		},
 	}
 
 	for name, test := range tests {
