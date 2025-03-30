@@ -98,6 +98,12 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncExpr": {
 			input: "fn (a, b) { a + b }",
 		},
+		"IfElse": {
+			input: "if cond { a } else { b }",
+		},
+		"IfElseChaining": {
+			input: "if cond1 { a } else if cond2 { b } else { c }",
+		},
 	}
 
 	for name, test := range tests {
@@ -112,7 +118,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			expr := parser.ParseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Len(t, parser.Errors, 0)
+			assert.Equal(t, parser.Errors, []*Error{})
 		})
 	}
 }
@@ -156,6 +162,15 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"ParamsMissingClosingParen": {
 			input: "fn (a, b { a + b }",
+		},
+		"IfElseMissingOpeningBraces": {
+			input: "if cond a } else b }",
+		},
+		"IfElseMissingCondition": {
+			input: "if { a } else { b }",
+		},
+		"IncompleteElse": {
+			input: "if { a } else",
 		},
 	}
 

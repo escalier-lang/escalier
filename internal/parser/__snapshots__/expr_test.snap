@@ -1052,144 +1052,285 @@
 }
 ---
 
-[TestParseExprErrorHandling/IncompleteTemplateLiteral - 1]
+[TestParseExprNoErrors/TemplateStringMultipleLines - 1]
 &ast.TemplateLitExpr{
     Quasis: {
         &ast.Quasi{
-            Value: "foo",
+            Value: "hello\nworld",
             Span:  ast.Span{
                 Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:2, Column:7},
             },
         },
     },
     Exprs: nil,
     span:  ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:5},
+        End:   ast.Location{Line:2, Column:7},
     },
     inferredType: nil,
 }
 ---
 
-[TestParseExprErrorHandling/IncompleteMember - 1]
-&ast.BinaryExpr{
-    Left: &ast.IdentExpr{
-        Name: "a",
+[TestParseExprNoErrors/IfElse - 1]
+&ast.IfElseExpr{
+    Cond: &ast.IdentExpr{
+        Name: "cond",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
-        },
-        inferredType: nil,
-    },
-    Op:    0,
-    Right: &ast.MemberExpr{
-        Object: &ast.IdentExpr{
-            Name: "b",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
-            },
-            inferredType: nil,
-        },
-        Prop: &ast.Ident{
-            Name: "",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:7},
-                End:   ast.Location{Line:1, Column:7},
-            },
-        },
-        OptChain: false,
-        span:     ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:7},
-        },
-        inferredType: nil,
-    },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:7},
-    },
-    inferredType: nil,
-}
----
-
-[TestParseExprErrorHandling/MismatchedBracketsIndex - 1]
-&ast.IndexExpr{
-    Object: &ast.IdentExpr{
-        Name: "foo",
-        span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:4},
-        },
-        inferredType: nil,
-    },
-    Index: &ast.IdentExpr{
-        Name: "bar",
-        span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:4},
             End:   ast.Location{Line:1, Column:8},
         },
         inferredType: nil,
     },
-    OptChain: false,
-    span:     ast.Span{
+    Cons: ast.Block{
+        Stmts: {
+            &ast.ExprStmt{
+                Expr: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:11},
+                        End:   ast.Location{Line:1, Column:12},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:11},
+                    End:   ast.Location{Line:1, Column:12},
+                },
+            },
+        },
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:9},
+            End:   ast.Location{Line:1, Column:14},
+        },
+    },
+    Alt: ast.BlockOrExpr{
+        Block: &ast.Block{
+            Stmts: {
+                &ast.ExprStmt{
+                    Expr: &ast.IdentExpr{
+                        Name: "b",
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:22},
+                            End:   ast.Location{Line:1, Column:23},
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:22},
+                        End:   ast.Location{Line:1, Column:23},
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start: ast.Location{Line:1, Column:20},
+                End:   ast.Location{Line:1, Column:25},
+            },
+        },
+        Expr: nil,
+    },
+    span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:9},
+        End:   ast.Location{Line:1, Column:25},
     },
     inferredType: nil,
 }
 ---
 
-[TestParseExprErrorHandling/IncompleteMember - 2]
+[TestParseExprNoErrors/IfElseChaining - 1]
+&ast.IfElseExpr{
+    Cond: &ast.IdentExpr{
+        Name: "cond1",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:9},
+        },
+        inferredType: nil,
+    },
+    Cons: ast.Block{
+        Stmts: {
+            &ast.ExprStmt{
+                Expr: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:12},
+                        End:   ast.Location{Line:1, Column:13},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:12},
+                    End:   ast.Location{Line:1, Column:13},
+                },
+            },
+        },
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:15},
+        },
+    },
+    Alt: ast.BlockOrExpr{
+        Block: (*ast.Block)(nil),
+        Expr:  &ast.IfElseExpr{
+            Cond: &ast.IdentExpr{
+                Name: "cond2",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:24},
+                    End:   ast.Location{Line:1, Column:29},
+                },
+                inferredType: nil,
+            },
+            Cons: ast.Block{
+                Stmts: {
+                    &ast.ExprStmt{
+                        Expr: &ast.IdentExpr{
+                            Name: "b",
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:32},
+                                End:   ast.Location{Line:1, Column:33},
+                            },
+                            inferredType: nil,
+                        },
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:32},
+                            End:   ast.Location{Line:1, Column:33},
+                        },
+                    },
+                },
+                Span: ast.Span{
+                    Start: ast.Location{Line:1, Column:30},
+                    End:   ast.Location{Line:1, Column:35},
+                },
+            },
+            Alt: ast.BlockOrExpr{
+                Block: &ast.Block{
+                    Stmts: {
+                        &ast.ExprStmt{
+                            Expr: &ast.IdentExpr{
+                                Name: "c",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:43},
+                                    End:   ast.Location{Line:1, Column:44},
+                                },
+                                inferredType: nil,
+                            },
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:43},
+                                End:   ast.Location{Line:1, Column:44},
+                            },
+                        },
+                    },
+                    Span: ast.Span{
+                        Start: ast.Location{Line:1, Column:41},
+                        End:   ast.Location{Line:1, Column:46},
+                    },
+                },
+                Expr: nil,
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:20},
+                End:   ast.Location{Line:1, Column:46},
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:46},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IfElseMissingCondition - 1]
+&ast.IfElseExpr{
+    Cond: nil,
+    Cons: ast.Block{
+        Stmts: {
+            &ast.ExprStmt{
+                Expr: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:7},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:6},
+                    End:   ast.Location{Line:1, Column:7},
+                },
+            },
+        },
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:9},
+        },
+    },
+    Alt: ast.BlockOrExpr{
+        Block: &ast.Block{
+            Stmts: {
+                &ast.ExprStmt{
+                    Expr: &ast.IdentExpr{
+                        Name: "b",
+                        span: ast.Span{
+                            Start: ast.Location{Line:1, Column:17},
+                            End:   ast.Location{Line:1, Column:18},
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:17},
+                        End:   ast.Location{Line:1, Column:18},
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start: ast.Location{Line:1, Column:15},
+                End:   ast.Location{Line:1, Column:20},
+            },
+        },
+        Expr: nil,
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:20},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IfElseMissingCondition - 2]
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:6},
-            End:   ast.Location{Line:1, Column:7},
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
         },
-        Message: "expected an identifier after .",
+        Message: "Expected a condition",
     },
 }
 ---
 
-[TestParseExprErrorHandling/IncompleteBinaryExpr - 1]
-&ast.BinaryExpr{
-    Left: &ast.BinaryExpr{
-        Left: &ast.IdentExpr{
-            Name: "a",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:2},
-            },
-            inferredType: nil,
-        },
-        Op:    1,
-        Right: &ast.IdentExpr{
-            Name: "b",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
-            },
-            inferredType: nil,
-        },
+[TestParseExprErrorHandling/IfElseMissingOpeningBraces - 1]
+&ast.IfElseExpr{
+    Cond: &ast.IdentExpr{
+        Name: "cond",
         span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:6},
-        },
-        inferredType: nil,
-    },
-    Op:    0,
-    Right: &ast.EmptyExpr{
-        span: ast.Span{
-            Start: ast.Location{Line:1, Column:8},
+            Start: ast.Location{Line:1, Column:4},
             End:   ast.Location{Line:1, Column:8},
         },
         inferredType: nil,
     },
+    Cons: ast.Block{
+        Stmts: {
+        },
+        Span: ast.Span{},
+    },
+    Alt:  ast.BlockOrExpr{},
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:8},
+        End:   ast.Location{Line:1, Column:11},
     },
     inferredType: nil,
 }
@@ -1228,6 +1369,101 @@
         End:   ast.Location{Line:1, Column:7},
     },
     inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 1]
+&ast.TaggedTemplateLitExpr{
+    Tag: &ast.IdentExpr{
+        Name: "foo",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:4},
+        },
+        inferredType: nil,
+    },
+    Quasis: {
+        &ast.Quasi{
+            Value: "bar",
+            Span:  ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:8},
+            },
+        },
+    },
+    Exprs: nil,
+    span:  ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 1]
+&ast.TupleExpr{
+    Elems: {
+        &ast.LiteralExpr{
+            Lit:  &ast.NumLit{Value:1},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
+            },
+            inferredType: nil,
+        },
+        &ast.LiteralExpr{
+            Lit:  &ast.NumLit{Value:2},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
+            },
+            inferredType: nil,
+        },
+        &ast.LiteralExpr{
+            Lit:  &ast.NumLit{Value:3},
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:8},
+                End:   ast.Location{Line:1, Column:9},
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:10},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteCall - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        Message: "Expected an expression",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing paren",
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        Message: "Expected a closing bracket",
+    },
 }
 ---
 
@@ -1274,45 +1510,21 @@
 }
 ---
 
-[TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
+[TestParseExprErrorHandling/IfElseMissingOpeningBraces - 2]
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:4},
-            End:   ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:9},
+            End:   ast.Location{Line:1, Column:10},
         },
-        Message: "Expected a closing bracket",
-    },
-}
----
-
-[TestParseExprErrorHandling/MismatchedParens - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:6},
-        },
-        Message: "Expected a closing paren",
-    },
-}
----
-
-[TestParseExprErrorHandling/IncompleteCall - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:7},
-            End:   ast.Location{Line:1, Column:7},
-        },
-        Message: "Expected an expression",
+        Message: "Expected an opening brace",
     },
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:4},
-            End:   ast.Location{Line:1, Column:5},
+            Start: ast.Location{Line:1, Column:9},
+            End:   ast.Location{Line:1, Column:10},
         },
-        Message: "Expected a closing paren",
+        Message: "Expected an opening brace",
     },
 }
 ---
@@ -1344,67 +1556,31 @@
 }
 ---
 
-[TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
+[TestParseExprErrorHandling/MismatchedParens - 2]
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Message: "Unexpected token",
+        Message: "Expected a closing paren",
     },
 }
 ---
 
-[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 1]
-&ast.TupleExpr{
-    Elems: {
-        &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:1},
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:3},
-            },
-            inferredType: nil,
-        },
-        &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:2},
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
-            },
-            inferredType: nil,
-        },
-        &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:3},
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:8},
-                End:   ast.Location{Line:1, Column:9},
-            },
-            inferredType: nil,
-        },
-    },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
-    },
-    inferredType: nil,
-}
----
-
-[TestParseExprErrorHandling/IncompleteMemberOptChain - 1]
+[TestParseExprErrorHandling/IncompleteBinaryExpr - 1]
 &ast.BinaryExpr{
-    Left: &ast.IdentExpr{
-        Name: "a",
-        span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
+    Left: &ast.BinaryExpr{
+        Left: &ast.IdentExpr{
+            Name: "a",
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
+            },
+            inferredType: nil,
         },
-        inferredType: nil,
-    },
-    Op:    0,
-    Right: &ast.MemberExpr{
-        Object: &ast.IdentExpr{
+        Op:    1,
+        Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:5},
@@ -1412,16 +1588,16 @@
             },
             inferredType: nil,
         },
-        Prop: &ast.Ident{
-            Name: "",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:8},
-                End:   ast.Location{Line:1, Column:8},
-            },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:6},
         },
-        OptChain: true,
-        span:     ast.Span{
-            Start: ast.Location{Line:1, Column:5},
+        inferredType: nil,
+    },
+    Op:    0,
+    Right: &ast.EmptyExpr{
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:8},
             End:   ast.Location{Line:1, Column:8},
         },
         inferredType: nil,
@@ -1434,77 +1610,21 @@
 }
 ---
 
-[TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
-        },
-        Message: "Expected a closing bracket",
-    },
-}
----
-
-[TestParseExprErrorHandling/IncompleteTemplateLiteral - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:5},
-        },
-        Message: "Expected a closing backtick",
-    },
-}
----
-
-[TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:6},
-            End:   ast.Location{Line:1, Column:8},
-        },
-        Message: "expected an identifier after ?.",
-    },
-}
----
-
-[TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:8},
-            End:   ast.Location{Line:1, Column:8},
-        },
-        Message: "Expected an expression",
-    },
-}
----
-
-[TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 1]
-&ast.TaggedTemplateLitExpr{
-    Tag: &ast.IdentExpr{
-        Name: "foo",
-        span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:4},
-        },
-        inferredType: nil,
-    },
+[TestParseExprErrorHandling/IncompleteTemplateLiteral - 1]
+&ast.TemplateLitExpr{
     Quasis: {
         &ast.Quasi{
-            Value: "bar",
+            Value: "foo",
             Span:  ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:8},
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:5},
             },
         },
     },
     Exprs: nil,
     span:  ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:8},
+        End:   ast.Location{Line:1, Column:5},
     },
     inferredType: nil,
 }
@@ -1592,6 +1712,147 @@
 }
 ---
 
+[TestParseExprErrorHandling/MismatchedBracketsIndex - 1]
+&ast.IndexExpr{
+    Object: &ast.IdentExpr{
+        Name: "foo",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:4},
+        },
+        inferredType: nil,
+    },
+    Index: &ast.IdentExpr{
+        Name: "bar",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:8},
+        },
+        inferredType: nil,
+    },
+    OptChain: false,
+    span:     ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:9},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteMember - 1]
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name: "a",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
+    },
+    Op:    0,
+    Right: &ast.MemberExpr{
+        Object: &ast.IdentExpr{
+            Name: "b",
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
+            },
+            inferredType: nil,
+        },
+        Prop: &ast.Ident{
+            Name: "",
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:7},
+                End:   ast.Location{Line:1, Column:7},
+            },
+        },
+        OptChain: false,
+        span:     ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:7},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:8},
+            End:   ast.Location{Line:1, Column:8},
+        },
+        Message: "Expected an expression",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:6},
+        },
+        Message: "Unexpected token",
+    },
+}
+---
+
+[TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing bracket",
+    },
+}
+---
+
+[TestParseExprErrorHandling/IncompleteMember - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        Message: "expected an identifier after .",
+    },
+}
+---
+
+[TestParseExprErrorHandling/IncompleteTemplateLiteral - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        Message: "Expected a closing backtick",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ParamsMissingClosingParen - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:11},
+        },
+        Message: "Expected a closing paren",
+    },
+}
+---
+
 [TestParseExprErrorHandling/ParamsMissingOpeningParen - 1]
 &ast.FuncExpr{
     Params: {
@@ -1662,15 +1923,45 @@
 }
 ---
 
-[TestParseExprErrorHandling/ParamsMissingClosingParen - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:10},
-            End:   ast.Location{Line:1, Column:11},
+[TestParseExprErrorHandling/IncompleteMemberOptChain - 1]
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name: "a",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
         },
-        Message: "Expected a closing paren",
+        inferredType: nil,
     },
+    Op:    0,
+    Right: &ast.MemberExpr{
+        Object: &ast.IdentExpr{
+            Name: "b",
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
+            },
+            inferredType: nil,
+        },
+        Prop: &ast.Ident{
+            Name: "",
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:8},
+                End:   ast.Location{Line:1, Column:8},
+            },
+        },
+        OptChain: true,
+        span:     ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:8},
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:8},
+    },
+    inferredType: nil,
 }
 ---
 
@@ -1686,22 +1977,67 @@
 }
 ---
 
-[TestParseExprNoErrors/TemplateStringMultipleLines - 1]
-&ast.TemplateLitExpr{
-    Quasis: {
-        &ast.Quasi{
-            Value: "hello\nworld",
-            Span:  ast.Span{
-                Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:2, Column:7},
+[TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:8},
+        },
+        Message: "expected an identifier after ?.",
+    },
+}
+---
+
+[TestParseExprErrorHandling/IncompleteElse - 1]
+&ast.IfElseExpr{
+    Cond: nil,
+    Cons: ast.Block{
+        Stmts: {
+            &ast.ExprStmt{
+                Expr: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:7},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:6},
+                    End:   ast.Location{Line:1, Column:7},
+                },
             },
         },
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:9},
+        },
     },
-    Exprs: nil,
-    span:  ast.Span{
+    Alt:  ast.BlockOrExpr{},
+    span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:2, Column:7},
+        End:   ast.Location{Line:1, Column:14},
     },
     inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteElse - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:4},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        Message: "Expected a condition",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:14},
+            End:   ast.Location{Line:1, Column:14},
+        },
+        Message: "Expected an if or an opening brace",
+    },
 }
 ---

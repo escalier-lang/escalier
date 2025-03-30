@@ -16,6 +16,17 @@ const (
 	Fn
 	Var
 	Val
+	If
+	Else
+	Match
+	Try
+	Catch
+	Finally
+	Throw
+	Async
+	Await
+	Gen
+	Yield
 	Return
 	Import
 	Export
@@ -27,14 +38,17 @@ const (
 	Asterisk
 	Slash
 	SlashGreaterThan
-	Equals
 	Dot
 	Comma
 	BackTick
+	Equal
+	EqualEqual
+	NotEqual
 	LessThan
 	LessThanEqual
-	LessThanSlash
 	GreaterThan
+	GreaterThanEqual
+	LessThanSlash // Used for JSX
 
 	// optional chaining
 	QuestionOpenParen

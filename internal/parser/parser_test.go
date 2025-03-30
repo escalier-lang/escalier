@@ -63,6 +63,17 @@ func TestParseModuleNoErrors(t *testing.T) {
 				]
 			`,
 		},
+		"IfElse": {
+			input: `
+				val x = if cond {
+					var a = 5
+					-10
+				} else {
+				 	var b = 10
+					-5
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {

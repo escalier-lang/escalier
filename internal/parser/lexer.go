@@ -25,15 +25,17 @@ func NewLexer(source Source) *Lexer {
 	}
 }
 
-// var KEYWORDS = map[string](func(span ast.Span) Token){
-// 	"fn":      NewToken,
-// 	"var":     NewVar,
-// 	"val":     NewVal,
-// 	"return":  NewReturn,
-// 	"import":  NewImport,
-// 	"export":  NewExport,
-// 	"declare": NewDeclare,
-// }
+var keywords = map[string]TokenType{
+	"fn":      Fn,
+	"var":     Var,
+	"val":     Val,
+	"return":  Return,
+	"import":  Import,
+	"export":  Export,
+	"declare": Declare,
+	"if":      If,
+	"else":    Else,
+}
 
 func (lexer *Lexer) next() *Token {
 	startOffset := lexer.currentOffset
@@ -83,7 +85,7 @@ func (lexer *Lexer) next() *Token {
 		}
 	case '=':
 		// TODO: handle ==, =>, etc.
-		token = NewToken(Equals, "=", ast.Span{Start: start, End: end})
+		token = NewToken(Equal, "=", ast.Span{Start: start, End: end})
 	case ',':
 		token = NewToken(Comma, ",", ast.Span{Start: start, End: end})
 	case '(':
@@ -205,22 +207,9 @@ func (lexer *Lexer) next() *Token {
 		end.Column = start.Column + i - startOffset
 		span := ast.Span{Start: start, End: end}
 
-		switch value {
-		case "fn":
-			token = NewToken(Fn, "fn", span)
-		case "var":
-			token = NewToken(Var, "var", span)
-		case "val":
-			token = NewToken(Val, "val", span)
-		case "return":
-			token = NewToken(Return, "return", span)
-		case "import":
-			token = NewToken(Import, "import", span)
-		case "export":
-			token = NewToken(Export, "export", span)
-		case "declare":
-			token = NewToken(Declare, "declare", span)
-		default:
+		if keyword, ok := keywords[value]; ok {
+			token = NewToken(keyword, value, span)
+		} else {
 			token = NewToken(Identifier, value, span)
 		}
 	default:
@@ -327,7 +316,13 @@ func (lexer *Lexer) lexJSXText() *Token {
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
 
-	value := contents[startOffset:endOffset]
+	var value string
+	if i >= n {
+		value = contents[startOffset:]
+		// TODO: report an errors
+	} else {
+		value = contents[startOffset:endOffset]
+	}
 	return NewToken(JSXText, value, ast.Span{Start: start, End: end})
 }
 
