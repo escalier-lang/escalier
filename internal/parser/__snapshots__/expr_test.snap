@@ -522,21 +522,23 @@
 &ast.FuncExpr{
     Params: {
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "a",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:5},
                     End:   ast.Location{Line:1, Column:6},
                 },
+                inferredType: nil,
             },
         },
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "b",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
+                inferredType: nil,
             },
         },
     },
@@ -1646,21 +1648,23 @@
 &ast.FuncExpr{
     Params: {
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "a",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:5},
                     End:   ast.Location{Line:1, Column:6},
                 },
+                inferredType: nil,
             },
         },
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "b",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
+                inferredType: nil,
             },
         },
     },
@@ -1857,21 +1861,23 @@
 &ast.FuncExpr{
     Params: {
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "a",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:4},
                     End:   ast.Location{Line:1, Column:5},
                 },
+                inferredType: nil,
             },
         },
         &ast.Param{
-            Name: &ast.Ident{
+            Pattern: &ast.IdentPat{
                 Name: "b",
                 span: ast.Span{
                     Start: ast.Location{Line:1, Column:7},
                     End:   ast.Location{Line:1, Column:8},
                 },
+                inferredType: nil,
             },
         },
     },

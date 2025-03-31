@@ -23,6 +23,19 @@ func TransformIdentifier(ident *ast.Ident) *Identifier {
 	}
 }
 
+func TransformPattern(pattern ast.Pat) Pat {
+	switch p := pattern.(type) {
+	case *ast.IdentPat:
+		return &IdentPat{
+			Name:   p.Name,
+			span:   nil,
+			source: p,
+		}
+	default:
+		panic("TODO")
+	}
+}
+
 func TransformStmt(stmt ast.Stmt) *Stmt {
 	var kind StmtKind
 
@@ -72,15 +85,15 @@ func TransformDecl(decl ast.Decl) *Decl {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		kind = &DVariable{
-			Kind: VariableKind(d.Kind),
-			Name: TransformIdentifier(d.Name),
-			Init: TransformExpr(d.Init),
+			Kind:    VariableKind(d.Kind),
+			Pattern: TransformPattern(d.Pattern),
+			Init:    TransformExpr(d.Init),
 		}
 	case *ast.FuncDecl:
 		var params []*Param
 		for _, p := range d.Params {
 			params = append(params, &Param{
-				Name: TransformIdentifier(p.Name),
+				Pattern: TransformPattern(p.Pattern),
 			})
 		}
 		kind = &DFunction{

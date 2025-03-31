@@ -172,7 +172,7 @@ loop:
 			}
 			//nolint: exhaustive
 			switch prop.Type {
-			case Identifier:
+			case Identifier, Underscore:
 				obj := expr
 				prop := ast.NewIdentifier(prop.Value, prop.Span)
 				expr = ast.NewMember(
@@ -226,7 +226,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 		case String:
 			parser.lexer.consume()
 			expr = ast.NewString(token.Value, token.Span)
-		case Identifier:
+		case Identifier, Underscore:
 			parser.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
@@ -347,31 +347,33 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 	}
 }
 
+// TODO: parse type annotations
 func (parser *Parser) parseParamSeq() []*ast.Param {
 	params := []*ast.Param{}
 
 	token := parser.lexer.peek()
-	if token.Type != Identifier {
+	if token.Type == CloseParen {
 		return params
 	}
-	param := &ast.Param{Name: ast.NewIdentifier(token.Value, token.Span)}
-	params = append(params, param)
-	parser.lexer.consume()
 
-	token = parser.lexer.peek()
+	pat := parser.parsePattern()
+	if pat == nil {
+		return params
+	}
+	params = append(params, &ast.Param{Pattern: pat})
 
 	for {
+		token := parser.lexer.peek()
+
 		//nolint: exhaustive
 		switch token.Type {
 		case Comma:
-			parser.lexer.consume()
-			token = parser.lexer.peek()
-			if token.Type != Identifier {
+			parser.lexer.consume() // consume ','
+			pat := parser.parsePattern()
+			if pat == nil {
 				return params
 			}
-			param := &ast.Param{Name: ast.NewIdentifier(token.Value, token.Span)}
-			params = append(params, param)
-			parser.lexer.consume()
+			params = append(params, &ast.Param{Pattern: pat})
 		default:
 			return params
 		}

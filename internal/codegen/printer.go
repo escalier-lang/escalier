@@ -134,6 +134,22 @@ func (p *Printer) PrintExpr(expr *Expr) {
 	expr.span = &Span{Start: start, End: end}
 }
 
+func (p *Printer) printPattern(pat Pat) {
+	switch pat := pat.(type) {
+	case *IdentPat:
+		p.Output += pat.Name
+		p.location.Column += len(pat.Name)
+	case *ObjectPat:
+		panic("TODO: print object pat")
+	case *TuplePat:
+		panic("TODO: print tuple pat")
+	}
+}
+
+func (p *Printer) printParam(param *Param) {
+	p.printPattern(param.Pattern)
+}
+
 func (p *Printer) PrintDecl(decl *Decl) {
 	start := p.location
 
@@ -156,8 +172,7 @@ func (p *Printer) PrintDecl(decl *Decl) {
 			p.Output += "const "
 			p.location.Column += 6
 		}
-		p.Output += d.Name.Name
-		p.location.Column += len(d.Name.Name)
+		p.printPattern(d.Pattern)
 		if d.Init != nil {
 			p.Output += " = "
 			p.location.Column += 3
@@ -178,8 +193,7 @@ func (p *Printer) PrintDecl(decl *Decl) {
 				p.Output += ", "
 				p.location.Column += 2
 			}
-			p.Output += param.Name.Name
-			p.location.Column += len(param.Name.Name)
+			p.printParam(param)
 		}
 		p.Output += ") {"
 		p.location.Column += 3

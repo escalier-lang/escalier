@@ -28,23 +28,23 @@
             Pattern: &ast.IdentPat{
                 Name: "a",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:3},
-                    End:   ast.Location{Line:1, Column:4},
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
                 },
                 inferredType: nil,
             },
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:3},
-                End:   ast.Location{Line:1, Column:4},
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
             },
         },
         &ast.TupleElemPat{
             Pattern: &ast.IdentPat{
                 Name: "b",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:7},
-                    End:   ast.Location{Line:1, Column:8},
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
                 },
                 inferredType: nil,
             },
@@ -57,7 +57,7 @@
                 inferredType: nil,
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:7},
+                Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:10},
             },
         },
@@ -88,7 +88,7 @@
 &ast.IdentPat{
     Name: "x",
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:2},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
     },
     inferredType: nil,
@@ -102,16 +102,16 @@
         &ast.IdentPat{
             Name: "a",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:6},
-                End:   ast.Location{Line:1, Column:7},
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
             },
             inferredType: nil,
         },
         &ast.IdentPat{
             Name: "b",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:9},
-                End:   ast.Location{Line:1, Column:10},
+                Start: ast.Location{Line:1, Column:8},
+                End:   ast.Location{Line:1, Column:9},
             },
             inferredType: nil,
         },
@@ -158,10 +158,9 @@
 ---
 
 [TestParsePatternNoErrors/Wildcard - 1]
-&ast.IdentPat{
-    Name: "_",
+&ast.WildcardPat{
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:2},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
     },
     inferredType: nil,
@@ -195,15 +194,15 @@
             Value: &ast.IdentPat{
                 Name: "c",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:9},
-                    End:   ast.Location{Line:1, Column:10},
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
                 },
                 inferredType: nil,
             },
             Default: nil,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:10},
+                End:   ast.Location{Line:1, Column:9},
             },
             inferredType: nil,
         },
@@ -211,14 +210,14 @@
             Pattern: &ast.IdentPat{
                 Name: "rest",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:18},
-                    End:   ast.Location{Line:1, Column:19},
+                    Start: ast.Location{Line:1, Column:14},
+                    End:   ast.Location{Line:1, Column:18},
                 },
                 inferredType: nil,
             },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:11},
-                End:   ast.Location{Line:1, Column:19},
+                End:   ast.Location{Line:1, Column:18},
             },
         },
     },
@@ -246,8 +245,8 @@
             Value: &ast.IdentPat{
                 Name: "c",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:14},
-                    End:   ast.Location{Line:1, Column:15},
+                    Start: ast.Location{Line:1, Column:12},
+                    End:   ast.Location{Line:1, Column:13},
                 },
                 inferredType: nil,
             },
@@ -268,10 +267,9 @@
 ---
 
 [TestParsePatternNoErrors/WildcardPattern - 1]
-&ast.IdentPat{
-    Name: "_",
+&ast.WildcardPat{
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:2},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
     },
     inferredType: nil,

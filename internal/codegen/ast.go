@@ -159,14 +159,13 @@ const (
 
 // TODO: support multiple declarators
 type DVariable struct {
-	Kind VariableKind
-	Name *Identifier // TODO: replace with Pattern
-	Init *Expr
+	Kind    VariableKind
+	Pattern Pat
+	Init    *Expr
 }
 
 type Param struct {
-	Name *Identifier // TODO: replace with Pattern
-	// TODO: include type annotation
+	Pattern Pat
 }
 
 type DFunction struct {
@@ -215,3 +214,129 @@ type SReturn struct {
 type Module struct {
 	Stmts []*Stmt
 }
+
+type Pat interface {
+	isPat()
+	Node
+}
+
+func (*IdentPat) isPat()  {}
+func (*ObjectPat) isPat() {}
+func (*TuplePat) isPat()  {}
+
+type IdentPat struct {
+	Name   string
+	source ast.Node
+	span   *Span
+}
+
+func NewIdentPat(name string, source ast.Node) *IdentPat {
+	return &IdentPat{Name: name, source: source, span: nil}
+}
+func (p *IdentPat) Span() *Span      { return p.span }
+func (p *IdentPat) Source() ast.Node { return p.source }
+
+type ObjPatElem interface {
+	isObjPatElem()
+	Node
+}
+
+func (*ObjKeyValuePat) isObjPatElem()  {}
+func (*ObjShorthandPat) isObjPatElem() {}
+func (*ObjRestPat) isObjPatElem()      {}
+
+type ObjKeyValuePat struct {
+	Key     string
+	Value   Pat
+	Default Expr // optional
+	source  ast.Node
+	span    *Span
+}
+
+func NewObjKeyValuePat(key string, value Pat, _default Expr, source ast.Node) *ObjKeyValuePat {
+	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, source: source, span: nil}
+}
+func (p *ObjKeyValuePat) Span() *Span      { return p.span }
+func (p *ObjKeyValuePat) Source() ast.Node { return p.source }
+
+type ObjShorthandPat struct {
+	Key     string
+	Default Expr // optional
+	source  ast.Node
+	span    *Span
+}
+
+func NewObjShorthandPat(key string, _default Expr, source ast.Node) *ObjShorthandPat {
+	return &ObjShorthandPat{Key: key, Default: _default, source: source, span: nil}
+}
+func (p *ObjShorthandPat) Span() *Span      { return p.span }
+func (p *ObjShorthandPat) Source() ast.Node { return p.source }
+
+type ObjRestPat struct {
+	Pattern Pat
+	source  ast.Node
+	span    *Span
+}
+
+func NewObjRestPat(pattern Pat, source ast.Node) *ObjRestPat {
+	return &ObjRestPat{Pattern: pattern, source: source, span: nil}
+}
+func (p *ObjRestPat) Span() *Span      { return p.span }
+func (p *ObjRestPat) Source() ast.Node { return p.source }
+
+type ObjectPat struct {
+	Elems  []ObjPatElem
+	source ast.Node
+	span   *Span
+}
+
+func NewObjectPat(elems []ObjPatElem, source ast.Node) *ObjectPat {
+	return &ObjectPat{Elems: elems, source: source, span: nil}
+}
+func (p *ObjectPat) Span() *Span      { return p.span }
+func (p *ObjectPat) Source() ast.Node { return p.source }
+
+type TuplePatElem interface {
+	isTuplePatElem()
+	Node
+}
+
+func (*TupleElemPat) isTuplePatElem() {}
+func (*TupleRestPat) isTuplePatElem() {}
+
+type TupleElemPat struct {
+	Pattern Pat
+	Default Expr // optional
+	source  ast.Node
+	span    *Span
+}
+
+func NewTupleElemPat(pattern Pat, _default Expr, source ast.Node) *TupleElemPat {
+	return &TupleElemPat{Pattern: pattern, Default: _default, source: source, span: nil}
+}
+func (p *TupleElemPat) Span() *Span      { return p.span }
+func (p *TupleElemPat) Source() ast.Node { return p.source }
+
+type TupleRestPat struct {
+	Pattern Pat
+	source  ast.Node
+	span    *Span
+}
+
+func NewTupleRestPat(pattern Pat, source ast.Node) *TupleRestPat {
+	return &TupleRestPat{Pattern: pattern, source: source, span: nil}
+}
+func (p *TupleRestPat) Span() *Span      { return p.span }
+func (p *TupleRestPat) Source() ast.Node { return p.source }
+
+type TuplePat struct {
+	Elems  []TuplePatElem
+	source ast.Node
+	span   *Span
+}
+
+func NewTuplePat(elems []TuplePatElem, source ast.Node) *TuplePat {
+	return &TuplePat{Elems: elems, source: source, span: nil}
+}
+func (p *TuplePat) Span() *Span      { return p.span }
+func (p *TuplePat) Source() ast.Node { return p.source }
