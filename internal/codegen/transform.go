@@ -179,7 +179,7 @@ func TransformExpr(expr ast.Expr) *Expr {
 	case *ast.LiteralExpr:
 		switch lit := e.Lit.(type) {
 		case *ast.BoolLit:
-			panic("TODO: bool literal")
+			kind = &EBool{Value: lit.Value}
 		case *ast.NumLit:
 			kind = &ENumber{Value: lit.Value}
 		case *ast.StrLit:

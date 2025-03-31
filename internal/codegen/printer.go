@@ -70,6 +70,12 @@ func (p *Printer) PrintExpr(expr *Expr) {
 	case *EString:
 		value := fmt.Sprintf("%q", e.Value)
 		p.print(value)
+	case *EBool:
+		if e.Value {
+			p.print("true")
+		} else {
+			p.print("false")
+		}
 	case *EIdentifier:
 		p.print(e.Name)
 	case *EUnary:

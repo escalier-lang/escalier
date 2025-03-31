@@ -226,6 +226,12 @@ func (parser *Parser) parsePrimary() ast.Expr {
 		case String:
 			parser.lexer.consume()
 			expr = ast.NewString(token.Value, token.Span)
+		case True:
+			parser.lexer.consume()
+			expr = ast.NewBoolean(true, token.Span)
+		case False:
+			parser.lexer.consume()
+			expr = ast.NewBoolean(false, token.Span)
 		case Identifier, Underscore:
 			parser.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)

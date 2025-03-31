@@ -43,6 +43,7 @@ type ExprKind interface{ isExpr() }
 func (*EBinary) isExpr()     {}
 func (*ENumber) isExpr()     {}
 func (*EString) isExpr()     {}
+func (*EBool) isExpr()       {}
 func (*EIdentifier) isExpr() {}
 func (*EUnary) isExpr()      {}
 func (*ECall) isExpr()       {}
@@ -125,6 +126,10 @@ type ENumber struct {
 
 type EString struct {
 	Value string
+}
+
+type EBool struct {
+	Value bool
 }
 
 type EIdentifier struct {

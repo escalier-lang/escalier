@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO: print errors to a file
 func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	tmpDir := t.TempDir()
 	shouldUpdate := os.Getenv("UPDATE_FIXTURES") == "true"
