@@ -72,6 +72,9 @@ func TestBuild(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, fixture := range fixtures {
+			// if fixture.Name() != "destructuring" {
+			// 	continue
+			// }
 			name := group.Name() + "/" + fixture.Name()
 			t.Run(name, func(t *testing.T) {
 				fixtureDir := filepath.Join(rootDir, "fixtures", group.Name(), fixture.Name())

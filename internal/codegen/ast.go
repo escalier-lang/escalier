@@ -46,6 +46,7 @@ func (*EString) isExpr()     {}
 func (*EIdentifier) isExpr() {}
 func (*EUnary) isExpr()      {}
 func (*ECall) isExpr()       {}
+func (*EFunction) isExpr()   {}
 func (*EIndex) isExpr()      {}
 func (*EMember) isExpr()     {}
 func (*EArray) isExpr()      {}
@@ -69,6 +70,11 @@ type ECall struct {
 	Callee   *Expr
 	Args     []*Expr
 	OptChain bool
+}
+
+type EFunction struct {
+	Params []*Param
+	Body   []*Stmt
 }
 
 type EArray struct {
@@ -218,6 +224,7 @@ type Module struct {
 type Pat interface {
 	isPat()
 	Node
+	SetSpan(span *Span)
 }
 
 func (*IdentPat) isPat()  {}
@@ -233,8 +240,9 @@ type IdentPat struct {
 func NewIdentPat(name string, source ast.Node) *IdentPat {
 	return &IdentPat{Name: name, source: source, span: nil}
 }
-func (p *IdentPat) Span() *Span      { return p.span }
-func (p *IdentPat) Source() ast.Node { return p.source }
+func (p *IdentPat) Span() *Span        { return p.span }
+func (p *IdentPat) SetSpan(span *Span) { p.span = span }
+func (p *IdentPat) Source() ast.Node   { return p.source }
 
 type ObjPatElem interface {
 	isObjPatElem()
@@ -248,12 +256,12 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key     string
 	Value   Pat
-	Default Expr // optional
+	Default *Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjKeyValuePat(key string, value Pat, _default Expr, source ast.Node) *ObjKeyValuePat {
+func NewObjKeyValuePat(key string, value Pat, _default *Expr, source ast.Node) *ObjKeyValuePat {
 	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, source: source, span: nil}
 }
 func (p *ObjKeyValuePat) Span() *Span      { return p.span }
@@ -261,12 +269,12 @@ func (p *ObjKeyValuePat) Source() ast.Node { return p.source }
 
 type ObjShorthandPat struct {
 	Key     string
-	Default Expr // optional
+	Default *Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjShorthandPat(key string, _default Expr, source ast.Node) *ObjShorthandPat {
+func NewObjShorthandPat(key string, _default *Expr, source ast.Node) *ObjShorthandPat {
 	return &ObjShorthandPat{Key: key, Default: _default, source: source, span: nil}
 }
 func (p *ObjShorthandPat) Span() *Span      { return p.span }
@@ -293,8 +301,9 @@ type ObjectPat struct {
 func NewObjectPat(elems []ObjPatElem, source ast.Node) *ObjectPat {
 	return &ObjectPat{Elems: elems, source: source, span: nil}
 }
-func (p *ObjectPat) Span() *Span      { return p.span }
-func (p *ObjectPat) Source() ast.Node { return p.source }
+func (p *ObjectPat) Span() *Span        { return p.span }
+func (p *ObjectPat) SetSpan(span *Span) { p.span = span }
+func (p *ObjectPat) Source() ast.Node   { return p.source }
 
 type TuplePatElem interface {
 	isTuplePatElem()
@@ -306,12 +315,12 @@ func (*TupleRestPat) isTuplePatElem() {}
 
 type TupleElemPat struct {
 	Pattern Pat
-	Default Expr // optional
+	Default *Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewTupleElemPat(pattern Pat, _default Expr, source ast.Node) *TupleElemPat {
+func NewTupleElemPat(pattern Pat, _default *Expr, source ast.Node) *TupleElemPat {
 	return &TupleElemPat{Pattern: pattern, Default: _default, source: source, span: nil}
 }
 func (p *TupleElemPat) Span() *Span      { return p.span }
@@ -338,5 +347,6 @@ type TuplePat struct {
 func NewTuplePat(elems []TuplePatElem, source ast.Node) *TuplePat {
 	return &TuplePat{Elems: elems, source: source, span: nil}
 }
-func (p *TuplePat) Span() *Span      { return p.span }
-func (p *TuplePat) Source() ast.Node { return p.source }
+func (p *TuplePat) Span() *Span        { return p.span }
+func (p *TuplePat) SetSpan(span *Span) { p.span = span }
+func (p *TuplePat) Source() ast.Node   { return p.source }

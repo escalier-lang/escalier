@@ -31,6 +31,62 @@ func TransformPattern(pattern ast.Pat) Pat {
 			span:   nil,
 			source: p,
 		}
+	case *ast.ObjectPat:
+		var elems []ObjPatElem
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				elems = append(elems, &ObjKeyValuePat{
+					Key:     e.Key,
+					Value:   TransformPattern(e.Value),
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.ObjShorthandPat:
+				elems = append(elems, &ObjShorthandPat{
+					Key:     e.Key,
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.ObjRestPat:
+				elems = append(elems, &ObjRestPat{
+					Pattern: TransformPattern(e.Pattern),
+					span:    nil,
+					source:  e,
+				})
+			}
+		}
+		return &ObjectPat{
+			Elems:  elems,
+			span:   nil,
+			source: p,
+		}
+	case *ast.TuplePat:
+		var elems []TuplePatElem
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.TupleElemPat:
+				elems = append(elems, &TupleElemPat{
+					Pattern: TransformPattern(e.Pattern),
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.TupleRestPat:
+				elems = append(elems, &TupleRestPat{
+					Pattern: TransformPattern(e.Pattern),
+					span:    nil,
+					source:  e,
+				})
+			}
+		}
+		return &TuplePat{
+			Elems:  elems,
+			span:   nil,
+			source: p,
+		}
 	default:
 		panic("TODO")
 	}
@@ -113,6 +169,10 @@ func TransformDecl(decl ast.Decl) *Decl {
 }
 
 func TransformExpr(expr ast.Expr) *Expr {
+	if expr == nil {
+		return nil
+	}
+
 	var kind ExprKind
 
 	switch e := expr.(type) {
@@ -167,6 +227,17 @@ func TransformExpr(expr ast.Expr) *Expr {
 	case *ast.TupleExpr:
 		kind = &EArray{
 			Elems: TransformExprs(e.Elems),
+		}
+	case *ast.FuncExpr:
+		var params []*Param
+		for _, p := range e.Params {
+			params = append(params, &Param{
+				Pattern: TransformPattern(p.Pattern),
+			})
+		}
+		kind = &EFunction{
+			Params: params,
+			Body:   TransformStmts(e.Body.Stmts),
 		}
 	case *ast.IgnoreExpr:
 		panic("TODO")

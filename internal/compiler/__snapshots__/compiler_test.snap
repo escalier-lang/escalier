@@ -13,7 +13,7 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "function add(a, b) {\n  return a + b;\n}\nfunction sub(a, b) {\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA;EACE,OAAO;;AAET;EAAe,OAAO;;AACtB,YAAU\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA;EACE,OAAO,AAAA,IAAI;;AAEb;EAAe,OAAO,AAAA,IAAI;;AAC1B,YAAU,AAAA,IAAI,GAAG\"}",
 }
 ---
 
@@ -22,7 +22,7 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,aAAW;AACX,cAAY\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,aAAW,CAAC,GAAG,GAAG;AAClB,cAAY,AAAA,KAAK\"}",
 }
 ---
 
@@ -31,6 +31,6 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "console.log(\"x =\", -5);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI,OAAM,CAAC\"}",
 }
 ---

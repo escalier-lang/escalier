@@ -634,8 +634,8 @@
         Pattern: &ast.IdentPat{
             Name: "",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:5},
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:1},
             },
             inferredType: nil,
         },
@@ -716,7 +716,14 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Message: "Expected identifier",
+        Message: "Expected a pattern",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:4},
+        },
+        Message: "Expected pattern",
     },
 }
 ---

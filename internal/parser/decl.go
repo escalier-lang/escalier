@@ -26,19 +26,15 @@ func (parser *Parser) parseDecl() ast.Decl {
 			kind = ast.VarKind
 		}
 
-		token := parser.lexer.peek()
-		var pat ast.Pat
-		if token.Type == Identifier {
-			parser.lexer.consume()
-			pat = ast.NewIdentPat(token.Value, token.Span)
-		} else {
-			parser.reportError(token.Span, "Expected identifier")
+		pat := parser.parsePattern()
+		if pat == nil {
+			parser.reportError(token.Span, "Expected pattern")
 			pat = ast.NewIdentPat(
 				"",
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			)
 		}
-		end := token.Span.End
+		end := pat.Span().End
 
 		token = parser.lexer.peek()
 		var init ast.Expr

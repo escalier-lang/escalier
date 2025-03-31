@@ -39,7 +39,7 @@ func (p *Parser) parsePattern() ast.Pat {
 	case Underscore: // Wildcard
 		p.lexer.consume()
 		return ast.NewWildcardPat(token.Span)
-	case OpenBracket: // Object
+	case OpenBracket: // Tuple
 		p.lexer.consume()
 		patElems := []ast.TuplePatElem{}
 		first := true
@@ -89,7 +89,7 @@ func (p *Parser) parsePattern() ast.Pat {
 			first = false
 		}
 		return ast.NewTuplePat(patElems, ast.Span{Start: token.Span.Start, End: token.Span.End})
-	case OpenBrace: // Tuple
+	case OpenBrace: // Object
 		p.lexer.consume()
 		patElems := []ast.ObjPatElem{}
 		first := true
@@ -122,7 +122,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init := p.ParseExprWithMarker(MarkerDelim)
+						init = p.ParseExprWithMarker(MarkerDelim)
 						span = ast.MergeSpans(span, init.Span())
 					}
 
@@ -132,7 +132,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init := p.ParseExprWithMarker(MarkerDelim)
+						init = p.ParseExprWithMarker(MarkerDelim)
 						span = ast.MergeSpans(span, init.Span())
 					}
 
