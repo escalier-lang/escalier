@@ -8,19 +8,17 @@ import (
 )
 
 func TestPrintExpr(t *testing.T) {
-	sum := &Expr{
-		Kind: &EBinary{
-			Left: &Expr{
-				Kind:   &ENumber{Value: 0.1},
-				span:   nil,
-				source: nil,
-			},
-			Op: Plus,
-			Right: &Expr{
-				Kind:   &ENumber{Value: 0.2},
-				span:   nil,
-				source: nil,
-			},
+	sum := &BinaryExpr{
+		Left: &NumExpr{
+			Value:  0.1,
+			span:   nil,
+			source: nil,
+		},
+		Op: Plus,
+		Right: &NumExpr{
+			Value:  0.2,
+			span:   nil,
+			source: nil,
 		},
 		span:   nil,
 		source: nil,

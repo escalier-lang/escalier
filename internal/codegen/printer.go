@@ -56,32 +56,32 @@ func (p *Printer) print(s string) {
 	p.location.Column += len(s)
 }
 
-func (p *Printer) PrintExpr(expr *Expr) {
+func (p *Printer) PrintExpr(expr Expr) {
 	start := p.location
 
-	switch e := expr.Kind.(type) {
-	case *EBinary:
+	switch e := expr.(type) {
+	case *BinaryExpr:
 		p.PrintExpr(e.Left)
 		p.print(" " + binaryOpMap[e.Op] + " ")
 		p.PrintExpr(e.Right)
-	case *ENumber:
+	case *NumExpr:
 		value := strconv.FormatFloat(e.Value, 'f', -1, 32)
 		p.print(value)
-	case *EString:
+	case *StrExpr:
 		value := fmt.Sprintf("%q", e.Value)
 		p.print(value)
-	case *EBool:
+	case *BoolExpr:
 		if e.Value {
 			p.print("true")
 		} else {
 			p.print("false")
 		}
-	case *EIdentifier:
+	case *IdentExpr:
 		p.print(e.Name)
-	case *EUnary:
+	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)
-	case *ECall:
+	case *CallExpr:
 		p.PrintExpr(e.Callee)
 		if e.OptChain {
 			p.print("?")
@@ -94,7 +94,7 @@ func (p *Printer) PrintExpr(expr *Expr) {
 			p.PrintExpr(arg)
 		}
 		p.print(")")
-	case *EFunction:
+	case *FuncExpr:
 		p.print("function (")
 		for i, param := range e.Params {
 			if i > 0 {
@@ -111,7 +111,7 @@ func (p *Printer) PrintExpr(expr *Expr) {
 		p.indent--
 		p.NewLine()
 		p.print("}")
-	case *EIndex:
+	case *IndexExpr:
 		p.PrintExpr(e.Object)
 		if e.OptChain {
 			p.print("?")
@@ -119,14 +119,14 @@ func (p *Printer) PrintExpr(expr *Expr) {
 		p.print("[")
 		p.PrintExpr(e.Index)
 		p.print("]")
-	case *EMember:
+	case *MemberExpr:
 		p.PrintExpr(e.Object)
 		if e.OptChain {
 			p.print("?")
 		}
 		p.print(".")
 		p.printIdent(e.Prop)
-	case *EArray:
+	case *ArrayExpr:
 		p.print("[")
 		for i, elem := range e.Elems {
 			if i > 0 {
@@ -138,7 +138,7 @@ func (p *Printer) PrintExpr(expr *Expr) {
 	}
 
 	end := p.location
-	expr.span = &Span{Start: start, End: end}
+	expr.SetSpan(&Span{Start: start, End: end})
 }
 
 func (p *Printer) printIdent(id *Identifier) {
@@ -208,18 +208,18 @@ func (p *Printer) printParam(param *Param) {
 	p.printPattern(param.Pattern)
 }
 
-func (p *Printer) PrintDecl(decl *Decl) {
+func (p *Printer) PrintDecl(decl Decl) {
 	start := p.location
 
-	if decl.Declare {
+	if decl.Declare() {
 		p.print("declare ")
 	}
-	if decl.Export {
+	if decl.Export() {
 		p.print("export ")
 	}
 
-	switch d := decl.Kind.(type) {
-	case *DVariable:
+	switch d := decl.(type) {
+	case *VarDecl:
 		switch d.Kind {
 		case VarKind:
 			p.print("let ")
@@ -232,7 +232,7 @@ func (p *Printer) PrintDecl(decl *Decl) {
 			p.PrintExpr(d.Init)
 		}
 		p.print(";")
-	case *DFunction:
+	case *FuncDecl:
 		p.print("function ")
 		p.print(d.Name.Name)
 
@@ -259,19 +259,19 @@ func (p *Printer) PrintDecl(decl *Decl) {
 	}
 
 	end := p.location
-	decl.span = &Span{Start: start, End: end}
+	decl.SetSpan(&Span{Start: start, End: end})
 }
 
-func (p *Printer) PrintStmt(stmt *Stmt) {
+func (p *Printer) PrintStmt(stmt Stmt) {
 	start := p.location
 
-	switch s := stmt.Kind.(type) {
-	case *SExpr:
+	switch s := stmt.(type) {
+	case *ExprStmt:
 		p.PrintExpr(s.Expr)
 		p.print(";")
-	case *SDecl:
+	case *DeclStmt:
 		p.PrintDecl(s.Decl)
-	case *SReturn:
+	case *ReturnStmt:
 		p.print("return")
 		if s.Expr != nil {
 			p.print(" ")
@@ -281,7 +281,7 @@ func (p *Printer) PrintStmt(stmt *Stmt) {
 	}
 
 	end := p.location
-	stmt.span = &Span{Start: start, End: end}
+	stmt.SetSpan(&Span{Start: start, End: end})
 }
 
 func (p *Printer) PrintModule(mod *Module) {

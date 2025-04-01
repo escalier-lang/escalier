@@ -97,14 +97,14 @@ func (s *SourceMapGenerator) TraverseModule(module *Module) {
 	}
 }
 
-func (s *SourceMapGenerator) TraverseStmt(stmt *Stmt) {
+func (s *SourceMapGenerator) TraverseStmt(stmt Stmt) {
 	// TODO: check if stmt.Span() is nil.  If it is, we should return an error
-	switch sk := stmt.Kind.(type) {
-	case *SExpr:
+	switch sk := stmt.(type) {
+	case *ExprStmt:
 		s.TraverseExpr(sk.Expr)
-	case *SDecl:
+	case *DeclStmt:
 		s.TraverseDecl(sk.Decl)
-	case *SReturn:
+	case *ReturnStmt:
 		s.AddSegmentForNode(stmt)
 		s.TraverseExpr(sk.Expr)
 	}
@@ -133,57 +133,57 @@ func (s *SourceMapGenerator) AddSegmentForNode(generated Node) {
 	s.groups[len(s.groups)-1] = append(s.groups[len(s.groups)-1], segment)
 }
 
-func (s *SourceMapGenerator) TraverseDecl(decl *Decl) {
+func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 	// TODO: we need to add segments to groups and new groups whenever
 	// the line number changes so we also need to keep track of the
 	// current line number
 
 	s.AddSegmentForNode(decl)
 
-	switch dk := decl.Kind.(type) {
-	case *DVariable:
+	switch dk := decl.(type) {
+	case *VarDecl:
 		if dk.Init != nil {
 			s.TraverseExpr(dk.Init)
 		}
-	case *DFunction:
+	case *FuncDecl:
 		for _, stmt := range dk.Body {
 			s.TraverseStmt(stmt)
 		}
 	}
 }
 
-func (s *SourceMapGenerator) TraverseExpr(expr *Expr) {
+func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	s.AddSegmentForNode(expr)
 
-	switch ek := expr.Kind.(type) {
-	case *EBinary:
+	switch ek := expr.(type) {
+	case *BinaryExpr:
 		s.TraverseExpr(ek.Left)
 		s.TraverseExpr(ek.Right)
-	case *EUnary:
+	case *UnaryExpr:
 		s.TraverseExpr(ek.Arg)
-	case *ECall:
+	case *CallExpr:
 		s.TraverseExpr(ek.Callee)
 		for _, arg := range ek.Args {
 			s.TraverseExpr(arg)
 		}
-	case *EFunction:
+	case *FuncExpr:
 		for _, param := range ek.Params {
 			s.AddSegmentForNode(param.Pattern)
 		}
 		for _, stmt := range ek.Body {
 			s.TraverseStmt(stmt)
 		}
-	case *EIndex:
+	case *IndexExpr:
 		s.TraverseExpr(ek.Object)
 		s.TraverseExpr(ek.Index)
-	case *EMember:
+	case *MemberExpr:
 		s.TraverseExpr(ek.Object)
 		s.AddSegmentForNode(ek.Prop)
-	case *EArray:
+	case *ArrayExpr:
 		for _, elem := range ek.Elems {
 			s.TraverseExpr(elem)
 		}
-	case *EIdentifier, *EString, *ENumber, *EBool:
+	case *IdentExpr, *StrExpr, *NumExpr, *BoolExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top
 		// of this function
 	default:
