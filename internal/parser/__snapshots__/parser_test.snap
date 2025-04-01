@@ -29,13 +29,14 @@
 [TestParseModuleNoErrors/VarDecls - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 0,
-        Name: &ast.Ident{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
             Name: "a",
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:9},
                 End:   ast.Location{Line:2, Column:10},
             },
+            inferredType: nil,
         },
         Init: &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:5},
@@ -71,21 +72,23 @@
         },
         Params: {
             &ast.Param{
-                Name: &ast.Ident{
+                Pattern: &ast.IdentPat{
                     Name: "a",
                     span: ast.Span{
                         Start: ast.Location{Line:2, Column:12},
                         End:   ast.Location{Line:2, Column:13},
                     },
+                    inferredType: nil,
                 },
             },
             &ast.Param{
-                Name: &ast.Ident{
+                Pattern: &ast.IdentPat{
                     Name: "b",
                     span: ast.Span{
                         Start: ast.Location{Line:2, Column:15},
                         End:   ast.Location{Line:2, Column:16},
                     },
+                    inferredType: nil,
                 },
             },
         },
@@ -144,13 +147,14 @@
 [TestParseModuleNoErrors/SplitExprOnNewline - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 1,
-        Name: &ast.Ident{
+        Kind:    1,
+        Pattern: &ast.IdentPat{
             Name: "a",
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:9},
                 End:   ast.Location{Line:2, Column:10},
             },
+            inferredType: nil,
         },
         Init: &ast.IdentExpr{
             Name: "x",
@@ -177,13 +181,14 @@
 [TestParseModuleNoErrors/MultilineExprInParens - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 1,
-        Name: &ast.Ident{
+        Kind:    1,
+        Pattern: &ast.IdentPat{
             Name: "a",
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:9},
                 End:   ast.Location{Line:2, Column:10},
             },
+            inferredType: nil,
         },
         Init: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
@@ -275,13 +280,14 @@
 [TestParseModuleNoErrors/SplitExprInNewScope - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 0,
-        Name: &ast.Ident{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
             Name: "funcs",
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:9},
                 End:   ast.Location{Line:2, Column:14},
             },
+            inferredType: nil,
         },
         Init: &ast.TupleExpr{
             Elems: {
@@ -294,13 +300,14 @@
                         Stmts: {
                             &ast.DeclStmt{
                                 Decl: &ast.VarDecl{
-                                    Kind: 1,
-                                    Name: &ast.Ident{
+                                    Kind:    1,
+                                    Pattern: &ast.IdentPat{
                                         Name: "a",
                                         span: ast.Span{
                                             Start: ast.Location{Line:4, Column:11},
                                             End:   ast.Location{Line:4, Column:12},
                                         },
+                                        inferredType: nil,
                                     },
                                     Init: &ast.IdentExpr{
                                         Name: "x",
@@ -432,13 +439,14 @@
 [TestParseModuleNoErrors/VarDecls - 2]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 0,
-        Name: &ast.Ident{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
             Name: "b",
             span: ast.Span{
                 Start: ast.Location{Line:3, Column:9},
                 End:   ast.Location{Line:3, Column:10},
             },
+            inferredType: nil,
         },
         Init: &ast.LiteralExpr{
             Lit:  &ast.NumLit{Value:10},
@@ -465,13 +473,14 @@
 [TestParseModuleNoErrors/VarDecls - 3]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 0,
-        Name: &ast.Ident{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
             Name: "sum",
             span: ast.Span{
                 Start: ast.Location{Line:4, Column:9},
                 End:   ast.Location{Line:4, Column:12},
             },
+            inferredType: nil,
         },
         Init: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
@@ -523,21 +532,23 @@
         },
         Params: {
             &ast.Param{
-                Name: &ast.Ident{
+                Pattern: &ast.IdentPat{
                     Name: "a",
                     span: ast.Span{
                         Start: ast.Location{Line:5, Column:12},
                         End:   ast.Location{Line:5, Column:13},
                     },
+                    inferredType: nil,
                 },
             },
             &ast.Param{
-                Name: &ast.Ident{
+                Pattern: &ast.IdentPat{
                     Name: "b",
                     span: ast.Span{
                         Start: ast.Location{Line:5, Column:15},
                         End:   ast.Location{Line:5, Column:16},
                     },
+                    inferredType: nil,
                 },
             },
         },
@@ -596,13 +607,14 @@
 [TestParseModuleNoErrors/IfElse - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
-        Kind: 0,
-        Name: &ast.Ident{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
             Name: "x",
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:9},
                 End:   ast.Location{Line:2, Column:10},
             },
+            inferredType: nil,
         },
         Init: &ast.IfElseExpr{
             Cond: &ast.IdentExpr{
@@ -617,13 +629,14 @@
                 Stmts: {
                     &ast.DeclStmt{
                         Decl: &ast.VarDecl{
-                            Kind: 1,
-                            Name: &ast.Ident{
+                            Kind:    1,
+                            Pattern: &ast.IdentPat{
                                 Name: "a",
                                 span: ast.Span{
                                     Start: ast.Location{Line:3, Column:10},
                                     End:   ast.Location{Line:3, Column:11},
                                 },
+                                inferredType: nil,
                             },
                             Init: &ast.LiteralExpr{
                                 Lit:  &ast.NumLit{Value:5},
@@ -678,13 +691,14 @@
                     Stmts: {
                         &ast.DeclStmt{
                             Decl: &ast.VarDecl{
-                                Kind: 1,
-                                Name: &ast.Ident{
+                                Kind:    1,
+                                Pattern: &ast.IdentPat{
                                     Name: "b",
                                     span: ast.Span{
                                         Start: ast.Location{Line:6, Column:11},
                                         End:   ast.Location{Line:6, Column:12},
                                     },
+                                    inferredType: nil,
                                 },
                                 Init: &ast.LiteralExpr{
                                     Lit:  &ast.NumLit{Value:10},

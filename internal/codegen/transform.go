@@ -23,6 +23,75 @@ func TransformIdentifier(ident *ast.Ident) *Identifier {
 	}
 }
 
+func TransformPattern(pattern ast.Pat) Pat {
+	switch p := pattern.(type) {
+	case *ast.IdentPat:
+		return &IdentPat{
+			Name:   p.Name,
+			span:   nil,
+			source: p,
+		}
+	case *ast.ObjectPat:
+		var elems []ObjPatElem
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				elems = append(elems, &ObjKeyValuePat{
+					Key:     e.Key,
+					Value:   TransformPattern(e.Value),
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.ObjShorthandPat:
+				elems = append(elems, &ObjShorthandPat{
+					Key:     e.Key,
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.ObjRestPat:
+				elems = append(elems, &ObjRestPat{
+					Pattern: TransformPattern(e.Pattern),
+					span:    nil,
+					source:  e,
+				})
+			}
+		}
+		return &ObjectPat{
+			Elems:  elems,
+			span:   nil,
+			source: p,
+		}
+	case *ast.TuplePat:
+		var elems []TuplePatElem
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.TupleElemPat:
+				elems = append(elems, &TupleElemPat{
+					Pattern: TransformPattern(e.Pattern),
+					Default: TransformExpr(e.Default),
+					span:    nil,
+					source:  e,
+				})
+			case *ast.TupleRestPat:
+				elems = append(elems, &TupleRestPat{
+					Pattern: TransformPattern(e.Pattern),
+					span:    nil,
+					source:  e,
+				})
+			}
+		}
+		return &TuplePat{
+			Elems:  elems,
+			span:   nil,
+			source: p,
+		}
+	default:
+		panic("TODO")
+	}
+}
+
 func TransformStmt(stmt ast.Stmt) *Stmt {
 	var kind StmtKind
 
@@ -72,15 +141,15 @@ func TransformDecl(decl ast.Decl) *Decl {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		kind = &DVariable{
-			Kind: VariableKind(d.Kind),
-			Name: TransformIdentifier(d.Name),
-			Init: TransformExpr(d.Init),
+			Kind:    VariableKind(d.Kind),
+			Pattern: TransformPattern(d.Pattern),
+			Init:    TransformExpr(d.Init),
 		}
 	case *ast.FuncDecl:
 		var params []*Param
 		for _, p := range d.Params {
 			params = append(params, &Param{
-				Name: TransformIdentifier(p.Name),
+				Pattern: TransformPattern(p.Pattern),
 			})
 		}
 		kind = &DFunction{
@@ -100,13 +169,17 @@ func TransformDecl(decl ast.Decl) *Decl {
 }
 
 func TransformExpr(expr ast.Expr) *Expr {
+	if expr == nil {
+		return nil
+	}
+
 	var kind ExprKind
 
 	switch e := expr.(type) {
 	case *ast.LiteralExpr:
 		switch lit := e.Lit.(type) {
 		case *ast.BoolLit:
-			panic("TODO: bool literal")
+			kind = &EBool{Value: lit.Value}
 		case *ast.NumLit:
 			kind = &ENumber{Value: lit.Value}
 		case *ast.StrLit:
@@ -154,6 +227,17 @@ func TransformExpr(expr ast.Expr) *Expr {
 	case *ast.TupleExpr:
 		kind = &EArray{
 			Elems: TransformExprs(e.Elems),
+		}
+	case *ast.FuncExpr:
+		var params []*Param
+		for _, p := range e.Params {
+			params = append(params, &Param{
+				Pattern: TransformPattern(p.Pattern),
+			})
+		}
+		kind = &EFunction{
+			Params: params,
+			Body:   TransformStmts(e.Body.Stmts),
 		}
 	case *ast.IgnoreExpr:
 		panic("TODO")

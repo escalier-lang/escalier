@@ -1,0 +1,2 @@
+val {a, b = 5, c: d, e: f = "hello", ...rest} = obj
+val [x, y = true, ...other] = array

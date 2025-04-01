@@ -231,6 +231,8 @@ func (lexer *Lexer) next() *Token {
 
 		if keyword, ok := keywords[value]; ok {
 			token = NewToken(keyword, value, span)
+		} else if value == "_" {
+			token = NewToken(Underscore, value, span)
 		} else {
 			token = NewToken(Identifier, value, span)
 		}

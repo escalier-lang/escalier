@@ -23,9 +23,8 @@ func (p *Printer) NewLine() {
 	p.Output += "\n"
 	p.location.Line++
 	p.location.Column = 1
-	for i := 0; i < p.indent; i++ {
-		p.Output += "  "
-		p.location.Column += 2
+	for range p.indent {
+		p.print("  ")
 	}
 }
 
@@ -52,137 +51,199 @@ var unaryOpMap = map[UnaryOp]string{
 	LogicalNot: "!",
 }
 
+func (p *Printer) print(s string) {
+	p.Output += s
+	p.location.Column += len(s)
+}
+
 func (p *Printer) PrintExpr(expr *Expr) {
 	start := p.location
 
 	switch e := expr.Kind.(type) {
 	case *EBinary:
 		p.PrintExpr(e.Left)
-		op := binaryOpMap[e.Op]
-		p.Output += " " + op + " "
-		p.location.Column += 2 + len(op)
+		p.print(" " + binaryOpMap[e.Op] + " ")
 		p.PrintExpr(e.Right)
 	case *ENumber:
 		value := strconv.FormatFloat(e.Value, 'f', -1, 32)
-		p.Output += value
-		p.location.Column += len(value)
+		p.print(value)
 	case *EString:
 		value := fmt.Sprintf("%q", e.Value)
-		p.Output += value
-		p.location.Column += len(value)
+		p.print(value)
+	case *EBool:
+		if e.Value {
+			p.print("true")
+		} else {
+			p.print("false")
+		}
 	case *EIdentifier:
-		p.Output += e.Name
-		p.location.Column += len(e.Name)
+		p.print(e.Name)
 	case *EUnary:
-		op := unaryOpMap[e.Op]
-		p.Output += op
-		p.location.Column += len(op)
+		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)
 	case *ECall:
 		p.PrintExpr(e.Callee)
 		if e.OptChain {
-			p.Output += "?"
-			p.location.Column++
+			p.print("?")
 		}
-		p.Output += "("
-		p.location.Column++
+		p.print("(")
 		for i, arg := range e.Args {
 			if i > 0 {
-				p.Output += ", "
-				p.location.Column += 2
+				p.print(", ")
 			}
 			p.PrintExpr(arg)
 		}
-		p.Output += ")"
-		p.location.Column++
+		p.print(")")
+	case *EFunction:
+		p.print("function (")
+		for i, param := range e.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+		}
+		p.print(") {")
+		p.indent++
+		p.NewLine()
+		for _, stmt := range e.Body {
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+		p.NewLine()
+		p.print("}")
 	case *EIndex:
 		p.PrintExpr(e.Object)
 		if e.OptChain {
-			p.Output += "?"
-			p.location.Column++
+			p.print("?")
 		}
-		p.Output += "["
-		p.location.Column++
+		p.print("[")
 		p.PrintExpr(e.Index)
-		p.Output += "]"
-		p.location.Column++
+		p.print("]")
 	case *EMember:
 		p.PrintExpr(e.Object)
 		if e.OptChain {
-			p.Output += "?"
-			p.location.Column++
+			p.print("?")
 		}
-		p.Output += "."
-		p.location.Column++
-		p.Output += e.Prop.Name
-		p.location.Column += len(e.Prop.Name)
+		p.print(".")
+		p.printIdent(e.Prop)
 	case *EArray:
-		p.Output += "["
-		p.location.Column++
+		p.print("[")
 		for i, elem := range e.Elems {
 			if i > 0 {
-				p.Output += ", "
-				p.location.Column += 2
+				p.print(", ")
 			}
 			p.PrintExpr(elem)
 		}
-		p.Output += "]"
-		p.location.Column++
+		p.print("]")
 	}
 
 	end := p.location
 	expr.span = &Span{Start: start, End: end}
 }
 
+func (p *Printer) printIdent(id *Identifier) {
+	start := p.location
+	p.print(id.Name)
+	end := p.location
+	id.span = &Span{Start: start, End: end}
+}
+
+func (p *Printer) printPattern(pat Pat) {
+	start := p.location
+	switch pat := pat.(type) {
+	case *IdentPat:
+		p.print(pat.Name)
+	case *ObjectPat:
+		p.print("{")
+		for i, elem := range pat.Elems {
+			if i > 0 {
+				p.print(", ")
+			}
+			switch elem := elem.(type) {
+			case *ObjKeyValuePat:
+				p.print(elem.Key)
+				p.print(": ")
+				p.printPattern(elem.Value)
+				if elem.Default != nil {
+					p.print(" = ")
+					p.PrintExpr(elem.Default)
+				}
+			case *ObjShorthandPat:
+				p.print(elem.Key)
+				if elem.Default != nil {
+					p.print(" = ")
+					p.PrintExpr(elem.Default)
+				}
+			case *ObjRestPat:
+				p.print("...")
+				p.printPattern(elem.Pattern)
+			}
+		}
+		p.print("}")
+	case *TuplePat:
+		p.print("[")
+		for i, elem := range pat.Elems {
+			if i > 0 {
+				p.print(", ")
+			}
+			switch elem := elem.(type) {
+			case *TupleElemPat:
+				p.printPattern(elem.Pattern)
+				if elem.Default != nil {
+					p.print(" = ")
+					p.PrintExpr(elem.Default)
+				}
+			case *TupleRestPat:
+				p.print("...")
+				p.printPattern(elem.Pattern)
+			}
+		}
+		p.print("]")
+	}
+	end := p.location
+	pat.SetSpan(&Span{Start: start, End: end})
+}
+
+func (p *Printer) printParam(param *Param) {
+	p.printPattern(param.Pattern)
+}
+
 func (p *Printer) PrintDecl(decl *Decl) {
 	start := p.location
 
 	if decl.Declare {
-		p.Output += "declare "
-		p.location.Column += 8
+		p.print("declare ")
 	}
 	if decl.Export {
-		p.Output += "export "
-		p.location.Column += 7
+		p.print("export ")
 	}
 
 	switch d := decl.Kind.(type) {
 	case *DVariable:
 		switch d.Kind {
 		case VarKind:
-			p.Output += "let "
-			p.location.Column += 4
+			p.print("let ")
 		case ValKind:
-			p.Output += "const "
-			p.location.Column += 6
+			p.print("const ")
 		}
-		p.Output += d.Name.Name
-		p.location.Column += len(d.Name.Name)
+		p.printPattern(d.Pattern)
 		if d.Init != nil {
-			p.Output += " = "
-			p.location.Column += 3
+			p.print(" = ")
 			p.PrintExpr(d.Init)
 		}
-		p.Output += ";"
-		p.location.Column++
+		p.print(";")
 	case *DFunction:
-		p.Output += "function "
-		p.location.Column += 9
-		p.Output += d.Name.Name
-		p.location.Column += len(d.Name.Name)
+		p.print("function ")
+		p.print(d.Name.Name)
 
-		p.Output += "("
-		p.location.Column++
+		p.print("(")
 		for i, param := range d.Params {
 			if i > 0 {
-				p.Output += ", "
-				p.location.Column += 2
+				p.print(", ")
 			}
-			p.Output += param.Name.Name
-			p.location.Column += len(param.Name.Name)
+			p.printParam(param)
 		}
-		p.Output += ") {"
-		p.location.Column += 3
+		p.print(") {")
 
 		p.indent++
 
@@ -194,8 +255,7 @@ func (p *Printer) PrintDecl(decl *Decl) {
 		p.indent--
 		p.NewLine()
 
-		p.Output += "}"
-		p.location.Column++
+		p.print("}")
 	}
 
 	end := p.location
@@ -208,20 +268,16 @@ func (p *Printer) PrintStmt(stmt *Stmt) {
 	switch s := stmt.Kind.(type) {
 	case *SExpr:
 		p.PrintExpr(s.Expr)
-		p.Output += ";"
-		p.location.Column++
+		p.print(";")
 	case *SDecl:
 		p.PrintDecl(s.Decl)
 	case *SReturn:
-		p.Output += "return"
-		p.location.Column += 6
+		p.print("return")
 		if s.Expr != nil {
-			p.Output += " "
-			p.location.Column++
+			p.print(" ")
 			p.PrintExpr(s.Expr)
 		}
-		p.Output += ";"
-		p.location.Column++
+		p.print(";")
 	}
 
 	end := p.location

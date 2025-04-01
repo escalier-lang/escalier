@@ -34,12 +34,12 @@ func (p *Parser) parsePattern() ast.Pat {
 			// TODO: support for default values
 			return ast.NewExtractPat(name, pats, span)
 		} else {
-			return ast.NewIdentPat(name, token.Span)
+			return ast.NewIdentPat(name, span)
 		}
 	case Underscore: // Wildcard
 		p.lexer.consume()
 		return ast.NewWildcardPat(token.Span)
-	case OpenBracket: // Object
+	case OpenBracket: // Tuple
 		p.lexer.consume()
 		patElems := []ast.TuplePatElem{}
 		first := true
@@ -51,11 +51,12 @@ func (p *Parser) parsePattern() ast.Pat {
 			}
 			if !first {
 				if token.Type != Comma {
-					p.reportError(token.Span, "Expected ','")
-					return nil
+					msg := fmt.Sprintf("Expected ',', got '%s'", token.Value)
+					p.reportError(token.Span, msg)
+				} else {
+					p.lexer.consume()
+					token = p.lexer.peek()
 				}
-				p.lexer.consume()
-				token = p.lexer.peek()
 			}
 			if token.Type == DotDotDot {
 				p.lexer.consume()
@@ -88,7 +89,7 @@ func (p *Parser) parsePattern() ast.Pat {
 			first = false
 		}
 		return ast.NewTuplePat(patElems, ast.Span{Start: token.Span.Start, End: token.Span.End})
-	case OpenBrace: // Tuple
+	case OpenBrace: // Object
 		p.lexer.consume()
 		patElems := []ast.ObjPatElem{}
 		first := true
@@ -121,7 +122,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init := p.ParseExprWithMarker(MarkerDelim)
+						init = p.ParseExprWithMarker(MarkerDelim)
 						span = ast.MergeSpans(span, init.Span())
 					}
 
@@ -131,7 +132,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init := p.ParseExprWithMarker(MarkerDelim)
+						init = p.ParseExprWithMarker(MarkerDelim)
 						span = ast.MergeSpans(span, init.Span())
 					}
 
@@ -173,6 +174,7 @@ func (p *Parser) parsePattern() ast.Pat {
 		p.lexer.consume()
 		return ast.NewLitPat(&ast.UndefinedLit{}, token.Span)
 	default:
+		// TODO: return an invalid pattern
 		p.reportError(token.Span, "Expected a pattern")
 		return nil
 	}

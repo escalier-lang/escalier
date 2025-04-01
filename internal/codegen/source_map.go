@@ -154,6 +154,41 @@ func (s *SourceMapGenerator) TraverseDecl(decl *Decl) {
 
 func (s *SourceMapGenerator) TraverseExpr(expr *Expr) {
 	s.AddSegmentForNode(expr)
+
+	switch ek := expr.Kind.(type) {
+	case *EBinary:
+		s.TraverseExpr(ek.Left)
+		s.TraverseExpr(ek.Right)
+	case *EUnary:
+		s.TraverseExpr(ek.Arg)
+	case *ECall:
+		s.TraverseExpr(ek.Callee)
+		for _, arg := range ek.Args {
+			s.TraverseExpr(arg)
+		}
+	case *EFunction:
+		for _, param := range ek.Params {
+			s.AddSegmentForNode(param.Pattern)
+		}
+		for _, stmt := range ek.Body {
+			s.TraverseStmt(stmt)
+		}
+	case *EIndex:
+		s.TraverseExpr(ek.Object)
+		s.TraverseExpr(ek.Index)
+	case *EMember:
+		s.TraverseExpr(ek.Object)
+		s.AddSegmentForNode(ek.Prop)
+	case *EArray:
+		for _, elem := range ek.Elems {
+			s.TraverseExpr(elem)
+		}
+	case *EIdentifier, *EString, *ENumber, *EBool:
+		// leave nodes are handled by the AddSegmentForNode call at the	top
+		// of this function
+	default:
+		panic("TODO - TraverseExpr")
+	}
 }
 
 func GenerateSourceMap(srcPath string, jsMod *Module, outName string) string {

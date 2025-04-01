@@ -21,15 +21,15 @@ const (
 
 type VarDecl struct {
 	Kind    VariableKind
-	Name    *Ident // TODO: replace with Pattern
+	Pattern Pat
 	Init    Expr
 	export  bool
 	declare bool
 	span    Span
 }
 
-func NewVarDecl(kind VariableKind, name *Ident, init Expr, export, declare bool, span Span) *VarDecl {
-	return &VarDecl{Kind: kind, Name: name, Init: init, export: export, declare: declare, span: span}
+func NewVarDecl(kind VariableKind, pattern Pat, init Expr, export, declare bool, span Span) *VarDecl {
+	return &VarDecl{Kind: kind, Pattern: pattern, Init: init, export: export, declare: declare, span: span}
 }
 func (*VarDecl) isDecl()         {}
 func (d *VarDecl) Export() bool  { return d.export }
@@ -37,7 +37,7 @@ func (d *VarDecl) Declare() bool { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
 
 type Param struct {
-	Name *Ident // TODO: replace with Pattern
+	Pattern Pat
 	// TODO: include type annotation
 }
 
