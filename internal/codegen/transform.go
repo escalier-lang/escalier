@@ -4,8 +4,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-func TransformExprs(exprs []ast.Expr) []*Expr {
-	var res []*Expr
+func TransformExprs(exprs []ast.Expr) []Expr {
+	var res []Expr
 	for _, e := range exprs {
 		res = append(res, TransformExpr(e))
 	}
@@ -92,33 +92,33 @@ func TransformPattern(pattern ast.Pat) Pat {
 	}
 }
 
-func TransformStmt(stmt ast.Stmt) *Stmt {
-	var kind StmtKind
-
+func TransformStmt(stmt ast.Stmt) Stmt {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
-		kind = &SExpr{
-			Expr: TransformExpr(s.Expr),
+		return &ExprStmt{
+			Expr:   TransformExpr(s.Expr),
+			span:   nil,
+			source: stmt,
 		}
 	case *ast.DeclStmt:
-		kind = &SDecl{
-			Decl: TransformDecl(s.Decl),
+		return &DeclStmt{
+			Decl:   TransformDecl(s.Decl),
+			span:   nil,
+			source: stmt,
 		}
 	case *ast.ReturnStmt:
-		kind = &SReturn{
-			Expr: TransformExpr(s.Expr),
+		return &ReturnStmt{
+			Expr:   TransformExpr(s.Expr),
+			span:   nil,
+			source: stmt,
 		}
-	}
-
-	return &Stmt{
-		Kind:   kind,
-		span:   nil,
-		source: stmt,
+	default:
+		panic("TransformStmt - default case should never happen")
 	}
 }
 
 func TransformModule(mod *ast.Module) *Module {
-	var stmts []*Stmt
+	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = append(stmts, TransformStmt(s))
 	}
@@ -127,23 +127,25 @@ func TransformModule(mod *ast.Module) *Module {
 	}
 }
 
-func TransformStmts(stmts []ast.Stmt) []*Stmt {
-	var res []*Stmt
+func TransformStmts(stmts []ast.Stmt) []Stmt {
+	var res []Stmt
 	for _, s := range stmts {
 		res = append(res, TransformStmt(s))
 	}
 	return res
 }
 
-func TransformDecl(decl ast.Decl) *Decl {
-	var kind DeclKind
-
+func TransformDecl(decl ast.Decl) Decl {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		kind = &DVariable{
+		return &VarDecl{
 			Kind:    VariableKind(d.Kind),
 			Pattern: TransformPattern(d.Pattern),
 			Init:    TransformExpr(d.Init),
+			declare: decl.Declare(),
+			export:  decl.Export(),
+			span:    nil,
+			source:  decl,
 		}
 	case *ast.FuncDecl:
 		var params []*Param
@@ -152,82 +154,84 @@ func TransformDecl(decl ast.Decl) *Decl {
 				Pattern: TransformPattern(p.Pattern),
 			})
 		}
-		kind = &DFunction{
-			Name:   TransformIdentifier(d.Name),
-			Params: params,
-			Body:   TransformStmts(d.Body.Stmts),
+		return &FuncDecl{
+			Name:    TransformIdentifier(d.Name),
+			Params:  params,
+			Body:    TransformStmts(d.Body.Stmts),
+			declare: decl.Declare(),
+			export:  decl.Export(),
+			span:    nil,
+			source:  decl,
 		}
-	}
-
-	return &Decl{
-		Kind:    kind,
-		Declare: decl.Declare(),
-		Export:  decl.Export(),
-		span:    nil,
-		source:  decl,
+	default:
+		panic("TODO - TransformDecl - default case")
 	}
 }
 
-func TransformExpr(expr ast.Expr) *Expr {
+func TransformExpr(expr ast.Expr) Expr {
 	if expr == nil {
 		return nil
 	}
-
-	var kind ExprKind
 
 	switch e := expr.(type) {
 	case *ast.LiteralExpr:
 		switch lit := e.Lit.(type) {
 		case *ast.BoolLit:
-			kind = &EBool{Value: lit.Value}
+			return NewBoolExpr(lit.Value, expr)
 		case *ast.NumLit:
-			kind = &ENumber{Value: lit.Value}
+			return NewNumExpr(lit.Value, expr)
 		case *ast.StrLit:
-			kind = &EString{Value: lit.Value}
+			return NewStrExpr(lit.Value, expr)
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:
 			panic("TODO: null literal")
 		case *ast.UndefinedLit:
 			panic("TODO: undefined literal")
+		default:
+			panic("TODO: literal type")
 		}
 	case *ast.BinaryExpr:
-		kind = &EBinary{
-			Left:  TransformExpr(e.Left),
-			Op:    BinaryOp(e.Op),
-			Right: TransformExpr(e.Right),
-		}
+		return NewBinaryExpr(
+			TransformExpr(e.Left),
+			BinaryOp(e.Op),
+			TransformExpr(e.Right),
+			expr,
+		)
 	case *ast.UnaryExpr:
-		kind = &EUnary{
-			Op:  UnaryOp(e.Op),
-			Arg: TransformExpr(e.Arg),
-		}
+		return NewUnaryExpr(
+			UnaryOp(e.Op),
+			TransformExpr(e.Arg),
+			expr,
+		)
 	case *ast.IdentExpr:
-		kind = &EIdentifier{
-			Name: e.Name,
-		}
+		return NewIdentExpr(e.Name, expr)
 	case *ast.CallExpr:
-		kind = &ECall{
-			Callee:   TransformExpr(e.Callee),
-			Args:     TransformExprs(e.Args),
-			OptChain: e.OptChain,
-		}
+		return NewCallExpr(
+			TransformExpr(e.Callee),
+			TransformExprs(e.Args),
+			e.OptChain,
+			expr,
+		)
 	case *ast.IndexExpr:
-		kind = &EIndex{
-			Object:   TransformExpr(e.Object),
-			Index:    TransformExpr(e.Index),
-			OptChain: e.OptChain,
-		}
+		return NewIndexExpr(
+			TransformExpr(e.Object),
+			TransformExpr(e.Index),
+			e.OptChain,
+			expr,
+		)
 	case *ast.MemberExpr:
-		kind = &EMember{
-			Object:   TransformExpr(e.Object),
-			Prop:     TransformIdentifier(e.Prop),
-			OptChain: e.OptChain,
-		}
+		return NewMemberExpr(
+			TransformExpr(e.Object),
+			TransformIdentifier(e.Prop),
+			e.OptChain,
+			expr,
+		)
 	case *ast.TupleExpr:
-		kind = &EArray{
-			Elems: TransformExprs(e.Elems),
-		}
+		return NewArrayExpr(
+			TransformExprs(e.Elems),
+			expr,
+		)
 	case *ast.FuncExpr:
 		var params []*Param
 		for _, p := range e.Params {
@@ -235,19 +239,16 @@ func TransformExpr(expr ast.Expr) *Expr {
 				Pattern: TransformPattern(p.Pattern),
 			})
 		}
-		kind = &EFunction{
-			Params: params,
-			Body:   TransformStmts(e.Body.Stmts),
-		}
+		return NewFuncExpr(
+			params,
+			TransformStmts(e.Body.Stmts),
+			expr,
+		)
 	case *ast.IgnoreExpr:
-		panic("TODO")
+		panic("TODO - TransformExpr - IgnoreExpr")
 	case *ast.EmptyExpr:
-		panic("TODO")
-	}
-
-	return &Expr{
-		Kind:   kind,
-		span:   nil,
-		source: expr,
+		panic("TODO - TransformExpr - EmptyExpr")
+	default:
+		panic("TODO - TransformExpr - default case")
 	}
 }
