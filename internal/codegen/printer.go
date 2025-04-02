@@ -38,7 +38,7 @@ var binaryOpMap = map[BinaryOp]string{
 	LessThanEqual:     "<=",
 	GreaterThan:       ">",
 	GreaterThanEqual:  ">=",
-	Equal:             "==",
+	EqualEqual:        "==",
 	NotEqual:          "!=",
 	LogicalAnd:        "&&",
 	LogicalOr:         "||",
