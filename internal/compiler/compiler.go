@@ -26,7 +26,7 @@ func Compile(source parser.Source) CompilerOutput {
 
 	srcFile := "./" + filepath.Base(source.Path)
 	outFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
-	sourceMap := codegen.GenerateSourceMap(srcFile, jsMod, outFile)
+	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, outFile)
 
 	outmap := "./" + filepath.Base(source.Path) + ".map"
 	output += "//# sourceMappingURL=" + outmap + "\n"
