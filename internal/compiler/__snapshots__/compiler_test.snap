@@ -4,7 +4,7 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,YAAU;AACV,UAAU\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"AAAA,YAAU;AACV,UAAU\"}",
 }
 ---
 
@@ -13,7 +13,7 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "function add(a, b) {\n  return a + b;\n}\nfunction sub(a, b) {\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA;EACE,OAAO,AAAA,IAAI;;AAEb;EAAe,OAAO,AAAA,IAAI;;AAC1B,YAAU,AAAA,IAAI,GAAG\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"fn add(a, b) {\\n  return a + b\\n}\\nfn sub(a, b) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,OAAO,AAAA,IAAI;;AAEb;EAAe,OAAO,AAAA,IAAI;;AAC1B,YAAU,AAAA,IAAI,GAAG\"}",
 }
 ---
 
@@ -22,7 +22,7 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,aAAW,CAAC,GAAG,GAAG;AAClB,cAAY,AAAA,KAAK\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAW,CAAC,GAAG,GAAG;AAClB,cAAY,AAAA,KAAK\"}",
 }
 ---
 
@@ -31,6 +31,6 @@ compiler.CompilerOutput{
     Errors: {
     },
     JS:        "console.log(\"x =\", -5);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[null],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI,OAAM,CAAC\"}",
+    SourceMap: "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"console.log(\\\"x =\\\", -5)\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI,OAAM,CAAC\"}",
 }
 ---
