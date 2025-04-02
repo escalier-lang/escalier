@@ -45,7 +45,7 @@ fn sub(a, b) { return a - b }`,
 	builder := &Builder{
 		tempId: 0,
 	}
-	m2 := builder.TransformModule(m1)
+	m2 := builder.BuildModule(m1)
 
 	printer := NewPrinter()
 	printer.PrintModule(m2)
