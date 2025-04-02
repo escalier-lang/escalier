@@ -191,7 +191,7 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	}
 }
 
-func GenerateSourceMap(srcPath string, jsMod *Module, outName string) string {
+func GenerateSourceMap(srcPath string, srcContent string, jsMod *Module, outName string) string {
 	s := &SourceMapGenerator{
 		groups: [][]*Segment{},
 	}
@@ -202,7 +202,7 @@ func GenerateSourceMap(srcPath string, jsMod *Module, outName string) string {
 		Version:        3,
 		File:           outName,
 		Sources:        []string{srcPath},
-		SourcesContent: []*string{nil},
+		SourcesContent: []*string{&srcContent},
 		Names:          []string{},
 		Mappings:       EncodeSegments(s.groups),
 	}
