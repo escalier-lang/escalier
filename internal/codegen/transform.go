@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -14,10 +15,10 @@ func (b *Builder) NewTempId() string {
 	return "temp" + strconv.Itoa(b.tempId)
 }
 
-func TransformExprs(exprs []ast.Expr) []Expr {
+func (b *Builder) TransformExprs(exprs []ast.Expr) []Expr {
 	var res []Expr
 	for _, e := range exprs {
-		res = append(res, TransformExpr(e))
+		res = append(res, b.TransformExpr(e))
 	}
 	return res
 }
@@ -75,13 +76,13 @@ func (b *Builder) buildPattern(p ast.Pat, target ast.Expr) ([]Expr, []Stmt) {
 					elems = append(elems, NewObjKeyValuePat(
 						e.Key,
 						buildPatternRec(e.Value, newTarget),
-						TransformExpr(e.Default),
+						b.TransformExpr(e.Default),
 						e,
 					))
 				case *ast.ObjShorthandPat:
 					elems = append(elems, NewObjShorthandPat(
 						e.Key,
-						TransformExpr(e.Default),
+						b.TransformExpr(e.Default),
 						e,
 					))
 				case *ast.ObjRestPat:
@@ -119,7 +120,7 @@ func (b *Builder) buildPattern(p ast.Pat, target ast.Expr) ([]Expr, []Stmt) {
 						elems,
 						NewTupleElemPat(
 							buildPatternRec(e.Pattern, newTarget),
-							TransformExpr(e.Default),
+							b.TransformExpr(e.Default),
 							e,
 						),
 					)
@@ -150,7 +151,7 @@ func (b *Builder) buildPattern(p ast.Pat, target ast.Expr) ([]Expr, []Stmt) {
 	// to the buildPatternRec function as the target.  This is necessary because
 	// the target may be a complex expression that needs to be evaluated only
 	// once.
-	pat := buildPatternRec(p, TransformExpr(target))
+	pat := buildPatternRec(p, b.TransformExpr(target))
 
 	if pat != nil {
 		decl := &VarDecl{
@@ -169,12 +170,13 @@ func (b *Builder) buildPattern(p ast.Pat, target ast.Expr) ([]Expr, []Stmt) {
 		})
 	} else {
 		// TODO
+		panic("TODO - buildPattern - pat is nil")
 	}
 
 	return checks, stmts
 }
 
-func TransformPattern(pattern ast.Pat) Pat {
+func (b *Builder) TransformPattern(pattern ast.Pat) Pat {
 	switch p := pattern.(type) {
 	case *ast.IdentPat:
 		return &IdentPat{
@@ -189,21 +191,21 @@ func TransformPattern(pattern ast.Pat) Pat {
 			case *ast.ObjKeyValuePat:
 				elems = append(elems, &ObjKeyValuePat{
 					Key:     e.Key,
-					Value:   TransformPattern(e.Value),
-					Default: TransformExpr(e.Default),
+					Value:   b.TransformPattern(e.Value),
+					Default: b.TransformExpr(e.Default),
 					span:    nil,
 					source:  e,
 				})
 			case *ast.ObjShorthandPat:
 				elems = append(elems, &ObjShorthandPat{
 					Key:     e.Key,
-					Default: TransformExpr(e.Default),
+					Default: b.TransformExpr(e.Default),
 					span:    nil,
 					source:  e,
 				})
 			case *ast.ObjRestPat:
 				elems = append(elems, &ObjRestPat{
-					Pattern: TransformPattern(e.Pattern),
+					Pattern: b.TransformPattern(e.Pattern),
 					span:    nil,
 					source:  e,
 				})
@@ -220,14 +222,14 @@ func TransformPattern(pattern ast.Pat) Pat {
 			switch e := elem.(type) {
 			case *ast.TupleElemPat:
 				elems = append(elems, &TupleElemPat{
-					Pattern: TransformPattern(e.Pattern),
-					Default: TransformExpr(e.Default),
+					Pattern: b.TransformPattern(e.Pattern),
+					Default: b.TransformExpr(e.Default),
 					span:    nil,
 					source:  e,
 				})
 			case *ast.TupleRestPat:
 				elems = append(elems, &TupleRestPat{
-					Pattern: TransformPattern(e.Pattern),
+					Pattern: b.TransformPattern(e.Pattern),
 					span:    nil,
 					source:  e,
 				})
@@ -247,24 +249,20 @@ func (b *Builder) TransformStmt(stmt ast.Stmt) []Stmt {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
 		stmt := &ExprStmt{
-			Expr:   TransformExpr(s.Expr),
+			Expr:   b.TransformExpr(s.Expr),
 			span:   nil,
 			source: stmt,
 		}
 		return []Stmt{stmt}
 	case *ast.DeclStmt:
-		stmt := &DeclStmt{
-			Decl:   b.TransformDecl(s.Decl),
+		return b.TransformDecl(s.Decl)
+	case *ast.ReturnStmt:
+		stmt := &ReturnStmt{
+			Expr:   b.TransformExpr(s.Expr),
 			span:   nil,
 			source: stmt,
 		}
 		return []Stmt{stmt}
-	case *ast.ReturnStmt:
-		return &ReturnStmt{
-			Expr:   TransformExpr(s.Expr),
-			span:   nil,
-			source: stmt,
-		}
 	default:
 		panic("TransformStmt - default case should never happen")
 	}
@@ -273,7 +271,7 @@ func (b *Builder) TransformStmt(stmt ast.Stmt) []Stmt {
 func (b *Builder) TransformModule(mod *ast.Module) *Module {
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
-		stmts = append(stmts, TransformStmt(s))
+		stmts = slices.Concat(stmts, b.TransformStmt(s))
 	}
 	return &Module{
 		Stmts: stmts,
@@ -283,7 +281,7 @@ func (b *Builder) TransformModule(mod *ast.Module) *Module {
 func (b *Builder) TransformStmts(stmts []ast.Stmt) []Stmt {
 	var res []Stmt
 	for _, s := range stmts {
-		res = append(res, TransformStmt(s))
+		res = slices.Concat(res, b.TransformStmt(s))
 	}
 	return res
 }
@@ -291,37 +289,49 @@ func (b *Builder) TransformStmts(stmts []ast.Stmt) []Stmt {
 func (b *Builder) TransformDecl(decl ast.Decl) []Stmt {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		return &VarDecl{
+		varDecl := &VarDecl{
 			Kind:    VariableKind(d.Kind),
-			Pattern: TransformPattern(d.Pattern),
-			Init:    TransformExpr(d.Init),
+			Pattern: b.TransformPattern(d.Pattern),
+			Init:    b.TransformExpr(d.Init),
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,
 			source:  decl,
 		}
+		stmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: decl,
+		}
+		return []Stmt{stmt}
 	case *ast.FuncDecl:
 		var params []*Param
 		for _, p := range d.Params {
 			params = append(params, &Param{
-				Pattern: TransformPattern(p.Pattern),
+				Pattern: b.TransformPattern(p.Pattern),
 			})
 		}
-		return &FuncDecl{
+		fnDecl := &FuncDecl{
 			Name:    TransformIdentifier(d.Name),
 			Params:  params,
-			Body:    TransformStmts(d.Body.Stmts),
+			Body:    b.TransformStmts(d.Body.Stmts),
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,
 			source:  decl,
 		}
+		stmt := &DeclStmt{
+			Decl:   fnDecl,
+			span:   nil,
+			source: decl,
+		}
+		return []Stmt{stmt}
 	default:
 		panic("TODO - TransformDecl - default case")
 	}
 }
 
-func TransformExpr(expr ast.Expr) Expr {
+func (b *Builder) TransformExpr(expr ast.Expr) Expr {
 	if expr == nil {
 		return nil
 	}
@@ -346,55 +356,55 @@ func TransformExpr(expr ast.Expr) Expr {
 		}
 	case *ast.BinaryExpr:
 		return NewBinaryExpr(
-			TransformExpr(e.Left),
+			b.TransformExpr(e.Left),
 			BinaryOp(e.Op),
-			TransformExpr(e.Right),
+			b.TransformExpr(e.Right),
 			expr,
 		)
 	case *ast.UnaryExpr:
 		return NewUnaryExpr(
 			UnaryOp(e.Op),
-			TransformExpr(e.Arg),
+			b.TransformExpr(e.Arg),
 			expr,
 		)
 	case *ast.IdentExpr:
 		return NewIdentExpr(e.Name, expr)
 	case *ast.CallExpr:
 		return NewCallExpr(
-			TransformExpr(e.Callee),
-			TransformExprs(e.Args),
+			b.TransformExpr(e.Callee),
+			b.TransformExprs(e.Args),
 			e.OptChain,
 			expr,
 		)
 	case *ast.IndexExpr:
 		return NewIndexExpr(
-			TransformExpr(e.Object),
-			TransformExpr(e.Index),
+			b.TransformExpr(e.Object),
+			b.TransformExpr(e.Index),
 			e.OptChain,
 			expr,
 		)
 	case *ast.MemberExpr:
 		return NewMemberExpr(
-			TransformExpr(e.Object),
+			b.TransformExpr(e.Object),
 			TransformIdentifier(e.Prop),
 			e.OptChain,
 			expr,
 		)
 	case *ast.TupleExpr:
 		return NewArrayExpr(
-			TransformExprs(e.Elems),
+			b.TransformExprs(e.Elems),
 			expr,
 		)
 	case *ast.FuncExpr:
 		var params []*Param
 		for _, p := range e.Params {
 			params = append(params, &Param{
-				Pattern: TransformPattern(p.Pattern),
+				Pattern: b.TransformPattern(p.Pattern),
 			})
 		}
 		return NewFuncExpr(
 			params,
-			TransformStmts(e.Body.Stmts),
+			b.TransformStmts(e.Body.Stmts),
 			expr,
 		)
 	case *ast.IgnoreExpr:

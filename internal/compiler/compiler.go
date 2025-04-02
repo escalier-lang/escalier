@@ -17,7 +17,8 @@ type CompilerOutput struct {
 func Compile(source parser.Source) CompilerOutput {
 	p1 := parser.NewParser(source)
 	escMod := p1.ParseModule()
-	jsMod := codegen.TransformModule(escMod)
+	builder := &codegen.Builder{}
+	jsMod := builder.TransformModule(escMod)
 
 	p2 := codegen.NewPrinter()
 	p2.PrintModule(jsMod)

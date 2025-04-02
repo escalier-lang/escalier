@@ -42,7 +42,10 @@ fn sub(a, b) { return a - b }`,
 	}
 	p := parser.NewParser(source)
 	m1 := p.ParseModule()
-	m2 := TransformModule(m1)
+	builder := &Builder{
+		tempId: 0,
+	}
+	m2 := builder.TransformModule(m1)
 
 	printer := NewPrinter()
 	printer.PrintModule(m2)
