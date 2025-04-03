@@ -51,7 +51,7 @@ fn sub(a, b) { return a - b }`,
 	printer.PrintModule(m2)
 
 	snaps.MatchSnapshot(t, printer.Output)
-	if printer.location.Line != 7 {
-		t.Errorf("got %d, want 7", printer.location.Line)
+	if printer.location.Line != 11 {
+		t.Errorf("got %d, want 11", printer.location.Line)
 	}
 }
