@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
@@ -59,7 +61,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			parser := NewParser(source)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)
@@ -110,7 +114,9 @@ func TestParseStmtErrorHandling(t *testing.T) {
 				Contents: test.input,
 			}
 
-			parser := NewParser(source)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
 			stmt := parser.parseStmt()
 
 			snaps.MatchSnapshot(t, stmt)

@@ -1,7 +1,9 @@
 package codegen
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -40,7 +42,10 @@ func TestPrintModule(t *testing.T) {
 		Contents: `fn add(a, b) { return a + b }
 fn sub(a, b) { return a - b }`,
 	}
-	p := parser.NewParser(source)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
 	m1 := p.ParseModule()
 	builder := &Builder{
 		tempId: 0,

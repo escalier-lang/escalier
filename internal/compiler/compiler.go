@@ -1,8 +1,10 @@
 package compiler
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -15,7 +17,9 @@ type CompilerOutput struct {
 }
 
 func Compile(source parser.Source) CompilerOutput {
-	p1 := parser.NewParser(source)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p1 := parser.NewParser(ctx, source)
 	escMod := p1.ParseModule()
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildModule(escMod)

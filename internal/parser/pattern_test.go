@@ -1,7 +1,9 @@
 package parser
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
@@ -60,7 +62,9 @@ func TestParsePatternNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			parser := NewParser(source)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
 			expr := parser.parsePattern()
 
 			snaps.MatchSnapshot(t, expr)

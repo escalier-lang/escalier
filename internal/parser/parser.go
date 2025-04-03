@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 type Parser struct {
 	lexer   *Lexer
 	markers Stack[Marker]
+	ctx     context.Context
 	Errors  []*Error
 }
 
@@ -21,8 +23,9 @@ const (
 	MarkerDelim
 )
 
-func NewParser(source Source) *Parser {
+func NewParser(ctx context.Context, source Source) *Parser {
 	return &Parser{
+		ctx:     ctx,
 		lexer:   NewLexer(source),
 		markers: Stack[Marker]{},
 		Errors:  []*Error{},
