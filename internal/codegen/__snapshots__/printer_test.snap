@@ -27,10 +27,14 @@
 ---
 
 [TestPrintModule - 1]
-function add(a, b) {
+function add(temp1, temp2) {
+  const a = temp1;
+  const b = temp2;
   return a + b;
 }
-function sub(a, b) {
+function sub(temp3, temp4) {
+  const a = temp3;
+  const b = temp4;
   return a - b;
 }
 

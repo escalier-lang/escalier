@@ -104,8 +104,8 @@ func (p *Printer) PrintExpr(expr Expr) {
 		}
 		p.print(") {")
 		p.indent++
-		p.NewLine()
 		for _, stmt := range e.Body {
+			p.NewLine()
 			p.PrintStmt(stmt)
 		}
 		p.indent--
