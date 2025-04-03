@@ -16,6 +16,9 @@ type Identifier struct {
 	source ast.Node
 }
 
+func NewIdentifier(name string, source ast.Node) *Identifier {
+	return &Identifier{Name: name, source: source, span: nil}
+}
 func (i *Identifier) Span() *Span        { return i.span }
 func (i *Identifier) SetSpan(span *Span) { i.span = span }
 func (i *Identifier) Source() ast.Node   { return i.source }
@@ -124,7 +127,7 @@ const (
 	LessThanEqual                     // <=
 	GreaterThan                       // >
 	GreaterThanEqual                  // >=
-	Equal                             // ==
+	EqualEqual                        // ==
 	NotEqual                          // !=
 	LogicalAnd                        // &&
 	LogicalOr                         // ||
@@ -152,6 +155,7 @@ const (
 	UnaryPlus  UnaryOp = iota // +
 	UnaryMinus                // -
 	LogicalNot                // !
+	TypeOf                    // typeof
 )
 
 type UnaryExpr struct {

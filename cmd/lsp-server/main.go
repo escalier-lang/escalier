@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -71,8 +73,10 @@ func setTrace(context *glsp.Context, params *protocol.SetTraceParams) error {
 	return nil
 }
 
-func validate(context *glsp.Context, uri protocol.DocumentUri, contents string) {
-	p := parser.NewParser(parser.Source{
+func validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, parser.Source{
 		Contents: contents,
 	})
 	p.ParseModule()
@@ -103,7 +107,7 @@ func validate(context *glsp.Context, uri protocol.DocumentUri, contents string) 
 		})
 	}
 
-	go context.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
 		URI:         uri,
 		Diagnostics: diagnotics,
 		Version:     nil,

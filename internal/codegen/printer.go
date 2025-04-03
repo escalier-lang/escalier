@@ -38,7 +38,7 @@ var binaryOpMap = map[BinaryOp]string{
 	LessThanEqual:     "<=",
 	GreaterThan:       ">",
 	GreaterThanEqual:  ">=",
-	Equal:             "==",
+	EqualEqual:        "==",
 	NotEqual:          "!=",
 	LogicalAnd:        "&&",
 	LogicalOr:         "||",
@@ -104,8 +104,8 @@ func (p *Printer) PrintExpr(expr Expr) {
 		}
 		p.print(") {")
 		p.indent++
-		p.NewLine()
 		for _, stmt := range e.Body {
+			p.NewLine()
 			p.PrintStmt(stmt)
 		}
 		p.indent--

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,13 @@ func (parser *Parser) ParseExprWithMarker(marker Marker) ast.Expr {
 }
 
 func (parser *Parser) ParseExpr() ast.Expr {
+	select {
+	case <-parser.ctx.Done():
+		fmt.Println("Taking too long to parse")
+	default:
+		// continue
+	}
+
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
 

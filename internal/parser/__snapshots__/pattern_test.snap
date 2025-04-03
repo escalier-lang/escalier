@@ -77,7 +77,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:19},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:20},
     },
     inferredType: nil,
@@ -222,7 +222,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:18},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:19},
     },
     inferredType: nil,
@@ -273,7 +273,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:22},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:23},
     },
     inferredType: nil,

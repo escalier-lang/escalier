@@ -1,7 +1,9 @@
 package codegen
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -40,15 +42,21 @@ func TestPrintModule(t *testing.T) {
 		Contents: `fn add(a, b) { return a + b }
 fn sub(a, b) { return a - b }`,
 	}
-	p := parser.NewParser(source)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
 	m1 := p.ParseModule()
-	m2 := TransformModule(m1)
+	builder := &Builder{
+		tempId: 0,
+	}
+	m2 := builder.BuildModule(m1)
 
 	printer := NewPrinter()
 	printer.PrintModule(m2)
 
 	snaps.MatchSnapshot(t, printer.Output)
-	if printer.location.Line != 7 {
-		t.Errorf("got %d, want 7", printer.location.Line)
+	if printer.location.Line != 11 {
+		t.Errorf("got %d, want 11", printer.location.Line)
 	}
 }

@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +86,9 @@ func TestParseModuleNoErrors(t *testing.T) {
 				Contents: test.input,
 			}
 
-			parser := NewParser(source)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
 			module := parser.ParseModule()
 
 			for _, stmt := range module.Stmts {

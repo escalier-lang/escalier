@@ -1,4 +1,6 @@
-const add = function (a, b) {
+const add = function (temp1, temp2) {
+  const a = temp1;
+  const b = temp2;
   return a + b;
 };
 //# sourceMappingURL=./func_expr.esc.map

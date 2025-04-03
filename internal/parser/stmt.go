@@ -47,6 +47,13 @@ func (parser *Parser) parseStmt() ast.Stmt {
 		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
 		expr := parser.ParseExprWithMarker(MarkerExpr)
+		// If no tokens have been consumed then we've encountered something we
+		// don't know how to parse.
+		nextToken := parser.lexer.peek()
+		if token.Span.End.Line == nextToken.Span.End.Line &&
+			token.Span.End.Column == nextToken.Span.End.Column {
+			parser.lexer.consume()
+		}
 		return ast.NewExprStmt(expr, expr.Span())
 	}
 }

@@ -121,16 +121,71 @@ func (s *SourceMapGenerator) AddSegmentForNode(generated Node) {
 	}
 
 	source := generated.Source()
+	if source == nil {
+		return
+	}
+
+	sourceSpan := source.Span()
+	if sourceSpan.Start.Line == 0 && sourceSpan.Start.Column == 0 {
+		// this is a special case where the source is nil
+		// so we don't need to add a segment
+		return
+	}
 
 	segment := &Segment{
 		GeneratedStartColumn: generated.Span().Start.Column - 1,
 		SourceIndex:          0, // always 0 for now
-		SourceStartLine:      source.Span().Start.Line - 1,
-		SourceStartColumn:    source.Span().Start.Column - 1,
+		SourceStartLine:      sourceSpan.Start.Line - 1,
+		SourceStartColumn:    sourceSpan.Start.Column - 1,
 		NameIndex:            -1, // not used for now
 	}
 
 	s.groups[len(s.groups)-1] = append(s.groups[len(s.groups)-1], segment)
+}
+
+func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
+	s.AddSegmentForNode(pattern)
+
+	switch pk := pattern.(type) {
+	case *IdentPat:
+		s.AddSegmentForNode(pk)
+	case *TuplePat:
+		for _, elem := range pk.Elems {
+			switch elem := elem.(type) {
+			case *TupleElemPat:
+				s.TraversePattern(elem.Pattern)
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
+			case *TupleRestPat:
+				s.TraversePattern(elem.Pattern)
+			default:
+				panic("TODO - TraversePattern")
+			}
+		}
+	case *ObjectPat:
+		for _, elem := range pk.Elems {
+			switch elem := elem.(type) {
+			case *ObjKeyValuePat:
+				// s.AddSegmentForNode(elem.Key)
+				s.TraversePattern(elem.Value)
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
+			case *ObjShorthandPat:
+				// s.AddSegmentForNode(elem.Key)
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
+			case *ObjRestPat:
+				s.TraversePattern(elem.Pattern)
+			default:
+				panic("TODO - TraversePattern")
+			}
+		}
+	default:
+		panic("TODO - TraversePattern")
+	}
 }
 
 func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
@@ -142,10 +197,17 @@ func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 
 	switch dk := decl.(type) {
 	case *VarDecl:
+		// TODO: traverse the pattern to get more granular segments
+		// but for now we just add the segment for the decl's pattern
+		// and the init expression
+		s.TraversePattern(dk.Pattern)
 		if dk.Init != nil {
 			s.TraverseExpr(dk.Init)
 		}
 	case *FuncDecl:
+		for _, param := range dk.Params {
+			s.AddSegmentForNode(param.Pattern)
+		}
 		for _, stmt := range dk.Body {
 			s.TraverseStmt(stmt)
 		}
