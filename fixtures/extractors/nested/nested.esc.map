@@ -1,0 +1,1 @@
+{"version":3,"file":"./nested.js","sources":["./nested.esc"],"sourcesContent":["val subject = C(D(\"hello\"), E([5, 10]))\nval C(D(msg), E([x, y])) = subject\n"],"names":[],"mappings":"MAAI,AAAA,UAAU,AAAA,EAAE,AAAA,EAAE,UAAS,AAAA,EAAE,CAAC,GAAG;kDAC7B,GAAuB;2CAArB;MAAE,AAAA;2CAAM;MAAE,CAAC,AAAA,GAAG,AAAA"}

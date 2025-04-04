@@ -1,0 +1,1 @@
+{"version":3,"file":"./arg_with_init.js","sources":["./arg_with_init.esc"],"sourcesContent":["val subject = C(undefined, 5)\nval C(x = \"hello\", y) = subject\n"],"names":[],"mappings":"MAAI,AAAA,UAAU,AAAA,EAAa;eACjB,6CAAN,GAAmB;MAAjB,AAAA;MAAY,AAAA"}

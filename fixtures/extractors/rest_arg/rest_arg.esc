@@ -1,0 +1,2 @@
+val subject = C("hello", 5, true)
+val C(x, ...y) = subject

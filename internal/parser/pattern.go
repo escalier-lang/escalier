@@ -21,18 +21,57 @@ func (p *Parser) parsePattern() ast.Pat {
 		if token.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
-			pats := p.parsePatternSeq()
-			token = p.lexer.peek()
-			if token.Type != CloseParen {
-				msg := fmt.Sprintf("Expected ')', got '%s'", token.Value)
-				p.reportError(token.Span, msg)
-			} else {
-				p.lexer.consume() // consume ')'
-			}
-			span = ast.MergeSpans(span, token.Span)
+			patArgs := []ast.ExtractPatArg{}
+			first := true
+			for {
+				token = p.lexer.peek()
+				if token.Type == CloseParen {
+					p.lexer.consume()
+					break
+				}
+				if !first {
+					if token.Type != Comma {
+						msg := fmt.Sprintf("Expected ',', got '%s'", token.Value)
+						p.reportError(token.Span, msg)
+					} else {
+						p.lexer.consume()
+						token = p.lexer.peek()
+					}
+				}
+				if token.Type == DotDotDot {
+					p.lexer.consume()
+					span := token.Span
 
-			// TODO: support for default values
-			return ast.NewExtractPat(name, pats, span)
+					var identPat *ast.IdentPat
+					token = p.lexer.peek()
+					if token.Type == Identifier {
+						p.lexer.consume()
+						identPat = ast.NewIdentPat(token.Value, token.Span)
+						span = ast.MergeSpans(span, identPat.Span())
+					} else {
+						p.reportError(token.Span, "Expected identifier")
+						identPat = ast.NewIdentPat("", token.Span)
+					}
+					patArgs = append(patArgs, ast.NewExtractRestArgPat(identPat, span))
+				} else {
+					pat := p.parsePattern()
+					span := pat.Span()
+
+					var init ast.Expr
+					token = p.lexer.peek()
+					if token.Type == Equal {
+						p.lexer.consume()
+						init = p.ParseExprWithMarker(MarkerDelim)
+						span = ast.MergeSpans(span, init.Span())
+					}
+					patArgs = append(patArgs, ast.NewExtractArgPat(pat, init, span))
+				}
+				first = false
+			}
+
+			end := token.Span.End
+			span = ast.NewSpan(span.Start, end)
+			return ast.NewExtractPat(name, patArgs, span)
 		} else {
 			return ast.NewIdentPat(name, span)
 		}
@@ -41,7 +80,7 @@ func (p *Parser) parsePattern() ast.Pat {
 		return ast.NewWildcardPat(token.Span)
 	case OpenBracket: // Tuple
 		start := token.Span.Start
-		p.lexer.consume()
+		p.lexer.consume() // consume '['
 		patElems := []ast.TuplePatElem{}
 		first := true
 		for {
