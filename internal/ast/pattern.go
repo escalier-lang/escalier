@@ -119,14 +119,42 @@ func (p *TuplePat) Span() Span             { return p.span }
 func (p *TuplePat) InferredType() Type     { return p.inferredType }
 func (p *TuplePat) SetInferredType(t Type) { p.inferredType = t }
 
+type ExtractPatArg interface {
+	isExtractPatArg()
+}
+
+func (*ExtractArgPat) isExtractPatArg()     {}
+func (*ExtractRestArgPat) isExtractPatArg() {}
+
+type ExtractArgPat struct {
+	Pattern Pat
+	Default Expr // optional
+	span    Span
+}
+
+func NewExtractArgPat(pattern Pat, _default Expr, span Span) *ExtractArgPat {
+	return &ExtractArgPat{Pattern: pattern, Default: _default, span: span}
+}
+func (p *ExtractArgPat) Span() Span { return p.span }
+
+type ExtractRestArgPat struct {
+	Pattern Pat
+	span    Span
+}
+
+func NewExtractRestArgPat(pattern Pat, span Span) *ExtractRestArgPat {
+	return &ExtractRestArgPat{Pattern: pattern, span: span}
+}
+func (p *ExtractRestArgPat) Span() Span { return p.span }
+
 type ExtractPat struct {
 	Name         string // TODO: QualIdent
-	Args         []Pat
+	Args         []ExtractPatArg
 	span         Span
 	inferredType Type
 }
 
-func NewExtractPat(name string, args []Pat, span Span) *ExtractPat {
+func NewExtractPat(name string, args []ExtractPatArg, span Span) *ExtractPat {
 	return &ExtractPat{Name: name, Args: args, span: span, inferredType: nil}
 }
 func (p *ExtractPat) Span() Span             { return p.span }

@@ -99,21 +99,35 @@
 &ast.ExtractPat{
     Name: "Foo",
     Args: {
-        &ast.IdentPat{
-            Name: "a",
-            span: ast.Span{
+        &ast.ExtractArgPat{
+            Pattern: &ast.IdentPat{
+                Name: "a",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
-            inferredType: nil,
         },
-        &ast.IdentPat{
-            Name: "b",
-            span: ast.Span{
+        &ast.ExtractArgPat{
+            Pattern: &ast.IdentPat{
+                Name: "b",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
             },
-            inferredType: nil,
         },
     },
     span: ast.Span{
