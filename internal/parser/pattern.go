@@ -21,7 +21,7 @@ func (p *Parser) parsePattern() ast.Pat {
 		if token.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
-			patArgs := []ast.ExtractPatArg{}
+			patArgs := []ast.ExtractorPatArg{}
 			first := true
 			for {
 				token = p.lexer.peek()
@@ -52,7 +52,7 @@ func (p *Parser) parsePattern() ast.Pat {
 						p.reportError(token.Span, "Expected identifier")
 						identPat = ast.NewIdentPat("", token.Span)
 					}
-					patArgs = append(patArgs, ast.NewExtractRestArgPat(identPat, span))
+					patArgs = append(patArgs, ast.NewExtractorRestArgPat(identPat, span))
 				} else {
 					pat := p.parsePattern()
 					span := pat.Span()
@@ -64,14 +64,14 @@ func (p *Parser) parsePattern() ast.Pat {
 						init = p.ParseExprWithMarker(MarkerDelim)
 						span = ast.MergeSpans(span, init.Span())
 					}
-					patArgs = append(patArgs, ast.NewExtractArgPat(pat, init, span))
+					patArgs = append(patArgs, ast.NewExtractorArgPat(pat, init, span))
 				}
 				first = false
 			}
 
 			end := token.Span.End
 			span = ast.NewSpan(span.Start, end)
-			return ast.NewExtractPat(name, patArgs, span)
+			return ast.NewExtractorPat(name, patArgs, span)
 		} else {
 			return ast.NewIdentPat(name, span)
 		}

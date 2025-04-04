@@ -96,10 +96,10 @@
 ---
 
 [TestParsePatternNoErrors/ExtractPattern - 1]
-&ast.ExtractPat{
+&ast.ExtractorPat{
     Name: "Foo",
     Args: {
-        &ast.ExtractArgPat{
+        &ast.ExtractorArgPat{
             Pattern: &ast.IdentPat{
                 Name: "a",
                 span: ast.Span{
@@ -114,7 +114,7 @@
                 End:   ast.Location{Line:1, Column:6},
             },
         },
-        &ast.ExtractArgPat{
+        &ast.ExtractorArgPat{
             Pattern: &ast.IdentPat{
                 Name: "b",
                 span: ast.Span{

@@ -6,13 +6,13 @@ type Pat interface {
 	Inferrable
 }
 
-func (*IdentPat) isPat()    {}
-func (*ObjectPat) isPat()   {}
-func (*TuplePat) isPat()    {}
-func (*ExtractPat) isPat()  {}
-func (*LitPat) isPat()      {}
-func (*IsPat) isPat()       {}
-func (*WildcardPat) isPat() {}
+func (*IdentPat) isPat()     {}
+func (*ObjectPat) isPat()    {}
+func (*TuplePat) isPat()     {}
+func (*ExtractorPat) isPat() {}
+func (*LitPat) isPat()       {}
+func (*IsPat) isPat()        {}
+func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
@@ -119,47 +119,47 @@ func (p *TuplePat) Span() Span             { return p.span }
 func (p *TuplePat) InferredType() Type     { return p.inferredType }
 func (p *TuplePat) SetInferredType(t Type) { p.inferredType = t }
 
-type ExtractPatArg interface {
-	isExtractPatArg()
+type ExtractorPatArg interface {
+	isExtractorPatArg()
 }
 
-func (*ExtractArgPat) isExtractPatArg()     {}
-func (*ExtractRestArgPat) isExtractPatArg() {}
+func (*ExtractorArgPat) isExtractorPatArg()     {}
+func (*ExtractorRestArgPat) isExtractorPatArg() {}
 
-type ExtractArgPat struct {
+type ExtractorArgPat struct {
 	Pattern Pat
 	Default Expr // optional
 	span    Span
 }
 
-func NewExtractArgPat(pattern Pat, _default Expr, span Span) *ExtractArgPat {
-	return &ExtractArgPat{Pattern: pattern, Default: _default, span: span}
+func NewExtractorArgPat(pattern Pat, _default Expr, span Span) *ExtractorArgPat {
+	return &ExtractorArgPat{Pattern: pattern, Default: _default, span: span}
 }
-func (p *ExtractArgPat) Span() Span { return p.span }
+func (p *ExtractorArgPat) Span() Span { return p.span }
 
-type ExtractRestArgPat struct {
+type ExtractorRestArgPat struct {
 	Pattern Pat
 	span    Span
 }
 
-func NewExtractRestArgPat(pattern Pat, span Span) *ExtractRestArgPat {
-	return &ExtractRestArgPat{Pattern: pattern, span: span}
+func NewExtractorRestArgPat(pattern Pat, span Span) *ExtractorRestArgPat {
+	return &ExtractorRestArgPat{Pattern: pattern, span: span}
 }
-func (p *ExtractRestArgPat) Span() Span { return p.span }
+func (p *ExtractorRestArgPat) Span() Span { return p.span }
 
-type ExtractPat struct {
+type ExtractorPat struct {
 	Name         string // TODO: QualIdent
-	Args         []ExtractPatArg
+	Args         []ExtractorPatArg
 	span         Span
 	inferredType Type
 }
 
-func NewExtractPat(name string, args []ExtractPatArg, span Span) *ExtractPat {
-	return &ExtractPat{Name: name, Args: args, span: span, inferredType: nil}
+func NewExtractorPat(name string, args []ExtractorPatArg, span Span) *ExtractorPat {
+	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil}
 }
-func (p *ExtractPat) Span() Span             { return p.span }
-func (p *ExtractPat) InferredType() Type     { return p.inferredType }
-func (p *ExtractPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *ExtractorPat) Span() Span             { return p.span }
+func (p *ExtractorPat) InferredType() Type     { return p.inferredType }
+func (p *ExtractorPat) SetInferredType(t Type) { p.inferredType = t }
 
 type LitPat struct {
 	Lit          Lit

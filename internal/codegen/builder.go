@@ -150,7 +150,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				}
 			}
 			return NewTuplePat(elems, p)
-		case *ast.ExtractPat:
+		case *ast.ExtractorPat:
 			tempVars := []Expr{}
 			tempVarPats := []TuplePatElem{}
 
@@ -158,7 +158,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				tempId := b.NewTempId()
 				tempVar := NewIdentExpr(tempId, nil)
 				switch arg := arg.(type) {
-				case *ast.ExtractArgPat:
+				case *ast.ExtractorArgPat:
 					var init Expr
 					if arg.Default != nil {
 						init = b.buildExpr(arg.Default)
@@ -173,7 +173,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 						nil, // TODO: source
 					)
 					tempVarPats = append(tempVarPats, tempVarPat)
-				case *ast.ExtractRestArgPat:
+				case *ast.ExtractorRestArgPat:
 					tempVarPat := NewTupleRestPat(
 						&IdentPat{
 							Name:   tempId,
@@ -222,9 +222,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				var argStmts []Stmt
 
 				switch arg := arg.(type) {
-				case *ast.ExtractArgPat:
+				case *ast.ExtractorArgPat:
 					argChecks, argStmts = b.buildPattern(arg.Pattern, temp)
-				case *ast.ExtractRestArgPat:
+				case *ast.ExtractorRestArgPat:
 					argChecks, argStmts = b.buildPattern(arg.Pattern, temp)
 				}
 
