@@ -146,13 +146,15 @@ func (lexer *Lexer) next() *Token {
 
 		switch nextCodePoint {
 		case '.':
-			token = NewToken(QuestionDot, ".", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end})
 		case '(':
-			token = NewToken(QuestionOpenParen, "(", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end})
 		case '[':
-			token = NewToken(QuestionOpenBracket, "[", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end})
 		default:
-			token = NewToken(Invalid, "", ast.Span{Start: start, End: end})
+			endOffset -= width
+			end.Column--
+			token = NewToken(Question, "?", ast.Span{Start: start, End: end})
 		}
 	case ':':
 		token = NewToken(Colon, ":", ast.Span{Start: start, End: end})

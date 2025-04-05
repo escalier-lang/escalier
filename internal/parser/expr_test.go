@@ -106,6 +106,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"IfElseChaining": {
 			input: "if cond1 { a } else if cond2 { b } else { c }",
 		},
+		"BasicObject": {
+			input: "{ 0: \"hello\", foo: 5, bar?: true, [qux]: false }",
+		},
 	}
 
 	for name, test := range tests {

@@ -20,6 +20,7 @@ const (
 	JSXText
 	Underscore
 	Colon
+	Question
 
 	// keywords
 	Fn

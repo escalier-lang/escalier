@@ -59,7 +59,13 @@
                 Name:  "bar",
                 Value: &&ast.JSXExprContainer{
                     Expr: &ast.LiteralExpr{
-                        Lit:  &ast.NumLit{Value:5},
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                        },
                         span: ast.Span{
                             Start: ast.Location{Line:1, Column:11},
                             End:   ast.Location{Line:1, Column:12},
@@ -116,7 +122,13 @@
                 Name:  "bar",
                 Value: &&ast.JSXExprContainer{
                     Expr: &ast.LiteralExpr{
-                        Lit:  &ast.NumLit{Value:5},
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                        },
                         span: ast.Span{
                             Start: ast.Location{Line:1, Column:11},
                             End:   ast.Location{Line:1, Column:12},
@@ -476,7 +488,13 @@
                 Name:  "bar",
                 Value: &&ast.JSXExprContainer{
                     Expr: &ast.LiteralExpr{
-                        Lit:  &ast.NumLit{Value:5},
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                        },
                         span: ast.Span{
                             Start: ast.Location{Line:1, Column:11},
                             End:   ast.Location{Line:1, Column:12},
@@ -543,7 +561,13 @@
                 Name:  "bar",
                 Value: &&ast.JSXExprContainer{
                     Expr: &ast.LiteralExpr{
-                        Lit:  &ast.NumLit{Value:5},
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:2, Column:8},
+                                End:   ast.Location{Line:2, Column:9},
+                            },
+                        },
                         span: ast.Span{
                             Start: ast.Location{Line:2, Column:8},
                             End:   ast.Location{Line:2, Column:9},

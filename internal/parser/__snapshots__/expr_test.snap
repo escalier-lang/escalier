@@ -1,7 +1,13 @@
 
 [TestParseExprNoErrors/NumberLiteralLeadingDecimal - 1]
 &ast.LiteralExpr{
-    Lit:  &ast.NumLit{Value:0.5},
+    Lit: &ast.NumLit{
+        Value: 0.5,
+        span:  ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:3},
+        },
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:3},
@@ -333,7 +339,13 @@
 
 [TestParseExprNoErrors/NumberLiteralTrailingDecimal - 1]
 &ast.LiteralExpr{
-    Lit:  &ast.NumLit{Value:1},
+    Lit: &ast.NumLit{
+        Value: 1,
+        span:  ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:3},
+        },
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:3},
@@ -344,7 +356,13 @@
 
 [TestParseExprNoErrors/NumberLiteralDecimal - 1]
 &ast.LiteralExpr{
-    Lit:  &ast.NumLit{Value:1.5},
+    Lit: &ast.NumLit{
+        Value: 1.5,
+        span:  ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:4},
+        },
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:4},
@@ -355,7 +373,13 @@
 
 [TestParseExprNoErrors/NumberLiteral - 1]
 &ast.LiteralExpr{
-    Lit:  &ast.NumLit{Value:5},
+    Lit: &ast.NumLit{
+        Value: 5,
+        span:  ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
@@ -509,7 +533,13 @@
 
 [TestParseExprNoErrors/StringLiteral - 1]
 &ast.LiteralExpr{
-    Lit:  &ast.StrLit{Value:"hello"},
+    Lit: &ast.StrLit{
+        Value: "hello",
+        span:  ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:7},
+        },
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:7},
@@ -594,7 +624,13 @@
 &ast.UnaryExpr{
     Op:  1,
     Arg: &ast.LiteralExpr{
-        Lit:  &ast.NumLit{Value:5},
+        Lit: &ast.NumLit{
+            Value: 5,
+            span:  ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
+            },
+        },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:2},
             End:   ast.Location{Line:1, Column:3},
@@ -872,7 +908,13 @@
 &ast.TupleExpr{
     Elems: {
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:1},
+            Lit: &ast.NumLit{
+                Value: 1,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
@@ -880,7 +922,13 @@
             inferredType: nil,
         },
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:2},
+            Lit: &ast.NumLit{
+                Value: 2,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
@@ -888,7 +936,13 @@
             inferredType: nil,
         },
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:3},
+            Lit: &ast.NumLit{
+                Value: 3,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
@@ -1406,7 +1460,13 @@
 &ast.TupleExpr{
     Elems: {
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:1},
+            Lit: &ast.NumLit{
+                Value: 1,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
@@ -1414,7 +1474,13 @@
             inferredType: nil,
         },
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:2},
+            Lit: &ast.NumLit{
+                Value: 2,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
@@ -1422,7 +1488,13 @@
             inferredType: nil,
         },
         &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:3},
+            Lit: &ast.NumLit{
+                Value: 3,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
@@ -2045,5 +2117,122 @@
         },
         Message: "Expected an if or an opening brace",
     },
+}
+---
+
+[TestParseExprNoErrors/BasicObject - 1]
+&ast.ObjectExpr{
+    Elems: {
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprPropName]{
+            Name: &ast.NumLit{
+                Value: 0,
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:4},
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.StrLit{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:6},
+                        End:   ast.Location{Line:1, Column:12},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:6},
+                    End:   ast.Location{Line:1, Column:12},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprPropName]{
+            Name: &ast.IdentExpr{
+                Name: "foo",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:14},
+                    End:   ast.Location{Line:1, Column:17},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:19},
+                        End:   ast.Location{Line:1, Column:20},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:19},
+                    End:   ast.Location{Line:1, Column:20},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprPropName]{
+            Name: &ast.IdentExpr{
+                Name: "bar",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:22},
+                    End:   ast.Location{Line:1, Column:25},
+                },
+                inferredType: nil,
+            },
+            Optional: true,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.BoolLit{
+                    Value: true,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:28},
+                        End:   ast.Location{Line:1, Column:32},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:28},
+                    End:   ast.Location{Line:1, Column:32},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprPropName]{
+            Name: &ast.ComputedPropName{
+                Expr: &ast.IdentExpr{
+                    Name: "qux",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:35},
+                        End:   ast.Location{Line:1, Column:38},
+                    },
+                    inferredType: nil,
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.BoolLit{
+                    Value: false,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:41},
+                        End:   ast.Location{Line:1, Column:46},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:41},
+                    End:   ast.Location{Line:1, Column:46},
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:47},
+        End:   ast.Location{Line:1, Column:48},
+    },
+    inferredType: nil,
 }
 ---

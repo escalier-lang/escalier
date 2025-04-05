@@ -39,7 +39,13 @@
             inferredType: nil,
         },
         Init: &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:5},
+            Lit: &ast.NumLit{
+                Value: 5,
+                span:  ast.Span{
+                    Start: ast.Location{Line:2, Column:13},
+                    End:   ast.Location{Line:2, Column:14},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:2, Column:13},
                 End:   ast.Location{Line:2, Column:14},
@@ -449,7 +455,13 @@
             inferredType: nil,
         },
         Init: &ast.LiteralExpr{
-            Lit:  &ast.NumLit{Value:10},
+            Lit: &ast.NumLit{
+                Value: 10,
+                span:  ast.Span{
+                    Start: ast.Location{Line:3, Column:13},
+                    End:   ast.Location{Line:3, Column:15},
+                },
+            },
             span: ast.Span{
                 Start: ast.Location{Line:3, Column:13},
                 End:   ast.Location{Line:3, Column:15},
@@ -639,7 +651,13 @@
                                 inferredType: nil,
                             },
                             Init: &ast.LiteralExpr{
-                                Lit:  &ast.NumLit{Value:5},
+                                Lit: &ast.NumLit{
+                                    Value: 5,
+                                    span:  ast.Span{
+                                        Start: ast.Location{Line:3, Column:14},
+                                        End:   ast.Location{Line:3, Column:15},
+                                    },
+                                },
                                 span: ast.Span{
                                     Start: ast.Location{Line:3, Column:14},
                                     End:   ast.Location{Line:3, Column:15},
@@ -662,7 +680,13 @@
                         Expr: &ast.UnaryExpr{
                             Op:  1,
                             Arg: &ast.LiteralExpr{
-                                Lit:  &ast.NumLit{Value:10},
+                                Lit: &ast.NumLit{
+                                    Value: 10,
+                                    span:  ast.Span{
+                                        Start: ast.Location{Line:4, Column:7},
+                                        End:   ast.Location{Line:4, Column:9},
+                                    },
+                                },
                                 span: ast.Span{
                                     Start: ast.Location{Line:4, Column:7},
                                     End:   ast.Location{Line:4, Column:9},
@@ -701,7 +725,13 @@
                                     inferredType: nil,
                                 },
                                 Init: &ast.LiteralExpr{
-                                    Lit:  &ast.NumLit{Value:10},
+                                    Lit: &ast.NumLit{
+                                        Value: 10,
+                                        span:  ast.Span{
+                                            Start: ast.Location{Line:6, Column:15},
+                                            End:   ast.Location{Line:6, Column:17},
+                                        },
+                                    },
                                     span: ast.Span{
                                         Start: ast.Location{Line:6, Column:15},
                                         End:   ast.Location{Line:6, Column:17},
@@ -724,7 +754,13 @@
                             Expr: &ast.UnaryExpr{
                                 Op:  1,
                                 Arg: &ast.LiteralExpr{
-                                    Lit:  &ast.NumLit{Value:5},
+                                    Lit: &ast.NumLit{
+                                        Value: 5,
+                                        span:  ast.Span{
+                                            Start: ast.Location{Line:7, Column:7},
+                                            End:   ast.Location{Line:7, Column:8},
+                                        },
+                                    },
                                     span: ast.Span{
                                         Start: ast.Location{Line:7, Column:7},
                                         End:   ast.Location{Line:7, Column:8},

@@ -123,7 +123,7 @@ type FuncType struct {
 func (t *FuncType) Provenance() *Provenance     { return t.provenance }
 func (t *FuncType) SetProvenance(p *Provenance) { t.provenance = p }
 
-type PropName interface{ isPropName() }
+type ObjTypePropName interface{ isPropName() }
 
 func (*StrPropName) isPropName()    {}
 func (*NumPropName) isPropName()    {}
