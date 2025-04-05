@@ -2,9 +2,11 @@ package parser
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Source struct {
@@ -208,36 +210,34 @@ func (lexer *Lexer) next() *Token {
 			end.Column = start.Column + (i - startOffset)
 			token = NewToken(Number, contents[startOffset:i], ast.Span{Start: start, End: end})
 		}
-	case '_', '$',
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-		'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-		'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
-
-		contents := lexer.source.Contents
-		n := len(contents)
-		i := startOffset + 1
-		for i < n {
-			c := contents[i]
-			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '$' {
-				break
-			}
-			i++
-		}
-		endOffset = i
-		value := contents[startOffset:i]
-		end.Column = start.Column + i - startOffset
-		span := ast.Span{Start: start, End: end}
-
-		if keyword, ok := keywords[value]; ok {
-			token = NewToken(keyword, value, span)
-		} else if value == "_" {
-			token = NewToken(Underscore, value, span)
-		} else {
-			token = NewToken(Identifier, value, span)
-		}
 	default:
-		if startOffset >= len(lexer.source.Contents) {
+		c := codePoint
+		if idIdentStart(c) {
+			contents := lexer.source.Contents
+
+			n := len(contents)
+			i := startOffset
+			for i < n {
+				codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[i:])
+				if !isIdentContinue(codePoint) {
+					break
+				}
+				i += width
+			}
+			endOffset = i
+
+			value := string(norm.NFC.Bytes([]byte(contents[startOffset:i])))
+			end.Column = start.Column + utf8.RuneCountInString(value)
+			span := ast.Span{Start: start, End: end}
+
+			if keyword, ok := keywords[value]; ok {
+				token = NewToken(keyword, value, span)
+			} else if value == "_" {
+				token = NewToken(Underscore, value, span)
+			} else {
+				token = NewToken(Identifier, value, span)
+			}
+		} else if startOffset >= len(lexer.source.Contents) {
 			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start})
 		} else {
 			token = NewToken(Invalid, "", ast.Span{Start: start, End: start})
@@ -248,6 +248,31 @@ func (lexer *Lexer) next() *Token {
 	lexer.currentLocation = end
 
 	return token
+}
+
+// Based on https://www.unicode.org/reports/tr31/#D1
+func idIdentStart(r rune) bool {
+	return (r == '_' || r == '$' || // '_', '$' are not included in the UAX-31 spec
+		unicode.IsLetter(r) ||
+		unicode.Is(unicode.Nl, r) ||
+		unicode.Is(unicode.Other_ID_Start, r)) &&
+		!unicode.Is(unicode.Pattern_Syntax, r) &&
+		!unicode.Is(unicode.Pattern_White_Space, r)
+}
+
+// Based on https://www.unicode.org/reports/tr31/#D1
+func isIdentContinue(r rune) bool {
+	return (r == '_' || r == '$' || // '_', '$' are not included in the UAX-31 spec
+		unicode.IsLetter(r) ||
+		unicode.Is(unicode.Nl, r) ||
+		unicode.Is(unicode.Other_ID_Start, r) ||
+		unicode.Is(unicode.Mn, r) ||
+		unicode.Is(unicode.Mc, r) ||
+		unicode.Is(unicode.Nd, r) ||
+		unicode.Is(unicode.Pc, r) ||
+		unicode.Is(unicode.Other_ID_Continue, r)) &&
+		!unicode.Is(unicode.Pattern_Syntax, r) &&
+		!unicode.Is(unicode.Pattern_White_Space, r)
 }
 
 func (lexer *Lexer) peek() *Token {
