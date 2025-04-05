@@ -51,6 +51,12 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ExportDeclareFunctionDecl": {
 			input: "export declare fn foo(a, b)",
 		},
+		"UnicodeVarDecl": {
+			input: "val längd = 5",
+		},
+		"UnicodeFunctionDecl": {
+			input: "fn до́бра(a, b) { a + b }",
+		},
 	}
 
 	for name, test := range tests {
