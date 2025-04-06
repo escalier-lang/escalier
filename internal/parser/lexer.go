@@ -103,8 +103,17 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
 		}
 	case '=':
-		// TODO: handle ==, =>, etc.
-		token = NewToken(Equal, "=", ast.Span{Start: start, End: end})
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "==") {
+			endOffset++
+			end.Column++
+			token = NewToken(EqualEqual, "==", ast.Span{Start: start, End: end})
+		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "=>") {
+			endOffset++
+			end.Column++
+			token = NewToken(FatArrow, "=>", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(Equal, "=", ast.Span{Start: start, End: end})
+		}
 	case ',':
 		token = NewToken(Comma, ",", ast.Span{Start: start, End: end})
 	case '(':
@@ -120,26 +129,25 @@ func (lexer *Lexer) next() *Token {
 	case ']':
 		token = NewToken(CloseBracket, "]", ast.Span{Start: start, End: end})
 	case '<':
-		if startOffset+1 < len(lexer.source.Contents) {
-			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
-			switch nextCodePoint {
-			case '=':
-				endOffset++
-				end.Column++
-				token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end})
-			case '/':
-				endOffset++
-				end.Column++
-				token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end})
-			default:
-				token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
-			}
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "<=") {
+			endOffset++
+			end.Column++
+			token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end})
+		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "</") {
+			endOffset++
+			end.Column++
+			token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
 		}
 	case '>':
-		// TODO: handle >=
-		token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], ">=") {
+			endOffset++
+			end.Column++
+			token = NewToken(GreaterThanEqual, ">=", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
+		}
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})
 	case '?':

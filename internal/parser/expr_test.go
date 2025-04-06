@@ -115,6 +115,24 @@ func TestParseExprNoErrors(t *testing.T) {
 		"ObjectWithMethods": {
 			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(x) { this.x = x } }",
 		},
+		"LessThan": {
+			input: "a < b",
+		},
+		"GreaterThan": {
+			input: "a > b",
+		},
+		"LessThanEqual": {
+			input: "a <= b",
+		},
+		"GreaterThanEqual": {
+			input: "a >= b",
+		},
+		"Equal": {
+			input: "a == b",
+		},
+		"NotEqual": {
+			input: "a != b",
+		},
 	}
 
 	for name, test := range tests {

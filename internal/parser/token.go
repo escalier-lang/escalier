@@ -63,6 +63,7 @@ const (
 	GreaterThanEqual
 	LessThanSlash // Used for JSX
 	DotDotDot
+	FatArrow
 
 	// optional chaining
 	QuestionOpenParen
