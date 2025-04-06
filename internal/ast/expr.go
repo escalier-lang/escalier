@@ -72,6 +72,7 @@ const (
 	LogicalAnd                        // &&
 	LogicalOr                         // ||
 	NullishCoalescing                 // ??
+	Assign                            // =
 )
 
 type BinaryExpr struct {
@@ -112,7 +113,10 @@ func (e *UnaryExpr) InferredType() Type     { return e.inferredType }
 func (e *UnaryExpr) SetInferredType(t Type) { e.inferredType = t }
 
 //sumtype:decl
-type Lit interface{ isLiteral() }
+type Lit interface {
+	isLiteral()
+	Node
+}
 
 func (*BoolLit) isLiteral()      {}
 func (*NumLit) isLiteral()       {}
@@ -121,12 +125,24 @@ func (*BigIntLit) isLiteral()    {}
 func (*NullLit) isLiteral()      {}
 func (*UndefinedLit) isLiteral() {}
 
-type BoolLit struct{ Value bool }
-type NumLit struct{ Value float64 }
-type StrLit struct{ Value string }
-type BigIntLit struct{ Value big.Int }
-type NullLit struct{}
-type UndefinedLit struct{}
+type BoolLit struct {
+	Value bool
+	span  Span
+}
+type NumLit struct {
+	Value float64
+	span  Span
+}
+type StrLit struct {
+	Value string
+	span  Span
+}
+type BigIntLit struct {
+	Value big.Int
+	span  Span
+}
+type NullLit struct{ span Span }
+type UndefinedLit struct{ span Span }
 
 type LiteralExpr struct {
 	Lit          Lit
@@ -134,28 +150,43 @@ type LiteralExpr struct {
 	inferredType Type
 }
 
-func NewNumber(value float64, span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &NumLit{Value: value}, span: span, inferredType: nil}
+func NewNumber(value float64, span Span) *NumLit {
+	return &NumLit{Value: value, span: span}
 }
-func NewString(value string, span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &StrLit{Value: value}, span: span, inferredType: nil}
+func (l *NumLit) Span() Span { return l.span }
+
+func NewString(value string, span Span) *StrLit {
+	return &StrLit{Value: value, span: span}
 }
-func NewBoolean(value bool, span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &BoolLit{Value: value}, span: span, inferredType: nil}
+func (l *StrLit) Span() Span { return l.span }
+
+func NewBoolean(value bool, span Span) *BoolLit {
+	return &BoolLit{Value: value, span: span}
 }
-func NewBigInt(value big.Int, span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &BigIntLit{Value: value}, span: span, inferredType: nil}
+func (l *BoolLit) Span() Span { return l.span }
+
+func NewBigInt(value big.Int, span Span) *BigIntLit {
+	return &BigIntLit{Value: value, span: span}
 }
-func NewNull(span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &NullLit{}, span: span, inferredType: nil}
+func (l *BigIntLit) Span() Span { return l.span }
+
+func NewNull(span Span) *NullLit {
+	return &NullLit{span: span}
 }
-func NewUndefined(span Span) *LiteralExpr {
-	return &LiteralExpr{Lit: &UndefinedLit{}, span: span, inferredType: nil}
+func (l *NullLit) Span() Span { return l.span }
+
+func NewUndefined(span Span) *UndefinedLit {
+	return &UndefinedLit{span: span}
 }
+func (l *UndefinedLit) Span() Span { return l.span }
 
 func (e *LiteralExpr) Span() Span             { return e.span }
 func (e *LiteralExpr) InferredType() Type     { return e.inferredType }
 func (e *LiteralExpr) SetInferredType(t Type) { e.inferredType = t }
+
+func NewLitExpr(lit Lit) *LiteralExpr {
+	return &LiteralExpr{Lit: lit, span: lit.Span(), inferredType: nil}
+}
 
 type IdentExpr struct {
 	Name         string
@@ -245,12 +276,12 @@ func (e *TupleExpr) InferredType() Type     { return e.inferredType }
 func (e *TupleExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type ObjectExpr struct {
-	Elems        []*ObjExprElem
+	Elems        []ObjExprElem
 	span         Span
 	inferredType Type
 }
 
-func NewObject(elems []*ObjExprElem, span Span) *ObjectExpr {
+func NewObject(elems []ObjExprElem, span Span) *ObjectExpr {
 	return &ObjectExpr{Elems: elems, span: span, inferredType: nil}
 }
 func (e *ObjectExpr) Span() Span             { return e.span }

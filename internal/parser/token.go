@@ -20,9 +20,13 @@ const (
 	JSXText
 	Underscore
 	Colon
+	Question
 
 	// keywords
 	Fn
+	Get
+	Set
+	Static
 	Var
 	Val
 	If
@@ -52,13 +56,15 @@ const (
 	BackTick
 	Equal
 	EqualEqual
-	NotEqual
+	BangEqual
 	LessThan
 	LessThanEqual
 	GreaterThan
 	GreaterThanEqual
 	LessThanSlash // Used for JSX
 	DotDotDot
+	FatArrow
+	Bang
 
 	// optional chaining
 	QuestionOpenParen

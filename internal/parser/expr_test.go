@@ -106,6 +106,33 @@ func TestParseExprNoErrors(t *testing.T) {
 		"IfElseChaining": {
 			input: "if cond1 { a } else if cond2 { b } else { c }",
 		},
+		"BasicObject": {
+			input: "{ 0: \"hello\", foo: 5, \"bar\"?: true, baz, [qux]: false }",
+		},
+		"EmptyObject": {
+			input: "{}",
+		},
+		"ObjectWithMethods": {
+			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(x) { this.x = x } }",
+		},
+		"LessThan": {
+			input: "a < b",
+		},
+		"GreaterThan": {
+			input: "a > b",
+		},
+		"LessThanEqual": {
+			input: "a <= b",
+		},
+		"GreaterThanEqual": {
+			input: "a >= b",
+		},
+		"Equal": {
+			input: "a == b",
+		},
+		"NotEqual": {
+			input: "a != b",
+		},
 	}
 
 	for name, test := range tests {
@@ -122,7 +149,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			expr := parser.ParseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Equal(t, parser.Errors, []*Error{})
+			assert.Equal(t, []*Error{}, parser.Errors)
 		})
 	}
 }
@@ -175,6 +202,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"IncompleteElse": {
 			input: "if { a } else",
+		},
+		"ObjectMissingColon": {
+			input: "{ foo 5, bar: 10 }",
+		},
+		"ObjectMissingComma": {
+			input: "{ foo: 5 bar: 10 }",
 		},
 	}
 

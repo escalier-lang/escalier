@@ -14,6 +14,7 @@ var precedence = map[ast.BinaryOp]int{
 	ast.Modulo:            12,
 	ast.Plus:              11,
 	ast.Minus:             11,
+	ast.Assign:            10,
 	ast.LessThan:          9,
 	ast.LessThanEqual:     9,
 	ast.GreaterThan:       9,
@@ -59,6 +60,20 @@ loop:
 			nextOp = ast.Times
 		case Slash:
 			nextOp = ast.Divide
+		case Equal:
+			nextOp = ast.Assign
+		case EqualEqual:
+			nextOp = ast.Equal
+		case BangEqual:
+			nextOp = ast.NotEqual
+		case LessThan:
+			nextOp = ast.LessThan
+		case LessThanEqual:
+			nextOp = ast.LessThanEqual
+		case GreaterThan:
+			nextOp = ast.GreaterThan
+		case GreaterThanEqual:
+			nextOp = ast.GreaterThanEqual
 		case CloseParen, CloseBracket, CloseBrace, Comma, EndOfFile, Var, Val, Fn, Return:
 			break loop
 		default:
@@ -214,14 +229,48 @@ loop:
 	return expr
 }
 
+func (p *Parser) parseObjKey() ast.ObjExprKey {
+	token := p.lexer.peek()
+
+	//nolint: exhaustive
+	switch token.Type {
+	case Identifier, Underscore:
+		p.lexer.consume()
+		return ast.NewIdent(token.Value, token.Span)
+	case String:
+		p.lexer.consume()
+		return ast.NewString(token.Value, token.Span)
+	case Number:
+		p.lexer.consume()
+		value, err := strconv.ParseFloat(token.Value, 64)
+		if err != nil {
+			p.reportError(token.Span, "Expected a number")
+		}
+		return ast.NewNumber(value, token.Span)
+	case OpenBracket:
+		p.lexer.consume()
+		expr := p.ParseExprWithMarker(MarkerDelim)
+		final := p.lexer.next() // consume the closing bracket
+		if final.Type != CloseBracket {
+			p.reportError(token.Span, "Expected a closing bracket")
+		}
+		return &ast.ComputedKey{Expr: expr}
+	default:
+		p.reportError(token.Span, "Expected a property name")
+		return nil
+	}
+}
+
 func (parser *Parser) parsePrimary() ast.Expr {
 	ops := parser.parsePrefix()
 	token := parser.lexer.peek()
 
 	var expr ast.Expr
 
-	// Loop until we parse a primary expression.
+	// Loop so that we can skip over unexpected tokens
 	for expr == nil {
+		start := token.Span.Start
+
 		//nolint: exhaustive
 		switch token.Type {
 		case Number:
@@ -230,16 +279,16 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			if err != nil {
 				// TODO: handle parsing errors
 			}
-			expr = ast.NewNumber(value, token.Span)
+			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
 		case String:
 			parser.lexer.consume()
-			expr = ast.NewString(token.Value, token.Span)
+			expr = ast.NewLitExpr(ast.NewString(token.Value, token.Span))
 		case True:
 			parser.lexer.consume()
-			expr = ast.NewBoolean(true, token.Span)
+			expr = ast.NewLitExpr(ast.NewBoolean(true, token.Span))
 		case False:
 			parser.lexer.consume()
-			expr = ast.NewBoolean(false, token.Span)
+			expr = ast.NewLitExpr(ast.NewBoolean(false, token.Span))
 		case Identifier, Underscore:
 			parser.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)
@@ -258,6 +307,162 @@ func (parser *Parser) parsePrimary() ast.Expr {
 				parser.reportError(token.Span, "Expected a closing bracket")
 			}
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
+		case OpenBrace:
+			var elems []ast.ObjExprElem
+			var first bool = true
+			parser.lexer.consume()
+		loop:
+			for {
+				token = parser.lexer.peek()
+				if token.Type == CloseBrace {
+					break
+				}
+
+				if !first {
+					token = parser.lexer.peek()
+					if token.Type == Comma {
+						parser.lexer.consume()
+						token = parser.lexer.peek()
+					} else {
+						parser.reportError(token.Span, "Expected a comma")
+					}
+				}
+
+				mod := ""
+				if token.Type == Get {
+					parser.lexer.consume() // consume 'get'
+					mod = "get"
+				} else if token.Type == Set {
+					parser.lexer.consume() // consume 'set'
+					mod = "set"
+				}
+
+				objKey := parser.parseObjKey()
+				if objKey == nil {
+					break
+				}
+				token = parser.lexer.peek()
+
+				// TODO: loop until we find a ':', '?', '(', ',' or '}' so
+				// that we can skip over unexpected tokens
+
+				switch token.Type {
+				case Colon:
+					parser.lexer.consume() // consume ':'
+					value := parser.ParseExprWithMarker(MarkerDelim)
+					if value == nil {
+						break
+					}
+					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+						Name:     objKey,
+						Value:    value,
+						Readonly: false, // TODO
+						Optional: false,
+					}
+					elems = append(elems, property)
+				case Question:
+					parser.lexer.consume() // consume '?'
+					token = parser.lexer.peek()
+					if token.Type != Colon {
+						parser.reportError(token.Span, "Expected a colon")
+					} else {
+						parser.lexer.consume() // consume ':'
+					}
+					value := parser.ParseExprWithMarker(MarkerDelim)
+					if value == nil {
+						break
+					}
+					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+						Name:     objKey,
+						Value:    value,
+						Readonly: true,
+						Optional: false,
+					}
+					elems = append(elems, property)
+				case OpenParen:
+					parser.lexer.consume() // consume '('
+					params := parser.parseParamSeq()
+
+					token = parser.lexer.peek()
+					if token.Type != CloseParen {
+						parser.reportError(token.Span, "Expected a closing paren")
+					} else {
+						parser.lexer.consume() // consume ')'
+					}
+
+					body := parser.parseBlock()
+					end := body.Span.End
+
+					// TODO: parse return and throws types
+					fn := ast.NewFuncExpr(
+						params,
+						nil,
+						nil,
+						body,
+						ast.Span{Start: start, End: end},
+					)
+
+					if mod == "get" {
+						method := &ast.Getter[ast.Expr, ast.ObjExprKey]{
+							Name: objKey,
+							Fn:   fn,
+						}
+						elems = append(elems, method)
+					} else if mod == "set" {
+						method := &ast.Setter[ast.Expr, ast.ObjExprKey]{
+							Name: objKey,
+							Fn:   fn,
+						}
+						elems = append(elems, method)
+					} else {
+						method := &ast.Method[ast.Expr, ast.ObjExprKey]{
+							Name: objKey,
+							Fn:   fn,
+						}
+						elems = append(elems, method)
+					}
+				default:
+					switch objKey.(type) {
+					case *ast.IdentExpr:
+						switch token.Type {
+						case Comma, CloseBrace:
+							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+								Name:     objKey,
+								Value:    nil, // shorthand property
+								Readonly: false,
+								Optional: false,
+							}
+							elems = append(elems, property)
+							if token.Type == CloseBrace {
+								break loop
+							}
+						default:
+							value := parser.ParseExprWithMarker(MarkerDelim)
+							if value == nil {
+								parser.reportError(token.Span, "Expected a comma, closing brace, or expression")
+							} else {
+								parser.reportError(token.Span, "Expected a comma or closing brace")
+							}
+							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+								Name:     objKey,
+								Value:    value,
+								Readonly: false,
+								Optional: false,
+							}
+							elems = append(elems, property)
+						}
+					default:
+						parser.reportError(token.Span, "Expected a comma or closing brace")
+					}
+				}
+
+				first = false
+			}
+			final := parser.lexer.next() // consume the closing brace
+			if final.Type != CloseBrace {
+				parser.reportError(token.Span, "Expected a closing brace")
+			}
+			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
 		case BackTick:
 			expr = parser.parseTemplateLitExpr(token, nil)
 		case Fn:
@@ -313,7 +518,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			return expr
 		default:
 			parser.lexer.consume()
-			parser.reportError(token.Span, "Unexpected token")
+			parser.reportError(token.Span, fmt.Sprintf("Unexpected token, '%s'", token.Value))
 			token = parser.lexer.peek()
 		}
 	}
