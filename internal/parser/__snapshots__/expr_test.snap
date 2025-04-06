@@ -870,7 +870,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:1},
+                    Start: ast.Location{Line:1, Column:3},
                     End:   ast.Location{Line:1, Column:25},
                 },
                 inferredType: nil,
@@ -938,7 +938,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:1},
+                    Start: ast.Location{Line:1, Column:31},
                     End:   ast.Location{Line:1, Column:58},
                 },
                 inferredType: nil,
@@ -1022,7 +1022,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:1},
+                    Start: ast.Location{Line:1, Column:64},
                     End:   ast.Location{Line:1, Column:85},
                 },
                 inferredType: nil,
@@ -1030,7 +1030,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:86},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:87},
     },
     inferredType: nil,
@@ -1291,7 +1291,7 @@
 &ast.ObjectExpr{
     Elems: nil,
     span:  ast.Span{
-        Start: ast.Location{Line:1, Column:2},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:3},
     },
     inferredType: nil,
@@ -2469,7 +2469,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:53},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:54},
     },
     inferredType: nil,
@@ -2533,7 +2533,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:18},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:19},
     },
     inferredType: nil,
@@ -2609,7 +2609,7 @@
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:18},
+        Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:19},
     },
     inferredType: nil,

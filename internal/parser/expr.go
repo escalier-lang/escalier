@@ -266,8 +266,6 @@ func (p *Parser) parsePrimary() ast.Expr {
 
 	// Loop so that we can skip over unexpected tokens
 	for expr == nil {
-		start := token.Span.Start
-
 		//nolint: exhaustive
 		switch token.Type {
 		case Number:
@@ -299,141 +297,8 @@ func (p *Parser) parsePrimary() ast.Expr {
 			end := p.expect(CloseBracket, AlwaysConsume)
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end})
 		case OpenBrace:
-			var elems []ast.ObjExprElem
-			var first bool = true
 			p.lexer.consume()
-		loop:
-			for {
-				token = p.lexer.peek()
-				if token.Type == CloseBrace {
-					break
-				}
-
-				if !first {
-					p.expect(Comma, ConsumeOnMatch)
-				}
-
-				token = p.lexer.peek()
-
-				mod := ""
-				if token.Type == Get {
-					p.lexer.consume() // consume 'get'
-					mod = "get"
-				} else if token.Type == Set {
-					p.lexer.consume() // consume 'set'
-					mod = "set"
-				}
-
-				objKey := p.parseObjKey()
-				if objKey == nil {
-					break
-				}
-				token = p.lexer.peek()
-
-				// TODO: loop until we find a ':', '?', '(', ',' or '}' so
-				// that we can skip over unexpected tokens
-
-				switch token.Type {
-				case Colon:
-					p.lexer.consume() // consume ':'
-					value := p.ParseExprWithMarker(MarkerDelim)
-					if value == nil {
-						break
-					}
-					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-						Name:     objKey,
-						Value:    value,
-						Readonly: false, // TODO
-						Optional: false,
-					}
-					elems = append(elems, property)
-				case Question:
-					p.lexer.consume() // consume '?'
-					p.expect(Colon, ConsumeOnMatch)
-					value := p.ParseExprWithMarker(MarkerDelim)
-					if value == nil {
-						break
-					}
-					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-						Name:     objKey,
-						Value:    value,
-						Readonly: true,
-						Optional: false,
-					}
-					elems = append(elems, property)
-				case OpenParen:
-					p.lexer.consume() // consume '('
-					params := p.parseParamSeq()
-					p.expect(CloseParen, ConsumeOnMatch)
-
-					body := p.parseBlock()
-					end := body.Span.End
-
-					// TODO: parse return and throws types
-					fn := ast.NewFuncExpr(
-						params,
-						nil,
-						nil,
-						body,
-						ast.Span{Start: start, End: end},
-					)
-
-					if mod == "get" {
-						method := &ast.Getter[ast.Expr, ast.ObjExprKey]{
-							Name: objKey,
-							Fn:   fn,
-						}
-						elems = append(elems, method)
-					} else if mod == "set" {
-						method := &ast.Setter[ast.Expr, ast.ObjExprKey]{
-							Name: objKey,
-							Fn:   fn,
-						}
-						elems = append(elems, method)
-					} else {
-						method := &ast.Method[ast.Expr, ast.ObjExprKey]{
-							Name: objKey,
-							Fn:   fn,
-						}
-						elems = append(elems, method)
-					}
-				default:
-					switch objKey.(type) {
-					case *ast.IdentExpr:
-						switch token.Type {
-						case Comma, CloseBrace:
-							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-								Name:     objKey,
-								Value:    nil, // shorthand property
-								Readonly: false,
-								Optional: false,
-							}
-							elems = append(elems, property)
-							if token.Type == CloseBrace {
-								break loop
-							}
-						default:
-							value := p.ParseExprWithMarker(MarkerDelim)
-							if value == nil {
-								p.reportError(token.Span, "Expected a comma, closing brace, or expression")
-							} else {
-								p.reportError(token.Span, "Expected a comma or closing brace")
-							}
-							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-								Name:     objKey,
-								Value:    value,
-								Readonly: false,
-								Optional: false,
-							}
-							elems = append(elems, property)
-						}
-					default:
-						p.reportError(token.Span, "Expected a comma or closing brace")
-					}
-				}
-
-				first = false
-			}
+			elems := p.parseObjExprElems()
 			end := p.expect(CloseBrace, AlwaysConsume)
 			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: end})
 		case BackTick:
@@ -525,6 +390,145 @@ func (p *Parser) parseExprSeq() []ast.Expr {
 			return exprs
 		}
 	}
+}
+
+func (p *Parser) parseObjExprElems() []ast.ObjExprElem {
+	var elems []ast.ObjExprElem
+	var first bool = true
+loop:
+	for {
+		token := p.lexer.peek()
+		if token.Type == CloseBrace {
+			break
+		}
+
+		if !first {
+			p.expect(Comma, ConsumeOnMatch)
+		}
+
+		token = p.lexer.peek()
+
+		mod := ""
+		if token.Type == Get {
+			p.lexer.consume() // consume 'get'
+			mod = "get"
+		} else if token.Type == Set {
+			p.lexer.consume() // consume 'set'
+			mod = "set"
+		}
+
+		objKey := p.parseObjKey()
+		if objKey == nil {
+			break
+		}
+		token = p.lexer.peek()
+
+		// TODO: loop until we find a ':', '?', '(', ',' or '}' so
+		// that we can skip over unexpected tokens
+
+		switch token.Type {
+		case Colon:
+			p.lexer.consume() // consume ':'
+			value := p.ParseExprWithMarker(MarkerDelim)
+			if value == nil {
+				break
+			}
+			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+				Name:     objKey,
+				Value:    value,
+				Readonly: false, // TODO
+				Optional: false,
+			}
+			elems = append(elems, property)
+		case Question:
+			p.lexer.consume() // consume '?'
+			p.expect(Colon, ConsumeOnMatch)
+			value := p.ParseExprWithMarker(MarkerDelim)
+			if value == nil {
+				break
+			}
+			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+				Name:     objKey,
+				Value:    value,
+				Readonly: true,
+				Optional: false,
+			}
+			elems = append(elems, property)
+		case OpenParen:
+			p.lexer.consume() // consume '('
+			params := p.parseParamSeq()
+			p.expect(CloseParen, ConsumeOnMatch)
+
+			body := p.parseBlock()
+			end := body.Span.End
+
+			// TODO: parse return and throws types
+			fn := ast.NewFuncExpr(
+				params,
+				nil,
+				nil,
+				body,
+				ast.Span{Start: objKey.Span().Start, End: end},
+			)
+
+			if mod == "get" {
+				method := &ast.Getter[ast.Expr, ast.ObjExprKey]{
+					Name: objKey,
+					Fn:   fn,
+				}
+				elems = append(elems, method)
+			} else if mod == "set" {
+				method := &ast.Setter[ast.Expr, ast.ObjExprKey]{
+					Name: objKey,
+					Fn:   fn,
+				}
+				elems = append(elems, method)
+			} else {
+				method := &ast.Method[ast.Expr, ast.ObjExprKey]{
+					Name: objKey,
+					Fn:   fn,
+				}
+				elems = append(elems, method)
+			}
+		default:
+			switch objKey.(type) {
+			case *ast.IdentExpr:
+				switch token.Type {
+				case Comma, CloseBrace:
+					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+						Name:     objKey,
+						Value:    nil, // shorthand property
+						Readonly: false,
+						Optional: false,
+					}
+					elems = append(elems, property)
+					if token.Type == CloseBrace {
+						break loop
+					}
+				default:
+					value := p.ParseExprWithMarker(MarkerDelim)
+					if value == nil {
+						p.reportError(token.Span, "Expected a comma, closing brace, or expression")
+					} else {
+						p.reportError(token.Span, "Expected a comma or closing brace")
+					}
+					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+						Name:     objKey,
+						Value:    value,
+						Readonly: false,
+						Optional: false,
+					}
+					elems = append(elems, property)
+				}
+			default:
+				p.reportError(token.Span, "Expected a comma or closing brace")
+			}
+		}
+
+		first = false
+	}
+
+	return elems
 }
 
 // TODO: parse type annotations
