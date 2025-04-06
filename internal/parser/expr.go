@@ -64,7 +64,7 @@ loop:
 			nextOp = ast.Assign
 		case EqualEqual:
 			nextOp = ast.Equal
-		case NotEqual:
+		case BangEqual:
 			nextOp = ast.NotEqual
 		case LessThan:
 			nextOp = ast.LessThan

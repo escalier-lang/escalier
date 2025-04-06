@@ -56,7 +56,7 @@ const (
 	BackTick
 	Equal
 	EqualEqual
-	NotEqual
+	BangEqual
 	LessThan
 	LessThanEqual
 	GreaterThan
@@ -64,6 +64,7 @@ const (
 	LessThanSlash // Used for JSX
 	DotDotDot
 	FatArrow
+	Bang
 
 	// optional chaining
 	QuestionOpenParen

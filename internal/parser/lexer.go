@@ -90,15 +90,11 @@ func (lexer *Lexer) next() *Token {
 	case '*':
 		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end})
 	case '/':
-		if startOffset+1 < len(lexer.source.Contents) {
-			nextCodePoint, _ := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+1:])
-			if nextCodePoint == '>' {
-				endOffset++
-				end.Column++
-				token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end})
-			} else {
-				token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
-			}
+		// TODO: handle comments, e.g. // and /* */
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "/>") {
+			endOffset++
+			end.Column++
+			token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
 		}
@@ -151,21 +147,28 @@ func (lexer *Lexer) next() *Token {
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})
 	case '?':
-		nextCodePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset+width:])
-		endOffset += width
-		end.Column++
-
-		switch nextCodePoint {
-		case '.':
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "?.") {
+			endOffset++
+			end.Column++
 			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end})
-		case '(':
+		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?(") {
+			endOffset++
+			end.Column++
 			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end})
-		case '[':
+		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?[") {
+			endOffset++
+			end.Column++
 			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end})
-		default:
-			endOffset -= width
-			end.Column--
+		} else {
 			token = NewToken(Question, "?", ast.Span{Start: start, End: end})
+		}
+	case '!':
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
+			endOffset++
+			end.Column++
+			token = NewToken(BangEqual, "!=", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(Bang, "!", ast.Span{Start: start, End: end})
 		}
 	case ':':
 		token = NewToken(Colon, ":", ast.Span{Start: start, End: end})

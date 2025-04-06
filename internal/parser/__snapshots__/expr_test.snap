@@ -2744,11 +2744,27 @@
 ---
 
 [TestParseExprNoErrors/NotEqual - 1]
-&ast.IdentExpr{
-    Name: "a",
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name: "a",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
+    },
+    Op:    10,
+    Right: &ast.IdentExpr{
+        Name: "b",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        inferredType: nil,
+    },
     span: ast.Span{
         Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:2},
+        End:   ast.Location{Line:1, Column:7},
     },
     inferredType: nil,
 }
