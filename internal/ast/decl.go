@@ -41,6 +41,10 @@ type Param struct {
 	// TODO: include type annotation
 }
 
+func (p *Param) Span() Span {
+	return p.Pattern.Span()
+}
+
 type FuncDecl struct {
 	Name    *Ident
 	Params  []*Param

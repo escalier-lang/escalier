@@ -133,6 +133,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"NotEqual": {
 			input: "a != b",
 		},
+		"FuncCall": {
+			input: "foo()",
+		},
 	}
 
 	for name, test := range tests {
@@ -146,7 +149,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.ParseExpr()
+			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Equal(t, []*Error{}, parser.Errors)
@@ -222,7 +225,7 @@ func TestParseExprErrorHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.ParseExpr()
+			expr := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Greater(t, len(parser.Errors), 0)

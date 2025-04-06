@@ -88,7 +88,10 @@ type RestSpread[T any] struct {
 	Value T
 }
 
-type ObjExprKey interface{ isObjExprKey() }
+type ObjExprKey interface {
+	isObjExprKey()
+	Node
+}
 
 func (*IdentExpr) isObjExprKey()   {}
 func (*StrLit) isObjExprKey()      {}
@@ -102,3 +105,4 @@ type ComputedKey struct {
 func NewComputedKey(expr Expr) *ComputedKey {
 	return &ComputedKey{Expr: expr}
 }
+func (c *ComputedKey) Span() Span { return c.Expr.Span() }
