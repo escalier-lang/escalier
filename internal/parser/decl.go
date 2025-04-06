@@ -2,20 +2,20 @@ package parser
 
 import "github.com/escalier-lang/escalier/internal/ast"
 
-func (parser *Parser) parseDecl() ast.Decl {
+func (p *Parser) parseDecl() ast.Decl {
 	export := false
 	declare := false
 
-	token := parser.lexer.next()
+	token := p.lexer.next()
 	start := token.Span.Start
 	if token.Type == Export {
 		export = true
-		token = parser.lexer.next()
+		token = p.lexer.next()
 	}
 
 	if token.Type == Declare {
 		declare = true
-		token = parser.lexer.next()
+		token = p.lexer.next()
 	}
 
 	//nolint: exhaustive
@@ -26,9 +26,9 @@ func (parser *Parser) parseDecl() ast.Decl {
 			kind = ast.VarKind
 		}
 
-		pat := parser.parsePattern()
+		pat := p.parsePattern()
 		if pat == nil {
-			parser.reportError(token.Span, "Expected pattern")
+			p.reportError(token.Span, "Expected pattern")
 			pat = ast.NewIdentPat(
 				"",
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
@@ -36,62 +36,60 @@ func (parser *Parser) parseDecl() ast.Decl {
 		}
 		end := pat.Span().End
 
-		token = parser.lexer.peek()
+		token = p.lexer.peek()
 		var init ast.Expr
 		if !declare {
 			if token.Type != Equal {
-				parser.reportError(token.Span, "Expected equals sign")
+				p.reportError(token.Span, "Expected equals sign")
 				return nil
 			}
-			parser.lexer.consume()
-			parser.markers.Push(MarkerExpr)
-			init = parser.ParseExpr()
-			parser.markers.Pop()
+			p.lexer.consume()
+			init = p.parseNonDelimitedExpr()
 			end = init.Span().End
 		}
 
 		return ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end})
 	case Fn:
-		token := parser.lexer.peek()
+		token := p.lexer.peek()
 		var ident *ast.Ident
 		if token.Type == Identifier {
-			parser.lexer.consume()
+			p.lexer.consume()
 			ident = ast.NewIdentifier(token.Value, token.Span)
 		} else {
-			parser.reportError(token.Span, "Expected identifier")
+			p.reportError(token.Span, "Expected identifier")
 			ident = ast.NewIdentifier(
 				"",
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			)
 		}
 
-		token = parser.lexer.peek()
+		token = p.lexer.peek()
 		if token.Type != OpenParen {
-			parser.reportError(token.Span, "Expected an opening paren")
+			p.reportError(token.Span, "Expected an opening paren")
 		} else {
-			parser.lexer.consume()
+			p.lexer.consume()
 		}
 
-		params := parser.parseParamSeq()
+		params := parseDelimSeq(p, CloseParen, Comma, p.parseParam)
 
-		token = parser.lexer.peek()
+		token = p.lexer.peek()
 		if token.Type != CloseParen {
-			parser.reportError(token.Span, "Expected a closing paren")
+			p.reportError(token.Span, "Expected a closing paren")
 		} else {
-			parser.lexer.consume()
+			p.lexer.consume()
 		}
 
 		end := token.Span.End
 
 		var body ast.Block
 		if !declare {
-			body = parser.parseBlock()
+			body = p.parseBlock()
 			end = body.Span.End
 		}
 
 		return ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end})
 	default:
-		parser.reportError(token.Span, "Unexpected token")
+		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }

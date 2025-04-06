@@ -61,7 +61,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init = p.ParseExprWithMarker(MarkerDelim)
+						init = p.parseExpr()
 						span = ast.MergeSpans(span, init.Span())
 					}
 					patArgs = append(patArgs, ast.NewExtractorArgPat(pat, init, span))
@@ -121,7 +121,7 @@ func (p *Parser) parsePattern() ast.Pat {
 				token = p.lexer.peek()
 				if token.Type == Equal {
 					p.lexer.consume()
-					init = p.ParseExprWithMarker(MarkerDelim)
+					init = p.parseExpr()
 					span = ast.MergeSpans(span, init.Span())
 				}
 				patElems = append(patElems, ast.NewTupleElemPat(pat, init, span))
@@ -164,7 +164,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init = p.ParseExprWithMarker(MarkerDelim)
+						init = p.parseExpr()
 						span = ast.MergeSpans(span, init.Span())
 					}
 
@@ -174,7 +174,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					token = p.lexer.peek()
 					if token.Type == Equal {
 						p.lexer.consume()
-						init = p.ParseExprWithMarker(MarkerDelim)
+						init = p.parseExpr()
 						span = ast.MergeSpans(span, init.Span())
 					}
 
