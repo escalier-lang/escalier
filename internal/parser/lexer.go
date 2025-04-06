@@ -30,6 +30,9 @@ func NewLexer(source Source) *Lexer {
 
 var keywords = map[string]TokenType{
 	"fn":        Fn,
+	"get":       Get,
+	"set":       Set,
+	"static":    Static,
 	"var":       Var,
 	"val":       Val,
 	"return":    Return,

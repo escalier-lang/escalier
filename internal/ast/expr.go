@@ -72,6 +72,7 @@ const (
 	LogicalAnd                        // &&
 	LogicalOr                         // ||
 	NullishCoalescing                 // ??
+	Assign                            // =
 )
 
 type BinaryExpr struct {

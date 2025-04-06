@@ -24,6 +24,9 @@ const (
 
 	// keywords
 	Fn
+	Get
+	Set
+	Static
 	Var
 	Val
 	If

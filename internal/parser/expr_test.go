@@ -109,6 +109,12 @@ func TestParseExprNoErrors(t *testing.T) {
 		"BasicObject": {
 			input: "{ 0: \"hello\", foo: 5, bar?: true, [qux]: false }",
 		},
+		"EmptyObject": {
+			input: "{}",
+		},
+		"ObjectWithMethods": {
+			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(x) { this.x = x } }",
+		},
 	}
 
 	for name, test := range tests {
@@ -125,7 +131,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			expr := parser.ParseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Equal(t, parser.Errors, []*Error{})
+			assert.Equal(t, []*Error{}, parser.Errors)
 		})
 	}
 }

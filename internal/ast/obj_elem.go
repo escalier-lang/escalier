@@ -2,35 +2,35 @@ package ast
 
 type ObjExprElem interface{ isObjExprElem() }
 
-func (*Callable[FuncExpr]) isObjExprElem()                {}
-func (*Constructor[FuncExpr]) isObjExprElem()             {}
-func (*Method[FuncExpr, ObjExprPropName]) isObjExprElem() {}
-func (*Getter[FuncExpr, ObjExprPropName]) isObjExprElem() {}
-func (*Setter[FuncExpr, ObjExprPropName]) isObjExprElem() {}
-func (*Property[Expr, ObjExprPropName]) isObjExprElem()   {}
-func (*RestSpread[Expr]) isObjExprElem()                  {}
+func (*Callable[FuncExpr]) isObjExprElem()           {}
+func (*Constructor[FuncExpr]) isObjExprElem()        {}
+func (*Method[FuncExpr, ObjExprKey]) isObjExprElem() {}
+func (*Getter[FuncExpr, ObjExprKey]) isObjExprElem() {}
+func (*Setter[FuncExpr, ObjExprKey]) isObjExprElem() {}
+func (*Property[Expr, ObjExprKey]) isObjExprElem()   {}
+func (*RestSpread[Expr]) isObjExprElem()             {}
 
 type ObjTypeElem interface{ isObjTypeElem() }
 
-func (*Callable[FuncType]) isObjTypeElem()                {}
-func (*Constructor[FuncType]) isObjTypeElem()             {}
-func (*Method[FuncType, ObjTypePropName]) isObjTypeElem() {}
-func (*Getter[FuncType, ObjTypePropName]) isObjTypeElem() {}
-func (*Setter[FuncType, ObjTypePropName]) isObjTypeElem() {}
-func (*Property[Type, ObjTypePropName]) isObjTypeElem()   {}
-func (*Mapped[Type]) isObjTypeElem()                      {}
-func (*RestSpread[Type]) isObjTypeElem()                  {}
+func (*Callable[FuncType]) isObjTypeElem()           {}
+func (*Constructor[FuncType]) isObjTypeElem()        {}
+func (*Method[FuncType, ObjTypeKey]) isObjTypeElem() {}
+func (*Getter[FuncType, ObjTypeKey]) isObjTypeElem() {}
+func (*Setter[FuncType, ObjTypeKey]) isObjTypeElem() {}
+func (*Property[Type, ObjTypeKey]) isObjTypeElem()   {}
+func (*Mapped[Type]) isObjTypeElem()                 {}
+func (*RestSpread[Type]) isObjTypeElem()             {}
 
 type ObjTypeAnnElem interface{ isObjTypeAnnElem() }
 
-func (*Callable[FuncTypeAnn]) isObjTypeAnnElem()                {}
-func (*Constructor[FuncTypeAnn]) isObjTypeAnnElem()             {}
-func (*Method[FuncTypeAnn, ObjExprPropName]) isObjTypeAnnElem() {}
-func (*Getter[FuncTypeAnn, ObjExprPropName]) isObjTypeAnnElem() {}
-func (*Setter[FuncTypeAnn, ObjExprPropName]) isObjTypeAnnElem() {}
-func (*Property[TypeAnn, ObjExprPropName]) isObjTypeAnnElem()   {}
-func (*Mapped[TypeAnn]) isObjTypeAnnElem()                      {}
-func (*RestSpread[TypeAnn]) isObjTypeAnnElem()                  {}
+func (*Callable[FuncTypeAnn]) isObjTypeAnnElem()           {}
+func (*Constructor[FuncTypeAnn]) isObjTypeAnnElem()        {}
+func (*Method[FuncTypeAnn, ObjExprKey]) isObjTypeAnnElem() {}
+func (*Getter[FuncTypeAnn, ObjExprKey]) isObjTypeAnnElem() {}
+func (*Setter[FuncTypeAnn, ObjExprKey]) isObjTypeAnnElem() {}
+func (*Property[TypeAnn, ObjExprKey]) isObjTypeAnnElem()   {}
+func (*Mapped[TypeAnn]) isObjTypeAnnElem()                 {}
+func (*RestSpread[TypeAnn]) isObjTypeAnnElem()             {}
 
 type Callable[T any] struct{ Fn T }
 type Constructor[T any] struct{ Fn T }
@@ -88,17 +88,17 @@ type RestSpread[T any] struct {
 	Value T
 }
 
-type ObjExprPropName interface{ isObjExprPropName() }
+type ObjExprKey interface{ isObjExprKey() }
 
-func (*IdentExpr) isObjExprPropName()        {}
-func (*StrLit) isObjExprPropName()           {}
-func (*NumLit) isObjExprPropName()           {}
-func (*ComputedPropName) isObjExprPropName() {}
+func (*IdentExpr) isObjExprKey()   {}
+func (*StrLit) isObjExprKey()      {}
+func (*NumLit) isObjExprKey()      {}
+func (*ComputedKey) isObjExprKey() {}
 
-type ComputedPropName struct {
+type ComputedKey struct {
 	Expr Expr
 }
 
-func NewComputedPropName(expr Expr) *ComputedPropName {
-	return &ComputedPropName{Expr: expr}
+func NewComputedKey(expr Expr) *ComputedKey {
+	return &ComputedKey{Expr: expr}
 }

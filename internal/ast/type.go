@@ -123,15 +123,15 @@ type FuncType struct {
 func (t *FuncType) Provenance() *Provenance     { return t.provenance }
 func (t *FuncType) SetProvenance(p *Provenance) { t.provenance = p }
 
-type ObjTypePropName interface{ isPropName() }
+type ObjTypeKey interface{ isObjTypeKey() }
 
-func (*StrPropName) isPropName()    {}
-func (*NumPropName) isPropName()    {}
-func (*SymbolPropName) isPropName() {}
+func (*StrObjTypeKey) isObjTypeKey()    {}
+func (*NumObjTypeKey) isObjTypeKey()    {}
+func (*SymbolObjTypeKey) isObjTypeKey() {}
 
-type StrPropName struct{ Value string }
-type NumPropName struct{ Value float64 }
-type SymbolPropName struct{ Value int }
+type StrObjTypeKey struct{ Value string }
+type NumObjTypeKey struct{ Value float64 }
+type SymbolObjTypeKey struct{ Value int }
 
 type ObjectType struct {
 	Elems      []*ObjTypeElem
