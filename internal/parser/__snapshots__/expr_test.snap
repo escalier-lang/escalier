@@ -234,10 +234,10 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
+            Start: ast.Location{Line:1, Column:9},
+            End:   ast.Location{Line:1, Column:10},
         },
-        Message: "Expected a closing bracket",
+        Message: "Expected ] but got )",
     },
 }
 ---
@@ -294,13 +294,6 @@
         },
         Message: "Expected an opening brace",
     },
-    &parser.Error{
-        Span: ast.Span{
-            Start: ast.Location{Line:1, Column:9},
-            End:   ast.Location{Line:1, Column:10},
-        },
-        Message: "Expected an opening brace",
-    },
 }
 ---
 
@@ -335,10 +328,10 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:6},
+            Start: ast.Location{Line:1, Column:11},
+            End:   ast.Location{Line:1, Column:12},
         },
-        Message: "Expected a closing paren",
+        Message: "Expected ) but got ]",
     },
 }
 ---
@@ -625,7 +618,7 @@
             Start: ast.Location{Line:1, Column:10},
             End:   ast.Location{Line:1, Column:11},
         },
-        Message: "Expected a closing paren",
+        Message: "Expected ) but got {",
     },
 }
 ---
@@ -751,7 +744,7 @@
             Start: ast.Location{Line:1, Column:4},
             End:   ast.Location{Line:1, Column:5},
         },
-        Message: "Expected an opening paren",
+        Message: "Expected ( but got identifier",
     },
 }
 ---
@@ -2554,7 +2547,7 @@
             Start: ast.Location{Line:1, Column:10},
             End:   ast.Location{Line:1, Column:13},
         },
-        Message: "Expected a comma",
+        Message: "Expected , but got identifier",
     },
 }
 ---
