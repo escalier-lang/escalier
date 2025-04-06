@@ -107,7 +107,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			input: "if cond1 { a } else if cond2 { b } else { c }",
 		},
 		"BasicObject": {
-			input: "{ 0: \"hello\", foo: 5, bar?: true, [qux]: false }",
+			input: "{ 0: \"hello\", foo: 5, \"bar\"?: true, baz, [qux]: false }",
 		},
 		"EmptyObject": {
 			input: "{}",
@@ -184,6 +184,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"IncompleteElse": {
 			input: "if { a } else",
+		},
+		"ObjectMissingColon": {
+			input: "{ foo 5, bar: 10 }",
+		},
+		"ObjectMissingComma": {
+			input: "{ foo: 5 bar: 10 }",
 		},
 	}
 

@@ -227,7 +227,7 @@ loop:
 	return expr
 }
 
-func (p *Parser) parsePropName() ast.ObjExprKey {
+func (p *Parser) parseObjKey() ast.ObjExprKey {
 	token := p.lexer.peek()
 
 	//nolint: exhaustive
@@ -322,7 +322,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 						parser.lexer.consume()
 						token = parser.lexer.peek()
 					} else {
-						break
+						parser.reportError(token.Span, "Expected a comma")
 					}
 				}
 
@@ -335,8 +335,8 @@ func (parser *Parser) parsePrimary() ast.Expr {
 					mod = "set"
 				}
 
-				parsePropName := parser.parsePropName()
-				if parsePropName == nil {
+				objKey := parser.parseObjKey()
+				if objKey == nil {
 					break
 				}
 				token = parser.lexer.peek()
@@ -345,17 +345,6 @@ func (parser *Parser) parsePrimary() ast.Expr {
 				// that we can skip over unexpected tokens
 
 				switch token.Type {
-				case Comma, CloseBrace:
-					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-						Name:     parsePropName,
-						Value:    nil, // shorthand property
-						Readonly: true,
-						Optional: false,
-					}
-					elems = append(elems, property)
-					if token.Type == CloseBrace {
-						break loop
-					}
 				case Colon:
 					parser.lexer.consume() // consume ':'
 					value := parser.ParseExprWithMarker(MarkerDelim)
@@ -363,7 +352,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 						break
 					}
 					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-						Name:     parsePropName,
+						Name:     objKey,
 						Value:    value,
 						Readonly: false, // TODO
 						Optional: false,
@@ -382,7 +371,7 @@ func (parser *Parser) parsePrimary() ast.Expr {
 						break
 					}
 					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
-						Name:     parsePropName,
+						Name:     objKey,
 						Value:    value,
 						Readonly: true,
 						Optional: false,
@@ -413,22 +402,55 @@ func (parser *Parser) parsePrimary() ast.Expr {
 
 					if mod == "get" {
 						method := &ast.Getter[ast.Expr, ast.ObjExprKey]{
-							Name: parsePropName,
+							Name: objKey,
 							Fn:   fn,
 						}
 						elems = append(elems, method)
 					} else if mod == "set" {
 						method := &ast.Setter[ast.Expr, ast.ObjExprKey]{
-							Name: parsePropName,
+							Name: objKey,
 							Fn:   fn,
 						}
 						elems = append(elems, method)
 					} else {
 						method := &ast.Method[ast.Expr, ast.ObjExprKey]{
-							Name: parsePropName,
+							Name: objKey,
 							Fn:   fn,
 						}
 						elems = append(elems, method)
+					}
+				default:
+					switch objKey.(type) {
+					case *ast.IdentExpr:
+						switch token.Type {
+						case Comma, CloseBrace:
+							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+								Name:     objKey,
+								Value:    nil, // shorthand property
+								Readonly: false,
+								Optional: false,
+							}
+							elems = append(elems, property)
+							if token.Type == CloseBrace {
+								break loop
+							}
+						default:
+							value := parser.ParseExprWithMarker(MarkerDelim)
+							if value == nil {
+								parser.reportError(token.Span, "Expected a comma, closing brace, or expression")
+							} else {
+								parser.reportError(token.Span, "Expected a comma or closing brace")
+							}
+							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+								Name:     objKey,
+								Value:    value,
+								Readonly: false,
+								Optional: false,
+							}
+							elems = append(elems, property)
+						}
+					default:
+						parser.reportError(token.Span, "Expected a comma or closing brace")
 					}
 				}
 

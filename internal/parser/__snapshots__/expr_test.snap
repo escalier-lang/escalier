@@ -2409,13 +2409,12 @@
             },
         },
         &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
-            Name: &ast.IdentExpr{
-                Name: "bar",
-                span: ast.Span{
+            Name: &ast.StrLit{
+                Value: "bar",
+                span:  ast.Span{
                     Start: ast.Location{Line:1, Column:22},
-                    End:   ast.Location{Line:1, Column:25},
+                    End:   ast.Location{Line:1, Column:26},
                 },
-                inferredType: nil,
             },
             Optional: false,
             Readonly: true,
@@ -2423,24 +2422,37 @@
                 Lit: &ast.BoolLit{
                     Value: true,
                     span:  ast.Span{
-                        Start: ast.Location{Line:1, Column:28},
-                        End:   ast.Location{Line:1, Column:32},
+                        Start: ast.Location{Line:1, Column:29},
+                        End:   ast.Location{Line:1, Column:33},
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:28},
-                    End:   ast.Location{Line:1, Column:32},
+                    Start: ast.Location{Line:1, Column:29},
+                    End:   ast.Location{Line:1, Column:33},
                 },
                 inferredType: nil,
             },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "baz",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:35},
+                    End:   ast.Location{Line:1, Column:38},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    nil,
         },
         &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
                     Name: "qux",
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:35},
-                        End:   ast.Location{Line:1, Column:38},
+                        Start: ast.Location{Line:1, Column:41},
+                        End:   ast.Location{Line:1, Column:44},
                     },
                     inferredType: nil,
                 },
@@ -2451,22 +2463,174 @@
                 Lit: &ast.BoolLit{
                     Value: false,
                     span:  ast.Span{
-                        Start: ast.Location{Line:1, Column:41},
-                        End:   ast.Location{Line:1, Column:46},
+                        Start: ast.Location{Line:1, Column:47},
+                        End:   ast.Location{Line:1, Column:52},
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:41},
-                    End:   ast.Location{Line:1, Column:46},
+                    Start: ast.Location{Line:1, Column:47},
+                    End:   ast.Location{Line:1, Column:52},
                 },
                 inferredType: nil,
             },
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:47},
-        End:   ast.Location{Line:1, Column:48},
+        Start: ast.Location{Line:1, Column:53},
+        End:   ast.Location{Line:1, Column:54},
     },
     inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectMissingComma - 1]
+&ast.ObjectExpr{
+    Elems: {
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "foo",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:8},
+                        End:   ast.Location{Line:1, Column:9},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "bar",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:10},
+                    End:   ast.Location{Line:1, Column:13},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 10,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:15},
+                        End:   ast.Location{Line:1, Column:17},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:15},
+                    End:   ast.Location{Line:1, Column:17},
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:18},
+        End:   ast.Location{Line:1, Column:19},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectMissingComma - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:10},
+            End:   ast.Location{Line:1, Column:13},
+        },
+        Message: "Expected a comma",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ObjectMissingColon - 1]
+&ast.ObjectExpr{
+    Elems: {
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "foo",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:7},
+                        End:   ast.Location{Line:1, Column:8},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:7},
+                    End:   ast.Location{Line:1, Column:8},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "bar",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:10},
+                    End:   ast.Location{Line:1, Column:13},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 10,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:1, Column:15},
+                        End:   ast.Location{Line:1, Column:17},
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:15},
+                    End:   ast.Location{Line:1, Column:17},
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:18},
+        End:   ast.Location{Line:1, Column:19},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectMissingColon - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:8},
+        },
+        Message: "Expected a comma or closing brace",
+    },
 }
 ---
