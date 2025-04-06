@@ -26,15 +26,15 @@ var precedence = map[ast.BinaryOp]int{
 	ast.NullishCoalescing: 3,
 }
 
-func (parser *Parser) ParseExprWithMarker(marker Marker) ast.Expr {
-	parser.markers.Push(marker)
-	defer parser.markers.Pop()
-	return parser.ParseExpr()
+func (p *Parser) ParseExprWithMarker(marker Marker) ast.Expr {
+	p.markers.Push(marker)
+	defer p.markers.Pop()
+	return p.ParseExpr()
 }
 
-func (parser *Parser) ParseExpr() ast.Expr {
+func (p *Parser) ParseExpr() ast.Expr {
 	select {
-	case <-parser.ctx.Done():
+	case <-p.ctx.Done():
 		fmt.Println("Taking too long to parse")
 	default:
 		// continue
@@ -43,11 +43,11 @@ func (parser *Parser) ParseExpr() ast.Expr {
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
 
-	values = append(values, parser.parsePrimary())
+	values = append(values, p.parsePrimary())
 
 loop:
 	for {
-		token := parser.lexer.peek()
+		token := p.lexer.peek()
 		var nextOp ast.BinaryOp
 
 		//nolint: exhaustive
@@ -82,13 +82,13 @@ loop:
 			// continue
 		}
 
-		if token.Span.Start.Line != parser.lexer.currentLocation.Line {
-			if len(parser.markers) == 0 || parser.markers.Peek() != MarkerDelim {
+		if token.Span.Start.Line != p.lexer.currentLocation.Line {
+			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
 				return values.Pop()
 			}
 		}
 
-		parser.lexer.consume()
+		p.lexer.consume()
 
 		if !ops.IsEmpty() {
 			if precedence[ops.Peek()] >= precedence[nextOp] {
@@ -102,7 +102,7 @@ loop:
 		}
 
 		ops.Push(nextOp)
-		expr := parser.parsePrimary()
+		expr := p.parsePrimary()
 		values.Push(expr)
 	}
 
@@ -125,8 +125,8 @@ type TokenAndOp struct {
 	Op    ast.UnaryOp
 }
 
-func (parser *Parser) parsePrefix() Stack[TokenAndOp] {
-	token := parser.lexer.peek()
+func (p *Parser) parsePrefix() Stack[TokenAndOp] {
+	token := p.lexer.peek()
 	result := NewStack[TokenAndOp]()
 
 loop:
@@ -140,26 +140,26 @@ loop:
 		default:
 			break loop
 		}
-		parser.lexer.consume()
-		token = parser.lexer.peek()
+		p.lexer.consume()
+		token = p.lexer.peek()
 	}
 
 	return result
 }
 
-func (parser *Parser) parseSuffix(expr ast.Expr) ast.Expr {
-	token := parser.lexer.peek()
+func (p *Parser) parseSuffix(expr ast.Expr) ast.Expr {
+	token := p.lexer.peek()
 
 loop:
 	for {
 		//nolint: exhaustive
 		switch token.Type {
 		case OpenParen, QuestionOpenParen:
-			parser.lexer.consume()
-			args := parser.parseExprSeq()
-			terminator := parser.lexer.next()
+			p.lexer.consume()
+			args := p.parseExprSeq()
+			terminator := p.lexer.next()
 			if terminator.Type != CloseParen {
-				parser.reportError(token.Span, "Expected a closing paren")
+				p.reportError(token.Span, "Expected a closing paren")
 			}
 			callee := expr
 			optChain := false
@@ -171,11 +171,11 @@ loop:
 				ast.Span{Start: callee.Span().Start, End: terminator.Span.End},
 			)
 		case OpenBracket, QuestionOpenBracket:
-			parser.lexer.consume()
-			index := parser.ParseExprWithMarker(MarkerDelim)
-			terminator := parser.lexer.next()
+			p.lexer.consume()
+			index := p.ParseExprWithMarker(MarkerDelim)
+			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
-				parser.reportError(token.Span, "Expected a closing bracket")
+				p.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := expr
 			optChain := false
@@ -187,8 +187,8 @@ loop:
 				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
 			)
 		case Dot, QuestionDot:
-			parser.lexer.consume()
-			prop := parser.lexer.next()
+			p.lexer.consume()
+			prop := p.lexer.next()
 			optChain := false
 			if token.Type == QuestionDot {
 				optChain = true
@@ -213,17 +213,17 @@ loop:
 					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
 				)
 				if token.Type == Dot {
-					parser.reportError(token.Span, "expected an identifier after .")
+					p.reportError(token.Span, "expected an identifier after .")
 				} else {
-					parser.reportError(token.Span, "expected an identifier after ?.")
+					p.reportError(token.Span, "expected an identifier after ?.")
 				}
 			}
 		case BackTick:
-			expr = parser.parseTemplateLitExpr(token, expr)
+			expr = p.parseTemplateLitExpr(token, expr)
 		default:
 			break loop
 		}
-		token = parser.lexer.peek()
+		token = p.lexer.peek()
 	}
 
 	return expr
@@ -250,10 +250,7 @@ func (p *Parser) parseObjKey() ast.ObjExprKey {
 	case OpenBracket:
 		p.lexer.consume()
 		expr := p.ParseExprWithMarker(MarkerDelim)
-		final := p.lexer.next() // consume the closing bracket
-		if final.Type != CloseBracket {
-			p.reportError(token.Span, "Expected a closing bracket")
-		}
+		p.expect(CloseBracket, AlwaysConsume)
 		return &ast.ComputedKey{Expr: expr}
 	default:
 		p.reportError(token.Span, "Expected a property name")
@@ -261,9 +258,9 @@ func (p *Parser) parseObjKey() ast.ObjExprKey {
 	}
 }
 
-func (parser *Parser) parsePrimary() ast.Expr {
-	ops := parser.parsePrefix()
-	token := parser.lexer.peek()
+func (p *Parser) parsePrimary() ast.Expr {
+	ops := p.parsePrefix()
+	token := p.lexer.peek()
 
 	var expr ast.Expr
 
@@ -274,82 +271,72 @@ func (parser *Parser) parsePrimary() ast.Expr {
 		//nolint: exhaustive
 		switch token.Type {
 		case Number:
-			parser.lexer.consume()
+			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
 				// TODO: handle parsing errors
 			}
 			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
 		case String:
-			parser.lexer.consume()
+			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewString(token.Value, token.Span))
 		case True:
-			parser.lexer.consume()
+			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewBoolean(true, token.Span))
 		case False:
-			parser.lexer.consume()
+			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewBoolean(false, token.Span))
 		case Identifier, Underscore:
-			parser.lexer.consume()
+			p.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
-			parser.lexer.consume()
-			expr = parser.ParseExprWithMarker(MarkerDelim)
-			final := parser.lexer.next() // consume the closing paren
-			if final.Type != CloseParen {
-				parser.reportError(token.Span, "Expected a closing paren")
-			}
+			p.lexer.consume()
+			expr = p.ParseExprWithMarker(MarkerDelim)
+			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
-			parser.lexer.consume()
-			elems := parser.parseExprSeq()
-			final := parser.lexer.next() // consume the closing bracket
-			if final.Type != CloseBracket {
-				parser.reportError(token.Span, "Expected a closing bracket")
-			}
-			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
+			p.lexer.consume()
+			elems := p.parseExprSeq()
+			end := p.expect(CloseBracket, AlwaysConsume)
+			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end})
 		case OpenBrace:
 			var elems []ast.ObjExprElem
 			var first bool = true
-			parser.lexer.consume()
+			p.lexer.consume()
 		loop:
 			for {
-				token = parser.lexer.peek()
+				token = p.lexer.peek()
 				if token.Type == CloseBrace {
 					break
 				}
 
 				if !first {
-					token = parser.lexer.peek()
-					if token.Type == Comma {
-						parser.lexer.consume()
-						token = parser.lexer.peek()
-					} else {
-						parser.reportError(token.Span, "Expected a comma")
-					}
+					p.expect(Comma, ConsumeOnMatch)
 				}
+
+				token = p.lexer.peek()
 
 				mod := ""
 				if token.Type == Get {
-					parser.lexer.consume() // consume 'get'
+					p.lexer.consume() // consume 'get'
 					mod = "get"
 				} else if token.Type == Set {
-					parser.lexer.consume() // consume 'set'
+					p.lexer.consume() // consume 'set'
 					mod = "set"
 				}
 
-				objKey := parser.parseObjKey()
+				objKey := p.parseObjKey()
 				if objKey == nil {
 					break
 				}
-				token = parser.lexer.peek()
+				token = p.lexer.peek()
 
 				// TODO: loop until we find a ':', '?', '(', ',' or '}' so
 				// that we can skip over unexpected tokens
 
 				switch token.Type {
 				case Colon:
-					parser.lexer.consume() // consume ':'
-					value := parser.ParseExprWithMarker(MarkerDelim)
+					p.lexer.consume() // consume ':'
+					value := p.ParseExprWithMarker(MarkerDelim)
 					if value == nil {
 						break
 					}
@@ -361,14 +348,9 @@ func (parser *Parser) parsePrimary() ast.Expr {
 					}
 					elems = append(elems, property)
 				case Question:
-					parser.lexer.consume() // consume '?'
-					token = parser.lexer.peek()
-					if token.Type != Colon {
-						parser.reportError(token.Span, "Expected a colon")
-					} else {
-						parser.lexer.consume() // consume ':'
-					}
-					value := parser.ParseExprWithMarker(MarkerDelim)
+					p.lexer.consume() // consume '?'
+					p.expect(Colon, ConsumeOnMatch)
+					value := p.ParseExprWithMarker(MarkerDelim)
 					if value == nil {
 						break
 					}
@@ -380,17 +362,11 @@ func (parser *Parser) parsePrimary() ast.Expr {
 					}
 					elems = append(elems, property)
 				case OpenParen:
-					parser.lexer.consume() // consume '('
-					params := parser.parseParamSeq()
+					p.lexer.consume() // consume '('
+					params := p.parseParamSeq()
+					p.expect(CloseParen, ConsumeOnMatch)
 
-					token = parser.lexer.peek()
-					if token.Type != CloseParen {
-						parser.reportError(token.Span, "Expected a closing paren")
-					} else {
-						parser.lexer.consume() // consume ')'
-					}
-
-					body := parser.parseBlock()
+					body := p.parseBlock()
 					end := body.Span.End
 
 					// TODO: parse return and throws types
@@ -437,11 +413,11 @@ func (parser *Parser) parsePrimary() ast.Expr {
 								break loop
 							}
 						default:
-							value := parser.ParseExprWithMarker(MarkerDelim)
+							value := p.ParseExprWithMarker(MarkerDelim)
 							if value == nil {
-								parser.reportError(token.Span, "Expected a comma, closing brace, or expression")
+								p.reportError(token.Span, "Expected a comma, closing brace, or expression")
 							} else {
-								parser.reportError(token.Span, "Expected a comma or closing brace")
+								p.reportError(token.Span, "Expected a comma or closing brace")
 							}
 							property := &ast.Property[ast.Expr, ast.ObjExprKey]{
 								Name:     objKey,
@@ -452,19 +428,16 @@ func (parser *Parser) parsePrimary() ast.Expr {
 							elems = append(elems, property)
 						}
 					default:
-						parser.reportError(token.Span, "Expected a comma or closing brace")
+						p.reportError(token.Span, "Expected a comma or closing brace")
 					}
 				}
 
 				first = false
 			}
-			final := parser.lexer.next() // consume the closing brace
-			if final.Type != CloseBrace {
-				parser.reportError(token.Span, "Expected a closing brace")
-			}
-			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: final.Span.End})
+			end := p.expect(CloseBrace, AlwaysConsume)
+			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: end})
 		case BackTick:
-			expr = parser.parseTemplateLitExpr(token, nil)
+			expr = p.parseTemplateLitExpr(token, nil)
 		case Fn:
 			// TODO: allow an optional identifier
 			// token := parser.lexer.peek()
@@ -480,50 +453,38 @@ func (parser *Parser) parsePrimary() ast.Expr {
 			// 		ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			// 	)
 			// }
-			parser.lexer.consume() // consume the fn keyword
+			p.lexer.consume() // consume the fn keyword
 
 			start := token.Span.Start
 
-			token = parser.lexer.peek()
-			if token.Type != OpenParen {
-				parser.reportError(token.Span, "Expected an opening paren")
-			} else {
-				parser.lexer.consume()
-			}
+			p.expect(OpenParen, ConsumeOnMatch)
+			params := p.parseParamSeq()
+			p.expect(CloseParen, ConsumeOnMatch)
 
-			params := parser.parseParamSeq()
-
-			token = parser.lexer.peek()
-			if token.Type != CloseParen {
-				parser.reportError(token.Span, "Expected a closing paren")
-			} else {
-				parser.lexer.consume()
-			}
-
-			body := parser.parseBlock()
+			body := p.parseBlock()
 			end := body.Span.End
 
 			// TODO: parse return and throws types
 			return ast.NewFuncExpr(params, nil, nil, body, ast.Span{Start: start, End: end})
 		case If:
-			return parser.parseIfElse()
+			return p.parseIfElse()
 		case LessThan:
-			return parser.parseJSXElement()
+			return p.parseJSXElement()
 		case
 			Val, Var, Return,
 			CloseBrace, CloseParen, CloseBracket,
 			EndOfFile:
 			expr = ast.NewEmpty(token.Span)
-			parser.reportError(token.Span, "Expected an expression")
+			p.reportError(token.Span, "Expected an expression")
 			return expr
 		default:
-			parser.lexer.consume()
-			parser.reportError(token.Span, fmt.Sprintf("Unexpected token, '%s'", token.Value))
-			token = parser.lexer.peek()
+			p.lexer.consume()
+			p.reportError(token.Span, fmt.Sprintf("Unexpected token, '%s'", token.Value))
+			token = p.lexer.peek()
 		}
 	}
 
-	expr = parser.parseSuffix(expr)
+	expr = p.parseSuffix(expr)
 
 	for !ops.IsEmpty() {
 		tokenAndOp := ops.Pop()
@@ -533,11 +494,11 @@ func (parser *Parser) parsePrimary() ast.Expr {
 	return expr
 }
 
-func (parser *Parser) parseExprSeq() []ast.Expr {
+func (p *Parser) parseExprSeq() []ast.Expr {
 	exprs := []ast.Expr{}
 
 	// handles empty sequences
-	token := parser.lexer.peek()
+	token := p.lexer.peek()
 
 	//nolint: exhaustive
 	switch token.Type {
@@ -546,20 +507,20 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 	default:
 	}
 
-	expr := parser.ParseExprWithMarker(MarkerDelim)
+	expr := p.ParseExprWithMarker(MarkerDelim)
 	exprs = append(exprs, expr)
 
-	token = parser.lexer.peek()
+	token = p.lexer.peek()
 
 	for {
 		//nolint: exhaustive
 		switch token.Type {
 		case Comma:
 			// TODO: handle trailing comma
-			parser.lexer.consume()
-			expr = parser.ParseExprWithMarker(MarkerDelim)
+			p.lexer.consume()
+			expr = p.ParseExprWithMarker(MarkerDelim)
 			exprs = append(exprs, expr)
-			token = parser.lexer.peek()
+			token = p.lexer.peek()
 		default:
 			return exprs
 		}
@@ -567,28 +528,28 @@ func (parser *Parser) parseExprSeq() []ast.Expr {
 }
 
 // TODO: parse type annotations
-func (parser *Parser) parseParamSeq() []*ast.Param {
+func (p *Parser) parseParamSeq() []*ast.Param {
 	params := []*ast.Param{}
 
-	token := parser.lexer.peek()
+	token := p.lexer.peek()
 	if token.Type == CloseParen {
 		return params
 	}
 
-	pat := parser.parsePattern()
+	pat := p.parsePattern()
 	if pat == nil {
 		return params
 	}
 	params = append(params, &ast.Param{Pattern: pat})
 
 	for {
-		token := parser.lexer.peek()
+		token := p.lexer.peek()
 
 		//nolint: exhaustive
 		switch token.Type {
 		case Comma:
-			parser.lexer.consume() // consume ','
-			pat := parser.parsePattern()
+			p.lexer.consume() // consume ','
+			pat := p.parsePattern()
 			if pat == nil {
 				return params
 			}
@@ -599,12 +560,12 @@ func (parser *Parser) parseParamSeq() []*ast.Param {
 	}
 }
 
-func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr {
-	parser.lexer.consume()
+func (p *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr {
+	p.lexer.consume()
 	var quasis []*ast.Quasi
 	var exprs []ast.Expr
 	for {
-		quasi := parser.lexer.lexQuasi()
+		quasi := p.lexer.lexQuasi()
 
 		var raw string
 		if strings.HasSuffix(quasi.Value, "`") {
@@ -614,24 +575,24 @@ func (parser *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr 
 		} else if strings.HasSuffix(quasi.Value, "${") {
 			raw = quasi.Value[:len(quasi.Value)-2]
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
-			expr := parser.ParseExprWithMarker(MarkerDelim)
+			expr := p.ParseExprWithMarker(MarkerDelim)
 			exprs = append(exprs, expr)
-			parser.lexer.consume() // consumes the closing brace
+			p.lexer.consume() // consumes the closing brace
 		} else {
 			// This case happens when the template literal is not closed which
 			// means we've reached the end of the file.
 			raw = quasi.Value
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
 			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End}
-			parser.reportError(span, "Expected a closing backtick")
+			p.reportError(span, "Expected a closing backtick")
 			break
 		}
 	}
 	if tag != nil {
-		span := ast.Span{Start: tag.Span().Start, End: parser.lexer.currentLocation}
+		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation}
 		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 	}
-	span := ast.Span{Start: token.Span.Start, End: parser.lexer.currentLocation}
+	span := ast.Span{Start: token.Span.Start, End: p.lexer.currentLocation}
 	return ast.NewTemplateLit(quasis, exprs, span)
 }
 
@@ -648,10 +609,6 @@ func (p *Parser) parseIfElse() ast.Expr {
 		cond = p.ParseExprWithMarker(MarkerDelim)
 	}
 
-	token = p.lexer.peek()
-	if token.Type != OpenBrace {
-		p.reportError(token.Span, "Expected an opening brace")
-	}
 	body := p.parseBlock()
 	token = p.lexer.peek()
 	if token.Type == Else {
