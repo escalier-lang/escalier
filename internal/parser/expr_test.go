@@ -112,6 +112,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"EmptyObject": {
 			input: "{}",
 		},
+		"ObjectWithSpreads": {
+			input: "{a, ...b, ...{c, d}}",
+		},
 		"ObjectWithMethods": {
 			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(x) { this.x = x } }",
 		},

@@ -27,30 +27,17 @@
 [TestParsePatternNoErrors/TuplePatternWithRest - 1]
 &ast.TuplePat{
     Elems: {
-        &ast.TupleElemPat{
-            Pattern: &ast.IdentPat{
-                Name: "a",
-                span: ast.Span{
-                    Start: ast.Location{Line:1, Column:2},
-                    End:   ast.Location{Line:1, Column:3},
-                },
-                inferredType: nil,
-            },
+        &ast.IdentPat{
+            Name:    "a",
             Default: nil,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:2},
                 End:   ast.Location{Line:1, Column:3},
             },
+            inferredType: nil,
         },
-        &ast.TupleElemPat{
-            Pattern: &ast.IdentPat{
-                Name: "b",
-                span: ast.Span{
-                    Start: ast.Location{Line:1, Column:5},
-                    End:   ast.Location{Line:1, Column:6},
-                },
-                inferredType: nil,
-            },
+        &ast.IdentPat{
+            Name:    "b",
             Default: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 5,
@@ -69,11 +56,13 @@
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:10},
             },
+            inferredType: nil,
         },
-        &ast.TupleRestPat{
+        &ast.RestPat{
             Pattern: &ast.IdentPat{
-                Name: "rest",
-                span: ast.Span{
+                Name:    "rest",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:15},
                     End:   ast.Location{Line:1, Column:19},
                 },
@@ -83,6 +72,7 @@
                 Start: ast.Location{Line:1, Column:12},
                 End:   ast.Location{Line:1, Column:19},
             },
+            inferredType: nil,
         },
     },
     span: ast.Span{
@@ -95,8 +85,9 @@
 
 [TestParsePatternNoErrors/Identifier - 1]
 &ast.IdentPat{
-    Name: "x",
-    span: ast.Span{
+    Name:    "x",
+    Default: nil,
+    span:    ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:2},
     },
@@ -108,35 +99,23 @@
 &ast.ExtractorPat{
     Name: "Foo",
     Args: {
-        &ast.ExtractorArgPat{
-            Pattern: &ast.IdentPat{
-                Name: "a",
-                span: ast.Span{
-                    Start: ast.Location{Line:1, Column:5},
-                    End:   ast.Location{Line:1, Column:6},
-                },
-                inferredType: nil,
-            },
+        &ast.IdentPat{
+            Name:    "a",
             Default: nil,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:5},
                 End:   ast.Location{Line:1, Column:6},
             },
+            inferredType: nil,
         },
-        &ast.ExtractorArgPat{
-            Pattern: &ast.IdentPat{
-                Name: "b",
-                span: ast.Span{
-                    Start: ast.Location{Line:1, Column:8},
-                    End:   ast.Location{Line:1, Column:9},
-                },
-                inferredType: nil,
-            },
+        &ast.IdentPat{
+            Name:    "b",
             Default: nil,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:8},
                 End:   ast.Location{Line:1, Column:9},
             },
+            inferredType: nil,
         },
     },
     span: ast.Span{
@@ -221,8 +200,9 @@
         &ast.ObjKeyValuePat{
             Key:   "b",
             Value: &ast.IdentPat{
-                Name: "c",
-                span: ast.Span{
+                Name:    "c",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
@@ -237,8 +217,9 @@
         },
         &ast.ObjRestPat{
             Pattern: &ast.IdentPat{
-                Name: "rest",
-                span: ast.Span{
+                Name:    "rest",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:14},
                     End:   ast.Location{Line:1, Column:18},
                 },
@@ -285,28 +266,29 @@
         &ast.ObjKeyValuePat{
             Key:   "b",
             Value: &ast.IdentPat{
-                Name: "c",
-                span: ast.Span{
-                    Start: ast.Location{Line:1, Column:12},
-                    End:   ast.Location{Line:1, Column:13},
-                },
-                inferredType: nil,
-            },
-            Default: &ast.LiteralExpr{
-                Lit: &ast.StrLit{
-                    Value: "hello",
-                    span:  ast.Span{
+                Name:    "c",
+                Default: &ast.LiteralExpr{
+                    Lit: &ast.StrLit{
+                        Value: "hello",
+                        span:  ast.Span{
+                            Start: ast.Location{Line:1, Column:16},
+                            End:   ast.Location{Line:1, Column:22},
+                        },
+                    },
+                    span: ast.Span{
                         Start: ast.Location{Line:1, Column:16},
                         End:   ast.Location{Line:1, Column:22},
                     },
+                    inferredType: nil,
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:16},
+                    Start: ast.Location{Line:1, Column:12},
                     End:   ast.Location{Line:1, Column:22},
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
+            Default: nil,
+            span:    ast.Span{
                 Start: ast.Location{Line:1, Column:9},
                 End:   ast.Location{Line:1, Column:22},
             },

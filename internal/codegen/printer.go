@@ -153,6 +153,10 @@ func (p *Printer) printPattern(pat Pat) {
 	switch pat := pat.(type) {
 	case *IdentPat:
 		p.print(pat.Name)
+		if pat.Default != nil {
+			p.print(" = ")
+			p.PrintExpr(pat.Default)
+		}
 	case *ObjectPat:
 		p.print("{")
 		for i, elem := range pat.Elems {
@@ -186,19 +190,12 @@ func (p *Printer) printPattern(pat Pat) {
 			if i > 0 {
 				p.print(", ")
 			}
-			switch elem := elem.(type) {
-			case *TupleElemPat:
-				p.printPattern(elem.Pattern)
-				if elem.Default != nil {
-					p.print(" = ")
-					p.PrintExpr(elem.Default)
-				}
-			case *TupleRestPat:
-				p.print("...")
-				p.printPattern(elem.Pattern)
-			}
+			p.printPattern(elem)
 		}
 		p.print("]")
+	case *RestPat:
+		p.print("...")
+		p.printPattern(pat.Pattern)
 	}
 	end := p.location
 	pat.SetSpan(&Span{Start: start, End: end})

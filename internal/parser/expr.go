@@ -370,6 +370,16 @@ func (p *Parser) parsePrimary() ast.Expr {
 func (p *Parser) parseObjExprElem() ast.ObjExprElem {
 	token := p.lexer.peek()
 
+	if token.Type == DotDotDot {
+		p.lexer.consume() // consume '...'
+		arg := p.parseExpr()
+		if arg != nil {
+			return &ast.RestSpread[ast.Expr]{Value: arg}
+		} else {
+			p.reportError(token.Span, "Expected an expression after '...'")
+		}
+	}
+
 	mod := ""
 	if token.Type == Get {
 		p.lexer.consume() // consume 'get'
@@ -485,7 +495,7 @@ func (p *Parser) parseObjExprElem() ast.ObjExprElem {
 }
 
 func (p *Parser) parseParam() *ast.Param {
-	pat := p.parsePattern()
+	pat := p.parsePattern(true)
 	if pat == nil {
 		return nil
 	}

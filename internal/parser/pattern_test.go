@@ -65,7 +65,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.parsePattern()
+			expr := parser.parsePattern(false)
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Equal(t, parser.Errors, []*Error{})

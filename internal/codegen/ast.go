@@ -333,15 +333,17 @@ type Pat interface {
 func (*IdentPat) isPat()  {}
 func (*ObjectPat) isPat() {}
 func (*TuplePat) isPat()  {}
+func (*RestPat) isPat()   {}
 
 type IdentPat struct {
-	Name   string
-	span   *Span
-	source ast.Node
+	Name    string
+	Default Expr // optional
+	span    *Span
+	source  ast.Node
 }
 
-func NewIdentPat(name string, source ast.Node) *IdentPat {
-	return &IdentPat{Name: name, source: source, span: nil}
+func NewIdentPat(name string, _default Expr, source ast.Node) *IdentPat {
+	return &IdentPat{Name: name, Default: _default, source: source, span: nil}
 }
 func (p *IdentPat) Span() *Span        { return p.span }
 func (p *IdentPat) SetSpan(span *Span) { p.span = span }
@@ -447,14 +449,27 @@ func (p *TupleRestPat) SetSpan(span *Span) { p.span = span }
 func (p *TupleRestPat) Source() ast.Node   { return p.source }
 
 type TuplePat struct {
-	Elems  []TuplePatElem
+	Elems  []Pat
 	span   *Span
 	source ast.Node
 }
 
-func NewTuplePat(elems []TuplePatElem, source ast.Node) *TuplePat {
+func NewTuplePat(elems []Pat, source ast.Node) *TuplePat {
 	return &TuplePat{Elems: elems, source: source, span: nil}
 }
 func (p *TuplePat) Span() *Span        { return p.span }
 func (p *TuplePat) SetSpan(span *Span) { p.span = span }
 func (p *TuplePat) Source() ast.Node   { return p.source }
+
+type RestPat struct {
+	Pattern Pat
+	span    *Span
+	source  ast.Node
+}
+
+func NewRestPat(pattern Pat, source ast.Node) *RestPat {
+	return &RestPat{Pattern: pattern, source: source, span: nil}
+}
+func (p *RestPat) Span() *Span        { return p.span }
+func (p *RestPat) SetSpan(span *Span) { p.span = span }
+func (p *RestPat) Source() ast.Node   { return p.source }

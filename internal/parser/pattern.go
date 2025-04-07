@@ -7,7 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-func (p *Parser) parsePattern() ast.Pat {
+func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
 	token := p.lexer.peek()
 
 	//nolint: exhaustive
@@ -21,7 +21,7 @@ func (p *Parser) parsePattern() ast.Pat {
 		if token.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
-			patArgs := []ast.ExtractorPatArg{}
+			patArgs := []ast.Pat{}
 			first := true
 			for {
 				token = p.lexer.peek()
@@ -35,37 +35,10 @@ func (p *Parser) parsePattern() ast.Pat {
 						p.reportError(token.Span, msg)
 					} else {
 						p.lexer.consume()
-						token = p.lexer.peek()
 					}
 				}
-				if token.Type == DotDotDot {
-					p.lexer.consume()
-					span := token.Span
-
-					var identPat *ast.IdentPat
-					token = p.lexer.peek()
-					if token.Type == Identifier {
-						p.lexer.consume()
-						identPat = ast.NewIdentPat(token.Value, token.Span)
-						span = ast.MergeSpans(span, identPat.Span())
-					} else {
-						p.reportError(token.Span, "Expected identifier")
-						identPat = ast.NewIdentPat("", token.Span)
-					}
-					patArgs = append(patArgs, ast.NewExtractorRestArgPat(identPat, span))
-				} else {
-					pat := p.parsePattern()
-					span := pat.Span()
-
-					var init ast.Expr
-					token = p.lexer.peek()
-					if token.Type == Equal {
-						p.lexer.consume()
-						init = p.parseExpr()
-						span = ast.MergeSpans(span, init.Span())
-					}
-					patArgs = append(patArgs, ast.NewExtractorArgPat(pat, init, span))
-				}
+				patArg := p.parsePattern(true)
+				patArgs = append(patArgs, patArg)
 				first = false
 			}
 
@@ -73,7 +46,13 @@ func (p *Parser) parsePattern() ast.Pat {
 			span = ast.NewSpan(span.Start, end)
 			return ast.NewExtractorPat(name, patArgs, span)
 		} else {
-			return ast.NewIdentPat(name, span)
+			var _default ast.Expr
+			if allowIdentDefault && token.Type == Equal {
+				p.lexer.consume()
+				_default = p.parseExpr()
+				span = ast.MergeSpans(span, _default.Span())
+			}
+			return ast.NewIdentPat(name, _default, span)
 		}
 	case Underscore: // Wildcard
 		p.lexer.consume()
@@ -81,7 +60,7 @@ func (p *Parser) parsePattern() ast.Pat {
 	case OpenBracket: // Tuple
 		start := token.Span.Start
 		p.lexer.consume() // consume '['
-		patElems := []ast.TuplePatElem{}
+		patElems := []ast.Pat{}
 		first := true
 		for {
 			token = p.lexer.peek()
@@ -106,15 +85,15 @@ func (p *Parser) parsePattern() ast.Pat {
 				token = p.lexer.peek()
 				if token.Type == Identifier {
 					p.lexer.consume()
-					identPat = ast.NewIdentPat(token.Value, token.Span)
+					identPat = ast.NewIdentPat(token.Value, nil, token.Span)
 					span = ast.MergeSpans(span, identPat.Span())
 				} else {
 					p.reportError(token.Span, "Expected identifier")
-					identPat = ast.NewIdentPat("", token.Span)
+					identPat = ast.NewIdentPat("", nil, token.Span)
 				}
-				patElems = append(patElems, ast.NewTupleRestPat(identPat, span))
+				patElems = append(patElems, ast.NewRestPattern(identPat, span))
 			} else {
-				pat := p.parsePattern()
+				pat := p.parsePattern(true)
 				span := pat.Span()
 
 				var init ast.Expr
@@ -124,7 +103,7 @@ func (p *Parser) parsePattern() ast.Pat {
 					init = p.parseExpr()
 					span = ast.MergeSpans(span, init.Span())
 				}
-				patElems = append(patElems, ast.NewTupleElemPat(pat, init, span))
+				patElems = append(patElems, pat)
 			}
 			first = false
 		}
@@ -157,7 +136,7 @@ func (p *Parser) parsePattern() ast.Pat {
 				token = p.lexer.peek()
 				if token.Type == Colon {
 					p.lexer.consume()
-					value := p.parsePattern()
+					value := p.parsePattern(true)
 					span = ast.MergeSpans(span, value.Span())
 
 					var init ast.Expr
@@ -183,7 +162,7 @@ func (p *Parser) parsePattern() ast.Pat {
 			} else if token.Type == DotDotDot {
 				p.lexer.consume()
 
-				pat := p.parsePattern()
+				pat := p.parsePattern(true)
 				span := ast.MergeSpans(token.Span, pat.Span())
 				patElems = append(patElems, ast.NewObjRestPat(pat, span))
 			} else {
@@ -236,7 +215,7 @@ func (parser *Parser) parsePatternSeq() []ast.Pat {
 	default:
 	}
 
-	pat := parser.parsePattern()
+	pat := parser.parsePattern(true)
 	pats = append(pats, pat)
 
 	token = parser.lexer.peek()
@@ -247,7 +226,7 @@ func (parser *Parser) parsePatternSeq() []ast.Pat {
 		case Comma:
 			// TODO: handle trailing comma
 			parser.lexer.consume()
-			pat = parser.parsePattern()
+			pat = parser.parsePattern(true)
 			pats = append(pats, pat)
 			token = parser.lexer.peek()
 		default:

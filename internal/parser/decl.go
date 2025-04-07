@@ -26,11 +26,12 @@ func (p *Parser) parseDecl() ast.Decl {
 			kind = ast.VarKind
 		}
 
-		pat := p.parsePattern()
+		pat := p.parsePattern(false)
 		if pat == nil {
 			p.reportError(token.Span, "Expected pattern")
 			pat = ast.NewIdentPat(
 				"",
+				nil,
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			)
 		}
