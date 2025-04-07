@@ -61,10 +61,15 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 	buildPatternRec = func(p ast.Pat, target Expr) Pat {
 		switch p := p.(type) {
 		case *ast.IdentPat:
+			var _default Expr
+			if p.Default != nil {
+				_default = b.buildExpr(p.Default)
+			}
 			return &IdentPat{
-				Name:   p.Name,
-				span:   nil,
-				source: p,
+				Name:    p.Name,
+				Default: _default,
+				span:    nil,
+				source:  p,
 			}
 		case *ast.ObjectPat:
 			var elems []ObjPatElem
@@ -111,80 +116,45 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			}
 			return NewObjectPat(elems, p)
 		case *ast.TuplePat:
-			var elems []TuplePatElem
+			// TODO: replace with Prop
+			length := NewIdentifier("length", nil)
+
+			checks = append(
+				checks,
+				NewBinaryExpr(
+					NewMemberExpr(target, length, false, nil),
+					EqualEqual,
+					NewNumExpr(float64(len(p.Elems)), nil),
+					nil,
+				),
+			)
+
+			var elems []Pat
 			for i, elem := range p.Elems {
-				switch e := elem.(type) {
-				case *ast.TupleElemPat:
-					var newTarget Expr
-					if target != nil {
-						newTarget = NewIndexExpr(target, NewNumExpr(float64(i), nil), false, nil)
-
-						// TODO: replace with Prop
-						length := NewIdentifier("length", nil)
-
-						checks = append(
-							checks,
-							NewBinaryExpr(
-								NewMemberExpr(target, length, false, nil),
-								EqualEqual,
-								NewNumExpr(float64(len(p.Elems)), nil),
-								nil,
-							),
-						)
-					}
-
-					elems = append(
-						elems,
-						NewTupleElemPat(
-							buildPatternRec(e.Pattern, newTarget),
-							b.buildExpr(e.Default),
-							e,
-						),
-					)
-				case *ast.TupleRestPat:
-					elems = append(elems, &TupleRestPat{
-						Pattern: buildPatternRec(e.Pattern, target),
-						span:    nil,
-						source:  e,
-					})
+				var newTarget Expr
+				if target != nil {
+					newTarget = NewIndexExpr(target, NewNumExpr(float64(i), nil), false, nil)
 				}
+				elems = append(elems, buildPatternRec(elem, newTarget))
 			}
+
 			return NewTuplePat(elems, p)
 		case *ast.ExtractorPat:
 			tempVars := []Expr{}
-			tempVarPats := []TuplePatElem{}
+			tempVarPats := []Pat{}
 
 			for _, arg := range p.Args {
 				tempId := b.NewTempId()
 				tempVar := NewIdentExpr(tempId, nil)
-				switch arg := arg.(type) {
-				case *ast.ExtractorArgPat:
-					var init Expr
-					if arg.Default != nil {
-						init = b.buildExpr(arg.Default)
-					}
-					tempVarPat := NewTupleElemPat(
-						&IdentPat{
-							Name:   tempId,
-							span:   nil,
-							source: nil,
-						},
-						init,
-						nil, // TODO: source
-					)
-					tempVarPats = append(tempVarPats, tempVarPat)
-				case *ast.ExtractorRestArgPat:
-					tempVarPat := NewTupleRestPat(
-						&IdentPat{
-							Name:   tempId,
-							span:   nil,
-							source: nil,
-						},
-						nil, // TODO: source
-					)
-					tempVarPats = append(tempVarPats, tempVarPat)
-				}
 
+				var init Expr
+				switch arg := arg.(type) {
+				case *ast.IdentPat:
+					init = b.buildExpr(arg.Default)
+				}
+				tempVarPat := NewIdentPat(tempId, init, p)
+
+				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
 			}
 			extractor := NewIdentExpr(p.Name, p)
@@ -217,21 +187,17 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
-
-				var argChecks []Expr
-				var argStmts []Stmt
-
-				switch arg := arg.(type) {
-				case *ast.ExtractorArgPat:
-					argChecks, argStmts = b.buildPattern(arg.Pattern, temp)
-				case *ast.ExtractorRestArgPat:
-					argChecks, argStmts = b.buildPattern(arg.Pattern, temp)
-				}
-
+				argChecks, argStmts := b.buildPattern(arg, temp)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
 			}
 			return nil
+		case *ast.RestPat:
+			return &RestPat{
+				Pattern: buildPatternRec(p.Pattern, target),
+				span:    nil,
+				source:  p,
+			}
 		case *ast.LitPat:
 			// TODO
 		case *ast.IsPat:
@@ -339,7 +305,8 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 			_, paramStmts := b.buildPattern(p.Pattern, NewIdentExpr(id, nil))
 			allParamStmts = slices.Concat(allParamStmts, paramStmts)
 			params = append(params, &Param{
-				Pattern: NewIdentPat(id, p.Pattern),
+				// TODO: handle param defaults
+				Pattern: NewIdentPat(id, nil, p.Pattern),
 			})
 		}
 		fnDecl := &FuncDecl{
@@ -434,7 +401,8 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 			_, paramStmts := b.buildPattern(p.Pattern, NewIdentExpr(id, nil))
 			allParamStmts = slices.Concat(allParamStmts, paramStmts)
 			params = append(params, &Param{
-				Pattern: NewIdentPat(id, nil),
+				// TODO: handle param defaults
+				Pattern: NewIdentPat(id, nil, p.Pattern),
 			})
 		}
 		return NewFuncExpr(

@@ -73,7 +73,8 @@ func TestBuild(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, fixture := range fixtures {
-			// if fixture.Name() != "nested" {
+			// TODO: use an environment variable for this instead
+			// if fixture.Name() != "destructuring" {
 			// 	continue
 			// }
 			name := group.Name() + "/" + fixture.Name()

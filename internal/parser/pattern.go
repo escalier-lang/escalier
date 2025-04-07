@@ -1,16 +1,16 @@
 package parser
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-func (p *Parser) parsePattern() ast.Pat {
+func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
 	token := p.lexer.peek()
+	start := token.Span.Start
 
-	//nolint: exhaustive
+	// nolint: exhaustive
 	switch token.Type {
 	case Identifier:
 		p.lexer.consume()
@@ -18,181 +18,48 @@ func (p *Parser) parsePattern() ast.Pat {
 		span := token.Span
 
 		token = p.lexer.peek()
-		if token.Type == OpenParen {
+		if token.Type == OpenParen { // Extractor
 			p.lexer.consume() // consume '('
-
-			patArgs := []ast.ExtractorPatArg{}
-			first := true
-			for {
-				token = p.lexer.peek()
-				if token.Type == CloseParen {
-					p.lexer.consume()
-					break
-				}
-				if !first {
-					if token.Type != Comma {
-						msg := fmt.Sprintf("Expected ',', got '%s'", token.Value)
-						p.reportError(token.Span, msg)
-					} else {
-						p.lexer.consume()
-						token = p.lexer.peek()
-					}
-				}
-				if token.Type == DotDotDot {
-					p.lexer.consume()
-					span := token.Span
-
-					var identPat *ast.IdentPat
-					token = p.lexer.peek()
-					if token.Type == Identifier {
-						p.lexer.consume()
-						identPat = ast.NewIdentPat(token.Value, token.Span)
-						span = ast.MergeSpans(span, identPat.Span())
-					} else {
-						p.reportError(token.Span, "Expected identifier")
-						identPat = ast.NewIdentPat("", token.Span)
-					}
-					patArgs = append(patArgs, ast.NewExtractorRestArgPat(identPat, span))
-				} else {
-					pat := p.parsePattern()
-					span := pat.Span()
-
-					var init ast.Expr
-					token = p.lexer.peek()
-					if token.Type == Equal {
-						p.lexer.consume()
-						init = p.parseExpr()
-						span = ast.MergeSpans(span, init.Span())
-					}
-					patArgs = append(patArgs, ast.NewExtractorArgPat(pat, init, span))
-				}
-				first = false
+			patArgs := parseDelimSeq(p, CloseParen, Comma, func() ast.Pat {
+				return p.parsePattern(true)
+			})
+			end := p.expect(CloseParen, AlwaysConsume)
+			return ast.NewExtractorPat(name, patArgs, ast.NewSpan(start, end))
+		} else { // Ident
+			var _default ast.Expr
+			if allowIdentDefault && token.Type == Equal {
+				p.lexer.consume()
+				_default = p.parseExpr()
+				span = ast.MergeSpans(span, _default.Span())
 			}
-
-			end := token.Span.End
-			span = ast.NewSpan(span.Start, end)
-			return ast.NewExtractorPat(name, patArgs, span)
-		} else {
-			return ast.NewIdentPat(name, span)
+			return ast.NewIdentPat(name, _default, span)
 		}
 	case Underscore: // Wildcard
 		p.lexer.consume()
 		return ast.NewWildcardPat(token.Span)
 	case OpenBracket: // Tuple
-		start := token.Span.Start
 		p.lexer.consume() // consume '['
-		patElems := []ast.TuplePatElem{}
-		first := true
-		for {
-			token = p.lexer.peek()
-			if token.Type == CloseBracket {
-				p.lexer.consume()
-				break
-			}
-			if !first {
-				if token.Type != Comma {
-					msg := fmt.Sprintf("Expected ',', got '%s'", token.Value)
-					p.reportError(token.Span, msg)
-				} else {
-					p.lexer.consume()
-					token = p.lexer.peek()
-				}
-			}
-			if token.Type == DotDotDot {
-				p.lexer.consume()
-				span := token.Span
-
-				var identPat *ast.IdentPat
-				token = p.lexer.peek()
-				if token.Type == Identifier {
-					p.lexer.consume()
-					identPat = ast.NewIdentPat(token.Value, token.Span)
-					span = ast.MergeSpans(span, identPat.Span())
-				} else {
-					p.reportError(token.Span, "Expected identifier")
-					identPat = ast.NewIdentPat("", token.Span)
-				}
-				patElems = append(patElems, ast.NewTupleRestPat(identPat, span))
-			} else {
-				pat := p.parsePattern()
-				span := pat.Span()
-
-				var init ast.Expr
-				token = p.lexer.peek()
-				if token.Type == Equal {
-					p.lexer.consume()
-					init = p.parseExpr()
-					span = ast.MergeSpans(span, init.Span())
-				}
-				patElems = append(patElems, ast.NewTupleElemPat(pat, init, span))
-			}
-			first = false
-		}
-		end := token.Span.End
+		patElems := parseDelimSeq(p, CloseBracket, Comma, func() ast.Pat {
+			return p.parsePattern(true)
+		})
+		end := p.expect(CloseBracket, AlwaysConsume)
 		return ast.NewTuplePat(patElems, ast.NewSpan(start, end))
 	case OpenBrace: // Object
-		start := token.Span.Start
-		p.lexer.consume()
-		patElems := []ast.ObjPatElem{}
-		first := true
-		for {
-			token = p.lexer.peek()
-			if token.Type == CloseBrace {
-				p.lexer.consume()
-				break
-			}
-			if !first {
-				if token.Type != Comma {
-					p.reportError(token.Span, "Expected ','")
-					return nil
-				}
-				p.lexer.consume()
-				token = p.lexer.peek()
-			}
-			if token.Type == Identifier {
-				p.lexer.consume()
-				key := token.Value
-				span := token.Span
-
-				token = p.lexer.peek()
-				if token.Type == Colon {
-					p.lexer.consume()
-					value := p.parsePattern()
-					span = ast.MergeSpans(span, value.Span())
-
-					var init ast.Expr
-					token = p.lexer.peek()
-					if token.Type == Equal {
-						p.lexer.consume()
-						init = p.parseExpr()
-						span = ast.MergeSpans(span, init.Span())
-					}
-
-					patElems = append(patElems, ast.NewObjKeyValuePat(key, value, init, span))
-				} else {
-					var init ast.Expr
-					token = p.lexer.peek()
-					if token.Type == Equal {
-						p.lexer.consume()
-						init = p.parseExpr()
-						span = ast.MergeSpans(span, init.Span())
-					}
-
-					patElems = append(patElems, ast.NewObjShorthandPat(key, init, span))
-				}
-			} else if token.Type == DotDotDot {
-				p.lexer.consume()
-
-				pat := p.parsePattern()
-				span := ast.MergeSpans(token.Span, pat.Span())
-				patElems = append(patElems, ast.NewObjRestPat(pat, span))
-			} else {
-				p.reportError(token.Span, "Expected identifier or '...'")
-			}
-			first = false
-		}
-		end := token.Span.End
+		p.lexer.consume() // consume '{'
+		patElems := parseDelimSeq(p, CloseBrace, Comma, p.parseObjPatElem)
+		end := p.expect(CloseBrace, AlwaysConsume)
 		return ast.NewObjectPat(patElems, ast.NewSpan(start, end))
+	case DotDotDot: // Rest
+		p.lexer.consume() // consume '...'
+		pat := p.parsePattern(true)
+		span := token.Span
+		if pat == nil {
+			p.reportError(token.Span, "Expected pattern")
+			return nil
+		} else {
+			span = ast.MergeSpans(span, pat.Span())
+		}
+		return ast.NewRestPat(pat, span)
 	case String:
 		p.lexer.consume()
 		return ast.NewLitPat(&ast.StrLit{Value: token.Value}, token.Span)
@@ -223,35 +90,48 @@ func (p *Parser) parsePattern() ast.Pat {
 	}
 }
 
-func (parser *Parser) parsePatternSeq() []ast.Pat {
-	pats := []ast.Pat{}
+func (p *Parser) parseObjPatElem() ast.ObjPatElem {
+	token := p.lexer.peek()
 
-	// handles empty sequences
-	token := parser.lexer.peek()
+	if token.Type == Identifier {
+		p.lexer.consume()
+		key := token.Value
+		span := token.Span
 
-	//nolint: exhaustive
-	switch token.Type {
-	case CloseBracket, CloseParen, CloseBrace:
-		return pats
-	default:
-	}
+		token = p.lexer.peek()
+		if token.Type == Colon {
+			p.lexer.consume()
+			value := p.parsePattern(true)
+			span = ast.MergeSpans(span, value.Span())
 
-	pat := parser.parsePattern()
-	pats = append(pats, pat)
+			var init ast.Expr
+			token = p.lexer.peek()
+			if token.Type == Equal {
+				p.lexer.consume()
+				init = p.parseExpr()
+				span = ast.MergeSpans(span, init.Span())
+			}
 
-	token = parser.lexer.peek()
+			return ast.NewObjKeyValuePat(key, value, init, span)
+		} else {
+			var init ast.Expr
+			token = p.lexer.peek()
+			if token.Type == Equal {
+				p.lexer.consume()
+				init = p.parseExpr()
+				span = ast.MergeSpans(span, init.Span())
+			}
 
-	for {
-		//nolint: exhaustive
-		switch token.Type {
-		case Comma:
-			// TODO: handle trailing comma
-			parser.lexer.consume()
-			pat = parser.parsePattern()
-			pats = append(pats, pat)
-			token = parser.lexer.peek()
-		default:
-			return pats
+			return ast.NewObjShorthandPat(key, init, span)
 		}
+	} else if token.Type == DotDotDot {
+		p.lexer.consume()
+
+		pat := p.parsePattern(true)
+		span := ast.MergeSpans(token.Span, pat.Span())
+		return ast.NewObjRestPat(pat, span)
+	} else {
+		p.reportError(token.Span, "Expected identifier or '...'")
+		return nil
 	}
 }

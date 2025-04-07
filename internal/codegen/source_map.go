@@ -151,16 +151,14 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 		s.AddSegmentForNode(pk)
 	case *TuplePat:
 		for _, elem := range pk.Elems {
+			s.TraversePattern(elem)
 			switch elem := elem.(type) {
-			case *TupleElemPat:
-				s.TraversePattern(elem.Pattern)
+			case *IdentPat:
 				if elem.Default != nil {
 					s.TraverseExpr(elem.Default)
 				}
-			case *TupleRestPat:
-				s.TraversePattern(elem.Pattern)
 			default:
-				panic("TODO - TraversePattern")
+				// TODO: handle defaults for other types of patterns
 			}
 		}
 	case *ObjectPat:
@@ -169,9 +167,7 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 			case *ObjKeyValuePat:
 				// s.AddSegmentForNode(elem.Key)
 				s.TraversePattern(elem.Value)
-				if elem.Default != nil {
-					s.TraverseExpr(elem.Default)
-				}
+				s.TraverseExpr(elem.Default)
 			case *ObjShorthandPat:
 				// s.AddSegmentForNode(elem.Key)
 				if elem.Default != nil {
@@ -183,6 +179,8 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 				panic("TODO - TraversePattern")
 			}
 		}
+	case *RestPat:
+		s.TraversePattern(pk.Pattern)
 	default:
 		panic("TODO - TraversePattern")
 	}
@@ -215,6 +213,10 @@ func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 }
 
 func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
+	if expr == nil {
+		return
+	}
+
 	s.AddSegmentForNode(expr)
 
 	switch ek := expr.(type) {

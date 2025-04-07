@@ -415,8 +415,9 @@
     Params: {
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "a",
-                span: ast.Span{
+                Name:    "a",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:5},
                     End:   ast.Location{Line:1, Column:6},
                 },
@@ -425,8 +426,9 @@
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "b",
-                span: ast.Span{
+                Name:    "b",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
@@ -628,8 +630,9 @@
     Params: {
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "a",
-                span: ast.Span{
+                Name:    "a",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:4},
                     End:   ast.Location{Line:1, Column:5},
                 },
@@ -638,8 +641,9 @@
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "b",
-                span: ast.Span{
+                Name:    "b",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:7},
                     End:   ast.Location{Line:1, Column:8},
                 },
@@ -830,8 +834,9 @@
                 Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
-                            Name: "self",
-                            span: ast.Span{
+                            Name:    "self",
+                            Default: nil,
+                            span:    ast.Span{
                                 Start: ast.Location{Line:1, Column:7},
                                 End:   ast.Location{Line:1, Column:11},
                             },
@@ -889,8 +894,9 @@
                 Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
-                            Name: "self",
-                            span: ast.Span{
+                            Name:    "self",
+                            Default: nil,
+                            span:    ast.Span{
                                 Start: ast.Location{Line:1, Column:35},
                                 End:   ast.Location{Line:1, Column:39},
                             },
@@ -957,8 +963,9 @@
                 Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
-                            Name: "x",
-                            span: ast.Span{
+                            Name:    "x",
+                            Default: nil,
+                            span:    ast.Span{
                                 Start: ast.Location{Line:1, Column:68},
                                 End:   ast.Location{Line:1, Column:69},
                             },
@@ -2281,8 +2288,9 @@
     Params: {
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "a",
-                span: ast.Span{
+                Name:    "a",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:5},
                     End:   ast.Location{Line:1, Column:6},
                 },
@@ -2291,8 +2299,9 @@
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
-                Name: "b",
-                span: ast.Span{
+                Name:    "b",
+                Default: nil,
+                span:    ast.Span{
                     Start: ast.Location{Line:1, Column:8},
                     End:   ast.Location{Line:1, Column:9},
                 },
@@ -2781,6 +2790,78 @@
     span:     ast.Span{
         Start: ast.Location{Line:1, Column:1},
         End:   ast.Location{Line:1, Column:6},
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/ObjectWithSpreads - 1]
+&ast.ObjectExpr{
+    Elems: {
+        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            Name: &ast.IdentExpr{
+                Name: "a",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    nil,
+        },
+        &ast.RestSpread[github.com/escalier-lang/escalier/internal/ast.Expr]{
+            Value: &ast.IdentExpr{
+                Name: "b",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:8},
+                    End:   ast.Location{Line:1, Column:9},
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.RestSpread[github.com/escalier-lang/escalier/internal/ast.Expr]{
+            Value: &ast.ObjectExpr{
+                Elems: {
+                    &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+                        Name: &ast.IdentExpr{
+                            Name: "c",
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:15},
+                                End:   ast.Location{Line:1, Column:16},
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    nil,
+                    },
+                    &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+                        Name: &ast.IdentExpr{
+                            Name: "d",
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:18},
+                                End:   ast.Location{Line:1, Column:19},
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    nil,
+                    },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:14},
+                    End:   ast.Location{Line:1, Column:20},
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start: ast.Location{Line:1, Column:1},
+        End:   ast.Location{Line:1, Column:21},
     },
     inferredType: nil,
 }
