@@ -1,0 +1,1 @@
+{"version":3,"file":"./destructuring.js","sources":["./destructuring.esc"],"sourcesContent":["val foo = fn ({a, b, ...rest}) {\n    return rest.length\n}\nfn bar({a, b, ...rest}) {\n    return rest.length\n}\n"],"names":[],"mappings":"MAAI,AAAA,MAAM,UAAI;QAAA,UAAU,AAAA;EACpB,OAAO,AAAA,KAAK;;AAEhB,aAAO;QAAA,UAAU,AAAA;EACb,OAAO,AAAA,KAAK"}
