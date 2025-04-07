@@ -18,15 +18,14 @@ func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
 		span := token.Span
 
 		token = p.lexer.peek()
-		if token.Type == OpenParen {
+		if token.Type == OpenParen { // Extractor
 			p.lexer.consume() // consume '('
 			patArgs := parseDelimSeq(p, CloseParen, Comma, func() ast.Pat {
 				return p.parsePattern(true)
 			})
 			end := p.expect(CloseParen, AlwaysConsume)
 			return ast.NewExtractorPat(name, patArgs, ast.NewSpan(start, end))
-		} else {
-			// Handles default values, e.g. [a, b = 1]
+		} else { // Ident
 			var _default ast.Expr
 			if allowIdentDefault && token.Type == Equal {
 				p.lexer.consume()
@@ -46,12 +45,12 @@ func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
 		end := p.expect(CloseBracket, AlwaysConsume)
 		return ast.NewTuplePat(patElems, ast.NewSpan(start, end))
 	case OpenBrace: // Object
-		p.lexer.consume()
+		p.lexer.consume() // consume '{'
 		patElems := parseDelimSeq(p, CloseBrace, Comma, p.parseObjPatElem)
 		end := p.expect(CloseBrace, AlwaysConsume)
 		return ast.NewObjectPat(patElems, ast.NewSpan(start, end))
 	case DotDotDot: // Rest
-		p.lexer.consume()
+		p.lexer.consume() // consume '...'
 		pat := p.parsePattern(true)
 		span := token.Span
 		if pat == nil {
