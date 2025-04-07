@@ -115,7 +115,7 @@ type RestPat struct {
 	inferredType Type
 }
 
-func NewRestPattern(pattern Pat, span Span) *RestPat {
+func NewRestPat(pattern Pat, span Span) *RestPat {
 	return &RestPat{Pattern: pattern, span: span, inferredType: nil}
 }
 func (p *RestPat) Span() Span             { return p.span }
