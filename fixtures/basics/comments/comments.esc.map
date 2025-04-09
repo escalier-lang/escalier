@@ -1,0 +1,1 @@
+{"version":3,"file":"./comments.js","sources":["./comments.esc"],"sourcesContent":["// comment\nval x = 5\nval y = (x \n    // comment\n    + 5)\n\n/**\n * @param {number} x\n * @param {number} y\n */\nfn add(x, y) {\n    return /* sum */ x + y\n}\n"],"names":[],"mappings":"MACI,AAAA,IAAI;MACJ,AAAA,IAAK,AAAA,IAEH;AAMN,aAAO,OAAG;QAAH,AAAA;QAAG,AAAA;EACN,OAAc,AAAA,IAAI"}

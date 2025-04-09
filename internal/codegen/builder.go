@@ -239,12 +239,18 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
-		stmt := &ExprStmt{
-			Expr:   b.buildExpr(s.Expr),
-			span:   nil,
-			source: stmt,
+		switch s.Expr.(type) {
+		case *ast.EmptyExpr:
+			// Ignore empty expressions.
+			return []Stmt{}
+		default:
+			stmt := &ExprStmt{
+				Expr:   b.buildExpr(s.Expr),
+				span:   nil,
+				source: stmt,
+			}
+			return []Stmt{stmt}
 		}
-		return []Stmt{stmt}
 	case *ast.DeclStmt:
 		return b.buildDecl(s.Decl)
 	case *ast.ReturnStmt:

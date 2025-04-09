@@ -82,6 +82,9 @@ loop:
 			nextOp = ast.GreaterThan
 		case GreaterThanEqual:
 			nextOp = ast.GreaterThanEqual
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			continue
 		case CloseParen, CloseBracket, CloseBrace, Comma, EndOfFile, Var, Val, Fn, Return:
 			break loop
 		default:

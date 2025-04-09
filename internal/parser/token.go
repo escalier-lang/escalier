@@ -19,6 +19,8 @@ const (
 	Quasi
 	JSXText
 	Underscore
+	LineComment
+	BlockComment
 	Colon
 	Question
 
