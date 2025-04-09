@@ -167,3 +167,45 @@
     },
 }
 ---
+
+[TestLexingLineComments - 1]
+[]*parser.Token{
+    &parser.Token{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        Type:  10,
+        Value: "// foo",
+    },
+    &parser.Token{
+        Span: ast.Span{
+            Start: ast.Location{Line:2, Column:1},
+            End:   ast.Location{Line:2, Column:7},
+        },
+        Type:  10,
+        Value: "// bar",
+    },
+    &parser.Token{
+        Span: ast.Span{
+            Start: ast.Location{Line:3, Column:1},
+            End:   ast.Location{Line:3, Column:1},
+        },
+        Type:  64,
+        Value: "",
+    },
+}
+---
+
+[TestLexingBlockComment - 1]
+[]*parser.Token{
+    &parser.Token{
+        Span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:4, Column:2},
+        },
+        Type:  11,
+        Value: "/**\n * foo\n * bar\n */",
+    },
+}
+---

@@ -99,26 +99,24 @@ func (lexer *Lexer) next() *Token {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
 			for i < n {
-				c := lexer.source.Contents[i]
-				if c == '\n' {
+				if lexer.source.Contents[i] == '\n' {
 					break
 				}
 				i++
 			}
 			endOffset = i
 			end.Column = start.Column + (i - startOffset)
-			value := lexer.source.Contents[startOffset+2 : i]
+			value := lexer.source.Contents[startOffset:i]
 			token = NewToken(LineComment, value, ast.Span{Start: start, End: end})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "/*") {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
 			for i < n {
-				c := lexer.source.Contents[i]
-				if c == '*' && i+1 < n && lexer.source.Contents[i+1] == '/' {
+				if strings.HasPrefix(lexer.source.Contents[i:], "*/") {
 					i += 2
 					break
 				}
-				if c == '\n' {
+				if lexer.source.Contents[i] == '\n' {
 					end.Line++
 					end.Column = 1
 				} else {
@@ -127,7 +125,7 @@ func (lexer *Lexer) next() *Token {
 				i++
 			}
 			endOffset = i
-			value := lexer.source.Contents[startOffset+2 : i-2]
+			value := lexer.source.Contents[startOffset:i]
 			token = NewToken(BlockComment, value, ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(Slash, "/", ast.Span{Start: start, End: end})

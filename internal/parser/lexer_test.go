@@ -67,3 +67,25 @@ func TestLexingParens(t *testing.T) {
 
 	snaps.MatchSnapshot(t, lexer.Lex())
 }
+
+func TestLexingLineComments(t *testing.T) {
+	source := Source{
+		Path:     "input.esc",
+		Contents: "// foo\n// bar\n",
+	}
+
+	lexer := NewLexer(source)
+
+	snaps.MatchSnapshot(t, lexer.Lex())
+}
+
+func TestLexingBlockComment(t *testing.T) {
+	source := Source{
+		Path:     "input.esc",
+		Contents: "/**\n * foo\n * bar\n */",
+	}
+
+	lexer := NewLexer(source)
+
+	snaps.MatchSnapshot(t, lexer.Lex())
+}
