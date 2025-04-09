@@ -2,5 +2,5 @@ val foo = fn (...args) {
     return args.length
 }
 fn bar(...args) {
-    return arg.length
+    return args.length
 }

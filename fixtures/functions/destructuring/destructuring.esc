@@ -1,6 +1,6 @@
 val foo = fn ({a, b, ...rest}) {
-    return rest.length
+    return rest.c
 }
 fn bar({a, b, ...rest}) {
-    return rest.length
+    return rest.c
 }

@@ -4,6 +4,6 @@ const foo = function (...temp1) {
 };
 function bar(...temp2) {
   const args = temp2;
-  return arg.length;
+  return args.length;
 }
 //# sourceMappingURL=./rest_params.esc.map
