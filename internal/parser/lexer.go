@@ -166,7 +166,7 @@ func (lexer *Lexer) next() *Token {
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
 			endOffset++
 			end.Column++
-			token = NewToken(BangEqual, "!=", ast.Span{Start: start, End: end})
+			token = NewToken(NotEqual, "!=", ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(Bang, "!", ast.Span{Start: start, End: end})
 		}
