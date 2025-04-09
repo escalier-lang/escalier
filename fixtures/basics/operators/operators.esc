@@ -4,12 +4,9 @@ val c = x * y
 val d = x / y
 val e = x == y
 val f = x != y
-val g = x ≠ y
 val h = x > y
 val i = x >= y
-val j = x ≥ y
 val k = x < y
-val l = x <= y
 val m = x ≤ y
 
 val p = -x
