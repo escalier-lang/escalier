@@ -1,0 +1,6 @@
+val foo = fn ({a, b, ...rest}) {
+    return rest.c
+}
+fn bar({a, b, ...rest}) {
+    return rest.c
+}

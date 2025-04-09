@@ -1,0 +1,6 @@
+val foo = fn (...args) {
+    return args.length
+}
+fn bar(...args) {
+    return args.length
+}

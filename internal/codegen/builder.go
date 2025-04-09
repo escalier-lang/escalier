@@ -282,33 +282,9 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 	case *ast.VarDecl:
 		init := b.buildExpr(d.Init)
 		_, stmts := b.buildPattern(d.Pattern, init)
-		// varDecl := &VarDecl{
-		// 	Kind:    VariableKind(d.Kind),
-		// 	Pattern: b.buildPattern(d.Pattern),
-		// 	Init:    b.buildExpr(d.Init),
-		// 	declare: decl.Declare(),
-		// 	export:  decl.Export(),
-		// 	span:    nil,
-		// 	source:  decl,
-		// }
-		// stmt := &DeclStmt{
-		// 	Decl:   varDecl,
-		// 	span:   nil,
-		// 	source: decl,
-		// }
 		return stmts
 	case *ast.FuncDecl:
-		var params []*Param
-		var allParamStmts []Stmt
-		for _, p := range d.Params {
-			id := b.NewTempId()
-			_, paramStmts := b.buildPattern(p.Pattern, NewIdentExpr(id, nil))
-			allParamStmts = slices.Concat(allParamStmts, paramStmts)
-			params = append(params, &Param{
-				// TODO: handle param defaults
-				Pattern: NewIdentPat(id, nil, p.Pattern),
-			})
-		}
+		params, allParamStmts := b.buildParams(d.Params)
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
@@ -394,17 +370,7 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 			expr,
 		)
 	case *ast.FuncExpr:
-		var params []*Param
-		var allParamStmts []Stmt
-		for _, p := range e.Params {
-			id := b.NewTempId()
-			_, paramStmts := b.buildPattern(p.Pattern, NewIdentExpr(id, nil))
-			allParamStmts = slices.Concat(allParamStmts, paramStmts)
-			params = append(params, &Param{
-				// TODO: handle param defaults
-				Pattern: NewIdentPat(id, nil, p.Pattern),
-			})
-		}
+		params, allParamStmts := b.buildParams(e.Params)
 		return NewFuncExpr(
 			params,
 			slices.Concat(allParamStmts, b.buildStmts(e.Body.Stmts)),
@@ -417,4 +383,30 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 	default:
 		panic("TODO - buildExpr - default case")
 	}
+}
+
+func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
+	var outParams []*Param
+	var outParamStmts []Stmt
+	for _, p := range inParams {
+		id := b.NewTempId()
+		var paramPat Pat
+		paramPat = NewIdentPat(id, nil, p.Pattern)
+
+		switch pat := p.Pattern.(type) {
+		case *ast.RestPat:
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, nil))
+			outParamStmts = slices.Concat(outParamStmts, paramStmts)
+			paramPat = NewRestPat(paramPat, nil)
+		default:
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, nil))
+			outParamStmts = slices.Concat(outParamStmts, paramStmts)
+		}
+
+		outParams = append(outParams, &Param{
+			// TODO: handle param defaults
+			Pattern: paramPat,
+		})
+	}
+	return outParams, outParamStmts
 }
