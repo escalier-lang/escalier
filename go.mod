@@ -6,6 +6,7 @@ require (
 	github.com/gkampitakis/go-snaps v0.5.11
 	github.com/stretchr/testify v1.10.0
 	github.com/tliron/glsp v0.2.2
+	golang.org/x/text v0.23.0
 )
 
 require (
@@ -40,6 +41,5 @@ require (
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/term v0.14.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
