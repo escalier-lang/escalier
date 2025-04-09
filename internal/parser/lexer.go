@@ -136,6 +136,8 @@ func (lexer *Lexer) next() *Token {
 		} else {
 			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
 		}
+	case '≤':
+		token = NewToken(LessThanEqual, "≤", ast.Span{Start: start, End: end})
 	case '>':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], ">=") {
 			endOffset++
@@ -144,6 +146,8 @@ func (lexer *Lexer) next() *Token {
 		} else {
 			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
 		}
+	case '≥':
+		token = NewToken(GreaterThanEqual, "≥", ast.Span{Start: start, End: end})
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})
 	case '?':
@@ -166,10 +170,12 @@ func (lexer *Lexer) next() *Token {
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
 			endOffset++
 			end.Column++
-			token = NewToken(BangEqual, "!=", ast.Span{Start: start, End: end})
+			token = NewToken(NotEqual, "!=", ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(Bang, "!", ast.Span{Start: start, End: end})
 		}
+	case '≠':
+		token = NewToken(NotEqual, "≠", ast.Span{Start: start, End: end})
 	case ':':
 		token = NewToken(Colon, ":", ast.Span{Start: start, End: end})
 	case '"':

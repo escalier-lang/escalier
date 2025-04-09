@@ -56,7 +56,7 @@ const (
 	BackTick
 	Equal
 	EqualEqual
-	BangEqual
+	NotEqual
 	LessThan
 	LessThanEqual
 	GreaterThan
