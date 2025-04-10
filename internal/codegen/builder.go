@@ -328,9 +328,9 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:
-			panic("TODO: null literal")
+			return NewNullExpr(expr)
 		case *ast.UndefinedLit:
-			panic("TODO: undefined literal")
+			return NewIdentExpr("undefined", expr)
 		default:
 			panic("TODO: literal type")
 		}

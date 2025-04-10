@@ -76,6 +76,8 @@ func (p *Printer) PrintExpr(expr Expr) {
 		} else {
 			p.print("false")
 		}
+	case *NullExpr:
+		p.print("null")
 	case *IdentExpr:
 		p.print(e.Name)
 	case *UnaryExpr:

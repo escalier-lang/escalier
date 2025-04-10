@@ -33,6 +33,7 @@ func (*BinaryExpr) isExpr() {}
 func (*NumExpr) isExpr()    {}
 func (*StrExpr) isExpr()    {}
 func (*BoolExpr) isExpr()   {}
+func (*NullExpr) isExpr()   {}
 func (*IdentExpr) isExpr()  {}
 func (*UnaryExpr) isExpr()  {}
 func (*CallExpr) isExpr()   {}
@@ -210,6 +211,18 @@ func NewBoolExpr(value bool, source ast.Node) *BoolExpr {
 func (e *BoolExpr) Span() *Span        { return e.span }
 func (e *BoolExpr) SetSpan(span *Span) { e.span = span }
 func (e *BoolExpr) Source() ast.Node   { return e.source }
+
+type NullExpr struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewNullExpr(source ast.Node) *NullExpr {
+	return &NullExpr{source: source, span: nil}
+}
+func (e *NullExpr) Span() *Span        { return e.span }
+func (e *NullExpr) SetSpan(span *Span) { e.span = span }
+func (e *NullExpr) Source() ast.Node   { return e.source }
 
 type IdentExpr struct {
 	Name   string

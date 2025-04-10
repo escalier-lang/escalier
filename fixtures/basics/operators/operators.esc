@@ -7,7 +7,7 @@ val f = x != y
 val h = x > y
 val i = x >= y
 val k = x < y
-val m = x ≤ y
+val m = x <= y
 
 val p = -x
 val q = +x
