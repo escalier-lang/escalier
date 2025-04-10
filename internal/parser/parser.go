@@ -32,19 +32,22 @@ func NewParser(ctx context.Context, source Source) *Parser {
 	}
 }
 
-func (parser *Parser) ParseModule() *ast.Module {
+func (p *Parser) ParseModule() *ast.Module {
 	stmts := []ast.Stmt{}
 
-	token := parser.lexer.peek()
+	token := p.lexer.peek()
 	for {
 		//nolint: exhaustive
 		switch token.Type {
 		case EndOfFile:
 			return &ast.Module{Stmts: stmts}
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
 		default:
-			stmt := parser.parseStmt()
+			stmt := p.parseStmt()
 			stmts = append(stmts, stmt)
-			token = parser.lexer.peek()
+			token = p.lexer.peek()
 		}
 	}
 }

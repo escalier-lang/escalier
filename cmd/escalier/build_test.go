@@ -28,9 +28,10 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	err = os.WriteFile(destFile, input, 0644)
 	require.NoError(t, err)
 
-	out := bytes.NewBuffer(nil)
-	build(out, []string{fixtureName + ".esc"})
-	fmt.Println("stdout =", out.String())
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+	build(stdout, stderr, []string{fixtureName + ".esc"})
+	fmt.Println("stderr =", stderr.String())
 
 	actualJs, err := os.ReadFile(fixtureName + ".js")
 	require.NoError(t, err)
@@ -74,7 +75,7 @@ func TestBuild(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			// if fixture.Name() != "destructuring" {
+			// if fixture.Name() != "comments" {
 			// 	continue
 			// }
 			name := group.Name() + "/" + fixture.Name()

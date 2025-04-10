@@ -279,6 +279,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 	for expr == nil {
 		// nolint: exhaustive
 		switch token.Type {
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
 		case Number:
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
@@ -295,6 +298,12 @@ func (p *Parser) parsePrimary() ast.Expr {
 		case False:
 			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewBoolean(false, token.Span))
+		case Null:
+			p.lexer.consume()
+			expr = ast.NewLitExpr(ast.NewNull(token.Span))
+		case Undefined:
+			p.lexer.consume()
+			expr = ast.NewLitExpr(ast.NewUndefined(token.Span))
 		case Identifier, Underscore:
 			p.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)

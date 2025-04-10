@@ -247,7 +247,7 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 		for _, elem := range ek.Elems {
 			s.TraverseExpr(elem)
 		}
-	case *IdentExpr, *StrExpr, *NumExpr, *BoolExpr:
+	case *IdentExpr, *StrExpr, *NumExpr, *BoolExpr, *NullExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top
 		// of this function
 	default:

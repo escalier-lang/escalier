@@ -11,26 +11,26 @@ import (
 	"github.com/escalier-lang/escalier/internal/parser"
 )
 
-func build(out io.Writer, files []string) {
+func build(stdout io.Writer, stderr io.Writer, files []string) {
 	for _, file := range files {
-		fmt.Fprintln(out, "building", file)
+		fmt.Fprintln(stdout, "building", file)
 
 		// check that file has .esc extension
 		if path.Ext(file) != ".esc" {
-			fmt.Fprintln(out, "file does not have .esc extension")
+			fmt.Fprintln(stdout, "file does not have .esc extension")
 			continue
 		}
 
 		// check if file exists
 		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Fprintln(out, "file does not exist")
+			fmt.Fprintln(stdout, "file does not exist")
 			continue
 		}
 
 		// open the file
 		f, err := os.Open(file)
 		if err != nil {
-			fmt.Fprintln(out, "failed to open file")
+			fmt.Fprintln(stdout, "failed to open file")
 			continue
 		}
 		defer f.Close()
@@ -38,7 +38,7 @@ func build(out io.Writer, files []string) {
 		// read file content
 		bytes, err := os.ReadFile(file)
 		if err != nil {
-			fmt.Fprintln(out, "failed to read file content")
+			fmt.Fprintln(stdout, "failed to read file content")
 			continue
 		}
 
@@ -48,6 +48,10 @@ func build(out io.Writer, files []string) {
 		}
 
 		output := compiler.Compile(source)
+
+		for _, err := range output.Errors {
+			fmt.Fprintln(stderr, err)
+		}
 
 		// create js file
 		outfile := strings.TrimSuffix(file, path.Ext(file)) + ".js"

@@ -22,6 +22,9 @@ func (p *Parser) parseBlock() ast.Block {
 		case CloseBrace:
 			p.lexer.consume()
 			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
 		default:
 			stmt := p.parseStmt()
 			stmts = append(stmts, stmt)

@@ -7,8 +7,7 @@ const f = x != y;
 const h = x > y;
 const i = x >= y;
 const k = x < y;
-const m = x;
-y;
+const m = x <= y;
 const p = -x;
 const q = +x;
 //# sourceMappingURL=./operators.esc.map

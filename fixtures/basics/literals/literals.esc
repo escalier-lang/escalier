@@ -1,0 +1,7 @@
+val nums = [5, 1.23, -1]
+val name = "world"
+val str = "world"
+// TODO: build template literal strings
+// val tmpl = `hello, ${name}`
+val bools = [true, false]
+val other = [null, undefined]

@@ -27,7 +27,7 @@ func main() {
 		fmt.Println("subcommand 'build'")
 		fmt.Println("  out:", *buildOut)
 		fmt.Println("  tail:", buildCmd.Args())
-		build(os.Stdout, buildCmd.Args())
+		build(os.Stdout, os.Stderr, buildCmd.Args())
 	case "format":
 		err := formatCmd.Parse(os.Args[2:])
 		if err != nil {

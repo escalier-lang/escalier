@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -328,9 +329,9 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:
-			panic("TODO: null literal")
+			return NewNullExpr(expr)
 		case *ast.UndefinedLit:
-			panic("TODO: undefined literal")
+			return NewIdentExpr("undefined", expr)
 		default:
 			panic("TODO: literal type")
 		}
@@ -387,7 +388,7 @@ func (b *Builder) buildExpr(expr ast.Expr) Expr {
 	case *ast.EmptyExpr:
 		panic("TODO - buildExpr - EmptyExpr")
 	default:
-		panic("TODO - buildExpr - default case")
+		panic(fmt.Sprintf("TODO - buildExpr - default case: %#v", e))
 	}
 }
 
