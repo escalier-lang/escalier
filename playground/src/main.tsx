@@ -2,9 +2,9 @@ import ReactDOM from 'react-dom/client';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
-import { Playground } from './playground';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
+import { Playground } from './playground';
 import './user-worker';
 
 async function main() {
