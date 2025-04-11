@@ -132,6 +132,15 @@ test('textDocument/didChange', async () => {
         capabilities: {},
     });
 
+    client.textDocumentDidOpen({
+        textDocument: {
+            uri: 'file:///home/user/project/foo.esc',
+            version: 2,
+            languageId: 'escalier',
+            text: 'console.log("Hello, world!")\nval x = 5\n',
+        },
+    });
+
     client.textDocumentDidChange({
         textDocument: {
             uri: 'file:///home/user/project/foo.esc',
