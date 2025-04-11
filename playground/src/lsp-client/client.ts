@@ -300,9 +300,21 @@ export class Client {
         return this.sendRequest('textDocument/definition', params);
     }
 
+    textDocumentCodeAction(
+        params: lsp.CodeActionParams,
+    ): Promise<lsp.Command[] | lsp.CodeAction[]> {
+        return this.sendRequest('textDocument/codeAction', params);
+    }
+
     // Go to type definition
 
     // Go to implementation
+
+    workspaceExecuteCommand(
+        params: lsp.ExecuteCommandParams,
+    ): Promise<lsp.LSPAny> {
+        return this.sendRequest('workspace/executeCommand', params);
+    }
 
     private fireAndForget(method: string, params: any) {
         const id = this.requestID++;

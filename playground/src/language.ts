@@ -29,6 +29,28 @@ export function setupLanguage(client: Client) {
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             const models = monaco.editor.getModels();
+
+            if (params.uri.endsWith('.esc')) {
+                client
+                    .workspaceExecuteCommand({
+                        command: 'compile',
+                        arguments: [params.uri],
+                    })
+                    .then((result) => {
+                        console.log('compile result =', result);
+                        const outputUri = params.uri.replace('.esc', '.js');
+                        const model = models.find(
+                            (model) => model.uri.toString() === outputUri,
+                        );
+
+                        if (!model) {
+                            return;
+                        }
+
+                        model.setValue(result.text);
+                    });
+            }
+
             const model = models.find(
                 (model) => model.uri.toString() === params.uri,
             );
@@ -59,7 +81,7 @@ export function setupLanguage(client: Client) {
         client.textDocumentDidOpen({
             textDocument: {
                 uri: model.uri.toString(),
-                languageId: languageID,
+                languageId: model.getLanguageId(),
                 version: model.getVersionId(),
                 text: model.getValue(),
             },

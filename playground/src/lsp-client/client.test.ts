@@ -28,18 +28,28 @@ test('initialize', async () => {
     });
 
     expect(initResult).toMatchInlineSnapshot(`
-      {
-        "capabilities": {
-          "declarationProvider": true,
-          "definitionProvider": true,
-          "textDocumentSync": 1,
-        },
-        "serverInfo": {
-          "name": "escalier",
-          "version": "0.0.1",
-        },
-      }
-    `);
+  {
+    "capabilities": {
+      "codeActionProvider": {
+        "codeActionKinds": [
+          "compile",
+        ],
+      },
+      "declarationProvider": true,
+      "definitionProvider": true,
+      "executeCommandProvider": {
+        "commands": [
+          "compile",
+        ],
+      },
+      "textDocumentSync": 1,
+    },
+    "serverInfo": {
+      "name": "escalier",
+      "version": "0.0.1",
+    },
+  }
+`);
 });
 
 test('foo/bar', async () => {
@@ -58,6 +68,54 @@ test('foo/bar', async () => {
     "message": "method not supported: foo/bar",
   }
 `);
+});
+
+test('textDocument/didOpen', async () => {
+    let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
+
+    client.onTextDocumentPublishDiagnostics((params) => {
+        console.log('Received diagnostics');
+        diagnostics = params.diagnostics;
+    });
+
+    await client.initialize({
+        processId: process.pid,
+        rootUri: 'file:///home/user/project',
+        capabilities: {},
+    });
+
+    client.textDocumentDidOpen({
+        textDocument: {
+            uri: 'file:///home/user/project/foo.esc',
+            version: 2,
+            languageId: 'escalier',
+            text: 'console.log("Hello, world!")\nval x =\n',
+        },
+    });
+
+    await vi.waitFor(() => {
+        expect(diagnostics).not.toBeNull();
+    });
+
+    expect(diagnostics).toMatchInlineSnapshot(`
+    [
+      {
+        "message": "Expected an expression",
+        "range": {
+          "end": {
+            "character": 0,
+            "line": 2,
+          },
+          "start": {
+            "character": 0,
+            "line": 2,
+          },
+        },
+        "severity": 1,
+        "source": "escalier",
+      },
+    ]
+  `);
 });
 
 test('textDocument/didChange', async () => {
@@ -105,4 +163,82 @@ test('textDocument/didChange', async () => {
         },
       ]
     `);
+});
+
+test('textDocument/codeAction', async () => {
+    await client.initialize({
+        processId: process.pid,
+        rootUri: 'file:///home/user/project',
+        capabilities: {},
+    });
+
+    const actions = await client.textDocumentCodeAction({
+        textDocument: {
+            uri: 'file:///home/user/project/foo.esc',
+        },
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 1 },
+        },
+        context: {
+            diagnostics: [],
+        },
+    });
+
+    expect(actions).toMatchInlineSnapshot(`
+  [
+    {
+      "command": {
+        "command": "compile",
+        "title": "Compile",
+      },
+      "kind": "compile",
+      "title": "Compile",
+    },
+  ]
+`);
+});
+
+test('workspace/executeCommand', async () => {
+    await client.initialize({
+        processId: process.pid,
+        rootUri: 'file:///home/user/project',
+        capabilities: {},
+    });
+
+    let diagnosticsPublished = false;
+
+    client.onTextDocumentPublishDiagnostics((_params) => {
+        diagnosticsPublished = true;
+    });
+
+    client.textDocumentDidOpen({
+        textDocument: {
+            uri: 'file:///home/user/project/foo.esc',
+            version: 2,
+            languageId: 'escalier',
+            text: 'console.log("Hello, world!")\nval x = 5\n',
+        },
+    });
+
+    await vi.waitFor(() => {
+        expect(diagnosticsPublished).toBeTruthy();
+    });
+
+    const response = await client.workspaceExecuteCommand({
+        command: 'compile',
+        arguments: ['file:///home/user/project/foo.esc'],
+    });
+
+    expect(response).toMatchInlineSnapshot(`
+  {
+    "languageId": "javascript",
+    "text": "console.log("Hello, world!");
+  const x = 5;
+  //# sourceMappingURL=./foo.esc.map
+  ",
+    "uri": "file:///home/user/project/foo.js",
+    "version": 0,
+  }
+`);
 });
