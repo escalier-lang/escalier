@@ -1,13 +1,13 @@
 package ast
 
 type Location struct {
-	Line   int
-	Column int
+	Line   int `json:"line"`
+	Column int `json:"column"`
 }
 
 type Span struct {
-	Start Location
-	End   Location
+	Start Location `json:"start"`
+	End   Location `json:"end"`
 }
 
 func NewSpan(start, end Location) Span {

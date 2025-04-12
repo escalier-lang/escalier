@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -261,6 +263,14 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 	}
 
 	output := compiler.Compile(source)
+
+	if len(output.Errors) > 0 {
+		errorsJSON, err := json.Marshal(output.Errors)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal compilation errors: %v", err)
+		}
+		return nil, errors.New(string(errorsJSON))
+	}
 
 	// TODO: include errors in the response
 	response := protocol.TextDocumentItem{

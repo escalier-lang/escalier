@@ -60,8 +60,8 @@ export const Playground = () => {
 
     return (
         <div className={styles.playground}>
-            <div>Input</div>
-            <div>Output</div>
+            <div className={styles.header}>Input</div>
+            <div className={styles.header}>Output</div>
             <div className={styles.editor} ref={inputDivRef} />
             <div className={styles.editor} ref={outputDivRef} />
         </div>
