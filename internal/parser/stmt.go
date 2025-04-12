@@ -47,6 +47,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 	case Return:
 		p.lexer.consume()
 		expr := p.parseNonDelimitedExpr()
+		if expr == nil {
+			return ast.NewReturnStmt(nil, token.Span)
+		}
 		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
 		expr := p.parseNonDelimitedExpr()

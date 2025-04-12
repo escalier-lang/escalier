@@ -40,6 +40,7 @@ export class Client {
     private deferreds: Map<number, Deferred>;
     private requestID: number;
     private wasmBuf: ArrayBuffer;
+    private errorBuffer: string;
 
     constructor(wasmBuf: ArrayBuffer) {
         this.stdin = new SimpleStream();
@@ -48,6 +49,7 @@ export class Client {
         this.deferreds = new Map();
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
+        this.errorBuffer = '';
 
         this.stdout.on('data', (chunk) => {
             const message = decoder.decode(chunk);
@@ -105,7 +107,12 @@ export class Client {
                     console.log('writeSync:', value);
                 } else if (fd === 2) {
                     const value = decoder.decode(buffer);
-                    console.error('writeSync:', value);
+                    if (value === '\n') {
+                        console.error(this.errorBuffer);
+                        this.errorBuffer = '';
+                    } else {
+                        this.errorBuffer += value;
+                    }
                 } else {
                     console.log('writeSync:', fd, buffer);
                 }

@@ -37,7 +37,13 @@ func (p *Parser) parseNonDelimitedExpr() ast.Expr {
 }
 
 func (p *Parser) parseExpr() ast.Expr {
-	return p.ParseExprWithMarker(MarkerDelim)
+	expr := p.ParseExprWithMarker(MarkerDelim)
+	if expr == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected an expression")
+		return ast.NewEmpty(token.Span)
+	}
+	return expr
 }
 
 func (p *Parser) parseExprInternal() ast.Expr {
@@ -51,7 +57,12 @@ func (p *Parser) parseExprInternal() ast.Expr {
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
 
-	values = append(values, p.parsePrimary())
+	primary := p.parsePrimary()
+	if primary == nil {
+		return nil
+	}
+
+	values = append(values, primary)
 
 loop:
 	for {
@@ -114,6 +125,11 @@ loop:
 
 		ops.Push(nextOp)
 		expr := p.parsePrimary()
+		if expr == nil {
+			token := p.lexer.peek()
+			p.reportError(token.Span, "Expected an expression")
+			expr = ast.NewEmpty(token.Span)
+		}
 		values.Push(expr)
 	}
 
@@ -359,9 +375,12 @@ func (p *Parser) parsePrimary() ast.Expr {
 			Val, Var, Return,
 			CloseBrace, CloseParen, CloseBracket,
 			EndOfFile:
-			expr = ast.NewEmpty(token.Span)
-			p.reportError(token.Span, "Expected an expression")
-			return expr
+			// Every call to `parseExpr()` should check if `nil` is returned so
+			// that we can raise an error if we were expecting an expression.
+			// We could also have a function like `maybeParseExpr()` that is okay
+			// with return `nil` whereas `parseExpr()` would return an error if
+			// `nil` is returned.
+			return nil
 		default:
 			p.lexer.consume()
 			p.reportError(token.Span, fmt.Sprintf("Unexpected token, '%s'", token.Value))

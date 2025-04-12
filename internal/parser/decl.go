@@ -46,6 +46,11 @@ func (p *Parser) parseDecl() ast.Decl {
 			}
 			p.lexer.consume()
 			init = p.parseNonDelimitedExpr()
+			if init == nil {
+				token := p.lexer.peek()
+				p.reportError(token.Span, "Expected an expression")
+				init = ast.NewEmpty(token.Span)
+			}
 			end = init.Span().End
 		}
 

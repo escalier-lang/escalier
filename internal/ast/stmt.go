@@ -29,7 +29,7 @@ func (*DeclStmt) isStmt()      {}
 func (s *DeclStmt) Span() Span { return s.span }
 
 type ReturnStmt struct {
-	Expr Expr
+	Expr Expr // optional
 	span Span
 }
 

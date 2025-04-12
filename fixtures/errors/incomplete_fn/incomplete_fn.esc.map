@@ -1,0 +1,1 @@
+{"version":3,"file":"./incomplete_fn.js","sources":["./incomplete_fn.esc"],"sourcesContent":["fn add(a, b) {\n    return a + b\n}\nfn\nval x = 5\n"],"names":[],"mappings":"AAAA,aAAO,OAAG;QAAH,AAAA;QAAG,AAAA;EACN,OAAO,AAAA,IAAI;;AAEf;;AACI,AAAA,GAAI"}
