@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/moznion/go-optional"
+
 type Pat interface {
 	isPat()
 	Node
@@ -17,12 +19,12 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
-	Default      Expr // optional
+	Default      optional.Option[Expr]
 	span         Span
 	inferredType Type
 }
 
-func NewIdentPat(name string, _default Expr, span Span) *IdentPat {
+func NewIdentPat(name string, _default optional.Option[Expr], span Span) *IdentPat {
 	return &IdentPat{Name: name, Default: _default, span: span, inferredType: nil}
 }
 func (p *IdentPat) Span() Span             { return p.span }
@@ -38,23 +40,23 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key          string
 	Value        Pat
-	Default      Expr // optional
+	Default      optional.Option[Expr]
 	span         Span
 	inferredType Type
 }
 
-func NewObjKeyValuePat(key string, value Pat, _default Expr, span Span) *ObjKeyValuePat {
+func NewObjKeyValuePat(key string, value Pat, _default optional.Option[Expr], span Span) *ObjKeyValuePat {
 	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, span: span, inferredType: nil}
 }
 func (p *ObjKeyValuePat) Span() Span { return p.span }
 
 type ObjShorthandPat struct {
 	Key     string
-	Default Expr // optional
+	Default optional.Option[Expr]
 	span    Span
 }
 
-func NewObjShorthandPat(key string, _default Expr, span Span) *ObjShorthandPat {
+func NewObjShorthandPat(key string, _default optional.Option[Expr], span Span) *ObjShorthandPat {
 	return &ObjShorthandPat{Key: key, Default: _default, span: span}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }

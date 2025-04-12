@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/moznion/go-optional"
+
 type ObjExprElem interface{ isObjExprElem() }
 
 func (*Callable[FuncExpr]) isObjExprElem()           {}
@@ -71,20 +73,20 @@ func NewProperty[T any, PN any](name PN, value T) *Property[T, PN] {
 	}
 }
 
-type IndexParam[T any] struct {
+type IndexParam[T Node] struct {
 	Name       string
 	Constraint T
 }
 
-type Mapped[T any] struct {
+type Mapped[T Node] struct {
 	TypeParam *IndexParam[T]
-	Name      T // optional, used for renaming keys
+	Name      optional.Option[T]
 	Value     T
 	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly  *MappedModifier
 }
 
-type RestSpread[T any] struct {
+type RestSpread[T Node] struct {
 	Value T
 }
 

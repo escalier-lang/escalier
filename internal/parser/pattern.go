@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
 )
 
 func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
@@ -26,11 +27,12 @@ func (p *Parser) parsePattern(allowIdentDefault bool) ast.Pat {
 			end := p.expect(CloseParen, AlwaysConsume)
 			return ast.NewExtractorPat(name, patArgs, ast.NewSpan(start, end))
 		} else { // Ident
-			var _default ast.Expr
+			_default := optional.None[ast.Expr]()
 			if allowIdentDefault && token.Type == Equal {
 				p.lexer.consume()
-				_default = p.parseExpr()
-				span = ast.MergeSpans(span, _default.Span())
+				e := p.parseExpr()
+				span = ast.MergeSpans(span, e.Span())
+				_default = optional.Some(e)
 			}
 			return ast.NewIdentPat(name, _default, span)
 		}
@@ -104,22 +106,24 @@ func (p *Parser) parseObjPatElem() ast.ObjPatElem {
 			value := p.parsePattern(true)
 			span = ast.MergeSpans(span, value.Span())
 
-			var init ast.Expr
+			init := optional.None[ast.Expr]()
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				init = p.parseExpr()
-				span = ast.MergeSpans(span, init.Span())
+				e := p.parseExpr()
+				span = ast.MergeSpans(span, e.Span())
+				init = optional.Some(e)
 			}
 
 			return ast.NewObjKeyValuePat(key, value, init, span)
 		} else {
-			var init ast.Expr
+			init := optional.None[ast.Expr]()
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				init = p.parseExpr()
-				span = ast.MergeSpans(span, init.Span())
+				e := p.parseExpr()
+				span = ast.MergeSpans(span, e.Span())
+				init = optional.Some(e)
 			}
 
 			return ast.NewObjShorthandPat(key, init, span)

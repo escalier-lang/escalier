@@ -155,10 +155,10 @@ func (p *Printer) printPattern(pat Pat) {
 	switch pat := pat.(type) {
 	case *IdentPat:
 		p.print(pat.Name)
-		if pat.Default != nil {
+		pat.Default.IfSome(func(e Expr) {
 			p.print(" = ")
-			p.PrintExpr(pat.Default)
-		}
+			p.PrintExpr(e)
+		})
 	case *ObjectPat:
 		p.print("{")
 		for i, elem := range pat.Elems {
@@ -170,16 +170,16 @@ func (p *Printer) printPattern(pat Pat) {
 				p.print(elem.Key)
 				p.print(": ")
 				p.printPattern(elem.Value)
-				if elem.Default != nil {
+				elem.Default.IfSome(func(e Expr) {
 					p.print(" = ")
-					p.PrintExpr(elem.Default)
-				}
+					p.PrintExpr(e)
+				})
 			case *ObjShorthandPat:
 				p.print(elem.Key)
-				if elem.Default != nil {
+				elem.Default.IfSome(func(e Expr) {
 					p.print(" = ")
-					p.PrintExpr(elem.Default)
-				}
+					p.PrintExpr(e)
+				})
 			case *ObjRestPat:
 				p.print("...")
 				p.printPattern(elem.Pattern)
@@ -272,10 +272,10 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 		p.PrintDecl(s.Decl)
 	case *ReturnStmt:
 		p.print("return")
-		if s.Expr != nil {
+		s.Expr.IfSome(func(e Expr) {
 			p.print(" ")
-			p.PrintExpr(s.Expr)
-		}
+			p.PrintExpr(e)
+		})
 		p.print(";")
 	}
 

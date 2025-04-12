@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/moznion/go-optional"
+
 //sumtype:decl
 type Stmt interface {
 	isStmt()
@@ -29,11 +31,11 @@ func (*DeclStmt) isStmt()      {}
 func (s *DeclStmt) Span() Span { return s.span }
 
 type ReturnStmt struct {
-	Expr Expr // optional
+	Expr optional.Option[Expr]
 	span Span
 }
 
-func NewReturnStmt(expr Expr, span Span) *ReturnStmt {
+func NewReturnStmt(expr optional.Option[Expr], span Span) *ReturnStmt {
 	return &ReturnStmt{Expr: expr, span: span}
 }
 func (*ReturnStmt) isStmt()      {}

@@ -1,6 +1,10 @@
 package ast
 
-import "math/big"
+import (
+	"math/big"
+
+	"github.com/moznion/go-optional"
+)
 
 //sumtype:decl
 type Expr interface {
@@ -291,12 +295,12 @@ func (e *ObjectExpr) SetInferredType(t Type) { e.inferredType = t }
 type IfElseExpr struct {
 	Cond         Expr
 	Cons         Block
-	Alt          BlockOrExpr // optional
+	Alt          optional.Option[BlockOrExpr]
 	span         Span
 	inferredType Type
 }
 
-func NewIfElse(cond Expr, cons Block, alt BlockOrExpr, span Span) *IfElseExpr {
+func NewIfElse(cond Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfElseExpr {
 	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfElseExpr) Span() Span             { return e.span }
@@ -307,12 +311,12 @@ type IfLetExpr struct {
 	Pattern      Pat
 	Target       Expr
 	Cons         Block
-	Alt          BlockOrExpr // optional
+	Alt          optional.Option[BlockOrExpr]
 	span         Span
 	inferredType Type
 }
 
-func NewIfLet(pattern Pat, target Expr, cons Block, alt BlockOrExpr, span Span) *IfLetExpr {
+func NewIfLet(pattern Pat, target Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfLetExpr {
 	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfLetExpr) Span() Span             { return e.span }
@@ -321,7 +325,7 @@ func (e *IfLetExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type MatchCase struct {
 	Pattern Pat
-	Guard   Expr // optional
+	Guard   optional.Option[Expr]
 	Body    BlockOrExpr
 	span    Span
 }
@@ -357,12 +361,12 @@ func (e *AssignExpr) SetInferredType(t Type) { e.inferredType = t }
 type TryCatchExpr struct {
 	Try          Block
 	Catch        []*MatchCase // optional
-	Finally      *Block       // optional
+	Finally      optional.Option[*Block]
 	span         Span
 	inferredType Type
 }
 
-func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryCatchExpr {
+func NewTryCatch(try Block, catch []*MatchCase, finally optional.Option[*Block], span Span) *TryCatchExpr {
 	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
 }
 func (e *TryCatchExpr) Span() Span             { return e.span }
