@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
 )
 
 var precedence = map[ast.BinaryOp]int{
@@ -595,26 +596,24 @@ func (p *Parser) parseIfElse() ast.Expr {
 				Expr:  expr,
 				Block: nil,
 			}
-			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: expr.Span().End})
+			return ast.NewIfElse(cond, body, optional.Some(alt), ast.Span{Start: start, End: expr.Span().End})
 		case OpenBrace:
 			block := p.parseBlock()
 			alt := ast.BlockOrExpr{
 				Expr:  nil,
 				Block: &block,
 			}
-			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: block.Span.End})
+			return ast.NewIfElse(cond, body, optional.Some(alt), ast.Span{Start: start, End: block.Span.End})
 		default:
 			p.reportError(token.Span, "Expected an if or an opening brace")
-			alt := ast.BlockOrExpr{
-				Expr:  nil,
-				Block: nil,
-			}
-			return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: token.Span.Start})
+			return ast.NewIfElse(
+				cond, body, optional.None[ast.BlockOrExpr](),
+				ast.Span{Start: start, End: token.Span.Start},
+			)
 		}
 	}
-	alt := ast.BlockOrExpr{
-		Expr:  nil,
-		Block: nil,
-	}
-	return ast.NewIfElse(cond, body, alt, ast.Span{Start: start, End: token.Span.Start})
+	return ast.NewIfElse(
+		cond, body, optional.None[ast.BlockOrExpr](),
+		ast.Span{Start: start, End: token.Span.Start},
+	)
 }

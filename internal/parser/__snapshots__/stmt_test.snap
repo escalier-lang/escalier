@@ -444,29 +444,31 @@
         Body: ast.Block{
             Stmts: {
                 &ast.ReturnStmt{
-                    Expr: &ast.BinaryExpr{
-                        Left: &ast.IdentExpr{
-                            Name: "a",
+                    Expr: {
+                        &ast.BinaryExpr{
+                            Left: &ast.IdentExpr{
+                                Name: "a",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:23},
+                                    End:   ast.Location{Line:1, Column:24},
+                                },
+                                inferredType: nil,
+                            },
+                            Op:    0,
+                            Right: &ast.IdentExpr{
+                                Name: "b",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:1, Column:27},
+                                    End:   ast.Location{Line:1, Column:28},
+                                },
+                                inferredType: nil,
+                            },
                             span: ast.Span{
                                 Start: ast.Location{Line:1, Column:23},
-                                End:   ast.Location{Line:1, Column:24},
-                            },
-                            inferredType: nil,
-                        },
-                        Op:    0,
-                        Right: &ast.IdentExpr{
-                            Name: "b",
-                            span: ast.Span{
-                                Start: ast.Location{Line:1, Column:27},
                                 End:   ast.Location{Line:1, Column:28},
                             },
                             inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start: ast.Location{Line:1, Column:23},
-                            End:   ast.Location{Line:1, Column:28},
-                        },
-                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:16},
@@ -625,29 +627,31 @@
                     },
                 },
                 &ast.ReturnStmt{
-                    Expr: &ast.BinaryExpr{
-                        Left: &ast.IdentExpr{
-                            Name: "a",
+                    Expr: {
+                        &ast.BinaryExpr{
+                            Left: &ast.IdentExpr{
+                                Name: "a",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:4, Column:12},
+                                    End:   ast.Location{Line:4, Column:13},
+                                },
+                                inferredType: nil,
+                            },
+                            Op:    0,
+                            Right: &ast.IdentExpr{
+                                Name: "b",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:4, Column:16},
+                                    End:   ast.Location{Line:4, Column:17},
+                                },
+                                inferredType: nil,
+                            },
                             span: ast.Span{
                                 Start: ast.Location{Line:4, Column:12},
-                                End:   ast.Location{Line:4, Column:13},
-                            },
-                            inferredType: nil,
-                        },
-                        Op:    0,
-                        Right: &ast.IdentExpr{
-                            Name: "b",
-                            span: ast.Span{
-                                Start: ast.Location{Line:4, Column:16},
                                 End:   ast.Location{Line:4, Column:17},
                             },
                             inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start: ast.Location{Line:4, Column:12},
-                            End:   ast.Location{Line:4, Column:17},
-                        },
-                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:4, Column:5},
@@ -730,19 +734,21 @@
         Body: ast.Block{
             Stmts: {
                 &ast.ReturnStmt{
-                    Expr: &ast.LiteralExpr{
-                        Lit: &ast.NumLit{
-                            Value: 5,
-                            span:  ast.Span{
+                    Expr: {
+                        &ast.LiteralExpr{
+                            Lit: &ast.NumLit{
+                                Value: 5,
+                                span:  ast.Span{
+                                    Start: ast.Location{Line:1, Column:15},
+                                    End:   ast.Location{Line:1, Column:16},
+                                },
+                            },
+                            span: ast.Span{
                                 Start: ast.Location{Line:1, Column:15},
                                 End:   ast.Location{Line:1, Column:16},
                             },
+                            inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start: ast.Location{Line:1, Column:15},
-                            End:   ast.Location{Line:1, Column:16},
-                        },
-                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:8},
@@ -965,28 +971,30 @@ nil
                     },
                 },
                 &ast.ReturnStmt{
-                    Expr: &ast.BinaryExpr{
-                        Left: &ast.IdentExpr{
-                            Name: "a",
+                    Expr: {
+                        &ast.BinaryExpr{
+                            Left: &ast.IdentExpr{
+                                Name: "a",
+                                span: ast.Span{
+                                    Start: ast.Location{Line:4, Column:12},
+                                    End:   ast.Location{Line:4, Column:13},
+                                },
+                                inferredType: nil,
+                            },
+                            Op:    0,
+                            Right: &ast.EmptyExpr{
+                                span: ast.Span{
+                                    Start: ast.Location{Line:5, Column:4},
+                                    End:   ast.Location{Line:5, Column:5},
+                                },
+                                inferredType: nil,
+                            },
                             span: ast.Span{
                                 Start: ast.Location{Line:4, Column:12},
-                                End:   ast.Location{Line:4, Column:13},
-                            },
-                            inferredType: nil,
-                        },
-                        Op:    0,
-                        Right: &ast.EmptyExpr{
-                            span: ast.Span{
-                                Start: ast.Location{Line:5, Column:4},
                                 End:   ast.Location{Line:5, Column:5},
                             },
                             inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start: ast.Location{Line:4, Column:12},
-                            End:   ast.Location{Line:5, Column:5},
-                        },
-                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:4, Column:5},

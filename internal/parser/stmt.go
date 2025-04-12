@@ -1,6 +1,9 @@
 package parser
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
+)
 
 func (p *Parser) parseBlock() ast.Block {
 	stmts := []ast.Stmt{}
@@ -50,7 +53,7 @@ func (p *Parser) parseStmt() ast.Stmt {
 		if expr == nil {
 			return ast.NewReturnStmt(nil, token.Span)
 		}
-		return ast.NewReturnStmt(expr, ast.Span{Start: token.Span.Start, End: expr.Span().End})
+		return ast.NewReturnStmt(optional.Some(expr), ast.Span{Start: token.Span.Start, End: expr.Span().End})
 	default:
 		expr := p.parseNonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we

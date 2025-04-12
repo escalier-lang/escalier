@@ -1,6 +1,9 @@
 package codegen
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
+)
 
 type Node interface {
 	Span() *Span
@@ -323,7 +326,7 @@ func (s *DeclStmt) SetSpan(span *Span) { s.span = span }
 func (s *DeclStmt) Source() ast.Node   { return s.source }
 
 type ReturnStmt struct {
-	Expr   Expr
+	Expr   optional.Option[Expr]
 	span   *Span
 	source ast.Node
 }
@@ -350,12 +353,12 @@ func (*RestPat) isPat()   {}
 
 type IdentPat struct {
 	Name    string
-	Default Expr // optional
+	Default optional.Option[Expr]
 	span    *Span
 	source  ast.Node
 }
 
-func NewIdentPat(name string, _default Expr, source ast.Node) *IdentPat {
+func NewIdentPat(name string, _default optional.Option[Expr], source ast.Node) *IdentPat {
 	return &IdentPat{Name: name, Default: _default, source: source, span: nil}
 }
 func (p *IdentPat) Span() *Span        { return p.span }
@@ -374,12 +377,12 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key     string
 	Value   Pat
-	Default Expr // optional
+	Default optional.Option[Expr]
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjKeyValuePat(key string, value Pat, _default Expr, source ast.Node) *ObjKeyValuePat {
+func NewObjKeyValuePat(key string, value Pat, _default optional.Option[Expr], source ast.Node) *ObjKeyValuePat {
 	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, source: source, span: nil}
 }
 func (p *ObjKeyValuePat) Span() *Span        { return p.span }
@@ -388,12 +391,12 @@ func (p *ObjKeyValuePat) Source() ast.Node   { return p.source }
 
 type ObjShorthandPat struct {
 	Key     string
-	Default Expr // optional
+	Default optional.Option[Expr]
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjShorthandPat(key string, _default Expr, source ast.Node) *ObjShorthandPat {
+func NewObjShorthandPat(key string, _default optional.Option[Expr], source ast.Node) *ObjShorthandPat {
 	return &ObjShorthandPat{Key: key, Default: _default, source: source, span: nil}
 }
 func (p *ObjShorthandPat) Span() *Span        { return p.span }
@@ -436,12 +439,12 @@ func (*TupleRestPat) isTuplePatElem() {}
 
 type TupleElemPat struct {
 	Pattern Pat
-	Default Expr // optional
+	Default optional.Option[Expr]
 	source  ast.Node
 	span    *Span
 }
 
-func NewTupleElemPat(pattern Pat, _default Expr, source ast.Node) *TupleElemPat {
+func NewTupleElemPat(pattern Pat, _default optional.Option[Expr], source ast.Node) *TupleElemPat {
 	return &TupleElemPat{Pattern: pattern, Default: _default, source: source, span: nil}
 }
 func (p *TupleElemPat) Span() *Span        { return p.span }

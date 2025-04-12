@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
 )
 
 type Builder struct {
@@ -62,10 +63,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 	buildPatternRec = func(p ast.Pat, target Expr) Pat {
 		switch p := p.(type) {
 		case *ast.IdentPat:
-			var _default Expr
-			if p.Default != nil {
-				_default = b.buildExpr(p.Default)
-			}
+			_default := optional.Map(p.Default, func(e ast.Expr) Expr {
+				return b.buildExpr(e)
+			})
 			return &IdentPat{
 				Name:    p.Name,
 				Default: _default,
@@ -99,13 +99,17 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					elems = append(elems, NewObjKeyValuePat(
 						e.Key,
 						buildPatternRec(e.Value, newTarget),
-						b.buildExpr(e.Default),
+						optional.Map(e.Default, func(e ast.Expr) Expr {
+							return b.buildExpr(e)
+						}),
 						e,
 					))
 				case *ast.ObjShorthandPat:
 					elems = append(elems, NewObjShorthandPat(
 						e.Key,
-						b.buildExpr(e.Default),
+						optional.Map(e.Default, func(e ast.Expr) Expr {
+							return b.buildExpr(e)
+						}),
 						e,
 					))
 				case *ast.ObjRestPat:
@@ -148,10 +152,12 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				tempId := b.NewTempId()
 				tempVar := NewIdentExpr(tempId, nil)
 
-				var init Expr
+				init := optional.None[Expr]()
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
-					init = b.buildExpr(arg.Default)
+					init = optional.Map(arg.Default, func(e ast.Expr) Expr {
+						return b.buildExpr(e)
+					})
 				}
 				tempVarPat := NewIdentPat(tempId, init, p)
 
@@ -255,8 +261,11 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 	case *ast.DeclStmt:
 		return b.buildDecl(s.Decl)
 	case *ast.ReturnStmt:
+		expr := optional.Map(s.Expr, func(e ast.Expr) Expr {
+			return b.buildExpr(e)
+		})
 		stmt := &ReturnStmt{
-			Expr:   b.buildExpr(s.Expr),
+			Expr:   expr,
 			span:   nil,
 			source: stmt,
 		}
