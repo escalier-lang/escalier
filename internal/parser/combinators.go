@@ -1,6 +1,11 @@
 package parser
 
-func parseDelimSeq[T any](
+func isNil[T comparable](arg T) bool {
+	var t T
+	return arg == t
+}
+
+func parseDelimSeq[T comparable](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
@@ -14,7 +19,7 @@ func parseDelimSeq[T any](
 	}
 
 	item := parserCombinator()
-	if any(item) == nil {
+	if isNil(item) {
 		return items
 	}
 	items = append(items, item)
@@ -24,7 +29,7 @@ func parseDelimSeq[T any](
 		if token.Type == separator {
 			p.lexer.consume() // consume separator
 			item := parserCombinator()
-			if any(item) == nil {
+			if isNil(item) {
 				return items
 			}
 			items = append(items, item)

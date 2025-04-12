@@ -1,0 +1,26 @@
+.playground {
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 40px 1fr;
+}
+
+.header {
+    background-color: #2e2e2e;
+    color: white;
+    font-size: 20px;
+    font-family: sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 10px;
+}
+
+.editor {
+    min-width: 0;
+}
+
+body {
+    margin: 0;
+}

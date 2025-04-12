@@ -40,6 +40,7 @@ export class Client {
     private deferreds: Map<number, Deferred>;
     private requestID: number;
     private wasmBuf: ArrayBuffer;
+    private errorBuffer: string;
 
     constructor(wasmBuf: ArrayBuffer) {
         this.stdin = new SimpleStream();
@@ -48,6 +49,7 @@ export class Client {
         this.deferreds = new Map();
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
+        this.errorBuffer = '';
 
         this.stdout.on('data', (chunk) => {
             const message = decoder.decode(chunk);
@@ -105,7 +107,12 @@ export class Client {
                     console.log('writeSync:', value);
                 } else if (fd === 2) {
                     const value = decoder.decode(buffer);
-                    console.error('writeSync:', value);
+                    if (value === '\n') {
+                        console.error(this.errorBuffer);
+                        this.errorBuffer = '';
+                    } else {
+                        this.errorBuffer += value;
+                    }
                 } else {
                     console.log('writeSync:', fd, buffer);
                 }
@@ -300,9 +307,21 @@ export class Client {
         return this.sendRequest('textDocument/definition', params);
     }
 
+    textDocumentCodeAction(
+        params: lsp.CodeActionParams,
+    ): Promise<lsp.Command[] | lsp.CodeAction[]> {
+        return this.sendRequest('textDocument/codeAction', params);
+    }
+
     // Go to type definition
 
     // Go to implementation
+
+    workspaceExecuteCommand(
+        params: lsp.ExecuteCommandParams,
+    ): Promise<lsp.LSPAny> {
+        return this.sendRequest('workspace/executeCommand', params);
+    }
 
     private fireAndForget(method: string, params: any) {
         const id = this.requestID++;

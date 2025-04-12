@@ -19,8 +19,17 @@ type CompilerOutput struct {
 func Compile(source parser.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	p1 := parser.NewParser(ctx, source)
-	escMod := p1.ParseModule()
+	p := parser.NewParser(ctx, source)
+	escMod := p.ParseModule()
+
+	if len(p.Errors) > 0 {
+		return CompilerOutput{
+			JS:        "",
+			SourceMap: "",
+			Errors:    p.Errors,
+		}
+	}
+
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildModule(escMod)
 
@@ -37,7 +46,7 @@ func Compile(source parser.Source) CompilerOutput {
 	output += "//# sourceMappingURL=" + outmap + "\n"
 
 	return CompilerOutput{
-		Errors:    p1.Errors,
+		Errors:    p.Errors,
 		JS:        output,
 		SourceMap: sourceMap,
 	}

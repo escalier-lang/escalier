@@ -23,12 +23,68 @@ function convertSeverity(
     }
 }
 
+type Loc = {
+    line: number;
+    column: number;
+};
+
+type Span = {
+    start: Loc;
+    end: Loc;
+};
+
+type ErrorMesage = {
+    message: string;
+    span: Span;
+};
+
 export function setupLanguage(client: Client) {
     monaco.languages.register({ id: languageID });
 
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             const models = monaco.editor.getModels();
+
+            if (params.uri.endsWith('.esc')) {
+                client
+                    .workspaceExecuteCommand({
+                        command: 'compile',
+                        arguments: [params.uri],
+                    })
+                    .catch((err) => {
+                        if (err.message) {
+                            try {
+                                const errorMessages: Array<ErrorMesage> =
+                                    JSON.parse(err.message);
+                                for (const message of errorMessages) {
+                                    const start = `${message.span.start.line}:${message.span.start.column}`;
+                                    const end = `${message.span.end.line}:${message.span.end.column}`;
+                                    console.log(
+                                        `ERROR: ${start}-${end} ${message.message}`,
+                                    );
+                                }
+                            } catch (e) {
+                                console.error('Error message:', err.message);
+                            }
+                        }
+                    })
+                    .then((result) => {
+                        if (!result) {
+                            return;
+                        }
+                        const outputUri = params.uri.replace('.esc', '.js');
+                        const model = models.find(
+                            (model) => model.uri.toString() === outputUri,
+                        );
+
+                        if (!model) {
+                            return;
+                        }
+
+                        model.setValue(result.text);
+                    });
+            }
+
             const model = models.find(
                 (model) => model.uri.toString() === params.uri,
             );
@@ -59,7 +115,7 @@ export function setupLanguage(client: Client) {
         client.textDocumentDidOpen({
             textDocument: {
                 uri: model.uri.toString(),
-                languageId: languageID,
+                languageId: model.getLanguageId(),
                 version: model.getVersionId(),
                 text: model.getValue(),
             },
