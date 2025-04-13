@@ -1,8 +1,13 @@
 package parser
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
+)
 
-func (p *Parser) parseDecl() ast.Decl {
+func (p *Parser) parseDecl() (optional.Option[ast.Decl], [](*Error)) {
+	errors := [](*Error){}
+
 	export := false
 	declare := false
 
@@ -26,35 +31,41 @@ func (p *Parser) parseDecl() ast.Decl {
 			kind = ast.VarKind
 		}
 
-		pat := p.parsePattern(false)
-		if pat == nil {
-			p.reportError(token.Span, "Expected pattern")
-			pat = ast.NewIdentPat(
+		patOption, patErrors := p.parsePattern(false)
+		errors = append(errors, patErrors...)
+		pat := patOption.TakeOrElse(func() ast.Pat {
+			errors = append(errors, NewError(token.Span, "Expected pattern"))
+			return ast.NewIdentPat(
 				"",
 				nil,
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			)
-		}
+		})
 		end := pat.Span().End
 
 		token = p.lexer.peek()
-		var init ast.Expr
+		init := optional.None[ast.Expr]()
 		if !declare {
 			if token.Type != Equal {
-				p.reportError(token.Span, "Expected equals sign")
-				return nil
+				errors = append(errors, NewError(token.Span, "Expected equals sign"))
+				return optional.None[ast.Decl](), errors
 			}
 			p.lexer.consume()
-			init = p.parseNonDelimitedExpr()
-			if init == nil {
+			initOption, initErrors := p.parseNonDelimitedExpr()
+			errors = append(errors, initErrors...)
+			init = initOption.OrElse(func() optional.Option[ast.Expr] {
 				token := p.lexer.peek()
-				p.reportError(token.Span, "Expected an expression")
-				init = ast.NewEmpty(token.Span)
-			}
-			end = init.Span().End
+				errors = append(errors, NewError(token.Span, "Expected an expression"))
+				return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
+			})
+			init.IfSome(func(e ast.Expr) {
+				end = e.Span().End
+			})
 		}
 
-		return ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end})
+		return optional.Some[ast.Decl](
+			ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end}),
+		), errors
 	case Fn:
 		token := p.lexer.peek()
 		var ident *ast.Ident
@@ -62,7 +73,7 @@ func (p *Parser) parseDecl() ast.Decl {
 			p.lexer.consume()
 			ident = ast.NewIdentifier(token.Value, token.Span)
 		} else {
-			p.reportError(token.Span, "Expected identifier")
+			errors = append(errors, NewError(token.Span, "Expected identifier"))
 			ident = ast.NewIdentifier(
 				"",
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
@@ -71,31 +82,39 @@ func (p *Parser) parseDecl() ast.Decl {
 
 		token = p.lexer.peek()
 		if token.Type != OpenParen {
-			p.reportError(token.Span, "Expected an opening paren")
+			errors = append(errors, NewError(token.Span, "Expected an opening paren"))
 		} else {
 			p.lexer.consume()
 		}
 
-		params := parseDelimSeq(p, CloseParen, Comma, p.parseParam)
+		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.parseParam)
+		errors = append(errors, seqErrors...)
 
 		token = p.lexer.peek()
 		if token.Type != CloseParen {
-			p.reportError(token.Span, "Expected a closing paren")
+			errors = append(errors, NewError(token.Span, "Expected a closing paren"))
 		} else {
 			p.lexer.consume()
 		}
 
 		end := token.Span.End
 
-		var body ast.Block
 		if !declare {
-			body = p.parseBlock()
+			body, bodyErrors := p.parseBlock()
+			errors = append(errors, bodyErrors...)
 			end = body.Span.End
+
+			return optional.Some[ast.Decl](
+				ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end}),
+			), errors
 		}
 
-		return ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end})
+		var body ast.Block // TODO: make this optional
+		return optional.Some[ast.Decl](
+			ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end}),
+		), errors
 	default:
-		p.reportError(token.Span, "Unexpected token")
-		return nil
+		errors = append(errors, NewError(token.Span, "Unexpected token"))
+		return optional.None[ast.Decl](), errors
 	}
 }

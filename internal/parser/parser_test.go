@@ -89,17 +89,17 @@ func TestParseModuleNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			module := parser.ParseModule()
+			module, errors := parser.ParseModule()
 
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)
 			}
-			if len(parser.Errors) > 0 {
-				for i, err := range parser.Errors {
+			if len(errors) > 0 {
+				for i, err := range errors {
 					fmt.Printf("Error[%d]: %#v\n", i, err)
 				}
 			}
-			assert.Len(t, parser.Errors, 0)
+			assert.Len(t, errors, 0)
 		})
 	}
 }

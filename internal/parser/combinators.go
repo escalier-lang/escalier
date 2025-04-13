@@ -1,40 +1,44 @@
 package parser
 
-func isNil[T comparable](arg T) bool {
-	var t T
-	return arg == t
-}
+import "github.com/moznion/go-optional"
 
 func parseDelimSeq[T comparable](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
-	parserCombinator func() T,
-) []T {
+	parserCombinator func() (optional.Option[T], []*Error),
+) ([]T, []*Error) {
 	items := []T{}
+	errors := []*Error{}
 
 	token := p.lexer.peek()
 	if token.Type == terminator {
-		return items
+		return items, errors
 	}
 
-	item := parserCombinator()
-	if isNil(item) {
-		return items
+	item, itemErrors := parserCombinator()
+	errors = append(errors, itemErrors...)
+	if item.IsNone() {
+		return items, errors
 	}
-	items = append(items, item)
+	item.IfSome(func(item T) {
+		items = append(items, item)
+	})
 
 	for {
 		token = p.lexer.peek()
 		if token.Type == separator {
 			p.lexer.consume() // consume separator
-			item := parserCombinator()
-			if isNil(item) {
-				return items
+			item, itemErrors := parserCombinator()
+			errors = append(errors, itemErrors...)
+			if item.IsNone() {
+				return items, errors
 			}
-			items = append(items, item)
+			item.IfSome(func(item T) {
+				items = append(items, item)
+			})
 		} else {
-			return items
+			return items, errors
 		}
 	}
 }

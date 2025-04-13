@@ -1,208 +1,126 @@
 
 [TestParsePatternNoErrors/BooleanLiteralFalse - 1]
-&ast.LitPat{
-    Lit:  &ast.BoolLit{},
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:6},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit:  &ast.BoolLit{},
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:6},
+        },
+        inferredType: nil,
     },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/StringLiteral - 1]
-&ast.LitPat{
-    Lit: &ast.StrLit{
-        Value: "hello",
-        span:  ast.Span{},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit: &ast.StrLit{
+            Value: "hello",
+            span:  ast.Span{},
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:7},
+        },
+        inferredType: nil,
     },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:7},
-    },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/TuplePatternWithRest - 1]
-&ast.TuplePat{
-    Elems: {
-        &ast.IdentPat{
-            Name:    "a",
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:3},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.TuplePat{
+        Elems: {
+            &ast.IdentPat{
+                Name:    "a",
+                Default: nil,
+                span:    ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+                inferredType: nil,
             },
-            inferredType: nil,
-        },
-        &ast.IdentPat{
-            Name:    "b",
-            Default: {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
+            &ast.IdentPat{
+                Name:    "b",
+                Default: {
+                    &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:9},
+                                End:   ast.Location{Line:1, Column:10},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:9},
                             End:   ast.Location{Line:1, Column:10},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:9},
-                        End:   ast.Location{Line:1, Column:10},
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:10},
+                },
+                inferredType: nil,
+            },
+            &ast.RestPat{
+                Pattern: &ast.IdentPat{
+                    Name:    "rest",
+                    Default: nil,
+                    span:    ast.Span{
+                        Start: ast.Location{Line:1, Column:15},
+                        End:   ast.Location{Line:1, Column:19},
                     },
                     inferredType: nil,
                 },
-            },
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:10},
-            },
-            inferredType: nil,
-        },
-        &ast.RestPat{
-            Pattern: &ast.IdentPat{
-                Name:    "rest",
-                Default: nil,
-                span:    ast.Span{
-                    Start: ast.Location{Line:1, Column:15},
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:12},
                     End:   ast.Location{Line:1, Column:19},
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:12},
-                End:   ast.Location{Line:1, Column:19},
-            },
-            inferredType: nil,
         },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:20},
+        },
+        inferredType: nil,
     },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:20},
-    },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/Identifier - 1]
-&ast.IdentPat{
-    Name:    "x",
-    Default: nil,
-    span:    ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:2},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.IdentPat{
+        Name:    "x",
+        Default: nil,
+        span:    ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
     },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/ExtractPattern - 1]
-&ast.ExtractorPat{
-    Name: "Foo",
-    Args: {
-        &ast.IdentPat{
-            Name:    "a",
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.ExtractorPat{
+        Name: "Foo",
+        Args: {
+            &ast.IdentPat{
+                Name:    "a",
+                Default: nil,
+                span:    ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:6},
+                },
+                inferredType: nil,
             },
-            inferredType: nil,
-        },
-        &ast.IdentPat{
-            Name:    "b",
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:8},
-                End:   ast.Location{Line:1, Column:9},
-            },
-            inferredType: nil,
-        },
-    },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/BooleanLiteralTrue - 1]
-&ast.LitPat{
-    Lit: &ast.BoolLit{
-        Value: true,
-        span:  ast.Span{},
-    },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:5},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/NullLiteral - 1]
-&ast.LitPat{
-    Lit:  &ast.NullLit{},
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:5},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/NumberLiteral - 1]
-&ast.LitPat{
-    Lit: &ast.NumLit{
-        Value: 5,
-        span:  ast.Span{},
-    },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:2},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/Wildcard - 1]
-&ast.WildcardPat{
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:2},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/UndefinedLiteral - 1]
-&ast.LitPat{
-    Lit:  &ast.UndefinedLit{},
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
-    },
-    inferredType: nil,
-}
----
-
-[TestParsePatternNoErrors/ObjectPatternWithRest - 1]
-&ast.ObjectPat{
-    Elems: {
-        &ast.ObjShorthandPat{
-            Key:     "a",
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:3},
-            },
-        },
-        &ast.ObjKeyValuePat{
-            Key:   "b",
-            Value: &ast.IdentPat{
-                Name:    "c",
+            &ast.IdentPat{
+                Name:    "b",
                 Default: nil,
                 span:    ast.Span{
                     Start: ast.Location{Line:1, Column:8},
@@ -210,111 +128,219 @@
                 },
                 inferredType: nil,
             },
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:9},
-            },
-            inferredType: nil,
         },
-        &ast.ObjRestPat{
-            Pattern: &ast.IdentPat{
-                Name:    "rest",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:10},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/BooleanLiteralTrue - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit: &ast.BoolLit{
+            Value: true,
+            span:  ast.Span{},
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/NullLiteral - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit:  &ast.NullLit{},
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/NumberLiteral - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit: &ast.NumLit{
+            Value: 5,
+            span:  ast.Span{},
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/Wildcard - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.WildcardPat{
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/UndefinedLiteral - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.LitPat{
+        Lit:  &ast.UndefinedLit{},
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:10},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParsePatternNoErrors/ObjectPatternWithRest - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.ObjectPat{
+        Elems: {
+            &ast.ObjShorthandPat{
+                Key:     "a",
                 Default: nil,
                 span:    ast.Span{
-                    Start: ast.Location{Line:1, Column:14},
-                    End:   ast.Location{Line:1, Column:18},
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+            },
+            &ast.ObjKeyValuePat{
+                Key:   "b",
+                Value: &ast.IdentPat{
+                    Name:    "c",
+                    Default: nil,
+                    span:    ast.Span{
+                        Start: ast.Location{Line:1, Column:8},
+                        End:   ast.Location{Line:1, Column:9},
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+                span:    ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:9},
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:11},
-                End:   ast.Location{Line:1, Column:18},
+            &ast.ObjRestPat{
+                Pattern: &ast.IdentPat{
+                    Name:    "rest",
+                    Default: nil,
+                    span:    ast.Span{
+                        Start: ast.Location{Line:1, Column:14},
+                        End:   ast.Location{Line:1, Column:18},
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:11},
+                    End:   ast.Location{Line:1, Column:18},
+                },
             },
         },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:19},
+        },
+        inferredType: nil,
     },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:19},
-    },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/ObjectPatternWithDefaults - 1]
-&ast.ObjectPat{
-    Elems: {
-        &ast.ObjShorthandPat{
-            Key:     "a",
-            Default: {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:6},
-                            End:   ast.Location{Line:1, Column:7},
-                        },
-                    },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:6},
-                        End:   ast.Location{Line:1, Column:7},
-                    },
-                    inferredType: nil,
-                },
-            },
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:2},
-                End:   ast.Location{Line:1, Column:7},
-            },
-        },
-        &ast.ObjKeyValuePat{
-            Key:   "b",
-            Value: &ast.IdentPat{
-                Name:    "c",
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.ObjectPat{
+        Elems: {
+            &ast.ObjShorthandPat{
+                Key:     "a",
                 Default: {
                     &ast.LiteralExpr{
-                        Lit: &ast.StrLit{
-                            Value: "hello",
+                        Lit: &ast.NumLit{
+                            Value: 5,
                             span:  ast.Span{
-                                Start: ast.Location{Line:1, Column:16},
-                                End:   ast.Location{Line:1, Column:22},
+                                Start: ast.Location{Line:1, Column:6},
+                                End:   ast.Location{Line:1, Column:7},
                             },
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:22},
+                            Start: ast.Location{Line:1, Column:6},
+                            End:   ast.Location{Line:1, Column:7},
                         },
                         inferredType: nil,
                     },
                 },
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:12},
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:7},
+                },
+            },
+            &ast.ObjKeyValuePat{
+                Key:   "b",
+                Value: &ast.IdentPat{
+                    Name:    "c",
+                    Default: {
+                        &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "hello",
+                                span:  ast.Span{
+                                    Start: ast.Location{Line:1, Column:16},
+                                    End:   ast.Location{Line:1, Column:22},
+                                },
+                            },
+                            span: ast.Span{
+                                Start: ast.Location{Line:1, Column:16},
+                                End:   ast.Location{Line:1, Column:22},
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:12},
+                        End:   ast.Location{Line:1, Column:22},
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+                span:    ast.Span{
+                    Start: ast.Location{Line:1, Column:9},
                     End:   ast.Location{Line:1, Column:22},
                 },
                 inferredType: nil,
             },
-            Default: nil,
-            span:    ast.Span{
-                Start: ast.Location{Line:1, Column:9},
-                End:   ast.Location{Line:1, Column:22},
-            },
-            inferredType: nil,
         },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:23},
+        },
+        inferredType: nil,
     },
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:23},
-    },
-    inferredType: nil,
 }
 ---
 
 [TestParsePatternNoErrors/WildcardPattern - 1]
-&ast.WildcardPat{
-    span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:2},
+optional.Option[github.com/escalier-lang/escalier/internal/ast.Pat]{
+    &ast.WildcardPat{
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:2},
+        },
+        inferredType: nil,
     },
-    inferredType: nil,
 }
 ---

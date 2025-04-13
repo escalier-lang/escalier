@@ -56,7 +56,9 @@ const (
 	ConsumeOnMismatch
 )
 
-func (p *Parser) expect(tt TokenType, consume Consume) ast.Location {
+// TODO: update expect to return errors as well
+func (p *Parser) expect(tt TokenType, consume Consume) (ast.Location, []*Error) {
+	errors := []*Error{}
 	token := p.lexer.peek()
 	if consume == AlwaysConsume {
 		p.lexer.consume()
@@ -65,11 +67,11 @@ func (p *Parser) expect(tt TokenType, consume Consume) ast.Location {
 		if consume == ConsumeOnMismatch {
 			p.lexer.consume()
 		}
-		p.reportError(token.Span, fmt.Sprintf("Expected %s but got %s", TokenMap[tt], TokenMap[token.Type]))
-		return token.Span.End
+		errors = append(errors, NewError(token.Span, fmt.Sprintf("Expected %s but got %s", TokenMap[tt], TokenMap[token.Type])))
+		return token.Span.End, errors
 	}
 	if consume == ConsumeOnMatch {
 		p.lexer.consume()
 	}
-	return token.Span.End
+	return token.Span.End, errors
 }

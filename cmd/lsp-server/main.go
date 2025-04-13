@@ -128,10 +128,10 @@ func (*Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, cont
 		Path:     uri,
 		Contents: contents,
 	})
-	p.ParseModule()
+	_, errors := p.ParseModule()
 
 	diagnotics := []protocol.Diagnostic{}
-	for _, err := range p.Errors {
+	for _, err := range errors {
 		severity := protocol.DiagnosticSeverityError
 		source := "escalier"
 		diagnotics = append(diagnotics, protocol.Diagnostic{

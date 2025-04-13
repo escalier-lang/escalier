@@ -5,15 +5,15 @@ import (
 	"github.com/moznion/go-optional"
 )
 
-func (p *Parser) parseBlock() ast.Block {
+func (p *Parser) parseBlock() (ast.Block, []*Error) {
 	stmts := []ast.Stmt{}
+	errors := []*Error{}
 	var start ast.Location
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
-		p.reportError(token.Span, "Expected an opening brace")
 		// TODO: include Span
-		return ast.Block{Stmts: stmts}
+		return ast.Block{Stmts: stmts}, []*Error{NewError(token.Span, "Expected an opening brace")}
 	} else {
 		start = token.Span.Start
 	}
@@ -24,38 +24,43 @@ func (p *Parser) parseBlock() ast.Block {
 		switch token.Type {
 		case CloseBrace:
 			p.lexer.consume()
-			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
+			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}, errors
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			stmt := p.parseStmt()
-			stmts = append(stmts, stmt)
+			stmt, stmtErrors := p.parseStmt()
+			errors = append(errors, stmtErrors...)
+			stmt.IfSome(func(stmt ast.Stmt) {
+				stmts = append(stmts, stmt)
+			})
 			token = p.lexer.peek()
 		}
 	}
 }
 
-func (p *Parser) parseStmt() ast.Stmt {
+func (p *Parser) parseStmt() (optional.Option[ast.Stmt], []*Error) {
 	token := p.lexer.peek()
 
 	//nolint: exhaustive
 	switch token.Type {
 	case Fn, Var, Val, Declare, Export:
-		decl := p.parseDecl()
-		if decl == nil {
-			return nil
-		}
-		return ast.NewDeclStmt(decl, decl.Span())
+		decl, declErrors := p.parseDecl()
+		stmt := optional.Map(decl, func(d ast.Decl) ast.Stmt {
+			return ast.NewDeclStmt(d, d.Span())
+		})
+		return stmt, declErrors
 	case Return:
 		p.lexer.consume()
-		expr := p.parseNonDelimitedExpr()
-		if expr == nil {
-			return ast.NewReturnStmt(nil, token.Span)
-		}
-		return ast.NewReturnStmt(optional.Some(expr), ast.Span{Start: token.Span.Start, End: expr.Span().End})
+		expr, exprErrors := p.parseNonDelimitedExpr()
+		stmt := optional.Map(expr, func(expr ast.Expr) ast.Stmt {
+			return ast.NewReturnStmt(
+				optional.Some(expr), ast.MergeSpans(token.Span, expr.Span()),
+			)
+		}).Or(optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span)))
+		return stmt, exprErrors
 	default:
-		expr := p.parseNonDelimitedExpr()
+		expr, exprErrors := p.parseNonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we
 		// don't know how to parse.
 		nextToken := p.lexer.peek()
@@ -63,6 +68,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 			token.Span.End.Column == nextToken.Span.End.Column {
 			p.lexer.consume()
 		}
-		return ast.NewExprStmt(expr, expr.Span())
+		stmt := optional.Map(expr, func(expr ast.Expr) ast.Stmt {
+			return ast.NewExprStmt(expr, expr.Span())
+		})
+		return stmt, exprErrors
 	}
 }

@@ -444,14 +444,16 @@ func (e *TaggedTemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
-	Closing      *JSXClosing
+	Closing      *JSXClosing // TODO: make this optional
 	Children     []JSXChild
 	span         Span
 	inferredType Type
 }
 
-func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXElementExpr {
-	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
+func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
+	return optional.Some(
+		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
+	)
 }
 func (e *JSXElementExpr) Span() Span             { return e.span }
 func (e *JSXElementExpr) InferredType() Type     { return e.inferredType }

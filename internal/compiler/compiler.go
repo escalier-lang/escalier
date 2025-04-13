@@ -20,13 +20,13 @@ func Compile(source parser.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	escMod := p.ParseModule()
+	escMod, escErrors := p.ParseModule()
 
-	if len(p.Errors) > 0 {
+	if len(escErrors) > 0 {
 		return CompilerOutput{
 			JS:        "",
 			SourceMap: "",
-			Errors:    p.Errors,
+			Errors:    escErrors,
 		}
 	}
 
@@ -46,7 +46,7 @@ func Compile(source parser.Source) CompilerOutput {
 	output += "//# sourceMappingURL=" + outmap + "\n"
 
 	return CompilerOutput{
-		Errors:    p.Errors,
+		Errors:    escErrors,
 		JS:        output,
 		SourceMap: sourceMap,
 	}
