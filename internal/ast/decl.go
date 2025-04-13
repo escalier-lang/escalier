@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/moznion/go-optional"
+
 type DeclGetters interface {
 	Export() bool
 	Declare() bool
@@ -22,13 +24,13 @@ const (
 type VarDecl struct {
 	Kind    VariableKind
 	Pattern Pat
-	Init    Expr
+	Init    optional.Option[Expr]
 	export  bool
 	declare bool
 	span    Span
 }
 
-func NewVarDecl(kind VariableKind, pattern Pat, init Expr, export, declare bool, span Span) *VarDecl {
+func NewVarDecl(kind VariableKind, pattern Pat, init optional.Option[Expr], export, declare bool, span Span) *VarDecl {
 	return &VarDecl{Kind: kind, Pattern: pattern, Init: init, export: export, declare: declare, span: span}
 }
 func (*VarDecl) isDecl()         {}

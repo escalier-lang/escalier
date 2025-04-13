@@ -1,8 +1,11 @@
 package parser
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
+)
 
-func (p *Parser) parseDecl() ast.Decl {
+func (p *Parser) parseDecl() optional.Option[ast.Decl] {
 	export := false
 	declare := false
 
@@ -26,35 +29,37 @@ func (p *Parser) parseDecl() ast.Decl {
 			kind = ast.VarKind
 		}
 
-		pat := p.parsePattern(false)
-		if pat == nil {
+		pat := p.parsePattern(false).TakeOrElse(func() ast.Pat {
 			p.reportError(token.Span, "Expected pattern")
-			pat = ast.NewIdentPat(
+			return ast.NewIdentPat(
 				"",
 				nil,
 				ast.Span{Start: token.Span.Start, End: token.Span.Start},
 			)
-		}
+		})
 		end := pat.Span().End
 
 		token = p.lexer.peek()
-		var init ast.Expr
+		init := optional.None[ast.Expr]()
 		if !declare {
 			if token.Type != Equal {
 				p.reportError(token.Span, "Expected equals sign")
-				return nil
+				return optional.None[ast.Decl]()
 			}
 			p.lexer.consume()
-			init = p.parseNonDelimitedExpr()
-			if init == nil {
+			init = p.parseNonDelimitedExpr().OrElse(func() optional.Option[ast.Expr] {
 				token := p.lexer.peek()
 				p.reportError(token.Span, "Expected an expression")
-				init = ast.NewEmpty(token.Span)
-			}
-			end = init.Span().End
+				return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
+			})
+			init.IfSome(func(e ast.Expr) {
+				end = e.Span().End
+			})
 		}
 
-		return ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end})
+		return optional.Some[ast.Decl](
+			ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end}),
+		)
 	case Fn:
 		token := p.lexer.peek()
 		var ident *ast.Ident
@@ -93,9 +98,11 @@ func (p *Parser) parseDecl() ast.Decl {
 			end = body.Span.End
 		}
 
-		return ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end})
+		return optional.Some[ast.Decl](
+			ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end}),
+		)
 	default:
 		p.reportError(token.Span, "Unexpected token")
-		return nil
+		return optional.None[ast.Decl]()
 	}
 }

@@ -30,30 +30,32 @@ func (p *Parser) parseBlock() ast.Block {
 			token = p.lexer.peek()
 		default:
 			stmt := p.parseStmt()
-			stmts = append(stmts, stmt)
+			stmt.IfSome(func(stmt ast.Stmt) {
+				stmts = append(stmts, stmt)
+			})
 			token = p.lexer.peek()
 		}
 	}
 }
 
-func (p *Parser) parseStmt() ast.Stmt {
+func (p *Parser) parseStmt() optional.Option[ast.Stmt] {
 	token := p.lexer.peek()
 
 	//nolint: exhaustive
 	switch token.Type {
 	case Fn, Var, Val, Declare, Export:
 		decl := p.parseDecl()
-		if decl == nil {
-			return nil
-		}
-		return ast.NewDeclStmt(decl, decl.Span())
+		return optional.Map(decl, func(d ast.Decl) ast.Stmt {
+			return ast.NewDeclStmt(d, d.Span())
+		})
 	case Return:
 		p.lexer.consume()
 		expr := p.parseNonDelimitedExpr()
-		if expr == nil {
-			return ast.NewReturnStmt(nil, token.Span)
-		}
-		return ast.NewReturnStmt(optional.Some(expr), ast.Span{Start: token.Span.Start, End: expr.Span().End})
+		return optional.Map(expr, func(expr ast.Expr) ast.Stmt {
+			return ast.NewReturnStmt(
+				optional.Some(expr), ast.MergeSpans(token.Span, expr.Span()),
+			)
+		}).Or(optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span)))
 	default:
 		expr := p.parseNonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we
@@ -63,6 +65,8 @@ func (p *Parser) parseStmt() ast.Stmt {
 			token.Span.End.Column == nextToken.Span.End.Column {
 			p.lexer.consume()
 		}
-		return ast.NewExprStmt(expr, expr.Span())
+		return optional.Map(expr, func(expr ast.Expr) ast.Stmt {
+			return ast.NewExprStmt(expr, expr.Span())
+		})
 	}
 }
