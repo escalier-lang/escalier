@@ -50,13 +50,12 @@ func (p *Parser) parseStmt() optional.Option[ast.Stmt] {
 		})
 	case Return:
 		p.lexer.consume()
-		expr := p.parseNonDelimitedExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
-		if expr == nil {
-			return optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span))
-		}
-		return optional.Some[ast.Stmt](
-			ast.NewReturnStmt(optional.Some(expr), ast.Span{Start: token.Span.Start, End: expr.Span().End}),
-		)
+		expr := p.parseNonDelimitedExpr()
+		return optional.Map(expr, func(expr ast.Expr) ast.Stmt {
+			return ast.NewReturnStmt(
+				optional.Some(expr), ast.MergeSpans(token.Span, expr.Span()),
+			)
+		}).Or(optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span)))
 	default:
 		expr := p.parseNonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we

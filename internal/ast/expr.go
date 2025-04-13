@@ -451,7 +451,7 @@ type JSXElementExpr struct {
 }
 
 func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
-	return optional.Some[*JSXElementExpr](
+	return optional.Some(
 		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
 	)
 }

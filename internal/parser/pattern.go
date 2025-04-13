@@ -32,9 +32,10 @@ func (p *Parser) parsePattern(allowIdentDefault bool) optional.Option[ast.Pat] {
 			_default := optional.None[ast.Expr]()
 			if allowIdentDefault && token.Type == Equal {
 				p.lexer.consume()
-				e := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
-				span = ast.MergeSpans(span, e.Span())
-				_default = optional.Some(e)
+				p.parseExpr().IfSome(func(e ast.Expr) {
+					span = ast.MergeSpans(span, e.Span())
+					_default = optional.Some(e)
+				})
 			}
 			return optional.Some[ast.Pat](
 				ast.NewIdentPat(name, _default, span),
@@ -134,11 +135,10 @@ func (p *Parser) parseObjPatElem() optional.Option[ast.ObjPatElem] {
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				e := p.parseExpr()
-				e.IfSome(func(e ast.Expr) {
+				init = p.parseExpr()
+				init.IfSome(func(e ast.Expr) {
 					span = ast.MergeSpans(span, e.Span())
 				})
-				init = e
 			}
 
 			return optional.Map(value, func(v ast.Pat) ast.ObjPatElem {
@@ -150,9 +150,10 @@ func (p *Parser) parseObjPatElem() optional.Option[ast.ObjPatElem] {
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				e := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
-				span = ast.MergeSpans(span, e.Span())
-				init = optional.Some(e)
+				p.parseExpr().IfSome(func(e ast.Expr) {
+					span = ast.MergeSpans(span, e.Span())
+					init = optional.Some(e)
+				})
 			}
 
 			return optional.Some[ast.ObjPatElem](
@@ -162,9 +163,10 @@ func (p *Parser) parseObjPatElem() optional.Option[ast.ObjPatElem] {
 	} else if token.Type == DotDotDot {
 		p.lexer.consume()
 
-		pat := p.parsePattern(true).Unwrap() // TODO: handle the case when parseExpr() returns None
-		span := ast.MergeSpans(token.Span, pat.Span())
-		return optional.Some[ast.ObjPatElem](ast.NewObjRestPat(pat, span))
+		return optional.Map(p.parsePattern(true), func(pat ast.Pat) ast.ObjPatElem {
+			span := ast.MergeSpans(token.Span, pat.Span())
+			return ast.NewObjRestPat(pat, span)
+		})
 	} else {
 		p.reportError(token.Span, "Expected identifier or '...'")
 		return optional.None[ast.ObjPatElem]()

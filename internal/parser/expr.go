@@ -101,14 +101,14 @@ loop:
 		case CloseParen, CloseBracket, CloseBrace, Comma, EndOfFile, Var, Val, Fn, Return:
 			break loop
 		default:
-			return optional.Some[ast.Expr](values.Pop())
+			return optional.Some(values.Pop())
 			// parser.reportError(token.Span, "Unexpected token")
 			// continue
 		}
 
 		if token.Span.Start.Line != p.lexer.currentLocation.Line {
 			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
-				return optional.Some[ast.Expr](values.Pop())
+				return optional.Some(values.Pop())
 			}
 		}
 
@@ -145,7 +145,7 @@ loop:
 	if len(values) != 1 {
 		panic("parseExpr - expected one value on the stack")
 	}
-	return optional.Some[ast.Expr](values.Pop())
+	return optional.Some(values.Pop())
 }
 
 type TokenAndOp struct {
@@ -201,7 +201,11 @@ loop:
 		case OpenBracket, QuestionOpenBracket:
 			p.lexer.consume()
 			// TODO: handle the case when parseExpr() return None correctly
-			index := p.parseExpr().Unwrap()
+			indexOption := p.parseExpr()
+			if indexOption.IsNone() {
+				p.reportError(token.Span, "Expected an expression after '['")
+				break loop
+			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
 				p.reportError(token.Span, "Expected a closing bracket")
@@ -212,7 +216,7 @@ loop:
 				optChain = true
 			}
 			expr = ast.NewIndex(
-				obj, index, optChain,
+				obj, indexOption.Unwrap(), optChain,
 				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
 			)
 		case Dot, QuestionDot:
@@ -336,7 +340,12 @@ func (p *Parser) parsePrimary() optional.Option[ast.Expr] {
 		case OpenParen:
 			p.lexer.consume()
 			// TODO: handle the case when parseExpr() return None
-			expr = p.parseExpr().Unwrap()
+			exprOption := p.parseExpr()
+			if exprOption.IsNone() {
+				p.reportError(token.Span, "Expected an expression after '('")
+				return optional.None[ast.Expr]()
+			}
+			expr = exprOption.Unwrap() // safe because we checked for None
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
 			p.lexer.consume()
@@ -410,7 +419,7 @@ func (p *Parser) parsePrimary() optional.Option[ast.Expr] {
 	}
 
 	if expr != nil {
-		return optional.Some[ast.Expr](expr)
+		return optional.Some(expr)
 	} else {
 		return optional.None[ast.Expr]()
 	}
@@ -441,10 +450,11 @@ func (p *Parser) parseObjExprElem() optional.Option[ast.ObjExprElem] {
 		mod = "set"
 	}
 
-	objKey := p.parseObjKey().Unwrap()
-	if objKey == nil {
+	objKeyOption := p.parseObjKey()
+	if objKeyOption.IsNone() {
 		return optional.None[ast.ObjExprElem]()
 	}
+	objKey := objKeyOption.Unwrap() // safe because we checked for None
 	token = p.lexer.peek()
 
 	// TODO: loop until we find a ':', '?', '(', ',' or '}' so
@@ -568,8 +578,10 @@ func (p *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 		} else if strings.HasSuffix(quasi.Value, "${") {
 			raw = quasi.Value[:len(quasi.Value)-2]
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
-			expr := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
-			exprs = append(exprs, expr)
+			expr := p.parseExpr()
+			expr.IfSome(func(expr ast.Expr) {
+				exprs = append(exprs, expr)
+			})
 			p.lexer.consume() // consumes the closing brace
 		} else {
 			// This case happens when the template literal is not closed which
@@ -599,7 +611,12 @@ func (p *Parser) parseIfElse() optional.Option[ast.Expr] {
 	if token.Type == OpenBrace {
 		p.reportError(token.Span, "Expected a condition")
 	} else {
-		cond = p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
+		condOption := p.parseExpr()
+		if condOption.IsNone() {
+			p.reportError(token.Span, "Expected a valid condition expression")
+			return optional.None[ast.Expr]()
+		}
+		cond = condOption.Unwrap() // safe because we checked for None
 	}
 
 	body := p.parseBlock()
@@ -610,7 +627,17 @@ func (p *Parser) parseIfElse() optional.Option[ast.Expr] {
 		// nolint: exhaustive
 		switch token.Type {
 		case If:
-			expr := p.parseIfElse().Unwrap() // TODO: handle the case when parseExpr() returns None
+			ifElseResult := p.parseIfElse()
+			if ifElseResult.IsNone() {
+				p.reportError(token.Span, "Expected a valid expression after 'if'")
+				return optional.Some[ast.Expr](
+					ast.NewIfElse(
+						cond, body, optional.None[ast.BlockOrExpr](),
+						ast.Span{Start: start, End: token.Span.Start},
+					),
+				)
+			}
+			expr := ifElseResult.Unwrap() // safe because we checked for None
 			alt := ast.BlockOrExpr{
 				Expr:  expr,
 				Block: nil,

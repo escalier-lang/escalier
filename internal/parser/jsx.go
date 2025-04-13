@@ -109,8 +109,13 @@ func (p *Parser) parseJSXAttrs() []*ast.JSXAttr {
 			p.lexer.consume() // consume string
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
-			p.lexer.consume()              // consume '{'
-			expr := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
+			p.lexer.consume() // consume '{'
+			exprOption := p.parseExpr()
+			if exprOption.IsNone() {
+				p.reportError(token.Span, "Expected an expression after '{'")
+				return attrs
+			}
+			expr := exprOption.Unwrap() // safe because we checked for None
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {

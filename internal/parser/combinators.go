@@ -2,11 +2,6 @@ package parser
 
 import "github.com/moznion/go-optional"
 
-func isNil[T comparable](arg T) bool {
-	var t T
-	return arg == t
-}
-
 func parseDelimSeq[T comparable](
 	p *Parser,
 	terminator TokenType,
