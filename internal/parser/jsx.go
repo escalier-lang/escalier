@@ -2,9 +2,10 @@ package parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/moznion/go-optional"
 )
 
-func (p *Parser) parseJSXElement() *ast.JSXElementExpr {
+func (p *Parser) parseJSXElement() optional.Option[*ast.JSXElementExpr] {
 	opening := p.parseJSXOpening()
 
 	span := ast.Span{
@@ -108,8 +109,8 @@ func (p *Parser) parseJSXAttrs() []*ast.JSXAttr {
 			p.lexer.consume() // consume string
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
-			p.lexer.consume() // consume '{'
-			expr := p.parseExpr()
+			p.lexer.consume()              // consume '{'
+			expr := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
@@ -180,10 +181,12 @@ func (p *Parser) parseJSXChildren() []ast.JSXChild {
 			return children
 		case LessThan:
 			jsxElement := p.parseJSXElement()
-			children = append(children, jsxElement)
+			jsxElement.IfSome(func(jsxElement *ast.JSXElementExpr) {
+				children = append(children, jsxElement)
+			})
 		case OpenBrace:
 			p.lexer.consume()
-			expr := p.parseExpr()
+			expr := p.parseExpr().Unwrap() // TODO: handle the case when parseExpr() returns None
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume()

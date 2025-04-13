@@ -296,7 +296,7 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		init := b.buildExpr(d.Init)
+		init := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None
 		_, stmts := b.buildPattern(d.Pattern, init)
 		return stmts
 	case *ast.FuncDecl:

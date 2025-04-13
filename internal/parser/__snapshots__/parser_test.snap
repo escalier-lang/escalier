@@ -39,19 +39,21 @@
             },
             inferredType: nil,
         },
-        Init: &ast.LiteralExpr{
-            Lit: &ast.NumLit{
-                Value: 5,
-                span:  ast.Span{
+        Init: {
+            &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:2, Column:13},
+                        End:   ast.Location{Line:2, Column:14},
+                    },
+                },
+                span: ast.Span{
                     Start: ast.Location{Line:2, Column:13},
                     End:   ast.Location{Line:2, Column:14},
                 },
+                inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:2, Column:13},
-                End:   ast.Location{Line:2, Column:14},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -168,13 +170,15 @@
             },
             inferredType: nil,
         },
-        Init: &ast.IdentExpr{
-            Name: "x",
-            span: ast.Span{
-                Start: ast.Location{Line:2, Column:13},
-                End:   ast.Location{Line:2, Column:14},
+        Init: {
+            &ast.IdentExpr{
+                Name: "x",
+                span: ast.Span{
+                    Start: ast.Location{Line:2, Column:13},
+                    End:   ast.Location{Line:2, Column:14},
+                },
+                inferredType: nil,
             },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -203,29 +207,31 @@
             },
             inferredType: nil,
         },
-        Init: &ast.BinaryExpr{
-            Left: &ast.IdentExpr{
-                Name: "x",
+        Init: {
+            &ast.BinaryExpr{
+                Left: &ast.IdentExpr{
+                    Name: "x",
+                    span: ast.Span{
+                        Start: ast.Location{Line:2, Column:14},
+                        End:   ast.Location{Line:2, Column:15},
+                    },
+                    inferredType: nil,
+                },
+                Op:    1,
+                Right: &ast.IdentExpr{
+                    Name: "y",
+                    span: ast.Span{
+                        Start: ast.Location{Line:3, Column:6},
+                        End:   ast.Location{Line:3, Column:7},
+                    },
+                    inferredType: nil,
+                },
                 span: ast.Span{
                     Start: ast.Location{Line:2, Column:14},
-                    End:   ast.Location{Line:2, Column:15},
-                },
-                inferredType: nil,
-            },
-            Op:    1,
-            Right: &ast.IdentExpr{
-                Name: "y",
-                span: ast.Span{
-                    Start: ast.Location{Line:3, Column:6},
                     End:   ast.Location{Line:3, Column:7},
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:2, Column:14},
-                End:   ast.Location{Line:3, Column:7},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -303,54 +309,56 @@
             },
             inferredType: nil,
         },
-        Init: &ast.TupleExpr{
-            Elems: {
-                &ast.FuncExpr{
-                    Params: {
-                    },
-                    Return: nil,
-                    Throws: nil,
-                    Body:   ast.Block{
-                        Stmts: {
-                            &ast.DeclStmt{
-                                Decl: &ast.VarDecl{
-                                    Kind:    1,
-                                    Pattern: &ast.IdentPat{
-                                        Name:    "a",
-                                        Default: nil,
-                                        span:    ast.Span{
-                                            Start: ast.Location{Line:4, Column:11},
-                                            End:   ast.Location{Line:4, Column:12},
+        Init: {
+            &ast.TupleExpr{
+                Elems: {
+                    &ast.FuncExpr{
+                        Params: {
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Body:   ast.Block{
+                            Stmts: {
+                                &ast.DeclStmt{
+                                    Decl: &ast.VarDecl{
+                                        Kind:    1,
+                                        Pattern: &ast.IdentPat{
+                                            Name:    "a",
+                                            Default: nil,
+                                            span:    ast.Span{
+                                                Start: ast.Location{Line:4, Column:11},
+                                                End:   ast.Location{Line:4, Column:12},
+                                            },
+                                            inferredType: nil,
                                         },
-                                        inferredType: nil,
-                                    },
-                                    Init: &ast.IdentExpr{
-                                        Name: "x",
-                                        span: ast.Span{
-                                            Start: ast.Location{Line:4, Column:15},
+                                        Init: {
+                                            &!%v(DEPTH EXCEEDED),
+                                        },
+                                        export:  false,
+                                        declare: false,
+                                        span:    ast.Span{
+                                            Start: ast.Location{Line:4, Column:7},
                                             End:   ast.Location{Line:4, Column:16},
                                         },
-                                        inferredType: nil,
                                     },
-                                    export:  false,
-                                    declare: false,
-                                    span:    ast.Span{
+                                    span: ast.Span{
                                         Start: ast.Location{Line:4, Column:7},
                                         End:   ast.Location{Line:4, Column:16},
                                     },
                                 },
-                                span: ast.Span{
-                                    Start: ast.Location{Line:4, Column:7},
-                                    End:   ast.Location{Line:4, Column:16},
-                                },
-                            },
-                            &ast.ExprStmt{
-                                Expr: &ast.UnaryExpr{
-                                    Op:  1,
-                                    Arg: &ast.IdentExpr{
-                                        Name: "y",
+                                &ast.ExprStmt{
+                                    Expr: &ast.UnaryExpr{
+                                        Op:  1,
+                                        Arg: &ast.IdentExpr{
+                                            Name: "y",
+                                            span: ast.Span{
+                                                Start: ast.Location{Line:5, Column:8},
+                                                End:   ast.Location{Line:5, Column:9},
+                                            },
+                                            inferredType: nil,
+                                        },
                                         span: ast.Span{
-                                            Start: ast.Location{Line:5, Column:8},
+                                            Start: ast.Location{Line:5, Column:7},
                                             End:   ast.Location{Line:5, Column:9},
                                         },
                                         inferredType: nil,
@@ -359,31 +367,26 @@
                                         Start: ast.Location{Line:5, Column:7},
                                         End:   ast.Location{Line:5, Column:9},
                                     },
-                                    inferredType: nil,
-                                },
-                                span: ast.Span{
-                                    Start: ast.Location{Line:5, Column:7},
-                                    End:   ast.Location{Line:5, Column:9},
                                 },
                             },
+                            Span: ast.Span{
+                                Start: ast.Location{Line:3, Column:11},
+                                End:   ast.Location{Line:6, Column:7},
+                            },
                         },
-                        Span: ast.Span{
-                            Start: ast.Location{Line:3, Column:11},
+                        span: ast.Span{
+                            Start: ast.Location{Line:3, Column:6},
                             End:   ast.Location{Line:6, Column:7},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:3, Column:6},
-                        End:   ast.Location{Line:6, Column:7},
-                    },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:2, Column:17},
+                    End:   ast.Location{Line:7, Column:6},
+                },
+                inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:2, Column:17},
-                End:   ast.Location{Line:7, Column:6},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -439,19 +442,21 @@
             },
             inferredType: nil,
         },
-        Init: &ast.LiteralExpr{
-            Lit: &ast.NumLit{
-                Value: 10,
-                span:  ast.Span{
+        Init: {
+            &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 10,
+                    span:  ast.Span{
+                        Start: ast.Location{Line:3, Column:13},
+                        End:   ast.Location{Line:3, Column:15},
+                    },
+                },
+                span: ast.Span{
                     Start: ast.Location{Line:3, Column:13},
                     End:   ast.Location{Line:3, Column:15},
                 },
+                inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:3, Column:13},
-                End:   ast.Location{Line:3, Column:15},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -480,29 +485,31 @@
             },
             inferredType: nil,
         },
-        Init: &ast.BinaryExpr{
-            Left: &ast.IdentExpr{
-                Name: "a",
+        Init: {
+            &ast.BinaryExpr{
+                Left: &ast.IdentExpr{
+                    Name: "a",
+                    span: ast.Span{
+                        Start: ast.Location{Line:4, Column:15},
+                        End:   ast.Location{Line:4, Column:16},
+                    },
+                    inferredType: nil,
+                },
+                Op:    0,
+                Right: &ast.IdentExpr{
+                    Name: "b",
+                    span: ast.Span{
+                        Start: ast.Location{Line:4, Column:19},
+                        End:   ast.Location{Line:4, Column:20},
+                    },
+                    inferredType: nil,
+                },
                 span: ast.Span{
                     Start: ast.Location{Line:4, Column:15},
-                    End:   ast.Location{Line:4, Column:16},
-                },
-                inferredType: nil,
-            },
-            Op:    0,
-            Right: &ast.IdentExpr{
-                Name: "b",
-                span: ast.Span{
-                    Start: ast.Location{Line:4, Column:19},
                     End:   ast.Location{Line:4, Column:20},
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:4, Column:15},
-                End:   ast.Location{Line:4, Column:20},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,
@@ -619,68 +626,77 @@
             },
             inferredType: nil,
         },
-        Init: &ast.IfElseExpr{
-            Cond: &ast.IdentExpr{
-                Name: "cond",
-                span: ast.Span{
-                    Start: ast.Location{Line:2, Column:16},
-                    End:   ast.Location{Line:2, Column:20},
+        Init: {
+            &ast.IfElseExpr{
+                Cond: &ast.IdentExpr{
+                    Name: "cond",
+                    span: ast.Span{
+                        Start: ast.Location{Line:2, Column:16},
+                        End:   ast.Location{Line:2, Column:20},
+                    },
+                    inferredType: nil,
                 },
-                inferredType: nil,
-            },
-            Cons: ast.Block{
-                Stmts: {
-                    &ast.DeclStmt{
-                        Decl: &ast.VarDecl{
-                            Kind:    1,
-                            Pattern: &ast.IdentPat{
-                                Name:    "a",
-                                Default: nil,
-                                span:    ast.Span{
-                                    Start: ast.Location{Line:3, Column:10},
-                                    End:   ast.Location{Line:3, Column:11},
+                Cons: ast.Block{
+                    Stmts: {
+                        &ast.DeclStmt{
+                            Decl: &ast.VarDecl{
+                                Kind:    1,
+                                Pattern: &ast.IdentPat{
+                                    Name:    "a",
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start: ast.Location{Line:3, Column:10},
+                                        End:   ast.Location{Line:3, Column:11},
+                                    },
+                                    inferredType: nil,
                                 },
-                                inferredType: nil,
-                            },
-                            Init: &ast.LiteralExpr{
-                                Lit: &ast.NumLit{
-                                    Value: 5,
-                                    span:  ast.Span{
-                                        Start: ast.Location{Line:3, Column:14},
-                                        End:   ast.Location{Line:3, Column:15},
+                                Init: {
+                                    &ast.LiteralExpr{
+                                        Lit: &ast.NumLit{
+                                            Value: 5,
+                                            span:  ast.Span{
+                                                Start: ast.Location{Line:3, Column:14},
+                                                End:   ast.Location{Line:3, Column:15},
+                                            },
+                                        },
+                                        span: ast.Span{
+                                            Start: ast.Location{Line:3, Column:14},
+                                            End:   ast.Location{Line:3, Column:15},
+                                        },
+                                        inferredType: nil,
                                     },
                                 },
-                                span: ast.Span{
-                                    Start: ast.Location{Line:3, Column:14},
+                                export:  false,
+                                declare: false,
+                                span:    ast.Span{
+                                    Start: ast.Location{Line:3, Column:6},
                                     End:   ast.Location{Line:3, Column:15},
                                 },
-                                inferredType: nil,
                             },
-                            export:  false,
-                            declare: false,
-                            span:    ast.Span{
+                            span: ast.Span{
                                 Start: ast.Location{Line:3, Column:6},
                                 End:   ast.Location{Line:3, Column:15},
                             },
                         },
-                        span: ast.Span{
-                            Start: ast.Location{Line:3, Column:6},
-                            End:   ast.Location{Line:3, Column:15},
-                        },
-                    },
-                    &ast.ExprStmt{
-                        Expr: &ast.UnaryExpr{
-                            Op:  1,
-                            Arg: &ast.LiteralExpr{
-                                Lit: &ast.NumLit{
-                                    Value: 10,
-                                    span:  ast.Span{
+                        &ast.ExprStmt{
+                            Expr: &ast.UnaryExpr{
+                                Op:  1,
+                                Arg: &ast.LiteralExpr{
+                                    Lit: &ast.NumLit{
+                                        Value: 10,
+                                        span:  ast.Span{
+                                            Start: ast.Location{Line:4, Column:7},
+                                            End:   ast.Location{Line:4, Column:9},
+                                        },
+                                    },
+                                    span: ast.Span{
                                         Start: ast.Location{Line:4, Column:7},
                                         End:   ast.Location{Line:4, Column:9},
                                     },
+                                    inferredType: nil,
                                 },
                                 span: ast.Span{
-                                    Start: ast.Location{Line:4, Column:7},
+                                    Start: ast.Location{Line:4, Column:6},
                                     End:   ast.Location{Line:4, Column:9},
                                 },
                                 inferredType: nil,
@@ -689,74 +705,70 @@
                                 Start: ast.Location{Line:4, Column:6},
                                 End:   ast.Location{Line:4, Column:9},
                             },
-                            inferredType: nil,
-                        },
-                        span: ast.Span{
-                            Start: ast.Location{Line:4, Column:6},
-                            End:   ast.Location{Line:4, Column:9},
                         },
                     },
+                    Span: ast.Span{
+                        Start: ast.Location{Line:2, Column:21},
+                        End:   ast.Location{Line:5, Column:6},
+                    },
                 },
-                Span: ast.Span{
-                    Start: ast.Location{Line:2, Column:21},
-                    End:   ast.Location{Line:5, Column:6},
-                },
-            },
-            Alt: {
-                {
-                    Block: &ast.Block{
-                        Stmts: {
-                            &ast.DeclStmt{
-                                Decl: &ast.VarDecl{
-                                    Kind:    1,
-                                    Pattern: &ast.IdentPat{
-                                        Name:    "b",
-                                        Default: nil,
-                                        span:    ast.Span{
-                                            Start: ast.Location{Line:6, Column:11},
-                                            End:   ast.Location{Line:6, Column:12},
+                Alt: {
+                    {
+                        Block: &ast.Block{
+                            Stmts: {
+                                &ast.DeclStmt{
+                                    Decl: &ast.VarDecl{
+                                        Kind:    1,
+                                        Pattern: &ast.IdentPat{
+                                            Name:    "b",
+                                            Default: nil,
+                                            span:    ast.Span{
+                                                Start: ast.Location{Line:6, Column:11},
+                                                End:   ast.Location{Line:6, Column:12},
+                                            },
+                                            inferredType: nil,
                                         },
-                                        inferredType: nil,
-                                    },
-                                    Init: &ast.LiteralExpr{
-                                        Lit: &ast.NumLit{
-                                            Value: 10,
-                                            span:  ast.Span{
-                                                Start: ast.Location{Line:6, Column:15},
-                                                End:   ast.Location{Line:6, Column:17},
+                                        Init: {
+                                            &ast.LiteralExpr{
+                                                Lit:  &!%v(DEPTH EXCEEDED),
+                                                span: ast.Span{
+                                                    Start: ast.Location{Line:6, Column:15},
+                                                    End:   ast.Location{Line:6, Column:17},
+                                                },
+                                                inferredType: nil,
                                             },
                                         },
-                                        span: ast.Span{
-                                            Start: ast.Location{Line:6, Column:15},
+                                        export:  false,
+                                        declare: false,
+                                        span:    ast.Span{
+                                            Start: ast.Location{Line:6, Column:7},
                                             End:   ast.Location{Line:6, Column:17},
                                         },
-                                        inferredType: nil,
                                     },
-                                    export:  false,
-                                    declare: false,
-                                    span:    ast.Span{
+                                    span: ast.Span{
                                         Start: ast.Location{Line:6, Column:7},
                                         End:   ast.Location{Line:6, Column:17},
                                     },
                                 },
-                                span: ast.Span{
-                                    Start: ast.Location{Line:6, Column:7},
-                                    End:   ast.Location{Line:6, Column:17},
-                                },
-                            },
-                            &ast.ExprStmt{
-                                Expr: &ast.UnaryExpr{
-                                    Op:  1,
-                                    Arg: &ast.LiteralExpr{
-                                        Lit: &ast.NumLit{
-                                            Value: 5,
-                                            span:  ast.Span{
+                                &ast.ExprStmt{
+                                    Expr: &ast.UnaryExpr{
+                                        Op:  1,
+                                        Arg: &ast.LiteralExpr{
+                                            Lit: &ast.NumLit{
+                                                Value: 5,
+                                                span:  ast.Span{
+                                                    Start: ast.Location{Line:7, Column:7},
+                                                    End:   ast.Location{Line:7, Column:8},
+                                                },
+                                            },
+                                            span: ast.Span{
                                                 Start: ast.Location{Line:7, Column:7},
                                                 End:   ast.Location{Line:7, Column:8},
                                             },
+                                            inferredType: nil,
                                         },
                                         span: ast.Span{
-                                            Start: ast.Location{Line:7, Column:7},
+                                            Start: ast.Location{Line:7, Column:6},
                                             End:   ast.Location{Line:7, Column:8},
                                         },
                                         inferredType: nil,
@@ -765,27 +777,22 @@
                                         Start: ast.Location{Line:7, Column:6},
                                         End:   ast.Location{Line:7, Column:8},
                                     },
-                                    inferredType: nil,
-                                },
-                                span: ast.Span{
-                                    Start: ast.Location{Line:7, Column:6},
-                                    End:   ast.Location{Line:7, Column:8},
                                 },
                             },
+                            Span: ast.Span{
+                                Start: ast.Location{Line:5, Column:12},
+                                End:   ast.Location{Line:8, Column:6},
+                            },
                         },
-                        Span: ast.Span{
-                            Start: ast.Location{Line:5, Column:12},
-                            End:   ast.Location{Line:8, Column:6},
-                        },
+                        Expr: nil,
                     },
-                    Expr: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:2, Column:12},
+                    End:   ast.Location{Line:8, Column:6},
+                },
+                inferredType: nil,
             },
-            span: ast.Span{
-                Start: ast.Location{Line:2, Column:12},
-                End:   ast.Location{Line:8, Column:6},
-            },
-            inferredType: nil,
         },
         export:  false,
         declare: false,

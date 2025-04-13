@@ -46,7 +46,9 @@ func (p *Parser) ParseModule() *ast.Module {
 			token = p.lexer.peek()
 		default:
 			stmt := p.parseStmt()
-			stmts = append(stmts, stmt)
+			stmt.IfSome(func(stmt ast.Stmt) {
+				stmts = append(stmts, stmt)
+			})
 			token = p.lexer.peek()
 		}
 	}
