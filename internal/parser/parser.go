@@ -27,7 +27,7 @@ func NewParser(ctx context.Context, source Source) *Parser {
 	}
 }
 
-func (p *Parser) ParseModule() (*ast.Module, []*Error) {
+func (p *Parser) Parse() (*ast.Module, []*Error) {
 	stmts := []ast.Stmt{}
 	errors := []*Error{}
 
@@ -41,7 +41,7 @@ func (p *Parser) ParseModule() (*ast.Module, []*Error) {
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			stmt, stmtErrors := p.parseStmt()
+			stmt, stmtErrors := p.stmt()
 			errors = append(errors, stmtErrors...)
 			stmt.IfSome(func(stmt ast.Stmt) {
 				stmts = append(stmts, stmt)

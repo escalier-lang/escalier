@@ -53,7 +53,7 @@ func TestParseJSXNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			jsx, errors := parser.parseJSXElement()
+			jsx, errors := parser.jsxElement()
 
 			snaps.MatchSnapshot(t, jsx)
 			assert.Len(t, errors, 0)
@@ -84,7 +84,7 @@ func TestParseJSXErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			jsx, errors := parser.parseJSXElement()
+			jsx, errors := parser.jsxElement()
 
 			snaps.MatchSnapshot(t, jsx)
 			assert.Greater(t, len(errors), 0)
