@@ -2483,19 +2483,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.StrLit{
-                        Value: "hello",
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.StrLit{
+                            Value: "hello",
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:6},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:6},
                             End:   ast.Location{Line:1, Column:12},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:6},
-                        End:   ast.Location{Line:1, Column:12},
-                    },
-                    inferredType: nil,
                 },
             },
             &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
@@ -2509,19 +2511,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:19},
+                                End:   ast.Location{Line:1, Column:20},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:19},
                             End:   ast.Location{Line:1, Column:20},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:19},
-                        End:   ast.Location{Line:1, Column:20},
-                    },
-                    inferredType: nil,
                 },
             },
             &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
@@ -2534,19 +2538,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: true,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.BoolLit{
-                        Value: true,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.BoolLit{
+                            Value: true,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:29},
+                                End:   ast.Location{Line:1, Column:33},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:29},
                             End:   ast.Location{Line:1, Column:33},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:29},
-                        End:   ast.Location{Line:1, Column:33},
-                    },
-                    inferredType: nil,
                 },
             },
             &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
@@ -2575,19 +2581,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.BoolLit{
-                        Value: false,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.BoolLit{
+                            Value: false,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:47},
+                                End:   ast.Location{Line:1, Column:52},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:47},
                             End:   ast.Location{Line:1, Column:52},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:47},
-                        End:   ast.Location{Line:1, Column:52},
-                    },
-                    inferredType: nil,
                 },
             },
         },
@@ -2615,19 +2623,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:8},
                             End:   ast.Location{Line:1, Column:9},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:8},
-                        End:   ast.Location{Line:1, Column:9},
-                    },
-                    inferredType: nil,
                 },
             },
         },
@@ -2667,19 +2677,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:7},
+                                End:   ast.Location{Line:1, Column:8},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:7},
                             End:   ast.Location{Line:1, Column:8},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:7},
-                        End:   ast.Location{Line:1, Column:8},
-                    },
-                    inferredType: nil,
                 },
             },
             &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
@@ -2693,19 +2705,21 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Optional: false,
                 Readonly: false,
-                Value:    &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 10,
-                        span:  ast.Span{
+                Value:    {
+                    &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 10,
+                            span:  ast.Span{
+                                Start: ast.Location{Line:1, Column:15},
+                                End:   ast.Location{Line:1, Column:17},
+                            },
+                        },
+                        span: ast.Span{
                             Start: ast.Location{Line:1, Column:15},
                             End:   ast.Location{Line:1, Column:17},
                         },
+                        inferredType: nil,
                     },
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:15},
-                        End:   ast.Location{Line:1, Column:17},
-                    },
-                    inferredType: nil,
                 },
             },
         },

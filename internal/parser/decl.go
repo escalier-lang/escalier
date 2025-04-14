@@ -105,13 +105,18 @@ func (p *Parser) parseDecl() (optional.Option[ast.Decl], [](*Error)) {
 			end = body.Span.End
 
 			return optional.Some[ast.Decl](
-				ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end}),
+				ast.NewFuncDecl(
+					ident, params, optional.Some(body), declare, export,
+					ast.NewSpan(start, end),
+				),
 			), errors
 		}
 
-		var body ast.Block // TODO: make this optional
 		return optional.Some[ast.Decl](
-			ast.NewFuncDecl(ident, params, body, declare, export, ast.Span{Start: start, End: end}),
+			ast.NewFuncDecl(
+				ident, params, optional.None[ast.Block](), declare, export,
+				ast.NewSpan(start, end),
+			),
 		), errors
 	default:
 		errors = append(errors, NewError(token.Span, "Unexpected token"))

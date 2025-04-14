@@ -23,10 +23,12 @@ func (p *Parser) parseJSXElement() (optional.Option[*ast.JSXElementExpr], []*Err
 		errors = append(errors, closingErrors...)
 		span.End = closing.Span().End
 
-		return ast.NewJSXElement(opening, closing, children, span), errors
+		return ast.NewJSXElement(opening, optional.Some(closing), children, span), errors
 	}
 
-	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span), errors
+	return ast.NewJSXElement(
+		opening, optional.None[*ast.JSXClosing](), []ast.JSXChild{}, span,
+	), errors
 }
 
 func (p *Parser) parseJSXOpening() (*ast.JSXOpening, []*Error) {
@@ -51,7 +53,7 @@ func (p *Parser) parseJSXOpening() (*ast.JSXOpening, []*Error) {
 			Start: start,
 			End:   end,
 		}
-		return ast.NewJSXOpening("", nil, false, span), errors
+		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span), errors
 	default:
 		errors = append(errors, NewError(token.Span, "Expected an identifier or '>'"))
 	}
@@ -155,7 +157,7 @@ func (p *Parser) parseJSXClosing() (*ast.JSXClosing, []*Error) {
 	var name string
 	token = p.lexer.next()
 
-	//nolint: exhaustive
+	// nolint: exhaustive
 	switch token.Type {
 	case Identifier:
 		name = token.Value

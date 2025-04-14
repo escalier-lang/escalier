@@ -50,14 +50,32 @@ func (p *Param) Span() Span {
 type FuncDecl struct {
 	Name    *Ident
 	Params  []*Param
-	Body    Block // TODO: make this optional
+	Return  optional.Option[TypeAnn] // required when `declare` is true
+	Throws  optional.Option[TypeAnn] // required when `declare` is true
+	Body    optional.Option[Block]
 	export  bool
 	declare bool
 	span    Span
 }
 
-func NewFuncDecl(name *Ident, params []*Param, body Block, export, declare bool, span Span) *FuncDecl {
-	return &FuncDecl{Name: name, Params: params, Body: body, export: export, declare: declare, span: span}
+func NewFuncDecl(
+	name *Ident,
+	params []*Param,
+	body optional.Option[Block],
+	export,
+	declare bool,
+	span Span,
+) *FuncDecl {
+	return &FuncDecl{
+		Name:    name,
+		Params:  params,
+		Return:  nil, // TODO
+		Throws:  nil, // TODO
+		Body:    body,
+		export:  export,
+		declare: declare,
+		span:    span,
+	}
 }
 func (*FuncDecl) isDecl()         {}
 func (d *FuncDecl) Export() bool  { return d.export }
