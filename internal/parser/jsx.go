@@ -5,10 +5,10 @@ import (
 	"github.com/moznion/go-optional"
 )
 
-func (p *Parser) parseJSXElement() (optional.Option[*ast.JSXElementExpr], []*Error) {
+func (p *Parser) jsxElement() (optional.Option[*ast.JSXElementExpr], []*Error) {
 	errors := []*Error{}
 
-	opening, openErrors := p.parseJSXOpening()
+	opening, openErrors := p.jsxOpening()
 	errors = append(errors, openErrors...)
 
 	span := ast.Span{
@@ -17,13 +17,14 @@ func (p *Parser) parseJSXElement() (optional.Option[*ast.JSXElementExpr], []*Err
 	}
 
 	if !opening.SelfClose {
-		children, childrenErrors := p.parseJSXChildren()
+		children, childrenErrors := p.jsxChildren()
 		errors = append(errors, childrenErrors...)
-		closing, closingErrors := p.parseJSXClosing()
+		closing, closingErrors := p.jsxClosing()
 		errors = append(errors, closingErrors...)
-		span.End = closing.Span().End
 
-		return ast.NewJSXElement(opening, optional.Some(closing), children, span), errors
+		return ast.NewJSXElement(
+			opening, optional.Some(closing), children, ast.MergeSpans(span, closing.Span()),
+		), errors
 	}
 
 	return ast.NewJSXElement(
@@ -31,7 +32,7 @@ func (p *Parser) parseJSXElement() (optional.Option[*ast.JSXElementExpr], []*Err
 	), errors
 }
 
-func (p *Parser) parseJSXOpening() (*ast.JSXOpening, []*Error) {
+func (p *Parser) jsxOpening() (*ast.JSXOpening, []*Error) {
 	errors := []*Error{}
 	token := p.lexer.next()
 	if token.Type != LessThan {
@@ -58,7 +59,7 @@ func (p *Parser) parseJSXOpening() (*ast.JSXOpening, []*Error) {
 		errors = append(errors, NewError(token.Span, "Expected an identifier or '>'"))
 	}
 
-	attrs, attrsErrors := p.parseJSXAttrs()
+	attrs, attrsErrors := p.jsxAttrs()
 	errors = append(errors, attrsErrors...)
 
 	var selfClosing bool
@@ -85,7 +86,7 @@ func (p *Parser) parseJSXOpening() (*ast.JSXOpening, []*Error) {
 	return ast.NewJSXOpening(name, attrs, selfClosing, span), errors
 }
 
-func (p *Parser) parseJSXAttrs() ([]*ast.JSXAttr, []*Error) {
+func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 	attrs := []*ast.JSXAttr{}
 	errors := []*Error{}
 
@@ -119,7 +120,7 @@ func (p *Parser) parseJSXAttrs() ([]*ast.JSXAttr, []*Error) {
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
-			exprOption, exprErrors := p.parseExpr()
+			exprOption, exprErrors := p.expr()
 			errors := append(errors, exprErrors...)
 			if exprOption.IsNone() {
 				errors := append(errors, NewError(token.Span, "Expected an expression after '{'"))
@@ -144,7 +145,7 @@ func (p *Parser) parseJSXAttrs() ([]*ast.JSXAttr, []*Error) {
 	return attrs, errors
 }
 
-func (p *Parser) parseJSXClosing() (*ast.JSXClosing, []*Error) {
+func (p *Parser) jsxClosing() (*ast.JSXClosing, []*Error) {
 	errors := []*Error{}
 
 	token := p.lexer.next()
@@ -186,7 +187,7 @@ func (p *Parser) parseJSXClosing() (*ast.JSXClosing, []*Error) {
 	return ast.NewJSXClosing(name, span), errors
 }
 
-func (p *Parser) parseJSXChildren() ([]ast.JSXChild, []*Error) {
+func (p *Parser) jsxChildren() ([]ast.JSXChild, []*Error) {
 	children := []ast.JSXChild{}
 	errors := []*Error{}
 
@@ -198,14 +199,14 @@ func (p *Parser) parseJSXChildren() ([]ast.JSXChild, []*Error) {
 		case LessThanSlash, EndOfFile:
 			return children, errors
 		case LessThan:
-			jsxElement, jsxErrors := p.parseJSXElement()
+			jsxElement, jsxErrors := p.jsxElement()
 			errors = append(errors, jsxErrors...)
 			jsxElement.IfSome(func(jsxElement *ast.JSXElementExpr) {
 				children = append(children, jsxElement)
 			})
 		case OpenBrace:
 			p.lexer.consume()
-			exprOption, exprErrors := p.parseExpr()
+			exprOption, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
 			expr := exprOption.Unwrap() // TODO: handle the case when parseExpr() returns None
 			token = p.lexer.peek()

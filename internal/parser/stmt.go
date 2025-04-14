@@ -5,7 +5,9 @@ import (
 	"github.com/moznion/go-optional"
 )
 
-func (p *Parser) parseBlock() (ast.Block, []*Error) {
+// block = '{' stmt* '}'
+// TODO: return (optional.Option[ast.Block], []*Error)
+func (p *Parser) block() (ast.Block, []*Error) {
 	stmts := []ast.Stmt{}
 	errors := []*Error{}
 	var start ast.Location
@@ -20,7 +22,7 @@ func (p *Parser) parseBlock() (ast.Block, []*Error) {
 
 	token = p.lexer.peek()
 	for {
-		//nolint: exhaustive
+		// nolint: exhaustive
 		switch token.Type {
 		case CloseBrace:
 			p.lexer.consume()
@@ -29,7 +31,7 @@ func (p *Parser) parseBlock() (ast.Block, []*Error) {
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			stmt, stmtErrors := p.parseStmt()
+			stmt, stmtErrors := p.stmt()
 			errors = append(errors, stmtErrors...)
 			stmt.IfSome(func(stmt ast.Stmt) {
 				stmts = append(stmts, stmt)
@@ -39,20 +41,21 @@ func (p *Parser) parseBlock() (ast.Block, []*Error) {
 	}
 }
 
-func (p *Parser) parseStmt() (optional.Option[ast.Stmt], []*Error) {
+// stmt = decl | ('return' expr?) | expr
+func (p *Parser) stmt() (optional.Option[ast.Stmt], []*Error) {
 	token := p.lexer.peek()
 
-	//nolint: exhaustive
+	// nolint: exhaustive
 	switch token.Type {
 	case Fn, Var, Val, Declare, Export:
-		decl, declErrors := p.parseDecl()
+		decl, declErrors := p.decl()
 		stmt := optional.Map(decl, func(d ast.Decl) ast.Stmt {
 			return ast.NewDeclStmt(d, d.Span())
 		})
 		return stmt, declErrors
 	case Return:
 		p.lexer.consume()
-		expr, exprErrors := p.parseNonDelimitedExpr()
+		expr, exprErrors := p.nonDelimitedExpr()
 		stmt := optional.Map(expr, func(expr ast.Expr) ast.Stmt {
 			return ast.NewReturnStmt(
 				optional.Some(expr), ast.MergeSpans(token.Span, expr.Span()),
@@ -60,7 +63,7 @@ func (p *Parser) parseStmt() (optional.Option[ast.Stmt], []*Error) {
 		}).Or(optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span)))
 		return stmt, exprErrors
 	default:
-		expr, exprErrors := p.parseNonDelimitedExpr()
+		expr, exprErrors := p.nonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we
 		// don't know how to parse.
 		nextToken := p.lexer.peek()

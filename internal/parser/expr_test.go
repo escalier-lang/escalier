@@ -152,7 +152,7 @@ func TestParseExprNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr, errors := parser.parseExpr()
+			expr, errors := parser.expr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Equal(t, []*Error{}, errors)
@@ -228,7 +228,7 @@ func TestParseExprErrorHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr, errors := parser.parseExpr()
+			expr, errors := parser.expr()
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Greater(t, len(errors), 0)

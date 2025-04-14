@@ -20,7 +20,7 @@ func Compile(source parser.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	escMod, escErrors := p.ParseModule()
+	escMod, escErrors := p.Parse()
 
 	if len(escErrors) > 0 {
 		return CompilerOutput{

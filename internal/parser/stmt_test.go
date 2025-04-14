@@ -70,7 +70,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			stmt, errors := parser.parseStmt()
+			stmt, errors := parser.stmt()
 
 			snaps.MatchSnapshot(t, stmt)
 			if len(errors) > 0 {
@@ -123,7 +123,7 @@ func TestParseStmtErrorHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			stmt, errors := parser.parseStmt()
+			stmt, errors := parser.stmt()
 
 			snaps.MatchSnapshot(t, stmt)
 			assert.Greater(t, len(errors), 0)

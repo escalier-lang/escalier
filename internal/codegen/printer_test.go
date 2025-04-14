@@ -46,7 +46,7 @@ fn sub(a, b) { return a - b }`,
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	m1, _ := p.ParseModule()
+	m1, _ := p.Parse()
 	builder := &Builder{
 		tempId: 0,
 	}
