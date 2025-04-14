@@ -444,7 +444,7 @@ func (e *TaggedTemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
-	Closing      *JSXClosing
+	Closing      *JSXClosing // TODO: make this optional
 	Children     []JSXChild
 	span         Span
 	inferredType Type

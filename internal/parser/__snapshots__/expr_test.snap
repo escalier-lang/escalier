@@ -157,8 +157,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
             },
         },
-        Exprs: nil,
-        span:  ast.Span{
+        Exprs: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:8},
         },
@@ -408,8 +409,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
             },
         },
-        Exprs: nil,
-        span:  ast.Span{
+        Exprs: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:5},
         },
@@ -1250,8 +1252,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
             },
         },
-        Exprs: nil,
-        span:  ast.Span{
+        Exprs: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:2, Column:7},
         },
@@ -1280,8 +1283,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
             },
         },
-        Exprs: nil,
-        span:  ast.Span{
+        Exprs: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:34},
         },

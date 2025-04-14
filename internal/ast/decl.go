@@ -50,7 +50,7 @@ func (p *Param) Span() Span {
 type FuncDecl struct {
 	Name    *Ident
 	Params  []*Param
-	Body    Block
+	Body    Block // TODO: make this optional
 	export  bool
 	declare bool
 	span    Span

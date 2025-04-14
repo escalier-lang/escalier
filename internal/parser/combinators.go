@@ -6,18 +6,20 @@ func parseDelimSeq[T comparable](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
-	parserCombinator func() optional.Option[T],
-) []T {
+	parserCombinator func() (optional.Option[T], []*Error),
+) ([]T, []*Error) {
 	items := []T{}
+	errors := []*Error{}
 
 	token := p.lexer.peek()
 	if token.Type == terminator {
-		return items
+		return items, errors
 	}
 
-	item := parserCombinator()
+	item, itemErrors := parserCombinator()
+	errors = append(errors, itemErrors...)
 	if item.IsNone() {
-		return items
+		return items, errors
 	}
 	item.IfSome(func(item T) {
 		items = append(items, item)
@@ -27,15 +29,16 @@ func parseDelimSeq[T comparable](
 		token = p.lexer.peek()
 		if token.Type == separator {
 			p.lexer.consume() // consume separator
-			item := parserCombinator()
+			item, itemErrors := parserCombinator()
+			errors = append(errors, itemErrors...)
 			if item.IsNone() {
-				return items
+				return items, errors
 			}
 			item.IfSome(func(item T) {
 				items = append(items, item)
 			})
 		} else {
-			return items
+			return items, errors
 		}
 	}
 }

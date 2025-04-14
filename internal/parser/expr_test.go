@@ -152,10 +152,10 @@ func TestParseExprNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.parseExpr()
+			expr, errors := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Equal(t, []*Error{}, parser.Errors)
+			assert.Equal(t, []*Error{}, errors)
 		})
 	}
 }
@@ -228,11 +228,11 @@ func TestParseExprErrorHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.parseExpr()
+			expr, errors := parser.parseExpr()
 
 			snaps.MatchSnapshot(t, expr)
-			assert.Greater(t, len(parser.Errors), 0)
-			snaps.MatchSnapshot(t, parser.Errors)
+			assert.Greater(t, len(errors), 0)
+			snaps.MatchSnapshot(t, errors)
 		})
 	}
 }

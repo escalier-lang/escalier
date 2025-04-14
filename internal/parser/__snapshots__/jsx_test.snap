@@ -13,8 +13,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
         },
         Closing:  (*ast.JSXClosing)(nil),
-        Children: nil,
-        span:     ast.Span{
+        Children: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:8},
         },
@@ -109,8 +110,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
         },
         Closing:  (*ast.JSXClosing)(nil),
-        Children: nil,
-        span:     ast.Span{
+        Children: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:27},
         },
@@ -423,8 +425,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                     },
                 },
                 Closing:  (*ast.JSXClosing)(nil),
-                Children: nil,
-                span:     ast.Span{
+                Children: {
+                },
+                span: ast.Span{
                     Start: ast.Location{Line:1, Column:3},
                     End:   ast.Location{Line:1, Column:10},
                 },
@@ -442,8 +445,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                     },
                 },
                 Closing:  (*ast.JSXClosing)(nil),
-                Children: nil,
-                span:     ast.Span{
+                Children: {
+                },
+                span: ast.Span{
                     Start: ast.Location{Line:1, Column:10},
                     End:   ast.Location{Line:1, Column:17},
                 },
@@ -487,8 +491,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
         },
         Closing:  (*ast.JSXClosing)(nil),
-        Children: nil,
-        span:     ast.Span{
+        Children: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:19},
         },
@@ -538,8 +543,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
         },
         Closing:  (*ast.JSXClosing)(nil),
-        Children: nil,
-        span:     ast.Span{
+        Children: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:16},
         },
@@ -627,8 +633,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
         },
         Closing:  (*ast.JSXClosing)(nil),
-        Children: nil,
-        span:     ast.Span{
+        Children: {
+        },
+        span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:4, Column:3},
         },
