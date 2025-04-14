@@ -260,7 +260,7 @@ loop:
 				}
 			}
 		case BackTick:
-			temp, tempErrors := p.parseTemplateLitExpr(token, expr)
+			temp, tempErrors := p.parseTemplateLitExpr(token, optional.Some(expr))
 			errors = append(errors, tempErrors...)
 			expr = temp
 		default:
@@ -412,7 +412,13 @@ func (p *Parser) parsePrimary() (optional.Option[ast.Expr], []*Error) {
 
 			// TODO: parse return and throws types
 			return optional.Some[ast.Expr](
-				ast.NewFuncExpr(params, nil, nil, body, ast.Span{Start: start, End: end}),
+				ast.NewFuncExpr(
+					params,
+					optional.None[ast.TypeAnn](),
+					optional.None[ast.TypeAnn](),
+					body,
+					ast.NewSpan(start, end),
+				),
 			), errors
 		case If:
 			return p.parseIfElse()
@@ -506,7 +512,7 @@ func (p *Parser) parseObjExprElem() (optional.Option[ast.ObjExprElem], []*Error)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
 			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
 				Name:     objKey,
-				Value:    value,
+				Value:    optional.Some(value),
 				Readonly: false, // TODO
 				Optional: false,
 			}
@@ -521,7 +527,7 @@ func (p *Parser) parseObjExprElem() (optional.Option[ast.ObjExprElem], []*Error)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
 			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
 				Name:     objKey,
-				Value:    value,
+				Value:    optional.Some(value),
 				Readonly: true,
 				Optional: false,
 			}
@@ -541,8 +547,8 @@ func (p *Parser) parseObjExprElem() (optional.Option[ast.ObjExprElem], []*Error)
 		// TODO: parse return and throws types
 		fn := ast.NewFuncExpr(
 			params,
-			nil,
-			nil,
+			optional.None[ast.TypeAnn](),
+			optional.None[ast.TypeAnn](),
 			body,
 			ast.Span{Start: objKey.Span().Start, End: end},
 		)
@@ -570,7 +576,7 @@ func (p *Parser) parseObjExprElem() (optional.Option[ast.ObjExprElem], []*Error)
 			case Comma, CloseBrace:
 				property := &ast.Property[ast.Expr, ast.ObjExprKey]{
 					Name:     objKey,
-					Value:    nil, // shorthand property
+					Value:    optional.None[ast.Expr](), // shorthand property
 					Readonly: false,
 					Optional: false,
 				}
@@ -580,13 +586,14 @@ func (p *Parser) parseObjExprElem() (optional.Option[ast.ObjExprElem], []*Error)
 				errors = append(errors, valueErrors...)
 				if value.IsNone() {
 					errors = append(errors, NewError(token.Span, "Expected a comma, closing brace, or expression"))
+					return optional.None[ast.ObjExprElem](), errors
 				} else {
 					errors = append(errors, NewError(token.Span, "Expected a comma or closing brace"))
 				}
 				return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
 					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
 						Name:     objKey,
-						Value:    value,
+						Value:    optional.Some(value),
 						Readonly: false,
 						Optional: false,
 					}
@@ -607,7 +614,7 @@ func (p *Parser) parseParam() (optional.Option[*ast.Param], []*Error) {
 	}), patErrors
 }
 
-func (p *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) (ast.Expr, []*Error) {
+func (p *Parser) parseTemplateLitExpr(token *Token, tag optional.Option[ast.Expr]) (ast.Expr, []*Error) {
 	p.lexer.consume()
 	quasis := []*ast.Quasi{}
 	exprs := []ast.Expr{}
@@ -639,12 +646,13 @@ func (p *Parser) parseTemplateLitExpr(token *Token, tag ast.Expr) (ast.Expr, []*
 			break
 		}
 	}
-	if tag != nil {
+	return optional.Map(tag, func(tag ast.Expr) ast.Expr {
 		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation}
-		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span), errors
-	}
-	span := ast.Span{Start: token.Span.Start, End: p.lexer.currentLocation}
-	return ast.NewTemplateLit(quasis, exprs, span), errors
+		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
+	}).OrElse(func() optional.Option[ast.Expr] {
+		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation)
+		return optional.Some[ast.Expr](ast.NewTemplateLit(quasis, exprs, span))
+	}).Unwrap(), errors
 }
 
 func (p *Parser) parseIfElse() (optional.Option[ast.Expr], []*Error) {

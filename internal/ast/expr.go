@@ -207,15 +207,28 @@ func (e *IdentExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type FuncExpr struct {
 	Params       []*Param
-	Return       TypeAnn
-	Throws       TypeAnn
+	Return       optional.Option[TypeAnn]
+	Throws       optional.Option[TypeAnn]
 	Body         Block
 	span         Span
 	inferredType Type
 }
 
-func NewFuncExpr(params []*Param, ret TypeAnn, throws TypeAnn, body Block, span Span) *FuncExpr {
-	return &FuncExpr{Params: params, Return: ret, Throws: throws, Body: body, span: span, inferredType: nil}
+func NewFuncExpr(
+	params []*Param,
+	ret optional.Option[TypeAnn],
+	throws optional.Option[TypeAnn],
+	body Block,
+	span Span,
+) *FuncExpr {
+	return &FuncExpr{
+		Params:       params,
+		Return:       ret,
+		Throws:       throws,
+		Body:         body,
+		span:         span,
+		inferredType: nil,
+	}
 }
 func (e *FuncExpr) Span() Span             { return e.span }
 func (e *FuncExpr) InferredType() Type     { return e.inferredType }
@@ -444,13 +457,13 @@ func (e *TaggedTemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
-	Closing      *JSXClosing // TODO: make this optional
+	Closing      optional.Option[*JSXClosing]
 	Children     []JSXChild
 	span         Span
 	inferredType Type
 }
 
-func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
+func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
 	return optional.Some(
 		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
 	)

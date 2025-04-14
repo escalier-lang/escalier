@@ -61,10 +61,10 @@ type Property[T any, PN any] struct {
 	Name     PN
 	Optional bool
 	Readonly bool
-	Value    T
+	Value    optional.Option[T]
 }
 
-func NewProperty[T any, PN any](name PN, value T) *Property[T, PN] {
+func NewProperty[T any, PN any](name PN, value optional.Option[T]) *Property[T, PN] {
 	return &Property[T, PN]{
 		Name:     name,
 		Value:    value,

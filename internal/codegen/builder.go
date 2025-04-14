@@ -301,10 +301,14 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 		return stmts
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
+		if d.Body.IsNone() {
+			return []Stmt{}
+		}
+		body := d.Body.Unwrap() // okay because we checked IsNone() above
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
-			Body:    slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
+			Body:    slices.Concat(allParamStmts, b.buildStmts(body.Stmts)),
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,
