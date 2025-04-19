@@ -242,10 +242,15 @@ func (e *IdentExpr) Span() Span             { return e.span }
 func (e *IdentExpr) InferredType() Type     { return e.inferredType }
 func (e *IdentExpr) SetInferredType(t Type) { e.inferredType = t }
 
+type FuncSig struct {
+	TypeParams []*TypeParam[TypeAnn]
+	Params     []*Param
+	Return     optional.Option[TypeAnn]
+	Throws     optional.Option[TypeAnn]
+}
+
 type FuncExpr struct {
-	Params       []*Param
-	Return       optional.Option[TypeAnn]
-	Throws       optional.Option[TypeAnn]
+	FuncSig
 	Body         Block
 	span         Span
 	inferredType Type
@@ -259,9 +264,11 @@ func NewFuncExpr(
 	span Span,
 ) *FuncExpr {
 	return &FuncExpr{
-		Params:       params,
-		Return:       ret,
-		Throws:       throws,
+		FuncSig: FuncSig{
+			Params: params,
+			Return: ret,
+			Throws: throws,
+		},
 		Body:         body,
 		span:         span,
 		inferredType: nil,

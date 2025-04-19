@@ -79,33 +79,36 @@
                 End:   ast.Location{Line:2, Column:11},
             },
         },
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "a",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:2, Column:12},
-                        End:   ast.Location{Line:2, Column:13},
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:2, Column:12},
+                            End:   ast.Location{Line:2, Column:13},
+                        },
+                        inferredType: nil,
                     },
-                    inferredType: nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:2, Column:15},
+                            End:   ast.Location{Line:2, Column:16},
+                        },
+                        inferredType: nil,
+                    },
                 },
             },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "b",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:2, Column:15},
-                        End:   ast.Location{Line:2, Column:16},
-                    },
-                    inferredType: nil,
-                },
-            },
+            Return: nil,
+            Throws: nil,
         },
-        Return: nil,
-        Throws: nil,
-        Body:   {
+        Body: {
             {
                 Stmts: {
                     &ast.ReturnStmt{
@@ -317,11 +320,14 @@
             &ast.TupleExpr{
                 Elems: {
                     &ast.FuncExpr{
-                        Params: {
+                        FuncSig: ast.FuncSig{
+                            TypeParams: nil,
+                            Params:     {
+                            },
+                            Return: nil,
+                            Throws: nil,
                         },
-                        Return: nil,
-                        Throws: nil,
-                        Body:   ast.Block{
+                        Body: ast.Block{
                             Stmts: {
                                 &ast.DeclStmt{
                                     Decl: &ast.VarDecl{
@@ -539,33 +545,36 @@
                 End:   ast.Location{Line:5, Column:11},
             },
         },
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "a",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:5, Column:12},
-                        End:   ast.Location{Line:5, Column:13},
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:5, Column:12},
+                            End:   ast.Location{Line:5, Column:13},
+                        },
+                        inferredType: nil,
                     },
-                    inferredType: nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:5, Column:15},
+                            End:   ast.Location{Line:5, Column:16},
+                        },
+                        inferredType: nil,
+                    },
                 },
             },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "b",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:5, Column:15},
-                        End:   ast.Location{Line:5, Column:16},
-                    },
-                    inferredType: nil,
-                },
-            },
+            Return: nil,
+            Throws: nil,
         },
-        Return: nil,
-        Throws: nil,
-        Body:   {
+        Body: {
             {
                 Stmts: {
                     &ast.ReturnStmt{

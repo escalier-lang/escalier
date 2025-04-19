@@ -115,32 +115,35 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:22},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:23},
-                            End:   ast.Location{Line:1, Column:24},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:23},
+                                End:   ast.Location{Line:1, Column:24},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:26},
+                                End:   ast.Location{Line:1, Column:27},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:26},
-                            End:   ast.Location{Line:1, Column:27},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return:  nil,
-            Throws:  nil,
             Body:    nil,
             export:  true,
             declare: true,
@@ -168,33 +171,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:14},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:15},
-                            End:   ast.Location{Line:1, Column:16},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:15},
+                                End:   ast.Location{Line:1, Column:16},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:18},
+                                End:   ast.Location{Line:1, Column:19},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:18},
-                            End:   ast.Location{Line:1, Column:19},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ExprStmt{
@@ -260,32 +266,35 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:15},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:17},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:16},
+                                End:   ast.Location{Line:1, Column:17},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:19},
+                                End:   ast.Location{Line:1, Column:20},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:19},
-                            End:   ast.Location{Line:1, Column:20},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return:  nil,
-            Throws:  nil,
             Body:    nil,
             export:  true,
             declare: false,
@@ -358,33 +367,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ExprStmt{
@@ -450,33 +462,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ReturnStmt{
@@ -589,11 +604,14 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.DeclStmt{
@@ -786,11 +804,14 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:4},
                 },
             },
-            Params: {
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ReturnStmt{
@@ -895,33 +916,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                     },
@@ -969,11 +993,14 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.DeclStmt{
@@ -1132,33 +1159,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:8},
+                                End:   ast.Location{Line:1, Column:9},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ExprStmt{
@@ -1236,33 +1266,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:7},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:9},
-                            End:   ast.Location{Line:1, Column:10},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:9},
+                                End:   ast.Location{Line:1, Column:10},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:12},
+                                End:   ast.Location{Line:1, Column:13},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:12},
-                            End:   ast.Location{Line:1, Column:13},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ExprStmt{
@@ -1385,33 +1418,36 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     End:   ast.Location{Line:1, Column:10},
                 },
             },
-            Params: {
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "a",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+            FuncSig: ast.FuncSig{
+                TypeParams: nil,
+                Params:     {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:11},
+                                End:   ast.Location{Line:1, Column:12},
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start: ast.Location{Line:1, Column:14},
+                                End:   ast.Location{Line:1, Column:15},
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name:    "b",
-                        Default: nil,
-                        span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:14},
-                            End:   ast.Location{Line:1, Column:15},
-                        },
-                        inferredType: nil,
-                    },
-                },
+                Return: nil,
+                Throws: nil,
             },
-            Return: nil,
-            Throws: nil,
-            Body:   {
+            Body: {
                 {
                     Stmts: {
                         &ast.ExprStmt{

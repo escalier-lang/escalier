@@ -34,7 +34,7 @@ func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
 func (*WildcardType) isType()     {}
-func (*ExtractType) isType()      {}
+func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
 func (*IntrinsicType) isType()    {}
 
@@ -136,6 +136,12 @@ type LitType struct {
 	provenance *Provenance
 }
 
+func NewLitType(lit Lit) *LitType {
+	return &LitType{
+		Lit:        lit,
+		provenance: nil,
+	}
+}
 func (t *LitType) Provenance() *Provenance     { return t.provenance }
 func (t *LitType) SetProvenance(p *Provenance) { t.provenance = p }
 func (t *LitType) Accept(v TypeVisitor)        { v.VisitType(t) }
@@ -204,10 +210,10 @@ func (t *GlobalThisType) Equal(other Type) bool {
 	return false
 }
 
-type TypeParam struct {
+type TypeParam[T any] struct {
 	Name       string
-	Constraint Type
-	Default    Type
+	Constraint T
+	Default    T
 }
 
 type FuncParam struct {
@@ -227,8 +233,8 @@ func NewFuncParam(name string, typ Type) *FuncParam {
 }
 
 type FuncType struct {
-	TypeParams []*TypeParam
-	Self       Type
+	TypeParams []*TypeParam[Type]
+	Self       optional.Option[Type]
 	Params     []*FuncParam
 	Return     Type
 	Throws     Type
@@ -290,7 +296,7 @@ type PropertyElemType struct {
 	Name     ObjTypeKey
 	Optional bool
 	Readonly bool
-	Value    optional.Option[Type]
+	Value    Type
 }
 type MappedElemType struct {
 	TypeParam *IndexParamType
@@ -330,9 +336,7 @@ func (s *SetterElemType) Accept(v TypeVisitor) {
 	s.Fn.Accept(v)
 }
 func (p *PropertyElemType) Accept(v TypeVisitor) {
-	p.Value.IfSome(func(value Type) {
-		value.Accept(v)
-	})
+	p.Value.Accept(v)
 }
 func (m *MappedElemType) Accept(v TypeVisitor) {
 	m.TypeParam.Constraint.Accept(v)
@@ -346,7 +350,7 @@ func (r *RestSpreadElemType) Accept(v TypeVisitor) {
 }
 
 type ObjectType struct {
-	Elems      []optional.Option[ObjTypeElem]
+	Elems      []ObjTypeElem
 	Exact      bool // Can't be true if any of Interface, Implements, or Extends are true
 	Immutable  bool // true for `#{...}`, false for `{...}`
 	Mutable    bool // true for `mut {...}`, false for `{...}`
@@ -357,13 +361,26 @@ type ObjectType struct {
 	provenance *Provenance // TODO: use optional.Option for this
 }
 
+// TODO: add different constructors for different types of object types
+func NewObjectType(elems []ObjTypeElem) *ObjectType {
+	return &ObjectType{
+		Elems:      elems,
+		Exact:      false,
+		Immutable:  false,
+		Mutable:    false,
+		Nomimal:    false,
+		Interface:  false,
+		Extends:    nil,
+		Implements: nil,
+		provenance: nil,
+	}
+}
+
 func (t *ObjectType) Provenance() *Provenance     { return t.provenance }
 func (t *ObjectType) SetProvenance(p *Provenance) { t.provenance = p }
 func (t *ObjectType) Accept(v TypeVisitor) {
 	for _, elem := range t.Elems {
-		elem.IfSome(func(e ObjTypeElem) {
-			e.Accept(v)
-		})
+		elem.Accept(v)
 	}
 	for _, ext := range t.Extends {
 		ext.Accept(v)
@@ -386,6 +403,12 @@ type TupleType struct {
 	provenance *Provenance
 }
 
+func NewTupleType(elems ...Type) *TupleType {
+	return &TupleType{
+		Elems:      elems,
+		provenance: nil,
+	}
+}
 func (t *TupleType) Provenance() *Provenance     { return t.provenance }
 func (t *TupleType) SetProvenance(p *Provenance) { t.provenance = p }
 func (t *TupleType) Accept(v TypeVisitor) {
@@ -407,6 +430,12 @@ type RestSpreadType struct {
 	provenance *Provenance
 }
 
+func NewRestSpreadType(typ Type) *RestSpreadType {
+	return &RestSpreadType{
+		Type:       typ,
+		provenance: nil,
+	}
+}
 func (t *RestSpreadType) Provenance() *Provenance     { return t.provenance }
 func (t *RestSpreadType) SetProvenance(p *Provenance) { t.provenance = p }
 func (t *RestSpreadType) Accept(v TypeVisitor) {
@@ -561,25 +590,32 @@ func (t *WildcardType) Equal(other Type) bool {
 	return false
 }
 
-type ExtractType struct {
+type ExtractorType struct {
 	Extractor  Type
 	Args       []Type
 	provenance *Provenance
 }
 
-func (t *ExtractType) Provenance() *Provenance     { return t.provenance }
-func (t *ExtractType) SetProvenance(p *Provenance) { t.provenance = p }
-func (t *ExtractType) Accept(v TypeVisitor) {
+func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
+	return &ExtractorType{
+		Extractor:  extractor,
+		Args:       args,
+		provenance: nil,
+	}
+}
+func (t *ExtractorType) Provenance() *Provenance     { return t.provenance }
+func (t *ExtractorType) SetProvenance(p *Provenance) { t.provenance = p }
+func (t *ExtractorType) Accept(v TypeVisitor) {
 	t.Extractor.Accept(v)
 	for _, arg := range t.Args {
 		arg.Accept(v)
 	}
 	v.VisitType(t)
 }
-func (t *ExtractType) Equal(other Type) bool {
-	if other, ok := other.(*ExtractType); ok {
+func (t *ExtractorType) Equal(other Type) bool {
+	if other, ok := other.(*ExtractorType); ok {
 		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(ExtractType{}, "provenance"))
+		return cmp.Equal(t, other, cmpopts.IgnoreFields(ExtractorType{}, "provenance"))
 	}
 	return false
 }
@@ -632,5 +668,5 @@ type TypeProvenance struct {
 }
 
 type ExprProvenance struct {
-	Expr *Expr
+	Expr Expr
 }

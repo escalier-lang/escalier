@@ -137,6 +137,7 @@ func (p *LitPat) Span() Span             { return p.span }
 func (p *LitPat) InferredType() Type     { return p.inferredType }
 func (p *LitPat) SetInferredType(t Type) { p.inferredType = t }
 
+// TODO: replace with optional Assertion field on IdentPat, ObjPatElem, and WildcardPat
 type IsPat struct {
 	Name         *Ident
 	Type         TypeAnn

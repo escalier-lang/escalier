@@ -143,13 +143,13 @@ func (c *Checker) unify(ctx Context, t1, t2 ast.Type) []*Error {
 	}
 	// | ObjectType, ExtractType -> ...
 	if obj, ok := t1.(*ast.ObjectType); ok {
-		if ext, ok := t2.(*ast.ExtractType); ok {
+		if ext, ok := t2.(*ast.ExtractorType); ok {
 			panic(fmt.Sprintf("TODO: unify types %v and %v", obj, ext))
 			// TODO
 		}
 	}
 	// | ExtractType, ObjectType -> ...
-	if ext, ok := t1.(*ast.ExtractType); ok {
+	if ext, ok := t1.(*ast.ExtractorType); ok {
 		if obj, ok := t2.(*ast.ObjectType); ok {
 			panic(fmt.Sprintf("TODO: unify types %v and %v", ext, obj))
 			// TODO
