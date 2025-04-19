@@ -9,7 +9,7 @@
         },
         source: nil,
     },
-    Op:    0,
+    Op:    "+",
     Right: &codegen.NumExpr{
         Value: 0.2,
         span:  &codegen.Span{

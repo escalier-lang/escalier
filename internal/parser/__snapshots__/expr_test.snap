@@ -87,7 +87,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
         Cons: ast.Block{
             Stmts: {
             },
-            Span: ast.Span{},
+            Span: ast.Span{
+                Start: ast.Location{Line:1, Column:9},
+                End:   ast.Location{Line:1, Column:10},
+            },
         },
         Alt:  nil,
         span: ast.Span{
@@ -266,7 +269,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    2,
+        Op:    "*",
         Right: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
                 Name: "b",
@@ -276,7 +279,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    0,
+            Op:    "+",
             Right: &ast.IdentExpr{
                 Name: "c",
                 span: ast.Span{
@@ -323,7 +326,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -365,7 +368,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    1,
+            Op:    "-",
             Right: &ast.IdentExpr{
                 Name: "b",
                 span: ast.Span{
@@ -380,7 +383,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.EmptyExpr{
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:8},
@@ -473,7 +476,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             },
                             inferredType: nil,
                         },
-                        Op:    0,
+                        Op:    "+",
                         Right: &ast.IdentExpr{
                             Name: "b",
                             span: ast.Span{
@@ -548,7 +551,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.MemberExpr{
             Object: &ast.IdentExpr{
                 Name: "b",
@@ -694,7 +697,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             },
                             inferredType: nil,
                         },
-                        Op:    0,
+                        Op:    "+",
                         Right: &ast.IdentExpr{
                             Name: "b",
                             span: ast.Span{
@@ -740,7 +743,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.MemberExpr{
             Object: &ast.IdentExpr{
                 Name: "b",
@@ -856,7 +859,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.ObjectExpr{
         Elems: {
-            &ast.Method[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.MethodExpr{
                 Name: &ast.IdentExpr{
                     Name: "foo",
                     span: ast.Span{
@@ -918,7 +921,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
             },
-            &ast.Getter[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.GetterExpr{
                 Name: &ast.IdentExpr{
                     Name: "bar",
                     span: ast.Span{
@@ -989,7 +992,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
             },
-            &ast.Setter[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.SetterExpr{
                 Name: &ast.IdentExpr{
                     Name: "bar",
                     span: ast.Span{
@@ -1041,7 +1044,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                         },
                                         inferredType: nil,
                                     },
-                                    Op:    14,
+                                    Op:    "=",
                                     Right: &ast.IdentExpr{
                                         Name: "x",
                                         span: ast.Span{
@@ -1170,7 +1173,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    0,
+            Op:    "+",
             Right: &ast.IdentExpr{
                 Name: "offset",
                 span: ast.Span{
@@ -1214,7 +1217,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    1,
+        Op:    "-",
         Right: &ast.UnaryExpr{
             Op:  1,
             Arg: &ast.IdentExpr{
@@ -1418,7 +1421,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    2,
+        Op:    "*",
         Right: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
                 Name: "b",
@@ -1428,7 +1431,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    0,
+            Op:    "+",
             Right: &ast.IdentExpr{
                 Name: "c",
                 span: ast.Span{
@@ -1482,7 +1485,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.IndexExpr{
             Object: &ast.IdentExpr{
                 Name: "b",
@@ -1817,7 +1820,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    1,
+            Op:    "-",
             Right: &ast.IdentExpr{
                 Name: "b",
                 span: ast.Span{
@@ -1832,7 +1835,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.IdentExpr{
             Name: "c",
             span: ast.Span{
@@ -1956,7 +1959,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    0,
+            Op:    "+",
             Right: &ast.IdentExpr{
                 Name: "offset",
                 span: ast.Span{
@@ -1993,7 +1996,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    3,
+            Op:    "/",
             Right: &ast.IdentExpr{
                 Name: "b",
                 span: ast.Span{
@@ -2008,7 +2011,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    2,
+        Op:    "*",
         Right: &ast.IdentExpr{
             Name: "c",
             span: ast.Span{
@@ -2038,7 +2041,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    2,
+            Op:    "*",
             Right: &ast.IdentExpr{
                 Name: "b",
                 span: ast.Span{
@@ -2053,7 +2056,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
                 Name: "c",
@@ -2063,7 +2066,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 inferredType: nil,
             },
-            Op:    2,
+            Op:    "*",
             Right: &ast.IdentExpr{
                 Name: "d",
                 span: ast.Span{
@@ -2136,7 +2139,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.MemberExpr{
             Object: &ast.IdentExpr{
                 Name: "b",
@@ -2180,7 +2183,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.CallExpr{
             Callee: &ast.IdentExpr{
                 Name: "foo",
@@ -2280,7 +2283,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    0,
+        Op:    "+",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2434,7 +2437,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             },
                             inferredType: nil,
                         },
-                        Op:    0,
+                        Op:    "+",
                         Right: &ast.IdentExpr{
                             Name: "b",
                             span: ast.Span{
@@ -2473,7 +2476,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.ObjectExpr{
         Elems: {
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.NumLit{
                     Value: 0,
                     span:  ast.Span{
@@ -2500,7 +2503,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                 },
             },
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "foo",
                     span: ast.Span{
@@ -2528,7 +2531,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                 },
             },
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.StrLit{
                     Value: "bar",
                     span:  ast.Span{
@@ -2555,7 +2558,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                 },
             },
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "baz",
                     span: ast.Span{
@@ -2568,7 +2571,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 Readonly: false,
                 Value:    nil,
             },
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.ComputedKey{
                     Expr: &ast.IdentExpr{
                         Name: "qux",
@@ -2612,7 +2615,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.ObjectExpr{
         Elems: {
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "foo",
                     span: ast.Span{
@@ -2666,7 +2669,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.ObjectExpr{
         Elems: {
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "foo",
                     span: ast.Span{
@@ -2694,7 +2697,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                 },
             },
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "bar",
                     span: ast.Span{
@@ -2755,7 +2758,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    6,
+        Op:    "<=",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2784,7 +2787,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    7,
+        Op:    ">",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2813,7 +2816,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    8,
+        Op:    ">=",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2842,7 +2845,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    5,
+        Op:    "<",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2871,7 +2874,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    10,
+        Op:    "!=",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2900,7 +2903,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
             },
             inferredType: nil,
         },
-        Op:    9,
+        Op:    "==",
         Right: &ast.IdentExpr{
             Name: "b",
             span: ast.Span{
@@ -2945,7 +2948,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.ObjectExpr{
         Elems: {
-            &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+            &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "a",
                     span: ast.Span{
@@ -2958,7 +2961,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 Readonly: false,
                 Value:    nil,
             },
-            &ast.RestSpread[github.com/escalier-lang/escalier/internal/ast.Expr]{
+            &ast.RestSpreadExpr{
                 Value: &ast.IdentExpr{
                     Name: "b",
                     span: ast.Span{
@@ -2968,10 +2971,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
             },
-            &ast.RestSpread[github.com/escalier-lang/escalier/internal/ast.Expr]{
+            &ast.RestSpreadExpr{
                 Value: &ast.ObjectExpr{
                     Elems: {
-                        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+                        &ast.PropertyExpr{
                             Name: &ast.IdentExpr{
                                 Name: "c",
                                 span: ast.Span{
@@ -2984,7 +2987,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             Readonly: false,
                             Value:    nil,
                         },
-                        &ast.Property[github.com/escalier-lang/escalier/internal/ast.Expr,github.com/escalier-lang/escalier/internal/ast.ObjExprKey]{
+                        &ast.PropertyExpr{
                             Name: &ast.IdentExpr{
                                 Name: "d",
                                 span: ast.Span{

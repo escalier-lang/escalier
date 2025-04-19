@@ -119,23 +119,24 @@ func (e *ArrayExpr) Span() *Span        { return e.span }
 func (e *ArrayExpr) SetSpan(span *Span) { e.span = span }
 func (e *ArrayExpr) Source() ast.Node   { return e.source }
 
-type BinaryOp int
+type BinaryOp string
 
 const (
-	Plus              BinaryOp = iota // +
-	Minus                             // -
-	Times                             // *
-	Divide                            // /
-	Modulo                            // %
-	LessThan                          // <
-	LessThanEqual                     // <=
-	GreaterThan                       // >
-	GreaterThanEqual                  // >=
-	EqualEqual                        // ==
-	NotEqual                          // !=
-	LogicalAnd                        // &&
-	LogicalOr                         // ||
-	NullishCoalescing                 // ??
+	Plus              BinaryOp = "+"
+	Minus             BinaryOp = "-"
+	Times             BinaryOp = "*"
+	Divide            BinaryOp = "/"
+	Modulo            BinaryOp = "%"
+	LessThan          BinaryOp = "<"
+	LessThanEqual     BinaryOp = "<="
+	GreaterThan       BinaryOp = ">"
+	GreaterThanEqual  BinaryOp = ">="
+	EqualEqual        BinaryOp = "=="
+	NotEqual          BinaryOp = "!="
+	LogicalAnd        BinaryOp = "&&"
+	LogicalOr         BinaryOp = "||"
+	NullishCoalescing BinaryOp = "??"
+	Assign            BinaryOp = "="
 )
 
 type BinaryExpr struct {

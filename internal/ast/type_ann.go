@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/moznion/go-optional"
+
 //sumtype:decl
 type TypeAnn interface {
 	isTypeAnn()
@@ -8,7 +10,8 @@ type TypeAnn interface {
 }
 
 func (*LitTypeAnn) isTypeAnn()          {}
-func (*KeywordTypeAnn) isTypeAnn()      {}
+func (*UnknownTypeAnn) isTypeAnn()      {}
+func (*NeverTypeAnn) isTypeAnn()        {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
 func (*TupleTypeAnn) isTypeAnn()        {}
 func (*UnionTypeAnn) isTypeAnn()        {}
@@ -38,18 +41,86 @@ func (t *LitTypeAnn) Span() Span               { return t.span }
 func (t *LitTypeAnn) InferredType() Type       { return t.inferredType }
 func (t *LitTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
 
-type KeywordTypeAnn struct {
-	Keyword      Keyword
+type UnknownTypeAnn struct {
 	span         Span
 	inferredType Type
 }
 
-func NewKeywordTypeAnn(keyword Keyword, span Span) *KeywordTypeAnn {
-	return &KeywordTypeAnn{Keyword: keyword, span: span, inferredType: nil}
+func NewUnknownTypeAnn(span Span) *UnknownTypeAnn {
+	return &UnknownTypeAnn{span: span, inferredType: nil}
 }
-func (t *KeywordTypeAnn) Span() Span               { return t.span }
-func (t *KeywordTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *KeywordTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *UnknownTypeAnn) Span() Span               { return t.span }
+func (t *UnknownTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *UnknownTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+
+type NeverTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewNeverTypeAnn(span Span) *NeverTypeAnn {
+	return &NeverTypeAnn{span: span, inferredType: nil}
+}
+func (t *NeverTypeAnn) Span() Span               { return t.span }
+func (t *NeverTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *NeverTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+
+type ObjTypeAnnElem interface{ isObjTypeAnnElem() }
+
+func (*CallableTypeAnn) isObjTypeAnnElem()    {}
+func (*ConstructorTypeAnn) isObjTypeAnnElem() {}
+func (*MethodTypeAnn) isObjTypeAnnElem()      {}
+func (*GetterTypeAnn) isObjTypeAnnElem()      {}
+func (*SetterTypeAnn) isObjTypeAnnElem()      {}
+func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
+func (*MappedTypeAnn) isObjTypeAnnElem()      {}
+func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
+
+type CallableTypeAnn struct{ Fn FuncTypeAnn }
+type ConstructorTypeAnn struct{ Fn FuncTypeAnn }
+type MethodTypeAnn struct {
+	Name ObjKey
+	Fn   FuncTypeAnn
+}
+type GetterTypeAnn struct {
+	Name ObjKey
+	Fn   FuncTypeAnn
+}
+type SetterTypeAnn struct {
+	Name ObjKey
+	Fn   FuncTypeAnn
+}
+
+type MappedModifier string
+
+const (
+	MMAdd    MappedModifier = "add"
+	MMRemove MappedModifier = "remove"
+)
+
+// TODO: include span
+type PropertyTypeAnn struct {
+	Name     ObjKey
+	Optional bool
+	Readonly bool
+	Value    optional.Option[TypeAnn]
+}
+
+type MappedTypeAnn struct {
+	TypeParam *IndexParamTypeAnn
+	Name      optional.Option[TypeAnn]
+	Value     TypeAnn
+	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
+	ReadOnly  *MappedModifier
+}
+type IndexParamTypeAnn struct {
+	Name       string
+	Constraint Type
+}
+
+type RestSpreadTypeAnn struct {
+	Value TypeAnn
+}
 
 type ObjectTypeAnn struct {
 	Elems        []*ObjTypeAnnElem

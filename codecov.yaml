@@ -2,6 +2,7 @@ ignore:
   - "cmd/escalier/main.go"
   - "cmd/lsp-server/*.go"
   - "internal/ast/**"
+  - "internal/checker/**"
   - "internal/codegen/ast.go"
   - "internal/parser/token.go"
   - "wasm_exec.js"

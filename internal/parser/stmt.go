@@ -14,8 +14,7 @@ func (p *Parser) block() (ast.Block, []*Error) {
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
-		// TODO: include Span
-		return ast.Block{Stmts: stmts}, []*Error{NewError(token.Span, "Expected an opening brace")}
+		return ast.Block{Stmts: stmts, Span: token.Span}, []*Error{NewError(token.Span, "Expected an opening brace")}
 	} else {
 		start = token.Span.Start
 	}
