@@ -272,7 +272,7 @@ loop:
 	return expr, errors
 }
 
-func (p *Parser) objExprKey() (optional.Option[ast.ObjExprKey], []*Error) {
+func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
@@ -280,12 +280,12 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjExprKey], []*Error) {
 	switch token.Type {
 	case Identifier, Underscore:
 		p.lexer.consume()
-		return optional.Some[ast.ObjExprKey](
+		return optional.Some[ast.ObjKey](
 			ast.NewIdent(token.Value, token.Span),
 		), []*Error{}
 	case String:
 		p.lexer.consume()
-		return optional.Some[ast.ObjExprKey](
+		return optional.Some[ast.ObjKey](
 			ast.NewString(token.Value, token.Span),
 		), []*Error{}
 	case Number:
@@ -294,7 +294,7 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjExprKey], []*Error) {
 		if err != nil {
 			errors = append(errors, NewError(token.Span, "Expected a number"))
 		}
-		return optional.Some[ast.ObjExprKey](
+		return optional.Some[ast.ObjKey](
 			ast.NewNumber(value, token.Span),
 		), errors
 	case OpenBracket:
@@ -303,11 +303,11 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjExprKey], []*Error) {
 		errors = append(errors, exprErrors...)
 		_, expectErrors := p.expect(CloseBracket, AlwaysConsume)
 		errors = append(errors, expectErrors...)
-		return optional.Map(expr, func(expr ast.Expr) ast.ObjExprKey {
+		return optional.Map(expr, func(expr ast.Expr) ast.ObjKey {
 			return &ast.ComputedKey{Expr: expr}
 		}), errors
 	default:
-		return optional.None[ast.ObjExprKey](), []*Error{NewError(token.Span, "Expected a property name")}
+		return optional.None[ast.ObjKey](), []*Error{NewError(token.Span, "Expected a property name")}
 	}
 }
 
@@ -329,7 +329,8 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
-				// TODO: handle parsing errors
+				errors = append(errors, NewError(token.Span, "Expected a number"))
+				return optional.None[ast.Expr](), errors
 			}
 			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
 		case String:
@@ -484,7 +485,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		})
 		if arg.IsSome() {
 			arg := optional.Map(arg, func(arg ast.Expr) ast.ObjExprElem {
-				return &ast.RestSpread[ast.Expr]{Value: arg}
+				return &ast.RestSpreadExpr{Value: arg}
 			})
 			return arg, errors
 		}
@@ -517,7 +518,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+			property := &ast.PropertyExpr{
 				Name:     objKey,
 				Value:    optional.Some(value),
 				Readonly: false, // TODO
@@ -532,7 +533,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-			property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+			property := &ast.PropertyExpr{
 				Name:     objKey,
 				Value:    optional.Some(value),
 				Readonly: true,
@@ -561,17 +562,17 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		)
 
 		if mod == "get" {
-			return optional.Some[ast.ObjExprElem](&ast.Getter[ast.Expr, ast.ObjExprKey]{
+			return optional.Some[ast.ObjExprElem](&ast.GetterExpr{
 				Name: objKey,
 				Fn:   fn,
 			}), errors
 		} else if mod == "set" {
-			return optional.Some[ast.ObjExprElem](&ast.Setter[ast.Expr, ast.ObjExprKey]{
+			return optional.Some[ast.ObjExprElem](&ast.SetterExpr{
 				Name: objKey,
 				Fn:   fn,
 			}), errors
 		} else {
-			return optional.Some[ast.ObjExprElem](&ast.Method[ast.Expr, ast.ObjExprKey]{
+			return optional.Some[ast.ObjExprElem](&ast.MethodExpr{
 				Name: objKey,
 				Fn:   fn,
 			}), errors
@@ -581,7 +582,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		case *ast.IdentExpr:
 			switch token.Type {
 			case Comma, CloseBrace:
-				property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+				property := &ast.PropertyExpr{
 					Name:     objKey,
 					Value:    optional.None[ast.Expr](), // shorthand property
 					Readonly: false,
@@ -598,7 +599,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 					errors = append(errors, NewError(token.Span, "Expected a comma or closing brace"))
 				}
 				return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-					property := &ast.Property[ast.Expr, ast.ObjExprKey]{
+					property := &ast.PropertyExpr{
 						Name:     objKey,
 						Value:    optional.Some(value),
 						Readonly: false,

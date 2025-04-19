@@ -207,7 +207,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{
@@ -397,7 +397,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{
@@ -490,7 +490,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                         },
                                         inferredType: nil,
                                     },
-                                    Op:    0,
+                                    Op:    "+",
                                     Right: &ast.IdentExpr{
                                         Name: "b",
                                         span: ast.Span{
@@ -687,7 +687,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                         },
                                         inferredType: nil,
                                     },
-                                    Op:    0,
+                                    Op:    "+",
                                     Right: &ast.IdentExpr{
                                         Name: "b",
                                         span: ast.Span{
@@ -925,19 +925,22 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 {
                     Stmts: {
                     },
-                    Span: ast.Span{},
+                    Span: ast.Span{
+                        Start: ast.Location{Line:1, Column:13},
+                        End:   ast.Location{Line:1, Column:13},
+                    },
                 },
             },
             export:  false,
             declare: false,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{},
+                End:   ast.Location{Line:1, Column:13},
             },
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{},
+            End:   ast.Location{Line:1, Column:13},
         },
     },
 }
@@ -1057,7 +1060,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                         },
                                         inferredType: nil,
                                     },
-                                    Op:    0,
+                                    Op:    "+",
                                     Right: &ast.EmptyExpr{
                                         span: ast.Span{
                                             Start: ast.Location{Line:5, Column:4},
@@ -1168,7 +1171,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{
@@ -1272,7 +1275,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{
@@ -1421,7 +1424,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{

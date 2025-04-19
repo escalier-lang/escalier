@@ -119,7 +119,7 @@
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    0,
+                                Op:    "+",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{
@@ -221,7 +221,7 @@
                     },
                     inferredType: nil,
                 },
-                Op:    1,
+                Op:    "-",
                 Right: &ast.IdentExpr{
                     Name: "y",
                     span: ast.Span{
@@ -271,7 +271,7 @@
                 },
                 inferredType: nil,
             },
-            Op:    0,
+            Op:    "+",
             Right: &ast.IdentExpr{
                 Name: "offset",
                 span: ast.Span{
@@ -499,7 +499,7 @@
                     },
                     inferredType: nil,
                 },
-                Op:    0,
+                Op:    "+",
                 Right: &ast.IdentExpr{
                     Name: "b",
                     span: ast.Span{
@@ -579,7 +579,7 @@
                                     },
                                     inferredType: nil,
                                 },
-                                Op:    1,
+                                Op:    "-",
                                 Right: &ast.IdentExpr{
                                     Name: "b",
                                     span: ast.Span{

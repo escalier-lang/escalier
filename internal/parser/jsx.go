@@ -121,7 +121,7 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
 			exprOption, exprErrors := p.expr()
-			errors := append(errors, exprErrors...)
+			errors = append(errors, exprErrors...)
 			if exprOption.IsNone() {
 				errors := append(errors, NewError(token.Span, "Expected an expression after '{'"))
 				return attrs, errors

@@ -59,24 +59,24 @@ func (e *EmptyExpr) Span() Span           { return e.span }
 func (*EmptyExpr) InferredType() Type     { return nil }
 func (*EmptyExpr) SetInferredType(t Type) {}
 
-type BinaryOp int
+type BinaryOp string
 
 const (
-	Plus              BinaryOp = iota // +
-	Minus                             // -
-	Times                             // *
-	Divide                            // /
-	Modulo                            // %
-	LessThan                          // <
-	LessThanEqual                     // <=
-	GreaterThan                       // >
-	GreaterThanEqual                  // >=
-	Equal                             // ==
-	NotEqual                          // !=
-	LogicalAnd                        // &&
-	LogicalOr                         // ||
-	NullishCoalescing                 // ??
-	Assign                            // =
+	Plus              BinaryOp = "+"
+	Minus             BinaryOp = "-"
+	Times             BinaryOp = "*"
+	Divide            BinaryOp = "/"
+	Modulo            BinaryOp = "%"
+	LessThan          BinaryOp = "<"
+	LessThanEqual     BinaryOp = "<="
+	GreaterThan       BinaryOp = ">"
+	GreaterThanEqual  BinaryOp = ">="
+	Equal             BinaryOp = "=="
+	NotEqual          BinaryOp = "!="
+	LogicalAnd        BinaryOp = "&&"
+	LogicalOr         BinaryOp = "||"
+	NullishCoalescing BinaryOp = "??"
+	Assign            BinaryOp = "="
 )
 
 type BinaryExpr struct {
@@ -120,6 +120,7 @@ func (e *UnaryExpr) SetInferredType(t Type) { e.inferredType = t }
 type Lit interface {
 	isLiteral()
 	Node
+	Equal(Lit) bool
 }
 
 func (*BoolLit) isLiteral()      {}
@@ -158,31 +159,67 @@ func NewNumber(value float64, span Span) *NumLit {
 	return &NumLit{Value: value, span: span}
 }
 func (l *NumLit) Span() Span { return l.span }
+func (l *NumLit) Equal(other Lit) bool {
+	if other, ok := other.(*NumLit); ok {
+		return l.Value == other.Value
+	}
+	return false
+}
 
 func NewString(value string, span Span) *StrLit {
 	return &StrLit{Value: value, span: span}
 }
 func (l *StrLit) Span() Span { return l.span }
+func (l *StrLit) Equal(other Lit) bool {
+	if other, ok := other.(*StrLit); ok {
+		return l.Value == other.Value
+	}
+	return false
+}
 
 func NewBoolean(value bool, span Span) *BoolLit {
 	return &BoolLit{Value: value, span: span}
 }
 func (l *BoolLit) Span() Span { return l.span }
+func (l *BoolLit) Equal(other Lit) bool {
+	if other, ok := other.(*BoolLit); ok {
+		return l.Value == other.Value
+	}
+	return false
+}
 
 func NewBigInt(value big.Int, span Span) *BigIntLit {
 	return &BigIntLit{Value: value, span: span}
 }
 func (l *BigIntLit) Span() Span { return l.span }
+func (l *BigIntLit) Equal(other Lit) bool {
+	if other, ok := other.(*BigIntLit); ok {
+		return l.Value.Cmp(&other.Value) == 0
+	}
+	return false
+}
 
 func NewNull(span Span) *NullLit {
 	return &NullLit{span: span}
 }
 func (l *NullLit) Span() Span { return l.span }
+func (l *NullLit) Equal(other Lit) bool {
+	if _, ok := other.(*NullLit); ok {
+		return true
+	}
+	return false
+}
 
 func NewUndefined(span Span) *UndefinedLit {
 	return &UndefinedLit{span: span}
 }
 func (l *UndefinedLit) Span() Span { return l.span }
+func (l *UndefinedLit) Equal(other Lit) bool {
+	if _, ok := other.(*UndefinedLit); ok {
+		return true
+	}
+	return false
+}
 
 func (e *LiteralExpr) Span() Span             { return e.span }
 func (e *LiteralExpr) InferredType() Type     { return e.inferredType }
@@ -291,6 +328,42 @@ func NewArray(elems []Expr, span Span) *TupleExpr {
 func (e *TupleExpr) Span() Span             { return e.span }
 func (e *TupleExpr) InferredType() Type     { return e.inferredType }
 func (e *TupleExpr) SetInferredType(t Type) { e.inferredType = t }
+
+type ObjExprElem interface {
+	isObjExprElem()
+}
+
+func (*CallableExpr) isObjExprElem()    {}
+func (*ConstructorExpr) isObjExprElem() {}
+func (*MethodExpr) isObjExprElem()      {}
+func (*GetterExpr) isObjExprElem()      {}
+func (*SetterExpr) isObjExprElem()      {}
+func (*PropertyExpr) isObjExprElem()    {}
+func (*RestSpreadExpr) isObjExprElem()  {}
+
+type CallableExpr struct{ Fn FuncExpr }
+type ConstructorExpr struct{ Fn FuncExpr }
+type MethodExpr struct {
+	Name ObjKey
+	Fn   *FuncExpr
+}
+type GetterExpr struct {
+	Name ObjKey
+	Fn   *FuncExpr
+}
+type SetterExpr struct {
+	Name ObjKey
+	Fn   *FuncExpr
+}
+
+// TODO: include span
+type PropertyExpr struct {
+	Name     ObjKey
+	Optional bool
+	Readonly bool
+	Value    optional.Option[Expr]
+}
+type RestSpreadExpr struct{ Value Expr }
 
 type ObjectExpr struct {
 	Elems        []ObjExprElem
