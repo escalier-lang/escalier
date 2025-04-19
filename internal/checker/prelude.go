@@ -1,49 +1,50 @@
 package checker
 
 import (
-	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/moznion/go-optional"
+
+	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 func Prelude() *Scope {
 	scope := NewScope(optional.None[*Scope]())
 
-	binArithType := &ast.FuncType{
-		Params: []*ast.FuncParam{
-			ast.NewFuncParam("a", ast.NewNumType()),
-			ast.NewFuncParam("b", ast.NewNumType()),
+	binArithType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam("a", NewNumType()),
+			NewFuncParam("b", NewNumType()),
 		},
-		Return: ast.NewNumType(),
+		Return: NewNumType(),
 	}
 
-	binCompType := &ast.FuncType{
-		Params: []*ast.FuncParam{
-			ast.NewFuncParam("a", ast.NewNumType()),
-			ast.NewFuncParam("b", ast.NewNumType()),
+	binCompType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam("a", NewNumType()),
+			NewFuncParam("b", NewNumType()),
 		},
-		Return: ast.NewBoolType(),
+		Return: NewBoolType(),
 	}
 
-	binLogicType := &ast.FuncType{
-		Params: []*ast.FuncParam{
-			ast.NewFuncParam("a", ast.NewBoolType()),
-			ast.NewFuncParam("b", ast.NewBoolType()),
+	binLogicType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam("a", NewBoolType()),
+			NewFuncParam("b", NewBoolType()),
 		},
-		Return: ast.NewBoolType(),
+		Return: NewBoolType(),
 	}
 
-	unaryArithType := &ast.FuncType{
-		Params: []*ast.FuncParam{
-			ast.NewFuncParam("a", ast.NewNumType()),
+	unaryArithType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam("a", NewNumType()),
 		},
-		Return: ast.NewNumType(),
+		Return: NewNumType(),
 	}
 
-	unaryLogicType := &ast.FuncType{
-		Params: []*ast.FuncParam{
-			ast.NewFuncParam("a", ast.NewBoolType()),
+	unaryLogicType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam("a", NewBoolType()),
 		},
-		Return: ast.NewBoolType(),
+		Return: NewBoolType(),
 	}
 
 	scope.Values["+"] = binArithType
@@ -61,7 +62,7 @@ func Prelude() *Scope {
 	scope.Values["&&"] = binLogicType
 	scope.Values["||"] = binLogicType
 
-	scope.Values["-"] = ast.NewIntersectionType(binArithType, unaryArithType)
+	scope.Values["-"] = NewIntersectionType(binArithType, unaryArithType)
 	scope.Values["!"] = unaryArithType
 
 	scope.Values["!"] = unaryLogicType

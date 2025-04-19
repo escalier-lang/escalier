@@ -1,6 +1,7 @@
-package ast
+package type_system
 
 import (
+	. "github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/moznion/go-optional"
@@ -210,30 +211,28 @@ func (t *GlobalThisType) Equal(other Type) bool {
 	return false
 }
 
-type TypeParam[T any] struct {
+type TypeParam struct {
 	Name       string
-	Constraint T
-	Default    T
+	Constraint optional.Option[Type]
+	Default    optional.Option[Type]
 }
 
 type FuncParam struct {
 	Name     string // TODO: update to Pattern
 	Type     Type
 	Optional bool
-	Default  *Expr
 }
 
-func NewFuncParam(name string, typ Type) *FuncParam {
+func NewFuncParam(name string, t Type) *FuncParam {
 	return &FuncParam{
 		Name:     name,
-		Type:     typ,
+		Type:     t,
 		Optional: false,
-		Default:  nil,
 	}
 }
 
 type FuncType struct {
-	TypeParams []*TypeParam[Type]
+	TypeParams []*TypeParam
 	Self       optional.Option[Type]
 	Params     []*FuncParam
 	Return     Type
@@ -298,6 +297,13 @@ type PropertyElemType struct {
 	Readonly bool
 	Value    Type
 }
+type MappedModifier string
+
+const (
+	MMAdd    MappedModifier = "add"
+	MMRemove MappedModifier = "remove"
+)
+
 type MappedElemType struct {
 	TypeParam *IndexParamType
 	Name      optional.Option[Type]
@@ -620,6 +626,10 @@ func (t *ExtractorType) Equal(other Type) bool {
 	return false
 }
 
+type Quasi struct {
+	Value string
+}
+
 type TemplateLitType struct {
 	Quasis     []*Quasi
 	Types      []Type
@@ -655,18 +665,4 @@ func (t *IntrinsicType) Equal(other Type) bool {
 		return t.Name == other.Name
 	}
 	return false
-}
-
-//sumtype:decl
-type Provenance interface{ isProvenance() }
-
-func (*TypeProvenance) isProvenance() {}
-func (*ExprProvenance) isProvenance() {}
-
-type TypeProvenance struct {
-	Type Type
-}
-
-type ExprProvenance struct {
-	Expr Expr
 }

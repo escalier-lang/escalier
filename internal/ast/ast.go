@@ -1,12 +1,14 @@
 package ast
 
+import "github.com/escalier-lang/escalier/internal/type_system"
+
 type Node interface {
 	Span() Span
 }
 
 type Inferrable interface {
-	InferredType() Type
-	SetInferredType(Type)
+	InferredType() type_system.Type
+	SetInferredType(type_system.Type)
 }
 
 // If `Name` is an empty string it means that the identifier is missing in

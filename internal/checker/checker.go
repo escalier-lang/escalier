@@ -1,7 +1,7 @@
 package checker
 
 import (
-	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/moznion/go-optional"
 )
 
@@ -15,9 +15,9 @@ func NewChecker() *Checker {
 	}
 }
 
-func (c *Checker) FreshVar() *ast.TypeVarType {
+func (c *Checker) FreshVar() *type_system.TypeVarType {
 	c.ID++
-	return &ast.TypeVarType{
+	return &type_system.TypeVarType{
 		ID:       c.ID,
 		Instance: nil,
 	}

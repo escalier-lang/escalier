@@ -5,6 +5,8 @@ ignore:
   - "internal/checker/**"
   - "internal/codegen/ast.go"
   - "internal/parser/token.go"
+  - "internal/provenance/**"
+  - "internal/type_system/**"
   - "wasm_exec.js"
   - "**/examples/**"
   - "**/fixtures/**"
