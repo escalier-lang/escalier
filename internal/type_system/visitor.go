@@ -1,6 +1,5 @@
-package ast
+package type_system
 
-// TODO: implement TypeVisitor
 type TypeVisitor interface {
 	VisitType(t Type)
 }

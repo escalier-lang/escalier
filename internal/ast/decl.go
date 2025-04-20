@@ -48,10 +48,8 @@ func (p *Param) Span() Span {
 }
 
 type FuncDecl struct {
-	Name    *Ident
-	Params  []*Param
-	Return  optional.Option[TypeAnn] // required when `declare` is true
-	Throws  optional.Option[TypeAnn] // required when `declare` is true
+	Name *Ident
+	FuncSig
 	Body    optional.Option[Block]
 	export  bool
 	declare bool
@@ -67,10 +65,12 @@ func NewFuncDecl(
 	span Span,
 ) *FuncDecl {
 	return &FuncDecl{
-		Name:    name,
-		Params:  params,
-		Return:  nil, // TODO
-		Throws:  nil, // TODO
+		Name: name,
+		FuncSig: FuncSig{
+			Params: params,
+			Return: nil, // TODO
+			Throws: nil, // TODO
+		},
 		Body:    body,
 		export:  export,
 		declare: declare,

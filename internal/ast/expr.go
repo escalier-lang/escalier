@@ -242,16 +242,28 @@ func (e *IdentExpr) Span() Span             { return e.span }
 func (e *IdentExpr) InferredType() Type     { return e.inferredType }
 func (e *IdentExpr) SetInferredType(t Type) { e.inferredType = t }
 
+type TypeParam struct {
+	Name       string
+	Constraint optional.Option[TypeAnn]
+	Default    optional.Option[TypeAnn]
+}
+
+type FuncSig struct {
+	TypeParams []*TypeParam
+	Params     []*Param
+	Return     optional.Option[TypeAnn]
+	Throws     optional.Option[TypeAnn]
+}
+
 type FuncExpr struct {
-	Params       []*Param
-	Return       optional.Option[TypeAnn]
-	Throws       optional.Option[TypeAnn]
+	FuncSig
 	Body         Block
 	span         Span
 	inferredType Type
 }
 
 func NewFuncExpr(
+	typeParams []*TypeParam,
 	params []*Param,
 	ret optional.Option[TypeAnn],
 	throws optional.Option[TypeAnn],
@@ -259,9 +271,12 @@ func NewFuncExpr(
 	span Span,
 ) *FuncExpr {
 	return &FuncExpr{
-		Params:       params,
-		Return:       ret,
-		Throws:       throws,
+		FuncSig: FuncSig{
+			TypeParams: typeParams,
+			Params:     params,
+			Return:     ret,
+			Throws:     throws,
+		},
 		Body:         body,
 		span:         span,
 		inferredType: nil,
@@ -415,6 +430,8 @@ type MatchCase struct {
 	Body    BlockOrExpr
 	span    Span
 }
+
+func (e *MatchCase) Span() Span { return e.span }
 
 type MatchExpr struct {
 	Target       Expr

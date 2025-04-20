@@ -1,6 +1,8 @@
 package ast
 
-import "github.com/moznion/go-optional"
+import (
+	"github.com/moznion/go-optional"
+)
 
 //sumtype:decl
 type TypeAnn interface {
@@ -175,13 +177,14 @@ func (t *IntersectionTypeAnn) InferredType() Type       { return t.inferredType 
 func (t *IntersectionTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
 
 type TypeRefTypeAnn struct {
-	TypeRef      TypeRefType
+	Name         string
+	TypeArgs     []TypeAnn
 	span         Span
 	inferredType Type
 }
 
-func NewRefTypeAnn(typeRef TypeRefType, span Span) *TypeRefTypeAnn {
-	return &TypeRefTypeAnn{TypeRef: typeRef, span: span, inferredType: nil}
+func NewRefTypeAnn(name string, typeArgs []TypeAnn, span Span) *TypeRefTypeAnn {
+	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span, inferredType: nil}
 }
 func (t *TypeRefTypeAnn) Span() Span               { return t.span }
 func (t *TypeRefTypeAnn) InferredType() Type       { return t.inferredType }

@@ -42,6 +42,7 @@ type Pair[T, U any] struct {
 	Second U
 }
 
+// TODO: dedupe with checker/infer.go
 func Zip[T, U any](ts []T, us []U) []Pair[T, U] {
 	if len(ts) != len(us) {
 		panic("slices have different length")

@@ -463,6 +463,7 @@ func (p *Parser) fnExpr(start ast.Location) (optional.Option[ast.Expr], []*Error
 	// TODO: parse return and throws types
 	return optional.Some[ast.Expr](
 		ast.NewFuncExpr(
+			[]*ast.TypeParam{}, // TODO
 			params,
 			optional.None[ast.TypeAnn](),
 			optional.None[ast.TypeAnn](),
@@ -554,6 +555,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 
 		// TODO: parse return and throws types
 		fn := ast.NewFuncExpr(
+			[]*ast.TypeParam{}, // TODO
 			params,
 			optional.None[ast.TypeAnn](),
 			optional.None[ast.TypeAnn](),

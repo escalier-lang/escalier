@@ -1,8 +1,12 @@
 package ast
 
+import "github.com/escalier-lang/escalier/internal/type_system"
+
 type Node interface {
 	Span() Span
 }
+
+type Type type_system.Type
 
 type Inferrable interface {
 	InferredType() Type

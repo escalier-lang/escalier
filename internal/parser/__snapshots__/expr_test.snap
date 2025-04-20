@@ -438,33 +438,37 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 [TestParseExprErrorHandling/ParamsMissingClosingParen - 1]
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "a",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:5},
-                        End:   ast.Location{Line:1, Column:6},
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:5},
+                            End:   ast.Location{Line:1, Column:6},
+                        },
+                        inferredType: nil,
                     },
-                    inferredType: nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:8},
+                            End:   ast.Location{Line:1, Column:9},
+                        },
+                        inferredType: nil,
+                    },
                 },
             },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "b",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:8},
-                        End:   ast.Location{Line:1, Column:9},
-                    },
-                    inferredType: nil,
-                },
-            },
+            Return: nil,
+            Throws: nil,
         },
-        Return: nil,
-        Throws: nil,
-        Body:   ast.Block{
+        Body: ast.Block{
             Stmts: {
                 &ast.ExprStmt{
                     Expr: &ast.BinaryExpr{
@@ -659,33 +663,37 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 [TestParseExprErrorHandling/ParamsMissingOpeningParen - 1]
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "a",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:4},
-                        End:   ast.Location{Line:1, Column:5},
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:4},
+                            End:   ast.Location{Line:1, Column:5},
+                        },
+                        inferredType: nil,
                     },
-                    inferredType: nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:7},
+                            End:   ast.Location{Line:1, Column:8},
+                        },
+                        inferredType: nil,
+                    },
                 },
             },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "b",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:7},
-                        End:   ast.Location{Line:1, Column:8},
-                    },
-                    inferredType: nil,
-                },
-            },
+            Return: nil,
+            Throws: nil,
         },
-        Return: nil,
-        Throws: nil,
-        Body:   ast.Block{
+        Body: ast.Block{
             Stmts: {
                 &ast.ExprStmt{
                     Expr: &ast.BinaryExpr{
@@ -869,22 +877,26 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
                 Fn: &ast.FuncExpr{
-                    Params: {
-                        &ast.Param{
-                            Pattern: &ast.IdentPat{
-                                Name:    "self",
-                                Default: nil,
-                                span:    ast.Span{
-                                    Start: ast.Location{Line:1, Column:7},
-                                    End:   ast.Location{Line:1, Column:11},
+                    FuncSig: ast.FuncSig{
+                        TypeParams: {
+                        },
+                        Params: {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start: ast.Location{Line:1, Column:7},
+                                        End:   ast.Location{Line:1, Column:11},
+                                    },
+                                    inferredType: nil,
                                 },
-                                inferredType: nil,
                             },
                         },
+                        Return: nil,
+                        Throws: nil,
                     },
-                    Return: nil,
-                    Throws: nil,
-                    Body:   ast.Block{
+                    Body: ast.Block{
                         Stmts: {
                             &ast.ReturnStmt{
                                 Expr: {
@@ -931,22 +943,26 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
                 Fn: &ast.FuncExpr{
-                    Params: {
-                        &ast.Param{
-                            Pattern: &ast.IdentPat{
-                                Name:    "self",
-                                Default: nil,
-                                span:    ast.Span{
-                                    Start: ast.Location{Line:1, Column:35},
-                                    End:   ast.Location{Line:1, Column:39},
+                    FuncSig: ast.FuncSig{
+                        TypeParams: {
+                        },
+                        Params: {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start: ast.Location{Line:1, Column:35},
+                                        End:   ast.Location{Line:1, Column:39},
+                                    },
+                                    inferredType: nil,
                                 },
-                                inferredType: nil,
                             },
                         },
+                        Return: nil,
+                        Throws: nil,
                     },
-                    Return: nil,
-                    Throws: nil,
-                    Body:   ast.Block{
+                    Body: ast.Block{
                         Stmts: {
                             &ast.ReturnStmt{
                                 Expr: {
@@ -1002,22 +1018,26 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     inferredType: nil,
                 },
                 Fn: &ast.FuncExpr{
-                    Params: {
-                        &ast.Param{
-                            Pattern: &ast.IdentPat{
-                                Name:    "x",
-                                Default: nil,
-                                span:    ast.Span{
-                                    Start: ast.Location{Line:1, Column:68},
-                                    End:   ast.Location{Line:1, Column:69},
+                    FuncSig: ast.FuncSig{
+                        TypeParams: {
+                        },
+                        Params: {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "x",
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start: ast.Location{Line:1, Column:68},
+                                        End:   ast.Location{Line:1, Column:69},
+                                    },
+                                    inferredType: nil,
                                 },
-                                inferredType: nil,
                             },
                         },
+                        Return: nil,
+                        Throws: nil,
                     },
-                    Return: nil,
-                    Throws: nil,
-                    Body:   ast.Block{
+                    Body: ast.Block{
                         Stmts: {
                             &ast.ExprStmt{
                                 Expr: &ast.BinaryExpr{
@@ -2399,33 +2419,37 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 [TestParseExprNoErrors/FuncExpr - 1]
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "a",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:5},
-                        End:   ast.Location{Line:1, Column:6},
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:5},
+                            End:   ast.Location{Line:1, Column:6},
+                        },
+                        inferredType: nil,
                     },
-                    inferredType: nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start: ast.Location{Line:1, Column:8},
+                            End:   ast.Location{Line:1, Column:9},
+                        },
+                        inferredType: nil,
+                    },
                 },
             },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "b",
-                    Default: nil,
-                    span:    ast.Span{
-                        Start: ast.Location{Line:1, Column:8},
-                        End:   ast.Location{Line:1, Column:9},
-                    },
-                    inferredType: nil,
-                },
-            },
+            Return: nil,
+            Throws: nil,
         },
-        Return: nil,
-        Throws: nil,
-        Body:   ast.Block{
+        Body: ast.Block{
             Stmts: {
                 &ast.ExprStmt{
                     Expr: &ast.BinaryExpr{
