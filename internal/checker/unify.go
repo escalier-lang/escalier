@@ -6,16 +6,6 @@ import (
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
-func match[T1 Type, T2 Type](t1, t2 Type, callback func(T1, T2)) bool {
-	if t1, ok1 := t1.(T1); ok1 {
-		if t2, ok2 := t2.(T2); ok2 {
-			callback(t1, t2)
-			return true
-		}
-	}
-	return false
-}
-
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
@@ -28,11 +18,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 	// | TypeVarType, _ -> ...
 	if tv1, ok := t1.(*TypeVarType); ok {
-		return c.bind(ctx, tv1, t2)
+		return c.bind(tv1, t2)
 	}
 	// | _, TypeVarType -> ...
 	if tv2, ok := t2.(*TypeVarType); ok {
-		return c.bind(ctx, tv2, t1)
+		return c.bind(tv2, t1)
 	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
@@ -110,8 +100,17 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | LitType, PrimType -> ...
 	if lit, ok := t1.(*LitType); ok {
 		if prim, ok := t2.(*PrimType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", lit, prim))
-			// TODO
+			if _, ok := lit.Lit.(*NumLit); ok && prim.Prim == "number" {
+				return nil
+			} else if _, ok := lit.Lit.(*StrLit); ok && prim.Prim == "string" {
+				return nil
+			} else if _, ok := lit.Lit.(*BoolLit); ok && prim.Prim == "boolean" {
+				return nil
+			} else if _, ok := lit.Lit.(*BigIntLit); ok && prim.Prim == "bigint" {
+				return nil
+			} else {
+				return []*Error{{message: fmt.Sprintf("Cannot unify %v and %v", lit, prim)}}
+			}
 		}
 	}
 	// | LitType, LitType -> ...
@@ -196,7 +195,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	panic(fmt.Sprintf("TODO: unify types %v and %v", t1, t2))
 }
 
-func (c *Checker) bind(ctx Context, t1 *TypeVarType, t2 Type) []*Error {
+func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
 	if t1 == nil || t2 == nil {
 		return []*Error{{message: "Cannot bind nil types"}}
 	}
@@ -206,7 +205,10 @@ func (c *Checker) bind(ctx Context, t1 *TypeVarType, t2 Type) []*Error {
 			// TODO: include t1 and t2 in the error message
 			return []*Error{{message: "recursive unification error"}}
 		} else {
-			// TODO: actually bind t1 and t2
+			t1.Instance = t2
+			t1.SetProvenance(&TypeProvenance{
+				Type: t2,
+			})
 		}
 	}
 

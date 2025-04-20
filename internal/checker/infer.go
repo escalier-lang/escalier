@@ -4,20 +4,82 @@ import (
 	"iter"
 	"slices"
 
+	"maps"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/moznion/go-optional"
 )
 
-var DUMMY_SPAN = ast.Span{
-	Start: ast.Location{
-		Line:   0,
-		Column: 0,
-	},
-	End: ast.Location{
-		Line:   0,
-		Column: 0,
-	},
+// TODO: Return a namespace instead of a type
+// A namespace is a mapping of names to types
+func (c *Checker) Infer(ctx Context, m *ast.Module) (map[string]Binding, []*Error) {
+	errors := []*Error{}
+	bindings := map[string]Binding{}
+
+	for _, stmt := range m.Stmts {
+		switch stmt := stmt.(type) {
+		case *ast.DeclStmt:
+			newBindings, declErrors := c.inferDecl(ctx, stmt.Decl)
+			// TODO: check for duplicate bindings
+			maps.Copy(bindings, newBindings)
+			errors = slices.Concat(errors, declErrors)
+		case *ast.ExprStmt:
+			panic("TODO: infer expression statement")
+		case *ast.ReturnStmt:
+			panic("TODO: infer return statement")
+		}
+	}
+
+	return bindings, errors
+}
+
+func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (map[string]Binding, []*Error) {
+	switch decl := decl.(type) {
+	case *ast.FuncDecl:
+		return c.inferFuncDecl(ctx, decl)
+	case *ast.VarDecl:
+		return c.inferVarDecl(ctx, decl)
+	// case *ast.TypeDecl:
+	// 	return c.inferTypeDecl(ctx, decl)
+	default:
+		return nil, []*Error{{message: "Unknown declaration type"}}
+	}
+}
+
+func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Binding, []*Error) {
+	errors := []*Error{}
+
+	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
+	errors = slices.Concat(errors, patErrors)
+
+	if decl.Init.IsNone() {
+		return nil, errors
+	}
+
+	initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
+	errors = slices.Concat(errors, initErrors)
+
+	c.unify(ctx, patType, initType)
+
+	for name, binding := range bindings {
+		ctx.Scope.Values[name] = binding
+	}
+
+	return bindings, errors
+}
+
+func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) (map[string]Binding, []*Error) {
+	// create a placeholder function type
+	// placeholder := &ast.FuncType{
+	// 	Params:     decl.Params,
+	// 	Return:     ast.NewNeverType(),
+	// 	Throws:     ast.NewNeverType(),
+	// 	TypeParams: []*ast.TypeParam[Type]{},
+	// 	Self:       optional.None[Type](),
+	// }
+
+	panic("TODO: infer function type")
 }
 
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
@@ -62,16 +124,28 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			message: "Operator " + string(expr.Op) + " is not a function",
 		}}
 	case *ast.UnaryExpr:
-
 		return NewNeverType(), []*Error{}
 	case *ast.CallExpr:
 		panic("call expression not implemented")
 	case *ast.MemberExpr:
 		panic("member expression not implemented")
 	case *ast.IdentExpr:
-		panic("identifier expression not implemented")
+		// TODO: look up the identifier in the context's scope
+		// We should be able to determine where an identifier was declared by
+		// using the provenance of the identifier's inferred type.
+		if ctx.Scope.getValue(expr.Name).IsSome() {
+			t := ctx.Scope.getValue(expr.Name).Unwrap()
+			expr.SetInferredType(t)
+			return t, nil
+		} else {
+			t := NewNeverType()
+			expr.SetInferredType(t)
+			return t, []*Error{{
+				message: "Unknown identifier " + expr.Name,
+			}}
+		}
 	case *ast.LiteralExpr:
-		panic("literal expression not implemented")
+		return c.inferLit(expr.Lit)
 	case *ast.TupleExpr:
 		panic("tuple expression not implemented")
 	case *ast.ObjectExpr:
@@ -79,32 +153,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	default:
 		return nil, []*Error{{message: "Unknown expression type"}}
 	}
-}
-
-func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (Type, []*Error) {
-	switch decl := decl.(type) {
-	case *ast.FuncDecl:
-		return c.inferFuncDecl(ctx, decl)
-	// case *ast.VarDecl:
-	// 	return c.inferVarDecl(ctx, decl)
-	// case *ast.TypeDecl:
-	// 	return c.inferTypeDecl(ctx, decl)
-	default:
-		return nil, []*Error{{message: "Unknown declaration type"}}
-	}
-}
-
-func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) (Type, []*Error) {
-	// create a placeholder function type
-	// placeholder := &ast.FuncType{
-	// 	Params:     decl.Params,
-	// 	Return:     ast.NewNeverType(),
-	// 	Throws:     ast.NewNeverType(),
-	// 	TypeParams: []*ast.TypeParam[Type]{},
-	// 	Self:       optional.None[Type](),
-	// }
-
-	panic("TODO: infer function type")
 }
 
 func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []*Error {
@@ -179,7 +227,7 @@ func (c *Checker) inferFunc(
 		c.unify(ctx, patType, placeholderParam.Type)
 
 		for name, binding := range bindings {
-			newCtx.Scope.Values[name] = binding.Type
+			newCtx.Scope.Values[name] = binding
 		}
 	}
 
@@ -203,67 +251,83 @@ func (c *Checker) inferFunc(
 	return funcType, errors
 }
 
+// We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
+	Source  optional.Option[ast.BindingSource]
 	Type    Type
 	Mutable bool
 }
 
 func (c *Checker) inferLit(lit ast.Lit) (Type, []*Error) {
+	var t Type
+	errors := []*Error{}
 	switch lit := lit.(type) {
 	case *ast.StrLit:
-		return NewLitType(&StrLit{Value: lit.Value}), []*Error{}
+		t = NewLitType(&StrLit{Value: lit.Value})
 	case *ast.NumLit:
-		return NewLitType(&NumLit{Value: lit.Value}), []*Error{}
+		t = NewLitType(&NumLit{Value: lit.Value})
 	case *ast.BoolLit:
-		return NewLitType(&BoolLit{Value: lit.Value}), []*Error{}
+		t = NewLitType(&BoolLit{Value: lit.Value})
 	case *ast.BigIntLit:
-		return NewLitType(&BigIntLit{Value: lit.Value}), []*Error{}
+		t = NewLitType(&BigIntLit{Value: lit.Value})
 	case *ast.NullLit:
-		return NewLitType(&NullLit{}), []*Error{}
+		t = NewLitType(&NullLit{})
 	case *ast.UndefinedLit:
-		return NewLitType(&UndefinedLit{}), []*Error{}
+		t = NewLitType(&UndefinedLit{})
 	default:
-		return NewNeverType(), []*Error{{message: "Unknown literal type"}}
+		t = NewNeverType()
+		errors = []*Error{{message: "Unknown literal type"}}
 	}
+	t.SetProvenance(&ast.LitProvenance{
+		Lit: lit,
+	})
+	return t, errors
 }
 
-// TODO: return a list of bindings for the pattern
-func (c *Checker) inferPattern(ctx Context, pattern ast.Pat) (Type, map[string]Binding, []*Error) {
+func (c *Checker) inferPattern(
+	ctx Context,
+	pattern ast.Pat,
+) (Type, map[string]Binding, []*Error) {
 
 	bindings := map[string]Binding{}
 	var inferPatRec func(ast.Pat) (Type, []*Error)
 
 	inferPatRec = func(pat ast.Pat) (Type, []*Error) {
+		var t Type
+		var errors []*Error
+
 		switch p := pat.(type) {
 		case *ast.IdentPat:
-			t := c.FreshVar()
+			t = c.FreshVar()
+			t.SetProvenance(&ast.PatProvenance{
+				Pat: p,
+			})
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = Binding{
+				Source:  optional.Some[ast.BindingSource](p),
 				Type:    t,
 				Mutable: false, // TODO
 			}
-			return t, []*Error{}
+			errors = []*Error{}
 		case *ast.LitPat:
-			return c.inferLit(p.Lit)
+			t, errors = c.inferLit(p.Lit)
 		case *ast.TuplePat:
 			elems := make([]Type, len(p.Elems))
-			errors := []*Error{}
 			for i, elem := range p.Elems {
 				elemType, elemErrors := inferPatRec(elem)
 				elems[i] = elemType
 				errors = append(errors, elemErrors...)
 			}
-			return NewTupleType(elems...), errors
+			t = NewTupleType(elems...)
 		case *ast.ObjectPat:
 			elems := make([]ObjTypeElem, len(p.Elems))
-			errors := []*Error{}
 			for _, elem := range p.Elems {
 				switch elem := elem.(type) {
 				case *ast.ObjKeyValuePat:
 					t, elemErrors := inferPatRec(elem.Value)
 					errors = append(errors, elemErrors...)
 					name := &StrObjTypeKey{
-						Value: elem.Key,
+						Value: elem.Key.Name,
 					}
 					elems = append(elems, &PropertyElemType{
 						Name:     name,
@@ -272,12 +336,15 @@ func (c *Checker) inferPattern(ctx Context, pattern ast.Pat) (Type, map[string]B
 						Readonly: false, // TODO: when should this be true?
 					})
 				case *ast.ObjShorthandPat:
+					// We can't infer the type of the shorthand pattern yet, so
+					// we use a fresh type variable.
 					t := c.FreshVar()
 					name := &StrObjTypeKey{
-						Value: elem.Key,
+						Value: elem.Key.Name,
 					}
 					// TODO: report an error if the name is already bound
-					bindings[elem.Key] = Binding{
+					bindings[elem.Key.Name] = Binding{
+						Source:  optional.Some[ast.BindingSource](elem.Key),
 						Type:    t,
 						Mutable: false, // TODO
 					}
@@ -291,11 +358,9 @@ func (c *Checker) inferPattern(ctx Context, pattern ast.Pat) (Type, map[string]B
 					panic("object pattern not implemented")
 				}
 			}
-			t := NewObjectType(elems)
-			return t, errors
+			t = NewObjectType(elems)
 		case *ast.ExtractorPat:
-			errors := []*Error{}
-			t := optional.Map(
+			t = optional.Map(
 				ctx.Scope.getValue(p.Name),
 				func(t Type) Type {
 					args := make([]Type, len(p.Args))
@@ -307,19 +372,26 @@ func (c *Checker) inferPattern(ctx Context, pattern ast.Pat) (Type, map[string]B
 					return NewExtractorType(t, args...)
 				},
 			).TakeOrElse(func() Type { return NewNeverType() })
-			return t, errors
 		case *ast.IsPat:
 			panic("IGNORE: this will be replaced with an Assertion filed on some patterns")
 		case *ast.RestPat:
-			return NewRestSpreadType(c.FreshVar()), []*Error{}
+			t = NewRestSpreadType(c.FreshVar())
+			errors = []*Error{}
 		case *ast.WildcardPat:
-			return c.FreshVar(), []*Error{}
+			t = c.FreshVar()
+			errors = []*Error{}
 		}
 
-		panic("unknown pattern type")
+		t.SetProvenance(&ast.PatProvenance{
+			Pat: pat,
+		})
+		return t, errors
 	}
 
 	t, errors := inferPatRec(pattern)
+	t.SetProvenance(&ast.PatProvenance{
+		Pat: pattern,
+	})
 	pattern.SetInferredType(t)
 
 	return t, bindings, errors

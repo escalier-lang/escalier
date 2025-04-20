@@ -91,14 +91,14 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					if target != nil {
 						newTarget = NewMemberExpr(
 							target,
-							NewIdentifier(e.Key, nil), // TODO: replace with Prop
+							NewIdentifier(e.Key.Name, e), // TODO: replace with Prop
 							false,
 							nil,
 						)
 					}
 
 					elems = append(elems, NewObjKeyValuePat(
-						e.Key,
+						e.Key.Name,
 						buildPatternRec(e.Value, newTarget),
 						optional.Map(e.Default, func(e ast.Expr) Expr {
 							return b.buildExpr(e)
@@ -107,7 +107,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					))
 				case *ast.ObjShorthandPat:
 					elems = append(elems, NewObjShorthandPat(
-						e.Key,
+						e.Key.Name,
 						optional.Map(e.Default, func(e ast.Expr) Expr {
 							return b.buildExpr(e)
 						}),
