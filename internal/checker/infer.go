@@ -234,7 +234,7 @@ func (c *Checker) inferPattern(ctx Context, pattern ast.Pat) (Type, map[string]B
 	var inferPatRec func(ast.Pat) (Type, []*Error)
 
 	inferPatRec = func(pat ast.Pat) (Type, []*Error) {
-		switch p := pattern.(type) {
+		switch p := pat.(type) {
 		case *ast.IdentPat:
 			t := c.FreshVar()
 			// TODO: report an error if the name is already bound

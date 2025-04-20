@@ -74,7 +74,7 @@ func (t *TypeVarType) Accept(v TypeVisitor) {
 type TypeRefType struct {
 	Name       string // TODO: Make this a qualified identifier
 	TypeArgs   []Type
-	TypeAlias  Type // resolved type alias (definition)
+	TypeAlias  optional.Option[Type] // resolved type alias (definition)
 	provenance *Provenance
 }
 

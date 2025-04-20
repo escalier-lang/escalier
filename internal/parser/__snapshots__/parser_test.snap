@@ -321,8 +321,9 @@
                 Elems: {
                     &ast.FuncExpr{
                         FuncSig: ast.FuncSig{
-                            TypeParams: nil,
-                            Params:     {
+                            TypeParams: {
+                            },
+                            Params: {
                             },
                             Return: nil,
                             Throws: nil,

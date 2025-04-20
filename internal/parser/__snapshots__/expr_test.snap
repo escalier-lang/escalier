@@ -439,8 +439,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
         FuncSig: ast.FuncSig{
-            TypeParams: nil,
-            Params:     {
+            TypeParams: {
+            },
+            Params: {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -663,8 +664,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
         FuncSig: ast.FuncSig{
-            TypeParams: nil,
-            Params:     {
+            TypeParams: {
+            },
+            Params: {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -876,8 +878,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        TypeParams: nil,
-                        Params:     {
+                        TypeParams: {
+                        },
+                        Params: {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "self",
@@ -941,8 +944,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        TypeParams: nil,
-                        Params:     {
+                        TypeParams: {
+                        },
+                        Params: {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "self",
@@ -1015,8 +1019,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        TypeParams: nil,
-                        Params:     {
+                        TypeParams: {
+                        },
+                        Params: {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "x",
@@ -2415,8 +2420,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
 optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
     &ast.FuncExpr{
         FuncSig: ast.FuncSig{
-            TypeParams: nil,
-            Params:     {
+            TypeParams: {
+            },
+            Params: {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",

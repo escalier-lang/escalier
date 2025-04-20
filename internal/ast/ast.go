@@ -6,9 +6,11 @@ type Node interface {
 	Span() Span
 }
 
+type Type type_system.Type
+
 type Inferrable interface {
-	InferredType() type_system.Type
-	SetInferredType(type_system.Type)
+	InferredType() Type
+	SetInferredType(Type)
 }
 
 // If `Name` is an empty string it means that the identifier is missing in
