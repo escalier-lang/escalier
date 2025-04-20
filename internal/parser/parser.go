@@ -27,7 +27,7 @@ func NewParser(ctx context.Context, source Source) *Parser {
 	}
 }
 
-func (p *Parser) Parse() (*ast.Module, []*Error) {
+func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	stmts := []ast.Stmt{}
 	errors := []*Error{}
 
@@ -36,7 +36,7 @@ func (p *Parser) Parse() (*ast.Module, []*Error) {
 		//nolint: exhaustive
 		switch token.Type {
 		case EndOfFile:
-			return &ast.Module{Stmts: stmts}, errors
+			return &ast.Script{Stmts: stmts}, errors
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()

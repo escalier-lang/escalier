@@ -91,14 +91,14 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					if target != nil {
 						newTarget = NewMemberExpr(
 							target,
-							NewIdentifier(e.Key, nil), // TODO: replace with Prop
+							NewIdentifier(e.Key.Name, e), // TODO: replace with Prop
 							false,
 							nil,
 						)
 					}
 
 					elems = append(elems, NewObjKeyValuePat(
-						e.Key,
+						e.Key.Name,
 						buildPatternRec(e.Value, newTarget),
 						optional.Map(e.Default, func(e ast.Expr) Expr {
 							return b.buildExpr(e)
@@ -107,7 +107,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					))
 				case *ast.ObjShorthandPat:
 					elems = append(elems, NewObjShorthandPat(
-						e.Key,
+						e.Key.Name,
 						optional.Map(e.Default, func(e ast.Expr) Expr {
 							return b.buildExpr(e)
 						}),
@@ -276,7 +276,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 	}
 }
 
-func (b *Builder) BuildModule(mod *ast.Module) *Module {
+func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))

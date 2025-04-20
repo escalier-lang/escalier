@@ -89,7 +89,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			module, errors := parser.Parse()
+			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)

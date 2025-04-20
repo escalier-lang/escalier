@@ -177,7 +177,7 @@ func (p *Parser) objPatElem() (optional.Option[ast.ObjPatElem], []*Error) {
 
 	if token.Type == Identifier {
 		p.lexer.consume()
-		key := token.Value
+		key := ast.NewIdentifier(token.Value, token.Span)
 		span := token.Span
 
 		token = p.lexer.peek()

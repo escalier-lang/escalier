@@ -20,7 +20,7 @@ func Compile(source parser.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	escMod, escErrors := p.Parse()
+	escMod, escErrors := p.ParseScript()
 
 	if len(escErrors) > 0 {
 		return CompilerOutput{
@@ -31,7 +31,7 @@ func Compile(source parser.Source) CompilerOutput {
 	}
 
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildModule(escMod)
+	jsMod := builder.BuildScript(escMod)
 
 	p2 := codegen.NewPrinter()
 	p2.PrintModule(jsMod)

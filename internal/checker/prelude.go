@@ -3,6 +3,7 @@ package checker
 import (
 	"github.com/moznion/go-optional"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -16,6 +17,11 @@ func Prelude() *Scope {
 		},
 		Return: NewNumType(),
 	}
+	binArithBinding := Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    binArithType,
+		Mutable: false,
+	}
 
 	binCompType := &FuncType{
 		Params: []*FuncParam{
@@ -23,6 +29,11 @@ func Prelude() *Scope {
 			NewFuncParam("b", NewNumType()),
 		},
 		Return: NewBoolType(),
+	}
+	binACompBinding := Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    binCompType,
+		Mutable: false,
 	}
 
 	binLogicType := &FuncType{
@@ -32,12 +43,22 @@ func Prelude() *Scope {
 		},
 		Return: NewBoolType(),
 	}
+	binLogicBinding := Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    binLogicType,
+		Mutable: false,
+	}
 
 	unaryArithType := &FuncType{
 		Params: []*FuncParam{
 			NewFuncParam("a", NewNumType()),
 		},
 		Return: NewNumType(),
+	}
+	unaryArithBinding := Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    unaryArithType,
+		Mutable: false,
 	}
 
 	unaryLogicType := &FuncType{
@@ -46,26 +67,35 @@ func Prelude() *Scope {
 		},
 		Return: NewBoolType(),
 	}
+	unaryLogicBinding := Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    unaryLogicType,
+		Mutable: false,
+	}
 
-	scope.Values["+"] = binArithType
-	scope.Values["-"] = binArithType
-	scope.Values["*"] = binArithType
-	scope.Values["/"] = binArithType
+	scope.Values["+"] = binArithBinding
+	scope.Values["-"] = binArithBinding
+	scope.Values["*"] = binArithBinding
+	scope.Values["/"] = binArithBinding
 
-	scope.Values["=="] = binCompType
-	scope.Values["!="] = binCompType
-	scope.Values["<"] = binCompType
-	scope.Values[">"] = binCompType
-	scope.Values["<="] = binCompType
-	scope.Values[">="] = binCompType
+	scope.Values["=="] = binACompBinding
+	scope.Values["!="] = binACompBinding
+	scope.Values["<"] = binACompBinding
+	scope.Values[">"] = binACompBinding
+	scope.Values["<="] = binACompBinding
+	scope.Values[">="] = binACompBinding
 
-	scope.Values["&&"] = binLogicType
-	scope.Values["||"] = binLogicType
+	scope.Values["&&"] = binLogicBinding
+	scope.Values["||"] = binLogicBinding
 
-	scope.Values["-"] = NewIntersectionType(binArithType, unaryArithType)
-	scope.Values["!"] = unaryArithType
+	scope.Values["-"] = Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    NewIntersectionType(binArithType, unaryArithType),
+		Mutable: false,
+	}
+	scope.Values["!"] = unaryArithBinding
 
-	scope.Values["!"] = unaryLogicType
+	scope.Values["!"] = unaryLogicBinding
 
 	return scope
 }
