@@ -276,7 +276,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 	}
 }
 
-func (b *Builder) BuildModule(mod *ast.Module) *Module {
+func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))

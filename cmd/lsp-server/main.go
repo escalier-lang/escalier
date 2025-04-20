@@ -128,7 +128,7 @@ func (*Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, cont
 		Path:     uri,
 		Contents: contents,
 	})
-	_, errors := p.Parse()
+	_, errors := p.ParseScript()
 
 	diagnotics := []protocol.Diagnostic{}
 	for _, err := range errors {

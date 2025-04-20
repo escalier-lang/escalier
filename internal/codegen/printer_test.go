@@ -46,11 +46,11 @@ fn sub(a, b) { return a - b }`,
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	m1, _ := p.Parse()
+	m1, _ := p.ParseScript()
 	builder := &Builder{
 		tempId: 0,
 	}
-	m2 := builder.BuildModule(m1)
+	m2 := builder.BuildScript(m1)
 
 	printer := NewPrinter()
 	printer.PrintModule(m2)

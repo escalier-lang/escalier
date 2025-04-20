@@ -34,7 +34,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := parser.NewParser(ctx, source)
-			module, errors := parser.Parse()
+			script, errors := parser.ParseScript()
 
 			if len(errors) > 0 {
 				for i, err := range errors {
@@ -50,7 +50,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c := NewChecker()
-			bindings, inferErrors := c.Infer(inferCtx, module)
+			bindings, inferErrors := c.InferScript(inferCtx, script)
 			assert.Len(t, inferErrors, 0)
 			assert.Len(t, bindings, 3)
 			for name, binding := range bindings {

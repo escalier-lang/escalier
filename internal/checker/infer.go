@@ -11,9 +11,7 @@ import (
 	"github.com/moznion/go-optional"
 )
 
-// TODO: Return a namespace instead of a type
-// A namespace is a mapping of names to types
-func (c *Checker) Infer(ctx Context, m *ast.Module) (map[string]Binding, []*Error) {
+func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, []*Error) {
 	errors := []*Error{}
 	bindings := map[string]Binding{}
 
@@ -32,6 +30,10 @@ func (c *Checker) Infer(ctx Context, m *ast.Module) (map[string]Binding, []*Erro
 	}
 
 	return bindings, errors
+}
+
+func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, []*Error) {
+	panic("TODO: infer module")
 }
 
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (map[string]Binding, []*Error) {

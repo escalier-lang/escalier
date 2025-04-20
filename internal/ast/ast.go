@@ -42,3 +42,7 @@ func (i *Ident) Span() Span {
 type Module struct {
 	Stmts []Stmt
 }
+
+type Script struct {
+	Stmts []Stmt
+}
