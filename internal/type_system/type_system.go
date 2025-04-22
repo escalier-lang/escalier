@@ -195,7 +195,7 @@ func (t *LitType) Equal(other Type) bool {
 func (t *LitType) String() string {
 	switch lit := t.Lit.(type) {
 	case *StrLit:
-		return lit.Value
+		return strconv.Quote(lit.Value)
 	case *NumLit:
 		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
 	case *BoolLit:
@@ -288,14 +288,14 @@ type TypeParam struct {
 }
 
 type FuncParam struct {
-	Name     string // TODO: update to Pattern
+	Pattern  Pat
 	Type     Type
 	Optional bool
 }
 
-func NewFuncParam(name string, t Type) *FuncParam {
+func NewFuncParam(pattern Pat, t Type) *FuncParam {
 	return &FuncParam{
-		Name:     name,
+		Pattern:  pattern,
 		Type:     t,
 		Optional: false,
 	}
@@ -355,7 +355,8 @@ func (t *FuncType) String() string {
 			if i > 0 {
 				result += ", "
 			}
-			result += param.Name + ": " + param.Type.String()
+			fmt.Printf("param: %#v\n", param)
+			result += param.Pattern.String() + ": " + param.Type.String()
 		}
 	}
 	result += ")"

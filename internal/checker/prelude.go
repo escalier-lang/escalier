@@ -12,8 +12,8 @@ func Prelude() *Scope {
 
 	binArithType := &FuncType{
 		Params: []*FuncParam{
-			NewFuncParam("a", NewNumType()),
-			NewFuncParam("b", NewNumType()),
+			NewFuncParam(NewIdentPat("a"), NewNumType()),
+			NewFuncParam(NewIdentPat("b"), NewNumType()),
 		},
 		Return: NewNumType(),
 	}
@@ -25,8 +25,8 @@ func Prelude() *Scope {
 
 	binCompType := &FuncType{
 		Params: []*FuncParam{
-			NewFuncParam("a", NewNumType()),
-			NewFuncParam("b", NewNumType()),
+			NewFuncParam(NewIdentPat("a"), NewNumType()),
+			NewFuncParam(NewIdentPat("b"), NewNumType()),
 		},
 		Return: NewBoolType(),
 	}
@@ -38,8 +38,8 @@ func Prelude() *Scope {
 
 	binLogicType := &FuncType{
 		Params: []*FuncParam{
-			NewFuncParam("a", NewBoolType()),
-			NewFuncParam("b", NewBoolType()),
+			NewFuncParam(NewIdentPat("a"), NewBoolType()),
+			NewFuncParam(NewIdentPat("b"), NewBoolType()),
 		},
 		Return: NewBoolType(),
 	}
@@ -51,7 +51,7 @@ func Prelude() *Scope {
 
 	unaryArithType := &FuncType{
 		Params: []*FuncParam{
-			NewFuncParam("a", NewNumType()),
+			NewFuncParam(NewIdentPat("a"), NewNumType()),
 		},
 		Return: NewNumType(),
 	}
@@ -63,7 +63,7 @@ func Prelude() *Scope {
 
 	unaryLogicType := &FuncType{
 		Params: []*FuncParam{
-			NewFuncParam("a", NewBoolType()),
+			NewFuncParam(NewIdentPat("a"), NewBoolType()),
 		},
 		Return: NewBoolType(),
 	}

@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"slices"
 
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -51,8 +52,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*TupleType); ok {
 		if tuple2, ok := t2.(*TupleType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", tuple1, tuple2))
-			// TODO
+			// TODO: handle spread and rest
+			errors := []*Error{}
+
+			// TODO: we should unify all of the pairs of elements that we can
+			if len(tuple1.Elems) != len(tuple2.Elems) {
+				return []*Error{{message: fmt.Sprintf("Cannot unify %v and %v", tuple1, tuple2)}}
+			}
+
+			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
+				unifyErrors := c.unify(ctx, elem1, elem2)
+				errors = slices.Concat(errors, unifyErrors)
+			}
+
+			return errors
 		}
 	}
 	// | TupleType, ArrayType -> ...

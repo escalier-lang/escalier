@@ -39,7 +39,8 @@ func (d *VarDecl) Declare() bool { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
 
 type Param struct {
-	Pattern Pat
+	Pattern  Pat
+	Optional bool
 	// TODO: include type annotation
 }
 

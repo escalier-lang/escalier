@@ -21,6 +21,18 @@ func TestParseModuleNoErrors(t *testing.T) {
 				val sum = a + b
 			`,
 		},
+		"TupleDecl": {
+			input: `
+				val [x, y] = [5, 10]
+			`,
+		},
+		"FuncExpr": {
+			input: `
+				val add = fn (x, y) {
+					return x + y
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {
@@ -52,7 +64,10 @@ func TestParseModuleNoErrors(t *testing.T) {
 			c := NewChecker()
 			bindings, inferErrors := c.InferScript(inferCtx, script)
 			assert.Len(t, inferErrors, 0)
-			assert.Len(t, bindings, 3)
+
+			// TODO: short term - print each of the binding's types and store
+			// them in a map and the snapshot the map.
+			// TODO: long term - generate a .d.ts file from the bindings
 			for name, binding := range bindings {
 				assert.NotNil(t, binding)
 				fmt.Printf("%s = %s\n", name, binding.Type.String())
