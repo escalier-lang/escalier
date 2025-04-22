@@ -116,8 +116,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -174,8 +175,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -271,8 +273,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -374,8 +377,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -471,8 +475,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -615,8 +620,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                 },
                 Return: nil,
                 Throws: nil,
@@ -815,8 +821,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                 },
                 Return: nil,
                 Throws: nil,
@@ -927,8 +934,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -1006,8 +1014,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                 },
                 Return: nil,
                 Throws: nil,
@@ -1172,8 +1181,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -1281,8 +1291,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",
@@ -1435,8 +1446,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
             },
             FuncSig: ast.FuncSig{
-                TypeParams: nil,
-                Params:     {
+                TypeParams: {
+                },
+                Params: {
                     &ast.Param{
                         Pattern: &ast.IdentPat{
                             Name:    "a",

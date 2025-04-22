@@ -208,8 +208,6 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			}
 		case *ast.LitPat:
 			// TODO
-		case *ast.IsPat:
-			// TODO
 		case *ast.WildcardPat:
 			// TODO
 		default:

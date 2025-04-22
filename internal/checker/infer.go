@@ -497,8 +497,6 @@ func (c *Checker) inferPattern(
 					return NewExtractorType(t, args...)
 				},
 			).TakeOrElse(func() Type { return NewNeverType() })
-		case *ast.IsPat:
-			panic("IGNORE: this will be replaced with an Assertion filed on some patterns")
 		case *ast.RestPat:
 			t = NewRestSpreadType(c.FreshVar())
 			errors = []*Error{}

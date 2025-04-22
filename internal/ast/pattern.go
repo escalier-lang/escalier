@@ -16,7 +16,6 @@ func (*TuplePat) isPat()     {}
 func (*ExtractorPat) isPat() {}
 func (*RestPat) isPat()      {}
 func (*LitPat) isPat()       {}
-func (*IsPat) isPat()        {}
 func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
@@ -32,8 +31,14 @@ func NewIdentPat(name string, _default optional.Option[Expr], span Span) *IdentP
 func (p *IdentPat) Span() Span             { return p.span }
 func (p *IdentPat) InferredType() Type     { return p.inferredType }
 func (p *IdentPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *IdentPat) Accept(v Visitor) {
+	v.VisitPat(p)
+}
 
-type ObjPatElem interface{ isObjPatElem() }
+type ObjPatElem interface {
+	isObjPatElem()
+	Node
+}
 
 func (*ObjKeyValuePat) isObjPatElem()  {}
 func (*ObjShorthandPat) isObjPatElem() {}
@@ -51,6 +56,9 @@ func NewObjKeyValuePat(key *Ident, value Pat, _default optional.Option[Expr], sp
 	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, span: span, inferredType: nil}
 }
 func (p *ObjKeyValuePat) Span() Span { return p.span }
+func (p *ObjKeyValuePat) Accept(v Visitor) {
+	// TODO
+}
 
 type ObjShorthandPat struct {
 	Key     *Ident
@@ -62,6 +70,9 @@ func NewObjShorthandPat(key *Ident, _default optional.Option[Expr], span Span) *
 	return &ObjShorthandPat{Key: key, Default: _default, span: span}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }
+func (p *ObjShorthandPat) Accept(v Visitor) {
+	// TODO
+}
 
 type ObjRestPat struct {
 	Pattern Pat
@@ -72,6 +83,9 @@ func NewObjRestPat(pattern Pat, span Span) *ObjRestPat {
 	return &ObjRestPat{Pattern: pattern, span: span}
 }
 func (p *ObjRestPat) Span() Span { return p.span }
+func (p *ObjRestPat) Accept(v Visitor) {
+	// TODO
+}
 
 type ObjectPat struct {
 	Elems        []ObjPatElem
@@ -85,6 +99,22 @@ func NewObjectPat(elems []ObjPatElem, span Span) *ObjectPat {
 func (p *ObjectPat) Span() Span             { return p.span }
 func (p *ObjectPat) InferredType() Type     { return p.inferredType }
 func (p *ObjectPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *ObjectPat) Accept(v Visitor) {
+	if v.VisitPat(p) {
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ObjKeyValuePat:
+				v.VisitPat(e.Value)
+			case *ObjShorthandPat:
+				e.Default.IfSome(func(expr Expr) {
+					v.VisitExpr(expr)
+				})
+			case *ObjRestPat:
+				v.VisitPat(e.Pattern)
+			}
+		}
+	}
+}
 
 type TuplePat struct {
 	Elems        []Pat
@@ -98,6 +128,13 @@ func NewTuplePat(elems []Pat, span Span) *TuplePat {
 func (p *TuplePat) Span() Span             { return p.span }
 func (p *TuplePat) InferredType() Type     { return p.inferredType }
 func (p *TuplePat) SetInferredType(t Type) { p.inferredType = t }
+func (p *TuplePat) Accept(v Visitor) {
+	if v.VisitPat(p) {
+		for _, elem := range p.Elems {
+			v.VisitPat(elem)
+		}
+	}
+}
 
 type ExtractorPat struct {
 	Name         string // TODO: QualIdent
@@ -112,6 +149,13 @@ func NewExtractorPat(name string, args []Pat, span Span) *ExtractorPat {
 func (p *ExtractorPat) Span() Span             { return p.span }
 func (p *ExtractorPat) InferredType() Type     { return p.inferredType }
 func (p *ExtractorPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *ExtractorPat) Accept(v Visitor) {
+	if v.VisitPat(p) {
+		for _, arg := range p.Args {
+			v.VisitPat(arg)
+		}
+	}
+}
 
 type RestPat struct {
 	Pattern      Pat
@@ -125,6 +169,11 @@ func NewRestPat(pattern Pat, span Span) *RestPat {
 func (p *RestPat) Span() Span             { return p.span }
 func (p *RestPat) InferredType() Type     { return p.inferredType }
 func (p *RestPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *RestPat) Accept(v Visitor) {
+	if v.VisitPat(p) {
+		v.VisitPat(p.Pattern)
+	}
+}
 
 type LitPat struct {
 	Lit          Lit
@@ -138,21 +187,11 @@ func NewLitPat(lit Lit, span Span) *LitPat {
 func (p *LitPat) Span() Span             { return p.span }
 func (p *LitPat) InferredType() Type     { return p.inferredType }
 func (p *LitPat) SetInferredType(t Type) { p.inferredType = t }
-
-// TODO: replace with optional Assertion field on IdentPat, ObjPatElem, and WildcardPat
-type IsPat struct {
-	Name         *Ident
-	Type         TypeAnn
-	span         Span
-	inferredType Type
+func (p *LitPat) Accept(v Visitor) {
+	if v.VisitPat(p) {
+		v.VisitLit(p.Lit)
+	}
 }
-
-func NewIsPat(name *Ident, typ TypeAnn, span Span) *IsPat {
-	return &IsPat{Name: name, Type: typ, span: span, inferredType: nil}
-}
-func (p *IsPat) Span() Span             { return p.span }
-func (p *IsPat) InferredType() Type     { return p.inferredType }
-func (p *IsPat) SetInferredType(t Type) { p.inferredType = t }
 
 type WildcardPat struct {
 	span         Span
@@ -165,3 +204,6 @@ func NewWildcardPat(span Span) *WildcardPat {
 func (p *WildcardPat) Span() Span             { return p.span }
 func (p *WildcardPat) InferredType() Type     { return p.inferredType }
 func (p *WildcardPat) SetInferredType(t Type) { p.inferredType = t }
+func (p *WildcardPat) Accept(v Visitor) {
+	v.VisitPat(p)
+}

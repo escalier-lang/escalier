@@ -80,8 +80,9 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: nil,
-            Params:     {
+            TypeParams: {
+            },
+            Params: {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -549,8 +550,9 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: nil,
-            Params:     {
+            TypeParams: {
+            },
+            Params: {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
