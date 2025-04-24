@@ -622,6 +622,12 @@ type UnionType struct {
 	provenance Provenance
 }
 
+func NewUnionType(types ...Type) *UnionType {
+	return &UnionType{
+		Types:      types,
+		provenance: nil,
+	}
+}
 func (t *UnionType) Provenance() Provenance     { return t.provenance }
 func (t *UnionType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *UnionType) Accept(v TypeVisitor) {

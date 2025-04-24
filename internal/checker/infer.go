@@ -1,7 +1,6 @@
 package checker
 
 import (
-	"fmt"
 	"iter"
 	"slices"
 
@@ -163,7 +162,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			}}
 		}
 	case *ast.LiteralExpr:
-		return c.inferLit(expr.Lit)
+		t, errors := c.inferLit(expr.Lit)
+		expr.SetInferredType(t)
+		return t, errors
 	case *ast.TupleExpr:
 		types := make([]Type, len(expr.Elems))
 		errors := []*Error{}
@@ -173,18 +174,66 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			errors = slices.Concat(errors, elemErrors)
 		}
 		tupleType := NewTupleType(types...)
+		expr.SetInferredType(tupleType)
 		return tupleType, errors
 	case *ast.ObjectExpr:
 		panic("object expression not implemented")
 	case *ast.FuncExpr:
 		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
-		fmt.Printf("func: %s\n", funcType.String())
-		bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
-		fmt.Printf("func: %s\n", funcType.String())
-		return funcType, slices.Concat(sigErrors, bodyErrors)
+		returnType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
+		unifyErrors := c.unify(ctx, funcType.Return, returnType)
+		expr.SetInferredType(funcType)
+		return funcType, slices.Concat(sigErrors, bodyErrors, unifyErrors)
+	case *ast.IfElseExpr:
+		return c.inferIfElse(ctx, expr)
 	default:
 		return nil, []*Error{{message: "Unknown expression type"}}
 	}
+}
+
+func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []*Error) {
+	condType, condErrors := c.inferExpr(ctx, expr.Cond)
+	unifyErrors := c.unify(ctx, condType, NewBoolType())
+	errors := slices.Concat(condErrors, unifyErrors)
+
+	var consType Type = NewNeverType()
+	for _, stmt := range expr.Cons.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+	if len(expr.Cons.Stmts) > 0 {
+		lastStmt := expr.Cons.Stmts[len(expr.Cons.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			consType = exprStmt.Expr.InferredType()
+		}
+	}
+
+	var altType Type = NewNeverType()
+	expr.Alt.IfSome(func(alt ast.BlockOrExpr) {
+		if alt.Block != nil {
+			for _, stmt := range alt.Block.Stmts {
+				stmtErrors := c.inferStmt(ctx, stmt)
+				errors = slices.Concat(errors, stmtErrors)
+			}
+			if len(alt.Block.Stmts) > 0 {
+				lastStmt := alt.Block.Stmts[len(alt.Block.Stmts)-1]
+				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+					altType = exprStmt.Expr.InferredType()
+				}
+			}
+		} else if alt.Expr != nil {
+			t, altErrors := c.inferExpr(ctx, alt.Expr)
+			errors = slices.Concat(errors, altErrors)
+			altType = t
+		} else {
+			panic("alt must be a block or expression")
+		}
+	})
+
+	t := NewUnionType(consType, altType)
+	expr.SetInferredType(t)
+
+	return t, errors
 }
 
 func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []*Error {
@@ -223,7 +272,7 @@ func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
-) (Type, map[string]Binding, []*Error) {
+) (*FuncType, map[string]Binding, []*Error) {
 	// TODO: handle generic functions
 	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
 	errors := []*Error{}
@@ -255,18 +304,45 @@ func (c *Checker) inferFuncSig(
 		Self:       optional.None[Type](),
 	}
 
-	// t.SetProvenance(&ast.FuncSigProvenance{
-	// 	FuncSig: sig,
-	// })
-
 	return t, bindings, errors
 }
+
+type ReturnVisitor struct {
+	Returns []*ast.ReturnStmt
+}
+
+func (v *ReturnVisitor) VisitStmt(stmt ast.Stmt) bool {
+	if returnStmt, ok := stmt.(*ast.ReturnStmt); ok {
+		v.Returns = append(v.Returns, returnStmt)
+	}
+
+	return true
+}
+func (v *ReturnVisitor) VisitExpr(expr ast.Expr) bool {
+	// Don't visit function expressions since we don't want to include any
+	// return statements inside them.
+	if _, ok := expr.(*ast.FuncExpr); ok {
+		return false
+	}
+	return true
+}
+func (v *ReturnVisitor) VisitDecl(decl ast.Decl) bool {
+	// Don't visit function declarations since we don't want to include any
+	// return statements inside them.
+	if _, ok := decl.(*ast.FuncDecl); ok {
+		return false
+	}
+	return true
+}
+func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
+func (v *ReturnVisitor) VisitTypeAnn(t ast.TypeAnn) bool { return true }
+func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
 
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]Binding,
 	body *ast.Block,
-) []*Error {
+) (Type, []*Error) {
 
 	ctx = ctx.WithParentScope()
 	maps.Copy(ctx.Scope.Values, bindings)
@@ -277,9 +353,36 @@ func (c *Checker) inferFuncBody(
 		errors = slices.Concat(errors, stmtErrors)
 	}
 
-	// TODO: find all of the return statements in the body
+	visitor := &ReturnVisitor{
+		Returns: []*ast.ReturnStmt{},
+	}
 
-	return errors
+	for _, stmt := range body.Stmts {
+		// TODO: don't visit statements that are unreachable
+		stmt.Accept(visitor)
+	}
+
+	returnTypes := []Type{}
+	for _, returnStmt := range visitor.Returns {
+		returnStmt.Expr.IfSome(func(expr ast.Expr) {
+			returnType, returnErrors := c.inferExpr(ctx, expr)
+			returnTypes = append(returnTypes, returnType)
+			errors = slices.Concat(errors, returnErrors)
+		})
+	}
+
+	// TODO: We also need to do dead code analysis to account for unreachable
+	// code.
+
+	if len(returnTypes) == 1 {
+		return returnTypes[0], errors
+	}
+
+	if len(returnTypes) > 1 {
+		return NewUnionType(returnTypes...), errors
+	}
+
+	return NewLitType(&UndefinedLit{}), errors
 }
 
 func patToPat(p ast.Pat) Pat {

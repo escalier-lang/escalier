@@ -97,5 +97,7 @@ func Prelude() *Scope {
 
 	scope.Values["!"] = unaryLogicBinding
 
+	// TODO: ++: fn (a: string, b: string) -> string
+
 	return scope
 }

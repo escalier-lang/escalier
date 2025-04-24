@@ -26,6 +26,30 @@ func TestParseModuleNoErrors(t *testing.T) {
 				val [x, y] = [5, 10]
 			`,
 		},
+		"IfElseExpr": {
+			input: `
+				val a = 5
+				val b = 10
+				val x = if (a > b) {
+					true
+				} else {
+					"hello"
+				}
+			`,
+		},
+		"IfElseIfExpr": {
+			input: `
+				val a = 5
+				val b = 10
+				val x = if (a > b) {
+					true
+				} else if (a < b) {
+					false
+				} else {
+				    "hello"
+				}
+			`,
+		},
 		"FuncExpr": {
 			input: `
 				val add = fn (x, y) {
@@ -33,6 +57,24 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"FuncExprWithoutReturn": {
+			input: `val log = fn (msg) {}`,
+		},
+		"FuncExprMultipleReturns": {
+			input: `
+				val add = fn (x, y) {
+				    if (x > y) {
+						return true
+					} else {
+					 	
+					}
+					return false
+				}
+			`,
+		},
+		// TODO:
+		// - declare variables within a function body
+		// - scope shadowing
 	}
 
 	for name, test := range tests {
@@ -63,7 +105,9 @@ func TestParseModuleNoErrors(t *testing.T) {
 			}
 			c := NewChecker()
 			bindings, inferErrors := c.InferScript(inferCtx, script)
-			assert.Len(t, inferErrors, 0)
+			if len(inferErrors) > 0 {
+				assert.Equal(t, inferErrors, []*Error{})
+			}
 
 			// TODO: short term - print each of the binding's types and store
 			// them in a map and the snapshot the map.
