@@ -26,6 +26,11 @@ func TestParseModuleNoErrors(t *testing.T) {
 				val [x, y] = [5, 10]
 			`,
 		},
+		"ObjectDecl": {
+			input: `
+				val {x, y} = {x: "foo", y: "bar"}
+			`,
+		},
 		"IfElseExpr": {
 			input: `
 				val a = 5
@@ -66,12 +71,23 @@ func TestParseModuleNoErrors(t *testing.T) {
 				    if (x > y) {
 						return true
 					} else {
-					 	
+
 					}
 					return false
 				}
 			`,
 		},
+		// "FuncRecursion": {
+		// 	input: `
+		// 		val fact = fn (n) {
+		// 			if (n == 0) {
+		// 				return 1
+		// 			} else {
+		// 				return n * fact(n - 1)
+		// 			}
+		// 		}
+		// 	`,
+		// },
 		// TODO:
 		// - declare variables within a function body
 		// - scope shadowing

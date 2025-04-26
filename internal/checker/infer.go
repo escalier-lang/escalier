@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"iter"
 	"slices"
 
@@ -177,7 +178,28 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		expr.SetInferredType(tupleType)
 		return tupleType, errors
 	case *ast.ObjectExpr:
-		panic("object expression not implemented")
+		elems := make([]ObjTypeElem, len(expr.Elems))
+		errors := []*Error{}
+		for _, elem := range expr.Elems {
+			switch elem := elem.(type) {
+			case *ast.PropertyExpr:
+				elem.Value.IfSome(func(value ast.Expr) {
+					t, elemErrors := c.inferExpr(ctx, value)
+					errors = slices.Concat(errors, elemErrors)
+					elems = append(
+						elems,
+						NewPropertyElemType(astKeyToTypeKey(elem.Name), t),
+					)
+				})
+			default:
+				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
+			}
+		}
+
+		objType := NewObjectType(elems)
+		expr.SetInferredType(objType)
+
+		return objType, errors
 	case *ast.FuncExpr:
 		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
 		returnType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
@@ -188,6 +210,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		return c.inferIfElse(ctx, expr)
 	default:
 		return nil, []*Error{{message: "Unknown expression type"}}
+	}
+}
+
+func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
+	switch key := key.(type) {
+	case *ast.IdentExpr:
+		return NewStrKey(key.Name)
+	case *ast.StrLit:
+		return NewStrKey(key.Value)
+	case *ast.NumLit:
+		return NewNumKey(key.Value)
+	case *ast.ComputedKey:
+		panic("TODO: handle computed key")
+	default:
+		panic(fmt.Sprintf("Unknown object key type: %T", key))
 	}
 }
 
@@ -554,34 +591,20 @@ func (c *Checker) inferPattern(
 				case *ast.ObjKeyValuePat:
 					t, elemErrors := inferPatRec(elem.Value)
 					errors = append(errors, elemErrors...)
-					name := &StrObjTypeKey{
-						Value: elem.Key.Name,
-					}
-					elems = append(elems, &PropertyElemType{
-						Name:     name,
-						Value:    t,
-						Optional: false,
-						Readonly: false, // TODO: when should this be true?
-					})
+					name := NewStrKey(elem.Key.Name)
+					elems = append(elems, NewPropertyElemType(name, t))
 				case *ast.ObjShorthandPat:
 					// We can't infer the type of the shorthand pattern yet, so
 					// we use a fresh type variable.
 					t := c.FreshVar()
-					name := &StrObjTypeKey{
-						Value: elem.Key.Name,
-					}
+					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = Binding{
 						Source:  optional.Some[ast.BindingSource](elem.Key),
 						Type:    t,
 						Mutable: false, // TODO
 					}
-					elems = append(elems, &PropertyElemType{
-						Name:     name,
-						Value:    t,
-						Optional: false,
-						Readonly: false, // TODO: when should this be true?
-					})
+					elems = append(elems, NewPropertyElemType(name, t))
 				case *ast.ObjRestPat:
 					panic("object pattern not implemented")
 				}

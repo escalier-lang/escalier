@@ -57,7 +57,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			// TODO: we should unify all of the pairs of elements that we can
 			if len(tuple1.Elems) != len(tuple2.Elems) {
-				return []*Error{{message: fmt.Sprintf("Cannot unify %v and %v", tuple1, tuple2)}}
+				return []*Error{{message: fmt.Sprintf("Cannot unify %#v and %#v", tuple1, tuple2)}}
 			}
 
 			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
@@ -71,42 +71,42 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | TupleType, ArrayType -> ...
 	if tuple1, ok := t2.(*TupleType); ok {
 		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", tuple1, array2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", tuple1, array2))
 			// TODO
 		}
 	}
 	// | ArrayType, TupleType -> ...
 	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
 		if tuple2, ok := t2.(*TupleType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", array1, tuple2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, tuple2))
 			// TODO
 		}
 	}
 	// | ArrayType, ArrayType -> ...
 	if rest, ok := t1.(*RestSpreadType); ok {
 		if array, ok := t2.(*TypeRefType); ok && array.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", rest, array))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", rest, array))
 			// TODO
 		}
 	}
 	// | FuncType, FuncType -> ...
 	if func1, ok := t1.(*FuncType); ok {
 		if func2, ok := t2.(*FuncType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", func1, func2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", func1, func2))
 			// TODO
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
 	if ref1, ok := t1.(*TypeRefType); ok {
 		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name == ref2.Name {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", ref1, ref2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
 			// TODO
 		}
 	}
 	// | TypeRefType, TypeRefType (different alias name) -> ...
 	if ref1, ok := t1.(*TypeRefType); ok {
 		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name != ref2.Name {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", ref1, ref2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
 			// TODO
 		}
 	}
@@ -122,14 +122,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			} else if _, ok := lit.Lit.(*BigIntLit); ok && prim.Prim == "bigint" {
 				return nil
 			} else {
-				return []*Error{{message: fmt.Sprintf("Cannot unify %v and %v", lit, prim)}}
+				return []*Error{{message: fmt.Sprintf("Cannot unify %#v and %#v", lit, prim)}}
 			}
 		}
 	}
 	// | LitType, LitType -> ...
 	if lit1, ok := t1.(*LitType); ok {
 		if lit2, ok := t2.(*LitType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", lit1, lit2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", lit1, lit2))
 			// TODO
 		}
 	}
@@ -137,7 +137,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	if lit, ok := t1.(*LitType); ok {
 		if template, ok := t2.(*TemplateLitType); ok {
 			if strLit, ok := lit.Lit.(*StrLit); ok {
-				panic(fmt.Sprintf("TODO: unify types %v and %v", strLit, template))
+				panic(fmt.Sprintf("TODO: unify types %#v and %#v", strLit, template))
 				// TODO
 			}
 		}
@@ -156,56 +156,107 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | ObjectType, ExtractType -> ...
 	if obj, ok := t1.(*ObjectType); ok {
 		if ext, ok := t2.(*ExtractorType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", obj, ext))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, ext))
 			// TODO
 		}
 	}
 	// | ExtractType, ObjectType -> ...
 	if ext, ok := t1.(*ExtractorType); ok {
 		if obj, ok := t2.(*ObjectType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", ext, obj))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ext, obj))
 			// TODO
 		}
 	}
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
 		if obj2, ok := t2.(*ObjectType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", obj1, obj2))
-			// TODO
+			// TODO: handle exactness
+			// TODO: handle unnamed elems, e.g. callable and newable signatures
+			// TODO: handle spread and rest
+			// TODO: handle mapped type elems
+			// TODO: handle getters/setters appropriately (we need to know which
+			// type is being read from and which is being written to... does that
+			// question even make sense?)
+
+			errors := []*Error{}
+
+			namedElems1 := make(map[any]Type)
+			namedElems2 := make(map[any]Type)
+
+			for _, elem := range obj1.Elems {
+				switch elem := elem.(type) {
+				case *MethodElemType:
+					namedElems1[elem.Name] = elem.Fn
+				case *GetterElemType:
+					namedElems1[elem.Name] = elem.Fn.Return
+				case *SetterElemType:
+					namedElems1[elem.Name] = elem.Fn.Params[0].Type
+				case *PropertyElemType:
+					namedElems1[elem.Name] = elem.Value
+				default: // skip other types of elems
+				}
+			}
+
+			for _, elem := range obj2.Elems {
+				switch elem := elem.(type) {
+				case *MethodElemType:
+					namedElems2[elem.Name] = elem.Fn
+				case *GetterElemType:
+					namedElems2[elem.Name] = elem.Fn.Return
+				case *SetterElemType:
+					namedElems2[elem.Name] = elem.Fn.Params[0].Type
+				case *PropertyElemType:
+					namedElems2[elem.Name] = elem.Value
+				default: // skip other types of elems
+				}
+			}
+
+			for key1, value1 := range namedElems2 {
+				if value2, ok := namedElems1[key1]; ok {
+					unifyErrors := c.unify(ctx, value1, value2)
+					errors = slices.Concat(errors, unifyErrors)
+				} else {
+					errors = slices.Concat(errors, []*Error{{
+						message: fmt.Sprintf("key %s not found in %#v", key1, obj1),
+					}})
+				}
+			}
+
+			return errors
 		}
 	}
 	// | IntersectionType, ObjectType -> ...
 	if intersection, ok := t1.(*IntersectionType); ok {
 		if obj, ok := t2.(*ObjectType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", intersection, obj))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection, obj))
 		}
 	}
 	// | ObjectType, UnionType -> ...
 	if obj, ok := t1.(*ObjectType); ok {
 		if union, ok := t2.(*UnionType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", obj, union))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, union))
 			// TODO
 		}
 	}
 	// | IntersectionType, IntersectionType -> ...
 	if intersection1, ok := t1.(*IntersectionType); ok {
 		if intersection2, ok := t2.(*IntersectionType); ok {
-			panic(fmt.Sprintf("TODO: unify types %v and %v", intersection1, intersection2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection1, intersection2))
 			// TODO
 		}
 	}
 	// | UnionType, _ -> ...
 	if union, ok := t1.(*UnionType); ok {
-		panic(fmt.Sprintf("TODO: unify types %v and %v", union, t2))
+		panic(fmt.Sprintf("TODO: unify types %#v and %#v", union, t2))
 		// TODO
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*UnionType); ok {
-		panic(fmt.Sprintf("TODO: unify types %v and %v", t1, union))
+		panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, union))
 	}
 
 	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %v and %v", t1, t2))
+	panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, t2))
 }
 
 func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
