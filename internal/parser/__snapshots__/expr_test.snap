@@ -452,6 +452,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -463,6 +464,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
             },
             Return: nil,
@@ -677,6 +679,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -688,6 +691,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
             },
             Return: nil,
@@ -891,6 +895,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     },
                                     inferredType: nil,
                                 },
+                                Optional: false,
                             },
                         },
                         Return: nil,
@@ -957,6 +962,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     },
                                     inferredType: nil,
                                 },
+                                Optional: false,
                             },
                         },
                         Return: nil,
@@ -1032,6 +1038,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     },
                                     inferredType: nil,
                                 },
+                                Optional: false,
                             },
                         },
                         Return: nil,
@@ -2433,6 +2440,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -2444,6 +2452,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                    Optional: false,
                 },
             },
             Return: nil,

@@ -1,11 +1,15 @@
 package type_system
 
-import "math/big"
+import (
+	"math/big"
+	"strconv"
+)
 
 //sumtype:decl
 type Lit interface {
 	isLiteral()
 	Equal(Lit) bool
+	String() string
 }
 
 func (*BoolLit) isLiteral()      {}
@@ -23,6 +27,12 @@ func (l *BoolLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *BoolLit) String() string {
+	if l.Value {
+		return "true"
+	}
+	return "false"
+}
 
 type NumLit struct{ Value float64 }
 
@@ -31,6 +41,9 @@ func (l *NumLit) Equal(other Lit) bool {
 		return l.Value == other.Value
 	}
 	return false
+}
+func (l *NumLit) String() string {
+	return strconv.FormatFloat(l.Value, 'f', -1, 32)
 }
 
 type StrLit struct{ Value string }
@@ -41,6 +54,9 @@ func (l *StrLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *StrLit) String() string {
+	return strconv.Quote(l.Value)
+}
 
 type BigIntLit struct{ Value big.Int }
 
@@ -49,6 +65,9 @@ func (l *BigIntLit) Equal(other Lit) bool {
 		return l.Value.Cmp(&other.Value) == 0
 	}
 	return false
+}
+func (l *BigIntLit) String() string {
+	return l.Value.String()
 }
 
 type NullLit struct{}
@@ -59,6 +78,9 @@ func (l *NullLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *NullLit) String() string {
+	return "null"
+}
 
 type UndefinedLit struct{}
 
@@ -67,4 +89,7 @@ func (l *UndefinedLit) Equal(other Lit) bool {
 		return true
 	}
 	return false
+}
+func (l *UndefinedLit) String() string {
+	return "undefined"
 }

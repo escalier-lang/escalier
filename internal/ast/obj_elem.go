@@ -18,3 +18,6 @@ func NewComputedKey(expr Expr) *ComputedKey {
 	return &ComputedKey{Expr: expr}
 }
 func (c *ComputedKey) Span() Span { return c.Expr.Span() }
+func (c *ComputedKey) Accept(v Visitor) {
+	// TODO
+}

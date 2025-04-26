@@ -195,7 +195,7 @@ func (t *LitType) Equal(other Type) bool {
 func (t *LitType) String() string {
 	switch lit := t.Lit.(type) {
 	case *StrLit:
-		return lit.Value
+		return strconv.Quote(lit.Value)
 	case *NumLit:
 		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
 	case *BoolLit:
@@ -288,14 +288,14 @@ type TypeParam struct {
 }
 
 type FuncParam struct {
-	Name     string // TODO: update to Pattern
+	Pattern  Pat
 	Type     Type
 	Optional bool
 }
 
-func NewFuncParam(name string, t Type) *FuncParam {
+func NewFuncParam(pattern Pat, t Type) *FuncParam {
 	return &FuncParam{
-		Name:     name,
+		Pattern:  pattern,
 		Type:     t,
 		Optional: false,
 	}
@@ -355,7 +355,8 @@ func (t *FuncType) String() string {
 			if i > 0 {
 				result += ", "
 			}
-			result += param.Name + ": " + param.Type.String()
+			fmt.Printf("param: %#v\n", param)
+			result += param.Pattern.String() + ": " + param.Type.String()
 		}
 	}
 	result += ")"
@@ -365,22 +366,51 @@ func (t *FuncType) String() string {
 	return result
 }
 
-type ObjTypeKey interface {
-	isObjTypeKey()
-	String() string
+type ObjTypeKeyKind int
+
+const (
+	StrObjTypeKeyKind ObjTypeKeyKind = iota
+	NumObjTypeKeyKind
+	SymObjTypeKeyKind
+)
+
+type ObjTypeKey struct {
+	Kind ObjTypeKeyKind // this is an "enum"
+	Str  string
+	Num  float64
+	Sym  int
 }
 
-func (*StrObjTypeKey) isObjTypeKey()    {}
-func (*NumObjTypeKey) isObjTypeKey()    {}
-func (*SymbolObjTypeKey) isObjTypeKey() {}
-
-type StrObjTypeKey struct{ Value string }
-type NumObjTypeKey struct{ Value float64 }
-type SymbolObjTypeKey struct{ Value int }
-
-func (s *StrObjTypeKey) String() string    { return s.Value }
-func (n *NumObjTypeKey) String() string    { return strconv.FormatFloat(n.Value, 'f', -1, 32) }
-func (s *SymbolObjTypeKey) String() string { return "symbol" + fmt.Sprint(s.Value) }
+func NewStrKey(str string) ObjTypeKey {
+	return ObjTypeKey{
+		Kind: StrObjTypeKeyKind,
+		Str:  str,
+	}
+}
+func NewNumKey(num float64) ObjTypeKey {
+	return ObjTypeKey{
+		Kind: NumObjTypeKeyKind,
+		Num:  num,
+	}
+}
+func NewSymKey(sym int) ObjTypeKey {
+	return ObjTypeKey{
+		Kind: SymObjTypeKeyKind,
+		Sym:  sym,
+	}
+}
+func (s *ObjTypeKey) String() string {
+	switch s.Kind {
+	case StrObjTypeKeyKind:
+		return s.Str
+	case NumObjTypeKeyKind:
+		return strconv.FormatFloat(s.Num, 'f', -1, 32)
+	case SymObjTypeKeyKind:
+		return "symbol" + fmt.Sprint(s.Sym)
+	default:
+		panic("unknown object type key kind")
+	}
+}
 
 type ObjTypeElem interface {
 	isObjTypeElem()
@@ -391,15 +421,15 @@ type CallableElemType struct{ Fn Type }
 type ConstructorElemType struct{ Fn Type }
 type MethodElemType struct {
 	Name ObjTypeKey
-	Fn   Type
+	Fn   *FuncType
 }
 type GetterElemType struct {
 	Name ObjTypeKey
-	Fn   Type
+	Fn   *FuncType
 }
 type SetterElemType struct {
 	Name ObjTypeKey
-	Fn   Type
+	Fn   *FuncType
 }
 type PropertyElemType struct {
 	Name     ObjTypeKey
@@ -407,6 +437,16 @@ type PropertyElemType struct {
 	Readonly bool
 	Value    Type
 }
+
+func NewPropertyElemType(name ObjTypeKey, value Type) *PropertyElemType {
+	return &PropertyElemType{
+		Name:     name,
+		Optional: false,
+		Readonly: false,
+		Value:    value,
+	}
+}
+
 type MappedModifier string
 
 const (
@@ -416,10 +456,12 @@ const (
 
 type MappedElemType struct {
 	TypeParam *IndexParamType
-	Name      optional.Option[Type]
-	Value     Type
-	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
-	ReadOnly  *MappedModifier
+	// TODO: rename this so that we can differentiate between this and the
+	// Name() method thats common to all ObjTypeElems.
+	name     optional.Option[Type]
+	Value    Type
+	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
+	ReadOnly *MappedModifier
 }
 type IndexParamType struct {
 	Name       string
@@ -456,7 +498,7 @@ func (p *PropertyElemType) Accept(v TypeVisitor) {
 }
 func (m *MappedElemType) Accept(v TypeVisitor) {
 	m.TypeParam.Constraint.Accept(v)
-	m.Name.IfSome(func(name Type) {
+	m.name.IfSome(func(name Type) {
 		name.Accept(v)
 	})
 	m.Value.Accept(v)
@@ -621,6 +663,12 @@ type UnionType struct {
 	provenance Provenance
 }
 
+func NewUnionType(types ...Type) *UnionType {
+	return &UnionType{
+		Types:      types,
+		provenance: nil,
+	}
+}
 func (t *UnionType) Provenance() Provenance     { return t.provenance }
 func (t *UnionType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *UnionType) Accept(v TypeVisitor) {

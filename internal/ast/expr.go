@@ -46,6 +46,9 @@ type IgnoreExpr struct {
 func (e *IgnoreExpr) Span() Span             { return e.span }
 func (e *IgnoreExpr) InferredType() Type     { return e.inferredType }
 func (e *IgnoreExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *IgnoreExpr) Accept(v Visitor) {
+	v.VisitExpr(e)
+}
 
 type EmptyExpr struct {
 	span         Span
@@ -58,6 +61,9 @@ func NewEmpty(span Span) *EmptyExpr {
 func (e *EmptyExpr) Span() Span           { return e.span }
 func (*EmptyExpr) InferredType() Type     { return nil }
 func (*EmptyExpr) SetInferredType(t Type) {}
+func (e *EmptyExpr) Accept(v Visitor) {
+	v.VisitExpr(e)
+}
 
 type BinaryOp string
 
@@ -93,6 +99,12 @@ func NewBinary(left, right Expr, op BinaryOp, span Span) *BinaryExpr {
 func (e *BinaryExpr) Span() Span             { return e.span }
 func (e *BinaryExpr) InferredType() Type     { return e.inferredType }
 func (e *BinaryExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *BinaryExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Left.Accept(v)
+		e.Right.Accept(v)
+	}
+}
 
 type UnaryOp int
 
@@ -115,6 +127,11 @@ func NewUnary(op UnaryOp, arg Expr, span Span) *UnaryExpr {
 func (e *UnaryExpr) Span() Span             { return e.span }
 func (e *UnaryExpr) InferredType() Type     { return e.inferredType }
 func (e *UnaryExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *UnaryExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Arg.Accept(v)
+	}
+}
 
 //sumtype:decl
 type Lit interface {
@@ -165,6 +182,9 @@ func (l *NumLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *NumLit) Accept(v Visitor) {
+	v.VisitLit(l)
+}
 
 func NewString(value string, span Span) *StrLit {
 	return &StrLit{Value: value, span: span}
@@ -175,6 +195,9 @@ func (l *StrLit) Equal(other Lit) bool {
 		return l.Value == other.Value
 	}
 	return false
+}
+func (l *StrLit) Accept(v Visitor) {
+	v.VisitLit(l)
 }
 
 func NewBoolean(value bool, span Span) *BoolLit {
@@ -187,6 +210,9 @@ func (l *BoolLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *BoolLit) Accept(v Visitor) {
+	v.VisitLit(l)
+}
 
 func NewBigInt(value big.Int, span Span) *BigIntLit {
 	return &BigIntLit{Value: value, span: span}
@@ -197,6 +223,9 @@ func (l *BigIntLit) Equal(other Lit) bool {
 		return l.Value.Cmp(&other.Value) == 0
 	}
 	return false
+}
+func (l *BigIntLit) Accept(v Visitor) {
+	v.VisitLit(l)
 }
 
 func NewNull(span Span) *NullLit {
@@ -209,6 +238,9 @@ func (l *NullLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *NullLit) Accept(v Visitor) {
+	v.VisitLit(l)
+}
 
 func NewUndefined(span Span) *UndefinedLit {
 	return &UndefinedLit{span: span}
@@ -220,6 +252,9 @@ func (l *UndefinedLit) Equal(other Lit) bool {
 	}
 	return false
 }
+func (l *UndefinedLit) Accept(v Visitor) {
+	v.VisitLit(l)
+}
 
 func (e *LiteralExpr) Span() Span             { return e.span }
 func (e *LiteralExpr) InferredType() Type     { return e.inferredType }
@@ -227,6 +262,9 @@ func (e *LiteralExpr) SetInferredType(t Type) { e.inferredType = t }
 
 func NewLitExpr(lit Lit) *LiteralExpr {
 	return &LiteralExpr{Lit: lit, span: lit.Span(), inferredType: nil}
+}
+func (e *LiteralExpr) Accept(v Visitor) {
+	v.VisitExpr(e)
 }
 
 type IdentExpr struct {
@@ -241,6 +279,9 @@ func NewIdent(name string, span Span) *IdentExpr {
 func (e *IdentExpr) Span() Span             { return e.span }
 func (e *IdentExpr) InferredType() Type     { return e.inferredType }
 func (e *IdentExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *IdentExpr) Accept(v Visitor) {
+	v.VisitExpr(e)
+}
 
 type TypeParam struct {
 	Name       string
@@ -285,6 +326,22 @@ func NewFuncExpr(
 func (e *FuncExpr) Span() Span             { return e.span }
 func (e *FuncExpr) InferredType() Type     { return e.inferredType }
 func (e *FuncExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *FuncExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, param := range e.Params {
+			param.Pattern.Accept(v)
+		}
+		e.Return.IfSome(func(ret TypeAnn) {
+			ret.Accept(v)
+		})
+		e.Throws.IfSome(func(throws TypeAnn) {
+			throws.Accept(v)
+		})
+		for _, stmt := range e.Body.Stmts {
+			stmt.Accept(v)
+		}
+	}
+}
 
 type CallExpr struct {
 	Callee       Expr
@@ -300,6 +357,14 @@ func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 func (e *CallExpr) Span() Span             { return e.span }
 func (e *CallExpr) InferredType() Type     { return e.inferredType }
 func (e *CallExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *CallExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Callee.Accept(v)
+		for _, arg := range e.Args {
+			arg.Accept(v)
+		}
+	}
+}
 
 type IndexExpr struct {
 	Object       Expr
@@ -315,6 +380,12 @@ func NewIndex(object, index Expr, optChain bool, span Span) *IndexExpr {
 func (e *IndexExpr) Span() Span             { return e.span }
 func (e *IndexExpr) InferredType() Type     { return e.inferredType }
 func (e *IndexExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *IndexExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Object.Accept(v)
+		e.Index.Accept(v)
+	}
+}
 
 type MemberExpr struct {
 	Object       Expr
@@ -330,6 +401,11 @@ func NewMember(object Expr, prop *Ident, optChain bool, span Span) *MemberExpr {
 func (e *MemberExpr) Span() Span             { return e.span }
 func (e *MemberExpr) InferredType() Type     { return e.inferredType }
 func (e *MemberExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *MemberExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Object.Accept(v)
+	}
+}
 
 type TupleExpr struct {
 	Elems        []Expr
@@ -343,6 +419,13 @@ func NewArray(elems []Expr, span Span) *TupleExpr {
 func (e *TupleExpr) Span() Span             { return e.span }
 func (e *TupleExpr) InferredType() Type     { return e.inferredType }
 func (e *TupleExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *TupleExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, elem := range e.Elems {
+			elem.Accept(v)
+		}
+	}
+}
 
 type ObjExprElem interface {
 	isObjExprElem()
@@ -392,6 +475,30 @@ func NewObject(elems []ObjExprElem, span Span) *ObjectExpr {
 func (e *ObjectExpr) Span() Span             { return e.span }
 func (e *ObjectExpr) InferredType() Type     { return e.inferredType }
 func (e *ObjectExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *ObjectExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, elem := range e.Elems {
+			switch elem := elem.(type) {
+			case *CallableExpr:
+				elem.Fn.Accept(v)
+			case *ConstructorExpr:
+				elem.Fn.Accept(v)
+			case *MethodExpr:
+				elem.Fn.Accept(v)
+			case *GetterExpr:
+				elem.Fn.Accept(v)
+			case *SetterExpr:
+				elem.Fn.Accept(v)
+			case *PropertyExpr:
+				elem.Value.IfSome(func(value Expr) {
+					value.Accept(v)
+				})
+			case *RestSpreadExpr:
+				elem.Value.Accept(v)
+			}
+		}
+	}
+}
 
 type IfElseExpr struct {
 	Cond         Expr
@@ -407,6 +514,24 @@ func NewIfElse(cond Expr, cons Block, alt optional.Option[BlockOrExpr], span Spa
 func (e *IfElseExpr) Span() Span             { return e.span }
 func (e *IfElseExpr) InferredType() Type     { return e.inferredType }
 func (e *IfElseExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *IfElseExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Cond.Accept(v)
+		for _, stmt := range e.Cons.Stmts {
+			stmt.Accept(v)
+		}
+		e.Alt.IfSome(func(alt BlockOrExpr) {
+			if alt.Block != nil {
+				for _, stmt := range alt.Block.Stmts {
+					stmt.Accept(v)
+				}
+			}
+			if alt.Expr != nil {
+				alt.Expr.Accept(v)
+			}
+		})
+	}
+}
 
 type IfLetExpr struct {
 	Pattern      Pat
@@ -423,6 +548,25 @@ func NewIfLet(pattern Pat, target Expr, cons Block, alt optional.Option[BlockOrE
 func (e *IfLetExpr) Span() Span             { return e.span }
 func (e *IfLetExpr) InferredType() Type     { return e.inferredType }
 func (e *IfLetExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *IfLetExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Pattern.Accept(v)
+		e.Target.Accept(v)
+		for _, stmt := range e.Cons.Stmts {
+			stmt.Accept(v)
+		}
+		e.Alt.IfSome(func(alt BlockOrExpr) {
+			if alt.Block != nil {
+				for _, stmt := range alt.Block.Stmts {
+					stmt.Accept(v)
+				}
+			}
+			if alt.Expr != nil {
+				alt.Expr.Accept(v)
+			}
+		})
+	}
+}
 
 type MatchCase struct {
 	Pattern Pat
@@ -446,6 +590,25 @@ func NewMatch(target Expr, cases []*MatchCase, span Span) *MatchExpr {
 func (e *MatchExpr) Span() Span             { return e.span }
 func (e *MatchExpr) InferredType() Type     { return e.inferredType }
 func (e *MatchExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *MatchExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Target.Accept(v)
+		for _, matchCase := range e.Cases {
+			matchCase.Pattern.Accept(v)
+			matchCase.Guard.IfSome(func(guard Expr) {
+				guard.Accept(v)
+			})
+			if matchCase.Body.Block != nil {
+				for _, stmt := range matchCase.Body.Block.Stmts {
+					stmt.Accept(v)
+				}
+			}
+			if matchCase.Body.Expr != nil {
+				matchCase.Body.Expr.Accept(v)
+			}
+		}
+	}
+}
 
 type AssignExpr struct {
 	Left         Expr
@@ -460,6 +623,12 @@ func NewAssign(left, right Expr, span Span) *AssignExpr {
 func (e *AssignExpr) Span() Span             { return e.span }
 func (e *AssignExpr) InferredType() Type     { return e.inferredType }
 func (e *AssignExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *AssignExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Left.Accept(v)
+		e.Right.Accept(v)
+	}
+}
 
 type TryCatchExpr struct {
 	Try          Block
@@ -475,6 +644,32 @@ func NewTryCatch(try Block, catch []*MatchCase, finally optional.Option[*Block],
 func (e *TryCatchExpr) Span() Span             { return e.span }
 func (e *TryCatchExpr) InferredType() Type     { return e.inferredType }
 func (e *TryCatchExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *TryCatchExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, stmt := range e.Try.Stmts {
+			stmt.Accept(v)
+		}
+		for _, matchCase := range e.Catch {
+			matchCase.Pattern.Accept(v)
+			matchCase.Guard.IfSome(func(guard Expr) {
+				guard.Accept(v)
+			})
+			if matchCase.Body.Block != nil {
+				for _, stmt := range matchCase.Body.Block.Stmts {
+					stmt.Accept(v)
+				}
+			}
+			if matchCase.Body.Expr != nil {
+				matchCase.Body.Expr.Accept(v)
+			}
+		}
+		e.Finally.IfSome(func(finally *Block) {
+			for _, stmt := range finally.Stmts {
+				stmt.Accept(v)
+			}
+		})
+	}
+}
 
 type ThrowExpr struct {
 	Arg          Expr
@@ -488,6 +683,11 @@ func NewThrow(arg Expr, span Span) *ThrowExpr {
 func (e *ThrowExpr) Span() Span             { return e.span }
 func (e *ThrowExpr) InferredType() Type     { return e.inferredType }
 func (e *ThrowExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *ThrowExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Arg.Accept(v)
+	}
+}
 
 type DoExpr struct {
 	Body         Block
@@ -501,6 +701,13 @@ func NewDo(body Block, span Span) *DoExpr {
 func (e *DoExpr) Span() Span             { return e.span }
 func (e *DoExpr) InferredType() Type     { return e.inferredType }
 func (e *DoExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *DoExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, stmt := range e.Body.Stmts {
+			stmt.Accept(v)
+		}
+	}
+}
 
 type AwaitExpr struct {
 	Arg          Expr
@@ -515,6 +722,11 @@ func NewAwait(arg Expr, span Span) *AwaitExpr {
 func (e *AwaitExpr) Span() Span             { return e.span }
 func (e *AwaitExpr) InferredType() Type     { return e.inferredType }
 func (e *AwaitExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *AwaitExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Arg.Accept(v)
+	}
+}
 
 type TemplateLitExpr struct {
 	Quasis       []*Quasi
@@ -529,6 +741,13 @@ func NewTemplateLit(quasis []*Quasi, exprs []Expr, span Span) *TemplateLitExpr {
 func (e *TemplateLitExpr) Span() Span             { return e.span }
 func (e *TemplateLitExpr) InferredType() Type     { return e.inferredType }
 func (e *TemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *TemplateLitExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		for _, expr := range e.Exprs {
+			expr.Accept(v)
+		}
+	}
+}
 
 type TaggedTemplateLitExpr struct {
 	Tag          Expr
@@ -544,6 +763,14 @@ func NewTaggedTemplateLit(tag Expr, quasis []*Quasi, exprs []Expr, span Span) *T
 func (e *TaggedTemplateLitExpr) Span() Span             { return e.span }
 func (e *TaggedTemplateLitExpr) InferredType() Type     { return e.inferredType }
 func (e *TaggedTemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
+	if v.VisitExpr(e) {
+		e.Tag.Accept(v)
+		for _, expr := range e.Exprs {
+			expr.Accept(v)
+		}
+	}
+}
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
@@ -561,6 +788,9 @@ func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], ch
 func (e *JSXElementExpr) Span() Span             { return e.span }
 func (e *JSXElementExpr) InferredType() Type     { return e.inferredType }
 func (e *JSXElementExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *JSXElementExpr) Accept(v Visitor) {
+	v.VisitExpr(e) // TODO: expand visitor to handle JSX
+}
 
 type JSXFragmentExpr struct {
 	Opening      *JSXOpening
@@ -576,6 +806,9 @@ func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChil
 func (e *JSXFragmentExpr) Span() Span             { return e.span }
 func (e *JSXFragmentExpr) InferredType() Type     { return e.inferredType }
 func (e *JSXFragmentExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *JSXFragmentExpr) Accept(v Visitor) {
+	v.VisitExpr(e) // TODO: expand visitor to handle JSX
+}
 
 type Block struct {
 	Stmts []Stmt

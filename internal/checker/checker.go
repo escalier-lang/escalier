@@ -30,7 +30,7 @@ type Context struct {
 	IsPatMatch bool
 }
 
-func (ctx *Context) WithScope(scope *Scope) Context {
+func (ctx *Context) WithParentScope() Context {
 	return Context{
 		Filename:   ctx.Filename,
 		Scope:      NewScope(optional.PtrFromNillable(ctx.Scope)),

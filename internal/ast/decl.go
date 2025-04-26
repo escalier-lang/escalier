@@ -37,9 +37,18 @@ func (*VarDecl) isDecl()         {}
 func (d *VarDecl) Export() bool  { return d.export }
 func (d *VarDecl) Declare() bool { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
+func (d *VarDecl) Accept(v Visitor) {
+	if v.VisitDecl(d) {
+		d.Pattern.Accept(v)
+		d.Init.IfSome(func(expr Expr) {
+			expr.Accept(v)
+		})
+	}
+}
 
 type Param struct {
-	Pattern Pat
+	Pattern  Pat
+	Optional bool
 	// TODO: include type annotation
 }
 
@@ -67,9 +76,10 @@ func NewFuncDecl(
 	return &FuncDecl{
 		Name: name,
 		FuncSig: FuncSig{
-			Params: params,
-			Return: nil, // TODO
-			Throws: nil, // TODO
+			TypeParams: []*TypeParam{}, // TODO
+			Params:     params,
+			Return:     nil, // TODO
+			Throws:     nil, // TODO
 		},
 		Body:    body,
 		export:  export,
@@ -81,3 +91,15 @@ func (*FuncDecl) isDecl()         {}
 func (d *FuncDecl) Export() bool  { return d.export }
 func (d *FuncDecl) Declare() bool { return d.declare }
 func (d *FuncDecl) Span() Span    { return d.span }
+func (d *FuncDecl) Accept(v Visitor) {
+	if v.VisitDecl(d) {
+		for _, param := range d.Params {
+			param.Pattern.Accept(v)
+		}
+		d.Body.IfSome(func(body Block) {
+			for _, stmt := range body.Stmts {
+				stmt.Accept(v)
+			}
+		})
+	}
+}
