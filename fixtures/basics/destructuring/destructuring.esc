@@ -1,2 +1,4 @@
+val obj = {a: true, b: false, c: 0, e: "foo", f: "bar", g: "baz"}
 val {a, b = 5, c: d, e: f = "hello", ...rest} = obj
+val array = [5, 10, "foo", "bar"]
 val [x, y = true, ...other] = array

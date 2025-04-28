@@ -24,7 +24,8 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, [
 			maps.Copy(bindings, newBindings)
 			errors = slices.Concat(errors, declErrors)
 		case *ast.ExprStmt:
-			panic("TODO: infer expression statement")
+			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
+			errors = slices.Concat(errors, exprErrors)
 		case *ast.ReturnStmt:
 			panic("TODO: infer return statement")
 		}
@@ -146,6 +147,37 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			}}
 		}
 	case *ast.MemberExpr:
+		objType, objErrors := c.inferExpr(ctx, expr.Object)
+
+		switch objType := objType.(type) {
+		case *ObjectType:
+			fmt.Printf("objType: %s\n", objType)
+			var propType Type = NewNeverType()
+			for _, elem := range objType.Elems {
+				switch elem := elem.(type) {
+				case *PropertyElemType:
+					if elem.Name == NewStrKey(expr.Prop.Name) {
+						propType = elem.Value
+					}
+				case *MethodElemType:
+					if elem.Name == NewStrKey(expr.Prop.Name) {
+						propType = elem.Fn
+					}
+				case *GetterElemType:
+					if elem.Name == NewStrKey(expr.Prop.Name) {
+						propType = elem.Fn.Return
+					}
+				case *SetterElemType:
+					if elem.Name == NewStrKey(expr.Prop.Name) {
+						propType = elem.Fn.Params[0].Type
+					}
+				default:
+					panic(fmt.Sprintf("Unknown object type element: %#v", elem))
+				}
+			}
+			return propType, objErrors
+		}
+
 		panic("member expression not implemented")
 	case *ast.IdentExpr:
 		// TODO: look up the identifier in the context's scope
@@ -180,16 +212,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	case *ast.ObjectExpr:
 		elems := make([]ObjTypeElem, len(expr.Elems))
 		errors := []*Error{}
-		for _, elem := range expr.Elems {
+		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
 				elem.Value.IfSome(func(value ast.Expr) {
 					t, elemErrors := c.inferExpr(ctx, value)
 					errors = slices.Concat(errors, elemErrors)
-					elems = append(
-						elems,
-						NewPropertyElemType(astKeyToTypeKey(elem.Name), t),
-					)
+					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 				})
 			default:
 				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
@@ -314,9 +343,9 @@ func (c *Checker) inferFuncSig(
 	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
 	errors := []*Error{}
 	bindings := map[string]Binding{}
-	params := []*FuncParam{}
+	params := make([]*FuncParam, len(sig.Params))
 
-	for _, param := range sig.Params {
+	for i, param := range sig.Params {
 		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
 
 		errors = slices.Concat(errors, patErrors)
@@ -326,11 +355,11 @@ func (c *Checker) inferFuncSig(
 
 		maps.Copy(bindings, patBindings)
 
-		params = append(params, &FuncParam{
+		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
 			Type:     patType,
 			Optional: false, // TODO
-		})
+		}
 	}
 
 	t := &FuncType{
@@ -369,6 +398,11 @@ func (v *ReturnVisitor) VisitDecl(decl ast.Decl) bool {
 	if _, ok := decl.(*ast.FuncDecl); ok {
 		return false
 	}
+	return true
+}
+func (v *ReturnVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool {
+	// An expression like if/else could have a return statement inside one of
+	// its branches.
 	return true
 }
 func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
@@ -585,7 +619,7 @@ func (c *Checker) inferPattern(
 			}
 			t = NewTupleType(elems...)
 		case *ast.ObjectPat:
-			elems := make([]ObjTypeElem, len(p.Elems))
+			elems := []ObjTypeElem{}
 			for _, elem := range p.Elems {
 				switch elem := elem.(type) {
 				case *ast.ObjKeyValuePat:
@@ -606,7 +640,9 @@ func (c *Checker) inferPattern(
 					}
 					elems = append(elems, NewPropertyElemType(name, t))
 				case *ast.ObjRestPat:
-					panic("object pattern not implemented")
+					t, restErrors := inferPatRec(elem.Pattern)
+					errors = slices.Concat(errors, restErrors)
+					elems = append(elems, NewRestSpreadElemType(t))
 				}
 			}
 			t = NewObjectType(elems)

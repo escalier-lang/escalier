@@ -256,7 +256,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	}
 
 	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, t2))
+	panic(fmt.Sprintf("TODO: unify types %s and %s", t1, t2))
 }
 
 func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
@@ -291,7 +291,7 @@ func (v *OccursInVisitor) VisitType(t Type) {
 }
 
 func occursInType(t1, t2 Type) bool {
-	visitor := &OccursInVisitor{result: false}
+	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
 	return visitor.result
 }

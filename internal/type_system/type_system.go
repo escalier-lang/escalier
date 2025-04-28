@@ -469,6 +469,12 @@ type IndexParamType struct {
 }
 type RestSpreadElemType struct{ Value Type }
 
+func NewRestSpreadElemType(value Type) *RestSpreadElemType {
+	return &RestSpreadElemType{
+		Value: value,
+	}
+}
+
 func (*CallableElemType) isObjTypeElem()    {}
 func (*ConstructorElemType) isObjTypeElem() {}
 func (*MethodElemType) isObjTypeElem()      {}
@@ -583,7 +589,7 @@ func (t *ObjectType) String() string {
 			case *RestSpreadElemType:
 				result += "..." + elem.Value.String()
 			default:
-				panic("unknown object type element")
+				panic(fmt.Sprintf("unknown object type element: %#v\n", elem))
 			}
 		}
 	}

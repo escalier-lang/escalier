@@ -18,12 +18,15 @@ func (b *Builder) NewTempId() string {
 	return "temp" + strconv.Itoa(b.tempId)
 }
 
-func (b *Builder) buildExprs(exprs []ast.Expr) []Expr {
-	var res []Expr
-	for _, e := range exprs {
-		res = append(res, b.buildExpr(e))
+func (b *Builder) buildExprs(exprs []ast.Expr) ([]Expr, []Stmt) {
+	outStmts := []Stmt{}
+	outExprs := make([]Expr, len(exprs))
+	for i, e := range exprs {
+		expr, stmts := b.buildExpr(e)
+		outExprs[i] = expr
+		outStmts = slices.Concat(outStmts, stmts)
 	}
-	return res
+	return outExprs, outStmts
 }
 
 func buildIdent(ident *ast.Ident) *Identifier {
@@ -65,7 +68,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 		switch p := p.(type) {
 		case *ast.IdentPat:
 			_default := optional.Map(p.Default, func(e ast.Expr) Expr {
-				return b.buildExpr(e)
+				defExpr, defStmts := b.buildExpr(e)
+				stmts = slices.Concat(stmts, defStmts)
+				return defExpr
 			})
 			return &IdentPat{
 				Name:    p.Name,
@@ -101,7 +106,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 						e.Key.Name,
 						buildPatternRec(e.Value, newTarget),
 						optional.Map(e.Default, func(e ast.Expr) Expr {
-							return b.buildExpr(e)
+							defExpr, defStmts := b.buildExpr(e)
+							stmts = slices.Concat(stmts, defStmts)
+							return defExpr
 						}),
 						e,
 					))
@@ -109,7 +116,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					elems = append(elems, NewObjShorthandPat(
 						e.Key.Name,
 						optional.Map(e.Default, func(e ast.Expr) Expr {
-							return b.buildExpr(e)
+							defExpr, defStmts := b.buildExpr(e)
+							stmts = slices.Concat(stmts, defStmts)
+							return defExpr
 						}),
 						e,
 					))
@@ -157,7 +166,9 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
 					init = optional.Map(arg.Default, func(e ast.Expr) Expr {
-						return b.buildExpr(e)
+						defExpr, defStmts := b.buildExpr(e)
+						stmts = slices.Concat(stmts, defStmts)
+						return defExpr
 					})
 				}
 				tempVarPat := NewIdentPat(tempId, init, p)
@@ -250,25 +261,29 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			// Ignore empty expressions.
 			return []Stmt{}
 		default:
+			expr, exprStmts := b.buildExpr(s.Expr)
 			stmt := &ExprStmt{
-				Expr:   b.buildExpr(s.Expr),
+				Expr:   expr,
 				span:   nil,
 				source: stmt,
 			}
-			return []Stmt{stmt}
+			return append(exprStmts, stmt)
 		}
 	case *ast.DeclStmt:
 		return b.buildDecl(s.Decl)
 	case *ast.ReturnStmt:
+		stmts := []Stmt{}
 		expr := optional.Map(s.Expr, func(e ast.Expr) Expr {
-			return b.buildExpr(e)
+			expr, exprStmts := b.buildExpr(e)
+			stmts = slices.Concat(stmts, exprStmts)
+			return expr
 		})
 		stmt := &ReturnStmt{
 			Expr:   expr,
 			span:   nil,
 			source: stmt,
 		}
-		return []Stmt{stmt}
+		return append(stmts, stmt)
 	default:
 		panic("TransformStmt - default case should never happen")
 	}
@@ -295,9 +310,10 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		init := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None
-		_, stmts := b.buildPattern(d.Pattern, init)
-		return stmts
+		initExpr, initStmts := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None
+		// Ignore checks returned by buildPattern
+		_, patStmts := b.buildPattern(d.Pattern, initExpr)
+		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body.IsNone() {
@@ -324,83 +340,151 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 	}
 }
 
-func (b *Builder) buildExpr(expr ast.Expr) Expr {
+func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 	if expr == nil {
-		return nil
+		return nil, []Stmt{}
 	}
 
-	switch e := expr.(type) {
+	switch expr := expr.(type) {
 	case *ast.LiteralExpr:
-		switch lit := e.Lit.(type) {
+		switch lit := expr.Lit.(type) {
 		case *ast.BoolLit:
-			return NewBoolExpr(lit.Value, expr)
+			return NewBoolExpr(lit.Value, expr), []Stmt{}
 		case *ast.NumLit:
-			return NewNumExpr(lit.Value, expr)
+			return NewNumExpr(lit.Value, expr), []Stmt{}
 		case *ast.StrLit:
-			return NewStrExpr(lit.Value, expr)
+			return NewStrExpr(lit.Value, expr), []Stmt{}
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:
-			return NewNullExpr(expr)
+			return NewNullExpr(expr), []Stmt{}
 		case *ast.UndefinedLit:
-			return NewIdentExpr("undefined", expr)
+			return NewIdentExpr("undefined", expr), []Stmt{}
 		default:
 			panic("TODO: literal type")
 		}
 	case *ast.BinaryExpr:
-		return NewBinaryExpr(
-			b.buildExpr(e.Left),
-			BinaryOp(e.Op),
-			b.buildExpr(e.Right),
-			expr,
-		)
+		leftExpr, leftStmts := b.buildExpr(expr.Left)
+		rightExpr, rightStmts := b.buildExpr(expr.Right)
+		stmts := slices.Concat(leftStmts, rightStmts)
+		return NewBinaryExpr(leftExpr, BinaryOp(expr.Op), rightExpr, expr), stmts
 	case *ast.UnaryExpr:
-		return NewUnaryExpr(
-			UnaryOp(e.Op),
-			b.buildExpr(e.Arg),
-			expr,
-		)
+		argExpr, argStmts := b.buildExpr(expr.Arg)
+		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
-		return NewIdentExpr(e.Name, expr)
+		return NewIdentExpr(expr.Name, expr), []Stmt{}
 	case *ast.CallExpr:
+		calleeExpr, calleeStmts := b.buildExpr(expr.Callee)
+		argsExprs, argsStmts := b.buildExprs(expr.Args)
+		stmts := slices.Concat(calleeStmts, argsStmts)
 		return NewCallExpr(
-			b.buildExpr(e.Callee),
-			b.buildExprs(e.Args),
-			e.OptChain,
+			calleeExpr,
+			argsExprs,
+			expr.OptChain,
 			expr,
-		)
+		), stmts
 	case *ast.IndexExpr:
-		return NewIndexExpr(
-			b.buildExpr(e.Object),
-			b.buildExpr(e.Index),
-			e.OptChain,
-			expr,
-		)
+		objExpr, objStmts := b.buildExpr(expr.Object)
+		indexExpr, indexStmts := b.buildExpr(expr.Index)
+		stmts := slices.Concat(objStmts, indexStmts)
+		return NewIndexExpr(objExpr, indexExpr, expr.OptChain, expr), stmts
 	case *ast.MemberExpr:
-		return NewMemberExpr(
-			b.buildExpr(e.Object),
-			buildIdent(e.Prop),
-			e.OptChain,
-			expr,
-		)
+		objExpr, objStmts := b.buildExpr(expr.Object)
+		propExpr := buildIdent(expr.Prop)
+		return NewMemberExpr(objExpr, propExpr, expr.OptChain, expr), objStmts
 	case *ast.TupleExpr:
-		return NewArrayExpr(
-			b.buildExprs(e.Elems),
+		elemsExprs, elemsStmts := b.buildExprs(expr.Elems)
+		return NewArrayExpr(elemsExprs, expr), elemsStmts
+	case *ast.ObjectExpr:
+		stmts := []Stmt{}
+		elems := make([]ObjExprElem, len(expr.Elems))
+		for i, elem := range expr.Elems {
+			switch elem := elem.(type) {
+			case *ast.MethodExpr:
+				key, keyStmts := b.buildObjKey(elem.Name)
+				stmts = slices.Concat(stmts, keyStmts)
+				params, allParamStmts := b.buildParams(elem.Fn.Params)
+				stmts = slices.Concat(stmts, allParamStmts)
+
+				elems[i] = NewMethodExpr(
+					key,
+					params,
+					b.buildStmts(elem.Fn.Body.Stmts),
+					elem,
+				)
+			case *ast.GetterExpr:
+				key, keyStmts := b.buildObjKey(elem.Name)
+				stmts = slices.Concat(stmts, keyStmts)
+
+				elems[i] = NewGetterExpr(
+					key,
+					b.buildStmts(elem.Fn.Body.Stmts),
+					elem,
+				)
+			case *ast.SetterExpr:
+				key, keyStmts := b.buildObjKey(elem.Name)
+				stmts = slices.Concat(stmts, keyStmts)
+				params, allParamStmts := b.buildParams(elem.Fn.Params)
+				stmts = slices.Concat(stmts, allParamStmts)
+				elems[i] = NewSetterExpr(
+					key,
+					params,
+					b.buildStmts(elem.Fn.Body.Stmts),
+					elem,
+				)
+			case *ast.PropertyExpr:
+				key, keyStmts := b.buildObjKey(elem.Name)
+				stmts = slices.Concat(stmts, keyStmts)
+				valueExpr := optional.Map(elem.Value, func(value ast.Expr) Expr {
+					valueExpr, valueStmts := b.buildExpr(value)
+					stmts = slices.Concat(stmts, valueStmts)
+					return valueExpr
+				}).TakeOrElse(func() Expr {
+					panic("TODO: handle object property shorthand")
+				})
+				elems[i] = NewPropertyExpr(
+					key,
+					valueExpr,
+					elem,
+				)
+			default:
+				panic(fmt.Sprintf("TODO - buildExpr - ObjectExpr - default case: %#v", elem))
+			}
+		}
+
+		return NewObjectExpr(
+			elems,
 			expr,
-		)
+		), stmts
 	case *ast.FuncExpr:
-		params, allParamStmts := b.buildParams(e.Params)
+		params, allParamStmts := b.buildParams(expr.Params)
 		return NewFuncExpr(
 			params,
-			slices.Concat(allParamStmts, b.buildStmts(e.Body.Stmts)),
+			slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts)),
 			expr,
-		)
+		), []Stmt{}
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:
 		panic("TODO - buildExpr - EmptyExpr")
 	default:
-		panic(fmt.Sprintf("TODO - buildExpr - default case: %#v", e))
+		panic(fmt.Sprintf("TODO - buildExpr - default case: %#v", expr))
+	}
+}
+
+func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
+	switch k := key.(type) {
+	case *ast.IdentExpr:
+		return NewIdentExpr(k.Name, key), []Stmt{}
+	case *ast.StrLit:
+		return NewStrExpr(k.Value, key), []Stmt{}
+	case *ast.NumLit:
+		return NewNumExpr(k.Value, key), []Stmt{}
+	case *ast.ComputedKey:
+		expr, stmts := b.buildExpr(k.Expr)
+		return NewComputedKey(expr, key), stmts
+	default:
+		panic(fmt.Sprintf("TODO - buildObjKey - default case: %#v", k))
 	}
 }
 

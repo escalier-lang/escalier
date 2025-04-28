@@ -429,6 +429,7 @@ func (e *TupleExpr) Accept(v Visitor) {
 
 type ObjExprElem interface {
 	isObjExprElem()
+	Node
 }
 
 func (*CallableExpr) isObjExprElem()    {}
@@ -439,29 +440,97 @@ func (*SetterExpr) isObjExprElem()      {}
 func (*PropertyExpr) isObjExprElem()    {}
 func (*RestSpreadExpr) isObjExprElem()  {}
 
-type CallableExpr struct{ Fn FuncExpr }
-type ConstructorExpr struct{ Fn FuncExpr }
+type CallableExpr struct {
+	Fn   FuncExpr
+	span Span
+}
+
+func (e *CallableExpr) Span() Span { return e.span }
+func (e *CallableExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Fn.Accept(v)
+	}
+}
+
+type ConstructorExpr struct {
+	Fn   FuncExpr
+	span Span
+}
+
+func (e *ConstructorExpr) Span() Span { return e.span }
+func (e *ConstructorExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Fn.Accept(v)
+	}
+}
+
 type MethodExpr struct {
 	Name ObjKey
 	Fn   *FuncExpr
+	span Span
 }
+
+func (e *MethodExpr) Span() Span { return e.span }
+func (e *MethodExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Fn.Accept(v)
+	}
+}
+
 type GetterExpr struct {
 	Name ObjKey
 	Fn   *FuncExpr
+	span Span
 }
+
+func (e *GetterExpr) Span() Span { return e.span }
+func (e *GetterExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Fn.Accept(v)
+	}
+}
+
 type SetterExpr struct {
 	Name ObjKey
 	Fn   *FuncExpr
+	span Span
 }
 
-// TODO: include span
+func (e *SetterExpr) Span() Span { return e.span }
+func (e *SetterExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Fn.Accept(v)
+	}
+}
+
 type PropertyExpr struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
 	Value    optional.Option[Expr]
+	span     Span
 }
-type RestSpreadExpr struct{ Value Expr }
+
+func (e *PropertyExpr) Span() Span { return e.span }
+func (e *PropertyExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Value.IfSome(func(value Expr) {
+			value.Accept(v)
+		})
+	}
+}
+
+type RestSpreadExpr struct {
+	Value Expr
+	span  Span
+}
+
+func (e *RestSpreadExpr) Span() Span { return e.span }
+func (e *RestSpreadExpr) Accept(v Visitor) {
+	if v.VisitObjExprElem(e) {
+		e.Value.Accept(v)
+	}
+}
 
 type ObjectExpr struct {
 	Elems        []ObjExprElem
@@ -478,24 +547,7 @@ func (e *ObjectExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *ObjectExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, elem := range e.Elems {
-			switch elem := elem.(type) {
-			case *CallableExpr:
-				elem.Fn.Accept(v)
-			case *ConstructorExpr:
-				elem.Fn.Accept(v)
-			case *MethodExpr:
-				elem.Fn.Accept(v)
-			case *GetterExpr:
-				elem.Fn.Accept(v)
-			case *SetterExpr:
-				elem.Fn.Accept(v)
-			case *PropertyExpr:
-				elem.Value.IfSome(func(value Expr) {
-					value.Accept(v)
-				})
-			case *RestSpreadExpr:
-				elem.Value.Accept(v)
-			}
+			elem.Accept(v)
 		}
 	}
 }

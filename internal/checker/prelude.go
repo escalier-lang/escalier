@@ -97,6 +97,24 @@ func Prelude() *Scope {
 
 	scope.Values["!"] = unaryLogicBinding
 
+	var objElems []ObjTypeElem
+
+	objElems = append(objElems, &MethodElemType{
+		Name: NewStrKey("log"),
+		Fn: &FuncType{
+			Params: []*FuncParam{
+				NewFuncParam(NewIdentPat("msg"), NewStrType()),
+			},
+			Return: NewLitType(&UndefinedLit{}),
+		},
+	})
+
+	scope.Values["console"] = Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    NewObjectType(objElems),
+		Mutable: false,
+	}
+
 	// TODO: ++: fn (a: string, b: string) -> string
 
 	return scope

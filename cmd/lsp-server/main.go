@@ -264,8 +264,8 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 
 	output := compiler.Compile(source)
 
-	if len(output.Errors) > 0 {
-		errorsJSON, err := json.Marshal(output.Errors)
+	if len(output.ParseErrors) > 0 {
+		errorsJSON, err := json.Marshal(output.ParseErrors)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal compilation errors: %v", err)
 		}
