@@ -64,20 +64,25 @@ func (p *Printer) PrintExpr(expr Expr) {
 		p.PrintExpr(e.Left)
 		p.print(" " + binaryOpMap[e.Op] + " ")
 		p.PrintExpr(e.Right)
-	case *NumExpr:
-		value := strconv.FormatFloat(e.Value, 'f', -1, 32)
-		p.print(value)
-	case *StrExpr:
-		value := fmt.Sprintf("%q", e.Value)
-		p.print(value)
-	case *BoolExpr:
-		if e.Value {
-			p.print("true")
-		} else {
-			p.print("false")
+	case *LitExpr:
+		switch l := e.Lit.(type) {
+		case *StrLit:
+			p.print(fmt.Sprintf("%q", l.Value))
+		case *NumLit:
+			p.print(strconv.FormatFloat(l.Value, 'f', -1, 32))
+		case *BoolLit:
+			if l.Value {
+				p.print("true")
+			} else {
+				p.print("false")
+			}
+		case *NullLit:
+			p.print("null")
+		// case *BigIntLit:
+		// 	p.print(l.Value.String())
+		default:
+			panic(fmt.Sprintf("PrintExpr: unknown literal type: %T", l))
 		}
-	case *NullExpr:
-		p.print("null")
 	case *IdentExpr:
 		p.print(e.Name)
 	case *UnaryExpr:
@@ -177,9 +182,9 @@ func (p *Printer) printObjKey(key ObjKey) {
 	switch key := key.(type) {
 	case *IdentExpr:
 		p.print(key.Name)
-	case *StrExpr:
+	case *StrLit:
 		p.print(fmt.Sprintf("%q", key.Value))
-	case *NumExpr:
+	case *NumLit:
 		p.print(strconv.FormatFloat(key.Value, 'f', -1, 32))
 	case *ComputedKey:
 		p.print("[")

@@ -11,17 +11,9 @@ import (
 
 func TestPrintExpr(t *testing.T) {
 	sum := &BinaryExpr{
-		Left: &NumExpr{
-			Value:  0.1,
-			span:   nil,
-			source: nil,
-		},
-		Op: Plus,
-		Right: &NumExpr{
-			Value:  0.2,
-			span:   nil,
-			source: nil,
-		},
+		Left:   NewLitExpr(NewNumLit(0.1, nil), nil),
+		Op:     Plus,
+		Right:  NewLitExpr(NewNumLit(0.2, nil), nil),
 		span:   nil,
 		source: nil,
 	}

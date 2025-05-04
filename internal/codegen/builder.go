@@ -85,7 +85,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 					NewBinaryExpr(
 						NewUnaryExpr(TypeOf, target, nil),
 						EqualEqual,
-						NewStrExpr("object", nil),
+						NewLitExpr(NewStrLit("object", nil), nil),
 						nil,
 					),
 				)
@@ -139,7 +139,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				NewBinaryExpr(
 					NewMemberExpr(target, length, false, nil),
 					EqualEqual,
-					NewNumExpr(float64(len(p.Elems)), nil),
+					NewLitExpr(NewNumLit(float64(len(p.Elems)), nil), nil),
 					nil,
 				),
 			)
@@ -148,7 +148,12 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			for i, elem := range p.Elems {
 				var newTarget Expr
 				if target != nil {
-					newTarget = NewIndexExpr(target, NewNumExpr(float64(i), nil), false, nil)
+					newTarget = NewIndexExpr(
+						target,
+						NewLitExpr(NewNumLit(float64(i), nil), nil),
+						false,
+						nil,
+					)
 				}
 				elems = append(elems, buildPatternRec(elem, newTarget))
 			}
@@ -351,15 +356,15 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 	case *ast.LiteralExpr:
 		switch lit := expr.Lit.(type) {
 		case *ast.BoolLit:
-			return NewBoolExpr(lit.Value, expr), []Stmt{}
+			return NewLitExpr(NewBoolLit(lit.Value, lit), expr), []Stmt{}
 		case *ast.NumLit:
-			return NewNumExpr(lit.Value, expr), []Stmt{}
+			return NewLitExpr(NewNumLit(lit.Value, lit), expr), []Stmt{}
 		case *ast.StrLit:
-			return NewStrExpr(lit.Value, expr), []Stmt{}
+			return NewLitExpr(NewStrLit(lit.Value, lit), expr), []Stmt{}
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:
-			return NewNullExpr(expr), []Stmt{}
+			return NewLitExpr(NewNullLit(lit), expr), []Stmt{}
 		case *ast.UndefinedLit:
 			return NewIdentExpr("undefined", expr), []Stmt{}
 		default:
@@ -479,9 +484,9 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	case *ast.IdentExpr:
 		return NewIdentExpr(k.Name, key), []Stmt{}
 	case *ast.StrLit:
-		return NewStrExpr(k.Value, key), []Stmt{}
+		return NewStrLit(k.Value, key), []Stmt{}
 	case *ast.NumLit:
-		return NewNumExpr(k.Value, key), []Stmt{}
+		return NewNumLit(k.Value, key), []Stmt{}
 	case *ast.ComputedKey:
 		expr, stmts := b.buildExpr(k.Expr)
 		return NewComputedKey(expr, key), stmts
