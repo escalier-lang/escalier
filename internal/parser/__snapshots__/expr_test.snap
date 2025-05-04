@@ -453,6 +453,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -465,6 +466,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
             },
             Return: nil,
@@ -680,6 +682,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -692,6 +695,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
             },
             Return: nil,
@@ -896,6 +900,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     inferredType: nil,
                                 },
                                 Optional: false,
+                                TypeAnn:  nil,
                             },
                         },
                         Return: nil,
@@ -937,6 +942,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                     inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:7},
+                },
             },
             &ast.GetterExpr{
                 Name: &ast.IdentExpr{
@@ -963,6 +972,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     inferredType: nil,
                                 },
                                 Optional: false,
+                                TypeAnn:  nil,
                             },
                         },
                         Return: nil,
@@ -1013,6 +1023,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                     },
                     inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:31},
+                    End:   ast.Location{Line:1, Column:35},
+                },
             },
             &ast.SetterExpr{
                 Name: &ast.IdentExpr{
@@ -1039,6 +1053,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                                     inferredType: nil,
                                 },
                                 Optional: false,
+                                TypeAnn:  nil,
                             },
                         },
                         Return: nil,
@@ -1102,6 +1117,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         End:   ast.Location{Line:1, Column:85},
                     },
                     inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:64},
+                    End:   ast.Location{Line:1, Column:68},
                 },
             },
         },
@@ -2441,6 +2460,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -2453,6 +2473,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
             },
             Return: nil,
@@ -2535,6 +2556,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:12},
+                },
             },
             &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
@@ -2563,6 +2588,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:14},
+                    End:   ast.Location{Line:1, Column:20},
+                },
             },
             &ast.PropertyExpr{
                 Name: &ast.StrLit{
@@ -2572,8 +2601,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         End:   ast.Location{Line:1, Column:26},
                     },
                 },
-                Optional: false,
-                Readonly: true,
+                Optional: true,
+                Readonly: false,
                 Value:    {
                     &ast.LiteralExpr{
                         Lit: &ast.BoolLit{
@@ -2590,6 +2619,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:22},
+                    End:   ast.Location{Line:1, Column:33},
+                },
             },
             &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
@@ -2603,6 +2636,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 Optional: false,
                 Readonly: false,
                 Value:    nil,
+                span:     ast.Span{
+                    Start: ast.Location{Line:1, Column:35},
+                    End:   ast.Location{Line:1, Column:38},
+                },
             },
             &ast.PropertyExpr{
                 Name: &ast.ComputedKey{
@@ -2632,6 +2669,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:41},
+                    End:   ast.Location{Line:1, Column:52},
                 },
             },
         },
@@ -2674,6 +2715,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
         },
@@ -2729,6 +2774,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         inferredType: nil,
                     },
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:3},
+                    End:   ast.Location{Line:1, Column:6},
+                },
             },
             &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
@@ -2756,6 +2805,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         },
                         inferredType: nil,
                     },
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:10},
+                    End:   ast.Location{Line:1, Column:17},
                 },
             },
         },
@@ -2993,6 +3046,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                 Optional: false,
                 Readonly: false,
                 Value:    nil,
+                span:     ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
             },
             &ast.RestSpreadExpr{
                 Value: &ast.IdentExpr{
@@ -3002,6 +3059,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         End:   ast.Location{Line:1, Column:9},
                     },
                     inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:5},
+                    End:   ast.Location{Line:1, Column:9},
                 },
             },
             &ast.RestSpreadExpr{
@@ -3019,6 +3080,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             Optional: false,
                             Readonly: false,
                             Value:    nil,
+                            span:     ast.Span{
+                                Start: ast.Location{Line:1, Column:15},
+                                End:   ast.Location{Line:1, Column:16},
+                            },
                         },
                         &ast.PropertyExpr{
                             Name: &ast.IdentExpr{
@@ -3032,6 +3097,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                             Optional: false,
                             Readonly: false,
                             Value:    nil,
+                            span:     ast.Span{
+                                Start: ast.Location{Line:1, Column:18},
+                                End:   ast.Location{Line:1, Column:19},
+                            },
                         },
                     },
                     span: ast.Span{
@@ -3039,6 +3108,10 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Expr]{
                         End:   ast.Location{Line:1, Column:20},
                     },
                     inferredType: nil,
+                },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:11},
+                    End:   ast.Location{Line:1, Column:20},
                 },
             },
         },

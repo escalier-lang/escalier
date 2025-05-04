@@ -283,12 +283,12 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
 		return optional.Some[ast.ObjKey](
 			ast.NewIdent(token.Value, token.Span),
 		), []*Error{}
-	case String:
+	case StrLit:
 		p.lexer.consume()
 		return optional.Some[ast.ObjKey](
 			ast.NewString(token.Value, token.Span),
 		), []*Error{}
-	case Number:
+	case NumLit:
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
@@ -325,7 +325,7 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
-		case Number:
+		case NumLit:
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
@@ -333,7 +333,7 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 				return optional.None[ast.Expr](), errors
 			}
 			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
-		case String:
+		case StrLit:
 			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewString(token.Value, token.Span))
 		case True:
@@ -486,7 +486,7 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		})
 		if arg.IsSome() {
 			arg := optional.Map(arg, func(arg ast.Expr) ast.ObjExprElem {
-				return &ast.RestSpreadExpr{Value: arg}
+				return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 			})
 			return arg, errors
 		}
@@ -519,12 +519,13 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-			property := &ast.PropertyExpr{
-				Name:     objKey,
-				Value:    optional.Some(value),
-				Readonly: false, // TODO
-				Optional: false,
-			}
+			property := ast.NewProperty(
+				objKey,
+				false,
+				false, // TODO: handle readonly
+				optional.Some(value),
+				ast.MergeSpans(objKey.Span(), value.Span()),
+			)
 			return property
 		}), errors
 	case Question:
@@ -534,12 +535,13 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
 		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-			property := &ast.PropertyExpr{
-				Name:     objKey,
-				Value:    optional.Some(value),
-				Readonly: true,
-				Optional: false,
-			}
+			property := ast.NewProperty(
+				objKey,
+				true,
+				false, // TODO: handle readonly
+				optional.Some(value),
+				ast.MergeSpans(objKey.Span(), value.Span()),
+			)
 			return property
 		}), errors
 	case OpenParen:
@@ -553,6 +555,8 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		errors = append(errors, bodyErrors...)
 		end := body.Span.End
 
+		span := ast.Span{Start: objKey.Span().Start, End: end}
+
 		// TODO: parse return and throws types
 		fn := ast.NewFuncExpr(
 			[]*ast.TypeParam{}, // TODO
@@ -560,36 +564,40 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 			optional.None[ast.TypeAnn](),
 			optional.None[ast.TypeAnn](),
 			body,
-			ast.Span{Start: objKey.Span().Start, End: end},
+			span,
 		)
 
 		if mod == "get" {
-			return optional.Some[ast.ObjExprElem](&ast.GetterExpr{
-				Name: objKey,
-				Fn:   fn,
-			}), errors
+			return optional.Some[ast.ObjExprElem](ast.NewGetter(
+				objKey,
+				fn,
+				ast.MergeSpans(token.Span, span),
+			)), errors
 		} else if mod == "set" {
-			return optional.Some[ast.ObjExprElem](&ast.SetterExpr{
-				Name: objKey,
-				Fn:   fn,
-			}), errors
+			return optional.Some[ast.ObjExprElem](ast.NewSetter(
+				objKey,
+				fn,
+				ast.MergeSpans(token.Span, span),
+			)), errors
 		} else {
-			return optional.Some[ast.ObjExprElem](&ast.MethodExpr{
-				Name: objKey,
-				Fn:   fn,
-			}), errors
+			return optional.Some[ast.ObjExprElem](ast.NewMethod(
+				objKey,
+				fn,
+				ast.MergeSpans(token.Span, span),
+			)), errors
 		}
 	default:
 		switch objKey.(type) {
 		case *ast.IdentExpr:
 			switch token.Type {
 			case Comma, CloseBrace:
-				property := &ast.PropertyExpr{
-					Name:     objKey,
-					Value:    optional.None[ast.Expr](), // shorthand property
-					Readonly: false,
-					Optional: false,
-				}
+				property := ast.NewProperty(
+					objKey,
+					false,
+					false,
+					optional.None[ast.Expr](), // shorthand property
+					objKey.Span(),
+				)
 				return optional.Some[ast.ObjExprElem](property), errors
 			default:
 				value, valueErrors := p.expr()
@@ -601,12 +609,13 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 					errors = append(errors, NewError(token.Span, "Expected a comma or closing brace"))
 				}
 				return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
-					property := &ast.PropertyExpr{
-						Name:     objKey,
-						Value:    optional.Some(value),
-						Readonly: false,
-						Optional: false,
-					}
+					property := ast.NewProperty(
+						objKey,
+						false,
+						false,
+						optional.Some(value),
+						objKey.Span(),
+					)
 					return property
 				}), errors
 			}
@@ -617,12 +626,38 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 	return optional.None[ast.ObjExprElem](), errors
 }
 
-// param = pattern
+// <pattern>: <type annotation>
+// <pattern>?: <type annotation>
+// <pattern>?
+// <pattern>
 func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
-	pat, patErrors := p.pattern(true)
+	pat, errors := p.pattern(true)
 	return optional.Map(pat, func(pat ast.Pat) *ast.Param {
-		return &ast.Param{Pattern: pat}
-	}), patErrors
+		token := p.lexer.peek()
+
+		opt := false
+		if token.Type == Question {
+			p.lexer.consume() // consume '?'
+			opt = true
+		}
+
+		if token.Type == Colon {
+			p.lexer.consume() // consume ':'
+			typeAnn, typeAnnErrors := p.typeAnn()
+			errors = append(errors, typeAnnErrors...)
+			return &ast.Param{
+				Pattern:  pat,
+				TypeAnn:  typeAnn,
+				Optional: opt,
+			}
+		}
+
+		return &ast.Param{
+			Pattern:  pat,
+			TypeAnn:  optional.None[ast.TypeAnn](),
+			Optional: opt,
+		}
+	}), errors
 }
 
 func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (ast.Expr, []*Error) {

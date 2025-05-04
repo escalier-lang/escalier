@@ -12,6 +12,11 @@ type TypeAnn interface {
 }
 
 func (*LitTypeAnn) isTypeAnn()          {}
+func (*NumberTypeAnn) isTypeAnn()       {}
+func (*StringTypeAnn) isTypeAnn()       {}
+func (*BooleanTypeAnn) isTypeAnn()      {}
+func (*NullTypeAnn) isTypeAnn()         {}
+func (*UndefinedTypeAnn) isTypeAnn()    {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
@@ -46,6 +51,81 @@ func (t *LitTypeAnn) Accept(v Visitor) {
 	if v.VisitTypeAnn(t) {
 		t.Lit.Accept(v)
 	}
+}
+
+type NumberTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewNumberTypeAnn(span Span) *NumberTypeAnn {
+	return &NumberTypeAnn{span: span, inferredType: nil}
+}
+func (t *NumberTypeAnn) Span() Span               { return t.span }
+func (t *NumberTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *NumberTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *NumberTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
+}
+
+type StringTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewStringTypeAnn(span Span) *StringTypeAnn {
+	return &StringTypeAnn{span: span, inferredType: nil}
+}
+func (t *StringTypeAnn) Span() Span               { return t.span }
+func (t *StringTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *StringTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *StringTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
+}
+
+type BooleanTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewBooleanTypeAnn(span Span) *BooleanTypeAnn {
+	return &BooleanTypeAnn{span: span, inferredType: nil}
+}
+func (t *BooleanTypeAnn) Span() Span               { return t.span }
+func (t *BooleanTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *BooleanTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *BooleanTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
+}
+
+type NullTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewNullTypeAnn(span Span) *NullTypeAnn {
+	return &NullTypeAnn{span: span, inferredType: nil}
+}
+func (t *NullTypeAnn) Span() Span               { return t.span }
+func (t *NullTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *NullTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *NullTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
+}
+
+type UndefinedTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewUndefinedTypeAnn(span Span) *UndefinedTypeAnn {
+	return &UndefinedTypeAnn{span: span, inferredType: nil}
+}
+func (t *UndefinedTypeAnn) Span() Span               { return t.span }
+func (t *UndefinedTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *UndefinedTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *UndefinedTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
 }
 
 type UnknownTypeAnn struct {
@@ -259,7 +339,8 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 }
 
 type FuncTypeAnn struct {
-	Params       []Param
+	TypeParams   optional.Option[[]TypeParam]
+	Params       []*Param
 	Return       TypeAnn
 	Throws       optional.Option[TypeAnn]
 	span         Span
@@ -267,12 +348,20 @@ type FuncTypeAnn struct {
 }
 
 func NewFuncTypeAnn(
-	params []Param,
+	typeParams optional.Option[[]TypeParam],
+	params []*Param,
 	ret TypeAnn,
 	throws optional.Option[TypeAnn],
 	span Span,
 ) *FuncTypeAnn {
-	return &FuncTypeAnn{Params: params, Return: ret, Throws: throws, span: span, inferredType: nil}
+	return &FuncTypeAnn{
+		TypeParams:   typeParams,
+		Params:       params,
+		Return:       ret,
+		Throws:       throws,
+		span:         span,
+		inferredType: nil,
+	}
 }
 func (t *FuncTypeAnn) Span() Span               { return t.span }
 func (t *FuncTypeAnn) InferredType() Type       { return t.inferredType }

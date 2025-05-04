@@ -49,7 +49,7 @@ func (d *VarDecl) Accept(v Visitor) {
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	// TODO: include type annotation
+	TypeAnn  optional.Option[TypeAnn]
 }
 
 func (p *Param) Span() Span {

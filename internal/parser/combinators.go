@@ -2,7 +2,7 @@ package parser
 
 import "github.com/moznion/go-optional"
 
-func parseDelimSeq[T comparable](
+func parseDelimSeq[T any](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,

@@ -289,6 +289,10 @@ type TypeParam struct {
 	Default    optional.Option[TypeAnn]
 }
 
+func NewTypeParam(name string, constraint, defaultType optional.Option[TypeAnn]) TypeParam {
+	return TypeParam{Name: name, Constraint: constraint, Default: defaultType}
+}
+
 type FuncSig struct {
 	TypeParams []*TypeParam
 	Params     []*Param
@@ -470,6 +474,9 @@ type MethodExpr struct {
 	span Span
 }
 
+func NewMethod(name ObjKey, fn *FuncExpr, span Span) *MethodExpr {
+	return &MethodExpr{Name: name, Fn: fn, span: span}
+}
 func (e *MethodExpr) Span() Span { return e.span }
 func (e *MethodExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
@@ -483,6 +490,9 @@ type GetterExpr struct {
 	span Span
 }
 
+func NewGetter(name ObjKey, fn *FuncExpr, span Span) *GetterExpr {
+	return &GetterExpr{Name: name, Fn: fn, span: span}
+}
 func (e *GetterExpr) Span() Span { return e.span }
 func (e *GetterExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
@@ -496,6 +506,9 @@ type SetterExpr struct {
 	span Span
 }
 
+func NewSetter(name ObjKey, fn *FuncExpr, span Span) *SetterExpr {
+	return &SetterExpr{Name: name, Fn: fn, span: span}
+}
 func (e *SetterExpr) Span() Span { return e.span }
 func (e *SetterExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
@@ -511,6 +524,9 @@ type PropertyExpr struct {
 	span     Span
 }
 
+func NewProperty(name ObjKey, optional, readonly bool, value optional.Option[Expr], span Span) *PropertyExpr {
+	return &PropertyExpr{Name: name, Optional: optional, Readonly: readonly, Value: value, span: span}
+}
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
@@ -525,6 +541,9 @@ type RestSpreadExpr struct {
 	span  Span
 }
 
+func NewRestSpread(value Expr, span Span) *RestSpreadExpr {
+	return &RestSpreadExpr{Value: value, span: span}
+}
 func (e *RestSpreadExpr) Span() Span { return e.span }
 func (e *RestSpreadExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {

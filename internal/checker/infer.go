@@ -14,14 +14,14 @@ import (
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, []*Error) {
 	errors := []*Error{}
-	bindings := map[string]Binding{}
+	ctx = ctx.WithParentScope()
 
 	for _, stmt := range m.Stmts {
 		switch stmt := stmt.(type) {
 		case *ast.DeclStmt:
 			newBindings, declErrors := c.inferDecl(ctx, stmt.Decl)
 			// TODO: check for duplicate bindings
-			maps.Copy(bindings, newBindings)
+			maps.Copy(ctx.Scope.Values, newBindings)
 			errors = slices.Concat(errors, declErrors)
 		case *ast.ExprStmt:
 			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
@@ -31,7 +31,7 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, [
 		}
 	}
 
-	return bindings, errors
+	return ctx.Scope.Values, errors
 }
 
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, []*Error) {
@@ -40,8 +40,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, [
 
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (map[string]Binding, []*Error) {
 	switch decl := decl.(type) {
-	// case *ast.FuncDecl:
-	// 	return c.inferFuncDecl(ctx, decl)
+	case *ast.FuncDecl:
+		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		return c.inferVarDecl(ctx, decl)
 	// case *ast.TypeDecl:
@@ -75,6 +75,28 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Bindi
 	return bindings, errors
 }
 
+func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) (map[string]Binding, []*Error) {
+	errors := []*Error{}
+
+	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+	errors = slices.Concat(errors, sigErrors)
+
+	decl.Body.IfSome(func(body ast.Block) {
+		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, &body)
+		errors = slices.Concat(errors, bodyErrors)
+		unifyErrors := c.unify(ctx, funcType.Return, returnType)
+		errors = slices.Concat(errors, unifyErrors)
+	})
+
+	bindings := map[string]Binding{}
+	bindings[decl.Name.Name] = Binding{
+		Source:  optional.Some[ast.BindingSource](decl.Name),
+		Type:    funcType,
+		Mutable: false,
+	}
+	return bindings, errors
+}
+
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	switch expr := expr.(type) {
 	case *ast.BinaryExpr:
@@ -89,6 +111,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		opType := opOption.Unwrap()
 
 		// TODO: extract this into a unifyCall method
+		// TODO: handle function overloading
 		if fnType, ok := opType.(*FuncType); ok {
 			if len(fnType.Params) != 2 {
 				return neverType, []*Error{{
@@ -149,6 +172,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 
+		objType = Prune(objType)
+
 		switch objType := objType.(type) {
 		case *ObjectType:
 			fmt.Printf("objType: %s\n", objType)
@@ -179,6 +204,54 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		}
 
 		panic("member expression not implemented")
+	case *ast.IndexExpr:
+		objType, objErrors := c.inferExpr(ctx, expr.Object)
+		indexType, indexErrors := c.inferExpr(ctx, expr.Index)
+
+		errors := slices.Concat(objErrors, indexErrors)
+
+		objType = Prune(objType)
+		indexType = Prune(indexType)
+
+		switch objType := objType.(type) {
+		case *TypeRefType:
+			if objType.Name == "Array" {
+				unifyErrors := c.unify(ctx, indexType, NewNumType())
+				errors = slices.Concat(errors, unifyErrors)
+				return objType.TypeArgs[0], errors
+			} else {
+				errors = append(errors, &Error{
+					message: fmt.Sprintf("Expected Array but got %s", objType),
+				})
+				return NewNeverType(), errors
+			}
+		case *TupleType:
+			if indexLit, ok := indexType.(*LitType); ok {
+				if indexType, ok := indexLit.Lit.(*NumLit); ok {
+					index := int(indexType.Value)
+					if index < len(objType.Elems) {
+						return objType.Elems[index], errors
+					} else {
+						errors = append(errors, &Error{
+							message: fmt.Sprintf("Index %d out of bounds for tuple of length %d", index, len(objType.Elems)),
+						})
+						return NewNeverType(), errors
+					}
+				} else {
+					errors = append(errors, &Error{
+						message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
+					})
+					return NewNeverType(), errors
+				}
+			} else {
+				errors = append(errors, &Error{
+					message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
+				})
+				return NewNeverType(), errors
+			}
+		default:
+			panic(fmt.Sprintf("Unknown object type: %#v", objType))
+		}
 	case *ast.IdentExpr:
 		// TODO: look up the identifier in the context's scope
 		// We should be able to determine where an identifier was declared by
@@ -308,7 +381,8 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []*Error {
 		_, errors := c.inferExpr(ctx, stmt.Expr)
 		return errors
 	case *ast.DeclStmt:
-		_, errors := c.inferDecl(ctx, stmt.Decl)
+		bindings, errors := c.inferDecl(ctx, stmt.Decl)
+		maps.Copy(ctx.Scope.Values, bindings)
 		return errors
 	case *ast.ReturnStmt:
 		errors := []*Error{}

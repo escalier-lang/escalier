@@ -35,7 +35,7 @@
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:2},
         },
-        Type:  35,
+        Type:  38,
         Value: "+",
     },
     &parser.Token{
@@ -43,7 +43,7 @@
             Start: ast.Location{Line:1, Column:3},
             End:   ast.Location{Line:1, Column:4},
         },
-        Type:  36,
+        Type:  39,
         Value: "-",
     },
     &parser.Token{
@@ -51,7 +51,7 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Type:  37,
+        Type:  40,
         Value: "*",
     },
     &parser.Token{
@@ -59,7 +59,7 @@
             Start: ast.Location{Line:1, Column:7},
             End:   ast.Location{Line:1, Column:8},
         },
-        Type:  38,
+        Type:  41,
         Value: "/",
     },
     &parser.Token{
@@ -67,7 +67,7 @@
             Start: ast.Location{Line:1, Column:9},
             End:   ast.Location{Line:1, Column:10},
         },
-        Type:  43,
+        Type:  46,
         Value: "=",
     },
 }
@@ -122,7 +122,7 @@
             Start: ast.Location{Line:1, Column:3},
             End:   ast.Location{Line:1, Column:4},
         },
-        Type:  37,
+        Type:  40,
         Value: "*",
     },
     &parser.Token{
@@ -130,7 +130,7 @@
             Start: ast.Location{Line:1, Column:5},
             End:   ast.Location{Line:1, Column:6},
         },
-        Type:  57,
+        Type:  65,
         Value: "(",
     },
     &parser.Token{
@@ -146,7 +146,7 @@
             Start: ast.Location{Line:1, Column:8},
             End:   ast.Location{Line:1, Column:9},
         },
-        Type:  35,
+        Type:  38,
         Value: "+",
     },
     &parser.Token{
@@ -162,7 +162,7 @@
             Start: ast.Location{Line:1, Column:11},
             End:   ast.Location{Line:1, Column:12},
         },
-        Type:  58,
+        Type:  66,
         Value: ")",
     },
 }
@@ -191,7 +191,7 @@
             Start: ast.Location{Line:3, Column:1},
             End:   ast.Location{Line:3, Column:1},
         },
-        Type:  64,
+        Type:  72,
         Value: "",
     },
 }

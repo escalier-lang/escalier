@@ -49,17 +49,17 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
-	unaryArithType := &FuncType{
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumType()),
-		},
-		Return: NewNumType(),
-	}
-	unaryArithBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
-		Type:    unaryArithType,
-		Mutable: false,
-	}
+	// unaryArithType := &FuncType{
+	// 	Params: []*FuncParam{
+	// 		NewFuncParam(NewIdentPat("a"), NewNumType()),
+	// 	},
+	// 	Return: NewNumType(),
+	// }
+	// unaryArithBinding := Binding{
+	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Type:    unaryArithType,
+	// 	Mutable: false,
+	// }
 
 	unaryLogicType := &FuncType{
 		Params: []*FuncParam{
@@ -88,12 +88,12 @@ func Prelude() *Scope {
 	scope.Values["&&"] = binLogicBinding
 	scope.Values["||"] = binLogicBinding
 
-	scope.Values["-"] = Binding{
-		Source:  optional.None[ast.BindingSource](),
-		Type:    NewIntersectionType(binArithType, unaryArithType),
-		Mutable: false,
-	}
-	scope.Values["!"] = unaryArithBinding
+	// TODO: uncomment after adding support for calling overloaded functions
+	// scope.Values["-"] = Binding{
+	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
+	// 	Mutable: false,
+	// }
 
 	scope.Values["!"] = unaryLogicBinding
 

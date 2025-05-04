@@ -8,8 +8,8 @@ const (
 	Identifier TokenType = iota
 
 	// literals
-	Number
-	String
+	NumLit
+	StrLit
 	True
 	False
 	Null
@@ -47,6 +47,11 @@ const (
 	Export
 	Declare
 
+	// type annotations
+	Number
+	String
+	Boolean
+
 	// operators
 	Plus
 	Minus
@@ -65,8 +70,13 @@ const (
 	GreaterThanEqual
 	LessThanSlash // Used for JSX
 	DotDotDot
+	Arrow
 	FatArrow
 	Bang
+	Ampersand
+	AmpersandAmpersand
+	Pipe
+	PipePipe
 
 	// optional chaining
 	QuestionOpenParen

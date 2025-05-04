@@ -37,6 +37,7 @@ func Compile(source parser.Source) CompilerOutput {
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
 			JS:          "",
+			DTS:         "",
 			SourceMap:   "",
 			ParseErrors: parseErrors,
 			TypeErrors:  typeErrors,
@@ -58,6 +59,7 @@ func Compile(source parser.Source) CompilerOutput {
 	outmap := "./" + filepath.Base(source.Path) + ".map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
+	printer = codegen.NewPrinter()
 	dtsOutput := printer.PrintModule(dtsMod)
 
 	return CompilerOutput{
