@@ -216,6 +216,18 @@ func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 	}
 }
 
+func (s *SourceMapGenerator) TraverseFunc(fn *FuncExpr) {
+	s.AddSegmentForNode(fn)
+
+	for _, param := range fn.Params {
+		s.AddSegmentForNode(param.Pattern)
+	}
+
+	for _, stmt := range fn.Body {
+		s.TraverseStmt(stmt)
+	}
+}
+
 func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	if expr == nil {
 		return
@@ -250,6 +262,38 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	case *ArrayExpr:
 		for _, elem := range ek.Elems {
 			s.TraverseExpr(elem)
+		}
+	case *ObjectExpr:
+		for _, elem := range ek.Elems {
+			switch elem := elem.(type) {
+			case *MethodExpr:
+				s.AddSegmentForNode(elem.Name)
+				for _, param := range elem.Params {
+					s.AddSegmentForNode(param.Pattern)
+				}
+				for _, stmt := range elem.Body {
+					s.TraverseStmt(stmt)
+				}
+			case *GetterExpr:
+				s.AddSegmentForNode(elem.Name)
+				for _, stmt := range elem.Body {
+					s.TraverseStmt(stmt)
+				}
+			case *SetterExpr:
+				s.AddSegmentForNode(elem.Name)
+				for _, param := range elem.Params {
+					s.AddSegmentForNode(param.Pattern)
+				}
+				for _, stmt := range elem.Body {
+					s.TraverseStmt(stmt)
+				}
+			case *PropertyExpr:
+				s.AddSegmentForNode(elem.Key)
+				s.TraverseExpr(elem.Value)
+			case *RestSpreadExpr:
+				s.AddSegmentForNode(elem)
+				s.TraverseExpr(elem.Arg)
+			}
 		}
 	case *IdentExpr, *StrExpr, *NumExpr, *BoolExpr, *NullExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top

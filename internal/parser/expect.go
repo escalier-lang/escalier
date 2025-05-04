@@ -8,8 +8,8 @@ import (
 
 var TokenMap = map[TokenType]string{
 	Identifier:          "identifier",
-	Number:              "number",
-	String:              "string",
+	NumLit:              "number",
+	StrLit:              "string",
 	True:                "true",
 	False:               "false",
 	Asterisk:            "*",
@@ -28,9 +28,12 @@ var TokenMap = map[TokenType]string{
 	QuestionDot:         "?.",
 	QuestionOpenParen:   "?(",
 	QuestionOpenBracket: "?[",
+	Arrow:               "->",
+	FatArrow:            "=>",
 	Fn:                  "fn",
 	Val:                 "val",
 	Var:                 "var",
+	Type:                "type",
 	Return:              "return",
 	Declare:             "declare",
 	Export:              "export",
@@ -56,7 +59,6 @@ const (
 	ConsumeOnMismatch
 )
 
-// TODO: update expect to return errors as well
 func (p *Parser) expect(tt TokenType, consume Consume) (ast.Location, []*Error) {
 	errors := []*Error{}
 	token := p.lexer.peek()

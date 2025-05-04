@@ -129,12 +129,12 @@ func (p *Parser) literalPat() (optional.Option[ast.Pat], []*Error) {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case String:
+	case StrLit:
 		p.lexer.consume()
 		return optional.Some[ast.Pat](
 			ast.NewLitPat(&ast.StrLit{Value: token.Value}, token.Span),
 		), errors
-	case Number:
+	case NumLit:
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {

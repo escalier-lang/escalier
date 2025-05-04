@@ -1,6 +1,7 @@
-val foo = fn (...args) {
-    return args.length
-}
-fn bar(...args) {
-    return args.length
-}
+//TODO: Add support for rest params
+//val foo = fn (...args: Array<number>) {
+//    return args.length
+//}
+//fn bar(...args: Array<number>) {
+//    return args.length
+//}

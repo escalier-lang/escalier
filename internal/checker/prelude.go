@@ -49,17 +49,17 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
-	unaryArithType := &FuncType{
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumType()),
-		},
-		Return: NewNumType(),
-	}
-	unaryArithBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
-		Type:    unaryArithType,
-		Mutable: false,
-	}
+	// unaryArithType := &FuncType{
+	// 	Params: []*FuncParam{
+	// 		NewFuncParam(NewIdentPat("a"), NewNumType()),
+	// 	},
+	// 	Return: NewNumType(),
+	// }
+	// unaryArithBinding := Binding{
+	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Type:    unaryArithType,
+	// 	Mutable: false,
+	// }
 
 	unaryLogicType := &FuncType{
 		Params: []*FuncParam{
@@ -88,14 +88,39 @@ func Prelude() *Scope {
 	scope.Values["&&"] = binLogicBinding
 	scope.Values["||"] = binLogicBinding
 
-	scope.Values["-"] = Binding{
-		Source:  optional.None[ast.BindingSource](),
-		Type:    NewIntersectionType(binArithType, unaryArithType),
-		Mutable: false,
-	}
-	scope.Values["!"] = unaryArithBinding
+	// TODO: uncomment after adding support for calling overloaded functions
+	// scope.Values["-"] = Binding{
+	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
+	// 	Mutable: false,
+	// }
 
 	scope.Values["!"] = unaryLogicBinding
+
+	var objElems []ObjTypeElem
+
+	objElems = append(objElems, &MethodElemType{
+		Name: NewStrKey("log"),
+		Fn: &FuncType{
+			Params: []*FuncParam{
+				NewFuncParam(NewIdentPat("msg"), NewStrType()),
+			},
+			Return: NewLitType(&UndefinedLit{}),
+		},
+	})
+
+	scope.Values["console"] = Binding{
+		Source:  optional.None[ast.BindingSource](),
+		Type:    NewObjectType(objElems),
+		Mutable: false,
+	}
+
+	arrayType := NewObjectType([]ObjTypeElem{})
+	typeParam := NewTypeParam("T")
+	scope.setTypeAlias("Array", TypeAlias{
+		Type:       arrayType,
+		TypeParams: []*TypeParam{typeParam},
+	})
 
 	// TODO: ++: fn (a: string, b: string) -> string
 

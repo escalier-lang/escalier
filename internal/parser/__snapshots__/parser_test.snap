@@ -94,6 +94,7 @@
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -106,6 +107,7 @@
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
             },
             Return: nil,
@@ -564,6 +566,7 @@
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
                 &ast.Param{
                     Pattern: &ast.IdentPat{
@@ -576,6 +579,7 @@
                         inferredType: nil,
                     },
                     Optional: false,
+                    TypeAnn:  nil,
                 },
             },
             Return: nil,

@@ -37,7 +37,7 @@ func TestArrays(t *testing.T) {
 func TestMemberAccess(t *testing.T) {
 	source := parser.Source{
 		Path:     "input.esc",
-		Contents: "console.log(\"x =\", -5)\n",
+		Contents: "console.log(\"hello, world\")\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, output)

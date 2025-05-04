@@ -137,10 +137,80 @@ func (p *Printer) PrintExpr(expr Expr) {
 			p.PrintExpr(elem)
 		}
 		p.print("]")
+	case *ObjectExpr:
+		p.print("{")
+		for i, elem := range e.Elems {
+			if i > 0 {
+				p.print(", ")
+			}
+			switch elem := elem.(type) {
+			case *MethodExpr:
+				p.printMethod(elem.Name, elem.Params, elem.Body)
+			case *GetterExpr:
+				p.print("get ")
+				p.printMethod(elem.Name, []*Param{}, elem.Body)
+			case *SetterExpr:
+				p.print("set ")
+				p.printMethod(elem.Name, elem.Params, elem.Body)
+			case *PropertyExpr:
+				p.printObjKey(elem.Key)
+				p.print(": ")
+				p.PrintExpr(elem.Value)
+			case *RestSpreadExpr:
+				p.print("...")
+				p.PrintExpr(elem.Arg)
+			default:
+				panic(fmt.Sprintf("PrintExpr: unknown object expression element type: %T", elem))
+			}
+		}
+	default:
+		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
 
 	end := p.location
 	expr.SetSpan(&Span{Start: start, End: end})
+}
+
+func (p *Printer) printObjKey(key ObjKey) {
+	start := p.location
+
+	switch key := key.(type) {
+	case *IdentExpr:
+		p.print(key.Name)
+	case *StrExpr:
+		p.print(fmt.Sprintf("%q", key.Value))
+	case *NumExpr:
+		p.print(strconv.FormatFloat(key.Value, 'f', -1, 32))
+	case *ComputedKey:
+		p.print("[")
+		p.PrintExpr(key.Expr)
+		p.print("]")
+	default:
+		panic(fmt.Sprintf("printObjKey: unknown object key type: %T", key))
+	}
+
+	end := p.location
+	key.SetSpan(&Span{Start: start, End: end})
+}
+
+func (p *Printer) printMethod(name ObjKey, params []*Param, body []Stmt) {
+	p.printObjKey(name)
+	p.print("(")
+	for i, param := range params {
+		if i > 0 {
+			p.print(", ")
+		}
+		p.printPattern(param.Pattern)
+	}
+	p.print(") {")
+	p.indent++
+	for _, stmt := range body {
+		p.NewLine()
+		p.PrintStmt(stmt)
+	}
+	p.indent--
+	p.NewLine()
+	p.print("}")
 }
 
 func (p *Printer) printIdent(id *Identifier) {
@@ -283,9 +353,10 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 	stmt.SetSpan(&Span{Start: start, End: end})
 }
 
-func (p *Printer) PrintModule(mod *Module) {
+func (p *Printer) PrintModule(mod *Module) string {
 	for _, stmt := range mod.Stmts {
 		p.PrintStmt(stmt)
 		p.NewLine()
 	}
+	return p.Output
 }

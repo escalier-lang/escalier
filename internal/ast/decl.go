@@ -14,6 +14,10 @@ type Decl interface {
 	Node
 }
 
+func (*VarDecl) isDecl()  {}
+func (*FuncDecl) isDecl() {}
+func (*TypeDecl) isDecl() {}
+
 type VariableKind int
 
 const (
@@ -33,7 +37,6 @@ type VarDecl struct {
 func NewVarDecl(kind VariableKind, pattern Pat, init optional.Option[Expr], export, declare bool, span Span) *VarDecl {
 	return &VarDecl{Kind: kind, Pattern: pattern, Init: init, export: export, declare: declare, span: span}
 }
-func (*VarDecl) isDecl()         {}
 func (d *VarDecl) Export() bool  { return d.export }
 func (d *VarDecl) Declare() bool { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
@@ -49,7 +52,7 @@ func (d *VarDecl) Accept(v Visitor) {
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	// TODO: include type annotation
+	TypeAnn  optional.Option[TypeAnn]
 }
 
 func (p *Param) Span() Span {
@@ -87,7 +90,6 @@ func NewFuncDecl(
 		span:    span,
 	}
 }
-func (*FuncDecl) isDecl()         {}
 func (d *FuncDecl) Export() bool  { return d.export }
 func (d *FuncDecl) Declare() bool { return d.declare }
 func (d *FuncDecl) Span() Span    { return d.span }
@@ -101,5 +103,34 @@ func (d *FuncDecl) Accept(v Visitor) {
 				stmt.Accept(v)
 			}
 		})
+	}
+}
+
+type TypeDecl struct {
+	Name       *Ident
+	TypeParams []*TypeParam
+	TypeAnn    TypeAnn
+	export     bool
+	declare    bool
+	span       Span
+}
+
+func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *TypeDecl {
+	return &TypeDecl{
+		Name:       name,
+		TypeParams: typeParams,
+		TypeAnn:    typeAnn,
+		export:     export,
+		declare:    declare,
+		span:       span,
+	}
+}
+func (d *TypeDecl) Export() bool  { return d.export }
+func (d *TypeDecl) Declare() bool { return d.declare }
+func (d *TypeDecl) Span() Span    { return d.span }
+func (d *TypeDecl) Accept(v Visitor) {
+	// TODO: visit type params
+	if v.VisitDecl(d) {
+		d.TypeAnn.Accept(v)
 	}
 }

@@ -35,6 +35,7 @@ var keywords = map[string]TokenType{
 	"static":    Static,
 	"var":       Var,
 	"val":       Val,
+	"type":      Type,
 	"return":    Return,
 	"import":    Import,
 	"export":    Export,
@@ -54,6 +55,9 @@ var keywords = map[string]TokenType{
 	"false":     False,
 	"null":      Null,
 	"undefined": Undefined,
+	"number":    Number,
+	"string":    String,
+	"boolean":   Boolean,
 }
 
 func (lexer *Lexer) next() *Token {
@@ -86,7 +90,13 @@ func (lexer *Lexer) next() *Token {
 	case '+':
 		token = NewToken(Plus, "+", ast.Span{Start: start, End: end})
 	case '-':
-		token = NewToken(Minus, "-", ast.Span{Start: start, End: end})
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "->") {
+			endOffset++
+			end.Column++
+			token = NewToken(Arrow, "->", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(Minus, "-", ast.Span{Start: start, End: end})
+		}
 	case '*':
 		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end})
 	case '/':
@@ -218,7 +228,7 @@ func (lexer *Lexer) next() *Token {
 		endOffset = i + 1                    // + 1 to include the closing quote
 		value := contents[startOffset+1 : i] // without the quotes
 		end.Column = start.Column + (i - startOffset)
-		token = NewToken(String, value, ast.Span{Start: start, End: end})
+		token = NewToken(StrLit, value, ast.Span{Start: start, End: end})
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -256,7 +266,7 @@ func (lexer *Lexer) next() *Token {
 			}
 		} else {
 			end.Column = start.Column + (i - startOffset)
-			token = NewToken(Number, contents[startOffset:i], ast.Span{Start: start, End: end})
+			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end})
 		}
 	default:
 		c := codePoint

@@ -255,8 +255,28 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 		panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, union))
 	}
 
+	retry := false
+	if typeRef, ok := t1.(*TypeRefType); ok {
+		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+			// TODO: apply type args
+			t1 = alias.Type
+			retry = true
+		})
+	}
+	if typeRef, ok := t2.(*TypeRefType); ok {
+		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+			// TODO: apply type args
+			t2 = alias.Type
+			retry = true
+		})
+	}
+
+	if retry {
+		return c.unify(ctx, t1, t2)
+	}
+
 	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, t2))
+	panic(fmt.Sprintf("TODO: unify types %s and %s", t1, t2))
 }
 
 func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
@@ -291,7 +311,7 @@ func (v *OccursInVisitor) VisitType(t Type) {
 }
 
 func occursInType(t1, t2 Type) bool {
-	visitor := &OccursInVisitor{result: false}
+	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
 	return visitor.result
 }

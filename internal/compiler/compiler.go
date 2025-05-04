@@ -6,48 +6,67 @@ import (
 	"strings"
 	"time"
 
+	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 type CompilerOutput struct {
-	Errors    []*parser.Error
-	JS        string
-	SourceMap string
+	ParseErrors []*parser.Error
+	TypeErrors  []*checker.Error
+	JS          string
+	SourceMap   string
+	DTS         string
 }
 
 func Compile(source parser.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
-	escMod, escErrors := p.ParseScript()
+	inMod, parseErrors := p.ParseScript()
 
-	if len(escErrors) > 0 {
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		Filename:   "input.esc",
+		Scope:      checker.Prelude(),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	bindings, typeErrors := c.InferScript(inferCtx, inMod)
+
+	if len(parseErrors) > 0 {
 		return CompilerOutput{
-			JS:        "",
-			SourceMap: "",
-			Errors:    escErrors,
+			JS:          "",
+			DTS:         "",
+			SourceMap:   "",
+			ParseErrors: parseErrors,
+			TypeErrors:  typeErrors,
 		}
 	}
 
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildScript(escMod)
+	jsMod := builder.BuildScript(inMod)
+	dtsMod := builder.BuildDefinitions(bindings)
 
-	p2 := codegen.NewPrinter()
-	p2.PrintModule(jsMod)
-
-	output := p2.Output
+	printer := codegen.NewPrinter()
+	jsOutput := printer.PrintModule(jsMod)
 
 	srcFile := "./" + filepath.Base(source.Path)
-	outFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
-	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, outFile)
+
+	jsFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
+	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, jsFile)
 
 	outmap := "./" + filepath.Base(source.Path) + ".map"
-	output += "//# sourceMappingURL=" + outmap + "\n"
+	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+
+	printer = codegen.NewPrinter()
+	dtsOutput := printer.PrintModule(dtsMod)
 
 	return CompilerOutput{
-		Errors:    escErrors,
-		JS:        output,
-		SourceMap: sourceMap,
+		ParseErrors: parseErrors,
+		TypeErrors:  typeErrors,
+		JS:          jsOutput,
+		SourceMap:   sourceMap,
+		DTS:         dtsOutput,
 	}
 }

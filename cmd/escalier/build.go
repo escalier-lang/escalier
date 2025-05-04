@@ -49,7 +49,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 
 		output := compiler.Compile(source)
 
-		for _, err := range output.Errors {
+		for _, err := range output.ParseErrors {
 			fmt.Fprintln(stderr, err)
 		}
 

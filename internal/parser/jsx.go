@@ -115,7 +115,7 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 
 		//nolint: exhaustive
 		switch token.Type {
-		case String:
+		case StrLit:
 			p.lexer.consume() // consume string
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:

@@ -44,6 +44,7 @@ func (*FuncExpr) isExpr()   {}
 func (*IndexExpr) isExpr()  {}
 func (*MemberExpr) isExpr() {}
 func (*ArrayExpr) isExpr()  {}
+func (*ObjectExpr) isExpr() {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -118,6 +119,124 @@ func NewArrayExpr(elems []Expr, source ast.Node) *ArrayExpr {
 func (e *ArrayExpr) Span() *Span        { return e.span }
 func (e *ArrayExpr) SetSpan(span *Span) { e.span = span }
 func (e *ArrayExpr) Source() ast.Node   { return e.source }
+
+type ObjKey interface {
+	isObjKey()
+	Node
+}
+
+func (*IdentExpr) isObjKey()   {}
+func (*StrExpr) isObjKey()     {}
+func (*NumExpr) isObjKey()     {}
+func (*ComputedKey) isObjKey() {}
+
+type ComputedKey struct {
+	Expr   Expr
+	span   *Span
+	source ast.Node
+}
+
+func (c *ComputedKey) Span() *Span        { return c.span }
+func (c *ComputedKey) SetSpan(span *Span) { c.span = span }
+func (c *ComputedKey) Source() ast.Node   { return c.Expr.Source() }
+func NewComputedKey(expr Expr, source ast.Node) *ComputedKey {
+	return &ComputedKey{Expr: expr, source: source, span: nil}
+}
+
+type ObjectExpr struct {
+	Elems  []ObjExprElem
+	span   *Span
+	source ast.Node
+}
+
+func NewObjectExpr(elems []ObjExprElem, source ast.Node) *ObjectExpr {
+	return &ObjectExpr{Elems: elems, source: source, span: nil}
+}
+func (e *ObjectExpr) Span() *Span        { return e.span }
+func (e *ObjectExpr) SetSpan(span *Span) { e.span = span }
+func (e *ObjectExpr) Source() ast.Node   { return e.source }
+
+type ObjExprElem interface {
+	isObjExprElem()
+	Node
+}
+
+func (*MethodExpr) isObjExprElem()     {}
+func (*GetterExpr) isObjExprElem()     {}
+func (*SetterExpr) isObjExprElem()     {}
+func (*PropertyExpr) isObjExprElem()   {}
+func (*RestSpreadExpr) isObjExprElem() {}
+
+type MethodExpr struct {
+	Name   ObjKey
+	Params []*Param
+	Body   []Stmt
+	source ast.Node
+	span   *Span
+}
+
+func NewMethodExpr(name ObjKey, params []*Param, body []Stmt, source ast.Node) *MethodExpr {
+	return &MethodExpr{Name: name, Params: params, Body: body, source: source, span: nil}
+}
+func (e *MethodExpr) Span() *Span        { return e.span }
+func (e *MethodExpr) SetSpan(span *Span) { e.span = span }
+func (e *MethodExpr) Source() ast.Node   { return e.source }
+
+type GetterExpr struct {
+	Name   ObjKey
+	Body   []Stmt
+	source ast.Node
+	span   *Span
+}
+
+func NewGetterExpr(name ObjKey, body []Stmt, source ast.Node) *GetterExpr {
+	return &GetterExpr{Name: name, Body: body, source: source, span: nil}
+}
+func (e *GetterExpr) Span() *Span        { return e.span }
+func (e *GetterExpr) SetSpan(span *Span) { e.span = span }
+func (e *GetterExpr) Source() ast.Node   { return e.source }
+
+type SetterExpr struct {
+	Name   ObjKey
+	Params []*Param
+	Body   []Stmt
+	source ast.Node
+	span   *Span
+}
+
+func NewSetterExpr(name ObjKey, params []*Param, body []Stmt, source ast.Node) *SetterExpr {
+	return &SetterExpr{Name: name, Params: params, Body: body, source: source, span: nil}
+}
+func (e *SetterExpr) Span() *Span        { return e.span }
+func (e *SetterExpr) SetSpan(span *Span) { e.span = span }
+func (e *SetterExpr) Source() ast.Node   { return e.source }
+
+type PropertyExpr struct {
+	Key    ObjKey
+	Value  Expr
+	source ast.Node
+	span   *Span
+}
+
+func NewPropertyExpr(key ObjKey, value Expr, source ast.Node) *PropertyExpr {
+	return &PropertyExpr{Key: key, Value: value, source: source, span: nil}
+}
+func (e *PropertyExpr) Span() *Span        { return e.span }
+func (e *PropertyExpr) SetSpan(span *Span) { e.span = span }
+func (e *PropertyExpr) Source() ast.Node   { return e.source }
+
+type RestSpreadExpr struct {
+	Arg    Expr
+	source ast.Node
+	span   *Span
+}
+
+func NewRestSpreadExpr(arg Expr, source ast.Node) *RestSpreadExpr {
+	return &RestSpreadExpr{Arg: arg, source: source, span: nil}
+}
+func (e *RestSpreadExpr) Span() *Span        { return e.span }
+func (e *RestSpreadExpr) SetSpan(span *Span) { e.span = span }
+func (e *RestSpreadExpr) Source() ast.Node   { return e.source }
 
 type BinaryOp string
 
