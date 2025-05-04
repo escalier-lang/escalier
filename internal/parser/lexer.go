@@ -35,6 +35,7 @@ var keywords = map[string]TokenType{
 	"static":    Static,
 	"var":       Var,
 	"val":       Val,
+	"type":      Type,
 	"return":    Return,
 	"import":    Import,
 	"export":    Export,
@@ -54,6 +55,9 @@ var keywords = map[string]TokenType{
 	"false":     False,
 	"null":      Null,
 	"undefined": Undefined,
+	"number":    Number,
+	"string":    String,
+	"boolean":   Boolean,
 }
 
 func (lexer *Lexer) next() *Token {

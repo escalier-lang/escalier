@@ -5,10 +5,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
         TypeParams: nil,
         Params:     {
         },
-        Return: &ast.TypeRefTypeAnn{
-            Name:     "number",
-            TypeArgs: {
-            },
+        Return: &ast.NumberTypeAnn{
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:9},
                 End:   ast.Location{Line:1, Column:15},
@@ -46,10 +43,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
 
 [TestParseTypeAnnNoErrors/NumberTypeAnn - 1]
 optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
-    &ast.TypeRefTypeAnn{
-        Name:     "number",
-        TypeArgs: {
-        },
+    &ast.NumberTypeAnn{
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:7},
@@ -61,10 +55,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
 
 [TestParseTypeAnnNoErrors/StringTypeAnn - 1]
 optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
-    &ast.TypeRefTypeAnn{
-        Name:     "string",
-        TypeArgs: {
-        },
+    &ast.StringTypeAnn{
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
             End:   ast.Location{Line:1, Column:7},
@@ -110,10 +101,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 },
                 Optional: false,
                 TypeAnn:  {
-                    &ast.TypeRefTypeAnn{
-                        Name:     "number",
-                        TypeArgs: {
-                        },
+                    &ast.NumberTypeAnn{
                         span: ast.Span{
                             Start: ast.Location{Line:1, Column:7},
                             End:   ast.Location{Line:1, Column:13},
@@ -134,10 +122,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 },
                 Optional: false,
                 TypeAnn:  {
-                    &ast.TypeRefTypeAnn{
-                        Name:     "string",
-                        TypeArgs: {
-                        },
+                    &ast.StringTypeAnn{
                         span: ast.Span{
                             Start: ast.Location{Line:1, Column:18},
                             End:   ast.Location{Line:1, Column:24},
@@ -147,10 +132,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 },
             },
         },
-        Return: &ast.TypeRefTypeAnn{
-            Name:     "boolean",
-            TypeArgs: {
-            },
+        Return: &ast.BooleanTypeAnn{
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:29},
                 End:   ast.Location{Line:1, Column:36},
@@ -175,10 +157,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 {
                     Name:       "T",
                     Constraint: {
-                        &ast.TypeRefTypeAnn{
-                            Name:     "number",
-                            TypeArgs: {
-                            },
+                        &ast.NumberTypeAnn{
                             span: ast.Span{
                                 Start: ast.Location{Line:1, Column:7},
                                 End:   ast.Location{Line:1, Column:13},
@@ -191,10 +170,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 {
                     Name:       "U",
                     Constraint: {
-                        &ast.TypeRefTypeAnn{
-                            Name:     "string",
-                            TypeArgs: {
-                            },
+                        &ast.StringTypeAnn{
                             span: ast.Span{
                                 Start: ast.Location{Line:1, Column:18},
                                 End:   ast.Location{Line:1, Column:24},
@@ -256,10 +232,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
                 },
             },
         },
-        Return: &ast.TypeRefTypeAnn{
-            Name:     "boolean",
-            TypeArgs: {
-            },
+        Return: &ast.BooleanTypeAnn{
             span: ast.Span{
                 Start: ast.Location{Line:1, Column:41},
                 End:   ast.Location{Line:1, Column:48},

@@ -46,7 +46,7 @@ func (p *Parser) stmt() (optional.Option[ast.Stmt], []*Error) {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Fn, Var, Val, Declare, Export:
+	case Fn, Var, Val, Type, Declare, Export:
 		decl, declErrors := p.decl()
 		stmt := optional.Map(decl, func(d ast.Decl) ast.Stmt {
 			return ast.NewDeclStmt(d, d.Span())

@@ -115,6 +115,13 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
+	arrayType := NewObjectType([]ObjTypeElem{})
+	typeParam := NewTypeParam("T")
+	scope.setTypeAlias("Array", TypeAlias{
+		Type:       arrayType,
+		TypeParams: []*TypeParam{typeParam},
+	})
+
 	// TODO: ++: fn (a: string, b: string) -> string
 
 	return scope

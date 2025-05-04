@@ -31,6 +31,7 @@ const (
 	Static
 	Var
 	Val
+	Type
 	If
 	Else
 	Match

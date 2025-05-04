@@ -335,6 +335,8 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 			source: decl,
 		}
 		return []Stmt{stmt}
+	case *ast.TypeDecl:
+		return []Stmt{}
 	default:
 		panic("TODO - TransformDecl - default case")
 	}

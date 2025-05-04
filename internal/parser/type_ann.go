@@ -110,6 +110,21 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 				ast.NewSpan(token.Span.Start, retType.Span().End),
 			),
 		), errors
+	case OpenBracket: // tuple type
+		p.lexer.consume()
+		elemTypes, elemErrors := parseDelimSeq(p, CloseBracket, Comma, func() (optional.Option[ast.TypeAnn], []*Error) {
+			typeArg, typeArgErrors := p.typeAnn()
+			return typeArg, typeArgErrors
+		})
+		errors = append(errors, elemErrors...)
+		end, endErrors := p.expect(CloseBracket, AlwaysConsume)
+		errors = append(errors, endErrors...)
+		return optional.Some[ast.TypeAnn](
+			ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end)),
+		), errors
+	case OpenBrace: // object type
+		p.lexer.consume()
+		panic("TODO: parse object type")
 	case Identifier:
 		p.lexer.consume()
 

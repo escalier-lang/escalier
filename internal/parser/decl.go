@@ -30,6 +30,8 @@ func (p *Parser) decl() (optional.Option[ast.Decl], [](*Error)) {
 		return p.varDecl(start, token, declare, export)
 	case Fn:
 		return p.fnDecl(start, declare, export)
+	case Type:
+		return p.typeDecl(start, declare, export)
 	default:
 		errors = append(errors, NewError(token.Span, "Unexpected token"))
 		return optional.None[ast.Decl](), errors
@@ -133,4 +135,29 @@ func (p *Parser) fnDecl(start ast.Location, declare bool, export bool) (optional
 			ast.NewSpan(start, end),
 		),
 	), errors
+}
+
+func (p *Parser) typeDecl(start ast.Location, declare bool, export bool) (optional.Option[ast.Decl], []*Error) {
+	errors := []*Error{}
+	token := p.lexer.peek()
+	if token.Type != Identifier {
+		errors = append(errors, NewError(token.Span, "Expected identifier"))
+		return optional.None[ast.Decl](), errors
+	}
+	p.lexer.consume()
+	ident := ast.NewIdentifier(token.Value, token.Span)
+
+	end := token.Span.End
+
+	_, tokenErrors := p.expect(Equal, AlwaysConsume)
+	errors = append(errors, tokenErrors...)
+
+	typeParams := []*ast.TypeParam{}
+
+	typeAnnOption, typeAnnErrors := p.typeAnn()
+	errors = append(errors, typeAnnErrors...)
+	decl := optional.Map(typeAnnOption, func(typeAnn ast.TypeAnn) ast.Decl {
+		return ast.NewTypeDecl(ident, typeParams, typeAnn, declare, export, ast.NewSpan(start, end))
+	})
+	return decl, errors
 }

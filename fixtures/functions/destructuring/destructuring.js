@@ -1,11 +1,9 @@
-type;
-Obj  {a: number, b: string, c: boolean;
 const foo = function (temp1) {
-  const {a, b, ...rest} = temp1;
-  return rest;
+  const [a, b, c] = temp1;
+  return c;
 };
 function bar(temp2) {
-  const {a, b, ...rest} = temp2;
-  return rest;
+  const [a, b, c] = temp2;
+  return c;
 }
 //# sourceMappingURL=./destructuring.esc.map

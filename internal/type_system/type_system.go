@@ -81,13 +81,26 @@ func (t *TypeVarType) String() string {
 	return "t" + fmt.Sprint(t.ID)
 }
 
+type TypeAlias struct {
+	Type       Type
+	TypeParams []*TypeParam
+}
+
 type TypeRefType struct {
 	Name       string // TODO: Make this a qualified identifier
 	TypeArgs   []Type
-	TypeAlias  optional.Option[Type] // resolved type alias (definition)
+	TypeAlias  optional.Option[TypeAlias] // resolved type alias (definition)
 	provenance Provenance
 }
 
+func NewTypeRefType(name string, typeAlias optional.Option[TypeAlias], typeArgs ...Type) *TypeRefType {
+	return &TypeRefType{
+		Name:       name,
+		TypeArgs:   typeArgs,
+		TypeAlias:  typeAlias,
+		provenance: nil,
+	}
+}
 func (t *TypeRefType) Provenance() Provenance     { return t.provenance }
 func (t *TypeRefType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *TypeRefType) Accept(v TypeVisitor)       { v.VisitType(t) }
@@ -285,6 +298,14 @@ type TypeParam struct {
 	Name       string
 	Constraint optional.Option[Type]
 	Default    optional.Option[Type]
+}
+
+func NewTypeParam(name string) *TypeParam {
+	return &TypeParam{
+		Name:       name,
+		Constraint: optional.None[Type](),
+		Default:    optional.None[Type](),
+	}
 }
 
 type FuncParam struct {

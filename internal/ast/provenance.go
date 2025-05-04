@@ -17,3 +17,9 @@ type PatProvenance struct {
 type TypeAnnProvenance struct {
 	TypeAnn TypeAnn
 }
+
+func NewTypeAnnProvenance(typeAnn TypeAnn) *TypeAnnProvenance {
+	return &TypeAnnProvenance{
+		TypeAnn: typeAnn,
+	}
+}

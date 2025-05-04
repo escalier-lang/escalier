@@ -75,7 +75,7 @@ func TestBuild(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			// if fixture.Name() != "logging" {
+			// if fixture.Name() != "destructuring" || group.Name() != "functions" {
 			// 	continue
 			// }
 			name := group.Name() + "/" + fixture.Name()

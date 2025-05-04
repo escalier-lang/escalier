@@ -44,8 +44,8 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (map[string]Binding, []*
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		return c.inferVarDecl(ctx, decl)
-	// case *ast.TypeDecl:
-	// 	return c.inferTypeDecl(ctx, decl)
+	case *ast.TypeDecl:
+		return c.inferTypeDecl(ctx, decl)
 	default:
 		return nil, []*Error{{message: "Unknown declaration type"}}
 	}
@@ -424,8 +424,16 @@ func (c *Checker) inferFuncSig(
 
 		errors = slices.Concat(errors, patErrors)
 
+		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
+			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+			errors = slices.Concat(errors, typeAnnErrors)
+			return typeAnnType
+		}).TakeOrElse(func() Type {
+			return c.FreshVar()
+		})
+
 		// TODO: handle type annotations on parameters
-		c.unify(ctx, patType, c.FreshVar())
+		c.unify(ctx, patType, typeAnn)
 
 		maps.Copy(bindings, patBindings)
 
@@ -576,61 +584,6 @@ func patToPat(p ast.Pat) Pat {
 	}
 }
 
-func (c *Checker) inferFunc(
-	ctx Context,
-	placeholder FuncType,
-	sig *ast.FuncSig,
-	body *ast.Block,
-) (Type, []*Error) {
-	if sig == nil {
-		return nil, []*Error{{message: "Function signature is nil"}}
-	}
-
-	if body == nil {
-		return nil, []*Error{{message: "Function body is nil"}}
-	}
-
-	newCtx := ctx.WithParentScope()
-	errors := []*Error{}
-
-	for placeholderParam, sigParam := range Zip(placeholder.Params, sig.Params) {
-		patType, bindings, paramErrors := c.inferPattern(ctx, sigParam.Pattern)
-		errors = slices.Concat(errors, paramErrors)
-
-		c.unify(ctx, patType, placeholderParam.Type)
-
-		for name, binding := range bindings {
-			newCtx.Scope.Values[name] = binding
-		}
-	}
-
-	for _, stmt := range body.Stmts {
-		stmtErrors := c.inferStmt(newCtx, stmt)
-		errors = slices.Concat(errors, stmtErrors)
-	}
-
-	// TODO: find return types
-
-	returnType := NewLitType(&UndefinedLit{})
-
-	funcType := &FuncType{
-		Params:     placeholder.Params,
-		Return:     returnType,
-		Throws:     NewNeverType(),
-		TypeParams: []*TypeParam{},
-		Self:       optional.None[Type](),
-	}
-
-	return funcType, errors
-}
-
-// We want to model both `let x = 5` as well as `fn (x: number) => x`
-type Binding struct {
-	Source  optional.Option[ast.BindingSource]
-	Type    Type
-	Mutable bool
-}
-
 func (c *Checker) inferLit(lit ast.Lit) (Type, []*Error) {
 	var t Type
 	errors := []*Error{}
@@ -754,4 +707,113 @@ func (c *Checker) inferPattern(
 	pattern.SetInferredType(t)
 
 	return t, bindings, errors
+}
+
+func (c *Checker) inferTypeDecl(
+	ctx Context,
+	decl *ast.TypeDecl,
+) (map[string]Binding, []*Error) {
+	errors := []*Error{}
+
+	typeParams := make([]*TypeParam, len(decl.TypeParams))
+	for i, typeParam := range decl.TypeParams {
+		constraint := optional.Map(typeParam.Constraint, func(constraint ast.TypeAnn) Type {
+			constraintType, constraintErrors := c.inferTypeAnn(ctx, constraint)
+			errors = slices.Concat(errors, constraintErrors)
+			return constraintType
+		})
+		default_ := optional.Map(typeParam.Default, func(default_ ast.TypeAnn) Type {
+			defaultType, defaultErrors := c.inferTypeAnn(ctx, default_)
+			errors = slices.Concat(errors, defaultErrors)
+			return defaultType
+		})
+		typeParams[i] = &TypeParam{
+			Name:       typeParam.Name,
+			Constraint: constraint,
+			Default:    default_,
+		}
+	}
+
+	t, typeErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
+	errors = slices.Concat(errors, typeErrors)
+
+	typeAlias := TypeAlias{
+		Type:       t,
+		TypeParams: typeParams,
+	}
+
+	typeAlias.Type = t
+	ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+
+	return nil, errors
+}
+
+func (c *Checker) inferTypeAnn(
+	ctx Context,
+	typeAnn ast.TypeAnn,
+) (Type, []*Error) {
+	errors := []*Error{}
+	var t Type = NewNeverType()
+
+	switch typeAnn := typeAnn.(type) {
+	case *ast.TypeRefTypeAnn:
+		t = optional.Map(ctx.Scope.getTypeAlias(typeAnn.Name), func(typeAlias TypeAlias) Type {
+			typeArgs := make([]Type, len(typeAnn.TypeArgs))
+			for i, typeArg := range typeAnn.TypeArgs {
+				typeArgType, typeArgErrors := c.inferTypeAnn(ctx, typeArg)
+				typeArgs[i] = typeArgType
+				errors = slices.Concat(errors, typeArgErrors)
+			}
+
+			t := NewTypeRefType(typeAnn.Name, optional.Some(typeAlias), typeArgs...)
+			return t
+		}).TakeOrElse(func() Type {
+			errors = append(errors, &Error{
+				message: fmt.Sprintf("Unknown type %s", typeAnn.Name),
+			})
+			t := NewNeverType()
+			return t
+		})
+	case *ast.NumberTypeAnn:
+		t = NewNumType()
+	case *ast.StringTypeAnn:
+		t = NewStrType()
+	case *ast.BooleanTypeAnn:
+		t = NewBoolType()
+	case *ast.LitTypeAnn:
+		switch lit := typeAnn.Lit.(type) {
+		case *ast.StrLit:
+			t = NewLitType(&StrLit{Value: lit.Value})
+		case *ast.NumLit:
+			t = NewLitType(&NumLit{Value: lit.Value})
+		case *ast.BoolLit:
+			t = NewLitType(&BoolLit{Value: lit.Value})
+		case *ast.BigIntLit:
+			t = NewLitType(&BigIntLit{Value: lit.Value})
+		case *ast.NullLit:
+			t = NewLitType(&NullLit{})
+		case *ast.UndefinedLit:
+			t = NewLitType(&UndefinedLit{})
+		default:
+			errors = append(errors, &Error{
+				message: fmt.Sprintf("Unknown literal type %T", lit),
+			})
+		}
+	case *ast.TupleTypeAnn:
+		elems := make([]Type, len(typeAnn.Elems))
+		for i, elem := range typeAnn.Elems {
+			elemType, elemErrors := c.inferTypeAnn(ctx, elem)
+			elems[i] = elemType
+			errors = slices.Concat(errors, elemErrors)
+		}
+		t = NewTupleType(elems...)
+	case *ast.ObjectTypeAnn:
+		panic("TODO: handle object type annotation")
+	default:
+		return nil, []*Error{{message: "Unknown type annotation"}}
+	}
+
+	t.SetProvenance(ast.NewTypeAnnProvenance(typeAnn))
+
+	return t, errors
 }
