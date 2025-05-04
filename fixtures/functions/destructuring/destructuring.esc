@@ -1,8 +1,7 @@
-//TODO: add support for type annotations
-//type Obj = {a: number, b: string, c: boolean}
-//val foo = fn ({a, b, ...rest}: Obj) {
-//    return rest.c
-//}
-//fn bar({a, b, ...rest}: Obj) {
-//    return rest.c
-//}
+type Obj = {a: number, b: string, c: boolean}
+val foo = fn ({a, b, ...rest}: Obj) {
+    return rest
+}
+fn bar({a, b, ...rest}: Obj) {
+    return rest
+}
