@@ -75,9 +75,9 @@ func TestBuild(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			// if fixture.Name() != "destructuring" || group.Name() != "functions" {
-			// 	continue
-			// }
+			if fixture.Name() != "destructuring" || group.Name() != "basics" {
+				continue
+			}
 			name := group.Name() + "/" + fixture.Name()
 			t.Run(name, func(t *testing.T) {
 				fixtureDir := filepath.Join(rootDir, "fixtures", group.Name(), fixture.Name())

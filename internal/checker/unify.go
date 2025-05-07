@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/moznion/go-optional"
 )
 
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
@@ -52,10 +53,31 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*TupleType); ok {
 		if tuple2, ok := t2.(*TupleType); ok {
-			// TODO: handle spread and rest
+			// TODO: handle spread
 			errors := []*Error{}
 
-			// TODO: we should unify all of the pairs of elements that we can
+			// TODO: Don't allow more than one rest element in tuple1
+			restElem, ok := tuple1.Elems[len(tuple1.Elems)-1].(*RestSpreadType)
+			if ok {
+				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
+				if len(elems1) > len(tuple2.Elems) {
+					return []*Error{{message: "No enough elements to unpack"}}
+				}
+				elems2 := tuple2.Elems[:len(elems1)]
+
+				for elem1, elem2 := range Zip(elems1, elems2) {
+					unifyErrors := c.unify(ctx, elem1, elem2)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				remainingElems := tuple2.Elems[len(elems1):]
+				tuple := &TupleType{
+					Elems: remainingElems,
+				}
+				unifyErrors := c.unify(ctx, restElem.Type, tuple)
+				errors = slices.Concat(errors, unifyErrors)
+				return errors
+			}
+
 			if len(tuple1.Elems) != len(tuple2.Elems) {
 				return []*Error{{message: fmt.Sprintf("Cannot unify %#v and %#v", tuple1, tuple2)}}
 			}
@@ -170,6 +192,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
 		if obj2, ok := t2.(*ObjectType); ok {
+			fmt.Printf("Unifying object types %s and %s\n", obj1, obj2)
+
 			// TODO: handle exactness
 			// TODO: handle unnamed elems, e.g. callable and newable signatures
 			// TODO: handle spread and rest
@@ -180,8 +204,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			errors := []*Error{}
 
-			namedElems1 := make(map[any]Type)
-			namedElems2 := make(map[any]Type)
+			namedElems1 := make(map[ObjTypeKey]Type)
+			namedElems2 := make(map[ObjTypeKey]Type)
+
+			restType := optional.None[Type]()
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
@@ -193,6 +219,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
 				case *PropertyElemType:
 					namedElems1[elem.Name] = elem.Value
+				case *RestSpreadElemType:
+					restType = optional.Some(elem.Value)
 				default: // skip other types of elems
 				}
 			}
@@ -211,16 +239,37 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 				}
 			}
 
+			usedKeys := map[ObjTypeKey]bool{}
 			for key1, value1 := range namedElems2 {
 				if value2, ok := namedElems1[key1]; ok {
 					unifyErrors := c.unify(ctx, value1, value2)
 					errors = slices.Concat(errors, unifyErrors)
+					usedKeys[key1] = true
 				} else {
 					errors = slices.Concat(errors, []*Error{{
-						message: fmt.Sprintf("key %s not found in %#v", key1, obj1),
+						message: fmt.Sprintf("key %#v not found in %s", key1, obj1),
 					}})
 				}
 			}
+
+			restType.IfSome(func(restType Type) {
+				restElems := []ObjTypeElem{}
+				for key2, value2 := range namedElems1 {
+					if _, ok := usedKeys[key2]; !ok {
+						restElems = append(restElems, &PropertyElemType{
+							Name:     key2,
+							Optional: false, // TODO
+							Readonly: false, // TODO
+							Value:    value2,
+						})
+					}
+				}
+
+				objType := NewObjectType(restElems)
+
+				unifyErrors := c.unify(ctx, restType, objType)
+				errors = slices.Concat(errors, unifyErrors)
+			})
 
 			return errors
 		}

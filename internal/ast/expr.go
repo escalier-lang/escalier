@@ -259,12 +259,12 @@ func (l *UndefinedLit) Accept(v Visitor) {
 func (e *LiteralExpr) Span() Span             { return e.span }
 func (e *LiteralExpr) InferredType() Type     { return e.inferredType }
 func (e *LiteralExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *LiteralExpr) Accept(v Visitor) {
+	v.VisitExpr(e)
+}
 
 func NewLitExpr(lit Lit) *LiteralExpr {
 	return &LiteralExpr{Lit: lit, span: lit.Span(), inferredType: nil}
-}
-func (e *LiteralExpr) Accept(v Visitor) {
-	v.VisitExpr(e)
 }
 
 type IdentExpr struct {

@@ -74,6 +74,7 @@ func (e *NullLit) Source() ast.Node   { return e.source }
 
 // If `Name` is an empty string it means that the identifier is missing in
 // the expression.
+// TODO: Dedupe with Ident
 type Identifier struct {
 	Name   string
 	span   *Span // gets filled in by the printer
@@ -399,9 +400,11 @@ const (
 )
 
 // TODO: support multiple declarators
+// TODO: support optional type annotations
 type VarDecl struct {
 	Kind    VariableKind
 	Pattern Pat
+	TypeAnn optional.Option[TypeAnn]
 	Init    Expr
 	export  bool
 	declare bool
@@ -416,7 +419,9 @@ func (d *VarDecl) SetSpan(span *Span) { d.span = span }
 func (d *VarDecl) Source() ast.Node   { return d.source }
 
 type Param struct {
-	Pattern Pat
+	Pattern  Pat
+	Optional bool
+	TypeAnn  optional.Option[TypeAnn]
 }
 
 type FuncDecl struct {
@@ -487,6 +492,7 @@ type Pat interface {
 }
 
 func (*IdentPat) isPat()  {}
+func (*LitPat) isPat()    {}
 func (*ObjectPat) isPat() {}
 func (*TuplePat) isPat()  {}
 func (*RestPat) isPat()   {}
@@ -504,6 +510,19 @@ func NewIdentPat(name string, _default optional.Option[Expr], source ast.Node) *
 func (p *IdentPat) Span() *Span        { return p.span }
 func (p *IdentPat) SetSpan(span *Span) { p.span = span }
 func (p *IdentPat) Source() ast.Node   { return p.source }
+
+type LitPat struct {
+	Lit    Lit
+	span   *Span
+	source ast.Node
+}
+
+func NewLitPat(lit Lit, source ast.Node) *LitPat {
+	return &LitPat{Lit: lit, source: source, span: nil}
+}
+func (p *LitPat) Span() *Span        { return p.span }
+func (p *LitPat) SetSpan(span *Span) { p.span = span }
+func (p *LitPat) Source() ast.Node   { return p.source }
 
 type ObjPatElem interface {
 	isObjPatElem()

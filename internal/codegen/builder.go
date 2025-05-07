@@ -195,6 +195,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			decl := &VarDecl{
 				Kind:    VariableKind(ast.ValKind),
 				Pattern: NewTuplePat(tempVarPats, nil),
+				TypeAnn: optional.None[TypeAnn](),
 				Init:    call,
 				declare: false,
 				export:  false,
@@ -242,6 +243,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 		decl := &VarDecl{
 			Kind:    VariableKind(ast.ValKind),
 			Pattern: pat,
+			TypeAnn: optional.None[TypeAnn](),
 			Init:    target,
 			declare: false, // TODO
 			export:  false, // TODO
@@ -515,7 +517,9 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		outParams = append(outParams, &Param{
 			// TODO: handle param defaults
-			Pattern: paramPat,
+			Pattern:  paramPat,
+			Optional: p.Optional,
+			TypeAnn:  optional.None[TypeAnn](),
 		})
 	}
 	return outParams, outParamStmts

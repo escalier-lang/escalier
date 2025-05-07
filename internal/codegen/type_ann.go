@@ -40,8 +40,8 @@ type LitTypeAnn struct {
 	span *Span
 }
 
-func NewLitTypeAnn(lit Lit, span *Span) *LitTypeAnn {
-	return &LitTypeAnn{Lit: lit, span: span}
+func NewLitTypeAnn(lit Lit) *LitTypeAnn {
+	return &LitTypeAnn{Lit: lit, span: nil}
 }
 func (t *LitTypeAnn) Span() *Span        { return t.span }
 func (t *LitTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -53,7 +53,7 @@ type NumberTypeAnn struct {
 }
 
 func NewNumberTypeAnn(span *Span) *NumberTypeAnn {
-	return &NumberTypeAnn{span: span}
+	return &NumberTypeAnn{span: nil, source: nil}
 }
 func (t *NumberTypeAnn) Span() *Span        { return t.span }
 func (t *NumberTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -65,7 +65,7 @@ type StringTypeAnn struct {
 }
 
 func NewStringTypeAnn(span *Span) *StringTypeAnn {
-	return &StringTypeAnn{span: span}
+	return &StringTypeAnn{span: nil, source: nil}
 }
 func (t *StringTypeAnn) Span() *Span        { return t.span }
 func (t *StringTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -77,7 +77,7 @@ type BooleanTypeAnn struct {
 }
 
 func NewBooleanTypeAnn(span *Span) *BooleanTypeAnn {
-	return &BooleanTypeAnn{span: span}
+	return &BooleanTypeAnn{span: nil, source: nil}
 }
 func (t *BooleanTypeAnn) Span() *Span        { return t.span }
 func (t *BooleanTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -89,7 +89,7 @@ type NullTypeAnn struct {
 }
 
 func NewNullTypeAnn(span *Span) *NullTypeAnn {
-	return &NullTypeAnn{span: span}
+	return &NullTypeAnn{span: nil, source: nil}
 }
 func (t *NullTypeAnn) Span() *Span        { return t.span }
 func (t *NullTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -101,7 +101,7 @@ type UndefinedTypeAnn struct {
 }
 
 func NewUndefinedTypeAnn(span *Span) *UndefinedTypeAnn {
-	return &UndefinedTypeAnn{span: span}
+	return &UndefinedTypeAnn{span: nil, source: nil}
 }
 func (t *UndefinedTypeAnn) Span() *Span        { return t.span }
 func (t *UndefinedTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -113,7 +113,7 @@ type UnknownTypeAnn struct {
 }
 
 func NewUnknownTypeAnn(span *Span) *UnknownTypeAnn {
-	return &UnknownTypeAnn{span: span}
+	return &UnknownTypeAnn{span: nil, source: nil}
 }
 func (t *UnknownTypeAnn) Span() *Span        { return t.span }
 func (t *UnknownTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -125,7 +125,7 @@ type NeverTypeAnn struct {
 }
 
 func NewNeverTypeAnn(span *Span) *NeverTypeAnn {
-	return &NeverTypeAnn{span: span}
+	return &NeverTypeAnn{span: nil, source: nil}
 }
 func (t *NeverTypeAnn) Span() *Span        { return t.span }
 func (t *NeverTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -191,13 +191,13 @@ type RestSpreadTypeAnn struct {
 }
 
 type ObjectTypeAnn struct {
-	Elems  []*ObjTypeAnnElem
+	Elems  []ObjTypeAnnElem
 	span   *Span
 	source ast.Node
 }
 
-func NewObjectTypeAnn(elems []*ObjTypeAnnElem, span *Span) *ObjectTypeAnn {
-	return &ObjectTypeAnn{Elems: elems, span: span}
+func NewObjectTypeAnn(elems []ObjTypeAnnElem) *ObjectTypeAnn {
+	return &ObjectTypeAnn{Elems: elems, span: nil, source: nil}
 }
 func (t *ObjectTypeAnn) Span() *Span        { return t.span }
 func (t *ObjectTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -209,8 +209,8 @@ type TupleTypeAnn struct {
 	source ast.Node
 }
 
-func NewTupleTypeAnn(elems []TypeAnn, span *Span) *TupleTypeAnn {
-	return &TupleTypeAnn{Elems: elems, span: span}
+func NewTupleTypeAnn(elems []TypeAnn) *TupleTypeAnn {
+	return &TupleTypeAnn{Elems: elems, span: nil, source: nil}
 }
 func (t *TupleTypeAnn) Span() *Span        { return t.span }
 func (t *TupleTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -222,8 +222,8 @@ type UnionTypeAnn struct {
 	source ast.Node
 }
 
-func NewUnionTypeAnn(types []TypeAnn, span *Span) *UnionTypeAnn {
-	return &UnionTypeAnn{Types: types, span: span}
+func NewUnionTypeAnn(types []TypeAnn) *UnionTypeAnn {
+	return &UnionTypeAnn{Types: types, span: nil, source: nil}
 }
 func (t *UnionTypeAnn) Span() *Span        { return t.span }
 func (t *UnionTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -235,8 +235,8 @@ type IntersectionTypeAnn struct {
 	source ast.Node
 }
 
-func NewIntersectionTypeAnn(types []TypeAnn, span *Span) *IntersectionTypeAnn {
-	return &IntersectionTypeAnn{Types: types, span: span}
+func NewIntersectionTypeAnn(types []TypeAnn) *IntersectionTypeAnn {
+	return &IntersectionTypeAnn{Types: types, span: nil, source: nil}
 }
 func (t *IntersectionTypeAnn) Span() *Span        { return t.span }
 func (t *IntersectionTypeAnn) Source() ast.Node   { return t.source }
@@ -249,8 +249,8 @@ type TypeRefTypeAnn struct {
 	source   ast.Node
 }
 
-func NewRefTypeAnn(name string, typeArgs []TypeAnn, span *Span) *TypeRefTypeAnn {
-	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span}
+func NewRefTypeAnn(name string, typeArgs []TypeAnn) *TypeRefTypeAnn {
+	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: nil, source: nil}
 }
 func (t *TypeRefTypeAnn) Span() *Span        { return t.span }
 func (t *TypeRefTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -284,6 +284,7 @@ func NewFuncTypeAnn(
 		Return:     ret,
 		Throws:     throws,
 		span:       span,
+		source:     nil,
 	}
 }
 func (t *FuncTypeAnn) Span() *Span        { return t.span }
@@ -296,8 +297,8 @@ type KeyOfTypeAnn struct {
 	source ast.Node
 }
 
-func NewKeyOfTypeAnn(typ TypeAnn, span *Span) *KeyOfTypeAnn {
-	return &KeyOfTypeAnn{Type: typ, span: span}
+func NewKeyOfTypeAnn(typ TypeAnn) *KeyOfTypeAnn {
+	return &KeyOfTypeAnn{Type: typ, span: nil, source: nil}
 }
 func (t *KeyOfTypeAnn) Span() *Span        { return t.span }
 func (t *KeyOfTypeAnn) Source() ast.Node   { return t.source }
@@ -309,8 +310,8 @@ type TypeOfTypeAnn struct {
 	source ast.Node
 }
 
-func NewTypeOfTypeAnn(value QualIdent, span *Span) *TypeOfTypeAnn {
-	return &TypeOfTypeAnn{Value: value, span: span}
+func NewTypeOfTypeAnn(value QualIdent) *TypeOfTypeAnn {
+	return &TypeOfTypeAnn{Value: value, span: nil, source: nil}
 }
 func (t *TypeOfTypeAnn) Span() *Span        { return t.span }
 func (t *TypeOfTypeAnn) Source() ast.Node   { return t.source }
@@ -323,8 +324,8 @@ type IndexTypeAnn struct {
 	source ast.Node
 }
 
-func NewIndexTypeAnn(target TypeAnn, index TypeAnn, span *Span) *IndexTypeAnn {
-	return &IndexTypeAnn{Target: target, Index: index, span: span}
+func NewIndexTypeAnn(target TypeAnn, index TypeAnn) *IndexTypeAnn {
+	return &IndexTypeAnn{Target: target, Index: index, span: nil, source: nil}
 }
 func (t *IndexTypeAnn) Span() *Span        { return t.span }
 func (t *IndexTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -339,8 +340,8 @@ type CondTypeAnn struct {
 	source  ast.Node
 }
 
-func NewCondTypeAnn(check, extends, cons, alt TypeAnn, span *Span) *CondTypeAnn {
-	return &CondTypeAnn{Check: check, Extends: extends, Cons: cons, Alt: alt, span: span}
+func NewCondTypeAnn(check, extends, cons, alt TypeAnn) *CondTypeAnn {
+	return &CondTypeAnn{Check: check, Extends: extends, Cons: cons, Alt: alt, span: nil, source: nil}
 }
 func (t *CondTypeAnn) Span() *Span        { return t.span }
 func (t *CondTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -352,8 +353,8 @@ type InferTypeAnn struct {
 	source ast.Node
 }
 
-func NewInferTypeAnn(name string, span *Span) *InferTypeAnn {
-	return &InferTypeAnn{Name: name, span: span}
+func NewInferTypeAnn(name string) *InferTypeAnn {
+	return &InferTypeAnn{Name: name, span: nil, source: nil}
 }
 func (t *InferTypeAnn) Span() *Span        { return t.span }
 func (t *InferTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -365,7 +366,7 @@ type AnyTypeAnn struct {
 }
 
 func NewAnyTypeAnn(span *Span) *AnyTypeAnn {
-	return &AnyTypeAnn{span: span}
+	return &AnyTypeAnn{span: nil, source: nil}
 }
 func (t *AnyTypeAnn) Span() *Span        { return t.span }
 func (t *AnyTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -383,19 +384,20 @@ type TemplateLitTypeAnn struct {
 	source   ast.Node
 }
 
-func NewTemplateLitTypeAnn(quasis []*Quasi, typeAnns []TypeAnn, span *Span) *TemplateLitTypeAnn {
-	return &TemplateLitTypeAnn{Quasis: quasis, TypeAnns: typeAnns, span: span}
+func NewTemplateLitTypeAnn(quasis []*Quasi, typeAnns []TypeAnn) *TemplateLitTypeAnn {
+	return &TemplateLitTypeAnn{Quasis: quasis, TypeAnns: typeAnns, span: nil, source: nil}
 }
 func (t *TemplateLitTypeAnn) Span() *Span        { return t.span }
 func (t *TemplateLitTypeAnn) SetSpan(span *Span) { t.span = span }
 func (t *TemplateLitTypeAnn) Source() ast.Node   { return t.source }
 
 type IntrinsicTypeAnn struct {
+	Name string
 	span *Span
 }
 
-func NewIntrinsicTypeAnn(span *Span) *IntrinsicTypeAnn {
-	return &IntrinsicTypeAnn{span: span}
+func NewIntrinsicTypeAnn(name string, span *Span) *IntrinsicTypeAnn {
+	return &IntrinsicTypeAnn{Name: name, span: nil}
 }
 func (t *IntrinsicTypeAnn) Span() *Span        { return t.span }
 func (t *IntrinsicTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -409,13 +411,20 @@ type ImportType struct {
 	source    ast.Node
 }
 
-func NewImportType(path string, qualifier QualIdent, typeArgs []TypeAnn, span *Span) *ImportType {
-	return &ImportType{Path: path, Qualifier: qualifier, TypeArgs: typeArgs, span: span}
+func NewImportType(path string, qualifier QualIdent, typeArgs []TypeAnn) *ImportType {
+	return &ImportType{
+		Path:      path,
+		Qualifier: qualifier,
+		TypeArgs:  typeArgs,
+		span:      nil,
+		source:    nil,
+	}
 }
 func (t *ImportType) Span() *Span        { return t.span }
 func (t *ImportType) SetSpan(span *Span) { t.span = span }
 func (t *ImportType) Source() ast.Node   { return t.source }
 
+// TODO: Dedupe with `Identifier`
 type Ident struct {
 	Name string
 	span Span
