@@ -1,7 +1,7 @@
 type Tuple = [number, string, boolean]
-val foo = fn ([a, b, c]: Tuple) {
+export val foo = fn ([a, b, c]: Tuple) {
     return c
 }
-fn bar([a, b, c]: Tuple) {
+export fn bar([a, b, c]: Tuple) {
     return c
 }
