@@ -404,6 +404,7 @@ type Decl interface {
 
 func (*VarDecl) isDecl()  {}
 func (*FuncDecl) isDecl() {}
+func (*TypeDecl) isDecl() {}
 
 type VariableKind int
 
@@ -667,3 +668,19 @@ func NewRestPat(pattern Pat, source ast.Node) *RestPat {
 func (p *RestPat) Span() *Span        { return p.span }
 func (p *RestPat) SetSpan(span *Span) { p.span = span }
 func (p *RestPat) Source() ast.Node   { return p.source }
+
+type TypeDecl struct {
+	Name       *Identifier
+	TypeParams []*TypeParam
+	TypeAnn    TypeAnn
+	export     bool
+	declare    bool
+	span       *Span
+	source     ast.Node
+}
+
+func (d *TypeDecl) Export() bool       { return d.export }
+func (d *TypeDecl) Declare() bool      { return d.declare }
+func (d *TypeDecl) Span() *Span        { return d.span }
+func (d *TypeDecl) SetSpan(span *Span) { d.span = span }
+func (d *TypeDecl) Source() ast.Node   { return d.source }

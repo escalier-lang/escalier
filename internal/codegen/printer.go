@@ -396,6 +396,13 @@ func (p *Printer) PrintDecl(decl Decl) {
 		d.Body.IfNone(func() {
 			p.print(";")
 		})
+	case *TypeDecl:
+		// TODO: handle type params
+		p.print("type ")
+		p.print(d.Name.Name)
+		p.print(" = ")
+		p.PrintTypeAnn(d.TypeAnn)
+		p.print(";")
 	}
 
 	end := p.location
@@ -514,7 +521,20 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 	case *TypeRefTypeAnn:
 		panic("PrintTypeAnn: TypeRefTypeAnn not implemented")
 	case *FuncTypeAnn:
-		panic("PrintTypeAnn: FuncTypeAnn not implemented")
+		p.print("(")
+		for i, param := range ta.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			param.TypeAnn.IfSome(func(ta TypeAnn) {
+				p.print(": ")
+				p.PrintTypeAnn(ta)
+			})
+		}
+		p.print(")")
+		p.print(" => ")
+		p.PrintTypeAnn(ta.Return)
 	case *KeyOfTypeAnn:
 		panic("PrintTypeAnn: KeyOfTypeAnn not implemented")
 	case *TypeOfTypeAnn:

@@ -120,7 +120,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c := NewChecker()
-			bindings, inferErrors := c.InferScript(inferCtx, script)
+			scope, inferErrors := c.InferScript(inferCtx, script)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
 			}
@@ -128,7 +128,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			// TODO: short term - print each of the binding's types and store
 			// them in a map and the snapshot the map.
 			// TODO: long term - generate a .d.ts file from the bindings
-			for name, binding := range bindings {
+			for name, binding := range scope.Values {
 				assert.NotNil(t, binding)
 				fmt.Printf("%s = %s\n", name, binding.Type.String())
 				fmt.Printf("%#v\n", binding.Type.Provenance())
