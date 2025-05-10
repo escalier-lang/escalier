@@ -46,7 +46,7 @@ func Compile(source parser.Source) CompilerOutput {
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
-	dtsMod := builder.BuildDefinitions(bindings)
+	dtsMod := builder.BuildDefinitions(inMod, bindings)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)

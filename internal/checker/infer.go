@@ -136,7 +136,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			message: "Operator " + string(expr.Op) + " is not a function",
 		}}
 	case *ast.UnaryExpr:
-		return NewNeverType(), []*Error{}
+		if expr.Op == ast.UnaryMinus {
+			if lit, ok := expr.Arg.(*ast.LiteralExpr); ok {
+				if num, ok := lit.Lit.(*ast.NumLit); ok {
+					return NewLitType(&NumLit{Value: num.Value * -1}), []*Error{}
+				}
+			}
+		}
+		return NewNeverType(), []*Error{{
+			message: "TODO: Handle unary operators",
+		}}
 	case *ast.CallExpr:
 		errors := []*Error{}
 		calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
@@ -687,8 +696,9 @@ func (c *Checker) inferPattern(
 				},
 			).TakeOrElse(func() Type { return NewNeverType() })
 		case *ast.RestPat:
-			t = NewRestSpreadType(c.FreshVar())
-			errors = []*Error{}
+			argType, argErrors := inferPatRec(p.Pattern)
+			errors = append(errors, argErrors...)
+			t = NewRestSpreadType(argType)
 		case *ast.WildcardPat:
 			t = c.FreshVar()
 			errors = []*Error{}

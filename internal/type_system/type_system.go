@@ -438,8 +438,8 @@ type ObjTypeElem interface {
 	Accept(TypeVisitor)
 }
 
-type CallableElemType struct{ Fn Type }
-type ConstructorElemType struct{ Fn Type }
+type CallableElemType struct{ Fn *FuncType }
+type ConstructorElemType struct{ Fn *FuncType }
 type MethodElemType struct {
 	Name ObjTypeKey
 	Fn   *FuncType

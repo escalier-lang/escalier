@@ -27,11 +27,11 @@ func (p *Parser) decl() (optional.Option[ast.Decl], [](*Error)) {
 	// nolint: exhaustive
 	switch token.Type {
 	case Val, Var:
-		return p.varDecl(start, token, declare, export)
+		return p.varDecl(start, token, export, declare)
 	case Fn:
-		return p.fnDecl(start, declare, export)
+		return p.fnDecl(start, export, declare)
 	case Type:
-		return p.typeDecl(start, declare, export)
+		return p.typeDecl(start, export, declare)
 	default:
 		errors = append(errors, NewError(token.Span, "Unexpected token"))
 		return optional.None[ast.Decl](), errors
@@ -40,7 +40,7 @@ func (p *Parser) decl() (optional.Option[ast.Decl], [](*Error)) {
 
 // valDecl = 'val' pat '=' expr
 // NOTE: '=' `expr` is optional for valDecl when `declare` is true.
-func (p *Parser) varDecl(start ast.Location, token *Token, declare bool, export bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
 	errors := []*Error{}
 	kind := ast.ValKind
 	if token.Type == Var {
@@ -80,14 +80,14 @@ func (p *Parser) varDecl(start ast.Location, token *Token, declare bool, export 
 	}
 
 	return optional.Some[ast.Decl](
-		ast.NewVarDecl(kind, pat, init, declare, export, ast.Span{Start: start, End: end}),
+		ast.NewVarDecl(kind, pat, init, export, declare, ast.Span{Start: start, End: end}),
 	), errors
 }
 
 // fnDecl = 'fn' ident '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
-func (p *Parser) fnDecl(start ast.Location, declare bool, export bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
 	errors := []*Error{}
 	token := p.lexer.peek()
 	var ident *ast.Ident
@@ -131,13 +131,13 @@ func (p *Parser) fnDecl(start ast.Location, declare bool, export bool) (optional
 
 	return optional.Some[ast.Decl](
 		ast.NewFuncDecl(
-			ident, params, bodyOption, declare, export,
+			ident, params, bodyOption, export, declare,
 			ast.NewSpan(start, end),
 		),
 	), errors
 }
 
-func (p *Parser) typeDecl(start ast.Location, declare bool, export bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
 	errors := []*Error{}
 	token := p.lexer.peek()
 	if token.Type != Identifier {
@@ -157,7 +157,7 @@ func (p *Parser) typeDecl(start ast.Location, declare bool, export bool) (option
 	typeAnnOption, typeAnnErrors := p.typeAnn()
 	errors = append(errors, typeAnnErrors...)
 	decl := optional.Map(typeAnnOption, func(typeAnn ast.TypeAnn) ast.Decl {
-		return ast.NewTypeDecl(ident, typeParams, typeAnn, declare, export, ast.NewSpan(start, end))
+		return ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
 	})
 	return decl, errors
 }

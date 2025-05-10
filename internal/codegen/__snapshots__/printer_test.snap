@@ -1,18 +1,32 @@
 
 [TestPrintExpr - 1]
 &codegen.BinaryExpr{
-    Left: &codegen.NumExpr{
-        Value: 0.1,
-        span:  &codegen.Span{
+    Left: &codegen.LitExpr{
+        Lit: &codegen.NumLit{
+            Value: 0.1,
+            span:  &codegen.Span{
+                Start: codegen.Location{Line:1, Column:1},
+                End:   codegen.Location{Line:1, Column:4},
+            },
+            source: nil,
+        },
+        span: &codegen.Span{
             Start: codegen.Location{Line:1, Column:1},
             End:   codegen.Location{Line:1, Column:4},
         },
         source: nil,
     },
     Op:    "+",
-    Right: &codegen.NumExpr{
-        Value: 0.2,
-        span:  &codegen.Span{
+    Right: &codegen.LitExpr{
+        Lit: &codegen.NumLit{
+            Value: 0.2,
+            span:  &codegen.Span{
+                Start: codegen.Location{Line:1, Column:7},
+                End:   codegen.Location{Line:1, Column:10},
+            },
+            source: nil,
+        },
+        span: &codegen.Span{
             Start: codegen.Location{Line:1, Column:7},
             End:   codegen.Location{Line:1, Column:10},
         },

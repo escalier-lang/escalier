@@ -11,8 +11,83 @@ type Node interface {
 	Source() ast.Node
 }
 
+type Lit interface {
+	isLiteral()
+	Node
+}
+
+func (*NumLit) isLiteral()       {}
+func (*StrLit) isLiteral()       {}
+func (*BoolLit) isLiteral()      {}
+func (*NullLit) isLiteral()      {}
+func (*UndefinedLit) isLiteral() {}
+
+type NumLit struct {
+	Value  float64
+	span   *Span
+	source ast.Node
+}
+
+func NewNumLit(value float64, source ast.Node) *NumLit {
+	return &NumLit{Value: value, source: source, span: nil}
+}
+func (e *NumLit) Span() *Span        { return e.span }
+func (e *NumLit) SetSpan(span *Span) { e.span = span }
+func (e *NumLit) Source() ast.Node   { return e.source }
+
+type StrLit struct {
+	Value  string
+	span   *Span
+	source ast.Node
+}
+
+func NewStrLit(value string, source ast.Node) *StrLit {
+	return &StrLit{Value: value, source: source, span: nil}
+}
+func (e *StrLit) Span() *Span        { return e.span }
+func (e *StrLit) SetSpan(span *Span) { e.span = span }
+func (e *StrLit) Source() ast.Node   { return e.source }
+
+type BoolLit struct {
+	Value  bool
+	span   *Span
+	source ast.Node
+}
+
+func NewBoolLit(value bool, source ast.Node) *BoolLit {
+	return &BoolLit{Value: value, source: source, span: nil}
+}
+func (e *BoolLit) Span() *Span        { return e.span }
+func (e *BoolLit) SetSpan(span *Span) { e.span = span }
+func (e *BoolLit) Source() ast.Node   { return e.source }
+
+type NullLit struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewNullLit(source ast.Node) *NullLit {
+	return &NullLit{source: source, span: nil}
+}
+func (e *NullLit) Span() *Span        { return e.span }
+func (e *NullLit) SetSpan(span *Span) { e.span = span }
+func (e *NullLit) Source() ast.Node   { return e.source }
+
+type UndefinedLit struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewUndefinedLit(source ast.Node) *UndefinedLit {
+	return &UndefinedLit{source: source, span: nil}
+}
+func (e *UndefinedLit) Span() *Span        { return e.span }
+func (e *UndefinedLit) SetSpan(span *Span) { e.span = span }
+func (e *UndefinedLit) Source() ast.Node   { return e.source }
+
 // If `Name` is an empty string it means that the identifier is missing in
 // the expression.
+// TODO: Dedupe with Ident
 type Identifier struct {
 	Name   string
 	span   *Span // gets filled in by the printer
@@ -33,10 +108,7 @@ type Expr interface {
 }
 
 func (*BinaryExpr) isExpr() {}
-func (*NumExpr) isExpr()    {}
-func (*StrExpr) isExpr()    {}
-func (*BoolExpr) isExpr()   {}
-func (*NullExpr) isExpr()   {}
+func (*LitExpr) isExpr()    {}
 func (*IdentExpr) isExpr()  {}
 func (*UnaryExpr) isExpr()  {}
 func (*CallExpr) isExpr()   {}
@@ -126,8 +198,8 @@ type ObjKey interface {
 }
 
 func (*IdentExpr) isObjKey()   {}
-func (*StrExpr) isObjKey()     {}
-func (*NumExpr) isObjKey()     {}
+func (*StrLit) isObjKey()      {}
+func (*NumLit) isObjKey()      {}
 func (*ComputedKey) isObjKey() {}
 
 type ComputedKey struct {
@@ -296,56 +368,18 @@ func (e *UnaryExpr) Span() *Span        { return e.span }
 func (e *UnaryExpr) SetSpan(span *Span) { e.span = span }
 func (e *UnaryExpr) Source() ast.Node   { return e.source }
 
-type NumExpr struct {
-	Value  float64
+type LitExpr struct {
+	Lit    Lit
 	span   *Span
 	source ast.Node
 }
 
-func NewNumExpr(value float64, source ast.Node) *NumExpr {
-	return &NumExpr{Value: value, source: source, span: nil}
+func NewLitExpr(lit Lit, source ast.Node) *LitExpr {
+	return &LitExpr{Lit: lit, source: source, span: nil}
 }
-func (e *NumExpr) Span() *Span        { return e.span }
-func (e *NumExpr) SetSpan(span *Span) { e.span = span }
-func (e *NumExpr) Source() ast.Node   { return e.source }
-
-type StrExpr struct {
-	Value  string
-	span   *Span
-	source ast.Node
-}
-
-func NewStrExpr(value string, source ast.Node) *StrExpr {
-	return &StrExpr{Value: value, source: source, span: nil}
-}
-func (e *StrExpr) Span() *Span        { return e.span }
-func (e *StrExpr) SetSpan(span *Span) { e.span = span }
-func (e *StrExpr) Source() ast.Node   { return e.source }
-
-type BoolExpr struct {
-	Value  bool
-	span   *Span
-	source ast.Node
-}
-
-func NewBoolExpr(value bool, source ast.Node) *BoolExpr {
-	return &BoolExpr{Value: value, source: source, span: nil}
-}
-func (e *BoolExpr) Span() *Span        { return e.span }
-func (e *BoolExpr) SetSpan(span *Span) { e.span = span }
-func (e *BoolExpr) Source() ast.Node   { return e.source }
-
-type NullExpr struct {
-	span   *Span
-	source ast.Node
-}
-
-func NewNullExpr(source ast.Node) *NullExpr {
-	return &NullExpr{source: source, span: nil}
-}
-func (e *NullExpr) Span() *Span        { return e.span }
-func (e *NullExpr) SetSpan(span *Span) { e.span = span }
-func (e *NullExpr) Source() ast.Node   { return e.source }
+func (e *LitExpr) Span() *Span        { return e.span }
+func (e *LitExpr) SetSpan(span *Span) { e.span = span }
+func (e *LitExpr) Source() ast.Node   { return e.source }
 
 type IdentExpr struct {
 	Name   string
@@ -378,11 +412,17 @@ const (
 	VarKind
 )
 
+type Declarator struct {
+	Pattern Pat
+	TypeAnn optional.Option[TypeAnn]
+	Init    Expr // TODO: make this an optional
+}
+
 // TODO: support multiple declarators
+// TODO: support optional type annotations
 type VarDecl struct {
 	Kind    VariableKind
-	Pattern Pat
-	Init    Expr
+	Decls   []*Declarator
 	export  bool
 	declare bool
 	span    *Span
@@ -396,13 +436,17 @@ func (d *VarDecl) SetSpan(span *Span) { d.span = span }
 func (d *VarDecl) Source() ast.Node   { return d.source }
 
 type Param struct {
-	Pattern Pat
+	Pattern  Pat
+	Optional bool
+	TypeAnn  optional.Option[TypeAnn]
 }
 
+// TODO: add support for type params
 type FuncDecl struct {
 	Name    *Identifier
 	Params  []*Param
-	Body    []Stmt
+	Body    optional.Option[[]Stmt]
+	TypeAnn optional.Option[TypeAnn] // return type annotation
 	export  bool
 	declare bool
 	span    *Span
@@ -467,6 +511,7 @@ type Pat interface {
 }
 
 func (*IdentPat) isPat()  {}
+func (*LitPat) isPat()    {}
 func (*ObjectPat) isPat() {}
 func (*TuplePat) isPat()  {}
 func (*RestPat) isPat()   {}
@@ -484,6 +529,19 @@ func NewIdentPat(name string, _default optional.Option[Expr], source ast.Node) *
 func (p *IdentPat) Span() *Span        { return p.span }
 func (p *IdentPat) SetSpan(span *Span) { p.span = span }
 func (p *IdentPat) Source() ast.Node   { return p.source }
+
+type LitPat struct {
+	Lit    Lit
+	span   *Span
+	source ast.Node
+}
+
+func NewLitPat(lit Lit, source ast.Node) *LitPat {
+	return &LitPat{Lit: lit, source: source, span: nil}
+}
+func (p *LitPat) Span() *Span        { return p.span }
+func (p *LitPat) SetSpan(span *Span) { p.span = span }
+func (p *LitPat) Source() ast.Node   { return p.source }
 
 type ObjPatElem interface {
 	isObjPatElem()
