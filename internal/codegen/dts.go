@@ -1,32 +1,115 @@
 package codegen
 
 import (
+	"fmt"
+	"sort"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/moznion/go-optional"
 )
 
-func (b *Builder) BuildDefinitions(bindings map[string]checker.Binding) *Module {
+type BindingVisitor struct {
+	Bindings []string
+}
+
+func (v *BindingVisitor) VisitPat(pat ast.Pat) bool {
+	if ident, ok := pat.(*ast.IdentPat); ok {
+		v.Bindings = append(v.Bindings, ident.Name)
+	}
+	return true
+}
+
+func (v *BindingVisitor) VisitStmt(stmt ast.Stmt) bool               { return false }
+func (v *BindingVisitor) VisitExpr(expr ast.Expr) bool               { return false }
+func (v *BindingVisitor) VisitDecl(decl ast.Decl) bool               { return false }
+func (v *BindingVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool { return false }
+func (v *BindingVisitor) VisitTypeAnn(t ast.TypeAnn) bool            { return false }
+func (v *BindingVisitor) VisitLit(lit ast.Lit) bool                  { return false }
+
+func findBindings(pat ast.Pat) []string {
+	visitor := &BindingVisitor{
+		Bindings: []string{},
+	}
+	pat.Accept(visitor)
+
+	return visitor.Bindings
+}
+
+// TODO: Update this function to group bindings from the same declaration together
+// and order them in the same way as the original code.
+func (b *Builder) BuildDefinitions(
+	mod *ast.Script,
+	bindings map[string]checker.Binding,
+) *Module {
 	stmts := []Stmt{}
 
-	for name, binding := range bindings {
-		typeAnn := buildTypeAnn(binding.Type)
-		decl := &VarDecl{
-			Kind:    VariableKind(ast.ValKind),
-			Pattern: NewIdentPat(name, optional.None[Expr](), nil),
-			TypeAnn: optional.Some(typeAnn),
-			Init:    nil,
-			declare: false,
-			export:  false,
-			span:    nil,
-			source:  nil,
+	for _, stmt := range mod.Stmts {
+		switch stmt := stmt.(type) {
+		case *ast.DeclStmt:
+			switch decl := stmt.Decl.(type) {
+			case *ast.VarDecl:
+				keys := findBindings(decl.Pattern)
+				sort.Strings(keys)
+
+				decls := make([]*Declarator, 0, len(keys))
+				for _, name := range keys {
+					binding := bindings[name]
+					fmt.Printf("VarDecl - %s = %s", name, binding.Type)
+					typeAnn := buildTypeAnn(binding.Type)
+					decls = append(decls, &Declarator{
+						Pattern: NewIdentPat(name, optional.None[Expr](), nil),
+						TypeAnn: optional.Some(typeAnn),
+						Init:    nil,
+					})
+				}
+
+				varDecl := &VarDecl{
+					Kind:    VariableKind(decl.Kind),
+					Decls:   decls,
+					declare: true, // Always true for .d.ts files
+					export:  decl.Export(),
+					span:    nil,
+					source:  nil,
+				}
+				stmts = append(stmts, &DeclStmt{
+					Decl:   varDecl,
+					span:   nil,
+					source: nil,
+				})
+
+			case *ast.FuncDecl:
+				binding := bindings[decl.Name.Name]
+
+				fmt.Printf("FuncDecl - %s = %s", decl.Name.Name, binding.Type)
+
+				funcType := binding.Type.(*type_sys.FuncType)
+
+				fnDecl := &FuncDecl{
+					Name:   NewIdentifier(decl.Name.Name, decl.Name),
+					Params: funcTypeToParams(funcType),
+					// TODO: Use the type annotation if there is one and if not
+					// fallback to the inferred return type from the binding.
+					TypeAnn: optional.Some(buildTypeAnn(funcType.Return)),
+					Body:    nil,
+					declare: true, // Always true for .d.ts files
+					export:  decl.Export(),
+					span:    nil,
+					source:  nil,
+				}
+				stmts = append(stmts, &DeclStmt{
+					Decl:   fnDecl,
+					span:   nil,
+					source: nil,
+				})
+			case *ast.TypeDecl:
+
+				panic("TODO: handle type decl")
+			}
+		default:
+			// Ignore other statements
 		}
-		stmts = append(stmts, &DeclStmt{
-			Decl:   decl,
-			span:   nil,
-			source: nil,
-		})
 	}
 
 	return &Module{Stmts: stmts}
@@ -147,7 +230,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.IntrinsicType:
 		return NewIntrinsicTypeAnn(t.Name, nil)
 	default:
-		panic("unknown type")
+		panic(fmt.Sprintf("unknown type: %s", t))
 	}
 }
 
@@ -244,13 +327,15 @@ func buildObjKey(key type_sys.ObjTypeKey) ObjKey {
 		// TODO: Check if key.Str is a valid identifier and if it is then return
 		// an IdentExpr instead of a StrLit.
 		return &StrLit{
-			Value: key.Str,
-			span:  nil,
+			Value:  key.Str,
+			span:   nil,
+			source: nil,
 		}
 	case type_sys.NumObjTypeKeyKind:
 		return &NumLit{
-			Value: key.Num,
-			span:  nil,
+			Value:  key.Num,
+			span:   nil,
+			source: nil,
 		}
 	case type_sys.SymObjTypeKeyKind:
 		panic("TODO: objTypeKeyToObjKey - SymObjTypeKey")
@@ -284,6 +369,12 @@ func litToLit(t type_sys.Lit) Lit {
 		return NewNumLit(lit.Value, nil)
 	case *type_sys.StrLit:
 		return NewStrLit(lit.Value, nil)
+	// case *type_sys.BigIntLit:
+	// 	return NewBigIntLit(lit.Value, nil)
+	case *type_sys.NullLit:
+		return NewNullLit(nil)
+	case *type_sys.UndefinedLit:
+		return NewUndefinedLit(nil)
 	default:
 		panic("unknown literal type")
 	}
@@ -293,6 +384,12 @@ func patToPat(pat type_sys.Pat) Pat {
 	switch pat := pat.(type) {
 	case *type_sys.IdentPat:
 		return NewIdentPat(pat.Name, optional.None[Expr](), nil)
+	case *type_sys.TuplePat:
+		elems := make([]Pat, len(pat.Elems))
+		for i, elem := range pat.Elems {
+			elems[i] = patToPat(elem)
+		}
+		return NewTuplePat(elems, nil)
 	case *type_sys.ObjectPat:
 		panic("TODO: patToPat - ObjectPat")
 	case *type_sys.ExtractorPat:
@@ -304,6 +401,6 @@ func patToPat(pat type_sys.Pat) Pat {
 	case *type_sys.WildcardPat:
 		panic("TODO: patToPat - WildcardPat")
 	default:
-		panic("unknown pattern type")
+		panic(fmt.Sprintf("unknown pattern type: %#v", pat))
 	}
 }

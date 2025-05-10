@@ -202,17 +202,22 @@ func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 		// TODO: traverse the pattern to get more granular segments
 		// but for now we just add the segment for the decl's pattern
 		// and the init expression
-		s.TraversePattern(dk.Pattern)
-		if dk.Init != nil {
-			s.TraverseExpr(dk.Init)
+		for _, d := range dk.Decls {
+			s.TraversePattern(d.Pattern)
+			if d.Init != nil {
+				s.TraverseExpr(d.Init)
+			}
+			// TODO: tranverse the type annotation if it exists
 		}
 	case *FuncDecl:
 		for _, param := range dk.Params {
 			s.AddSegmentForNode(param.Pattern)
 		}
-		for _, stmt := range dk.Body {
-			s.TraverseStmt(stmt)
-		}
+		dk.Body.IfSome(func(body []Stmt) {
+			for _, stmt := range body {
+				s.TraverseStmt(stmt)
+			}
+		})
 	}
 }
 

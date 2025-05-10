@@ -45,6 +45,18 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 		require.Equal(t, string(expectedJs), string(actualJs))
 	}
 
+	actualDts, err := os.ReadFile(fixtureName + ".d.ts")
+	require.NoError(t, err)
+
+	if shouldUpdate {
+		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".d.ts"), actualDts, 0644)
+		require.NoError(t, err)
+	} else {
+		expectedDts, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".d.ts"))
+		require.NoError(t, err)
+		require.Equal(t, string(expectedDts), string(actualDts))
+	}
+
 	actualMap, err := os.ReadFile(fixtureName + ".esc.map")
 	require.NoError(t, err)
 
@@ -75,7 +87,7 @@ func TestBuild(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			if fixture.Name() != "destructuring" || group.Name() != "basics" {
+			if /*fixture.Name() != "operators" || */ group.Name() != "basics" {
 				continue
 			}
 			name := group.Name() + "/" + fixture.Name()

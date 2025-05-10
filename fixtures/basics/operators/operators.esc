@@ -1,7 +1,10 @@
-val a = x + y
-val b = x - y
-val c = x * y
-val d = x / y
+val x = 5
+val y = 10
+
+export val a = x + y
+export val b = x - y
+export val c = x * y
+export val d = x / y
 val e = x == y
 val f = x != y
 val h = x > y
@@ -9,5 +12,5 @@ val i = x >= y
 val k = x < y
 val m = x <= y
 
-val p = -x
-val q = +x
+// export val p = -x
+// val q = +x

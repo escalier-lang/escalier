@@ -3,8 +3,11 @@
 &codegen.BinaryExpr{
     Left: &codegen.LitExpr{
         Lit: &codegen.NumLit{
-            Value:  0.1,
-            span:   (*codegen.Span)(nil),
+            Value: 0.1,
+            span:  &codegen.Span{
+                Start: codegen.Location{Line:1, Column:1},
+                End:   codegen.Location{Line:1, Column:4},
+            },
             source: nil,
         },
         span: &codegen.Span{
@@ -16,8 +19,11 @@
     Op:    "+",
     Right: &codegen.LitExpr{
         Lit: &codegen.NumLit{
-            Value:  0.2,
-            span:   (*codegen.Span)(nil),
+            Value: 0.2,
+            span:  &codegen.Span{
+                Start: codegen.Location{Line:1, Column:7},
+                End:   codegen.Location{Line:1, Column:10},
+            },
             source: nil,
         },
         span: &codegen.Span{

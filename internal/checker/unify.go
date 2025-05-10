@@ -254,7 +254,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			restType.IfSome(func(restType Type) {
 				restElems := []ObjTypeElem{}
-				for key2, value2 := range namedElems1 {
+				for key2, value2 := range namedElems2 {
 					if _, ok := usedKeys[key2]; !ok {
 						restElems = append(restElems, &PropertyElemType{
 							Name:     key2,

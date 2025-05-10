@@ -16,10 +16,11 @@ type Lit interface {
 	Node
 }
 
-func (*NumLit) isLiteral()  {}
-func (*StrLit) isLiteral()  {}
-func (*BoolLit) isLiteral() {}
-func (*NullLit) isLiteral() {}
+func (*NumLit) isLiteral()       {}
+func (*StrLit) isLiteral()       {}
+func (*BoolLit) isLiteral()      {}
+func (*NullLit) isLiteral()      {}
+func (*UndefinedLit) isLiteral() {}
 
 type NumLit struct {
 	Value  float64
@@ -71,6 +72,18 @@ func NewNullLit(source ast.Node) *NullLit {
 func (e *NullLit) Span() *Span        { return e.span }
 func (e *NullLit) SetSpan(span *Span) { e.span = span }
 func (e *NullLit) Source() ast.Node   { return e.source }
+
+type UndefinedLit struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewUndefinedLit(source ast.Node) *UndefinedLit {
+	return &UndefinedLit{source: source, span: nil}
+}
+func (e *UndefinedLit) Span() *Span        { return e.span }
+func (e *UndefinedLit) SetSpan(span *Span) { e.span = span }
+func (e *UndefinedLit) Source() ast.Node   { return e.source }
 
 // If `Name` is an empty string it means that the identifier is missing in
 // the expression.
@@ -399,13 +412,17 @@ const (
 	VarKind
 )
 
+type Declarator struct {
+	Pattern Pat
+	TypeAnn optional.Option[TypeAnn]
+	Init    Expr // TODO: make this an optional
+}
+
 // TODO: support multiple declarators
 // TODO: support optional type annotations
 type VarDecl struct {
 	Kind    VariableKind
-	Pattern Pat
-	TypeAnn optional.Option[TypeAnn]
-	Init    Expr
+	Decls   []*Declarator
 	export  bool
 	declare bool
 	span    *Span
@@ -424,10 +441,12 @@ type Param struct {
 	TypeAnn  optional.Option[TypeAnn]
 }
 
+// TODO: add support for type params
 type FuncDecl struct {
 	Name    *Identifier
 	Params  []*Param
-	Body    []Stmt
+	Body    optional.Option[[]Stmt]
+	TypeAnn optional.Option[TypeAnn] // return type annotation
 	export  bool
 	declare bool
 	span    *Span

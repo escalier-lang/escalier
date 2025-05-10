@@ -104,13 +104,13 @@ func (p *ObjectPat) Accept(v Visitor) {
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ObjKeyValuePat:
-				v.VisitPat(e.Value)
+				e.Value.Accept(v)
 			case *ObjShorthandPat:
 				e.Default.IfSome(func(expr Expr) {
-					v.VisitExpr(expr)
+					expr.Accept(v)
 				})
 			case *ObjRestPat:
-				v.VisitPat(e.Pattern)
+				e.Pattern.Accept(v)
 			}
 		}
 	}
@@ -131,7 +131,7 @@ func (p *TuplePat) SetInferredType(t Type) { p.inferredType = t }
 func (p *TuplePat) Accept(v Visitor) {
 	if v.VisitPat(p) {
 		for _, elem := range p.Elems {
-			v.VisitPat(elem)
+			elem.Accept(v)
 		}
 	}
 }
@@ -189,7 +189,7 @@ func (p *LitPat) InferredType() Type     { return p.inferredType }
 func (p *LitPat) SetInferredType(t Type) { p.inferredType = t }
 func (p *LitPat) Accept(v Visitor) {
 	if v.VisitPat(p) {
-		v.VisitLit(p.Lit)
+		p.Lit.Accept(v)
 	}
 }
 

@@ -14,8 +14,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             Init:    nil,
-            export:  true,
-            declare: false,
+            export:  false,
+            declare: true,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:14},
@@ -89,8 +89,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     inferredType: nil,
                 },
             },
-            export:  false,
-            declare: true,
+            export:  true,
+            declare: false,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:17},
@@ -250,8 +250,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                     },
                 },
             },
-            export:  false,
-            declare: true,
+            export:  true,
+            declare: false,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:30},
@@ -311,8 +311,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 Throws: nil,
             },
             Body:    nil,
-            export:  true,
-            declare: false,
+            export:  false,
+            declare: true,
             span:    ast.Span{
                 Start: ast.Location{Line:1, Column:1},
                 End:   ast.Location{Line:1, Column:21},

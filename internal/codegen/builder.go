@@ -192,11 +192,17 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				nil, // TODO: source
 			)
 
+			decls := []*Declarator{
+				&Declarator{
+					Pattern: NewTuplePat(tempVarPats, nil),
+					TypeAnn: optional.None[TypeAnn](),
+					Init:    call,
+				},
+			}
+
 			decl := &VarDecl{
 				Kind:    VariableKind(ast.ValKind),
-				Pattern: NewTuplePat(tempVarPats, nil),
-				TypeAnn: optional.None[TypeAnn](),
-				Init:    call,
+				Decls:   decls,
 				declare: false,
 				export:  false,
 				span:    nil,
@@ -240,11 +246,17 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 	pat := buildPatternRec(p, target)
 
 	if pat != nil {
+		decls := []*Declarator{
+			&Declarator{
+				Pattern: pat,
+				TypeAnn: optional.None[TypeAnn](),
+				Init:    target,
+			},
+		}
+
 		decl := &VarDecl{
 			Kind:    VariableKind(ast.ValKind),
-			Pattern: pat,
-			TypeAnn: optional.None[TypeAnn](),
-			Init:    target,
+			Decls:   decls,
 			declare: false, // TODO
 			export:  false, // TODO
 			span:    nil,
@@ -330,7 +342,7 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
-			Body:    slices.Concat(allParamStmts, b.buildStmts(body.Stmts)),
+			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(body.Stmts))),
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,
@@ -368,7 +380,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		case *ast.NullLit:
 			return NewLitExpr(NewNullLit(lit), expr), []Stmt{}
 		case *ast.UndefinedLit:
-			return NewIdentExpr("undefined", expr), []Stmt{}
+			return NewLitExpr(NewUndefinedLit(lit), expr), []Stmt{}
 		default:
 			panic("TODO: literal type")
 		}

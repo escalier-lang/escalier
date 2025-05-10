@@ -1,8 +1,8 @@
 const x = 5;
 const y = x + 5;
-function add(temp1, temp2) {
-  const x = temp1;
-  const y = temp2;
-  return x + y;
+export function add(temp1, temp2) {
+  const a = temp1;
+  const b = temp2;
+  return a + b;
 }
 //# sourceMappingURL=./comments.esc.map

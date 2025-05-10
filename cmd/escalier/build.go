@@ -53,18 +53,37 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			fmt.Fprintln(stderr, err)
 		}
 
-		// create js file
-		outfile := strings.TrimSuffix(file, path.Ext(file)) + ".js"
-		out, err := os.Create(outfile)
+		for _, err := range output.TypeErrors {
+			fmt.Fprintln(stderr, err)
+		}
+
+		// create .js file
+		jsFile := strings.TrimSuffix(file, path.Ext(file)) + ".js"
+		jsOut, err := os.Create(jsFile)
 		if err != nil {
-			fmt.Fprintln(out, "failed to create output file")
+			fmt.Fprintln(stderr, "failed to create .js file")
 			continue
 		}
 
-		// write js output to file
-		_, err = out.WriteString(output.JS)
+		// write .js output to file
+		_, err = jsOut.WriteString(output.JS)
 		if err != nil {
-			fmt.Fprintln(out, "failed to write output to file")
+			fmt.Fprintln(stderr, "failed to write .js to file")
+			continue
+		}
+
+		// create .d.ts file
+		defFile := strings.TrimSuffix(file, path.Ext(file)) + ".d.ts"
+		defOut, err := os.Create(defFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create .d.ts file")
+			continue
+		}
+
+		// write .d.ts output to file
+		_, err = defOut.WriteString(output.DTS)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to write .d.ts to file")
 			continue
 		}
 
@@ -72,14 +91,14 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		mapFile := file + ".map"
 		mapOut, err := os.Create(mapFile)
 		if err != nil {
-			fmt.Fprintln(out, "failed to create map file")
+			fmt.Fprintln(stderr, "failed to create map file")
 			continue
 		}
 
 		// write sourcemap output to file
 		_, err = mapOut.WriteString(output.SourceMap)
 		if err != nil {
-			fmt.Fprintln(out, "failed to write source map to file")
+			fmt.Fprintln(stderr, "failed to write source map to file")
 			continue
 		}
 	}
