@@ -104,9 +104,18 @@ func (b *Builder) BuildDefinitions(
 					source: nil,
 				})
 			case *ast.TypeDecl:
+				typeParams := make([]*TypeParam, len(decl.TypeParams))
+				for i, param := range decl.TypeParams {
+					typeParams[i] = &TypeParam{
+						Name:       param.Name,
+						Constraint: optional.Map(param.Constraint, typeAnnToTypeAnn),
+						Default:    optional.Map(param.Default, typeAnnToTypeAnn),
+					}
+				}
+
 				typeDecl := &TypeDecl{
 					Name:       NewIdentifier(decl.Name.Name, decl.Name),
-					TypeParams: []*TypeParam{},
+					TypeParams: typeParams,
 					TypeAnn:    typeAnnToTypeAnn(decl.TypeAnn),
 					declare:    true, // Always true for .d.ts files
 					export:     decl.Export(),

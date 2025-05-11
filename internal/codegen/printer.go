@@ -397,9 +397,25 @@ func (p *Printer) PrintDecl(decl Decl) {
 			p.print(";")
 		})
 	case *TypeDecl:
-		// TODO: handle type params
 		p.print("type ")
 		p.print(d.Name.Name)
+		if len(d.TypeParams) > 0 {
+			p.print("<")
+			for i, param := range d.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(param.Name)
+				param.Constraint.IfSome(func(ta TypeAnn) {
+					p.print(": ")
+					p.PrintTypeAnn(ta)
+				})
+				param.Default.IfSome(func(t TypeAnn) {
+					p.print(" = ")
+					p.PrintTypeAnn(t)
+				})
+			}
+		}
 		p.print(" = ")
 		p.PrintTypeAnn(d.TypeAnn)
 		p.print(";")
