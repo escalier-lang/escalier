@@ -105,10 +105,15 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 		}
 	}
 	// | ArrayType, ArrayType -> ...
+	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
+		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, array2))
+		}
+	}
+	// | RestSpreadType, ArrayType -> ...
 	if rest, ok := t1.(*RestSpreadType); ok {
 		if array, ok := t2.(*TypeRefType); ok && array.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", rest, array))
-			// TODO
+			return c.unify(ctx, rest.Type, array)
 		}
 	}
 	// | FuncType, FuncType -> ...
@@ -196,7 +201,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			// TODO: handle exactness
 			// TODO: handle unnamed elems, e.g. callable and newable signatures
-			// TODO: handle spread and rest
+			// TODO: handle spread
 			// TODO: handle mapped type elems
 			// TODO: handle getters/setters appropriately (we need to know which
 			// type is being read from and which is being written to... does that
@@ -206,6 +211,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			namedElems1 := make(map[ObjTypeKey]Type)
 			namedElems2 := make(map[ObjTypeKey]Type)
+			keys2 := []ObjTypeKey{} // original order of keys in obj2
 
 			restType := optional.None[Type]()
 
@@ -229,12 +235,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems2[elem.Name] = elem.Fn
+					keys2 = append(keys2, elem.Name)
 				case *GetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Return
+					keys2 = append(keys2, elem.Name)
 				case *SetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
+					keys2 = append(keys2, elem.Name)
 				case *PropertyElemType:
 					namedElems2[elem.Name] = elem.Value
+					keys2 = append(keys2, elem.Name)
 				default: // skip other types of elems
 				}
 			}
@@ -254,13 +264,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 			restType.IfSome(func(restType Type) {
 				restElems := []ObjTypeElem{}
-				for key2, value2 := range namedElems2 {
-					if _, ok := usedKeys[key2]; !ok {
+				for _, key := range keys2 {
+					if _, ok := usedKeys[key]; !ok {
 						restElems = append(restElems, &PropertyElemType{
-							Name:     key2,
+							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
-							Value:    value2,
+							Value:    namedElems2[key],
 						})
 					}
 				}

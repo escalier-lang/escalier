@@ -39,6 +39,10 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, [
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []*Error {
 	switch decl := decl.(type) {
 	case *ast.FuncDecl:
+		// Handle incomplete function declarations
+		if decl.Name.Name == "" {
+			return []*Error{}
+		}
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		return c.inferVarDecl(ctx, decl)
@@ -441,9 +445,14 @@ func (c *Checker) inferFuncSig(
 
 		maps.Copy(bindings, patBindings)
 
+		fmt.Printf("typeAnn: %s\n", typeAnn)
+		for name, binding := range patBindings {
+			fmt.Printf("%s: %s\n", name, binding.Type)
+		}
+
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
-			Type:     patType,
+			Type:     typeAnn,
 			Optional: false, // TODO
 		}
 	}
@@ -583,8 +592,10 @@ func patToPat(p ast.Pat) Pat {
 			args[i] = patToPat(arg)
 		}
 		return &ExtractorPat{Name: p.Name, Args: args}
+	case *ast.RestPat:
+		return &RestPat{Pattern: patToPat(p.Pattern)}
 	default:
-		panic("unknown pattern type")
+		panic("unknown pattern type: " + fmt.Sprintf("%T", p))
 	}
 }
 

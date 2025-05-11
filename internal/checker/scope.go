@@ -48,7 +48,9 @@ func (s *Scope) getTypeAlias(name string) optional.Option[TypeAlias] {
 	if v, ok := s.Types[name]; ok {
 		return optional.Some(v)
 	}
-	return optional.None[TypeAlias]()
+	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[TypeAlias] {
+		return p.getTypeAlias(name)
+	}).Or(optional.None[TypeAlias]())
 }
 
 func (s *Scope) setTypeAlias(name string, alias TypeAlias) {

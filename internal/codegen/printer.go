@@ -519,7 +519,17 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 	case *IntersectionTypeAnn:
 		panic("PrintTypeAnn: IntersectionTypeAnn not implemented")
 	case *TypeRefTypeAnn:
-		panic("PrintTypeAnn: TypeRefTypeAnn not implemented")
+		p.print(ta.Name)
+		if len(ta.TypeArgs) > 0 {
+			p.print("<")
+			for i, arg := range ta.TypeArgs {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.PrintTypeAnn(arg)
+			}
+			p.print(">")
+		}
 	case *FuncTypeAnn:
 		p.print("(")
 		for i, param := range ta.Params {
