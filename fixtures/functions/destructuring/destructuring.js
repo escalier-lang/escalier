@@ -2,7 +2,7 @@ const foo = function (temp1) {
   const [a, b, c] = temp1;
   return c;
 };
-function bar(temp2) {
+export function bar(temp2) {
   const [a, b, c] = temp2;
   return c;
 }

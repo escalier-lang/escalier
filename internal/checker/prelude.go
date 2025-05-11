@@ -115,7 +115,13 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
-	arrayType := NewObjectType([]ObjTypeElem{})
+	length := &PropertyElemType{
+		Name:     NewStrKey("length"),
+		Value:    NewNumType(),
+		Optional: false,
+		Readonly: true,
+	}
+	arrayType := NewObjectType([]ObjTypeElem{length})
 	typeParam := NewTypeParam("T")
 	scope.setTypeAlias("Array", TypeAlias{
 		Type:       arrayType,

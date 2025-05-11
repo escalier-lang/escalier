@@ -12,16 +12,14 @@ import (
 	"github.com/moznion/go-optional"
 )
 
-func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, []*Error) {
+func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []*Error) {
 	errors := []*Error{}
 	ctx = ctx.WithParentScope()
 
 	for _, stmt := range m.Stmts {
 		switch stmt := stmt.(type) {
 		case *ast.DeclStmt:
-			newBindings, declErrors := c.inferDecl(ctx, stmt.Decl)
-			// TODO: check for duplicate bindings
-			maps.Copy(ctx.Scope.Values, newBindings)
+			declErrors := c.inferDecl(ctx, stmt.Decl)
 			errors = slices.Concat(errors, declErrors)
 		case *ast.ExprStmt:
 			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
@@ -31,34 +29,38 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (map[string]Binding, [
 		}
 	}
 
-	return ctx.Scope.Values, errors
+	return ctx.Scope, errors
 }
 
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, []*Error) {
 	panic("TODO: infer module")
 }
 
-func (c *Checker) inferDecl(ctx Context, decl ast.Decl) (map[string]Binding, []*Error) {
+func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []*Error {
 	switch decl := decl.(type) {
 	case *ast.FuncDecl:
+		// Handle incomplete function declarations
+		if decl.Name.Name == "" {
+			return []*Error{}
+		}
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		return c.inferVarDecl(ctx, decl)
 	case *ast.TypeDecl:
 		return c.inferTypeDecl(ctx, decl)
 	default:
-		return nil, []*Error{{message: "Unknown declaration type"}}
+		return []*Error{{message: "Unknown declaration type"}}
 	}
 }
 
-func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Binding, []*Error) {
+func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 	errors := []*Error{}
 
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
 	if decl.Init.IsNone() {
-		return nil, errors
+		return errors
 	}
 
 	// TODO: infer a structural placeholder based on the expression and then
@@ -71,11 +73,10 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Bindi
 	c.unify(ctx, patType, initType)
 
 	maps.Copy(ctx.Scope.Values, bindings)
-
-	return bindings, errors
+	return errors
 }
 
-func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) (map[string]Binding, []*Error) {
+func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []*Error {
 	errors := []*Error{}
 
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
@@ -88,13 +89,13 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) (map[string]Bin
 		errors = slices.Concat(errors, unifyErrors)
 	})
 
-	bindings := map[string]Binding{}
-	bindings[decl.Name.Name] = Binding{
+	binding := Binding{
 		Source:  optional.Some[ast.BindingSource](decl.Name),
 		Type:    funcType,
 		Mutable: false,
 	}
-	return bindings, errors
+	ctx.Scope.setValue(decl.Name.Name, binding)
+	return errors
 }
 
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
@@ -390,9 +391,7 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []*Error {
 		_, errors := c.inferExpr(ctx, stmt.Expr)
 		return errors
 	case *ast.DeclStmt:
-		bindings, errors := c.inferDecl(ctx, stmt.Decl)
-		maps.Copy(ctx.Scope.Values, bindings)
-		return errors
+		return c.inferDecl(ctx, stmt.Decl)
 	case *ast.ReturnStmt:
 		errors := []*Error{}
 		optional.Map(stmt.Expr, func(expr ast.Expr) Type {
@@ -446,9 +445,14 @@ func (c *Checker) inferFuncSig(
 
 		maps.Copy(bindings, patBindings)
 
+		fmt.Printf("typeAnn: %s\n", typeAnn)
+		for name, binding := range patBindings {
+			fmt.Printf("%s: %s\n", name, binding.Type)
+		}
+
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
-			Type:     patType,
+			Type:     typeAnn,
 			Optional: false, // TODO
 		}
 	}
@@ -588,8 +592,10 @@ func patToPat(p ast.Pat) Pat {
 			args[i] = patToPat(arg)
 		}
 		return &ExtractorPat{Name: p.Name, Args: args}
+	case *ast.RestPat:
+		return &RestPat{Pattern: patToPat(p.Pattern)}
 	default:
-		panic("unknown pattern type")
+		panic("unknown pattern type: " + fmt.Sprintf("%T", p))
 	}
 }
 
@@ -722,7 +728,7 @@ func (c *Checker) inferPattern(
 func (c *Checker) inferTypeDecl(
 	ctx Context,
 	decl *ast.TypeDecl,
-) (map[string]Binding, []*Error) {
+) []*Error {
 	errors := []*Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
@@ -755,7 +761,7 @@ func (c *Checker) inferTypeDecl(
 	typeAlias.Type = t
 	ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 
-	return nil, errors
+	return errors
 }
 
 func (c *Checker) inferTypeAnn(

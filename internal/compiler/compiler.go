@@ -32,7 +32,7 @@ func Compile(source parser.Source) CompilerOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	bindings, typeErrors := c.InferScript(inferCtx, inMod)
+	scope, typeErrors := c.InferScript(inferCtx, inMod)
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
@@ -46,7 +46,7 @@ func Compile(source parser.Source) CompilerOutput {
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
-	dtsMod := builder.BuildDefinitions(inMod, bindings)
+	dtsMod := builder.BuildDefinitions(inMod, scope)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)

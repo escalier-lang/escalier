@@ -41,7 +41,7 @@ func findBindings(pat ast.Pat) []string {
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
 	mod *ast.Script,
-	bindings map[string]checker.Binding,
+	scope *checker.Scope,
 ) *Module {
 	stmts := []Stmt{}
 
@@ -55,7 +55,7 @@ func (b *Builder) BuildDefinitions(
 
 				decls := make([]*Declarator, 0, len(keys))
 				for _, name := range keys {
-					binding := bindings[name]
+					binding := scope.Values[name]
 					fmt.Printf("VarDecl - %s = %s", name, binding.Type)
 					typeAnn := buildTypeAnn(binding.Type)
 					decls = append(decls, &Declarator{
@@ -80,7 +80,7 @@ func (b *Builder) BuildDefinitions(
 				})
 
 			case *ast.FuncDecl:
-				binding := bindings[decl.Name.Name]
+				binding := scope.Values[decl.Name.Name]
 
 				fmt.Printf("FuncDecl - %s = %s", decl.Name.Name, binding.Type)
 
@@ -104,8 +104,29 @@ func (b *Builder) BuildDefinitions(
 					source: nil,
 				})
 			case *ast.TypeDecl:
+				typeParams := make([]*TypeParam, len(decl.TypeParams))
+				for i, param := range decl.TypeParams {
+					typeParams[i] = &TypeParam{
+						Name:       param.Name,
+						Constraint: optional.Map(param.Constraint, typeAnnToTypeAnn),
+						Default:    optional.Map(param.Default, typeAnnToTypeAnn),
+					}
+				}
 
-				panic("TODO: handle type decl")
+				typeDecl := &TypeDecl{
+					Name:       NewIdentifier(decl.Name.Name, decl.Name),
+					TypeParams: typeParams,
+					TypeAnn:    typeAnnToTypeAnn(decl.TypeAnn),
+					declare:    true, // Always true for .d.ts files
+					export:     decl.Export(),
+					span:       nil,
+					source:     nil,
+				}
+				stmts = append(stmts, &DeclStmt{
+					Decl:   typeDecl,
+					span:   nil,
+					source: nil,
+				})
 			}
 		default:
 			// Ignore other statements
@@ -358,6 +379,63 @@ func mapMappedModifier(mod *type_sys.MappedModifier) *MappedModifier {
 		return &result
 	default:
 		panic("unknown mapped modifier")
+	}
+}
+
+func typeAnnToTypeAnn(ta ast.TypeAnn) TypeAnn {
+	switch t := ta.(type) {
+	case *ast.LitTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - LitTypeAnn")
+	case *ast.NumberTypeAnn:
+		return NewNumberTypeAnn(nil)
+	case *ast.StringTypeAnn:
+		return NewStringTypeAnn(nil)
+	case *ast.BooleanTypeAnn:
+		return NewBooleanTypeAnn(nil)
+	case *ast.NullTypeAnn:
+		return NewNullTypeAnn(nil)
+	case *ast.UndefinedTypeAnn:
+		return NewUndefinedTypeAnn(nil)
+	case *ast.UnknownTypeAnn:
+		return NewUnknownTypeAnn(nil)
+	case *ast.NeverTypeAnn:
+		return NewNeverTypeAnn(nil)
+	case *ast.ObjectTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - ObjectTypeAnn")
+	case *ast.TupleTypeAnn:
+		elems := make([]TypeAnn, len(t.Elems))
+		for i, elem := range t.Elems {
+			elems[i] = typeAnnToTypeAnn(elem)
+		}
+		return NewTupleTypeAnn(elems)
+	case *ast.UnionTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - UnionTypeAnn")
+	case *ast.IntersectionTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - IntersectionTypeAnn")
+	case *ast.TypeRefTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - TypeRefTypeAnn")
+	case *ast.FuncTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - FuncTypeAnn")
+	case *ast.KeyOfTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - KeyOfTypeAnn")
+	case *ast.TypeOfTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - TypeOfTypeAnn")
+	case *ast.IndexTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - IndexTypeAnn")
+	case *ast.CondTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - CondTypeAnn")
+	case *ast.InferTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - InferTypeAnn")
+	case *ast.WildcardTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - WildcardTypeAnn")
+	case *ast.TemplateLitTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - TemplateLitTypeAnn")
+	case *ast.IntrinsicTypeAnn:
+		panic("TODO: typeAnnToTypeAnn - IntrinsicTypeAnn")
+	case *ast.ImportType:
+		panic("TODO: typeAnnToTypeAnn - ImportType")
+	default:
+		panic(fmt.Sprintf("unknown type annotation: %T", t))
 	}
 }
 
