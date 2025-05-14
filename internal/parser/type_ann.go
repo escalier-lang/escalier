@@ -12,6 +12,7 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
+	// nolint: exhaustive
 	switch token.Type {
 	case Number:
 		p.lexer.consume()
@@ -123,8 +124,17 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 			ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end)),
 		), errors
 	case OpenBrace: // object type
-		p.lexer.consume()
-		panic("TODO: parse object type")
+		p.lexer.consume() // consume '{'
+		elems, propErrors := parseDelimSeq(p, CloseBrace, Comma, func() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
+			elem, elemErrors := p.objTypeAnnElem()
+			return elem, elemErrors
+		})
+		errors = append(errors, propErrors...)
+		end, endErrors := p.expect(CloseBrace, AlwaysConsume)
+		errors = append(errors, endErrors...)
+		return optional.Some[ast.TypeAnn](
+			ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end)),
+		), errors
 	case Identifier:
 		p.lexer.consume()
 
@@ -150,6 +160,109 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 		})
 		p.lexer.consume()
 		return optional.None[ast.TypeAnn](), errors
+	}
+}
+
+func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
+	token := p.lexer.peek()
+	errors := []*Error{}
+
+	mod := ""
+	if token.Type == Get {
+		p.lexer.consume() // consume 'get'
+		mod = "get"
+	} else if token.Type == Set {
+		p.lexer.consume() // consume 'set'
+		mod = "set"
+	}
+
+	objKeyOption, objKeyErrors := p.objExprKey()
+	errors = append(errors, objKeyErrors...)
+	if objKeyOption.IsNone() {
+		return optional.None[ast.ObjTypeAnnElem](), errors
+	}
+	objKey := objKeyOption.Unwrap() // safe because we checked for None
+	token = p.lexer.peek()
+
+	// nolint: exhaustive
+	switch token.Type {
+	case Colon:
+		p.lexer.consume() // consume ':'
+		value, valueErrors := p.typeAnn()
+		errors = append(errors, valueErrors...)
+		property := optional.Map(value, func(value ast.TypeAnn) ast.ObjTypeAnnElem {
+			property := &ast.PropertyTypeAnn{
+				Name:     objKey,
+				Optional: false,
+				Readonly: false, // TODO: handle readonly
+				Value:    value,
+			}
+			return property
+		})
+		return property, errors
+	case Question:
+		p.lexer.consume() // consume '?'
+		_, expectErrors := p.expect(Colon, ConsumeOnMatch)
+		errors = append(errors, expectErrors...)
+		value, valueErrors := p.typeAnn()
+		errors = append(errors, valueErrors...)
+		return optional.Map(value, func(value ast.TypeAnn) ast.ObjTypeAnnElem {
+			property := &ast.PropertyTypeAnn{
+				Name:     objKey,
+				Optional: true,
+				Readonly: false, // TODO: handle readonly
+				Value:    value,
+			}
+			return property
+		}), errors
+	case OpenParen:
+		p.lexer.consume() // consume '('
+		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+		errors = append(errors, seqErrors...)
+		_, expectErrors := p.expect(CloseParen, ConsumeOnMatch)
+		errors = append(errors, expectErrors...)
+
+		_, expectErrors = p.expect(Arrow, ConsumeOnMatch)
+		errors = append(errors, expectErrors...)
+
+		retTypeOption, retTypeErrors := p.typeAnn()
+		errors = append(errors, retTypeErrors...)
+		if retTypeOption.IsNone() {
+			errors = append(errors, &Error{
+				Span:    token.Span,
+				Message: "expected return type annotation",
+			})
+			return optional.None[ast.ObjTypeAnnElem](), errors
+		}
+		retType, _ := retTypeOption.Take()
+
+		fnTypeAnn := ast.NewFuncTypeAnn(
+			optional.None[[]ast.TypeParam](),
+			params,
+			retType,
+			optional.None[ast.TypeAnn](),
+			ast.MergeSpans(token.Span, retType.Span()),
+		)
+
+		if mod == "get" {
+			return optional.Some[ast.ObjTypeAnnElem](&ast.GetterTypeAnn{
+				Name: objKey,
+				Fn:   fnTypeAnn,
+			}), errors
+		} else if mod == "set" {
+			return optional.Some[ast.ObjTypeAnnElem](&ast.SetterTypeAnn{
+				Name: objKey,
+				Fn:   fnTypeAnn,
+			}), errors
+		} else {
+			return optional.Some[ast.ObjTypeAnnElem](&ast.MethodTypeAnn{
+				Name: objKey,
+				Fn:   fnTypeAnn,
+			}), errors
+		}
+	default:
+		// skip over the token and return optional.None
+		panic("objTypeAnnElem - not a valid property")
 	}
 }
 

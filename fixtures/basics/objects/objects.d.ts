@@ -1,0 +1,10 @@
+export declare const obj1: {a: 5, b: "hello", c: true};
+declare const a: 5;
+declare const b: "hello";
+declare const key: "c";
+declare const c: true;
+declare type Point = {};
+declare const p: Point;
+export declare const obj2: {d: 5, e: {f: 10}};
+declare const d: 5;
+declare const f: 10;

@@ -30,6 +30,7 @@ func (p *Printer) NewLine() {
 }
 
 var binaryOpMap = map[BinaryOp]string{
+	Assign:            "=",
 	Plus:              "+",
 	Minus:             "-",
 	Times:             "*",
@@ -178,6 +179,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 				panic(fmt.Sprintf("PrintExpr: unknown object expression element type: %T", elem))
 			}
 		}
+		p.print("}")
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}

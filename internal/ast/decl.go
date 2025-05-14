@@ -28,14 +28,31 @@ const (
 type VarDecl struct {
 	Kind    VariableKind
 	Pattern Pat
+	TypeAnn optional.Option[TypeAnn]
 	Init    optional.Option[Expr]
 	export  bool
 	declare bool
 	span    Span
 }
 
-func NewVarDecl(kind VariableKind, pattern Pat, init optional.Option[Expr], export, declare bool, span Span) *VarDecl {
-	return &VarDecl{Kind: kind, Pattern: pattern, Init: init, export: export, declare: declare, span: span}
+func NewVarDecl(
+	kind VariableKind,
+	pattern Pat,
+	typeAnn optional.Option[TypeAnn],
+	init optional.Option[Expr],
+	export,
+	declare bool,
+	span Span,
+) *VarDecl {
+	return &VarDecl{
+		Kind:    kind,
+		Pattern: pattern,
+		TypeAnn: typeAnn,
+		Init:    init,
+		export:  export,
+		declare: declare,
+		span:    span,
+	}
 }
 func (d *VarDecl) Export() bool  { return d.export }
 func (d *VarDecl) Declare() bool { return d.declare }

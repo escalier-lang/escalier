@@ -46,6 +46,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	if _, ok := t1.(*NeverType); ok {
 		return nil
 	}
+	// | _, NeverType -> ...
+	if _, ok := t2.(*NeverType); ok {
+		return []*Error{{message: fmt.Sprintf("Cannot unify %s with never", t1)}}
+	}
 	// | UnknownType, _ -> ...
 	if _, ok := t2.(*UnknownType); ok {
 		return nil
@@ -197,7 +201,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
 		if obj2, ok := t2.(*ObjectType); ok {
-			fmt.Printf("Unifying object types %s and %s\n", obj1, obj2)
 
 			// TODO: handle exactness
 			// TODO: handle unnamed elems, e.g. callable and newable signatures
@@ -250,14 +253,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			}
 
 			usedKeys := map[ObjTypeKey]bool{}
-			for key1, value1 := range namedElems2 {
-				if value2, ok := namedElems1[key1]; ok {
+			for key2, value2 := range namedElems2 {
+				if value1, ok := namedElems1[key2]; ok {
 					unifyErrors := c.unify(ctx, value1, value2)
 					errors = slices.Concat(errors, unifyErrors)
-					usedKeys[key1] = true
+					usedKeys[key2] = true
 				} else {
 					errors = slices.Concat(errors, []*Error{{
-						message: fmt.Sprintf("key %#v not found in %s", key1, obj1),
+						message: fmt.Sprintf("key %#v not found in %s", key2, obj1),
 					}})
 				}
 			}

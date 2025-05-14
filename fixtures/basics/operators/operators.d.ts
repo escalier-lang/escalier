@@ -1,8 +1,8 @@
 declare const x: 5;
 declare const y: 10;
-export declare const a: 10;
-export declare const b: 10;
-export declare const c: 10;
+export declare const a: number;
+export declare const b: number;
+export declare const c: number;
 export declare const d: number;
 declare const e: boolean;
 declare const f: boolean;

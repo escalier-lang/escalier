@@ -56,7 +56,6 @@ func (b *Builder) BuildDefinitions(
 				decls := make([]*Declarator, 0, len(keys))
 				for _, name := range keys {
 					binding := scope.Values[name]
-					fmt.Printf("VarDecl - %s = %s", name, binding.Type)
 					typeAnn := buildTypeAnn(binding.Type)
 					decls = append(decls, &Declarator{
 						Pattern: NewIdentPat(name, optional.None[Expr](), nil),
@@ -81,8 +80,6 @@ func (b *Builder) BuildDefinitions(
 
 			case *ast.FuncDecl:
 				binding := scope.Values[decl.Name.Name]
-
-				fmt.Printf("FuncDecl - %s = %s", decl.Name.Name, binding.Type)
 
 				funcType := binding.Type.(*type_sys.FuncType)
 
@@ -255,6 +252,59 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	}
 }
 
+// func buildAstObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeAnnElem {
+// 	switch elem := elem.(type) {
+// 	case *ast.CallableTypeAnn:
+// 		return &CallableTypeAnn{
+// 			Fn: buildFuncTypeAnn(elem.Fn),
+// 		}
+// 	case *ast.ConstructorTypeAnn:
+// 		return &ConstructorTypeAnn{
+// 			Fn: buildFuncTypeAnn(elem.Fn),
+// 		}
+// 	case *ast.MethodTypeAnn:
+// 		return &MethodTypeAnn{
+// 			Name: buildObjKey(elem.Name),
+// 			Fn:   buildFuncTypeAnn(elem.Fn),
+// 		}
+// 	case *ast.GetterTypeAnn:
+// 		return &GetterTypeAnn{
+// 			Name: buildObjKey(elem.Name),
+// 			Fn:   buildFuncTypeAnn(elem.Fn),
+// 		}
+// 	case *ast.SetterTypeAnn:
+// 		return &SetterTypeAnn{
+// 			Name: buildObjKey(elem.Name),
+// 			Fn:   buildFuncTypeAnn(elem.Fn),
+// 		}
+// 	case *ast.PropertyTypeAnn:
+// 		return &PropertyTypeAnn{
+// 			Name:     buildObjKey(elem.Name),
+// 			Optional: elem.Optional,
+// 			Readonly: elem.Readonly,
+// 			Value:    optional.Some(buildTypeAnn(elem.Value)),
+// 		}
+// 	case *ast.MappedTypeAnn:
+// 		typeParam := &IndexParamTypeAnn{
+// 			Name:       elem.TypeParam.Name,
+// 			Constraint: buildTypeAnn(elem.TypeParam.Constraint),
+// 		}
+// 		return &MappedTypeAnn{
+// 			TypeParam: typeParam,
+// 			Name:      optional.None[TypeAnn](),
+// 			Value:     buildTypeAnn(elem.Value),
+// 			Optional:  mapMappedModifier(elem.Optional),
+// 			ReadOnly:  mapMappedModifier(elem.ReadOnly),
+// 		}
+// 	case *ast.RestSpreadTypeAnn:
+// 		return &RestSpreadTypeAnn{
+// 			Value: buildTypeAnn(elem.Value),
+// 		}
+// 	default:
+// 		panic("unknown object type element")
+// 	}
+// }
+
 func buildObjTypeAnnElem(elem type_sys.ObjTypeElem) ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *type_sys.CallableElemType:
@@ -401,7 +451,11 @@ func typeAnnToTypeAnn(ta ast.TypeAnn) TypeAnn {
 	case *ast.NeverTypeAnn:
 		return NewNeverTypeAnn(nil)
 	case *ast.ObjectTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - ObjectTypeAnn")
+		// elems := make([]ObjTypeAnnElem, len(t.Elems))
+		// for i, elem := range t.Elems {
+		// 	elems[i] = buildAstObjTypeAnnElem(elem)
+		// }
+		return NewObjectTypeAnn([]ObjTypeAnnElem{})
 	case *ast.TupleTypeAnn:
 		elems := make([]TypeAnn, len(t.Elems))
 		for i, elem := range t.Elems {
