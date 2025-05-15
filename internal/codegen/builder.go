@@ -327,6 +327,10 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 }
 
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
+	if decl.Declare() {
+		return []Stmt{}
+	}
+
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		initExpr, initStmts := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None

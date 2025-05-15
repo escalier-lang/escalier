@@ -12,6 +12,6 @@ val p: Point = {x: 0, y: 0}
 p.x = 5
 p.y = 10
 
-export val obj2 = {d?: 5, e?: {f: 10}}
+export declare val obj2: {d?: number, e?: {f: string}}
 val d = obj2.d
 val f = obj2.e?.f

@@ -59,7 +59,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
-	if decl.Init.IsNone() {
+	if decl.TypeAnn.IsNone() && decl.Init.IsNone() {
 		return errors
 	}
 
@@ -67,8 +67,6 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 	// unify it with the pattern type.  Then we can pass in map of the new bindings
 	// which will be added to a new scope before inferring function expressions
 	// in the expressions.
-	initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
-	errors = slices.Concat(errors, initErrors)
 
 	decl.TypeAnn.IfSome(func(typeAnn ast.TypeAnn) {
 		taType, taErrors := c.inferTypeAnn(ctx, typeAnn)
@@ -77,11 +75,19 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 		unifyErrors := c.unify(ctx, taType, patType)
 		errors = slices.Concat(errors, unifyErrors)
 
-		unifyErrors = c.unify(ctx, initType, taType)
-		errors = slices.Concat(errors, unifyErrors)
+		decl.Init.IfSome(func(init ast.Expr) {
+			initType, initErrors := c.inferExpr(ctx, init)
+			errors = slices.Concat(errors, initErrors)
+
+			unifyErrors = c.unify(ctx, initType, taType)
+			errors = slices.Concat(errors, unifyErrors)
+		})
 	})
 
 	decl.TypeAnn.IfNone(func() {
+		initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
+		errors = slices.Concat(errors, initErrors)
+
 		unifyErrors := c.unify(ctx, patType, initType)
 		errors = slices.Concat(errors, unifyErrors)
 	})
@@ -973,12 +979,13 @@ func (c *Checker) inferTypeAnn(
 			}
 		}
 
-		return NewObjectType(elems), errors
+		t = NewObjectType(elems)
 	default:
 		return nil, []*Error{{message: "Unknown type annotation"}}
 	}
 
 	t.SetProvenance(ast.NewTypeAnnProvenance(typeAnn))
+	typeAnn.SetInferredType(t)
 
 	return t, errors
 }

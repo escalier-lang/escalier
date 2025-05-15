@@ -104,16 +104,42 @@ func (b *Builder) BuildDefinitions(
 				typeParams := make([]*TypeParam, len(decl.TypeParams))
 				for i, param := range decl.TypeParams {
 					typeParams[i] = &TypeParam{
-						Name:       param.Name,
-						Constraint: optional.Map(param.Constraint, typeAnnToTypeAnn),
-						Default:    optional.Map(param.Default, typeAnnToTypeAnn),
+						Name: param.Name,
+						Constraint: optional.FlatMap(
+							param.Constraint,
+							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
+								t := ta.InferredType()
+								if t == nil {
+									// TODO: report an error if there's no inferred type
+									return optional.None[TypeAnn]()
+								}
+								return optional.Some(buildTypeAnn(t))
+							},
+						),
+						Default: optional.FlatMap(
+							param.Default,
+							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
+								t := ta.InferredType()
+								if t == nil {
+									// TODO: report an error if there's no inferred type
+									return optional.None[TypeAnn]()
+								}
+								return optional.Some(buildTypeAnn(t))
+							},
+						),
 					}
+				}
+
+				typeAnnType := decl.TypeAnn.InferredType()
+				if typeAnnType == nil {
+					// TODO: report an error if there's no inferred type
+					continue
 				}
 
 				typeDecl := &TypeDecl{
 					Name:       NewIdentifier(decl.Name.Name, decl.Name),
 					TypeParams: typeParams,
-					TypeAnn:    typeAnnToTypeAnn(decl.TypeAnn),
+					TypeAnn:    buildTypeAnn(typeAnnType),
 					declare:    true, // Always true for .d.ts files
 					export:     decl.Export(),
 					span:       nil,
@@ -252,59 +278,6 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	}
 }
 
-// func buildAstObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeAnnElem {
-// 	switch elem := elem.(type) {
-// 	case *ast.CallableTypeAnn:
-// 		return &CallableTypeAnn{
-// 			Fn: buildFuncTypeAnn(elem.Fn),
-// 		}
-// 	case *ast.ConstructorTypeAnn:
-// 		return &ConstructorTypeAnn{
-// 			Fn: buildFuncTypeAnn(elem.Fn),
-// 		}
-// 	case *ast.MethodTypeAnn:
-// 		return &MethodTypeAnn{
-// 			Name: buildObjKey(elem.Name),
-// 			Fn:   buildFuncTypeAnn(elem.Fn),
-// 		}
-// 	case *ast.GetterTypeAnn:
-// 		return &GetterTypeAnn{
-// 			Name: buildObjKey(elem.Name),
-// 			Fn:   buildFuncTypeAnn(elem.Fn),
-// 		}
-// 	case *ast.SetterTypeAnn:
-// 		return &SetterTypeAnn{
-// 			Name: buildObjKey(elem.Name),
-// 			Fn:   buildFuncTypeAnn(elem.Fn),
-// 		}
-// 	case *ast.PropertyTypeAnn:
-// 		return &PropertyTypeAnn{
-// 			Name:     buildObjKey(elem.Name),
-// 			Optional: elem.Optional,
-// 			Readonly: elem.Readonly,
-// 			Value:    optional.Some(buildTypeAnn(elem.Value)),
-// 		}
-// 	case *ast.MappedTypeAnn:
-// 		typeParam := &IndexParamTypeAnn{
-// 			Name:       elem.TypeParam.Name,
-// 			Constraint: buildTypeAnn(elem.TypeParam.Constraint),
-// 		}
-// 		return &MappedTypeAnn{
-// 			TypeParam: typeParam,
-// 			Name:      optional.None[TypeAnn](),
-// 			Value:     buildTypeAnn(elem.Value),
-// 			Optional:  mapMappedModifier(elem.Optional),
-// 			ReadOnly:  mapMappedModifier(elem.ReadOnly),
-// 		}
-// 	case *ast.RestSpreadTypeAnn:
-// 		return &RestSpreadTypeAnn{
-// 			Value: buildTypeAnn(elem.Value),
-// 		}
-// 	default:
-// 		panic("unknown object type element")
-// 	}
-// }
-
 func buildObjTypeAnnElem(elem type_sys.ObjTypeElem) ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *type_sys.CallableElemType:
@@ -335,7 +308,7 @@ func buildObjTypeAnnElem(elem type_sys.ObjTypeElem) ObjTypeAnnElem {
 			Name:     buildObjKey(elem.Name),
 			Optional: elem.Optional,
 			Readonly: elem.Readonly,
-			Value:    optional.Some(buildTypeAnn(elem.Value)),
+			Value:    buildTypeAnn(elem.Value),
 		}
 	case *type_sys.MappedElemType:
 		typeParam := &IndexParamTypeAnn{
@@ -429,67 +402,6 @@ func mapMappedModifier(mod *type_sys.MappedModifier) *MappedModifier {
 		return &result
 	default:
 		panic("unknown mapped modifier")
-	}
-}
-
-func typeAnnToTypeAnn(ta ast.TypeAnn) TypeAnn {
-	switch t := ta.(type) {
-	case *ast.LitTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - LitTypeAnn")
-	case *ast.NumberTypeAnn:
-		return NewNumberTypeAnn(nil)
-	case *ast.StringTypeAnn:
-		return NewStringTypeAnn(nil)
-	case *ast.BooleanTypeAnn:
-		return NewBooleanTypeAnn(nil)
-	case *ast.NullTypeAnn:
-		return NewNullTypeAnn(nil)
-	case *ast.UndefinedTypeAnn:
-		return NewUndefinedTypeAnn(nil)
-	case *ast.UnknownTypeAnn:
-		return NewUnknownTypeAnn(nil)
-	case *ast.NeverTypeAnn:
-		return NewNeverTypeAnn(nil)
-	case *ast.ObjectTypeAnn:
-		// elems := make([]ObjTypeAnnElem, len(t.Elems))
-		// for i, elem := range t.Elems {
-		// 	elems[i] = buildAstObjTypeAnnElem(elem)
-		// }
-		return NewObjectTypeAnn([]ObjTypeAnnElem{})
-	case *ast.TupleTypeAnn:
-		elems := make([]TypeAnn, len(t.Elems))
-		for i, elem := range t.Elems {
-			elems[i] = typeAnnToTypeAnn(elem)
-		}
-		return NewTupleTypeAnn(elems)
-	case *ast.UnionTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - UnionTypeAnn")
-	case *ast.IntersectionTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - IntersectionTypeAnn")
-	case *ast.TypeRefTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - TypeRefTypeAnn")
-	case *ast.FuncTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - FuncTypeAnn")
-	case *ast.KeyOfTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - KeyOfTypeAnn")
-	case *ast.TypeOfTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - TypeOfTypeAnn")
-	case *ast.IndexTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - IndexTypeAnn")
-	case *ast.CondTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - CondTypeAnn")
-	case *ast.InferTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - InferTypeAnn")
-	case *ast.WildcardTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - WildcardTypeAnn")
-	case *ast.TemplateLitTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - TemplateLitTypeAnn")
-	case *ast.IntrinsicTypeAnn:
-		panic("TODO: typeAnnToTypeAnn - IntrinsicTypeAnn")
-	case *ast.ImportType:
-		panic("TODO: typeAnnToTypeAnn - ImportType")
-	default:
-		panic(fmt.Sprintf("unknown type annotation: %T", t))
 	}
 }
 

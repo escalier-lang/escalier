@@ -6,7 +6,6 @@ const c = obj1["c"];
 const p = {x: 0, y: 0};
 p.x = 5;
 p.y = 10;
-const obj2 = {d: 5, e: {f: 10}};
 const d = obj2.d;
 const f = obj2.e?.f;
 //# sourceMappingURL=./objects.esc.map

@@ -511,10 +511,11 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *PropertyTypeAnn:
 				p.printObjKey(elem.Name)
-				elem.Value.IfSome(func(value TypeAnn) {
-					p.print(": ")
-					p.PrintTypeAnn(value)
-				})
+				if elem.Optional {
+					p.print("?")
+				}
+				p.print(": ")
+				p.PrintTypeAnn(elem.Value)
 			case *RestSpreadTypeAnn:
 				p.print("...")
 				p.PrintTypeAnn(elem.Value)

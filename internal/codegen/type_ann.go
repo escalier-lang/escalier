@@ -169,7 +169,7 @@ type PropertyTypeAnn struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
-	Value    optional.Option[TypeAnn]
+	Value    TypeAnn
 }
 
 type MappedTypeAnn struct {
