@@ -347,6 +347,7 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 			Name:    buildIdent(d.Name),
 			Params:  params,
 			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(body.Stmts))),
+			TypeAnn: optional.None[TypeAnn](),
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,

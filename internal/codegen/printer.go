@@ -482,7 +482,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
+				p.print(")")
 				p.print(": ")
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *GetterTypeAnn:
@@ -494,7 +499,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
+				p.print(")")
 				p.print(": ")
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *SetterTypeAnn:
@@ -506,9 +516,13 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
+				p.print(")")
+				// TypeScript doesn't allow setters to have a return type
 			case *PropertyTypeAnn:
 				p.printObjKey(elem.Name)
 				if elem.Optional {

@@ -8,4 +8,6 @@ p.x = 5;
 p.y = 10;
 const d = obj2.d;
 const f = obj2.e?.f;
+const g = obj3.bar;
+obj3.bar = "hello";
 //# sourceMappingURL=./objects.esc.map

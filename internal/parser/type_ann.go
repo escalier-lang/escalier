@@ -32,12 +32,12 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 	case Null:
 		p.lexer.consume()
 		return optional.Some[ast.TypeAnn](
-			ast.NewNullTypeAnn(token.Span),
+			ast.NewLitTypeAnn(ast.NewNull(token.Span), token.Span),
 		), errors
 	case Undefined:
 		p.lexer.consume()
 		return optional.Some[ast.TypeAnn](
-			ast.NewUndefinedTypeAnn(token.Span),
+			ast.NewLitTypeAnn(ast.NewUndefined(token.Span), token.Span),
 		), errors
 	case NumLit:
 		p.lexer.consume()

@@ -15,8 +15,6 @@ func (*LitTypeAnn) isTypeAnn()          {}
 func (*NumberTypeAnn) isTypeAnn()       {}
 func (*StringTypeAnn) isTypeAnn()       {}
 func (*BooleanTypeAnn) isTypeAnn()      {}
-func (*NullTypeAnn) isTypeAnn()         {}
-func (*UndefinedTypeAnn) isTypeAnn()    {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
@@ -95,36 +93,6 @@ func (t *BooleanTypeAnn) Span() Span               { return t.span }
 func (t *BooleanTypeAnn) InferredType() Type       { return t.inferredType }
 func (t *BooleanTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
 func (t *BooleanTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
-}
-
-type NullTypeAnn struct {
-	span         Span
-	inferredType Type
-}
-
-func NewNullTypeAnn(span Span) *NullTypeAnn {
-	return &NullTypeAnn{span: span, inferredType: nil}
-}
-func (t *NullTypeAnn) Span() Span               { return t.span }
-func (t *NullTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *NullTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
-func (t *NullTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
-}
-
-type UndefinedTypeAnn struct {
-	span         Span
-	inferredType Type
-}
-
-func NewUndefinedTypeAnn(span Span) *UndefinedTypeAnn {
-	return &UndefinedTypeAnn{span: span, inferredType: nil}
-}
-func (t *UndefinedTypeAnn) Span() Span               { return t.span }
-func (t *UndefinedTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *UndefinedTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
-func (t *UndefinedTypeAnn) Accept(v Visitor) {
 	v.VisitTypeAnn(t)
 }
 
