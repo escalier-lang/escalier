@@ -1,0 +1,12 @@
+export declare const obj1: {a: 5, b: "hello", c: true};
+declare const a: 5;
+declare const b: "hello";
+declare const key: "c";
+declare const c: true;
+declare type Point = {x: number, y: number};
+declare const p: Point;
+export declare const obj2: {d?: number, e?: {f: string}};
+declare const d: number | undefined;
+declare const f: string | undefined;
+export declare const obj3: {foo(msg: string, flag: boolean): string, get bar(): boolean, set bar(value: boolean)};
+declare const g: boolean;

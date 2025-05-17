@@ -60,6 +60,16 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 	end := pat.Span().End
 
 	token = p.lexer.peek()
+
+	typeAnn := optional.None[ast.TypeAnn]()
+	if token.Type == Colon {
+		p.lexer.consume() // consume ':'
+		typeAnnOption, typeAnnErrors := p.typeAnn()
+		errors = append(errors, typeAnnErrors...)
+		typeAnn = typeAnnOption
+		token = p.lexer.peek()
+	}
+
 	init := optional.None[ast.Expr]()
 	if !declare {
 		if token.Type != Equal {
@@ -79,8 +89,9 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 		})
 	}
 
+	span := ast.Span{Start: start, End: end}
 	return optional.Some[ast.Decl](
-		ast.NewVarDecl(kind, pat, init, export, declare, ast.Span{Start: start, End: end}),
+		ast.NewVarDecl(kind, pat, typeAnn, init, export, declare, span),
 	), errors
 }
 

@@ -15,8 +15,6 @@ func (*LitTypeAnn) isTypeAnn()          {}
 func (*NumberTypeAnn) isTypeAnn()       {}
 func (*StringTypeAnn) isTypeAnn()       {}
 func (*BooleanTypeAnn) isTypeAnn()      {}
-func (*NullTypeAnn) isTypeAnn()         {}
-func (*UndefinedTypeAnn) isTypeAnn()    {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
@@ -98,36 +96,6 @@ func (t *BooleanTypeAnn) Accept(v Visitor) {
 	v.VisitTypeAnn(t)
 }
 
-type NullTypeAnn struct {
-	span         Span
-	inferredType Type
-}
-
-func NewNullTypeAnn(span Span) *NullTypeAnn {
-	return &NullTypeAnn{span: span, inferredType: nil}
-}
-func (t *NullTypeAnn) Span() Span               { return t.span }
-func (t *NullTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *NullTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
-func (t *NullTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
-}
-
-type UndefinedTypeAnn struct {
-	span         Span
-	inferredType Type
-}
-
-func NewUndefinedTypeAnn(span Span) *UndefinedTypeAnn {
-	return &UndefinedTypeAnn{span: span, inferredType: nil}
-}
-func (t *UndefinedTypeAnn) Span() Span               { return t.span }
-func (t *UndefinedTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *UndefinedTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
-func (t *UndefinedTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
-}
-
 type UnknownTypeAnn struct {
 	span         Span
 	inferredType Type
@@ -169,19 +137,19 @@ func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
 func (*MappedTypeAnn) isObjTypeAnnElem()      {}
 func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 
-type CallableTypeAnn struct{ Fn FuncTypeAnn }
-type ConstructorTypeAnn struct{ Fn FuncTypeAnn }
+type CallableTypeAnn struct{ Fn *FuncTypeAnn }
+type ConstructorTypeAnn struct{ Fn *FuncTypeAnn }
 type MethodTypeAnn struct {
 	Name ObjKey
-	Fn   FuncTypeAnn
+	Fn   *FuncTypeAnn
 }
 type GetterTypeAnn struct {
 	Name ObjKey
-	Fn   FuncTypeAnn
+	Fn   *FuncTypeAnn
 }
 type SetterTypeAnn struct {
 	Name ObjKey
-	Fn   FuncTypeAnn
+	Fn   *FuncTypeAnn
 }
 
 type MappedModifier string
@@ -196,7 +164,7 @@ type PropertyTypeAnn struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
-	Value    optional.Option[TypeAnn]
+	Value    TypeAnn
 }
 
 type MappedTypeAnn struct {
@@ -218,12 +186,12 @@ type RestSpreadTypeAnn struct {
 }
 
 type ObjectTypeAnn struct {
-	Elems        []*ObjTypeAnnElem
+	Elems        []ObjTypeAnnElem
 	span         Span
 	inferredType Type
 }
 
-func NewObjectTypeAnn(elems []*ObjTypeAnnElem, span Span) *ObjectTypeAnn {
+func NewObjectTypeAnn(elems []ObjTypeAnnElem, span Span) *ObjectTypeAnn {
 	return &ObjectTypeAnn{Elems: elems, span: span, inferredType: nil}
 }
 func (t *ObjectTypeAnn) Span() Span               { return t.span }
@@ -232,7 +200,7 @@ func (t *ObjectTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
 func (t *ObjectTypeAnn) Accept(v Visitor) {
 	if v.VisitTypeAnn(t) {
 		for _, elem := range t.Elems {
-			switch e := (*elem).(type) {
+			switch e := (elem).(type) {
 			case *CallableTypeAnn:
 				e.Fn.Accept(v)
 			case *ConstructorTypeAnn:
@@ -244,9 +212,7 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 			case *SetterTypeAnn:
 				e.Fn.Accept(v)
 			case *PropertyTypeAnn:
-				e.Value.IfSome(func(value TypeAnn) {
-					value.Accept(v)
-				})
+				e.Value.Accept(v)
 			case *MappedTypeAnn:
 				e.TypeParam.Constraint.Accept(v)
 				e.Value.Accept(v)

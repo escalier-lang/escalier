@@ -76,6 +76,12 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"MemberAssignment": {
+			input: `
+				p.x = 5
+				p.y = 10
+			`,
+		},
 	}
 
 	for name, test := range tests {

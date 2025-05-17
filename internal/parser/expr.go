@@ -101,12 +101,8 @@ loop:
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			continue
-		case CloseParen, CloseBracket, CloseBrace, Comma, EndOfFile, Var, Val, Fn, Return:
-			break loop
 		default:
-			return optional.Some(values.Pop()), errors
-			// parser.reportError(token.Span, "Unexpected token")
-			// continue
+			break loop
 		}
 
 		if token.Span.Start.Line != p.lexer.currentLocation.Line {
@@ -492,6 +488,8 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		}
 	}
 
+	// TODO: raise an error if 'get' or 'set' is used with a property definition
+	// instead of a method.
 	mod := ""
 	if token.Type == Get {
 		p.lexer.consume() // consume 'get'

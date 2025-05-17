@@ -30,6 +30,7 @@ func (p *Printer) NewLine() {
 }
 
 var binaryOpMap = map[BinaryOp]string{
+	Assign:            "=",
 	Plus:              "+",
 	Minus:             "-",
 	Times:             "*",
@@ -178,6 +179,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 				panic(fmt.Sprintf("PrintExpr: unknown object expression element type: %T", elem))
 			}
 		}
+		p.print("}")
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
@@ -480,7 +482,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
+				p.print(")")
 				p.print(": ")
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *GetterTypeAnn:
@@ -492,7 +499,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
+				p.print(")")
 				p.print(": ")
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *SetterTypeAnn:
@@ -504,15 +516,20 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
+					param.TypeAnn.IfSome(func(ta TypeAnn) {
+						p.print(": ")
+						p.PrintTypeAnn(ta)
+					})
 				}
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
+				p.print(")")
+				// TypeScript doesn't allow setters to have a return type
 			case *PropertyTypeAnn:
 				p.printObjKey(elem.Name)
-				elem.Value.IfSome(func(value TypeAnn) {
-					p.print(": ")
-					p.PrintTypeAnn(value)
-				})
+				if elem.Optional {
+					p.print("?")
+				}
+				p.print(": ")
+				p.PrintTypeAnn(elem.Value)
 			case *RestSpreadTypeAnn:
 				p.print("...")
 				p.PrintTypeAnn(elem.Value)
@@ -531,7 +548,14 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		}
 		p.print("]")
 	case *UnionTypeAnn:
-		panic("PrintTypeAnn: UnionTypeAnn not implemented")
+		// TODO: handle precedence of union types
+		// e.g. (A | B) & C vs A | (B & C)
+		for i, elem := range ta.Types {
+			if i > 0 {
+				p.print(" | ")
+			}
+			p.PrintTypeAnn(elem)
+		}
 	case *IntersectionTypeAnn:
 		panic("PrintTypeAnn: IntersectionTypeAnn not implemented")
 	case *TypeRefTypeAnn:

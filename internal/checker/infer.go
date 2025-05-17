@@ -59,7 +59,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
-	if decl.Init.IsNone() {
+	if decl.TypeAnn.IsNone() && decl.Init.IsNone() {
 		return errors
 	}
 
@@ -67,10 +67,30 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []*Error {
 	// unify it with the pattern type.  Then we can pass in map of the new bindings
 	// which will be added to a new scope before inferring function expressions
 	// in the expressions.
-	initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
-	errors = slices.Concat(errors, initErrors)
 
-	c.unify(ctx, patType, initType)
+	decl.TypeAnn.IfSome(func(typeAnn ast.TypeAnn) {
+		taType, taErrors := c.inferTypeAnn(ctx, typeAnn)
+		errors = slices.Concat(errors, taErrors)
+
+		unifyErrors := c.unify(ctx, taType, patType)
+		errors = slices.Concat(errors, unifyErrors)
+
+		decl.Init.IfSome(func(init ast.Expr) {
+			initType, initErrors := c.inferExpr(ctx, init)
+			errors = slices.Concat(errors, initErrors)
+
+			unifyErrors = c.unify(ctx, initType, taType)
+			errors = slices.Concat(errors, unifyErrors)
+		})
+	})
+
+	decl.TypeAnn.IfNone(func() {
+		initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
+		errors = slices.Concat(errors, initErrors)
+
+		unifyErrors := c.unify(ctx, patType, initType)
+		errors = slices.Concat(errors, unifyErrors)
+	})
 
 	maps.Copy(ctx.Scope.Values, bindings)
 	return errors
@@ -102,6 +122,19 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	switch expr := expr.(type) {
 	case *ast.BinaryExpr:
 		neverType := NewNeverType()
+
+		if expr.Op == ast.Assign {
+			// TODO: check if expr.Left is a valid lvalue
+			leftType, leftErrors := c.inferExpr(ctx, expr.Left)
+			rightType, rightErrors := c.inferExpr(ctx, expr.Right)
+
+			errors := slices.Concat(leftErrors, rightErrors)
+			// RHS must be a subtype of LHS because we're assigning RHS to LHS
+			unifyErrors := c.unify(ctx, rightType, leftType)
+			errors = slices.Concat(errors, unifyErrors)
+
+			return neverType, errors
+		}
 
 		opOption := ctx.Scope.getValue(string(expr.Op))
 		if opOption.IsNone() {
@@ -180,40 +213,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			}}
 		}
 	case *ast.MemberExpr:
+		// TODO: create a getPropType function to handle this so that we can
+		// call it recursively if need be.
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
-
-		objType = Prune(objType)
-
-		switch objType := objType.(type) {
-		case *ObjectType:
-			fmt.Printf("objType: %s\n", objType)
-			var propType Type = NewNeverType()
-			for _, elem := range objType.Elems {
-				switch elem := elem.(type) {
-				case *PropertyElemType:
-					if elem.Name == NewStrKey(expr.Prop.Name) {
-						propType = elem.Value
-					}
-				case *MethodElemType:
-					if elem.Name == NewStrKey(expr.Prop.Name) {
-						propType = elem.Fn
-					}
-				case *GetterElemType:
-					if elem.Name == NewStrKey(expr.Prop.Name) {
-						propType = elem.Fn.Return
-					}
-				case *SetterElemType:
-					if elem.Name == NewStrKey(expr.Prop.Name) {
-						propType = elem.Fn.Params[0].Type
-					}
-				default:
-					panic(fmt.Sprintf("Unknown object type element: %#v", elem))
-				}
-			}
-			return propType, objErrors
-		}
-
-		panic("member expression not implemented")
+		propType, propErrors := c.getPropType(ctx, objType, expr.Prop, expr.OptChain)
+		return propType, slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		indexType, indexErrors := c.inferExpr(ctx, expr.Index)
@@ -259,6 +263,30 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 				})
 				return NewNeverType(), errors
 			}
+		case *ObjectType:
+			if indexLit, ok := indexType.(*LitType); ok {
+				if indexType, ok := indexLit.Lit.(*StrLit); ok {
+					for _, elem := range objType.Elems {
+						switch elem := elem.(type) {
+						case *PropertyElemType:
+							if elem.Name == NewStrKey(indexType.Value) {
+								return elem.Value, errors
+							}
+						default:
+							panic(fmt.Sprintf("Unknown object type element: %#v", elem))
+						}
+					}
+
+					errors = append(errors, &Error{
+						message: fmt.Sprintf("No property with key %s", indexType),
+					})
+					return NewNeverType(), errors
+				}
+			}
+			errors = append(errors, &Error{
+				message: fmt.Sprintf("%s is not a valid object key", indexType),
+			})
+			return NewNeverType(), errors
 		default:
 			panic(fmt.Sprintf("Unknown object type: %#v", objType))
 		}
@@ -323,6 +351,132 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	default:
 		return nil, []*Error{{message: "Unknown expression type"}}
 	}
+}
+
+func (c *Checker) expandType(ctx Context, t Type) (Type, []*Error) {
+	t = Prune(t)
+
+	switch t := t.(type) {
+	case *ObjectType, *LitType:
+		return t, nil
+	case *UnionType:
+		types := make([]Type, len(t.Types))
+		errors := []*Error{}
+		for i, elem := range t.Types {
+			elem, elemErrors := c.expandType(ctx, elem)
+			types[i] = elem
+			errors = slices.Concat(errors, elemErrors)
+		}
+		unionType := NewUnionType(types...)
+		unionType.SetProvenance(&TypeProvenance{
+			Type: t,
+		})
+		return unionType, errors
+	case *TypeRefType:
+		typeAlias := ctx.Scope.getTypeAlias(t.Name)
+		if typeAlias.IsNone() {
+			errors := []*Error{{
+				message: fmt.Sprintf("Unknown type %s", t.Name),
+			}}
+			return nil, errors
+		}
+		ta := typeAlias.Unwrap()
+		// TODO: replace type params with type args
+		return c.expandType(ctx, ta.Type)
+	default:
+		panic("TODO: expandType - handle other types")
+	}
+}
+
+func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optChain bool) (Type, []*Error) {
+	errors := []*Error{}
+
+	objType = Prune(objType)
+	fmt.Printf("expr.optChain: %t, objType: %s\n", optChain, objType)
+
+	objType, expandErrors := c.expandType(ctx, objType)
+	errors = slices.Concat(errors, expandErrors)
+	fmt.Printf("expanded objType: %s\n", objType)
+
+	var propType Type = NewNeverType()
+
+	switch t := objType.(type) {
+	case *ObjectType:
+		for _, elem := range t.Elems {
+			switch elem := elem.(type) {
+			case *PropertyElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Value
+
+					if elem.Optional {
+						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+					}
+				}
+			case *MethodElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn
+				}
+			case *GetterElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn.Return
+				}
+			case *SetterElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn.Params[0].Type
+				}
+			default:
+				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
+			}
+		}
+	case *UnionType:
+		undefinedElems := []Type{}
+		definedElems := []Type{}
+		for _, elem := range t.Types {
+			elem = Prune(elem)
+			switch elem := elem.(type) {
+			case *LitType:
+				if _, ok := elem.Lit.(*UndefinedLit); ok {
+					undefinedElems = append(undefinedElems, elem)
+				}
+			default:
+				definedElems = append(definedElems, elem)
+			}
+		}
+
+		if len(definedElems) == 0 {
+			errors = append(errors, &Error{
+				message: "Cannot get property from never",
+			})
+			return propType, errors
+		}
+
+		if len(definedElems) == 1 {
+			if len(undefinedElems) == 0 {
+				return c.getPropType(ctx, definedElems[0], prop, optChain)
+			}
+
+			if len(undefinedElems) > 0 && !optChain {
+				errors = append(errors, &Error{
+					message: "Cannot get property from undefined",
+				})
+				return propType, errors
+			}
+
+			pType, pErrors := c.getPropType(ctx, definedElems[0], prop, optChain)
+			errors = slices.Concat(errors, pErrors)
+			propType = NewUnionType(pType, NewLitType(&UndefinedLit{}))
+		}
+
+		if len(definedElems) > 1 {
+			panic("TODO: handle getting property from union type with multiple defined elements")
+		}
+	default:
+		errors = append(errors, &Error{
+			message: fmt.Sprintf("Expected object type but got %s", objType),
+		})
+	}
+
+	return propType, errors
 }
 
 func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
@@ -764,6 +918,50 @@ func (c *Checker) inferTypeDecl(
 	return errors
 }
 
+func (c *Checker) inferFuncTypeAnn(
+	ctx Context,
+	funcTypeAnn *ast.FuncTypeAnn,
+) (*FuncType, []*Error) {
+	errors := []*Error{}
+	params := make([]*FuncParam, len(funcTypeAnn.Params))
+	for i, param := range funcTypeAnn.Params {
+		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
+		errors = slices.Concat(errors, patErrors)
+
+		// TODO: make type annoations required on parameters in function type
+		// annotations
+		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
+			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+			errors = slices.Concat(errors, typeAnnErrors)
+			return typeAnnType
+		}).TakeOrElse(func() Type {
+			return c.FreshVar()
+		})
+
+		c.unify(ctx, patType, typeAnn)
+
+		maps.Copy(ctx.Scope.Values, patBindings)
+
+		params[i] = &FuncParam{
+			Pattern:  patToPat(param.Pattern),
+			Type:     typeAnn,
+			Optional: false,
+		}
+	}
+	returnType, returnErrors := c.inferTypeAnn(ctx, funcTypeAnn.Return)
+	errors = slices.Concat(errors, returnErrors)
+
+	funcType := FuncType{
+		Params:     params,
+		Return:     returnType,
+		Throws:     NewNeverType(),
+		TypeParams: []*TypeParam{},
+		Self:       optional.None[Type](),
+	}
+
+	return &funcType, errors
+}
+
 func (c *Checker) inferTypeAnn(
 	ctx Context,
 	typeAnn ast.TypeAnn,
@@ -824,12 +1022,52 @@ func (c *Checker) inferTypeAnn(
 		}
 		t = NewTupleType(elems...)
 	case *ast.ObjectTypeAnn:
-		panic("TODO: handle object type annotation")
+		elems := make([]ObjTypeElem, len(typeAnn.Elems))
+		for i, elem := range typeAnn.Elems {
+			switch elem := elem.(type) {
+			case *ast.CallableTypeAnn:
+				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+				errors = slices.Concat(errors, fnErrors)
+				elems[i] = &CallableElemType{Fn: fn}
+			case *ast.ConstructorTypeAnn:
+				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+				errors = slices.Concat(errors, fnErrors)
+				elems[i] = &ConstructorElemType{Fn: fn}
+			case *ast.MethodTypeAnn:
+				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+				errors = slices.Concat(errors, fnErrors)
+				elems[i] = &MethodElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+			case *ast.GetterTypeAnn:
+				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+				errors = slices.Concat(errors, fnErrors)
+				elems[i] = &GetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+			case *ast.SetterTypeAnn:
+				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+				errors = slices.Concat(errors, fnErrors)
+				elems[i] = &SetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+			case *ast.PropertyTypeAnn:
+				typeAnn, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
+				errors = slices.Concat(errors, typeAnnErrors)
+				elems[i] = &PropertyElemType{
+					Name:     astKeyToTypeKey(elem.Name),
+					Optional: elem.Optional,
+					Readonly: elem.Readonly,
+					Value:    typeAnn,
+				}
+			case *ast.MappedTypeAnn:
+				panic("TODO: handle MappedTypeAnn")
+			case *ast.RestSpreadTypeAnn:
+				panic("TODO: handle RestSpreadTypeAnn")
+			}
+		}
+
+		t = NewObjectType(elems)
 	default:
 		return nil, []*Error{{message: "Unknown type annotation"}}
 	}
 
 	t.SetProvenance(ast.NewTypeAnnProvenance(typeAnn))
+	typeAnn.SetInferredType(t)
 
 	return t, errors
 }

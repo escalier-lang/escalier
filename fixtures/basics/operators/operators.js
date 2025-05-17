@@ -1,8 +1,8 @@
 const x = 5;
 const y = 10;
-const a = y;
-const b = y;
-const c = y;
+const a = x + y;
+const b = x - y;
+const c = x * y;
 const d = x / y;
 const e = x == y;
 const f = x != y;

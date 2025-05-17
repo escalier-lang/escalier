@@ -1,0 +1,23 @@
+export val obj1 = {a: 5, b: "hello", c: true}
+val a = obj1.a
+val b = obj1["b"]
+val key = "c"
+val c = obj1["c"]
+
+type Point = {x: number, y: number}
+val p: Point = {x: 0, y: 0}
+p.x = 5
+p.y = 10
+
+export declare val obj2: {d?: number, e?: {f: string}}
+val d = obj2.d
+val f = obj2.e?.f
+
+export declare val obj3: {
+    foo(msg: string, flag: boolean) -> string,
+    get bar() -> boolean,
+    set bar(value: boolean) -> undefined
+}
+
+val g = obj3.bar
+obj3.bar = "hello"

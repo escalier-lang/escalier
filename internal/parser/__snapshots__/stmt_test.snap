@@ -13,6 +13,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
+            TypeAnn: nil,
             Init:    nil,
             export:  false,
             declare: true,
@@ -43,6 +44,7 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
+            TypeAnn: nil,
             Init:    nil,
             export:  true,
             declare: true,
@@ -73,7 +75,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
-            Init: {
+            TypeAnn: nil,
+            Init:    {
                 &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
@@ -340,7 +343,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
-            Init: {
+            TypeAnn: nil,
+            Init:    {
                 &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
@@ -587,7 +591,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
-            Init: {
+            TypeAnn: nil,
+            Init:    {
                 &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
@@ -652,7 +657,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Init: {
+                                TypeAnn: nil,
+                                Init:    {
                                     &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 5,
@@ -692,7 +698,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Init: {
+                                TypeAnn: nil,
+                                Init:    {
                                     &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 10,
@@ -788,7 +795,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
-            Init: {
+            TypeAnn: nil,
+            Init:    {
                 &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
@@ -1048,7 +1056,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Init: {
+                                TypeAnn: nil,
+                                Init:    {
                                     &ast.EmptyExpr{
                                         span: ast.Span{
                                             Start: ast.Location{Line:3, Column:5},
@@ -1081,7 +1090,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     },
                                     inferredType: nil,
                                 },
-                                Init: {
+                                TypeAnn: nil,
+                                Init:    {
                                     &ast.LiteralExpr{
                                         Lit: &ast.NumLit{
                                             Value: 5,
@@ -1419,7 +1429,8 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 },
                 inferredType: nil,
             },
-            Init: {
+            TypeAnn: nil,
+            Init:    {
                 &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
