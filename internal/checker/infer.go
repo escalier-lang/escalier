@@ -213,35 +213,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			}}
 		}
 	case *ast.MemberExpr:
-		t, objErrors := c.inferExpr(ctx, expr.Object)
-		objType, expandErrors := expandObjectType(ctx, Prune(t))
-		errors := slices.Concat(objErrors, expandErrors)
-
-		var propType Type = NewNeverType()
-		for _, elem := range objType.Elems {
-			switch elem := elem.(type) {
-			case *PropertyElemType:
-				if elem.Name == NewStrKey(expr.Prop.Name) {
-					propType = elem.Value
-				}
-			case *MethodElemType:
-				if elem.Name == NewStrKey(expr.Prop.Name) {
-					propType = elem.Fn
-				}
-			case *GetterElemType:
-				if elem.Name == NewStrKey(expr.Prop.Name) {
-					propType = elem.Fn.Return
-				}
-			case *SetterElemType:
-				if elem.Name == NewStrKey(expr.Prop.Name) {
-					propType = elem.Fn.Params[0].Type
-				}
-			default:
-				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
-			}
-		}
-
-		return propType, errors
+		// TODO: create a getPropType function to handle this so that we can
+		// call it recursively if need be.
+		objType, objErrors := c.inferExpr(ctx, expr.Object)
+		propType, propErrors := c.getPropType(ctx, objType, expr.Prop, expr.OptChain)
+		return propType, slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		indexType, indexErrors := c.inferExpr(ctx, expr.Index)
@@ -377,10 +353,25 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	}
 }
 
-func expandObjectType(ctx Context, objType Type) (*ObjectType, []*Error) {
-	switch t := objType.(type) {
-	case *ObjectType:
+func (c *Checker) expandType(ctx Context, t Type) (Type, []*Error) {
+	t = Prune(t)
+
+	switch t := t.(type) {
+	case *ObjectType, *LitType:
 		return t, nil
+	case *UnionType:
+		types := make([]Type, len(t.Types))
+		errors := []*Error{}
+		for i, elem := range t.Types {
+			elem, elemErrors := c.expandType(ctx, elem)
+			types[i] = elem
+			errors = slices.Concat(errors, elemErrors)
+		}
+		unionType := NewUnionType(types...)
+		unionType.SetProvenance(&TypeProvenance{
+			Type: t,
+		})
+		return unionType, errors
 	case *TypeRefType:
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias.IsNone() {
@@ -391,10 +382,101 @@ func expandObjectType(ctx Context, objType Type) (*ObjectType, []*Error) {
 		}
 		ta := typeAlias.Unwrap()
 		// TODO: replace type params with type args
-		return expandObjectType(ctx, ta.Type)
+		return c.expandType(ctx, ta.Type)
 	default:
-		panic(fmt.Sprintf("Unknown object type: %#v", t))
+		panic("TODO: expandType - handle other types")
 	}
+}
+
+func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optChain bool) (Type, []*Error) {
+	errors := []*Error{}
+
+	objType = Prune(objType)
+	fmt.Printf("expr.optChain: %t, objType: %s\n", optChain, objType)
+
+	objType, expandErrors := c.expandType(ctx, objType)
+	errors = slices.Concat(errors, expandErrors)
+	fmt.Printf("expanded objType: %s\n", objType)
+
+	var propType Type = NewNeverType()
+
+	switch t := objType.(type) {
+	case *ObjectType:
+		for _, elem := range t.Elems {
+			switch elem := elem.(type) {
+			case *PropertyElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Value
+
+					if elem.Optional {
+						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+					}
+				}
+			case *MethodElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn
+				}
+			case *GetterElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn.Return
+				}
+			case *SetterElemType:
+				if elem.Name == NewStrKey(prop.Name) {
+					propType = elem.Fn.Params[0].Type
+				}
+			default:
+				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
+			}
+		}
+	case *UnionType:
+		undefinedElems := []Type{}
+		definedElems := []Type{}
+		for _, elem := range t.Types {
+			elem = Prune(elem)
+			switch elem := elem.(type) {
+			case *LitType:
+				if _, ok := elem.Lit.(*UndefinedLit); ok {
+					undefinedElems = append(undefinedElems, elem)
+				}
+			default:
+				definedElems = append(definedElems, elem)
+			}
+		}
+
+		if len(definedElems) == 0 {
+			errors = append(errors, &Error{
+				message: "Cannot get property from never",
+			})
+			return propType, errors
+		}
+
+		if len(definedElems) == 1 {
+			if len(undefinedElems) == 0 {
+				return c.getPropType(ctx, definedElems[0], prop, optChain)
+			}
+
+			if len(undefinedElems) > 0 && !optChain {
+				errors = append(errors, &Error{
+					message: "Cannot get property from undefined",
+				})
+				return propType, errors
+			}
+
+			pType, pErrors := c.getPropType(ctx, definedElems[0], prop, optChain)
+			errors = slices.Concat(errors, pErrors)
+			propType = NewUnionType(pType, NewLitType(&UndefinedLit{}))
+		}
+
+		if len(definedElems) > 1 {
+			panic("TODO: handle getting property from union type with multiple defined elements")
+		}
+	default:
+		errors = append(errors, &Error{
+			message: fmt.Sprintf("Expected object type but got %s", objType),
+		})
+	}
+
+	return propType, errors
 }
 
 func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {

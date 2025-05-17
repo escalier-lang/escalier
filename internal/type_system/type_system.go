@@ -690,7 +690,13 @@ type UnionType struct {
 	provenance Provenance
 }
 
-func NewUnionType(types ...Type) *UnionType {
+func NewUnionType(types ...Type) Type {
+	if len(types) == 0 {
+		return NewNeverType()
+	}
+	if len(types) == 1 {
+		return types[0]
+	}
 	return &UnionType{
 		Types:      types,
 		provenance: nil,

@@ -534,7 +534,14 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		}
 		p.print("]")
 	case *UnionTypeAnn:
-		panic("PrintTypeAnn: UnionTypeAnn not implemented")
+		// TODO: handle precedence of union types
+		// e.g. (A | B) & C vs A | (B & C)
+		for i, elem := range ta.Types {
+			if i > 0 {
+				p.print(" | ")
+			}
+			p.PrintTypeAnn(elem)
+		}
 	case *IntersectionTypeAnn:
 		panic("PrintTypeAnn: IntersectionTypeAnn not implemented")
 	case *TypeRefTypeAnn:

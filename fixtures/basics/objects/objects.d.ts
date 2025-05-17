@@ -6,5 +6,5 @@ declare const c: true;
 declare type Point = {x: number, y: number};
 declare const p: Point;
 export declare const obj2: {d?: number, e?: {f: string}};
-declare const d: number;
-declare const f: string;
+declare const d: number | undefined;
+declare const f: string | undefined;
