@@ -12,7 +12,7 @@ import (
 // they are the same type.
 func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	if t1 == nil || t2 == nil {
-		return []*Error{{message: "Cannot unify nil types"}}
+		return []*Error{{Message: "Cannot unify nil types"}}
 	}
 
 	t1 = Prune(t1)
@@ -48,7 +48,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	}
 	// | _, NeverType -> ...
 	if _, ok := t2.(*NeverType); ok {
-		return []*Error{{message: fmt.Sprintf("Cannot unify %s with never", t1)}}
+		return []*Error{{Message: fmt.Sprintf("Cannot unify %s with never", t1)}}
 	}
 	// | UnknownType, _ -> ...
 	if _, ok := t2.(*UnknownType); ok {
@@ -65,7 +65,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			if ok {
 				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
 				if len(elems1) > len(tuple2.Elems) {
-					return []*Error{{message: "No enough elements to unpack"}}
+					return []*Error{{Message: "No enough elements to unpack"}}
 				}
 				elems2 := tuple2.Elems[:len(elems1)]
 
@@ -83,7 +83,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			}
 
 			if len(tuple1.Elems) != len(tuple2.Elems) {
-				return []*Error{{message: fmt.Sprintf("Cannot unify %#v and %#v", tuple1, tuple2)}}
+				return []*Error{{Message: fmt.Sprintf("Cannot unify %#v and %#v", tuple1, tuple2)}}
 			}
 
 			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
@@ -153,7 +153,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			} else if _, ok := lit.Lit.(*BigIntLit); ok && prim.Prim == "bigint" {
 				return nil
 			} else {
-				return []*Error{{message: fmt.Sprintf("Cannot unify %#v and %#v", lit, prim)}}
+				return []*Error{{Message: fmt.Sprintf("Cannot unify %#v and %#v", lit, prim)}}
 			}
 		}
 	}
@@ -180,7 +180,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 				return nil
 			} else {
 				// TODO: include unique1 and unique2 in the error message
-				return []*Error{{message: "Cannot unify unique symbols"}}
+				return []*Error{{Message: "Cannot unify unique symbols"}}
 			}
 		}
 	}
@@ -260,7 +260,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 					usedKeys[key2] = true
 				} else {
 					errors = slices.Concat(errors, []*Error{{
-						message: fmt.Sprintf("key %#v not found in %s", key2, obj1),
+						Message: fmt.Sprintf("key %#v not found in %s", key2, obj1),
 					}})
 				}
 			}
@@ -343,13 +343,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 
 func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
 	if t1 == nil || t2 == nil {
-		return []*Error{{message: "Cannot bind nil types"}}
+		return []*Error{{Message: "Cannot bind nil types"}}
 	}
 
 	if !t1.Equal(t2) {
 		if occursInType(t1, t2) {
 			// TODO: include t1 and t2 in the error message
-			return []*Error{{message: "recursive unification error"}}
+			return []*Error{{Message: "recursive unification error"}}
 		} else {
 			t1.Instance = t2
 			t1.SetProvenance(&TypeProvenance{

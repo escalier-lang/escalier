@@ -281,7 +281,6 @@
 						const id = this._nextCallbackTimeoutID;
 						this._nextCallbackTimeoutID++;
 						const duration = getInt64(sp + 8);
-						console.log("Scheduling timeout event", id, duration);
 						this._scheduledTimeouts.set(id, setTimeout(
 							() => {
 								this._resume();

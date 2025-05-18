@@ -228,10 +228,39 @@ export function setupLanguage(client: Client) {
         ],
     });
     monaco.languages.registerHoverProvider(languageID, {
-        provideHover(_model, _position, _token, _context) {
+        async provideHover(model, position, _token, _context) {
+            const hover = await client.textDocumentHover({
+                textDocument: { uri: model.uri.toString() },
+                position: {
+                    line: position.lineNumber,
+                    character: position.column,
+                },
+            });
+            if (!hover) {
+                return {
+                    contents: [
+                        {
+                            value: 'TODO: return hover contents',
+                        },
+                    ],
+                };
+            }
+
+            if (lsp.MarkupContent.is(hover.contents)) {
+                return {
+                    contents: [
+                        {
+                            value: hover.contents.value,
+                        },
+                    ],
+                };
+            }
+
             return {
                 contents: [
-                    { value: 'This should show the type of the hovered item' },
+                    {
+                        value: 'TODO: hover - handle other types',
+                    },
                 ],
             };
         },

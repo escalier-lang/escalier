@@ -13,6 +13,8 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 )
@@ -37,14 +39,16 @@ func main() {
 }
 
 type Server struct {
-	handler   protocol.Handler
-	documents map[protocol.DocumentUri]protocol.TextDocumentItem
+	handler    protocol.Handler
+	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
+	parsedDocs map[protocol.DocumentUri]*ast.Script
 }
 
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents: map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		documents:  map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		parsedDocs: map[protocol.DocumentUri]*ast.Script{},
 	}
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
@@ -58,6 +62,7 @@ func NewServer() *Server {
 		TextDocumentDidChange:   s.textDocumentDidChange,
 		TextDocumentDeclaration: s.textDocumentDeclaration,
 		TextDocumentDefinition:  s.textDocumentDefinition,
+		TextDocumentHover:       s.textDocumentHover,
 		TextDocumentCodeAction:  s.textDocumentCodeAction,
 
 		// Workspace
@@ -121,17 +126,29 @@ func (*Server) setTrace(context *glsp.Context, params *protocol.SetTraceParams) 
 	return nil
 }
 
-func (*Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string) {
+// TODO: cache the results of the validation so that we can use them when responding
+// to hover and completion requests.
+func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, parser.Source{
 		Path:     uri,
 		Contents: contents,
 	})
-	_, errors := p.ParseScript()
+	script, parseErrors := p.ParseScript()
+	server.parsedDocs[uri] = script
+
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		Filename:   uri,
+		Scope:      checker.Prelude(),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	_, typeErrors := c.InferScript(inferCtx, script)
 
 	diagnotics := []protocol.Diagnostic{}
-	for _, err := range errors {
+	for _, err := range parseErrors {
 		severity := protocol.DiagnosticSeverityError
 		source := "escalier"
 		diagnotics = append(diagnotics, protocol.Diagnostic{
@@ -143,6 +160,31 @@ func (*Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, cont
 				End: protocol.Position{
 					Line:      protocol.UInteger(err.Span.End.Line - 1),
 					Character: protocol.UInteger(err.Span.End.Column - 1),
+				},
+			},
+			Severity:           &severity,
+			Code:               nil,
+			CodeDescription:    nil,
+			Source:             &source,
+			Message:            err.Message,
+			Tags:               nil,
+			RelatedInformation: nil,
+			Data:               nil,
+		})
+	}
+
+	for _, err := range typeErrors {
+		severity := protocol.DiagnosticSeverityError
+		source := "escalier"
+		diagnotics = append(diagnotics, protocol.Diagnostic{
+			Range: protocol.Range{
+				Start: protocol.Position{
+					Line:      0,
+					Character: 0,
+				},
+				End: protocol.Position{
+					Line:      0,
+					Character: 0,
 				},
 			},
 			Severity:           &severity,
@@ -209,6 +251,49 @@ func (*Server) textDocumentDefinition(context *glsp.Context, params *protocol.De
 	return nil, err
 }
 
+func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
+	fmt.Fprintf(os.Stderr, "textDocumentHover - position = line:%d, column:%d\n", params.Position.Line, params.Position.Character)
+
+	value := fmt.Sprintf(
+		"textDocumentHover - position = line:%d, column:%d\n",
+		params.Position.Line,
+		params.Position.Character,
+	)
+
+	script := server.parsedDocs[params.TextDocument.URI]
+	if script != nil {
+		loc := ast.Location{
+			Line:   int(params.Position.Line),
+			Column: int(params.Position.Character),
+		}
+		node := findNodeInScript(script, loc)
+		node.IfSome(func(node ast.Node) {
+			switch node := node.(type) {
+			case ast.Expr:
+				if node.InferredType() != nil {
+					value = "`" + node.InferredType().String() + "`"
+				}
+			case ast.Pat:
+				if node.InferredType() != nil {
+					value = "`" + node.InferredType().String() + "`"
+				}
+			default:
+				// do nothing
+			}
+		})
+	}
+
+	hover := protocol.Hover{
+		Contents: protocol.MarkupContent{
+			Kind:  protocol.MarkupKindMarkdown,
+			Value: value,
+		},
+		Range: nil,
+	}
+	return &hover, nil
+}
+
 func addr[T any](x T) *T {
 	return &x
 }
@@ -250,6 +335,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 
 	doc, ok := s.documents[uri]
 	if !ok {
+		fmt.Fprintf(os.Stderr, "document not found: %s\n", uri)
 		return nil, fmt.Errorf("document not found: %s", uri)
 	}
 

@@ -376,7 +376,6 @@ func (t *FuncType) String() string {
 			if i > 0 {
 				result += ", "
 			}
-			fmt.Printf("param: %#v\n", param)
 			result += param.Pattern.String() + ": " + param.Type.String()
 		}
 	}
@@ -406,17 +405,23 @@ func NewStrKey(str string) ObjTypeKey {
 	return ObjTypeKey{
 		Kind: StrObjTypeKeyKind,
 		Str:  str,
+		Num:  0,
+		Sym:  0,
 	}
 }
 func NewNumKey(num float64) ObjTypeKey {
 	return ObjTypeKey{
 		Kind: NumObjTypeKeyKind,
+		Str:  "",
 		Num:  num,
+		Sym:  0,
 	}
 }
 func NewSymKey(sym int) ObjTypeKey {
 	return ObjTypeKey{
 		Kind: SymObjTypeKeyKind,
+		Str:  "",
+		Num:  0,
 		Sym:  sym,
 	}
 }

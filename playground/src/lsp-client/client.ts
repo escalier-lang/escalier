@@ -56,6 +56,7 @@ export class Client {
             const headerRegex = /Content-Length: (\d+)/;
             const payload = message.replace(headerRegex, '').trim();
             const object = JSON.parse(payload);
+            console.log('playload:', object);
 
             // TODO: validate the the object being returned is a valid RPC JSON response
             if (object.id != null) {
@@ -311,6 +312,10 @@ export class Client {
         params: lsp.CodeActionParams,
     ): Promise<lsp.Command[] | lsp.CodeAction[]> {
         return this.sendRequest('textDocument/codeAction', params);
+    }
+
+    textDocumentHover(params: lsp.HoverParams): Promise<lsp.Hover | null> {
+        return this.sendRequest('textDocument/hover', params);
     }
 
     // Go to type definition
