@@ -1,5 +1,3 @@
-val q = {x:}
-
 export val obj1 = {a: 5, b: "hello", c: true}
 val a = obj1.a
 val b = obj1["b"]

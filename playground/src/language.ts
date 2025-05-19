@@ -97,10 +97,10 @@ export function setupLanguage(client: Client) {
                 (diagnostic): monaco.editor.IMarkerData => {
                     return {
                         severity: convertSeverity(diagnostic.severity),
-                        startLineNumber: diagnostic.range.start.line + 1,
-                        startColumn: diagnostic.range.start.character + 1,
-                        endLineNumber: diagnostic.range.end.line + 1,
-                        endColumn: diagnostic.range.end.character + 1,
+                        startLineNumber: diagnostic.range.start.line,
+                        startColumn: diagnostic.range.start.character,
+                        endLineNumber: diagnostic.range.end.line,
+                        endColumn: diagnostic.range.end.character,
                         message: diagnostic.message,
                     };
                 },

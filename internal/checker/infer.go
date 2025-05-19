@@ -143,11 +143,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 				Message: "Unknown operator " + string(expr.Op),
 			}}
 		}
-		opType := opOption.Unwrap()
+		opBinding := opOption.Unwrap()
 
 		// TODO: extract this into a unifyCall method
 		// TODO: handle function overloading
-		if fnType, ok := opType.(*FuncType); ok {
+		if fnType, ok := opBinding.Type.(*FuncType); ok {
 			if len(fnType.Params) != 2 {
 				return neverType, []*Error{{
 					Message: "Invalid number of arguments for operator " + string(expr.Op),
@@ -309,9 +309,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		// We should be able to determine where an identifier was declared by
 		// using the provenance of the identifier's inferred type.
 		if ctx.Scope.getValue(expr.Name).IsSome() {
-			t := ctx.Scope.getValue(expr.Name).Unwrap()
-			expr.SetInferredType(t)
-			return t, nil
+			binding := ctx.Scope.getValue(expr.Name).Unwrap()
+			expr.SetInferredType(binding.Type)
+			expr.Source = binding.Source.Unwrap()
+			return binding.Type, nil
 		} else {
 			t := NewNeverType()
 			expr.SetInferredType(t)
@@ -350,9 +351,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
 						if ctx.Scope.getValue(key.Name).IsSome() {
-							t := ctx.Scope.getValue(key.Name).Unwrap()
-							expr.SetInferredType(t)
-							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+							binding := ctx.Scope.getValue(key.Name).Unwrap()
+							expr.SetInferredType(binding.Type)
+							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), binding.Type)
 						} else {
 							t := NewNeverType()
 							expr.SetInferredType(t)
@@ -877,14 +878,14 @@ func (c *Checker) inferPattern(
 		case *ast.ExtractorPat:
 			t = optional.Map(
 				ctx.Scope.getValue(p.Name),
-				func(t Type) Type {
+				func(binding Binding) Type {
 					args := make([]Type, len(p.Args))
 					for i, arg := range p.Args {
 						argType, argErrors := inferPatRec(arg)
 						args[i] = argType
 						errors = append(errors, argErrors...)
 					}
-					return NewExtractorType(t, args...)
+					return NewExtractorType(binding.Type, args...)
 				},
 			).TakeOrElse(func() Type { return NewNeverType() })
 		case *ast.RestPat:
