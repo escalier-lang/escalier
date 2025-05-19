@@ -51,8 +51,8 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
                 /[a-z_$][\w$]*/,
                 {
                     cases: {
-                        '@typeKeywords': 'keyword',
                         '@keywords': 'keyword',
+                        '@typeKeywords': 'keyword',
                         '@default': 'identifier',
                     },
                 },
