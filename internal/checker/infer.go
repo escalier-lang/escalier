@@ -345,6 +345,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 					errors = slices.Concat(errors, elemErrors)
 					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 				})
+				elem.Value.IfNone(func() {
+					switch key := elem.Name.(type) {
+					case *ast.IdentExpr:
+						// TODO: dedupe with *ast.IdentExpr case
+						if ctx.Scope.getValue(key.Name).IsSome() {
+							t := ctx.Scope.getValue(key.Name).Unwrap()
+							expr.SetInferredType(t)
+							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+						} else {
+							t := NewNeverType()
+							expr.SetInferredType(t)
+							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+							errors = append(errors, &Error{
+								Message: "Unknown identifier " + key.Name,
+							})
+						}
+					}
+				})
 			default:
 				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
 			}
@@ -363,7 +381,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	case *ast.IfElseExpr:
 		return c.inferIfElse(ctx, expr)
 	default:
-		return nil, []*Error{{Message: "Unknown expression type"}}
+		return NewNeverType(), []*Error{{Message: "Unknown expression type"}}
 	}
 }
 

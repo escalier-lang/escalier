@@ -29,6 +29,12 @@ func parseDelimSeq[T any](
 		token = p.lexer.peek()
 		if token.Type == separator {
 			p.lexer.consume() // consume separator
+
+			token = p.lexer.peek()
+			if token.Type == terminator {
+				return items, errors
+			}
+
 			item, itemErrors := parserCombinator()
 			errors = append(errors, itemErrors...)
 			if item.IsNone() {
