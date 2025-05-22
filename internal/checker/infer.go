@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"iter"
-	"os"
 	"slices"
 
 	"maps"
@@ -425,11 +424,9 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 	errors := []*Error{}
 
 	objType = Prune(objType)
-	fmt.Fprintf(os.Stderr, "expr.optChain: %t, objType: %s\n", optChain, objType)
 
 	objType, expandErrors := c.expandType(ctx, objType)
 	errors = slices.Concat(errors, expandErrors)
-	fmt.Fprintf(os.Stderr, "expanded objType: %s\n", objType)
 
 	var propType Type = NewNeverType()
 
@@ -631,11 +628,6 @@ func (c *Checker) inferFuncSig(
 		c.unify(ctx, patType, typeAnn)
 
 		maps.Copy(bindings, patBindings)
-
-		fmt.Fprintf(os.Stderr, "typeAnn: %s\n", typeAnn)
-		for name, binding := range patBindings {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", name, binding.Type)
-		}
 
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
@@ -1079,13 +1071,19 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, fnErrors)
 				elems[i] = &SetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
 			case *ast.PropertyTypeAnn:
-				typeAnn, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
-				errors = slices.Concat(errors, typeAnnErrors)
+				var t Type
+				if elem.Value != nil {
+					typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
+					errors = slices.Concat(errors, typeAnnErrors)
+					t = typeAnnType
+				} else {
+					t = NewLitType(&UndefinedLit{})
+				}
 				elems[i] = &PropertyElemType{
 					Name:     astKeyToTypeKey(elem.Name),
 					Optional: elem.Optional,
 					Readonly: elem.Readonly,
-					Value:    typeAnn,
+					Value:    t,
 				}
 			case *ast.MappedTypeAnn:
 				panic("TODO: handle MappedTypeAnn")

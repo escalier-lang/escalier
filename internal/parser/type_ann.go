@@ -127,7 +127,10 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 		p.lexer.consume() // consume '{'
 		elems, propErrors := parseDelimSeq(p, CloseBrace, Comma, func() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
 			elem, elemErrors := p.objTypeAnnElem()
-			return elem, elemErrors
+			if elem == nil {
+				return optional.None[ast.ObjTypeAnnElem](), elemErrors
+			}
+			return optional.Some(elem), elemErrors
 		})
 		errors = append(errors, propErrors...)
 		end, endErrors := p.expect(CloseBrace, AlwaysConsume)
@@ -163,7 +166,7 @@ func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 	}
 }
 
-func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
+func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
@@ -179,26 +182,64 @@ func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error
 	objKeyOption, objKeyErrors := p.objExprKey()
 	errors = append(errors, objKeyErrors...)
 	if objKeyOption.IsNone() {
-		return optional.None[ast.ObjTypeAnnElem](), errors
+		return nil, errors
 	}
 	objKey := objKeyOption.Unwrap() // safe because we checked for None
 	token = p.lexer.peek()
 
+	// TODO: handle the following cases:
+	// - {prop}
+	// - {prop:}
+	// - {prop?}
+	// - {prop?:}
+	// - {prop,}
+	// - {prop:,}
+	// - {prop?,}
+	// - {prop?:,}
+	// These are all intermediate cases... in each case the property type should
+	// be inferred as `unknown`.
+
 	// nolint: exhaustive
 	switch token.Type {
+	case CloseBrace:
+		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
+			Name:     objKey,
+			Optional: false,
+			Readonly: false, // TODO: handle readonly
+			Value:    nil,
+		}
+		return property, errors
+	case Comma:
+		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
+			Name:     objKey,
+			Optional: false,
+			Readonly: false, // TODO: handle readonly
+			Value:    nil,
+		}
+		return property, errors
 	case Colon:
 		p.lexer.consume() // consume ':'
 		value, valueErrors := p.typeAnn()
 		errors = append(errors, valueErrors...)
-		property := optional.Map(value, func(value ast.TypeAnn) ast.ObjTypeAnnElem {
-			property := &ast.PropertyTypeAnn{
-				Name:     objKey,
-				Optional: false,
-				Readonly: false, // TODO: handle readonly
-				Value:    value,
+
+		if value.IsNone() {
+			token := p.lexer.peek()
+			if token.Type == Comma {
+				return nil, errors
 			}
-			return property
+		}
+
+		property := &ast.PropertyTypeAnn{
+			Name:     objKey,
+			Optional: false,
+			Readonly: false, // TODO: handle readonly
+			Value:    nil,
+		}
+
+		value.IfSome(func(value ast.TypeAnn) {
+			property.Value = value
 		})
+
 		return property, errors
 	case Question:
 		p.lexer.consume() // consume '?'
@@ -206,15 +247,12 @@ func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error
 		errors = append(errors, expectErrors...)
 		value, valueErrors := p.typeAnn()
 		errors = append(errors, valueErrors...)
-		return optional.Map(value, func(value ast.TypeAnn) ast.ObjTypeAnnElem {
-			property := &ast.PropertyTypeAnn{
-				Name:     objKey,
-				Optional: true,
-				Readonly: false, // TODO: handle readonly
-				Value:    value,
-			}
-			return property
-		}), errors
+		return &ast.PropertyTypeAnn{
+			Name:     objKey,
+			Optional: true,
+			Readonly: false, // TODO: handle readonly
+			Value:    value.TakeOr(nil),
+		}, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
 		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
@@ -232,7 +270,7 @@ func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error
 				Span:    token.Span,
 				Message: "expected return type annotation",
 			})
-			return optional.None[ast.ObjTypeAnnElem](), errors
+			return nil, errors
 		}
 		retType, _ := retTypeOption.Take()
 
@@ -245,20 +283,20 @@ func (p *Parser) objTypeAnnElem() (optional.Option[ast.ObjTypeAnnElem], []*Error
 		)
 
 		if mod == "get" {
-			return optional.Some[ast.ObjTypeAnnElem](&ast.GetterTypeAnn{
+			return &ast.GetterTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,
-			}), errors
+			}, errors
 		} else if mod == "set" {
-			return optional.Some[ast.ObjTypeAnnElem](&ast.SetterTypeAnn{
+			return &ast.SetterTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,
-			}), errors
+			}, errors
 		} else {
-			return optional.Some[ast.ObjTypeAnnElem](&ast.MethodTypeAnn{
+			return &ast.MethodTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,
-			}), errors
+			}, errors
 		}
 	default:
 		// skip over the token and return optional.None

@@ -6,11 +6,14 @@ func parseDelimSeq[T any](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
+	// TODO: update this to return `nil` instead of `optional.None` when there
+	// is no item
 	parserCombinator func() (optional.Option[T], []*Error),
 ) ([]T, []*Error) {
 	items := []T{}
 	errors := []*Error{}
 
+	// Empty sequence
 	token := p.lexer.peek()
 	if token.Type == terminator {
 		return items, errors

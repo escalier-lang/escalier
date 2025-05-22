@@ -56,7 +56,6 @@ export class Client {
             const headerRegex = /Content-Length: (\d+)/;
             const payload = message.replace(headerRegex, '').trim();
             const object = JSON.parse(payload);
-            console.log('playload:', object);
 
             // TODO: validate the the object being returned is a valid RPC JSON response
             if (object.id != null) {
