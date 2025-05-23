@@ -187,21 +187,14 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 	objKey := objKeyOption.Unwrap() // safe because we checked for None
 	token = p.lexer.peek()
 
-	// TODO: handle the following cases:
-	// - {prop}
-	// - {prop:}
-	// - {prop?}
-	// - {prop?:}
-	// - {prop,}
-	// - {prop:,}
-	// - {prop?,}
-	// - {prop?:,}
-	// These are all intermediate cases... in each case the property type should
-	// be inferred as `unknown`.
-
 	// nolint: exhaustive
 	switch token.Type {
 	case CloseBrace:
+		errors = append(errors, &Error{
+			Span:    token.Span,
+			Message: "expected type annotation",
+		})
+
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
@@ -210,6 +203,11 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		}
 		return property, errors
 	case Comma:
+		errors = append(errors, &Error{
+			Span:    token.Span,
+			Message: "expected type annotation",
+		})
+
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
@@ -219,21 +217,31 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		return property, errors
 	case Colon:
 		p.lexer.consume() // consume ':'
-		value, valueErrors := p.typeAnn()
-		errors = append(errors, valueErrors...)
-
-		if value.IsNone() {
-			token := p.lexer.peek()
-			if token.Type == Comma {
-				return nil, errors
-			}
-		}
 
 		property := &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
 			Readonly: false, // TODO: handle readonly
 			Value:    nil,
+		}
+
+		token = p.lexer.peek()
+		if token.Type == Comma {
+			errors = append(errors, &Error{
+				Span:    token.Span,
+				Message: "expected type annotation",
+			})
+			return property, errors
+		}
+
+		value, valueErrors := p.typeAnn()
+		errors = append(errors, valueErrors...)
+
+		if value.IsNone() {
+			token := p.lexer.peek()
+			if token.Type == Comma {
+				return property, errors
+			}
 		}
 
 		value.IfSome(func(value ast.TypeAnn) {

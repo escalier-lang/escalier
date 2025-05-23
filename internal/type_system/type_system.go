@@ -246,6 +246,7 @@ type UnknownType struct {
 	provenance Provenance
 }
 
+func NewUnknownType() *UnknownType                { return &UnknownType{provenance: nil} }
 func (t *UnknownType) Provenance() Provenance     { return t.provenance }
 func (t *UnknownType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *UnknownType) Accept(v TypeVisitor)       { v.VisitType(t) }
