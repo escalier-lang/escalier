@@ -10,4 +10,5 @@ const d = obj2.d;
 const f = obj2.e?.f;
 const g = obj3.bar;
 obj3.bar = "hello";
+const obj4 = {a, b, c};
 //# sourceMappingURL=./objects.esc.map

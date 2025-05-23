@@ -294,7 +294,9 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 				}
 			case *PropertyExpr:
 				s.AddSegmentForNode(elem.Key)
-				s.TraverseExpr(elem.Value)
+				elem.Value.IfSome(func(value Expr) {
+					s.TraverseExpr(value)
+				})
 			case *RestSpreadExpr:
 				s.AddSegmentForNode(elem)
 				s.TraverseExpr(elem.Arg)

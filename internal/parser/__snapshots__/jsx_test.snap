@@ -304,8 +304,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
             },
             &ast.JSXExprContainer{
                 Expr: &ast.IdentExpr{
-                    Name: "msg",
-                    span: ast.Span{
+                    Name:   "msg",
+                    Source: nil,
+                    span:   ast.Span{
                         Start: ast.Location{Line:1, Column:14},
                         End:   ast.Location{Line:1, Column:17},
                     },
@@ -373,8 +374,9 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                     Children: {
                         &ast.JSXExprContainer{
                             Expr: &ast.IdentExpr{
-                                Name: "foo",
-                                span: ast.Span{
+                                Name:   "foo",
+                                Source: nil,
+                                span:   ast.Span{
                                     Start: ast.Location{Line:1, Column:14},
                                     End:   ast.Location{Line:1, Column:17},
                                 },

@@ -28,28 +28,30 @@ test('initialize', async () => {
     });
 
     expect(initResult).toMatchInlineSnapshot(`
-  {
-    "capabilities": {
-      "codeActionProvider": {
-        "codeActionKinds": [
-          "compile",
-        ],
-      },
-      "declarationProvider": true,
-      "definitionProvider": true,
-      "executeCommandProvider": {
-        "commands": [
-          "compile",
-        ],
-      },
-      "textDocumentSync": 1,
-    },
-    "serverInfo": {
-      "name": "escalier",
-      "version": "0.0.1",
-    },
-  }
-`);
+      {
+        "capabilities": {
+          "codeActionProvider": {
+            "codeActionKinds": [
+              "compile",
+            ],
+          },
+          "declarationProvider": true,
+          "definitionProvider": true,
+          "executeCommandProvider": {
+            "commands": [
+              "compile",
+            ],
+          },
+          "hoverProvider": true,
+          "textDocumentSync": 1,
+          "typeDefinitionProvider": true,
+        },
+        "serverInfo": {
+          "name": "escalier",
+          "version": "0.0.1",
+        },
+      }
+    `);
 });
 
 test('foo/bar', async () => {
@@ -98,24 +100,39 @@ test('textDocument/didOpen', async () => {
     });
 
     expect(diagnostics).toMatchInlineSnapshot(`
-    [
-      {
-        "message": "Expected an expression",
-        "range": {
-          "end": {
-            "character": 0,
-            "line": 2,
+      [
+        {
+          "message": "Expected an expression",
+          "range": {
+            "end": {
+              "character": 1,
+              "line": 3,
+            },
+            "start": {
+              "character": 1,
+              "line": 3,
+            },
           },
-          "start": {
-            "character": 0,
-            "line": 2,
-          },
+          "severity": 1,
+          "source": "escalier",
         },
-        "severity": 1,
-        "source": "escalier",
-      },
-    ]
-  `);
+        {
+          "message": "Unknown expression type",
+          "range": {
+            "end": {
+              "character": 0,
+              "line": 0,
+            },
+            "start": {
+              "character": 0,
+              "line": 0,
+            },
+          },
+          "severity": 1,
+          "source": "escalier",
+        },
+      ]
+    `);
 });
 
 test('textDocument/didChange', async () => {
@@ -159,12 +176,27 @@ test('textDocument/didChange', async () => {
           "message": "Expected an expression",
           "range": {
             "end": {
+              "character": 1,
+              "line": 3,
+            },
+            "start": {
+              "character": 1,
+              "line": 3,
+            },
+          },
+          "severity": 1,
+          "source": "escalier",
+        },
+        {
+          "message": "Unknown expression type",
+          "range": {
+            "end": {
               "character": 0,
-              "line": 2,
+              "line": 0,
             },
             "start": {
               "character": 0,
-              "line": 2,
+              "line": 0,
             },
           },
           "severity": 1,

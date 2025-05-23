@@ -269,12 +269,13 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 
 type IdentExpr struct {
 	Name         string
+	Source       BindingSource
 	span         Span
 	inferredType Type
 }
 
 func NewIdent(name string, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, span: span, inferredType: nil}
+	return &IdentExpr{Name: name, Source: nil, span: span, inferredType: nil}
 }
 func (e *IdentExpr) Span() Span             { return e.span }
 func (e *IdentExpr) InferredType() Type     { return e.inferredType }

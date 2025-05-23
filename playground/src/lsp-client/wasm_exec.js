@@ -281,11 +281,16 @@
 						const id = this._nextCallbackTimeoutID;
 						this._nextCallbackTimeoutID++;
 						const duration = getInt64(sp + 8);
-						console.log("Scheduling timeout event", id, duration);
 						this._scheduledTimeouts.set(id, setTimeout(
 							() => {
 								this._resume();
 								while (this._scheduledTimeouts.has(id)) {
+									if (this.exited) {
+										for (const [id, timeout] of this._scheduledTimeouts) {
+											clearTimeout(timeout);
+											this._scheduledTimeouts.delete(id);
+										}
+									}
 									// for some reason Go failed to register the timeout event, log and try again
 									// (temporary workaround for https://github.com/golang/go/issues/28975)
 									console.warn("scheduleTimeoutEvent: missed timeout event");

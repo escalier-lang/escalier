@@ -170,8 +170,10 @@ func (p *Printer) PrintExpr(expr Expr) {
 				p.printMethod(elem.Name, elem.Params, elem.Body)
 			case *PropertyExpr:
 				p.printObjKey(elem.Key)
-				p.print(": ")
-				p.PrintExpr(elem.Value)
+				elem.Value.IfSome(func(value Expr) {
+					p.print(": ")
+					p.PrintExpr(value)
+				})
 			case *RestSpreadExpr:
 				p.print("...")
 				p.PrintExpr(elem.Arg)

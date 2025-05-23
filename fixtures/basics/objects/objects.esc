@@ -21,3 +21,5 @@ export declare val obj3: {
 
 val g = obj3.bar
 obj3.bar = "hello"
+
+export val obj4 = {a, b, c}

@@ -313,6 +313,10 @@ export class Client {
         return this.sendRequest('textDocument/codeAction', params);
     }
 
+    textDocumentHover(params: lsp.HoverParams): Promise<lsp.Hover | null> {
+        return this.sendRequest('textDocument/hover', params);
+    }
+
     // Go to type definition
 
     // Go to implementation

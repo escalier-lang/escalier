@@ -28,13 +28,13 @@ func NewScope(parent optional.Option[*Scope]) *Scope {
 	}
 }
 
-func (s *Scope) getValue(name string) optional.Option[Type] {
+func (s *Scope) getValue(name string) optional.Option[Binding] {
 	if v, ok := s.Values[name]; ok {
-		return optional.Some(v.Type)
+		return optional.Some(v)
 	}
-	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[Type] {
+	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[Binding] {
 		return p.getValue(name)
-	}).Or(optional.None[Type]())
+	}).Or(optional.None[Binding]())
 }
 
 func (s *Scope) setValue(name string, binding Binding) {

@@ -285,12 +285,12 @@ func (e *SetterExpr) Source() ast.Node   { return e.source }
 
 type PropertyExpr struct {
 	Key    ObjKey
-	Value  Expr
+	Value  optional.Option[Expr]
 	source ast.Node
 	span   *Span
 }
 
-func NewPropertyExpr(key ObjKey, value Expr, source ast.Node) *PropertyExpr {
+func NewPropertyExpr(key ObjKey, value optional.Option[Expr], source ast.Node) *PropertyExpr {
 	return &PropertyExpr{Key: key, Value: value, source: source, span: nil}
 }
 func (e *PropertyExpr) Span() *Span        { return e.span }

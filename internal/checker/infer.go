@@ -49,7 +49,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []*Error {
 	case *ast.TypeDecl:
 		return c.inferTypeDecl(ctx, decl)
 	default:
-		return []*Error{{message: "Unknown declaration type"}}
+		return []*Error{{Message: "Unknown declaration type"}}
 	}
 }
 
@@ -139,17 +139,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		opOption := ctx.Scope.getValue(string(expr.Op))
 		if opOption.IsNone() {
 			return neverType, []*Error{{
-				message: "Unknown operator " + string(expr.Op),
+				Message: "Unknown operator " + string(expr.Op),
 			}}
 		}
-		opType := opOption.Unwrap()
+		opBinding := opOption.Unwrap()
 
 		// TODO: extract this into a unifyCall method
 		// TODO: handle function overloading
-		if fnType, ok := opType.(*FuncType); ok {
+		if fnType, ok := opBinding.Type.(*FuncType); ok {
 			if len(fnType.Params) != 2 {
 				return neverType, []*Error{{
-					message: "Invalid number of arguments for operator " + string(expr.Op),
+					Message: "Invalid number of arguments for operator " + string(expr.Op),
 				}}
 			}
 
@@ -167,7 +167,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		}
 
 		return neverType, []*Error{{
-			message: "Operator " + string(expr.Op) + " is not a function",
+			Message: "Operator " + string(expr.Op) + " is not a function",
 		}}
 	case *ast.UnaryExpr:
 		if expr.Op == ast.UnaryMinus {
@@ -178,12 +178,19 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			}
 		}
 		return NewNeverType(), []*Error{{
-			message: "TODO: Handle unary operators",
+			Message: "TODO: Handle unary operators",
 		}}
 	case *ast.CallExpr:
 		errors := []*Error{}
 		calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 		errors = slices.Concat(errors, calleeErrors)
+
+		argTypes := make([]Type, len(expr.Args))
+		for i, arg := range expr.Args {
+			argType, argErrors := c.inferExpr(ctx, arg)
+			errors = slices.Concat(errors, argErrors)
+			argTypes[i] = argType
+		}
 
 		// TODO: handle calleeType being something other than a function, e.g.
 		// TypeRef, ObjType with callable signature, etc.
@@ -193,23 +200,29 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 			// TODO: handle rest params and spread args
 			if len(fnType.Params) != len(expr.Args) {
 				return NewNeverType(), []*Error{{
-					message: "Invalid number of arguments for function",
+					Message: "Invalid number of arguments for function",
 				}}
 			}
 
-			for i, arg := range expr.Args {
-				argType, argErrors := c.inferExpr(ctx, arg)
-				errors = slices.Concat(errors, argErrors)
-
-				paramType := fnType.Params[i].Type
+			for argType, param := range Zip(argTypes, fnType.Params) {
+				paramType := param.Type
 				paramErrors := c.unify(ctx, argType, paramType)
 				errors = slices.Concat(errors, paramErrors)
 			}
 
+			// for i, arg := range expr.Args {
+			// 	argType, argErrors := c.inferExpr(ctx, arg)
+			// 	errors = slices.Concat(errors, argErrors)
+
+			// 	paramType := fnType.Params[i].Type
+			// 	paramErrors := c.unify(ctx, argType, paramType)
+			// 	errors = slices.Concat(errors, paramErrors)
+			// }
+
 			return fnType.Return, errors
 		} else {
 			return NewNeverType(), []*Error{{
-				message: "Callee is not a function",
+				Message: "Callee is not a function",
 			}}
 		}
 	case *ast.MemberExpr:
@@ -235,7 +248,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 				return objType.TypeArgs[0], errors
 			} else {
 				errors = append(errors, &Error{
-					message: fmt.Sprintf("Expected Array but got %s", objType),
+					Message: fmt.Sprintf("Expected Array but got %s", objType),
 				})
 				return NewNeverType(), errors
 			}
@@ -247,19 +260,19 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 						return objType.Elems[index], errors
 					} else {
 						errors = append(errors, &Error{
-							message: fmt.Sprintf("Index %d out of bounds for tuple of length %d", index, len(objType.Elems)),
+							Message: fmt.Sprintf("Index %d out of bounds for tuple of length %d", index, len(objType.Elems)),
 						})
 						return NewNeverType(), errors
 					}
 				} else {
 					errors = append(errors, &Error{
-						message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
+						Message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
 					})
 					return NewNeverType(), errors
 				}
 			} else {
 				errors = append(errors, &Error{
-					message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
+					Message: fmt.Sprintf("Expected index to be a number but got %s", indexType),
 				})
 				return NewNeverType(), errors
 			}
@@ -278,13 +291,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 					}
 
 					errors = append(errors, &Error{
-						message: fmt.Sprintf("No property with key %s", indexType),
+						Message: fmt.Sprintf("No property with key %s", indexType),
 					})
 					return NewNeverType(), errors
 				}
 			}
 			errors = append(errors, &Error{
-				message: fmt.Sprintf("%s is not a valid object key", indexType),
+				Message: fmt.Sprintf("%s is not a valid object key", indexType),
 			})
 			return NewNeverType(), errors
 		default:
@@ -295,14 +308,15 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 		// We should be able to determine where an identifier was declared by
 		// using the provenance of the identifier's inferred type.
 		if ctx.Scope.getValue(expr.Name).IsSome() {
-			t := ctx.Scope.getValue(expr.Name).Unwrap()
-			expr.SetInferredType(t)
-			return t, nil
+			binding := ctx.Scope.getValue(expr.Name).Unwrap()
+			expr.SetInferredType(binding.Type)
+			expr.Source = binding.Source.Unwrap()
+			return binding.Type, nil
 		} else {
 			t := NewNeverType()
 			expr.SetInferredType(t)
 			return t, []*Error{{
-				message: "Unknown identifier " + expr.Name,
+				Message: "Unknown identifier " + expr.Name,
 			}}
 		}
 	case *ast.LiteralExpr:
@@ -331,6 +345,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 					errors = slices.Concat(errors, elemErrors)
 					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 				})
+				elem.Value.IfNone(func() {
+					switch key := elem.Name.(type) {
+					case *ast.IdentExpr:
+						// TODO: dedupe with *ast.IdentExpr case
+						if ctx.Scope.getValue(key.Name).IsSome() {
+							binding := ctx.Scope.getValue(key.Name).Unwrap()
+							expr.SetInferredType(binding.Type)
+							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), binding.Type)
+						} else {
+							t := NewNeverType()
+							expr.SetInferredType(t)
+							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+							errors = append(errors, &Error{
+								Message: "Unknown identifier " + key.Name,
+							})
+						}
+					}
+				})
 			default:
 				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
 			}
@@ -349,7 +381,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []*Error) {
 	case *ast.IfElseExpr:
 		return c.inferIfElse(ctx, expr)
 	default:
-		return nil, []*Error{{message: "Unknown expression type"}}
+		return NewNeverType(), []*Error{{Message: "Unknown expression type"}}
 	}
 }
 
@@ -376,7 +408,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []*Error) {
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias.IsNone() {
 			errors := []*Error{{
-				message: fmt.Sprintf("Unknown type %s", t.Name),
+				Message: fmt.Sprintf("Unknown type %s", t.Name),
 			}}
 			return nil, errors
 		}
@@ -392,11 +424,9 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 	errors := []*Error{}
 
 	objType = Prune(objType)
-	fmt.Printf("expr.optChain: %t, objType: %s\n", optChain, objType)
 
 	objType, expandErrors := c.expandType(ctx, objType)
 	errors = slices.Concat(errors, expandErrors)
-	fmt.Printf("expanded objType: %s\n", objType)
 
 	var propType Type = NewNeverType()
 
@@ -445,7 +475,7 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 
 		if len(definedElems) == 0 {
 			errors = append(errors, &Error{
-				message: "Cannot get property from never",
+				Message: "Cannot get property from never",
 			})
 			return propType, errors
 		}
@@ -457,7 +487,7 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 
 			if len(undefinedElems) > 0 && !optChain {
 				errors = append(errors, &Error{
-					message: "Cannot get property from undefined",
+					Message: "Cannot get property from undefined",
 				})
 				return propType, errors
 			}
@@ -472,7 +502,7 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 		}
 	default:
 		errors = append(errors, &Error{
-			message: fmt.Sprintf("Expected object type but got %s", objType),
+			Message: fmt.Sprintf("Expected object type but got %s", objType),
 		})
 	}
 
@@ -557,7 +587,7 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []*Error {
 		})
 		return errors
 	default:
-		return []*Error{{message: "Unknown statement type"}}
+		return []*Error{{Message: "Unknown statement type"}}
 	}
 }
 
@@ -598,11 +628,6 @@ func (c *Checker) inferFuncSig(
 		c.unify(ctx, patType, typeAnn)
 
 		maps.Copy(bindings, patBindings)
-
-		fmt.Printf("typeAnn: %s\n", typeAnn)
-		for name, binding := range patBindings {
-			fmt.Printf("%s: %s\n", name, binding.Type)
-		}
 
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
@@ -771,7 +796,7 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []*Error) {
 		t = NewLitType(&UndefinedLit{})
 	default:
 		t = NewNeverType()
-		errors = []*Error{{message: "Unknown literal type"}}
+		errors = []*Error{{Message: "Unknown literal type"}}
 	}
 	t.SetProvenance(&ast.LitProvenance{
 		Lit: lit,
@@ -845,14 +870,14 @@ func (c *Checker) inferPattern(
 		case *ast.ExtractorPat:
 			t = optional.Map(
 				ctx.Scope.getValue(p.Name),
-				func(t Type) Type {
+				func(binding Binding) Type {
 					args := make([]Type, len(p.Args))
 					for i, arg := range p.Args {
 						argType, argErrors := inferPatRec(arg)
 						args[i] = argType
 						errors = append(errors, argErrors...)
 					}
-					return NewExtractorType(t, args...)
+					return NewExtractorType(binding.Type, args...)
 				},
 			).TakeOrElse(func() Type { return NewNeverType() })
 		case *ast.RestPat:
@@ -983,7 +1008,7 @@ func (c *Checker) inferTypeAnn(
 			return t
 		}).TakeOrElse(func() Type {
 			errors = append(errors, &Error{
-				message: fmt.Sprintf("Unknown type %s", typeAnn.Name),
+				Message: fmt.Sprintf("Unknown type %s", typeAnn.Name),
 			})
 			t := NewNeverType()
 			return t
@@ -1010,7 +1035,7 @@ func (c *Checker) inferTypeAnn(
 			t = NewLitType(&UndefinedLit{})
 		default:
 			errors = append(errors, &Error{
-				message: fmt.Sprintf("Unknown literal type %T", lit),
+				Message: fmt.Sprintf("Unknown literal type %T", lit),
 			})
 		}
 	case *ast.TupleTypeAnn:
@@ -1046,13 +1071,19 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, fnErrors)
 				elems[i] = &SetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
 			case *ast.PropertyTypeAnn:
-				typeAnn, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
-				errors = slices.Concat(errors, typeAnnErrors)
+				var t Type
+				if elem.Value != nil {
+					typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
+					errors = slices.Concat(errors, typeAnnErrors)
+					t = typeAnnType
+				} else {
+					t = NewLitType(&UndefinedLit{})
+				}
 				elems[i] = &PropertyElemType{
 					Name:     astKeyToTypeKey(elem.Name),
 					Optional: elem.Optional,
 					Readonly: elem.Readonly,
-					Value:    typeAnn,
+					Value:    t,
 				}
 			case *ast.MappedTypeAnn:
 				panic("TODO: handle MappedTypeAnn")
@@ -1063,7 +1094,7 @@ func (c *Checker) inferTypeAnn(
 
 		t = NewObjectType(elems)
 	default:
-		return nil, []*Error{{message: "Unknown type annotation"}}
+		return nil, []*Error{{Message: "Unknown type annotation"}}
 	}
 
 	t.SetProvenance(ast.NewTypeAnnProvenance(typeAnn))
