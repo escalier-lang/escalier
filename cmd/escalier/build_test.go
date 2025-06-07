@@ -11,10 +11,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func checkFile(t *testing.T, fixtureDir string, fixtureName string, ext string) {
+	actualJs, err := os.ReadFile(fixtureName + ext)
+	require.NoError(t, err)
+
+	if os.Getenv("UPDATE_FIXTURES") == "true" {
+		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+ext), actualJs, 0644)
+		require.NoError(t, err)
+	} else {
+		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+ext))
+		require.NoError(t, err)
+		require.Equal(t, string(expectedJs), string(actualJs))
+	}
+}
+
 // TODO: print errors to a file
 func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	tmpDir := t.TempDir()
-	shouldUpdate := os.Getenv("UPDATE_FIXTURES") == "true"
 
 	err := os.Chdir(tmpDir)
 	require.NoError(t, err)
@@ -33,40 +46,37 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	build(stdout, stderr, []string{fixtureName + ".esc"})
 	fmt.Println("stderr =", stderr.String())
 
-	actualJs, err := os.ReadFile(fixtureName + ".js")
-	require.NoError(t, err)
+	checkFile(t, fixtureDir, fixtureName, ".js")
+	checkFile(t, fixtureDir, fixtureName, ".d.ts")
+	checkFile(t, fixtureDir, fixtureName, ".esc.map")
 
-	if shouldUpdate {
-		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".js"), actualJs, 0644)
-		require.NoError(t, err)
-	} else {
-		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".js"))
-		require.NoError(t, err)
-		require.Equal(t, string(expectedJs), string(actualJs))
+	// check errors
+	if stderr.Len() > 0 {
+		actualErr := stderr.Bytes()
+		if os.Getenv("UPDATE_FIXTURES") == "true" {
+			err = os.WriteFile(filepath.Join(fixtureDir, "error.txt"), actualErr, 0644)
+			require.NoError(t, err)
+		} else {
+			expectedErr, err := os.ReadFile(filepath.Join(fixtureDir, "error.txt"))
+			require.NoError(t, err)
+			require.Equal(t, string(expectedErr), string(actualErr))
+		}
 	}
 
-	actualDts, err := os.ReadFile(fixtureName + ".d.ts")
-	require.NoError(t, err)
-
-	if shouldUpdate {
-		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".d.ts"), actualDts, 0644)
-		require.NoError(t, err)
-	} else {
-		expectedDts, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".d.ts"))
-		require.NoError(t, err)
-		require.Equal(t, string(expectedDts), string(actualDts))
-	}
-
-	actualMap, err := os.ReadFile(fixtureName + ".esc.map")
-	require.NoError(t, err)
-
-	if shouldUpdate {
-		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+".esc.map"), actualMap, 0644)
-		require.NoError(t, err)
-	} else {
-		expectedMap, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+".esc.map"))
-		require.NoError(t, err)
-		require.Equal(t, string(expectedMap), string(actualMap))
+	// if there are no errors, check that the error file does not exist
+	if stderr.Len() == 0 {
+		if os.Getenv("UPDATE_FIXTURES") == "true" {
+			// remove the error file if it exists
+			if _, err := os.Stat(filepath.Join(fixtureDir, "error.txt")); !os.IsNotExist(err) {
+				// file exists, remove it
+				err = os.Remove(filepath.Join(fixtureDir, "error.txt"))
+				require.NoError(t, err)
+			}
+		} else {
+			// check that the error file does not exist
+			_, err := os.Stat(filepath.Join(fixtureDir, "error.txt"))
+			require.True(t, os.IsNotExist(err), "error file should not exist")
+		}
 	}
 }
 
@@ -87,7 +97,7 @@ func TestBuild(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			if fixture.Name() != "objects" || group.Name() != "basics" {
+			if group.Name() == "extractors" {
 				continue
 			}
 			name := group.Name() + "/" + fixture.Name()

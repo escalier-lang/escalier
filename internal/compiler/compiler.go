@@ -13,7 +13,7 @@ import (
 
 type CompilerOutput struct {
 	ParseErrors []*parser.Error
-	TypeErrors  []*checker.Error
+	TypeErrors  []checker.Error
 	JS          string
 	SourceMap   string
 	DTS         string
