@@ -226,7 +226,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 			Code:               nil,
 			CodeDescription:    nil,
 			Source:             &source,
-			Message:            err.Message,
+			Message:            err.Message(),
 			Tags:               nil,
 			RelatedInformation: nil,
 			Data:               nil,

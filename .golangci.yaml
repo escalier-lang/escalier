@@ -3,3 +3,6 @@ linters:
     - exhaustive
     - exhaustruct
     - gochecksumtype
+
+issues:
+  max-same-issues: 0
