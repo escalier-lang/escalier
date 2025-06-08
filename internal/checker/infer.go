@@ -88,7 +88,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 		initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
 		errors = slices.Concat(errors, initErrors)
 
-		unifyErrors := c.unify(ctx, patType, initType)
+		unifyErrors := c.unify(ctx, initType, patType)
 		errors = slices.Concat(errors, unifyErrors)
 	})
 

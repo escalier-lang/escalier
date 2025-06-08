@@ -1,2 +1,0 @@
-Key not found in object: f in {a: true, b: false, c: 0, e: "foo", ...{f: "bar", g: "baz"}}
-Key not found in object: g in {a: true, b: false, c: 0, e: "foo", ...{f: "bar", g: "baz"}}

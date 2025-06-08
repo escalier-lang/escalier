@@ -64,19 +64,19 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			errors := []Error{}
 
 			// TODO: Don't allow more than one rest element in tuple1
-			restElem, ok := tuple1.Elems[len(tuple1.Elems)-1].(*RestSpreadType)
+			restElem, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
 			if ok {
-				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
-				if len(elems1) > len(tuple2.Elems) {
+				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
+				if len(elems2) > len(tuple1.Elems) {
 					return []Error{&NotEnoughElementsToUnpackError{}}
 				}
-				elems2 := tuple2.Elems[:len(elems1)]
+				elems1 := tuple1.Elems[:len(elems2)]
 
 				for elem1, elem2 := range Zip(elems1, elems2) {
 					unifyErrors := c.unify(ctx, elem1, elem2)
 					errors = slices.Concat(errors, unifyErrors)
 				}
-				remainingElems := tuple2.Elems[len(elems1):]
+				remainingElems := tuple1.Elems[len(elems2):]
 				tuple := &TupleType{
 					Elems: remainingElems,
 				}
@@ -225,7 +225,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			namedElems1 := make(map[ObjTypeKey]Type)
 			namedElems2 := make(map[ObjTypeKey]Type)
-			keys2 := []ObjTypeKey{} // original order of keys in obj2
+			keys1 := []ObjTypeKey{} // original order of keys in obj2
 
 			restType := optional.None[Type]()
 
@@ -233,14 +233,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems1[elem.Name] = elem.Fn
+					keys1 = append(keys1, elem.Name)
 				case *GetterElemType:
 					namedElems1[elem.Name] = elem.Fn.Return
+					keys1 = append(keys1, elem.Name)
 				case *SetterElemType:
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
+					keys1 = append(keys1, elem.Name)
 				case *PropertyElemType:
 					namedElems1[elem.Name] = elem.Value
-				case *RestSpreadElemType:
-					restType = optional.Some(elem.Value)
+					keys1 = append(keys1, elem.Name)
 				default: // skip other types of elems
 				}
 			}
@@ -249,16 +251,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems2[elem.Name] = elem.Fn
-					keys2 = append(keys2, elem.Name)
 				case *GetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Return
-					keys2 = append(keys2, elem.Name)
 				case *SetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
-					keys2 = append(keys2, elem.Name)
 				case *PropertyElemType:
 					namedElems2[elem.Name] = elem.Value
-					keys2 = append(keys2, elem.Name)
+				case *RestSpreadElemType:
+					restType = optional.Some(elem.Value)
 				default: // skip other types of elems
 				}
 			}
@@ -279,13 +279,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			restType.IfSome(func(restType Type) {
 				restElems := []ObjTypeElem{}
-				for _, key := range keys2 {
+				for _, key := range keys1 {
 					if _, ok := usedKeys[key]; !ok {
 						restElems = append(restElems, &PropertyElemType{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
-							Value:    namedElems2[key],
+							Value:    namedElems1[key],
 						})
 					}
 				}
