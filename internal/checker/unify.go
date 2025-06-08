@@ -10,9 +10,9 @@ import (
 
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
-func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
+func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if t1 == nil || t2 == nil {
-		return []*Error{{Message: "Cannot unify nil types"}}
+		panic("Cannot unify nil types")
 	}
 
 	t1 = Prune(t1)
@@ -48,7 +48,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	}
 	// | _, NeverType -> ...
 	if _, ok := t2.(*NeverType); ok {
-		return []*Error{{Message: fmt.Sprintf("Cannot unify %s with never", t1)}}
+		return []Error{&CannotUnifyTypesError{
+			Left:  t1,
+			Right: t2,
+		}}
 	}
 	// | UnknownType, _ -> ...
 	if _, ok := t2.(*UnknownType); ok {
@@ -58,22 +61,22 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	if tuple1, ok := t1.(*TupleType); ok {
 		if tuple2, ok := t2.(*TupleType); ok {
 			// TODO: handle spread
-			errors := []*Error{}
+			errors := []Error{}
 
 			// TODO: Don't allow more than one rest element in tuple1
-			restElem, ok := tuple1.Elems[len(tuple1.Elems)-1].(*RestSpreadType)
+			restElem, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
 			if ok {
-				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
-				if len(elems1) > len(tuple2.Elems) {
-					return []*Error{{Message: "No enough elements to unpack"}}
+				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
+				if len(elems2) > len(tuple1.Elems) {
+					return []Error{&NotEnoughElementsToUnpackError{}}
 				}
-				elems2 := tuple2.Elems[:len(elems1)]
+				elems1 := tuple1.Elems[:len(elems2)]
 
 				for elem1, elem2 := range Zip(elems1, elems2) {
 					unifyErrors := c.unify(ctx, elem1, elem2)
 					errors = slices.Concat(errors, unifyErrors)
 				}
-				remainingElems := tuple2.Elems[len(elems1):]
+				remainingElems := tuple1.Elems[len(elems2):]
 				tuple := &TupleType{
 					Elems: remainingElems,
 				}
@@ -83,7 +86,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			}
 
 			if len(tuple1.Elems) != len(tuple2.Elems) {
-				return []*Error{{Message: fmt.Sprintf("Cannot unify %#v and %#v", tuple1, tuple2)}}
+				return []Error{&CannotUnifyTypesError{
+					Left:  tuple1,
+					Right: tuple2,
+				}}
 			}
 
 			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
@@ -153,7 +159,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			} else if _, ok := lit.Lit.(*BigIntLit); ok && prim.Prim == "bigint" {
 				return nil
 			} else {
-				return []*Error{{Message: fmt.Sprintf("Cannot unify %#v and %#v", lit, prim)}}
+				return []Error{&CannotUnifyTypesError{
+					Left:  lit,
+					Right: prim,
+				}}
 			}
 		}
 	}
@@ -179,8 +188,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			if unique1.Equal(unique2) {
 				return nil
 			} else {
-				// TODO: include unique1 and unique2 in the error message
-				return []*Error{{Message: "Cannot unify unique symbols"}}
+				return []Error{&CannotUnifyTypesError{
+					Left:  unique1,
+					Right: unique2,
+				}}
 			}
 		}
 	}
@@ -210,11 +221,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 			// type is being read from and which is being written to... does that
 			// question even make sense?)
 
-			errors := []*Error{}
+			errors := []Error{}
 
 			namedElems1 := make(map[ObjTypeKey]Type)
 			namedElems2 := make(map[ObjTypeKey]Type)
-			keys2 := []ObjTypeKey{} // original order of keys in obj2
+			keys1 := []ObjTypeKey{} // original order of keys in obj2
 
 			restType := optional.None[Type]()
 
@@ -222,14 +233,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems1[elem.Name] = elem.Fn
+					keys1 = append(keys1, elem.Name)
 				case *GetterElemType:
 					namedElems1[elem.Name] = elem.Fn.Return
+					keys1 = append(keys1, elem.Name)
 				case *SetterElemType:
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
+					keys1 = append(keys1, elem.Name)
 				case *PropertyElemType:
 					namedElems1[elem.Name] = elem.Value
-				case *RestSpreadElemType:
-					restType = optional.Some(elem.Value)
+					keys1 = append(keys1, elem.Name)
 				default: // skip other types of elems
 				}
 			}
@@ -238,16 +251,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems2[elem.Name] = elem.Fn
-					keys2 = append(keys2, elem.Name)
 				case *GetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Return
-					keys2 = append(keys2, elem.Name)
 				case *SetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
-					keys2 = append(keys2, elem.Name)
 				case *PropertyElemType:
 					namedElems2[elem.Name] = elem.Value
-					keys2 = append(keys2, elem.Name)
+				case *RestSpreadElemType:
+					restType = optional.Some(elem.Value)
 				default: // skip other types of elems
 				}
 			}
@@ -259,21 +270,22 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 					errors = slices.Concat(errors, unifyErrors)
 					usedKeys[key2] = true
 				} else {
-					errors = slices.Concat(errors, []*Error{{
-						Message: fmt.Sprintf("key %#v not found in %s", key2, obj1),
+					errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+						Object: obj1,
+						Key:    key2,
 					}})
 				}
 			}
 
 			restType.IfSome(func(restType Type) {
 				restElems := []ObjTypeElem{}
-				for _, key := range keys2 {
+				for _, key := range keys1 {
 					if _, ok := usedKeys[key]; !ok {
 						restElems = append(restElems, &PropertyElemType{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
-							Value:    namedElems2[key],
+							Value:    namedElems1[key],
 						})
 					}
 				}
@@ -341,15 +353,17 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []*Error {
 	panic(fmt.Sprintf("TODO: unify types %s and %s", t1, t2))
 }
 
-func (c *Checker) bind(t1 *TypeVarType, t2 Type) []*Error {
+func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
 	if t1 == nil || t2 == nil {
-		return []*Error{{Message: "Cannot bind nil types"}}
+		panic("Cannot bind nil types") // this should never happen
 	}
 
 	if !t1.Equal(t2) {
 		if occursInType(t1, t2) {
-			// TODO: include t1 and t2 in the error message
-			return []*Error{{Message: "recursive unification error"}}
+			return []Error{&RecursiveUnificationError{
+				Left:  t1,
+				Right: t2,
+			}}
 		} else {
 			t1.Instance = t2
 			t1.SetProvenance(&TypeProvenance{

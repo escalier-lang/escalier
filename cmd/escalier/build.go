@@ -53,8 +53,9 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			fmt.Fprintln(stderr, err)
 		}
 
+		// TODO: sort by err.Location()
 		for _, err := range output.TypeErrors {
-			fmt.Fprintln(stderr, err)
+			fmt.Fprintln(stderr, err.Message())
 		}
 
 		// create .js file
