@@ -117,7 +117,7 @@ test('textDocument/didOpen', async () => {
           "source": "escalier",
         },
         {
-          "message": "Unknown expression type",
+          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
           "range": {
             "end": {
               "character": 0,
@@ -188,7 +188,7 @@ test('textDocument/didChange', async () => {
           "source": "escalier",
         },
         {
-          "message": "Unknown expression type",
+          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
           "range": {
             "end": {
               "character": 0,
