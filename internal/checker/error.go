@@ -110,7 +110,7 @@ func (e CannotUnifyTypesError) Span() ast.Span {
 	return t1Node.Span()
 }
 func (e CannotUnifyTypesError) Message() string {
-	return "Cannot unify types: " + e.T1.String() + " with " + e.T2.String()
+	return e.T1.String() + " cannot be assigned to " + e.T2.String()
 }
 
 type UnknownIdentifierError struct {

@@ -227,7 +227,7 @@ func (lexer *Lexer) next() *Token {
 		}
 		endOffset = i + 1                    // + 1 to include the closing quote
 		value := contents[startOffset+1 : i] // without the quotes
-		end.Column = start.Column + (i - startOffset)
+		end.Column = start.Column + (endOffset - startOffset)
 		token = NewToken(StrLit, value, ast.Span{Start: start, End: end})
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents

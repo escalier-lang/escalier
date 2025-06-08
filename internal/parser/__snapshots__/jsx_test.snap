@@ -96,19 +96,19 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                         Value: "hello",
                         span:  ast.Span{
                             Start: ast.Location{Line:1, Column:18},
-                            End:   ast.Location{Line:1, Column:24},
+                            End:   ast.Location{Line:1, Column:25},
                         },
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:18},
-                        End:   ast.Location{Line:1, Column:24},
+                        End:   ast.Location{Line:1, Column:25},
                     },
                 },
             },
             SelfClose: true,
             span:      ast.Span{
                 Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:27},
+                End:   ast.Location{Line:1, Column:28},
             },
         },
         Closing:  nil,
@@ -116,7 +116,7 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:27},
+            End:   ast.Location{Line:1, Column:28},
         },
         inferredType: nil,
     },
@@ -162,27 +162,27 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                         Value: "hello",
                         span:  ast.Span{
                             Start: ast.Location{Line:1, Column:18},
-                            End:   ast.Location{Line:1, Column:24},
+                            End:   ast.Location{Line:1, Column:25},
                         },
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:18},
-                        End:   ast.Location{Line:1, Column:24},
+                        End:   ast.Location{Line:1, Column:25},
                     },
                 },
             },
             SelfClose: false,
             span:      ast.Span{
                 Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:25},
+                End:   ast.Location{Line:1, Column:26},
             },
         },
         Closing: {
             &ast.JSXClosing{
                 Name: "Foo",
                 span: ast.Span{
-                    Start: ast.Location{Line:1, Column:25},
-                    End:   ast.Location{Line:1, Column:31},
+                    Start: ast.Location{Line:1, Column:26},
+                    End:   ast.Location{Line:1, Column:32},
                 },
             },
         },
@@ -190,7 +190,7 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:31},
+            End:   ast.Location{Line:1, Column:32},
         },
         inferredType: nil,
     },
@@ -494,19 +494,19 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                         Value: "hello",
                         span:  ast.Span{
                             Start: ast.Location{Line:1, Column:10},
-                            End:   ast.Location{Line:1, Column:16},
+                            End:   ast.Location{Line:1, Column:17},
                         },
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:1, Column:10},
-                        End:   ast.Location{Line:1, Column:16},
+                        End:   ast.Location{Line:1, Column:17},
                     },
                 },
             },
             SelfClose: true,
             span:      ast.Span{
                 Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:19},
+                End:   ast.Location{Line:1, Column:20},
             },
         },
         Closing:  nil,
@@ -514,7 +514,7 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:19},
+            End:   ast.Location{Line:1, Column:20},
         },
         inferredType: nil,
     },
@@ -578,7 +578,7 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
     &parser.Error{
         Span: ast.Span{
             Start: ast.Location{Line:1, Column:10},
-            End:   ast.Location{Line:1, Column:16},
+            End:   ast.Location{Line:1, Column:17},
         },
         Message: "Expected '='",
     },
@@ -636,12 +636,12 @@ optional.Option[*github.com/escalier-lang/escalier/internal/ast.JSXElementExpr]{
                         Value: "hello",
                         span:  ast.Span{
                             Start: ast.Location{Line:3, Column:7},
-                            End:   ast.Location{Line:3, Column:13},
+                            End:   ast.Location{Line:3, Column:14},
                         },
                     },
                     span: ast.Span{
                         Start: ast.Location{Line:3, Column:7},
-                        End:   ast.Location{Line:3, Column:13},
+                        End:   ast.Location{Line:3, Column:14},
                     },
                 },
             },

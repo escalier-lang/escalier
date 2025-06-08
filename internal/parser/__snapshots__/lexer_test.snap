@@ -99,7 +99,7 @@
     &parser.Token{
         Span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:8},
         },
         Type:  2,
         Value: "hello",
