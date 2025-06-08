@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/compiler"
@@ -49,13 +50,34 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 
 		output := compiler.Compile(source)
 
+		lines := strings.Split(source.Contents, "\n")
+
 		for _, err := range output.ParseErrors {
 			fmt.Fprintln(stderr, err)
 		}
 
 		// TODO: sort by err.Location()
 		for _, err := range output.TypeErrors {
-			fmt.Fprintln(stderr, err.Message())
+			if err.Span().Start.String() == "0:0" {
+				message := fmt.Sprintf("%s:%s: %s\n", source.Path, err.Span().Start, err.Message())
+				fmt.Fprintln(stderr, message)
+				continue
+			}
+
+			message := fmt.Sprintf("%s:%s: %s\n", source.Path, err.Span().Start, err.Message())
+			message += "\n"
+			lineNum := strconv.Itoa(err.Span().Start.Line) + ":"
+			message += fmt.Sprintf("%-4s", lineNum)
+			message += lines[err.Span().Start.Line-1] + "\n"
+			for range 4 + err.Span().Start.Column - 1 {
+				message += " "
+			}
+			for range err.Span().End.Column - err.Span().Start.Column {
+				message += "^"
+			}
+			message += "\n"
+
+			fmt.Fprintln(stderr, message)
 		}
 
 		// create .js file

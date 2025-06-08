@@ -1,13 +1,23 @@
 package ast
 
+import "strconv"
+
 type Location struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
 }
 
+func (l Location) String() string {
+	return strconv.Itoa(l.Line) + ":" + strconv.Itoa(l.Column)
+}
+
 type Span struct {
 	Start Location `json:"start"`
 	End   Location `json:"end"`
+}
+
+func (s Span) String() string {
+	return s.Start.String() + "-" + s.End.String()
 }
 
 func (s Span) Contains(loc Location) bool {

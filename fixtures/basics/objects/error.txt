@@ -1,1 +1,5 @@
-Cannot unify types: "hello" with boolean
+objects.esc:23:12: Cannot unify types: "hello" with boolean
+
+23: obj3.bar = "hello"
+               ^^^^^^
+

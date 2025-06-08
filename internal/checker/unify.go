@@ -49,8 +49,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | _, NeverType -> ...
 	if _, ok := t2.(*NeverType); ok {
 		return []Error{&CannotUnifyTypesError{
-			Left:  t1,
-			Right: t2,
+			T1: t1,
+			T2: t2,
 		}}
 	}
 	// | UnknownType, _ -> ...
@@ -87,8 +87,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			if len(tuple1.Elems) != len(tuple2.Elems) {
 				return []Error{&CannotUnifyTypesError{
-					Left:  tuple1,
-					Right: tuple2,
+					T1: tuple1,
+					T2: tuple2,
 				}}
 			}
 
@@ -160,8 +160,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
-					Left:  lit,
-					Right: prim,
+					T1: lit,
+					T2: prim,
 				}}
 			}
 		}
@@ -189,8 +189,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
-					Left:  unique1,
-					Right: unique2,
+					T1: unique1,
+					T2: unique2,
 				}}
 			}
 		}
