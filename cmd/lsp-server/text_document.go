@@ -211,19 +211,11 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	for _, err := range typeErrors {
 		severity := protocol.DiagnosticSeverityError
 		source := "escalier"
+		span := err.Span()
 		diagnotics = append(diagnotics, protocol.Diagnostic{
-			Range: protocol.Range{
-				Start: protocol.Position{
-					Line:      0,
-					Character: 0,
-				},
-				End: protocol.Position{
-					Line:      0,
-					Character: 0,
-				},
-			},
+			Range:              spanToRange(span),
 			Severity:           &severity,
-			Code:               nil,
+			Code:               &protocol.IntegerOrString{Value: "ERR_CODE"},
 			CodeDescription:    nil,
 			Source:             &source,
 			Message:            err.Message(),

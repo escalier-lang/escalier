@@ -95,7 +95,7 @@ export function setupLanguage(client: Client) {
 
             const markers: monaco.editor.IMarkerData[] = params.diagnostics.map(
                 (diagnostic): monaco.editor.IMarkerData => {
-                    return {
+                    const result: monaco.editor.IMarkerData = {
                         severity: convertSeverity(diagnostic.severity),
                         startLineNumber: diagnostic.range.start.line,
                         startColumn: diagnostic.range.start.character,
@@ -103,6 +103,14 @@ export function setupLanguage(client: Client) {
                         endColumn: diagnostic.range.end.character,
                         message: diagnostic.message,
                     };
+
+                    if (typeof diagnostic.code === 'string') {
+                        result.code = diagnostic.code;
+                    } else if (typeof diagnostic.code === 'number') {
+                        result.code = `(${diagnostic.code})`;
+                    }
+
+                    return result;
                 },
             );
             monaco.editor.setModelMarkers(model, languageID, markers);
