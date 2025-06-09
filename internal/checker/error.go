@@ -9,6 +9,11 @@ import (
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
+var DEFAULT_SPAN = ast.Span{
+	Start: ast.Location{Line: 1, Column: 1},
+	End:   ast.Location{Line: 1, Column: 1},
+}
+
 type Error interface {
 	isError()
 	Span() ast.Span
@@ -35,7 +40,7 @@ type UnimplementedError struct {
 }
 
 func (e UnimplementedError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e UnimplementedError) Message() string {
 	return "Unimplemented: " + e.message
@@ -46,7 +51,7 @@ type InvalidObjectKeyError struct {
 }
 
 func (e InvalidObjectKeyError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e InvalidObjectKeyError) Message() string {
 	return "Invalid object key: " + e.Key.String()
@@ -58,7 +63,7 @@ type KeyNotFoundError struct {
 }
 
 func (e KeyNotFoundError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e KeyNotFoundError) Message() string {
 	return "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
@@ -70,7 +75,7 @@ type OutOfBoundsError struct {
 }
 
 func (e OutOfBoundsError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e OutOfBoundsError) Message() string {
 	return "Index out of bounds: " + strconv.Itoa(e.Index) + " for length " + strconv.Itoa(e.Length)
@@ -82,7 +87,7 @@ type RecursiveUnificationError struct {
 }
 
 func (e RecursiveUnificationError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e RecursiveUnificationError) Message() string {
 	return "Recursive unification error: cannot unify " + e.Left.String() + " with " + e.Right.String()
@@ -91,7 +96,7 @@ func (e RecursiveUnificationError) Message() string {
 type NotEnoughElementsToUnpackError struct{}
 
 func (e NotEnoughElementsToUnpackError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e NotEnoughElementsToUnpackError) Message() string {
 	return "Not enough elements to unpack"
@@ -118,7 +123,7 @@ type UnknownIdentifierError struct {
 }
 
 func (e UnknownIdentifierError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e UnknownIdentifierError) Message() string {
 	return "Unknown identifier: " + e.Ident.Name
@@ -129,7 +134,7 @@ type UnknownOperatorError struct {
 }
 
 func (e UnknownOperatorError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e UnknownOperatorError) Message() string {
 	return "Unknown operator: " + e.Operator
@@ -140,7 +145,7 @@ type UnkonwnTypeError struct {
 }
 
 func (e UnkonwnTypeError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e UnkonwnTypeError) Message() string {
 	return "Unknown type: " + e.TypeName
@@ -151,7 +156,7 @@ type CalleeIsNotCallableError struct {
 }
 
 func (e CalleeIsNotCallableError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e CalleeIsNotCallableError) Message() string {
 	return "Callee is not callable: " + e.Callee.String()
@@ -163,7 +168,7 @@ type InvalidNumberOfArgumentsError struct {
 }
 
 func (e InvalidNumberOfArgumentsError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e InvalidNumberOfArgumentsError) Message() string {
 	return "Invalid number of arguments for function: " + e.Callee.String() +
@@ -175,7 +180,7 @@ type ExpectedObjectError struct {
 }
 
 func (e ExpectedObjectError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e ExpectedObjectError) Message() string {
 	return "Expected an object type, but got: " + e.Type.String()
@@ -186,7 +191,7 @@ type ExpectedArrayError struct {
 }
 
 func (e ExpectedArrayError) Span() ast.Span {
-	return ast.Span{}
+	return DEFAULT_SPAN
 }
 func (e ExpectedArrayError) Message() string {
 	return "Expected an array type, but got: " + e.Type.String()

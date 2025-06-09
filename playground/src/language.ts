@@ -38,6 +38,22 @@ type ErrorMesage = {
     span: Span;
 };
 
+function manocoPosToLspPos(position: monaco.Position): lsp.Position {
+    return {
+        line: position.lineNumber - 1, // LSP uses 0-based line numbers
+        character: position.column - 1, // LSP uses 0-based character indices
+    };
+}
+
+function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
+    return new monaco.Range(
+        range.start.line + 1,
+        range.start.character + 1,
+        range.end.line + 1,
+        range.end.character + 1,
+    );
+}
+
 export function setupLanguage(client: Client) {
     monaco.languages.register({ id: languageID });
 
@@ -97,10 +113,10 @@ export function setupLanguage(client: Client) {
                 (diagnostic): monaco.editor.IMarkerData => {
                     const result: monaco.editor.IMarkerData = {
                         severity: convertSeverity(diagnostic.severity),
-                        startLineNumber: diagnostic.range.start.line,
-                        startColumn: diagnostic.range.start.character,
-                        endLineNumber: diagnostic.range.end.line,
-                        endColumn: diagnostic.range.end.character,
+                        startLineNumber: diagnostic.range.start.line + 1,
+                        startColumn: diagnostic.range.start.character + 1,
+                        endLineNumber: diagnostic.range.end.line + 1,
+                        endColumn: diagnostic.range.end.character + 1,
                         message: diagnostic.message,
                     };
 
@@ -165,21 +181,13 @@ export function setupLanguage(client: Client) {
                     textDocument: {
                         uri: model.uri.toString(),
                     },
-                    position: {
-                        line: position.lineNumber,
-                        character: position.column,
-                    },
+                    position: manocoPosToLspPos(position),
                 });
 
                 if (lsp.Location.is(decl)) {
                     return {
                         uri: monaco.Uri.parse(decl.uri),
-                        range: {
-                            startLineNumber: decl.range.start.line,
-                            startColumn: decl.range.start.character,
-                            endLineNumber: decl.range.end.line,
-                            endColumn: decl.range.end.character,
-                        },
+                        range: lspRangeToMonacoRange(decl.range),
                     };
                 }
 
@@ -194,26 +202,18 @@ export function setupLanguage(client: Client) {
         async provideDefinition(model, position, _token) {
             try {
                 console.log('provideDefinition called');
+                console.log(position);
                 const def = await client.textDocumentDefinition({
                     textDocument: {
                         uri: model.uri.toString(),
                     },
-                    position: {
-                        line: position.lineNumber,
-                        character: position.column,
-                    },
+                    position: manocoPosToLspPos(position),
                 });
-                console.log('def = ', def);
 
                 if (lsp.Location.is(def)) {
                     return {
                         uri: monaco.Uri.parse(def.uri),
-                        range: {
-                            startLineNumber: def.range.start.line,
-                            startColumn: def.range.start.character,
-                            endLineNumber: def.range.end.line,
-                            endColumn: def.range.end.character,
-                        },
+                        range: lspRangeToMonacoRange(def.range),
                     };
                 }
 

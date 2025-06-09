@@ -13,16 +13,24 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
+// LSP uses 0-based line and column indices, while Escalier uses 1-based.
 func spanToRange(span ast.Span) protocol.Range {
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      protocol.UInteger(span.Start.Line),
-			Character: protocol.UInteger(span.Start.Column),
+			Line:      protocol.UInteger(span.Start.Line - 1),
+			Character: protocol.UInteger(span.Start.Column - 1),
 		},
 		End: protocol.Position{
-			Line:      protocol.UInteger(span.End.Line),
-			Character: protocol.UInteger(span.End.Column),
+			Line:      protocol.UInteger(span.End.Line - 1),
+			Character: protocol.UInteger(span.End.Column - 1),
 		},
+	}
+}
+
+func posToLoc(pos protocol.Position) ast.Location {
+	return ast.Location{
+		Line:   int(pos.Line) + 1,      // Convert to 1-based index
+		Column: int(pos.Character) + 1, // Convert to 1-based index
 	}
 }
 
@@ -33,10 +41,7 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 }
 
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
-	loc := ast.Location{
-		Line:   int(params.Position.Line),
-		Column: int(params.Position.Character),
-	}
+	loc := posToLoc(params.Position)
 	script := s.astCache[params.TextDocument.URI]
 	if script == nil {
 		return nil, fmt.Errorf("textDocument/definition: script not found")
@@ -105,20 +110,16 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
-	fmt.Fprintf(os.Stderr, "textDocumentHover - position = line:%d, column:%d\n", params.Position.Line, params.Position.Character)
 
+	loc := posToLoc(params.Position)
 	value := fmt.Sprintf(
-		"textDocumentHover - position = line:%d, column:%d\n",
-		params.Position.Line,
-		params.Position.Character,
+		"textDocumentHover - loc = line:%d, column:%d\n",
+		loc.Line,
+		loc.Column,
 	)
 
 	script := server.astCache[params.TextDocument.URI]
 	if script != nil {
-		loc := ast.Location{
-			Line:   int(params.Position.Line),
-			Column: int(params.Position.Character),
-		}
 		node := findNodeInScript(script, loc)
 
 		if node != nil {
