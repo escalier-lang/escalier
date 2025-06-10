@@ -105,18 +105,19 @@ test('textDocument/didOpen', async () => {
           "message": "Expected an expression",
           "range": {
             "end": {
-              "character": 1,
-              "line": 3,
+              "character": 0,
+              "line": 2,
             },
             "start": {
-              "character": 1,
-              "line": 3,
+              "character": 0,
+              "line": 2,
             },
           },
           "severity": 1,
           "source": "escalier",
         },
         {
+          "code": "ERR_CODE",
           "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
           "range": {
             "end": {
@@ -176,18 +177,19 @@ test('textDocument/didChange', async () => {
           "message": "Expected an expression",
           "range": {
             "end": {
-              "character": 1,
-              "line": 3,
+              "character": 0,
+              "line": 2,
             },
             "start": {
-              "character": 1,
-              "line": 3,
+              "character": 0,
+              "line": 2,
             },
           },
           "severity": 1,
           "source": "escalier",
         },
         {
+          "code": "ERR_CODE",
           "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
           "range": {
             "end": {

@@ -29,12 +29,12 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
             Value: "hello",
             span:  ast.Span{
                 Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:7},
+                End:   ast.Location{Line:1, Column:8},
             },
         },
         span: ast.Span{
             Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:7},
+            End:   ast.Location{Line:1, Column:8},
         },
         inferredType: nil,
     },
