@@ -1,1 +1,1 @@
-{"version":3,"file":"./func_decl.js","sources":["./func_decl.esc"],"sourcesContent":["export fn add(a, b) {\n    return a + b\n}\n"],"names":[],"mappings":"AAAA,oBAAc,OAAG;QAAH,AAAA;QAAG,AAAA;EACb,OAAO,AAAA,IAAI"}
+{"version":3,"file":"./func_decl.js","sources":["./func_decl.esc"],"sourcesContent":["export fn add(a: number, b: number) {\n    return a + b\n}\n"],"names":[],"mappings":"AAAA,oBAAc,OAAW;QAAX,AAAA;QAAW,AAAA;EACrB,OAAO,AAAA,IAAI"}

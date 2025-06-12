@@ -16,7 +16,7 @@ compiler.CompilerOutput{
     },
     TypeErrors: nil,
     JS:         "function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"fn add(a, b) {\\n  return a + b\\n}\\nfn sub(a, b) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAG;QAAH,AAAA;QAAG,AAAA;EACR,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAG;QAAH,AAAA;QAAG,AAAA;EAAK,OAAO,AAAA,IAAI;;MACtB,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
+    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
     DTS:        "declare function add(a: number, b: number): number;\ndeclare function sub(a: number, b: number): number;\ndeclare const sum: number;\n",
 }
 ---

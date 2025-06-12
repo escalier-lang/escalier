@@ -19,7 +19,7 @@ func TestVarDecls(t *testing.T) {
 func TestFuncDecls(t *testing.T) {
 	source := parser.Source{
 		Path:     "input.esc",
-		Contents: "fn add(a, b) {\n  return a + b\n}\nfn sub(a, b) { return a - b }\nval sum = add(1, 2)\n",
+		Contents: "fn add(a: number, b: number) {\n  return a + b\n}\nfn sub(a: number, b: number) { return a - b }\nval sum = add(1, 2)\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, output)
