@@ -122,11 +122,11 @@ test('textDocument/didOpen', async () => {
           "range": {
             "end": {
               "character": 0,
-              "line": 0,
+              "line": 2,
             },
             "start": {
               "character": 0,
-              "line": 0,
+              "line": 2,
             },
           },
           "severity": 1,
@@ -194,11 +194,11 @@ test('textDocument/didChange', async () => {
           "range": {
             "end": {
               "character": 0,
-              "line": 0,
+              "line": 2,
             },
             "start": {
               "character": 0,
-              "line": 0,
+              "line": 2,
             },
           },
           "severity": 1,
