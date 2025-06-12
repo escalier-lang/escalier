@@ -37,21 +37,23 @@ func (e ExpectedArrayError) isError()             {}
 
 type UnimplementedError struct {
 	message string
+	span    ast.Span
 }
 
 func (e UnimplementedError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e UnimplementedError) Message() string {
 	return "Unimplemented: " + e.message
 }
 
 type InvalidObjectKeyError struct {
-	Key Type
+	Key  Type
+	span ast.Span
 }
 
 func (e InvalidObjectKeyError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e InvalidObjectKeyError) Message() string {
 	return "Invalid object key: " + e.Key.String()
@@ -72,10 +74,11 @@ func (e KeyNotFoundError) Message() string {
 type OutOfBoundsError struct {
 	Index  int
 	Length int
+	span   ast.Span
 }
 
 func (e OutOfBoundsError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e OutOfBoundsError) Message() string {
 	return "Index out of bounds: " + strconv.Itoa(e.Index) + " for length " + strconv.Itoa(e.Length)
@@ -93,10 +96,12 @@ func (e RecursiveUnificationError) Message() string {
 	return "Recursive unification error: cannot unify " + e.Left.String() + " with " + e.Right.String()
 }
 
-type NotEnoughElementsToUnpackError struct{}
+type NotEnoughElementsToUnpackError struct {
+	span ast.Span
+}
 
 func (e NotEnoughElementsToUnpackError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e NotEnoughElementsToUnpackError) Message() string {
 	return "Not enough elements to unpack"
@@ -120,10 +125,11 @@ func (e CannotUnifyTypesError) Message() string {
 
 type UnknownIdentifierError struct {
 	Ident *ast.IdentExpr
+	span  ast.Span
 }
 
 func (e UnknownIdentifierError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e UnknownIdentifierError) Message() string {
 	return "Unknown identifier: " + e.Ident.Name
@@ -142,24 +148,27 @@ func (e UnknownOperatorError) Message() string {
 
 type UnkonwnTypeError struct {
 	TypeName string
+	typeRef  *TypeRefType
 }
 
 func (e UnkonwnTypeError) Span() ast.Span {
-	return DEFAULT_SPAN
+	node := GetNode(e.typeRef.Provenance())
+	return node.Span()
 }
 func (e UnkonwnTypeError) Message() string {
 	return "Unknown type: " + e.TypeName
 }
 
 type CalleeIsNotCallableError struct {
-	Callee Type
+	Type Type
+	span ast.Span
 }
 
 func (e CalleeIsNotCallableError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e CalleeIsNotCallableError) Message() string {
-	return "Callee is not callable: " + e.Callee.String()
+	return "Callee is not callable: " + e.Type.String()
 }
 
 type InvalidNumberOfArgumentsError struct {
@@ -209,14 +218,8 @@ func GetNode(p provenance.Provenance) ast.Node {
 		return nil
 	}
 	switch prov := p.(type) {
-	case *ast.LitProvenance:
-		return prov.Lit
-	case *ast.ExprProvenance:
-		return prov.Expr
-	case *ast.PatProvenance:
-		return prov.Pat
-	case *ast.TypeAnnProvenance:
-		return prov.TypeAnn
+	case *ast.NodeProvenance:
+		return prov.Node
 	case *type_system.TypeProvenance:
 		if prov.Type == nil {
 			return nil

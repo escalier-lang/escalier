@@ -1,0 +1,1 @@
+{"version":3,"file":"./not_enough_elements.js","sources":["./not_enough_elements.esc"],"sourcesContent":["val [a, b, c] = [1]\nconsole.log(a)\n"],"names":[],"mappings":"MAAI,CAAC,AAAA,GAAG,AAAA,GAAG,AAAA,KAAK,CAAC;AACjB,AAAA,AAAA,QAAQ,IAAI"}

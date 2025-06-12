@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/moznion/go-optional"
 )
@@ -17,6 +18,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 	t1 = Prune(t1)
 	t2 = Prune(t2)
+
+	// fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
 
 	// | TypeVarType, _ -> ...
 	if tv1, ok := t1.(*TypeVarType); ok {
@@ -67,9 +70,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			restElem, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
 			if ok {
 				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
-				if len(elems2) > len(tuple1.Elems) {
-					return []Error{&NotEnoughElementsToUnpackError{}}
-				}
 				elems1 := tuple1.Elems[:len(elems2)]
 
 				for elem1, elem2 := range Zip(elems1, elems2) {
@@ -83,6 +83,36 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				unifyErrors := c.unify(ctx, restElem.Type, tuple)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
+			}
+
+			if len(tuple2.Elems) > len(tuple1.Elems) {
+				// Unify the elements that are present in both tuples
+				for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
+					unifyErrors := c.unify(ctx, elem1, elem2)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+
+				extraElems := tuple2.Elems[len(tuple1.Elems):]
+				first := GetNode(extraElems[0].Provenance())
+				last := GetNode(extraElems[len(extraElems)-1].Provenance())
+
+				// Any remaining elements in tuple2 should be typed as `undefined`
+				// since they are not present in tuple1.
+				for _, elem2 := range extraElems {
+					undefinedType := NewLitType(&UndefinedLit{})
+					node := GetNode(elem2.Provenance())
+					// We se the provenance just in case it's needed for error
+					// reporting.
+					undefinedType.SetProvenance(&ast.NodeProvenance{
+						Node: node,
+					})
+					unifyErrors := c.unify(ctx, elem2, undefinedType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+
+				return []Error{&NotEnoughElementsToUnpackError{
+					span: ast.MergeSpans(first.Span(), last.Span()),
+				}}
 			}
 
 			if len(tuple1.Elems) != len(tuple2.Elems) {
@@ -353,6 +383,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	panic(fmt.Sprintf("TODO: unify types %s and %s", t1, t2))
 }
 
+// TODO: check if t1 is already bound to an instance
 func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot bind nil types") // this should never happen

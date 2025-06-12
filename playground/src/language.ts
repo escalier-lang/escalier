@@ -239,10 +239,7 @@ export function setupLanguage(client: Client) {
         async provideHover(model, position, _token, _context) {
             const hover = await client.textDocumentHover({
                 textDocument: { uri: model.uri.toString() },
-                position: {
-                    line: position.lineNumber,
-                    character: position.column,
-                },
+                position: manocoPosToLspPos(position),
             });
             if (!hover) {
                 return {
