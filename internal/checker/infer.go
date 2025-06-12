@@ -301,14 +301,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		}
 	case *ast.IdentExpr:
 		if ctx.Scope.getValue(expr.Name).IsSome() {
-			// This doesn't work with params in functions because they're
-			// inferred based on their usage that the moment.
-			// TODO: update code to require type annotations on params (unless
-			// they can be inferred from usage, e.g. when passing the function
-			// as a callback).  If no type annotation is provided, we can infer
-			// their types as 'unknown'.
-			// TODO: actually use type annotations on params when inferring
-			// functions.
 			binding := ctx.Scope.getValue(expr.Name).Unwrap()
 			// We create a new type and set its provenance to be the identifier
 			// instead of the binding source.  This ensures that errors are reported
