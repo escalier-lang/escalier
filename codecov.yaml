@@ -7,6 +7,7 @@ ignore:
   - "internal/parser/token.go"
   - "internal/provenance/**"
   - "internal/type_system/**"
+  - "tools/**"
   - "wasm_exec.js"
   - "**/examples/**"
   - "**/fixtures/**"
