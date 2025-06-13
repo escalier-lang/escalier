@@ -178,6 +178,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		}
 		return NewNeverType(), []Error{&UnimplementedError{
 			message: "Handle unary operators",
+			span:    expr.Span(),
 		}}
 	case *ast.CallExpr:
 		errors := []Error{}
@@ -221,7 +222,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 			return fnType.Return, errors
 		} else {
-			return NewNeverType(), []Error{&CalleeIsNotCallableError{Callee: calleeType}}
+			return NewNeverType(), []Error{
+				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 	case *ast.MemberExpr:
 		// TODO: create a getPropType function to handle this so that we can
@@ -258,12 +260,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 						errors = append(errors, &OutOfBoundsError{
 							Index:  index,
 							Length: len(objType.Elems),
+							span:   expr.Index.Span(),
 						})
 						return NewNeverType(), errors
 					}
 				}
 			}
-			errors = append(errors, &InvalidObjectKeyError{Key: indexType})
+			errors = append(errors, &InvalidObjectKeyError{
+				Key:  indexType,
+				span: expr.Index.Span(),
+			})
 			return NewNeverType(), errors
 		case *ObjectType:
 			// TODO: create a helper to convert indexType to a ObjTypeKey
@@ -285,24 +291,28 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					}
 				}
 			}
-			errors = append(errors, &InvalidObjectKeyError{Key: indexType})
+			errors = append(errors, &InvalidObjectKeyError{
+				Key:  indexType,
+				span: expr.Index.Span(),
+			})
 			return NewNeverType(), errors
 		default:
 			panic(fmt.Sprintf("Unknown object type: %#v", objType))
 		}
 	case *ast.IdentExpr:
-		// TODO: look up the identifier in the context's scope
-		// We should be able to determine where an identifier was declared by
-		// using the provenance of the identifier's inferred type.
 		if ctx.Scope.getValue(expr.Name).IsSome() {
 			binding := ctx.Scope.getValue(expr.Name).Unwrap()
-			expr.SetInferredType(binding.Type)
+			// We create a new type and set its provenance to be the identifier
+			// instead of the binding source.  This ensures that errors are reported
+			// on the identifier itself instead of the binding source.
+			t := Prune(binding.Type).WithProvenance(&ast.NodeProvenance{Node: expr})
+			expr.SetInferredType(t)
 			expr.Source = binding.Source.Unwrap()
-			return binding.Type, nil
+			return t, nil
 		} else {
 			t := NewNeverType()
 			expr.SetInferredType(t)
-			return t, []Error{&UnknownIdentifierError{Ident: expr}}
+			return t, []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
 		}
 	case *ast.LiteralExpr:
 		t, errors := c.inferLit(expr.Lit)
@@ -342,7 +352,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 							t := NewNeverType()
 							expr.SetInferredType(t)
 							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
-							errors = append(errors, &UnknownIdentifierError{Ident: key})
+							errors = append(
+								errors,
+								&UnknownIdentifierError{Ident: key, span: key.Span()},
+							)
 						}
 					}
 				})
@@ -365,7 +378,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		return c.inferIfElse(ctx, expr)
 	default:
 		return NewNeverType(), []Error{
-			&UnimplementedError{message: "Infer expression type: " + fmt.Sprintf("%T", expr)},
+			&UnimplementedError{
+				message: "Infer expression type: " + fmt.Sprintf("%T", expr),
+				span:    expr.Span(),
+			},
 		}
 	}
 }
@@ -392,7 +408,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	case *TypeRefType:
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias.IsNone() {
-			errors := []Error{&UnkonwnTypeError{TypeName: t.Name}}
+			errors := []Error{&UnkonwnTypeError{TypeName: t.Name, typeRef: t}}
 			return nil, errors
 		}
 		ta := typeAlias.Unwrap()
@@ -774,8 +790,8 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 	default:
 		panic(fmt.Sprintf("Unknown literal type: %T", lit))
 	}
-	t.SetProvenance(&ast.LitProvenance{
-		Lit: lit,
+	t.SetProvenance(&ast.NodeProvenance{
+		Node: lit,
 	})
 	return t, errors
 }
@@ -795,9 +811,6 @@ func (c *Checker) inferPattern(
 		switch p := pat.(type) {
 		case *ast.IdentPat:
 			t = c.FreshVar()
-			t.SetProvenance(&ast.PatProvenance{
-				Pat: p,
-			})
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = Binding{
 				Source:  optional.Some[ast.BindingSource](p),
@@ -865,15 +878,16 @@ func (c *Checker) inferPattern(
 			errors = []Error{}
 		}
 
-		t.SetProvenance(&ast.PatProvenance{
-			Pat: pat,
+		t.SetProvenance(&ast.NodeProvenance{
+			Node: pat,
 		})
+		pat.SetInferredType(t)
 		return t, errors
 	}
 
 	t, errors := inferPatRec(pattern)
-	t.SetProvenance(&ast.PatProvenance{
-		Pat: pattern,
+	t.SetProvenance(&ast.NodeProvenance{
+		Node: pattern,
 	})
 	pattern.SetInferredType(t)
 
@@ -1069,7 +1083,9 @@ func (c *Checker) inferTypeAnn(
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
 
-	t.SetProvenance(ast.NewTypeAnnProvenance(typeAnn))
+	t.SetProvenance(&ast.NodeProvenance{
+		Node: typeAnn,
+	})
 	typeAnn.SetInferredType(t)
 
 	return t, errors

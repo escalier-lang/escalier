@@ -1,3 +1,5 @@
+//go:generate go run ../../tools/gen_provenance.go
+
 package type_system
 
 import (
@@ -18,6 +20,9 @@ type Type interface {
 	Equal(Type) bool
 	Accept(TypeVisitor)
 	String() string
+	// WithProvenance returns a new Type with the given Provenance.
+	// It's essentially a shallow copy of the Type with the new Provenance.
+	WithProvenance(Provenance) Type
 }
 
 func (*TypeVarType) isType()      {}
@@ -63,8 +68,6 @@ type TypeVarType struct {
 	provenance Provenance
 }
 
-func (t *TypeVarType) Provenance() Provenance     { return t.provenance }
-func (t *TypeVarType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *TypeVarType) Equal(other Type) bool {
 	if other, ok := other.(*TypeVarType); ok {
 		return t.ID == other.ID
@@ -101,9 +104,7 @@ func NewTypeRefType(name string, typeAlias optional.Option[TypeAlias], typeArgs 
 		provenance: nil,
 	}
 }
-func (t *TypeRefType) Provenance() Provenance     { return t.provenance }
-func (t *TypeRefType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *TypeRefType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *TypeRefType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *TypeRefType) Equal(other Type) bool {
 	if other, ok := other.(*TypeRefType); ok {
 		// nolint: exhaustruct
@@ -159,9 +160,7 @@ func NewBoolType() *PrimType {
 		provenance: nil,
 	}
 }
-func (t *PrimType) Provenance() Provenance     { return t.provenance }
-func (t *PrimType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *PrimType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *PrimType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *PrimType) Equal(other Type) bool {
 	if other, ok := other.(*PrimType); ok {
 		return t.Prim == other.Prim
@@ -196,9 +195,7 @@ func NewLitType(lit Lit) *LitType {
 		provenance: nil,
 	}
 }
-func (t *LitType) Provenance() Provenance     { return t.provenance }
-func (t *LitType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *LitType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *LitType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *LitType) Equal(other Type) bool {
 	if other, ok := other.(*LitType); ok {
 		return t.Lit.Equal(other.Lit)
@@ -229,9 +226,7 @@ type UniqueSymbolType struct {
 	provenance Provenance
 }
 
-func (t *UniqueSymbolType) Provenance() Provenance     { return t.provenance }
-func (t *UniqueSymbolType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *UniqueSymbolType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *UniqueSymbolType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *UniqueSymbolType) Equal(other Type) bool {
 	if other, ok := other.(*UniqueSymbolType); ok {
 		return t.Value == other.Value
@@ -246,10 +241,8 @@ type UnknownType struct {
 	provenance Provenance
 }
 
-func NewUnknownType() *UnknownType                { return &UnknownType{provenance: nil} }
-func (t *UnknownType) Provenance() Provenance     { return t.provenance }
-func (t *UnknownType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *UnknownType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func NewUnknownType() *UnknownType          { return &UnknownType{provenance: nil} }
+func (t *UnknownType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *UnknownType) Equal(other Type) bool {
 	if _, ok := other.(*UnknownType); ok {
 		return true
@@ -264,10 +257,8 @@ type NeverType struct {
 	provenance Provenance
 }
 
-func NewNeverType() *NeverType                  { return &NeverType{provenance: nil} }
-func (t *NeverType) Provenance() Provenance     { return t.provenance }
-func (t *NeverType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *NeverType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func NewNeverType() *NeverType            { return &NeverType{provenance: nil} }
+func (t *NeverType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *NeverType) Equal(other Type) bool {
 	if _, ok := other.(*NeverType); ok {
 		return true
@@ -282,9 +273,7 @@ type GlobalThisType struct {
 	provenance Provenance
 }
 
-func (t *GlobalThisType) Provenance() Provenance     { return t.provenance }
-func (t *GlobalThisType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *GlobalThisType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *GlobalThisType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *GlobalThisType) Equal(other Type) bool {
 	if _, ok := other.(*GlobalThisType); ok {
 		return true
@@ -332,8 +321,6 @@ type FuncType struct {
 	provenance Provenance
 }
 
-func (t *FuncType) Provenance() Provenance     { return t.provenance }
-func (t *FuncType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *FuncType) Accept(v TypeVisitor) {
 	for _, param := range t.Params {
 		param.Type.Accept(v)
@@ -567,8 +554,6 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 	}
 }
 
-func (t *ObjectType) Provenance() Provenance     { return t.provenance }
-func (t *ObjectType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *ObjectType) Accept(v TypeVisitor) {
 	for _, elem := range t.Elems {
 		elem.Accept(v)
@@ -635,8 +620,6 @@ func NewTupleType(elems ...Type) *TupleType {
 		provenance: nil,
 	}
 }
-func (t *TupleType) Provenance() Provenance     { return t.provenance }
-func (t *TupleType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *TupleType) Accept(v TypeVisitor) {
 	for _, elem := range t.Elems {
 		elem.Accept(v)
@@ -675,8 +658,6 @@ func NewRestSpreadType(typ Type) *RestSpreadType {
 		provenance: nil,
 	}
 }
-func (t *RestSpreadType) Provenance() Provenance     { return t.provenance }
-func (t *RestSpreadType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *RestSpreadType) Accept(v TypeVisitor) {
 	v.VisitType(t)
 	t.Type.Accept(v)
@@ -708,8 +689,6 @@ func NewUnionType(types ...Type) Type {
 		provenance: nil,
 	}
 }
-func (t *UnionType) Provenance() Provenance     { return t.provenance }
-func (t *UnionType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *UnionType) Accept(v TypeVisitor) {
 	for _, typ := range t.Types {
 		typ.Accept(v)
@@ -749,8 +728,6 @@ func NewIntersectionType(types ...Type) *IntersectionType {
 		provenance: nil,
 	}
 }
-func (t *IntersectionType) Provenance() Provenance     { return t.provenance }
-func (t *IntersectionType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *IntersectionType) Accept(v TypeVisitor) {
 	for _, typ := range t.Types {
 		typ.Accept(v)
@@ -784,8 +761,6 @@ type KeyOfType struct {
 	provenance Provenance
 }
 
-func (t *KeyOfType) Provenance() Provenance     { return t.provenance }
-func (t *KeyOfType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *KeyOfType) Accept(v TypeVisitor) {
 	t.Type.Accept(v)
 	v.VisitType(t)
@@ -808,8 +783,6 @@ type IndexType struct {
 	provenance Provenance
 }
 
-func (t *IndexType) Provenance() Provenance     { return t.provenance }
-func (t *IndexType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *IndexType) Accept(v TypeVisitor) {
 	t.Target.Accept(v)
 	t.Index.Accept(v)
@@ -834,8 +807,6 @@ type CondType struct {
 	provenance Provenance
 }
 
-func (t *CondType) Provenance() Provenance     { return t.provenance }
-func (t *CondType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *CondType) Accept(v TypeVisitor) {
 	t.Check.Accept(v)
 	t.Extends.Accept(v)
@@ -859,9 +830,7 @@ type InferType struct {
 	provenance Provenance
 }
 
-func (t *InferType) Provenance() Provenance     { return t.provenance }
-func (t *InferType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *InferType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *InferType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *InferType) Equal(other Type) bool {
 	if other, ok := other.(*InferType); ok {
 		return t.Name == other.Name
@@ -876,9 +845,7 @@ type WildcardType struct {
 	provenance Provenance
 }
 
-func (t *WildcardType) Provenance() Provenance     { return t.provenance }
-func (t *WildcardType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *WildcardType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *WildcardType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *WildcardType) Equal(other Type) bool {
 	if _, ok := other.(*WildcardType); ok {
 		return true
@@ -902,8 +869,6 @@ func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
 		provenance: nil,
 	}
 }
-func (t *ExtractorType) Provenance() Provenance     { return t.provenance }
-func (t *ExtractorType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *ExtractorType) Accept(v TypeVisitor) {
 	t.Extractor.Accept(v)
 	for _, arg := range t.Args {
@@ -943,8 +908,6 @@ type TemplateLitType struct {
 	provenance Provenance
 }
 
-func (t *TemplateLitType) Provenance() Provenance     { return t.provenance }
-func (t *TemplateLitType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *TemplateLitType) Accept(v TypeVisitor) {
 	for _, typ := range t.Types {
 		typ.Accept(v)
@@ -977,9 +940,7 @@ type IntrinsicType struct {
 	provenance Provenance
 }
 
-func (t *IntrinsicType) Provenance() Provenance     { return t.provenance }
-func (t *IntrinsicType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *IntrinsicType) Accept(v TypeVisitor)       { v.VisitType(t) }
+func (t *IntrinsicType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *IntrinsicType) Equal(other Type) bool {
 	if other, ok := other.(*IntrinsicType); ok {
 		return t.Name == other.Name
