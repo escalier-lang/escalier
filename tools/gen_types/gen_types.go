@@ -14,8 +14,8 @@ import (
 
 // The 'go:generate' comment appears in internal/type_system/type_system.go.
 // These paths are relative to that file.
-const inputPath = "./type_system.go"
-const outputPath = "./provenance_gen.go"
+const inputPath = "./types.go"
+const outputPath = "./types_gen.go"
 
 func main() {
 	fset := token.NewFileSet()

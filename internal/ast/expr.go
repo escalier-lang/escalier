@@ -1,3 +1,5 @@
+//go:generate go run ../../tools/gen_ast/gen_ast.go -p ./expr.go
+
 package ast
 
 import (
@@ -43,9 +45,6 @@ type IgnoreExpr struct {
 	inferredType Type
 }
 
-func (e *IgnoreExpr) Span() Span             { return e.span }
-func (e *IgnoreExpr) InferredType() Type     { return e.inferredType }
-func (e *IgnoreExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *IgnoreExpr) Accept(v Visitor) {
 	v.VisitExpr(e)
 }
@@ -58,9 +57,6 @@ type EmptyExpr struct {
 func NewEmpty(span Span) *EmptyExpr {
 	return &EmptyExpr{span: span, inferredType: nil}
 }
-func (e *EmptyExpr) Span() Span           { return e.span }
-func (*EmptyExpr) InferredType() Type     { return nil }
-func (*EmptyExpr) SetInferredType(t Type) {}
 func (e *EmptyExpr) Accept(v Visitor) {
 	v.VisitExpr(e)
 }
@@ -96,9 +92,6 @@ type BinaryExpr struct {
 func NewBinary(left, right Expr, op BinaryOp, span Span) *BinaryExpr {
 	return &BinaryExpr{Left: left, Right: right, Op: op, span: span, inferredType: nil}
 }
-func (e *BinaryExpr) Span() Span             { return e.span }
-func (e *BinaryExpr) InferredType() Type     { return e.inferredType }
-func (e *BinaryExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *BinaryExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Left.Accept(v)
@@ -124,9 +117,6 @@ type UnaryExpr struct {
 func NewUnary(op UnaryOp, arg Expr, span Span) *UnaryExpr {
 	return &UnaryExpr{Op: op, Arg: arg, span: span, inferredType: nil}
 }
-func (e *UnaryExpr) Span() Span             { return e.span }
-func (e *UnaryExpr) InferredType() Type     { return e.inferredType }
-func (e *UnaryExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *UnaryExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Arg.Accept(v)
@@ -256,9 +246,6 @@ func (l *UndefinedLit) Accept(v Visitor) {
 	v.VisitLit(l)
 }
 
-func (e *LiteralExpr) Span() Span             { return e.span }
-func (e *LiteralExpr) InferredType() Type     { return e.inferredType }
-func (e *LiteralExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *LiteralExpr) Accept(v Visitor) {
 	v.VisitExpr(e)
 }
@@ -277,9 +264,6 @@ type IdentExpr struct {
 func NewIdent(name string, span Span) *IdentExpr {
 	return &IdentExpr{Name: name, Source: nil, span: span, inferredType: nil}
 }
-func (e *IdentExpr) Span() Span             { return e.span }
-func (e *IdentExpr) InferredType() Type     { return e.inferredType }
-func (e *IdentExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *IdentExpr) Accept(v Visitor) {
 	v.VisitExpr(e)
 }
@@ -328,9 +312,6 @@ func NewFuncExpr(
 		inferredType: nil,
 	}
 }
-func (e *FuncExpr) Span() Span             { return e.span }
-func (e *FuncExpr) InferredType() Type     { return e.inferredType }
-func (e *FuncExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *FuncExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, param := range e.Params {
@@ -359,9 +340,6 @@ type CallExpr struct {
 func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 	return &CallExpr{Callee: callee, Args: args, OptChain: optChain, span: span, inferredType: nil}
 }
-func (e *CallExpr) Span() Span             { return e.span }
-func (e *CallExpr) InferredType() Type     { return e.inferredType }
-func (e *CallExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *CallExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Callee.Accept(v)
@@ -382,9 +360,6 @@ type IndexExpr struct {
 func NewIndex(object, index Expr, optChain bool, span Span) *IndexExpr {
 	return &IndexExpr{Object: object, Index: index, OptChain: optChain, span: span, inferredType: nil}
 }
-func (e *IndexExpr) Span() Span             { return e.span }
-func (e *IndexExpr) InferredType() Type     { return e.inferredType }
-func (e *IndexExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *IndexExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Object.Accept(v)
@@ -403,9 +378,6 @@ type MemberExpr struct {
 func NewMember(object Expr, prop *Ident, optChain bool, span Span) *MemberExpr {
 	return &MemberExpr{Object: object, Prop: prop, OptChain: optChain, span: span, inferredType: nil}
 }
-func (e *MemberExpr) Span() Span             { return e.span }
-func (e *MemberExpr) InferredType() Type     { return e.inferredType }
-func (e *MemberExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *MemberExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Object.Accept(v)
@@ -421,9 +393,6 @@ type TupleExpr struct {
 func NewArray(elems []Expr, span Span) *TupleExpr {
 	return &TupleExpr{Elems: elems, span: span, inferredType: nil}
 }
-func (e *TupleExpr) Span() Span             { return e.span }
-func (e *TupleExpr) InferredType() Type     { return e.inferredType }
-func (e *TupleExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *TupleExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, elem := range e.Elems {
@@ -437,6 +406,7 @@ type ObjExprElem interface {
 	Node
 }
 
+// TODO: rename these to CallableSig or something like that
 func (*CallableExpr) isObjExprElem()    {}
 func (*ConstructorExpr) isObjExprElem() {}
 func (*MethodExpr) isObjExprElem()      {}
@@ -561,9 +531,6 @@ type ObjectExpr struct {
 func NewObject(elems []ObjExprElem, span Span) *ObjectExpr {
 	return &ObjectExpr{Elems: elems, span: span, inferredType: nil}
 }
-func (e *ObjectExpr) Span() Span             { return e.span }
-func (e *ObjectExpr) InferredType() Type     { return e.inferredType }
-func (e *ObjectExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *ObjectExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, elem := range e.Elems {
@@ -583,9 +550,6 @@ type IfElseExpr struct {
 func NewIfElse(cond Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfElseExpr {
 	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
-func (e *IfElseExpr) Span() Span             { return e.span }
-func (e *IfElseExpr) InferredType() Type     { return e.inferredType }
-func (e *IfElseExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *IfElseExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Cond.Accept(v)
@@ -617,9 +581,6 @@ type IfLetExpr struct {
 func NewIfLet(pattern Pat, target Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfLetExpr {
 	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
-func (e *IfLetExpr) Span() Span             { return e.span }
-func (e *IfLetExpr) InferredType() Type     { return e.inferredType }
-func (e *IfLetExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *IfLetExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Pattern.Accept(v)
@@ -659,9 +620,6 @@ type MatchExpr struct {
 func NewMatch(target Expr, cases []*MatchCase, span Span) *MatchExpr {
 	return &MatchExpr{Target: target, Cases: cases, span: span, inferredType: nil}
 }
-func (e *MatchExpr) Span() Span             { return e.span }
-func (e *MatchExpr) InferredType() Type     { return e.inferredType }
-func (e *MatchExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *MatchExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Target.Accept(v)
@@ -692,9 +650,6 @@ type AssignExpr struct {
 func NewAssign(left, right Expr, span Span) *AssignExpr {
 	return &AssignExpr{Left: left, Right: right, span: span, inferredType: nil}
 }
-func (e *AssignExpr) Span() Span             { return e.span }
-func (e *AssignExpr) InferredType() Type     { return e.inferredType }
-func (e *AssignExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *AssignExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Left.Accept(v)
@@ -713,9 +668,6 @@ type TryCatchExpr struct {
 func NewTryCatch(try Block, catch []*MatchCase, finally optional.Option[*Block], span Span) *TryCatchExpr {
 	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
 }
-func (e *TryCatchExpr) Span() Span             { return e.span }
-func (e *TryCatchExpr) InferredType() Type     { return e.inferredType }
-func (e *TryCatchExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *TryCatchExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, stmt := range e.Try.Stmts {
@@ -752,9 +704,6 @@ type ThrowExpr struct {
 func NewThrow(arg Expr, span Span) *ThrowExpr {
 	return &ThrowExpr{Arg: arg, span: span, inferredType: nil}
 }
-func (e *ThrowExpr) Span() Span             { return e.span }
-func (e *ThrowExpr) InferredType() Type     { return e.inferredType }
-func (e *ThrowExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *ThrowExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Arg.Accept(v)
@@ -770,9 +719,6 @@ type DoExpr struct {
 func NewDo(body Block, span Span) *DoExpr {
 	return &DoExpr{Body: body, span: span, inferredType: nil}
 }
-func (e *DoExpr) Span() Span             { return e.span }
-func (e *DoExpr) InferredType() Type     { return e.inferredType }
-func (e *DoExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *DoExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, stmt := range e.Body.Stmts {
@@ -791,9 +737,6 @@ type AwaitExpr struct {
 func NewAwait(arg Expr, span Span) *AwaitExpr {
 	return &AwaitExpr{Arg: arg, Throws: nil, span: span, inferredType: nil}
 }
-func (e *AwaitExpr) Span() Span             { return e.span }
-func (e *AwaitExpr) InferredType() Type     { return e.inferredType }
-func (e *AwaitExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Arg.Accept(v)
@@ -810,9 +753,6 @@ type TemplateLitExpr struct {
 func NewTemplateLit(quasis []*Quasi, exprs []Expr, span Span) *TemplateLitExpr {
 	return &TemplateLitExpr{Quasis: quasis, Exprs: exprs, span: span, inferredType: nil}
 }
-func (e *TemplateLitExpr) Span() Span             { return e.span }
-func (e *TemplateLitExpr) InferredType() Type     { return e.inferredType }
-func (e *TemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *TemplateLitExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		for _, expr := range e.Exprs {
@@ -832,9 +772,6 @@ type TaggedTemplateLitExpr struct {
 func NewTaggedTemplateLit(tag Expr, quasis []*Quasi, exprs []Expr, span Span) *TaggedTemplateLitExpr {
 	return &TaggedTemplateLitExpr{Tag: tag, Quasis: quasis, Exprs: exprs, span: span, inferredType: nil}
 }
-func (e *TaggedTemplateLitExpr) Span() Span             { return e.span }
-func (e *TaggedTemplateLitExpr) InferredType() Type     { return e.inferredType }
-func (e *TaggedTemplateLitExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
 	if v.VisitExpr(e) {
 		e.Tag.Accept(v)
@@ -857,9 +794,6 @@ func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], ch
 		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
 	)
 }
-func (e *JSXElementExpr) Span() Span             { return e.span }
-func (e *JSXElementExpr) InferredType() Type     { return e.inferredType }
-func (e *JSXElementExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *JSXElementExpr) Accept(v Visitor) {
 	v.VisitExpr(e) // TODO: expand visitor to handle JSX
 }
@@ -875,9 +809,6 @@ type JSXFragmentExpr struct {
 func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXFragmentExpr {
 	return &JSXFragmentExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
-func (e *JSXFragmentExpr) Span() Span             { return e.span }
-func (e *JSXFragmentExpr) InferredType() Type     { return e.inferredType }
-func (e *JSXFragmentExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *JSXFragmentExpr) Accept(v Visitor) {
 	v.VisitExpr(e) // TODO: expand visitor to handle JSX
 }

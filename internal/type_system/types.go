@@ -1,4 +1,4 @@
-//go:generate go run ../../tools/gen_provenance.go
+//go:generate go run ../../tools/gen_types/gen_types.go
 
 package type_system
 
