@@ -1,3 +1,5 @@
+//go:generate go run ../../tools/gen_provenance.go
+
 package type_system
 
 import (
@@ -83,13 +85,6 @@ func (t *TypeVarType) String() string {
 	}
 	return "t" + fmt.Sprint(t.ID)
 }
-func (t *TypeVarType) WithProvenance(p Provenance) Type {
-	return &TypeVarType{
-		ID:         t.ID,
-		Instance:   t.Instance,
-		provenance: p,
-	}
-}
 
 type TypeAlias struct {
 	Type       Type
@@ -134,14 +129,6 @@ func (t *TypeRefType) String() string {
 		result += ">"
 	}
 	return result
-}
-func (t *TypeRefType) WithProvenance(p Provenance) Type {
-	return &TypeRefType{
-		Name:       t.Name,
-		TypeArgs:   t.TypeArgs,
-		TypeAlias:  t.TypeAlias,
-		provenance: p,
-	}
 }
 
 type Prim string
@@ -202,12 +189,6 @@ func (t *PrimType) String() string {
 		panic("unknown primitive type")
 	}
 }
-func (t *PrimType) WithProvenance(p Provenance) Type {
-	return &PrimType{
-		Prim:       t.Prim,
-		provenance: p,
-	}
-}
 
 type LitType struct {
 	Lit        Lit
@@ -247,12 +228,6 @@ func (t *LitType) String() string {
 		panic("unknown literal type")
 	}
 }
-func (t *LitType) WithProvenance(p Provenance) Type {
-	return &LitType{
-		Lit:        t.Lit,
-		provenance: p,
-	}
-}
 
 type UniqueSymbolType struct {
 	Value      int
@@ -270,12 +245,6 @@ func (t *UniqueSymbolType) Equal(other Type) bool {
 }
 func (t *UniqueSymbolType) String() string {
 	return "symbol" + fmt.Sprint(t.Value)
-}
-func (t *UniqueSymbolType) WithProvenance(p Provenance) Type {
-	return &UniqueSymbolType{
-		Value:      t.Value,
-		provenance: p,
-	}
 }
 
 type UnknownType struct {
@@ -295,11 +264,6 @@ func (t *UnknownType) Equal(other Type) bool {
 func (t *UnknownType) String() string {
 	return "unknown"
 }
-func (t *UnknownType) WithProvenance(p Provenance) Type {
-	return &UnknownType{
-		provenance: p,
-	}
-}
 
 type NeverType struct {
 	provenance Provenance
@@ -318,11 +282,6 @@ func (t *NeverType) Equal(other Type) bool {
 func (t *NeverType) String() string {
 	return "never"
 }
-func (t *NeverType) WithProvenance(p Provenance) Type {
-	return &NeverType{
-		provenance: p,
-	}
-}
 
 type GlobalThisType struct {
 	provenance Provenance
@@ -339,11 +298,6 @@ func (t *GlobalThisType) Equal(other Type) bool {
 }
 func (t *GlobalThisType) String() string {
 	return "this"
-}
-func (t *GlobalThisType) WithProvenance(p Provenance) Type {
-	return &GlobalThisType{
-		provenance: p,
-	}
 }
 
 type TypeParam struct {
@@ -436,16 +390,6 @@ func (t *FuncType) String() string {
 		result += " -> " + t.Return.String()
 	}
 	return result
-}
-func (t *FuncType) WithProvenance(p Provenance) Type {
-	return &FuncType{
-		TypeParams: t.TypeParams,
-		Self:       t.Self,
-		Params:     t.Params,
-		Return:     t.Return,
-		Throws:     t.Throws,
-		provenance: p,
-	}
 }
 
 type ObjTypeKeyKind int
@@ -684,19 +628,6 @@ func (t *ObjectType) String() string {
 	result += "}"
 	return result
 }
-func (t *ObjectType) WithProvenance(p Provenance) Type {
-	return &ObjectType{
-		Elems:      t.Elems,
-		Exact:      t.Exact,
-		Immutable:  t.Immutable,
-		Mutable:    t.Mutable,
-		Nomimal:    t.Nomimal,
-		Interface:  t.Interface,
-		Extends:    t.Extends,
-		Implements: t.Implements,
-		provenance: p,
-	}
-}
 
 type TupleType struct {
 	Elems      []Type
@@ -737,12 +668,6 @@ func (t *TupleType) String() string {
 	result += "]"
 	return result
 }
-func (t *TupleType) WithProvenance(p Provenance) Type {
-	return &TupleType{
-		Elems:      t.Elems,
-		provenance: p,
-	}
-}
 
 type RestSpreadType struct {
 	Type       Type
@@ -769,12 +694,6 @@ func (t *RestSpreadType) Equal(other Type) bool {
 }
 func (t *RestSpreadType) String() string {
 	return "..." + t.Type.String()
-}
-func (t *RestSpreadType) WithProvenance(p Provenance) Type {
-	return &RestSpreadType{
-		Type:       t.Type,
-		provenance: p,
-	}
 }
 
 type UnionType struct {
@@ -823,12 +742,6 @@ func (t *UnionType) String() string {
 	}
 	return result
 }
-func (t *UnionType) WithProvenance(p Provenance) Type {
-	return &UnionType{
-		Types:      t.Types,
-		provenance: p,
-	}
-}
 
 type IntersectionType struct {
 	Types      []Type
@@ -870,12 +783,6 @@ func (t *IntersectionType) String() string {
 	}
 	return result
 }
-func (t *IntersectionType) WithProvenance(p Provenance) Type {
-	return &IntersectionType{
-		Types:      t.Types,
-		provenance: p,
-	}
-}
 
 type KeyOfType struct {
 	Type       Type
@@ -898,12 +805,6 @@ func (t *KeyOfType) Equal(other Type) bool {
 // TODO: handle precedence when printing
 func (t *KeyOfType) String() string {
 	return "keyof " + t.Type.String()
-}
-func (t *KeyOfType) WithProvenance(p Provenance) Type {
-	return &KeyOfType{
-		Type:       t.Type,
-		provenance: p,
-	}
 }
 
 type IndexType struct {
@@ -928,13 +829,6 @@ func (t *IndexType) Equal(other Type) bool {
 }
 func (t *IndexType) String() string {
 	return t.Target.String() + "[" + t.Index.String() + "]"
-}
-func (t *IndexType) WithProvenance(p Provenance) Type {
-	return &IndexType{
-		Target:     t.Target,
-		Index:      t.Index,
-		provenance: p,
-	}
 }
 
 type CondType struct {
@@ -964,15 +858,6 @@ func (t *CondType) Equal(other Type) bool {
 func (t *CondType) String() string {
 	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Cons.String() + " } else { " + t.Alt.String() + " }"
 }
-func (t *CondType) WithProvenance(p Provenance) Type {
-	return &CondType{
-		Check:      t.Check,
-		Extends:    t.Extends,
-		Cons:       t.Cons,
-		Alt:        t.Alt,
-		provenance: p,
-	}
-}
 
 type InferType struct {
 	Name       string
@@ -991,12 +876,6 @@ func (t *InferType) Equal(other Type) bool {
 func (t *InferType) String() string {
 	return "infer " + t.Name
 }
-func (t *InferType) WithProvenance(p Provenance) Type {
-	return &InferType{
-		Name:       t.Name,
-		provenance: p,
-	}
-}
 
 type WildcardType struct {
 	provenance Provenance
@@ -1013,11 +892,6 @@ func (t *WildcardType) Equal(other Type) bool {
 }
 func (t *WildcardType) String() string {
 	return "_"
-}
-func (t *WildcardType) WithProvenance(p Provenance) Type {
-	return &WildcardType{
-		provenance: p,
-	}
 }
 
 type ExtractorType struct {
@@ -1063,13 +937,6 @@ func (t *ExtractorType) String() string {
 	}
 	return result
 }
-func (t *ExtractorType) WithProvenance(p Provenance) Type {
-	return &ExtractorType{
-		Extractor:  t.Extractor,
-		Args:       t.Args,
-		provenance: p,
-	}
-}
 
 type Quasi struct {
 	Value string
@@ -1109,13 +976,6 @@ func (t *TemplateLitType) String() string {
 	result += "`"
 	return result
 }
-func (t *TemplateLitType) WithProvenance(p Provenance) Type {
-	return &TemplateLitType{
-		Quasis:     t.Quasis,
-		Types:      t.Types,
-		provenance: p,
-	}
-}
 
 type IntrinsicType struct {
 	Name       string
@@ -1133,10 +993,4 @@ func (t *IntrinsicType) Equal(other Type) bool {
 }
 func (t *IntrinsicType) String() string {
 	return t.Name
-}
-func (t *IntrinsicType) WithProvenance(p Provenance) Type {
-	return &IntrinsicType{
-		Name:       t.Name,
-		provenance: p,
-	}
 }

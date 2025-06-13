@@ -101,7 +101,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				for _, elem2 := range extraElems {
 					undefinedType := NewLitType(&UndefinedLit{})
 					node := GetNode(elem2.Provenance())
-					// We se the provenance just in case it's needed for error
+					// We set the provenance just in case it's needed for error
 					// reporting.
 					undefinedType.SetProvenance(&ast.NodeProvenance{
 						Node: node,
@@ -110,9 +110,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					errors = slices.Concat(errors, unifyErrors)
 				}
 
-				return []Error{&NotEnoughElementsToUnpackError{
+				return slices.Concat(errors, []Error{&NotEnoughElementsToUnpackError{
 					span: ast.MergeSpans(first.Span(), last.Span()),
-				}}
+				}})
 			}
 
 			if len(tuple1.Elems) != len(tuple2.Elems) {
