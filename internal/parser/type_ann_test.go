@@ -34,6 +34,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"FuncWithTypeParams": {
 			input: "fn<T: number, U: string>(x: T, y: U) -> boolean",
 		},
+		"UnionType": {
+			input: "A | B | C",
+		},
+		"IntersectionType": {
+			input: "A & B & C",
+		},
+		"UnionAndIntersectionType": {
+			input: "A & B | X & Y",
+		},
 	}
 
 	for name, test := range tests {

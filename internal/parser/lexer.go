@@ -58,6 +58,7 @@ var keywords = map[string]TokenType{
 	"number":    Number,
 	"string":    String,
 	"boolean":   Boolean,
+	"mut":       Mut,
 }
 
 func (lexer *Lexer) next() *Token {
@@ -185,6 +186,22 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(GreaterThanEqual, ">=", ast.Span{Start: start, End: end})
 		} else {
 			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
+		}
+	case '|':
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "||") {
+			endOffset++
+			end.Column++
+			token = NewToken(PipePipe, "||", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(Pipe, "|", ast.Span{Start: start, End: end})
+		}
+	case '&':
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "&&") {
+			endOffset++
+			end.Column++
+			token = NewToken(AmpersandAmpersand, "&&", ast.Span{Start: start, End: end})
+		} else {
+			token = NewToken(Ampersand, "&", ast.Span{Start: start, End: end})
 		}
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})

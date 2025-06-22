@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -8,7 +9,150 @@ import (
 	"github.com/moznion/go-optional"
 )
 
+type TypeAnnOpKind string
+
+const (
+	Union        TypeAnnOpKind = "union"
+	Intersection TypeAnnOpKind = "intersection"
+)
+
+var typeAnnPrecedence = map[TypeAnnOpKind]int{
+	Intersection: 4,
+	Union:        3,
+}
+
+type TypeAnnOp struct {
+	Kind  TypeAnnOpKind
+	Arity int
+}
+
 func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
+	select {
+	case <-p.ctx.Done():
+		fmt.Println("Taking too long to parse")
+	default:
+		// continue
+	}
+
+	typeAnns := NewStack[ast.TypeAnn]()
+	errors := []*Error{}
+	ops := NewStack[*TypeAnnOp]()
+
+	primary, primaryErrors := p.primaryTypeAnn()
+	if primary.IsNone() {
+		return optional.None[ast.TypeAnn](), primaryErrors
+	}
+
+	errors = append(errors, primaryErrors...)
+	primary.IfSome(func(ta ast.TypeAnn) {
+		typeAnns = append(typeAnns, ta)
+	})
+
+loop:
+	for {
+		token := p.lexer.peek()
+		var nextOp *TypeAnnOp
+
+		// nolint: exhaustive
+		switch token.Type {
+		case Pipe:
+			nextOp = &TypeAnnOp{
+				Kind:  Union,
+				Arity: 2,
+			}
+		case Ampersand:
+			nextOp = &TypeAnnOp{
+				Kind:  Intersection,
+				Arity: 2,
+			}
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			continue
+		default:
+			break loop
+		}
+
+		if token.Span.Start.Line != p.lexer.currentLocation.Line {
+			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
+				return optional.Some(typeAnns.Pop()), errors
+			}
+		}
+
+		p.lexer.consume()
+		skipOp := false
+
+		if !ops.IsEmpty() {
+			if ops.Peek().Kind == nextOp.Kind {
+				ops.Peek().Arity++ // update the arity of the operator
+				skipOp = true
+			} else if typeAnnPrecedence[ops.Peek().Kind] >= typeAnnPrecedence[nextOp.Kind] {
+				op := ops.Pop()
+				arity := op.Arity
+				args := make([]ast.TypeAnn, arity)
+				for i := range arity {
+					args[i] = typeAnns[len(typeAnns)-arity+i]
+				}
+				typeAnns = typeAnns[:len(typeAnns)-arity]
+				span := ast.MergeSpans(args[0].Span(), args[arity-1].Span())
+
+				switch op.Kind {
+				case Union:
+					typeAnns.Push(ast.NewUnionTypeAnn(args, span))
+				case Intersection:
+					typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
+				default:
+					// This should never happen, but just in case
+					panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+				}
+			}
+		}
+
+		if !skipOp {
+			ops.Push(nextOp)
+		}
+
+		typeAnnOption, primaryErrors := p.primaryTypeAnn()
+		errors = append(errors, primaryErrors...)
+		typeAnn := typeAnnOption.TakeOrElse(func() ast.TypeAnn {
+			token := p.lexer.peek()
+			errors = append(errors, NewError(token.Span, "Expected an type annotation"))
+
+			// TODO: add an EmptyTypeAnn to the AST
+			// For now, we panic to indicate that something went wrong
+			panic("parseExpr - expected a TypeAnn, but got none")
+			// return ast.NewEmpty(token.Span)
+		})
+		typeAnns.Push(typeAnn)
+	}
+
+	for !ops.IsEmpty() {
+		op := ops.Pop()
+		arity := op.Arity
+		args := make([]ast.TypeAnn, arity)
+		for i := range arity {
+			args[i] = typeAnns[len(typeAnns)-arity+i]
+		}
+		typeAnns = typeAnns[:len(typeAnns)-arity]
+		span := ast.MergeSpans(args[0].Span(), args[arity-1].Span())
+
+		switch op.Kind {
+		case Union:
+			typeAnns.Push(ast.NewUnionTypeAnn(args, span))
+		case Intersection:
+			typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
+		default:
+			// This should never happen, but just in case
+			panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+		}
+	}
+
+	if len(typeAnns) != 1 {
+		panic("parseExpr - expected one TypeAnn on the stack")
+	}
+	return optional.Some(typeAnns.Pop()), errors
+}
+
+func (p *Parser) primaryTypeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
