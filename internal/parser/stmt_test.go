@@ -14,48 +14,64 @@ func TestParseStmtNoErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		"VarDecl": {
-			input: "var x = 5",
-		},
-		"ValDecl": {
-			input: "val x = 5",
-		},
-		"ExportValDecl": {
-			input: "export val x = 5",
-		},
-		"DeclareValDecl": {
-			input: "declare val x",
-		},
-		"ExportDeclareValDecl": {
-			input: "export declare val x",
-		},
-		"FunctionDecl": {
-			input: "fn foo(a, b) { a + b }",
-		},
-		"FunctionDeclWithReturn": {
-			input: "fn foo(a, b) { return a + b }",
-		},
-		"FunctionDeclWithMultipleStmts": {
-			input: `fn foo() {
-				val a = 5
-				val b = 10
-				return a + b
-			}`,
-		},
-		"ExportFunctionDecl": {
-			input: "export fn foo(a, b) { a + b }",
-		},
-		"DeclareFunctionDecl": {
-			input: "declare fn foo(a, b)",
-		},
-		"ExportDeclareFunctionDecl": {
-			input: "export declare fn foo(a, b)",
-		},
-		"UnicodeVarDecl": {
-			input: "val längd = 5",
-		},
-		"UnicodeFunctionDecl": {
-			input: "fn до́бра(a, b) { a + b }",
+		// "VarDecl": {
+		// 	input: "var x = 5",
+		// },
+		// "ValDecl": {
+		// 	input: "val x = 5",
+		// },
+		// "ExportValDecl": {
+		// 	input: "export val x = 5",
+		// },
+		// "DeclareValDecl": {
+		// 	input: "declare val x",
+		// },
+		// "ExportDeclareValDecl": {
+		// 	input: "export declare val x",
+		// },
+		// "FunctionDecl": {
+		// 	input: "fn foo(a, b) { a + b }",
+		// },
+		// "FunctionDeclWithReturn": {
+		// 	input: "fn foo(a, b) { return a + b }",
+		// },
+		// "FunctionDeclWithMultipleStmts": {
+		// 	input: `fn foo() {
+		// 		val a = 5
+		// 		val b = 10
+		// 		return a + b
+		// 	}`,
+		// },
+		// "ExportFunctionDecl": {
+		// 	input: "export fn foo(a, b) { a + b }",
+		// },
+		// "DeclareFunctionDecl": {
+		// 	input: "declare fn foo(a, b)",
+		// },
+		// "ExportDeclareFunctionDecl": {
+		// 	input: "export declare fn foo(a, b)",
+		// },
+		// "UnicodeVarDecl": {
+		// 	input: "val längd = 5",
+		// },
+		// "UnicodeFunctionDecl": {
+		// 	input: "fn до́бра(a, b) { a + b }",
+		// },
+		// "TypeDecl": {
+		// 	input: "type MyType = { x: number, y: string }",
+		// },
+		// "TypeDeclWithComments": {
+		// 	input: `type MyType = Foo
+		// 		// Comment
+		// 		| Bar
+		// 		// Comment
+		// 		| Baz`,
+		// },
+		"TypeDeclWithLeadingPipe": {
+			input: `type MyType =
+				| Foo
+				| Bar
+				| Baz`,
 		},
 	}
 

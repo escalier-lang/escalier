@@ -165,7 +165,12 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (option
 
 	typeParams := []*ast.TypeParam{}
 
+	// Pushing a MarkerDelim here enables typeAnn to parse type annotations that
+	// span multiple lines.
+	p.markers.Push(MarkerDelim)
 	typeAnnOption, typeAnnErrors := p.typeAnn()
+	p.markers.Pop()
+
 	errors = append(errors, typeAnnErrors...)
 	decl := optional.Map(typeAnnOption, func(typeAnn ast.TypeAnn) ast.Decl {
 		return ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
