@@ -43,6 +43,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"UnionAndIntersectionType": {
 			input: "A & B | X & Y",
 		},
+		"IndexedTypeWithBrackets": {
+			input: "A[B]",
+		},
+		"IndexedTypeWithDot": {
+			input: "A.B",
+		},
 	}
 
 	for name, test := range tests {

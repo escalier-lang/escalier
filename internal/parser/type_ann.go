@@ -303,7 +303,72 @@ func (p *Parser) primaryTypeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 		}
 	}
 
+	typeAnn, suffixErrors := p.typeAnnSuffix(typeAnn)
+	errors = append(errors, suffixErrors...)
+
 	return optional.Some(typeAnn), errors
+}
+
+func (p *Parser) typeAnnSuffix(typeAnn ast.TypeAnn) (ast.TypeAnn, []*Error) {
+	token := p.lexer.peek()
+	errors := []*Error{}
+
+loop:
+	for {
+		// nolint: exhaustive
+		switch token.Type {
+		case OpenBracket:
+			p.lexer.consume()
+			// TODO: handle the case when parseExpr() return None correctly
+			indexOption, indexErrors := p.typeAnn()
+			errors = append(errors, indexErrors...)
+			if indexOption.IsNone() {
+				errors = append(errors, NewError(token.Span, "Expected an expression after '['"))
+				break loop
+			}
+			terminator := p.lexer.next()
+			if terminator.Type != CloseBracket {
+				errors = append(errors, NewError(token.Span, "Expected a closing bracket"))
+			}
+			obj := typeAnn
+			typeAnn = ast.NewIndexTypeAnn(
+				obj, indexOption.Unwrap(),
+				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
+			)
+		case Dot:
+			p.lexer.consume()
+			prop := p.lexer.next()
+			// nolint: exhaustive
+			switch prop.Type {
+			case Identifier, Underscore:
+				obj := typeAnn
+				// This interprets T.K as T["K"]
+				prop := ast.NewLitTypeAnn(ast.NewString(prop.Value, token.Span), token.Span)
+				typeAnn = ast.NewIndexTypeAnn(
+					obj, prop,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
+			default:
+				obj := typeAnn
+				// This interprets T. as T[""]
+				prop := ast.NewLitTypeAnn(ast.NewString("", token.Span), token.Span)
+				typeAnn = ast.NewIndexTypeAnn(
+					obj, prop,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
+				if token.Type == Dot {
+					errors = append(errors, NewError(token.Span, "expected an identifier after ."))
+				} else {
+					errors = append(errors, NewError(token.Span, "expected an identifier after ?."))
+				}
+			}
+		default:
+			break loop
+		}
+		token = p.lexer.peek()
+	}
+
+	return typeAnn, errors
 }
 
 func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {

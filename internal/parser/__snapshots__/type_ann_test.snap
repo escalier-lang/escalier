@@ -408,3 +408,71 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/IndexedTypeWithDot - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
+    &ast.IndexTypeAnn{
+        Target: &ast.TypeRefTypeAnn{
+            Name:     "A",
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
+            },
+            inferredType: nil,
+        },
+        Index: &ast.LitTypeAnn{
+            Lit: &ast.StrLit{
+                Value: "B",
+                span:  ast.Span{
+                    Start: ast.Location{Line:1, Column:2},
+                    End:   ast.Location{Line:1, Column:3},
+                },
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:2},
+                End:   ast.Location{Line:1, Column:3},
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:3},
+        },
+        inferredType: nil,
+    },
+}
+---
+
+[TestParseTypeAnnNoErrors/IndexedTypeWithBrackets - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
+    &ast.IndexTypeAnn{
+        Target: &ast.TypeRefTypeAnn{
+            Name:     "A",
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:1},
+                End:   ast.Location{Line:1, Column:2},
+            },
+            inferredType: nil,
+        },
+        Index: &ast.TypeRefTypeAnn{
+            Name:     "B",
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:3},
+                End:   ast.Location{Line:1, Column:4},
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:1},
+            End:   ast.Location{Line:1, Column:5},
+        },
+        inferredType: nil,
+    },
+}
+---
