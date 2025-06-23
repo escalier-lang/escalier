@@ -49,6 +49,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"IndexedTypeWithDot": {
 			input: "A.B",
 		},
+		"MutableType": {
+			input: "mut A",
+		},
 	}
 
 	for name, test := range tests {

@@ -164,8 +164,16 @@ loop:
 }
 
 func (p *Parser) primaryTypeAnn() (optional.Option[ast.TypeAnn], []*Error) {
+	// TODO: parse prefixes, e.g. `mut`
 	token := p.lexer.peek()
 	errors := []*Error{}
+	isMut := false
+
+	if token.Type == Mut {
+		p.lexer.consume() // consume 'mut'
+		token = p.lexer.peek()
+		isMut = true
+	}
 
 	var typeAnn ast.TypeAnn
 
@@ -305,6 +313,10 @@ func (p *Parser) primaryTypeAnn() (optional.Option[ast.TypeAnn], []*Error) {
 
 	typeAnn, suffixErrors := p.typeAnnSuffix(typeAnn)
 	errors = append(errors, suffixErrors...)
+
+	if isMut {
+		typeAnn = ast.NewMutableTypeAnn(typeAnn, token.Span)
+	}
 
 	return optional.Some(typeAnn), errors
 }

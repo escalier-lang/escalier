@@ -476,3 +476,25 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/MutableType - 1]
+optional.Option[github.com/escalier-lang/escalier/internal/ast.TypeAnn]{
+    &ast.MutableTypeAnn{
+        Target: &ast.TypeRefTypeAnn{
+            Name:     "A",
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start: ast.Location{Line:1, Column:5},
+                End:   ast.Location{Line:1, Column:6},
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:5},
+            End:   ast.Location{Line:1, Column:6},
+        },
+        inferredType: nil,
+    },
+}
+---
