@@ -89,3 +89,7 @@ func (node *IntrinsicTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 func (node *ImportType) Span() Span             { return node.span }
 func (node *ImportType) InferredType() Type     { return node.inferredType }
 func (node *ImportType) SetInferredType(t Type) { node.inferredType = t }
+
+func (node *MutableTypeAnn) Span() Span             { return node.span }
+func (node *MutableTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *MutableTypeAnn) SetInferredType(t Type) { node.inferredType = t }

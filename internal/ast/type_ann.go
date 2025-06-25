@@ -35,6 +35,7 @@ func (*TemplateLitTypeAnn) isTypeAnn()  {}
 func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportType) isTypeAnn()          {}
 func (*MatchTypeAnn) isTypeAnn()        {}
+func (*MutableTypeAnn) isTypeAnn()      {}
 
 type LitTypeAnn struct {
 	Lit          Lit
@@ -478,5 +479,20 @@ func (t *ImportType) Accept(v Visitor) {
 		for _, typeArg := range t.TypeArgs {
 			typeArg.Accept(v)
 		}
+	}
+}
+
+type MutableTypeAnn struct {
+	Target       TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewMutableTypeAnn(target TypeAnn, span Span) *MutableTypeAnn {
+	return &MutableTypeAnn{Target: target, span: span, inferredType: nil}
+}
+func (t *MutableTypeAnn) Accept(v Visitor) {
+	if v.VisitTypeAnn(t) {
+		t.Target.Accept(v)
 	}
 }

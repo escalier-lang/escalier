@@ -94,6 +94,8 @@ const (
 
 	Invalid
 	EndOfFile
+
+	Mut
 )
 
 type Token struct {

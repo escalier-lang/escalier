@@ -57,6 +57,22 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"UnicodeFunctionDecl": {
 			input: "fn до́бра(a, b) { a + b }",
 		},
+		"TypeDecl": {
+			input: "type MyType = { x: number, y: string }",
+		},
+		"TypeDeclWithComments": {
+			input: `type MyType = Foo
+				// Comment
+				| Bar
+				// Comment
+				| Baz`,
+		},
+		"TypeDeclWithLeadingPipe": {
+			input: `type MyType =
+				| Foo
+				| Bar
+				| Baz`,
+		},
 	}
 
 	for name, test := range tests {

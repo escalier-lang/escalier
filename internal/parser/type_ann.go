@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -8,162 +9,378 @@ import (
 	"github.com/moznion/go-optional"
 )
 
+type TypeAnnOpKind string
+
+const (
+	Union        TypeAnnOpKind = "union"
+	Intersection TypeAnnOpKind = "intersection"
+)
+
+var typeAnnPrecedence = map[TypeAnnOpKind]int{
+	Intersection: 4,
+	Union:        3,
+}
+
+type TypeAnnOp struct {
+	Kind  TypeAnnOpKind
+	Arity int
+}
+
 func (p *Parser) typeAnn() (optional.Option[ast.TypeAnn], []*Error) {
+	select {
+	case <-p.ctx.Done():
+		fmt.Println("Taking too long to parse")
+	default:
+		// continue
+	}
+
+	typeAnns := NewStack[ast.TypeAnn]()
+	errors := []*Error{}
+	ops := NewStack[*TypeAnnOp]()
+
+	token := p.lexer.peek()
+	//nolint: exhaustive
+	switch token.Type {
+	case Pipe:
+		p.lexer.consume() // skip leading '|'
+	case Ampersand:
+		p.lexer.consume() // skip leading '&'
+	default:
+		// Nothing to skip, continue parsing
+	}
+
+	primary, primaryErrors := p.primaryTypeAnn()
+	if primary.IsNone() {
+		return optional.None[ast.TypeAnn](), primaryErrors
+	}
+
+	errors = append(errors, primaryErrors...)
+	primary.IfSome(func(ta ast.TypeAnn) {
+		typeAnns = append(typeAnns, ta)
+	})
+
+loop:
+	for {
+		token := p.lexer.peek()
+		var nextOp *TypeAnnOp
+
+		// nolint: exhaustive
+		switch token.Type {
+		case Pipe:
+			nextOp = &TypeAnnOp{
+				Kind:  Union,
+				Arity: 2,
+			}
+		case Ampersand:
+			nextOp = &TypeAnnOp{
+				Kind:  Intersection,
+				Arity: 2,
+			}
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			continue
+		default:
+			break loop
+		}
+
+		if token.Span.Start.Line != p.lexer.currentLocation.Line {
+			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
+				return optional.Some(typeAnns.Pop()), errors
+			}
+		}
+
+		p.lexer.consume()
+		skipOp := false
+
+		if !ops.IsEmpty() {
+			if ops.Peek().Kind == nextOp.Kind {
+				ops.Peek().Arity++ // update the arity of the operator
+				skipOp = true
+			} else if typeAnnPrecedence[ops.Peek().Kind] >= typeAnnPrecedence[nextOp.Kind] {
+				op := ops.Pop()
+				arity := op.Arity
+				args := make([]ast.TypeAnn, arity)
+				for i := range arity {
+					args[i] = typeAnns[len(typeAnns)-arity+i]
+				}
+				typeAnns = typeAnns[:len(typeAnns)-arity]
+				span := ast.MergeSpans(args[0].Span(), args[arity-1].Span())
+
+				switch op.Kind {
+				case Union:
+					typeAnns.Push(ast.NewUnionTypeAnn(args, span))
+				case Intersection:
+					typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
+				default:
+					// This should never happen, but just in case
+					panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+				}
+			}
+		}
+
+		if !skipOp {
+			ops.Push(nextOp)
+		}
+
+		typeAnnOption, primaryErrors := p.primaryTypeAnn()
+		errors = append(errors, primaryErrors...)
+		typeAnn := typeAnnOption.TakeOrElse(func() ast.TypeAnn {
+			token := p.lexer.peek()
+			errors = append(errors, NewError(token.Span, "Expected an type annotation"))
+
+			// TODO: add an EmptyTypeAnn to the AST
+			// For now, we panic to indicate that something went wrong
+			panic("parseExpr - expected a TypeAnn, but got none")
+			// return ast.NewEmpty(token.Span)
+		})
+		typeAnns.Push(typeAnn)
+	}
+
+	for !ops.IsEmpty() {
+		op := ops.Pop()
+		arity := op.Arity
+		args := make([]ast.TypeAnn, arity)
+		for i := range arity {
+			args[i] = typeAnns[len(typeAnns)-arity+i]
+		}
+		typeAnns = typeAnns[:len(typeAnns)-arity]
+		span := ast.MergeSpans(args[0].Span(), args[arity-1].Span())
+
+		switch op.Kind {
+		case Union:
+			typeAnns.Push(ast.NewUnionTypeAnn(args, span))
+		case Intersection:
+			typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
+		default:
+			// This should never happen, but just in case
+			panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+		}
+	}
+
+	if len(typeAnns) != 1 {
+		panic("parseExpr - expected one TypeAnn on the stack")
+	}
+	return optional.Some(typeAnns.Pop()), errors
+}
+
+func (p *Parser) primaryTypeAnn() (optional.Option[ast.TypeAnn], []*Error) {
+	// TODO: parse prefixes, e.g. `mut`
 	token := p.lexer.peek()
 	errors := []*Error{}
+	isMut := false
 
-	// nolint: exhaustive
-	switch token.Type {
-	case Number:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewNumberTypeAnn(token.Span),
-		), errors
-	case String:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewStringTypeAnn(token.Span),
-		), errors
-	case Boolean:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewBooleanTypeAnn(token.Span),
-		), errors
-	case Null:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewLitTypeAnn(ast.NewNull(token.Span), token.Span),
-		), errors
-	case Undefined:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewLitTypeAnn(ast.NewUndefined(token.Span), token.Span),
-		), errors
-	case NumLit:
-		p.lexer.consume()
-		value, err := strconv.ParseFloat(token.Value, 64)
-		if err != nil {
-			errors = append(errors, NewError(token.Span, "Expected a number"))
-			return optional.None[ast.TypeAnn](), errors
-		}
-		return optional.Some[ast.TypeAnn](
-			ast.NewLitTypeAnn(
-				ast.NewNumber(value, token.Span),
-				token.Span,
-			),
-		), errors
-	case StrLit:
-		p.lexer.consume()
-		return optional.Some[ast.TypeAnn](
-			ast.NewLitTypeAnn(
+	if token.Type == Mut {
+		p.lexer.consume() // consume 'mut'
+		token = p.lexer.peek()
+		isMut = true
+	}
+
+	var typeAnn ast.TypeAnn
+
+	for typeAnn == nil {
+		// nolint: exhaustive
+		switch token.Type {
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
+		case Number:
+			p.lexer.consume()
+			typeAnn = ast.NewNumberTypeAnn(token.Span)
+		case String:
+			p.lexer.consume()
+			typeAnn = ast.NewStringTypeAnn(token.Span)
+		case Boolean:
+			p.lexer.consume()
+			typeAnn = ast.NewBooleanTypeAnn(token.Span)
+		case Null:
+			p.lexer.consume()
+			typeAnn = ast.NewLitTypeAnn(ast.NewNull(token.Span), token.Span)
+		case Undefined:
+			p.lexer.consume()
+			typeAnn = ast.NewLitTypeAnn(ast.NewUndefined(token.Span), token.Span)
+		case NumLit:
+			p.lexer.consume()
+			value, err := strconv.ParseFloat(token.Value, 64)
+			if err != nil {
+				errors = append(errors, NewError(token.Span, "Expected a number"))
+				return optional.None[ast.TypeAnn](), errors
+			}
+			typeAnn = ast.NewLitTypeAnn(ast.NewNumber(value, token.Span), token.Span)
+		case StrLit:
+			p.lexer.consume()
+			typeAnn = ast.NewLitTypeAnn(
 				ast.NewString(token.Value, token.Span),
 				token.Span,
-			),
-		), errors
-	case Fn:
-		p.lexer.consume()
-		maybeTypeParams := optional.None[[]ast.TypeParam]()
+			)
+		case Fn:
+			p.lexer.consume()
+			maybeTypeParams := optional.None[[]ast.TypeParam]()
 
-		if p.lexer.peek().Type == LessThan {
-			p.lexer.consume() // consume '<'
-			typeParams, typeParamErrors := parseDelimSeq(p, GreaterThan, Comma, func() (optional.Option[ast.TypeParam], []*Error) {
-				typeParam, typeParamErrors := p.typeParam()
-				return typeParam, typeParamErrors
-			})
-			errors = append(errors, typeParamErrors...)
-			maybeTypeParams = optional.Some(typeParams)
+			if p.lexer.peek().Type == LessThan {
+				p.lexer.consume() // consume '<'
+				typeParams, typeParamErrors := parseDelimSeq(p, GreaterThan, Comma, func() (optional.Option[ast.TypeParam], []*Error) {
+					typeParam, typeParamErrors := p.typeParam()
+					return typeParam, typeParamErrors
+				})
+				errors = append(errors, typeParamErrors...)
+				maybeTypeParams = optional.Some(typeParams)
 
-			_, tokenErrors := p.expect(GreaterThan, AlwaysConsume)
+				_, tokenErrors := p.expect(GreaterThan, AlwaysConsume)
+				errors = append(errors, tokenErrors...)
+			}
+
+			_, tokenErrors := p.expect(OpenParen, AlwaysConsume)
 			errors = append(errors, tokenErrors...)
-		}
 
-		_, tokenErrors := p.expect(OpenParen, AlwaysConsume)
-		errors = append(errors, tokenErrors...)
+			funcParams, funcParamsErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+			errors = append(errors, funcParamsErrors...)
 
-		funcParams, funcParamsErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
-		errors = append(errors, funcParamsErrors...)
+			_, tokenErrors = p.expect(CloseParen, AlwaysConsume)
+			errors = append(errors, tokenErrors...)
 
-		_, tokenErrors = p.expect(CloseParen, AlwaysConsume)
-		errors = append(errors, tokenErrors...)
+			_, tokenErrors = p.expect(Arrow, AlwaysConsume)
+			errors = append(errors, tokenErrors...)
 
-		_, tokenErrors = p.expect(Arrow, AlwaysConsume)
-		errors = append(errors, tokenErrors...)
+			retTypeOption, retTypeErrors := p.typeAnn()
+			errors = append(errors, retTypeErrors...)
+			if retTypeOption.IsNone() {
+				errors = append(errors, &Error{
+					Span:    token.Span,
+					Message: "expected return type annotation",
+				})
+				return optional.None[ast.TypeAnn](), errors
+			}
+			retType, _ := retTypeOption.Take()
 
-		retTypeOption, retTypeErrors := p.typeAnn()
-		errors = append(errors, retTypeErrors...)
-		if retTypeOption.IsNone() {
-			errors = append(errors, &Error{
-				Span:    token.Span,
-				Message: "expected return type annotation",
-			})
-			return optional.None[ast.TypeAnn](), errors
-		}
-		retType, _ := retTypeOption.Take()
+			throws := optional.None[ast.TypeAnn]()
 
-		throws := optional.None[ast.TypeAnn]()
-
-		return optional.Some[ast.TypeAnn](
-			ast.NewFuncTypeAnn(
+			typeAnn = ast.NewFuncTypeAnn(
 				maybeTypeParams,
 				funcParams,
 				retType,
 				throws,
 				ast.NewSpan(token.Span.Start, retType.Span().End),
-			),
-		), errors
-	case OpenBracket: // tuple type
-		p.lexer.consume()
-		elemTypes, elemErrors := parseDelimSeq(p, CloseBracket, Comma, func() (optional.Option[ast.TypeAnn], []*Error) {
-			typeArg, typeArgErrors := p.typeAnn()
-			return typeArg, typeArgErrors
-		})
-		errors = append(errors, elemErrors...)
-		end, endErrors := p.expect(CloseBracket, AlwaysConsume)
-		errors = append(errors, endErrors...)
-		return optional.Some[ast.TypeAnn](
-			ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end)),
-		), errors
-	case OpenBrace: // object type
-		p.lexer.consume() // consume '{'
-		elems, propErrors := parseDelimSeq(p, CloseBrace, Comma, func() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
-			elem, elemErrors := p.objTypeAnnElem()
-			if elem == nil {
-				return optional.None[ast.ObjTypeAnnElem](), elemErrors
-			}
-			return optional.Some(elem), elemErrors
-		})
-		errors = append(errors, propErrors...)
-		end, endErrors := p.expect(CloseBrace, AlwaysConsume)
-		errors = append(errors, endErrors...)
-		return optional.Some[ast.TypeAnn](
-			ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end)),
-		), errors
-	case Identifier:
-		p.lexer.consume()
-
-		if p.lexer.peek().Type == LessThan {
-			p.lexer.consume() // consume '<'
-			typeArgs, typeArgErrors := parseDelimSeq(p, GreaterThan, Comma, func() (optional.Option[ast.TypeAnn], []*Error) {
+			)
+		case OpenBracket: // tuple type
+			p.lexer.consume()
+			elemTypes, elemErrors := parseDelimSeq(p, CloseBracket, Comma, func() (optional.Option[ast.TypeAnn], []*Error) {
 				typeArg, typeArgErrors := p.typeAnn()
 				return typeArg, typeArgErrors
 			})
-			end, endErrors := p.expect(GreaterThan, AlwaysConsume)
-			return optional.Some[ast.TypeAnn](
-				ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end)),
-			), slices.Concat(typeArgErrors, endErrors)
-		}
+			errors = append(errors, elemErrors...)
+			end, endErrors := p.expect(CloseBracket, AlwaysConsume)
+			errors = append(errors, endErrors...)
+			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end))
+		case OpenBrace: // object type
+			p.lexer.consume() // consume '{'
+			elems, propErrors := parseDelimSeq(p, CloseBrace, Comma, func() (optional.Option[ast.ObjTypeAnnElem], []*Error) {
+				elem, elemErrors := p.objTypeAnnElem()
+				if elem == nil {
+					return optional.None[ast.ObjTypeAnnElem](), elemErrors
+				}
+				return optional.Some(elem), elemErrors
+			})
+			errors = append(errors, propErrors...)
+			end, endErrors := p.expect(CloseBrace, AlwaysConsume)
+			errors = append(errors, endErrors...)
+			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end))
+		case Identifier:
+			p.lexer.consume()
 
-		return optional.Some[ast.TypeAnn](
-			ast.NewRefTypeAnn(token.Value, []ast.TypeAnn{}, token.Span),
-		), errors
-	default:
-		errors = append(errors, &Error{
-			Span:    token.Span,
-			Message: "expected type annotation",
-		})
-		p.lexer.consume()
-		return optional.None[ast.TypeAnn](), errors
+			// Try to parse a set of type parameters
+			if p.lexer.peek().Type == LessThan {
+				p.lexer.consume() // consume '<'
+				typeArgs, typeArgErrors := parseDelimSeq(p, GreaterThan, Comma, func() (optional.Option[ast.TypeAnn], []*Error) {
+					typeArg, typeArgErrors := p.typeAnn()
+					return typeArg, typeArgErrors
+				})
+				end, endErrors := p.expect(GreaterThan, AlwaysConsume)
+				return optional.Some[ast.TypeAnn](
+					ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end)),
+				), slices.Concat(typeArgErrors, endErrors)
+			}
+
+			typeAnn = ast.NewRefTypeAnn(token.Value, []ast.TypeAnn{}, token.Span)
+		default:
+			errors = append(errors, &Error{
+				Span:    token.Span,
+				Message: "expected type annotation",
+			})
+			p.lexer.consume()
+			return optional.None[ast.TypeAnn](), errors
+		}
 	}
+
+	typeAnn, suffixErrors := p.typeAnnSuffix(typeAnn)
+	errors = append(errors, suffixErrors...)
+
+	if isMut {
+		typeAnn = ast.NewMutableTypeAnn(typeAnn, token.Span)
+	}
+
+	return optional.Some(typeAnn), errors
+}
+
+func (p *Parser) typeAnnSuffix(typeAnn ast.TypeAnn) (ast.TypeAnn, []*Error) {
+	token := p.lexer.peek()
+	errors := []*Error{}
+
+loop:
+	for {
+		// nolint: exhaustive
+		switch token.Type {
+		case OpenBracket:
+			p.lexer.consume()
+			// TODO: handle the case when parseExpr() return None correctly
+			indexOption, indexErrors := p.typeAnn()
+			errors = append(errors, indexErrors...)
+			if indexOption.IsNone() {
+				errors = append(errors, NewError(token.Span, "Expected an expression after '['"))
+				break loop
+			}
+			terminator := p.lexer.next()
+			if terminator.Type != CloseBracket {
+				errors = append(errors, NewError(token.Span, "Expected a closing bracket"))
+			}
+			obj := typeAnn
+			typeAnn = ast.NewIndexTypeAnn(
+				obj, indexOption.Unwrap(),
+				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
+			)
+		case Dot:
+			p.lexer.consume()
+			prop := p.lexer.next()
+			// nolint: exhaustive
+			switch prop.Type {
+			case Identifier, Underscore:
+				obj := typeAnn
+				// This interprets T.K as T["K"]
+				prop := ast.NewLitTypeAnn(ast.NewString(prop.Value, token.Span), token.Span)
+				typeAnn = ast.NewIndexTypeAnn(
+					obj, prop,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
+			default:
+				obj := typeAnn
+				// This interprets T. as T[""]
+				prop := ast.NewLitTypeAnn(ast.NewString("", token.Span), token.Span)
+				typeAnn = ast.NewIndexTypeAnn(
+					obj, prop,
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+				)
+				if token.Type == Dot {
+					errors = append(errors, NewError(token.Span, "expected an identifier after ."))
+				} else {
+					errors = append(errors, NewError(token.Span, "expected an identifier after ?."))
+				}
+			}
+		default:
+			break loop
+		}
+		token = p.lexer.peek()
+	}
+
+	return typeAnn, errors
 }
 
 func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
