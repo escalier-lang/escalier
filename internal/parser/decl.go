@@ -61,12 +61,12 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 
 	token = p.lexer.peek()
 
-	typeAnn := optional.None[ast.TypeAnn]()
+	typeAnnOption := optional.None[ast.TypeAnn]()
 	if token.Type == Colon {
 		p.lexer.consume() // consume ':'
-		typeAnnOption, typeAnnErrors := p.typeAnn()
+		typeAnn, typeAnnErrors := p.typeAnn()
 		errors = append(errors, typeAnnErrors...)
-		typeAnn = typeAnnOption
+		typeAnnOption = optional.Some(typeAnn)
 		token = p.lexer.peek()
 	}
 
@@ -91,7 +91,7 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 
 	span := ast.Span{Start: start, End: end}
 	return optional.Some[ast.Decl](
-		ast.NewVarDecl(kind, pat, typeAnn, init, export, declare, span),
+		ast.NewVarDecl(kind, pat, typeAnnOption, init, export, declare, span),
 	), errors
 }
 
@@ -168,11 +168,11 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (option
 	// Pushing a MarkerDelim here enables typeAnn to parse type annotations that
 	// span multiple lines.
 	p.markers.Push(MarkerDelim)
-	typeAnnOption, typeAnnErrors := p.typeAnn()
+	typeAnn, typeAnnErrors := p.typeAnn()
 	p.markers.Pop()
 
 	errors = append(errors, typeAnnErrors...)
-	decl := optional.Map(typeAnnOption, func(typeAnn ast.TypeAnn) ast.Decl {
+	decl := optional.Map(optional.Some(typeAnn), func(typeAnn ast.TypeAnn) ast.Decl {
 		return ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
 	})
 	return decl, errors

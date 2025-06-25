@@ -276,7 +276,7 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 }
 
 type FuncTypeAnn struct {
-	TypeParams   optional.Option[[]TypeParam]
+	TypeParams   optional.Option[[]*TypeParam]
 	Params       []*Param
 	Return       TypeAnn
 	Throws       optional.Option[TypeAnn]
@@ -285,7 +285,7 @@ type FuncTypeAnn struct {
 }
 
 func NewFuncTypeAnn(
-	typeParams optional.Option[[]TypeParam],
+	typeParams optional.Option[[]*TypeParam],
 	params []*Param,
 	ret TypeAnn,
 	throws optional.Option[TypeAnn],

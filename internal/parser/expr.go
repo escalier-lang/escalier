@@ -645,7 +645,7 @@ func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
 			errors = append(errors, typeAnnErrors...)
 			return &ast.Param{
 				Pattern:  pat,
-				TypeAnn:  typeAnn,
+				TypeAnn:  optional.Some(typeAnn),
 				Optional: opt,
 			}
 		}

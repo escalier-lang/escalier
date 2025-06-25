@@ -902,20 +902,22 @@ func (c *Checker) inferTypeDecl(
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
 	for i, typeParam := range decl.TypeParams {
-		constraint := optional.Map(typeParam.Constraint, func(constraint ast.TypeAnn) Type {
-			constraintType, constraintErrors := c.inferTypeAnn(ctx, constraint)
+		var constraintType Type
+		var defaultType Type
+		if typeParam.Constraint != nil {
+			var constraintErrors []Error
+			constraintType, constraintErrors = c.inferTypeAnn(ctx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
-			return constraintType
-		})
-		default_ := optional.Map(typeParam.Default, func(default_ ast.TypeAnn) Type {
-			defaultType, defaultErrors := c.inferTypeAnn(ctx, default_)
+		}
+		if typeParam.Default != nil {
+			var defaultErrors []Error
+			defaultType, defaultErrors = c.inferTypeAnn(ctx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
-			return defaultType
-		})
+		}
 		typeParams[i] = &TypeParam{
 			Name:       typeParam.Name,
-			Constraint: constraint,
-			Default:    default_,
+			Constraint: constraintType,
+			Default:    defaultType,
 		}
 	}
 

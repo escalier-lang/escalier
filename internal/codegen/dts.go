@@ -103,30 +103,27 @@ func (b *Builder) BuildDefinitions(
 			case *ast.TypeDecl:
 				typeParams := make([]*TypeParam, len(decl.TypeParams))
 				for i, param := range decl.TypeParams {
+					constraint := optional.None[TypeAnn]()
+					if param.Constraint != nil {
+						t := param.Constraint.InferredType()
+						if t == nil {
+							// TODO: report an error if there's no inferred type
+						}
+						constraint = optional.Some(buildTypeAnn(t))
+					}
+					default_ := optional.None[TypeAnn]()
+					if param.Default != nil {
+						t := param.Default.InferredType()
+						if t == nil {
+							// TODO: report an error if there's no inferred type
+						}
+						default_ = optional.Some(buildTypeAnn(t))
+					}
+
 					typeParams[i] = &TypeParam{
-						Name: param.Name,
-						Constraint: optional.FlatMap(
-							param.Constraint,
-							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
-								t := ta.InferredType()
-								if t == nil {
-									// TODO: report an error if there's no inferred type
-									return optional.None[TypeAnn]()
-								}
-								return optional.Some(buildTypeAnn(t))
-							},
-						),
-						Default: optional.FlatMap(
-							param.Default,
-							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
-								t := ta.InferredType()
-								if t == nil {
-									// TODO: report an error if there's no inferred type
-									return optional.None[TypeAnn]()
-								}
-								return optional.Some(buildTypeAnn(t))
-							},
-						),
+						Name:       param.Name,
+						Constraint: constraint,
+						Default:    default_,
 					}
 				}
 

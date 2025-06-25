@@ -270,11 +270,11 @@ func (e *IdentExpr) Accept(v Visitor) {
 
 type TypeParam struct {
 	Name       string
-	Constraint optional.Option[TypeAnn]
-	Default    optional.Option[TypeAnn]
+	Constraint TypeAnn
+	Default    TypeAnn
 }
 
-func NewTypeParam(name string, constraint, defaultType optional.Option[TypeAnn]) TypeParam {
+func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 	return TypeParam{Name: name, Constraint: constraint, Default: defaultType}
 }
 
