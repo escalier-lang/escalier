@@ -106,9 +106,9 @@ func (s *SourceMapGenerator) TraverseStmt(stmt Stmt) {
 		s.TraverseDecl(sk.Decl)
 	case *ReturnStmt:
 		s.AddSegmentForNode(stmt)
-		sk.Expr.IfSome(func(e Expr) {
-			s.TraverseExpr(e)
-		})
+		if sk.Expr != nil {
+			s.TraverseExpr(sk.Expr)
+		}
 	}
 }
 

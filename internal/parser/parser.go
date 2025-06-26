@@ -43,9 +43,9 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 		default:
 			stmt, stmtErrors := p.stmt()
 			errors = append(errors, stmtErrors...)
-			stmt.IfSome(func(stmt ast.Stmt) {
+			if stmt != nil {
 				stmts = append(stmts, stmt)
-			})
+			}
 			token = p.lexer.peek()
 		}
 	}

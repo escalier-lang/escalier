@@ -193,7 +193,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			)
 
 			decls := []*Declarator{
-				&Declarator{
+				{
 					Pattern: NewTuplePat(tempVarPats, nil),
 					TypeAnn: optional.None[TypeAnn](),
 					Init:    call,
@@ -247,7 +247,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 
 	if pat != nil {
 		decls := []*Declarator{
-			&Declarator{
+			{
 				Pattern: pat,
 				TypeAnn: optional.None[TypeAnn](),
 				Init:    target,
@@ -292,11 +292,12 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 		return b.buildDecl(s.Decl)
 	case *ast.ReturnStmt:
 		stmts := []Stmt{}
-		expr := optional.Map(s.Expr, func(e ast.Expr) Expr {
-			expr, exprStmts := b.buildExpr(e)
+		var expr Expr
+		if s.Expr != nil {
+			var exprStmts []Stmt
+			expr, exprStmts = b.buildExpr(s.Expr)
 			stmts = slices.Concat(stmts, exprStmts)
-			return expr
-		})
+		}
 		stmt := &ReturnStmt{
 			Expr:   expr,
 			span:   nil,

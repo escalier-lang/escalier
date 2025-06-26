@@ -440,10 +440,10 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 		p.PrintDecl(s.Decl)
 	case *ReturnStmt:
 		p.print("return")
-		s.Expr.IfSome(func(e Expr) {
+		if s.Expr != nil {
 			p.print(" ")
-			p.PrintExpr(e)
-		})
+			p.PrintExpr(s.Expr)
+		}
 		p.print(";")
 	}
 

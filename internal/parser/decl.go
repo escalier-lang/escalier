@@ -2,7 +2,6 @@ package parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 // decl = 'export'? 'declare'? (varDecl | fnDecl)
@@ -82,13 +81,14 @@ func (p *Parser) varDecl(
 			return nil, errors
 		}
 		p.lexer.consume()
-		initOption, initErrors := p.nonDelimitedExpr()
+		var initErrors []*Error
+		init, initErrors = p.nonDelimitedExpr()
 		errors = append(errors, initErrors...)
-		init = initOption.OrElse(func() optional.Option[ast.Expr] {
+		if init == nil {
 			token := p.lexer.peek()
 			errors = append(errors, NewError(token.Span, "Expected an expression"))
-			return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
-		}).Unwrap()
+			init = ast.NewEmpty(token.Span)
+		}
 		end = init.Span().End
 	}
 

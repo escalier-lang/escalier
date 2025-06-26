@@ -33,8 +33,9 @@ func (p *Parser) exprWithMarker(marker Marker) (optional.Option[ast.Expr], []*Er
 	return p.exprInternal()
 }
 
-func (p *Parser) nonDelimitedExpr() (optional.Option[ast.Expr], []*Error) {
-	return p.exprWithMarker(MarkerExpr)
+func (p *Parser) nonDelimitedExpr() (ast.Expr, []*Error) {
+	exprOption, exprError := p.exprWithMarker(MarkerExpr)
+	return exprOption.Unwrap(), exprError
 }
 
 func (p *Parser) expr() (optional.Option[ast.Expr], []*Error) {

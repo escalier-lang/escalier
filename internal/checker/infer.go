@@ -573,13 +573,13 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 		return c.inferDecl(ctx, stmt.Decl)
 	case *ast.ReturnStmt:
 		errors := []Error{}
-		optional.Map(stmt.Expr, func(expr ast.Expr) Type {
-			t, exprErrors := c.inferExpr(ctx, expr)
+		if stmt.Expr != nil {
+			// The inferred type is ignored here, but inferExpr still attaches
+			// the inferred type to the expression.  This is used later on this
+			// file, search for `ReturnVisitor` to see how it is used.
+			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
 			errors = exprErrors
-			return t
-		}).TakeOrElse(func() Type {
-			return NewLitType(&UndefinedLit{})
-		})
+		}
 		return errors
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
@@ -704,11 +704,11 @@ func (c *Checker) inferFuncBody(
 
 	returnTypes := []Type{}
 	for _, returnStmt := range visitor.Returns {
-		returnStmt.Expr.IfSome(func(expr ast.Expr) {
-			returnType, returnErrors := c.inferExpr(ctx, expr)
+		if returnStmt.Expr != nil {
+			returnType, returnErrors := c.inferExpr(ctx, returnStmt.Expr)
 			returnTypes = append(returnTypes, returnType)
 			errors = slices.Concat(errors, returnErrors)
-		})
+		}
 	}
 
 	// TODO: We also need to do dead code analysis to account for unreachable

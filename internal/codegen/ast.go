@@ -491,7 +491,7 @@ func (s *DeclStmt) SetSpan(span *Span) { s.span = span }
 func (s *DeclStmt) Source() ast.Node   { return s.source }
 
 type ReturnStmt struct {
-	Expr   optional.Option[Expr]
+	Expr   Expr // optional
 	span   *Span
 	source ast.Node
 }
