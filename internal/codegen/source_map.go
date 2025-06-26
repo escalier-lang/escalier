@@ -156,9 +156,9 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 			s.TraversePattern(elem)
 			switch elem := elem.(type) {
 			case *IdentPat:
-				elem.Default.IfSome(func(e Expr) {
-					s.TraverseExpr(e)
-				})
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
 			default:
 				// TODO: handle defaults for other types of patterns
 			}
@@ -169,14 +169,14 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 			case *ObjKeyValuePat:
 				// s.AddSegmentForNode(elem.Key)
 				s.TraversePattern(elem.Value)
-				elem.Default.IfSome(func(e Expr) {
-					s.TraverseExpr(e)
-				})
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
 			case *ObjShorthandPat:
 				// s.AddSegmentForNode(elem.Key)
-				elem.Default.IfSome(func(e Expr) {
-					s.TraverseExpr(e)
-				})
+				if elem.Default != nil {
+					s.TraverseExpr(elem.Default)
+				}
 			case *ObjRestPat:
 				s.TraversePattern(elem.Pattern)
 			default:

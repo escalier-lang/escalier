@@ -58,7 +58,7 @@ func (b *Builder) BuildDefinitions(
 					binding := scope.Values[name]
 					typeAnn := buildTypeAnn(binding.Type)
 					decls = append(decls, &Declarator{
-						Pattern: NewIdentPat(name, optional.None[Expr](), nil),
+						Pattern: NewIdentPat(name, nil, nil),
 						TypeAnn: optional.Some(typeAnn),
 						Init:    nil,
 					})
@@ -424,7 +424,7 @@ func litToLit(t type_sys.Lit) Lit {
 func patToPat(pat type_sys.Pat) Pat {
 	switch pat := pat.(type) {
 	case *type_sys.IdentPat:
-		return NewIdentPat(pat.Name, optional.None[Expr](), nil)
+		return NewIdentPat(pat.Name, nil, nil)
 	case *type_sys.TuplePat:
 		elems := make([]Pat, len(pat.Elems))
 		for i, elem := range pat.Elems {

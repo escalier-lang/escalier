@@ -67,14 +67,15 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 	buildPatternRec = func(p ast.Pat, target Expr) Pat {
 		switch p := p.(type) {
 		case *ast.IdentPat:
-			_default := optional.Map(p.Default, func(e ast.Expr) Expr {
-				defExpr, defStmts := b.buildExpr(e)
+			var defExpr Expr
+			if p.Default != nil {
+				var defStmts []Stmt
+				defExpr, defStmts = b.buildExpr(p.Default)
 				stmts = slices.Concat(stmts, defStmts)
-				return defExpr
-			})
+			}
 			return &IdentPat{
 				Name:    p.Name,
-				Default: _default,
+				Default: defExpr,
 				span:    nil,
 				source:  p,
 			}
@@ -102,24 +103,28 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 						)
 					}
 
+					var defExpr Expr
+					if e.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts = b.buildExpr(e.Default)
+						stmts = slices.Concat(stmts, defStmts)
+					}
 					elems = append(elems, NewObjKeyValuePat(
 						e.Key.Name,
 						buildPatternRec(e.Value, newTarget),
-						optional.Map(e.Default, func(e ast.Expr) Expr {
-							defExpr, defStmts := b.buildExpr(e)
-							stmts = slices.Concat(stmts, defStmts)
-							return defExpr
-						}),
+						defExpr,
 						e,
 					))
 				case *ast.ObjShorthandPat:
+					var defExpr Expr
+					if e.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts = b.buildExpr(e.Default)
+						stmts = slices.Concat(stmts, defStmts)
+					}
 					elems = append(elems, NewObjShorthandPat(
 						e.Key.Name,
-						optional.Map(e.Default, func(e ast.Expr) Expr {
-							defExpr, defStmts := b.buildExpr(e)
-							stmts = slices.Concat(stmts, defStmts)
-							return defExpr
-						}),
+						defExpr,
 						e,
 					))
 				case *ast.ObjRestPat:
@@ -167,14 +172,15 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				tempId := b.NewTempId()
 				tempVar := NewIdentExpr(tempId, nil)
 
-				init := optional.None[Expr]()
+				var init Expr
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
-					init = optional.Map(arg.Default, func(e ast.Expr) Expr {
-						defExpr, defStmts := b.buildExpr(e)
+					if arg.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts := b.buildExpr(arg.Default)
 						stmts = slices.Concat(stmts, defStmts)
-						return defExpr
-					})
+						init = defExpr
+					}
 				}
 				tempVarPat := NewIdentPat(tempId, init, p)
 
