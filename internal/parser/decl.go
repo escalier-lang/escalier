@@ -6,7 +6,7 @@ import (
 )
 
 // decl = 'export'? 'declare'? (varDecl | fnDecl)
-func (p *Parser) decl() (optional.Option[ast.Decl], [](*Error)) {
+func (p *Parser) decl() (ast.Decl, [](*Error)) {
 	errors := [](*Error){}
 
 	export := false
@@ -34,13 +34,18 @@ func (p *Parser) decl() (optional.Option[ast.Decl], [](*Error)) {
 		return p.typeDecl(start, export, declare)
 	default:
 		errors = append(errors, NewError(token.Span, "Unexpected token"))
-		return optional.None[ast.Decl](), errors
+		return nil, errors
 	}
 }
 
 // valDecl = 'val' pat '=' expr
 // NOTE: '=' `expr` is optional for valDecl when `declare` is true.
-func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) varDecl(
+	start ast.Location,
+	token *Token,
+	export bool,
+	declare bool,
+) (ast.Decl, []*Error) {
 	errors := []*Error{}
 	kind := ast.ValKind
 	if token.Type == Var {
@@ -61,20 +66,20 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 
 	token = p.lexer.peek()
 
-	typeAnnOption := optional.None[ast.TypeAnn]()
+	var typeAnn ast.TypeAnn
 	if token.Type == Colon {
 		p.lexer.consume() // consume ':'
-		typeAnn, typeAnnErrors := p.typeAnn()
+		var typeAnnErrors []*Error
+		typeAnn, typeAnnErrors = p.typeAnn()
 		errors = append(errors, typeAnnErrors...)
-		typeAnnOption = optional.Some(typeAnn)
 		token = p.lexer.peek()
 	}
 
-	init := optional.None[ast.Expr]()
+	var init ast.Expr
 	if !declare {
 		if token.Type != Equal {
 			errors = append(errors, NewError(token.Span, "Expected equals sign"))
-			return optional.None[ast.Decl](), errors
+			return nil, errors
 		}
 		p.lexer.consume()
 		initOption, initErrors := p.nonDelimitedExpr()
@@ -83,22 +88,18 @@ func (p *Parser) varDecl(start ast.Location, token *Token, export bool, declare 
 			token := p.lexer.peek()
 			errors = append(errors, NewError(token.Span, "Expected an expression"))
 			return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
-		})
-		init.IfSome(func(e ast.Expr) {
-			end = e.Span().End
-		})
+		}).Unwrap()
+		end = init.Span().End
 	}
 
 	span := ast.Span{Start: start, End: end}
-	return optional.Some[ast.Decl](
-		ast.NewVarDecl(kind, pat, typeAnnOption, init, export, declare, span),
-	), errors
+	return ast.NewVarDecl(kind, pat, typeAnn, init, export, declare, span), errors
 }
 
 // fnDecl = 'fn' ident '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
-func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (ast.Decl, []*Error) {
 	errors := []*Error{}
 	token := p.lexer.peek()
 	var ident *ast.Ident
@@ -132,28 +133,26 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (optional
 
 	end := token.Span.End
 
-	bodyOption := optional.None[ast.Block]()
+	var body ast.Block
 	if !declare {
-		body, bodyErrors := p.block()
+		var bodyErrors []*Error
+		body, bodyErrors = p.block()
 		errors = append(errors, bodyErrors...)
 		end = body.Span.End
-		bodyOption = optional.Some(body)
 	}
 
-	return optional.Some[ast.Decl](
-		ast.NewFuncDecl(
-			ident, params, bodyOption, export, declare,
-			ast.NewSpan(start, end),
-		),
+	return ast.NewFuncDecl(
+		ident, params, optional.Some(body), export, declare,
+		ast.NewSpan(start, end),
 	), errors
 }
 
-func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (optional.Option[ast.Decl], []*Error) {
+func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (ast.Decl, []*Error) {
 	errors := []*Error{}
 	token := p.lexer.peek()
 	if token.Type != Identifier {
 		errors = append(errors, NewError(token.Span, "Expected identifier"))
-		return optional.None[ast.Decl](), errors
+		return nil, errors
 	}
 	p.lexer.consume()
 	ident := ast.NewIdentifier(token.Value, token.Span)
@@ -172,8 +171,9 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) (option
 	p.markers.Pop()
 
 	errors = append(errors, typeAnnErrors...)
-	decl := optional.Map(optional.Some(typeAnn), func(typeAnn ast.TypeAnn) ast.Decl {
-		return ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
-	})
+	if typeAnn == nil {
+		return nil, errors
+	}
+	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
 	return decl, errors
 }

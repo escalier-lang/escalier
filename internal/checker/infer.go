@@ -59,7 +59,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
-	if decl.TypeAnn.IsNone() && decl.Init.IsNone() {
+	if decl.TypeAnn == nil && decl.Init == nil {
 		return errors
 	}
 
@@ -68,29 +68,31 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 	// which will be added to a new scope before inferring function expressions
 	// in the expressions.
 
-	decl.TypeAnn.IfSome(func(typeAnn ast.TypeAnn) {
-		taType, taErrors := c.inferTypeAnn(ctx, typeAnn)
+	if decl.TypeAnn != nil {
+		taType, taErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
 		errors = slices.Concat(errors, taErrors)
 
 		unifyErrors := c.unify(ctx, taType, patType)
 		errors = slices.Concat(errors, unifyErrors)
 
-		decl.Init.IfSome(func(init ast.Expr) {
-			initType, initErrors := c.inferExpr(ctx, init)
+		if decl.Init != nil {
+			initType, initErrors := c.inferExpr(ctx, decl.Init)
 			errors = slices.Concat(errors, initErrors)
 
 			unifyErrors = c.unify(ctx, initType, taType)
 			errors = slices.Concat(errors, unifyErrors)
-		})
-	})
-
-	decl.TypeAnn.IfNone(func() {
-		initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
+		}
+	} else {
+		if decl.Init == nil {
+			// TODO: report an error, but set initType to be `unknown`
+			panic("Expected either a type annotation or an initializer expression")
+		}
+		initType, initErrors := c.inferExpr(ctx, decl.Init)
 		errors = slices.Concat(errors, initErrors)
 
 		unifyErrors := c.unify(ctx, initType, patType)
 		errors = slices.Concat(errors, unifyErrors)
-	})
+	}
 
 	maps.Copy(ctx.Scope.Values, bindings)
 	return errors

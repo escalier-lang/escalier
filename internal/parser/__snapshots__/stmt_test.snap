@@ -14,21 +14,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             TypeAnn: nil,
-            Init:    {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:7},
-                            End:   ast.Location{Line:1, Column:8},
-                        },
-                    },
-                    span: ast.Span{
+            Init:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
                         Start: ast.Location{Line:1, Column:7},
                         End:   ast.Location{Line:1, Column:8},
                     },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:7},
+                    End:   ast.Location{Line:1, Column:8},
+                },
+                inferredType: nil,
             },
             export:  false,
             declare: false,
@@ -275,14 +273,12 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     inferredType: nil,
                                 },
                                 TypeAnn: nil,
-                                Init:    {
-                                    &ast.EmptyExpr{
-                                        span: ast.Span{
-                                            Start: ast.Location{Line:3, Column:5},
-                                            End:   ast.Location{Line:3, Column:8},
-                                        },
-                                        inferredType: nil,
+                                Init:    &ast.EmptyExpr{
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:3, Column:5},
+                                        End:   ast.Location{Line:3, Column:8},
                                     },
+                                    inferredType: nil,
                                 },
                                 export:  false,
                                 declare: false,
@@ -309,21 +305,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     inferredType: nil,
                                 },
                                 TypeAnn: nil,
-                                Init:    {
-                                    &ast.LiteralExpr{
-                                        Lit: &ast.NumLit{
-                                            Value: 5,
-                                            span:  ast.Span{
-                                                Start: ast.Location{Line:3, Column:13},
-                                                End:   ast.Location{Line:3, Column:14},
-                                            },
-                                        },
-                                        span: ast.Span{
+                                Init:    &ast.LiteralExpr{
+                                    Lit: &ast.NumLit{
+                                        Value: 5,
+                                        span:  ast.Span{
                                             Start: ast.Location{Line:3, Column:13},
                                             End:   ast.Location{Line:3, Column:14},
                                         },
-                                        inferredType: nil,
                                     },
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:3, Column:13},
+                                        End:   ast.Location{Line:3, Column:14},
+                                    },
+                                    inferredType: nil,
                                 },
                                 export:  false,
                                 declare: false,
@@ -720,21 +714,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             TypeAnn: nil,
-            Init:    {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:9},
-                            End:   ast.Location{Line:1, Column:10},
-                        },
-                    },
-                    span: ast.Span{
+            Init:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
                         Start: ast.Location{Line:1, Column:9},
                         End:   ast.Location{Line:1, Column:10},
                     },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:9},
+                    End:   ast.Location{Line:1, Column:10},
+                },
+                inferredType: nil,
             },
             export:  false,
             declare: false,
@@ -766,21 +758,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             TypeAnn: nil,
-            Init:    {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:9},
-                            End:   ast.Location{Line:1, Column:10},
-                        },
-                    },
-                    span: ast.Span{
+            Init:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
                         Start: ast.Location{Line:1, Column:9},
                         End:   ast.Location{Line:1, Column:10},
                     },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:9},
+                    End:   ast.Location{Line:1, Column:10},
+                },
+                inferredType: nil,
             },
             export:  false,
             declare: false,
@@ -812,21 +802,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             TypeAnn: nil,
-            Init:    {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:17},
-                        },
-                    },
-                    span: ast.Span{
+            Init:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
                         Start: ast.Location{Line:1, Column:16},
                         End:   ast.Location{Line:1, Column:17},
                     },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:16},
+                    End:   ast.Location{Line:1, Column:17},
+                },
+                inferredType: nil,
             },
             export:  true,
             declare: false,
@@ -888,7 +876,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 Return: nil,
                 Throws: nil,
             },
-            Body:    nil,
+            Body: {
+                {},
+            },
             export:  false,
             declare: true,
             span:    ast.Span{
@@ -949,7 +939,9 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 Return: nil,
                 Throws: nil,
             },
-            Body:    nil,
+            Body: {
+                {},
+            },
             export:  true,
             declare: true,
             span:    ast.Span{
@@ -1494,21 +1486,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                 inferredType: nil,
             },
             TypeAnn: nil,
-            Init:    {
-                &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 5,
-                        span:  ast.Span{
-                            Start: ast.Location{Line:1, Column:13},
-                            End:   ast.Location{Line:1, Column:14},
-                        },
-                    },
-                    span: ast.Span{
+            Init:    &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
                         Start: ast.Location{Line:1, Column:13},
                         End:   ast.Location{Line:1, Column:14},
                     },
-                    inferredType: nil,
                 },
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:13},
+                    End:   ast.Location{Line:1, Column:14},
+                },
+                inferredType: nil,
             },
             export:  false,
             declare: false,
@@ -1662,21 +1652,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     inferredType: nil,
                                 },
                                 TypeAnn: nil,
-                                Init:    {
-                                    &ast.LiteralExpr{
-                                        Lit: &ast.NumLit{
-                                            Value: 5,
-                                            span:  ast.Span{
-                                                Start: ast.Location{Line:2, Column:13},
-                                                End:   ast.Location{Line:2, Column:14},
-                                            },
-                                        },
-                                        span: ast.Span{
+                                Init:    &ast.LiteralExpr{
+                                    Lit: &ast.NumLit{
+                                        Value: 5,
+                                        span:  ast.Span{
                                             Start: ast.Location{Line:2, Column:13},
                                             End:   ast.Location{Line:2, Column:14},
                                         },
-                                        inferredType: nil,
                                     },
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:2, Column:13},
+                                        End:   ast.Location{Line:2, Column:14},
+                                    },
+                                    inferredType: nil,
                                 },
                                 export:  false,
                                 declare: false,
@@ -1703,21 +1691,19 @@ optional.Option[github.com/escalier-lang/escalier/internal/ast.Stmt]{
                                     inferredType: nil,
                                 },
                                 TypeAnn: nil,
-                                Init:    {
-                                    &ast.LiteralExpr{
-                                        Lit: &ast.NumLit{
-                                            Value: 10,
-                                            span:  ast.Span{
-                                                Start: ast.Location{Line:3, Column:13},
-                                                End:   ast.Location{Line:3, Column:15},
-                                            },
-                                        },
-                                        span: ast.Span{
+                                Init:    &ast.LiteralExpr{
+                                    Lit: &ast.NumLit{
+                                        Value: 10,
+                                        span:  ast.Span{
                                             Start: ast.Location{Line:3, Column:13},
                                             End:   ast.Location{Line:3, Column:15},
                                         },
-                                        inferredType: nil,
                                     },
+                                    span: ast.Span{
+                                        Start: ast.Location{Line:3, Column:13},
+                                        End:   ast.Location{Line:3, Column:15},
+                                    },
+                                    inferredType: nil,
                                 },
                                 export:  false,
                                 declare: false,

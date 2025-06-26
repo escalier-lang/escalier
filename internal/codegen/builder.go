@@ -333,7 +333,10 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		initExpr, initStmts := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None
+		if d.Init == nil {
+			panic("TODO - TransformDecl - VarDecl - Init is nil")
+		}
+		initExpr, initStmts := b.buildExpr(d.Init)
 		// Ignore checks returned by buildPattern
 		_, patStmts := b.buildPattern(d.Pattern, initExpr)
 		return slices.Concat(initStmts, patStmts)

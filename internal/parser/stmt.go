@@ -48,10 +48,11 @@ func (p *Parser) stmt() (optional.Option[ast.Stmt], []*Error) {
 	switch token.Type {
 	case Fn, Var, Val, Type, Declare, Export:
 		decl, declErrors := p.decl()
-		stmt := optional.Map(decl, func(d ast.Decl) ast.Stmt {
-			return ast.NewDeclStmt(d, d.Span())
-		})
-		return stmt, declErrors
+		if decl == nil {
+			return optional.None[ast.Stmt](), declErrors
+		}
+		stmt := ast.NewDeclStmt(decl, decl.Span())
+		return optional.Some[ast.Stmt](stmt), declErrors
 	case Return:
 		p.lexer.consume()
 		expr, exprErrors := p.nonDelimitedExpr()

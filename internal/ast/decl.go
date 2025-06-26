@@ -28,8 +28,8 @@ const (
 type VarDecl struct {
 	Kind    VariableKind
 	Pattern Pat
-	TypeAnn optional.Option[TypeAnn]
-	Init    optional.Option[Expr]
+	TypeAnn TypeAnn // optional
+	Init    Expr    // optional
 	export  bool
 	declare bool
 	span    Span
@@ -38,8 +38,8 @@ type VarDecl struct {
 func NewVarDecl(
 	kind VariableKind,
 	pattern Pat,
-	typeAnn optional.Option[TypeAnn],
-	init optional.Option[Expr],
+	typeAnn TypeAnn,
+	init Expr,
 	export,
 	declare bool,
 	span Span,
@@ -60,9 +60,9 @@ func (d *VarDecl) Span() Span    { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
 	if v.VisitDecl(d) {
 		d.Pattern.Accept(v)
-		d.Init.IfSome(func(expr Expr) {
-			expr.Accept(v)
-		})
+		if d.Init != nil {
+			d.Init.Accept(v)
+		}
 	}
 }
 
