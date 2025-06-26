@@ -51,16 +51,16 @@ func (p *Parser) varDecl(
 		kind = ast.VarKind
 	}
 
-	patOption, patErrors := p.pattern(false)
+	pat, patErrors := p.pattern(false)
 	errors = append(errors, patErrors...)
-	pat := patOption.TakeOrElse(func() ast.Pat {
+	if pat == nil {
 		errors = append(errors, NewError(token.Span, "Expected pattern"))
-		return ast.NewIdentPat(
+		pat = ast.NewIdentPat(
 			"",
 			nil,
 			ast.Span{Start: token.Span.Start, End: token.Span.Start},
 		)
-	})
+	}
 	end := pat.Span().End
 
 	token = p.lexer.peek()

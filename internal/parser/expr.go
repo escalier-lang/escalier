@@ -622,31 +622,32 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 // <pattern>
 func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
 	pat, errors := p.pattern(true)
-	return optional.Map(pat, func(pat ast.Pat) *ast.Param {
-		token := p.lexer.peek()
+	if pat == nil {
+		return optional.None[*ast.Param](), errors
+	}
+	token := p.lexer.peek()
 
-		opt := false
-		if token.Type == Question {
-			p.lexer.consume() // consume '?'
-			opt = true
-		}
+	opt := false
+	if token.Type == Question {
+		p.lexer.consume() // consume '?'
+		opt = true
+	}
 
-		if token.Type == Colon {
-			p.lexer.consume() // consume ':'
-			typeAnn, typeAnnErrors := p.typeAnn()
-			errors = append(errors, typeAnnErrors...)
-			return &ast.Param{
-				Pattern:  pat,
-				TypeAnn:  optional.Some(typeAnn),
-				Optional: opt,
-			}
-		}
-
-		return &ast.Param{
+	if token.Type == Colon {
+		p.lexer.consume() // consume ':'
+		typeAnn, typeAnnErrors := p.typeAnn()
+		errors = append(errors, typeAnnErrors...)
+		return optional.Some(&ast.Param{
 			Pattern:  pat,
-			TypeAnn:  optional.None[ast.TypeAnn](),
+			TypeAnn:  optional.Some(typeAnn),
 			Optional: opt,
-		}
+		}), errors
+	}
+
+	return optional.Some(&ast.Param{
+		Pattern:  pat,
+		TypeAnn:  optional.None[ast.TypeAnn](),
+		Optional: opt,
 	}), errors
 }
 
