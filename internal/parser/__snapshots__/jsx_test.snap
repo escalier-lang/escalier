@@ -11,7 +11,7 @@
             End:   ast.Location{Line:1, Column:8},
         },
     },
-    Closing:  nil,
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
     },
     span: ast.Span{
@@ -34,13 +34,11 @@
             End:   ast.Location{Line:1, Column:6},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "Foo",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:6},
-                End:   ast.Location{Line:1, Column:12},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "Foo",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:6},
+            End:   ast.Location{Line:1, Column:12},
         },
     },
     Children: {
@@ -106,7 +104,7 @@
             End:   ast.Location{Line:1, Column:28},
         },
     },
-    Closing:  nil,
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
     },
     span: ast.Span{
@@ -170,13 +168,11 @@
             End:   ast.Location{Line:1, Column:26},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "Foo",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:26},
-                End:   ast.Location{Line:1, Column:32},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "Foo",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:26},
+            End:   ast.Location{Line:1, Column:32},
         },
     },
     Children: {
@@ -201,13 +197,11 @@
             End:   ast.Location{Line:1, Column:6},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "div",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:29},
-                End:   ast.Location{Line:1, Column:35},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "div",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:29},
+            End:   ast.Location{Line:1, Column:35},
         },
     },
     Children: {
@@ -222,13 +216,11 @@
                     End:   ast.Location{Line:1, Column:12},
                 },
             },
-            Closing: {
-                &ast.JSXClosing{
-                    Name: "span",
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:17},
-                        End:   ast.Location{Line:1, Column:24},
-                    },
+            Closing: &ast.JSXClosing{
+                Name: "span",
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:17},
+                    End:   ast.Location{Line:1, Column:24},
                 },
             },
             Children: {
@@ -274,13 +266,11 @@
             End:   ast.Location{Line:1, Column:6},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "div",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:18},
-                End:   ast.Location{Line:1, Column:24},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "div",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:18},
+            End:   ast.Location{Line:1, Column:24},
         },
     },
     Children: {
@@ -327,13 +317,11 @@
             End:   ast.Location{Line:1, Column:6},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "div",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:26},
-                End:   ast.Location{Line:1, Column:32},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "div",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:26},
+            End:   ast.Location{Line:1, Column:32},
         },
     },
     Children: {
@@ -349,13 +337,11 @@
                         End:   ast.Location{Line:1, Column:13},
                     },
                 },
-                Closing: {
-                    &ast.JSXClosing{
-                        Name: "span",
-                        span: ast.Span{
-                            Start: ast.Location{Line:1, Column:18},
-                            End:   ast.Location{Line:1, Column:25},
-                        },
+                Closing: &ast.JSXClosing{
+                    Name: "span",
+                    span: ast.Span{
+                        Start: ast.Location{Line:1, Column:18},
+                        End:   ast.Location{Line:1, Column:25},
                     },
                 },
                 Children: {
@@ -407,13 +393,11 @@
             End:   ast.Location{Line:1, Column:3},
         },
     },
-    Closing: {
-        &ast.JSXClosing{
-            Name: "",
-            span: ast.Span{
-                Start: ast.Location{Line:1, Column:17},
-                End:   ast.Location{Line:1, Column:20},
-            },
+    Closing: &ast.JSXClosing{
+        Name: "",
+        span: ast.Span{
+            Start: ast.Location{Line:1, Column:17},
+            End:   ast.Location{Line:1, Column:20},
         },
     },
     Children: {
@@ -428,7 +412,7 @@
                     End:   ast.Location{Line:1, Column:10},
                 },
             },
-            Closing:  nil,
+            Closing:  (*ast.JSXClosing)(nil),
             Children: {
             },
             span: ast.Span{
@@ -448,7 +432,7 @@
                     End:   ast.Location{Line:1, Column:17},
                 },
             },
-            Closing:  nil,
+            Closing:  (*ast.JSXClosing)(nil),
             Children: {
             },
             span: ast.Span{
@@ -492,7 +476,7 @@
             End:   ast.Location{Line:1, Column:20},
         },
     },
-    Closing:  nil,
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
     },
     span: ast.Span{
@@ -542,7 +526,7 @@
             End:   ast.Location{Line:1, Column:16},
         },
     },
-    Closing:  nil,
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
     },
     span: ast.Span{
@@ -630,7 +614,7 @@
             End:   ast.Location{Line:4, Column:3},
         },
     },
-    Closing:  nil,
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
     },
     span: ast.Span{

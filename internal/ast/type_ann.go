@@ -277,19 +277,19 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 }
 
 type FuncTypeAnn struct {
-	TypeParams   optional.Option[[]*TypeParam]
+	TypeParams   []*TypeParam // optional
 	Params       []*Param
 	Return       TypeAnn
-	Throws       optional.Option[TypeAnn]
+	Throws       TypeAnn // optionanl
 	span         Span
 	inferredType Type
 }
 
 func NewFuncTypeAnn(
-	typeParams optional.Option[[]*TypeParam],
+	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn,
-	throws optional.Option[TypeAnn],
+	throws TypeAnn,
 	span Span,
 ) *FuncTypeAnn {
 	return &FuncTypeAnn{
@@ -307,9 +307,9 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 			param.Pattern.Accept(v)
 		}
 		t.Return.Accept(v)
-		t.Throws.IfSome(func(throws TypeAnn) {
-			throws.Accept(v)
-		})
+		if t.Throws != nil {
+			t.Throws.Accept(v)
+		}
 	}
 }
 

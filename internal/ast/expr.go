@@ -783,13 +783,13 @@ func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
-	Closing      optional.Option[*JSXClosing]
+	Closing      *JSXClosing // optional
 	Children     []JSXChild
 	span         Span
 	inferredType Type
 }
 
-func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], children []JSXChild, span Span) *JSXElementExpr {
+func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXElementExpr {
 	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {

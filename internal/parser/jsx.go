@@ -2,7 +2,6 @@ package parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 func (p *Parser) jsxElement() (*ast.JSXElementExpr, []*Error) {
@@ -23,12 +22,12 @@ func (p *Parser) jsxElement() (*ast.JSXElementExpr, []*Error) {
 		errors = append(errors, closingErrors...)
 
 		return ast.NewJSXElement(
-			opening, optional.Some(closing), children, ast.MergeSpans(span, closing.Span()),
+			opening, closing, children, ast.MergeSpans(span, closing.Span()),
 		), errors
 	}
 
 	return ast.NewJSXElement(
-		opening, optional.None[*ast.JSXClosing](), []ast.JSXChild{}, span,
+		opening, nil, []ast.JSXChild{}, span,
 	), errors
 }
 

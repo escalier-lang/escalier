@@ -140,29 +140,27 @@
 [TestParseTypeAnnNoErrors/FuncWithTypeParams - 1]
 &ast.FuncTypeAnn{
     TypeParams: {
-        {
-            &ast.TypeParam{
-                Name:       "T",
-                Constraint: &ast.NumberTypeAnn{
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:7},
-                        End:   ast.Location{Line:1, Column:13},
-                    },
-                    inferredType: nil,
+        &ast.TypeParam{
+            Name:       "T",
+            Constraint: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:7},
+                    End:   ast.Location{Line:1, Column:13},
                 },
-                Default: nil,
+                inferredType: nil,
             },
-            &ast.TypeParam{
-                Name:       "U",
-                Constraint: &ast.StringTypeAnn{
-                    span: ast.Span{
-                        Start: ast.Location{Line:1, Column:18},
-                        End:   ast.Location{Line:1, Column:24},
-                    },
-                    inferredType: nil,
+            Default: nil,
+        },
+        &ast.TypeParam{
+            Name:       "U",
+            Constraint: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start: ast.Location{Line:1, Column:18},
+                    End:   ast.Location{Line:1, Column:24},
                 },
-                Default: nil,
+                inferredType: nil,
             },
+            Default: nil,
         },
     },
     Params: {

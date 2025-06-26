@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 type TypeAnnOpKind string
@@ -212,13 +211,13 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			)
 		case Fn:
 			p.lexer.consume()
-			maybeTypeParams := optional.None[[]*ast.TypeParam]()
+			var typeParams []*ast.TypeParam
 
 			if p.lexer.peek().Type == LessThan {
 				p.lexer.consume() // consume '<'
-				typeParams, typeParamErrors := parseDelimSeqNonOptional(p, GreaterThan, Comma, p.typeParam)
+				var typeParamErrors []*Error
+				typeParams, typeParamErrors = parseDelimSeqNonOptional(p, GreaterThan, Comma, p.typeParam)
 				errors = append(errors, typeParamErrors...)
-				maybeTypeParams = optional.Some(typeParams)
 
 				_, tokenErrors := p.expect(GreaterThan, AlwaysConsume)
 				errors = append(errors, tokenErrors...)
@@ -246,13 +245,11 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 				return nil, errors
 			}
 
-			throws := optional.None[ast.TypeAnn]()
-
 			typeAnn = ast.NewFuncTypeAnn(
-				maybeTypeParams,
+				typeParams,
 				funcParams,
 				retType,
-				throws,
+				nil, // TODO: support throws clause
 				ast.NewSpan(token.Span.Start, retType.Span().End),
 			)
 		case OpenBracket: // tuple type
@@ -478,10 +475,10 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		}
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
-			optional.None[[]*ast.TypeParam](),
+			nil, // TODO: support type parameters on methods
 			params,
 			retType,
-			optional.None[ast.TypeAnn](),
+			nil, // TODO: support throws clause
 			ast.MergeSpans(token.Span, retType.Span()),
 		)
 
