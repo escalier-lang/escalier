@@ -342,14 +342,13 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
-		if d.Body.IsNone() {
+		if d.Body == nil {
 			return []Stmt{}
 		}
-		body := d.Body.Unwrap() // okay because we checked IsNone() above
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
-			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(body.Stmts))),
+			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts))),
 			TypeAnn: optional.None[TypeAnn](),
 			declare: decl.Declare(),
 			export:  decl.Export(),

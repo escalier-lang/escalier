@@ -142,7 +142,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (ast.Decl
 	}
 
 	return ast.NewFuncDecl(
-		ident, params, optional.Some(body), export, declare,
+		ident, params, &body, export, declare,
 		ast.NewSpan(start, end),
 	), errors
 }

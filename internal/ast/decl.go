@@ -79,7 +79,7 @@ func (p *Param) Span() Span {
 type FuncDecl struct {
 	Name *Ident
 	FuncSig
-	Body    optional.Option[Block]
+	Body    *Block // optional
 	export  bool
 	declare bool
 	span    Span
@@ -88,7 +88,7 @@ type FuncDecl struct {
 func NewFuncDecl(
 	name *Ident,
 	params []*Param,
-	body optional.Option[Block],
+	body *Block,
 	export,
 	declare bool,
 	span Span,
@@ -115,11 +115,11 @@ func (d *FuncDecl) Accept(v Visitor) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
 		}
-		d.Body.IfSome(func(body Block) {
-			for _, stmt := range body.Stmts {
+		if d.Body != nil {
+			for _, stmt := range d.Body.Stmts {
 				stmt.Accept(v)
 			}
-		})
+		}
 	}
 }
 

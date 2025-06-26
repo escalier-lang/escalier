@@ -104,12 +104,12 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
-	decl.Body.IfSome(func(body ast.Block) {
-		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, &body)
+	if decl.Body != nil {
+		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
 		errors = slices.Concat(errors, bodyErrors)
 		unifyErrors := c.unify(ctx, funcType.Return, returnType)
 		errors = slices.Concat(errors, unifyErrors)
-	})
+	}
 
 	binding := Binding{
 		Source:  optional.Some[ast.BindingSource](decl.Name),
