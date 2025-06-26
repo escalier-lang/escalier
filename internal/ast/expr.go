@@ -789,10 +789,8 @@ type JSXElementExpr struct {
 	inferredType Type
 }
 
-func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
-	return optional.Some(
-		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
-	)
+func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], children []JSXChild, span Span) *JSXElementExpr {
+	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {
 	v.VisitExpr(e) // TODO: expand visitor to handle JSX

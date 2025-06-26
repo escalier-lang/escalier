@@ -36,6 +36,7 @@ func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportType) isTypeAnn()          {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
+func (*EmptyTypeAnn) isTypeAnn()        {}
 
 type LitTypeAnn struct {
 	Lit          Lit
@@ -495,4 +496,16 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 	if v.VisitTypeAnn(t) {
 		t.Target.Accept(v)
 	}
+}
+
+type EmptyTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewEmptyTypeAnn(span Span) *EmptyTypeAnn {
+	return &EmptyTypeAnn{span: span, inferredType: nil}
+}
+func (t *EmptyTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
 }
