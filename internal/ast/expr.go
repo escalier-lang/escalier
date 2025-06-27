@@ -4,8 +4,6 @@ package ast
 
 import (
 	"math/big"
-
-	"github.com/moznion/go-optional"
 )
 
 //sumtype:decl
@@ -270,19 +268,19 @@ func (e *IdentExpr) Accept(v Visitor) {
 
 type TypeParam struct {
 	Name       string
-	Constraint optional.Option[TypeAnn]
-	Default    optional.Option[TypeAnn]
+	Constraint TypeAnn
+	Default    TypeAnn
 }
 
-func NewTypeParam(name string, constraint, defaultType optional.Option[TypeAnn]) TypeParam {
+func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 	return TypeParam{Name: name, Constraint: constraint, Default: defaultType}
 }
 
 type FuncSig struct {
 	TypeParams []*TypeParam
 	Params     []*Param
-	Return     optional.Option[TypeAnn]
-	Throws     optional.Option[TypeAnn]
+	Return     TypeAnn // optional
+	Throws     TypeAnn // optional
 }
 
 type FuncExpr struct {
@@ -295,8 +293,8 @@ type FuncExpr struct {
 func NewFuncExpr(
 	typeParams []*TypeParam,
 	params []*Param,
-	ret optional.Option[TypeAnn],
-	throws optional.Option[TypeAnn],
+	ret TypeAnn, // optional
+	throws TypeAnn, // optional
 	body Block,
 	span Span,
 ) *FuncExpr {
@@ -317,12 +315,12 @@ func (e *FuncExpr) Accept(v Visitor) {
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
 		}
-		e.Return.IfSome(func(ret TypeAnn) {
-			ret.Accept(v)
-		})
-		e.Throws.IfSome(func(throws TypeAnn) {
-			throws.Accept(v)
-		})
+		if e.Return != nil {
+			e.Return.Accept(v)
+		}
+		if e.Throws != nil {
+			e.Throws.Accept(v)
+		}
 		for _, stmt := range e.Body.Stmts {
 			stmt.Accept(v)
 		}
@@ -491,19 +489,19 @@ type PropertyExpr struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
-	Value    optional.Option[Expr]
+	Value    Expr // optional
 	span     Span
 }
 
-func NewProperty(name ObjKey, optional, readonly bool, value optional.Option[Expr], span Span) *PropertyExpr {
+func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *PropertyExpr {
 	return &PropertyExpr{Name: name, Optional: optional, Readonly: readonly, Value: value, span: span}
 }
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
-		e.Value.IfSome(func(value Expr) {
-			value.Accept(v)
-		})
+		if e.Value != nil {
+			e.Value.Accept(v)
+		}
 	}
 }
 
@@ -542,12 +540,12 @@ func (e *ObjectExpr) Accept(v Visitor) {
 type IfElseExpr struct {
 	Cond         Expr
 	Cons         Block
-	Alt          optional.Option[BlockOrExpr]
+	Alt          *BlockOrExpr // optional
 	span         Span
 	inferredType Type
 }
 
-func NewIfElse(cond Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfElseExpr {
+func NewIfElse(cond Expr, cons Block, alt *BlockOrExpr, span Span) *IfElseExpr {
 	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfElseExpr) Accept(v Visitor) {
@@ -556,7 +554,8 @@ func (e *IfElseExpr) Accept(v Visitor) {
 		for _, stmt := range e.Cons.Stmts {
 			stmt.Accept(v)
 		}
-		e.Alt.IfSome(func(alt BlockOrExpr) {
+		if e.Alt != nil {
+			alt := e.Alt
 			if alt.Block != nil {
 				for _, stmt := range alt.Block.Stmts {
 					stmt.Accept(v)
@@ -565,7 +564,7 @@ func (e *IfElseExpr) Accept(v Visitor) {
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
 			}
-		})
+		}
 	}
 }
 
@@ -573,12 +572,12 @@ type IfLetExpr struct {
 	Pattern      Pat
 	Target       Expr
 	Cons         Block
-	Alt          optional.Option[BlockOrExpr]
+	Alt          *BlockOrExpr // optional
 	span         Span
 	inferredType Type
 }
 
-func NewIfLet(pattern Pat, target Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfLetExpr {
+func NewIfLet(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span) *IfLetExpr {
 	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfLetExpr) Accept(v Visitor) {
@@ -588,7 +587,8 @@ func (e *IfLetExpr) Accept(v Visitor) {
 		for _, stmt := range e.Cons.Stmts {
 			stmt.Accept(v)
 		}
-		e.Alt.IfSome(func(alt BlockOrExpr) {
+		if e.Alt != nil {
+			alt := e.Alt
 			if alt.Block != nil {
 				for _, stmt := range alt.Block.Stmts {
 					stmt.Accept(v)
@@ -597,13 +597,13 @@ func (e *IfLetExpr) Accept(v Visitor) {
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
 			}
-		})
+		}
 	}
 }
 
 type MatchCase struct {
 	Pattern Pat
-	Guard   optional.Option[Expr]
+	Guard   Expr // optional
 	Body    BlockOrExpr
 	span    Span
 }
@@ -625,9 +625,9 @@ func (e *MatchExpr) Accept(v Visitor) {
 		e.Target.Accept(v)
 		for _, matchCase := range e.Cases {
 			matchCase.Pattern.Accept(v)
-			matchCase.Guard.IfSome(func(guard Expr) {
-				guard.Accept(v)
-			})
+			if matchCase.Guard != nil {
+				matchCase.Guard.Accept(v)
+			}
 			if matchCase.Body.Block != nil {
 				for _, stmt := range matchCase.Body.Block.Stmts {
 					stmt.Accept(v)
@@ -660,12 +660,12 @@ func (e *AssignExpr) Accept(v Visitor) {
 type TryCatchExpr struct {
 	Try          Block
 	Catch        []*MatchCase // optional
-	Finally      optional.Option[*Block]
+	Finally      *Block       // optional
 	span         Span
 	inferredType Type
 }
 
-func NewTryCatch(try Block, catch []*MatchCase, finally optional.Option[*Block], span Span) *TryCatchExpr {
+func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryCatchExpr {
 	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
@@ -675,9 +675,9 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 		}
 		for _, matchCase := range e.Catch {
 			matchCase.Pattern.Accept(v)
-			matchCase.Guard.IfSome(func(guard Expr) {
-				guard.Accept(v)
-			})
+			if matchCase.Guard != nil {
+				matchCase.Guard.Accept(v)
+			}
 			if matchCase.Body.Block != nil {
 				for _, stmt := range matchCase.Body.Block.Stmts {
 					stmt.Accept(v)
@@ -687,11 +687,11 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 				matchCase.Body.Expr.Accept(v)
 			}
 		}
-		e.Finally.IfSome(func(finally *Block) {
-			for _, stmt := range finally.Stmts {
+		if e.Finally != nil {
+			for _, stmt := range e.Finally.Stmts {
 				stmt.Accept(v)
 			}
-		})
+		}
 	}
 }
 
@@ -783,16 +783,14 @@ func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
 
 type JSXElementExpr struct {
 	Opening      *JSXOpening
-	Closing      optional.Option[*JSXClosing]
+	Closing      *JSXClosing // optional
 	Children     []JSXChild
 	span         Span
 	inferredType Type
 }
 
-func NewJSXElement(opening *JSXOpening, closing optional.Option[*JSXClosing], children []JSXChild, span Span) optional.Option[*JSXElementExpr] {
-	return optional.Some(
-		&JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil},
-	)
+func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild, span Span) *JSXElementExpr {
+	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {
 	v.VisitExpr(e) // TODO: expand visitor to handle JSX

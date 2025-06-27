@@ -58,7 +58,7 @@ func (b *Builder) BuildDefinitions(
 					binding := scope.Values[name]
 					typeAnn := buildTypeAnn(binding.Type)
 					decls = append(decls, &Declarator{
-						Pattern: NewIdentPat(name, optional.None[Expr](), nil),
+						Pattern: NewIdentPat(name, nil, nil),
 						TypeAnn: optional.Some(typeAnn),
 						Init:    nil,
 					})
@@ -103,30 +103,27 @@ func (b *Builder) BuildDefinitions(
 			case *ast.TypeDecl:
 				typeParams := make([]*TypeParam, len(decl.TypeParams))
 				for i, param := range decl.TypeParams {
+					constraint := optional.None[TypeAnn]()
+					if param.Constraint != nil {
+						t := param.Constraint.InferredType()
+						if t == nil {
+							// TODO: report an error if there's no inferred type
+						}
+						constraint = optional.Some(buildTypeAnn(t))
+					}
+					default_ := optional.None[TypeAnn]()
+					if param.Default != nil {
+						t := param.Default.InferredType()
+						if t == nil {
+							// TODO: report an error if there's no inferred type
+						}
+						default_ = optional.Some(buildTypeAnn(t))
+					}
+
 					typeParams[i] = &TypeParam{
-						Name: param.Name,
-						Constraint: optional.FlatMap(
-							param.Constraint,
-							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
-								t := ta.InferredType()
-								if t == nil {
-									// TODO: report an error if there's no inferred type
-									return optional.None[TypeAnn]()
-								}
-								return optional.Some(buildTypeAnn(t))
-							},
-						),
-						Default: optional.FlatMap(
-							param.Default,
-							func(ta ast.TypeAnn) optional.Option[TypeAnn] {
-								t := ta.InferredType()
-								if t == nil {
-									// TODO: report an error if there's no inferred type
-									return optional.None[TypeAnn]()
-								}
-								return optional.Some(buildTypeAnn(t))
-							},
-						),
+						Name:       param.Name,
+						Constraint: constraint,
+						Default:    default_,
 					}
 				}
 
@@ -427,7 +424,7 @@ func litToLit(t type_sys.Lit) Lit {
 func patToPat(pat type_sys.Pat) Pat {
 	switch pat := pat.(type) {
 	case *type_sys.IdentPat:
-		return NewIdentPat(pat.Name, optional.None[Expr](), nil)
+		return NewIdentPat(pat.Name, nil, nil)
 	case *type_sys.TuplePat:
 		elems := make([]Pat, len(pat.Elems))
 		for i, elem := range pat.Elems {

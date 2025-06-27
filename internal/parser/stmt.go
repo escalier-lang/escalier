@@ -2,11 +2,9 @@ package parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 // block = '{' stmt* '}'
-// TODO: return (optional.Option[ast.Block], []*Error)
 func (p *Parser) block() (ast.Block, []*Error) {
 	stmts := []ast.Stmt{}
 	errors := []*Error{}
@@ -32,35 +30,36 @@ func (p *Parser) block() (ast.Block, []*Error) {
 		default:
 			stmt, stmtErrors := p.stmt()
 			errors = append(errors, stmtErrors...)
-			stmt.IfSome(func(stmt ast.Stmt) {
+			if stmt != nil {
 				stmts = append(stmts, stmt)
-			})
+			}
 			token = p.lexer.peek()
 		}
 	}
 }
 
 // stmt = decl | ('return' expr?) | expr
-func (p *Parser) stmt() (optional.Option[ast.Stmt], []*Error) {
+func (p *Parser) stmt() (ast.Stmt, []*Error) {
 	token := p.lexer.peek()
 
 	// nolint: exhaustive
 	switch token.Type {
 	case Fn, Var, Val, Type, Declare, Export:
 		decl, declErrors := p.decl()
-		stmt := optional.Map(decl, func(d ast.Decl) ast.Stmt {
-			return ast.NewDeclStmt(d, d.Span())
-		})
+		if decl == nil {
+			return nil, declErrors
+		}
+		stmt := ast.NewDeclStmt(decl, decl.Span())
 		return stmt, declErrors
 	case Return:
 		p.lexer.consume()
 		expr, exprErrors := p.nonDelimitedExpr()
-		stmt := optional.Map(expr, func(expr ast.Expr) ast.Stmt {
-			return ast.NewReturnStmt(
-				optional.Some(expr), ast.MergeSpans(token.Span, expr.Span()),
-			)
-		}).Or(optional.Some[ast.Stmt](ast.NewReturnStmt(nil, token.Span)))
-		return stmt, exprErrors
+		if expr == nil {
+			return ast.NewReturnStmt(nil, token.Span), exprErrors
+		}
+		return ast.NewReturnStmt(
+			expr, ast.MergeSpans(token.Span, expr.Span()),
+		), exprErrors
 	default:
 		expr, exprErrors := p.nonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we
@@ -70,9 +69,9 @@ func (p *Parser) stmt() (optional.Option[ast.Stmt], []*Error) {
 			token.Span.End.Column == nextToken.Span.End.Column {
 			p.lexer.consume()
 		}
-		stmt := optional.Map(expr, func(expr ast.Expr) ast.Stmt {
-			return ast.NewExprStmt(expr, expr.Span())
-		})
-		return stmt, exprErrors
+		if expr == nil {
+			return nil, exprErrors
+		}
+		return ast.NewExprStmt(expr, expr.Span()), exprErrors
 	}
 }

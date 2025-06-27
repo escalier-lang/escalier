@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 var precedence = map[ast.BinaryOp]int{
@@ -27,27 +26,28 @@ var precedence = map[ast.BinaryOp]int{
 	ast.NullishCoalescing: 3,
 }
 
-func (p *Parser) exprWithMarker(marker Marker) (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) exprWithMarker(marker Marker) (ast.Expr, []*Error) {
 	p.markers.Push(marker)
 	defer p.markers.Pop()
 	return p.exprInternal()
 }
 
-func (p *Parser) nonDelimitedExpr() (optional.Option[ast.Expr], []*Error) {
-	return p.exprWithMarker(MarkerExpr)
+func (p *Parser) nonDelimitedExpr() (ast.Expr, []*Error) {
+	expr, exprError := p.exprWithMarker(MarkerExpr)
+	return expr, exprError
 }
 
-func (p *Parser) expr() (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) expr() (ast.Expr, []*Error) {
 	expr, errors := p.exprWithMarker(MarkerDelim)
-	expr = expr.OrElse(func() optional.Option[ast.Expr] {
+	if expr == nil {
 		token := p.lexer.peek()
 		errors = append(errors, NewError(token.Span, "Expected an expression"))
-		return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
-	})
+		return ast.NewEmpty(token.Span), errors
+	}
 	return expr, errors
 }
 
-func (p *Parser) exprInternal() (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) exprInternal() (ast.Expr, []*Error) {
 	select {
 	case <-p.ctx.Done():
 		fmt.Println("Taking too long to parse")
@@ -56,18 +56,16 @@ func (p *Parser) exprInternal() (optional.Option[ast.Expr], []*Error) {
 	}
 
 	values := NewStack[ast.Expr]()
-	errors := []*Error{}
 	ops := NewStack[ast.BinaryOp]()
 
 	primary, primaryErrors := p.primaryExpr()
-	if primary.IsNone() {
-		return optional.None[ast.Expr](), primaryErrors
+	if primary == nil {
+		return nil, primaryErrors
 	}
 
+	errors := []*Error{}
 	errors = append(errors, primaryErrors...)
-	primary.IfSome(func(e ast.Expr) {
-		values = append(values, e)
-	})
+	values = append(values, primary)
 
 loop:
 	for {
@@ -107,7 +105,7 @@ loop:
 
 		if token.Span.Start.Line != p.lexer.currentLocation.Line {
 			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
-				return optional.Some(values.Pop()), errors
+				return values.Pop(), errors
 			}
 		}
 
@@ -125,13 +123,13 @@ loop:
 		}
 
 		ops.Push(nextOp)
-		exprOption, primaryErrors := p.primaryExpr()
+		expr, primaryErrors := p.primaryExpr()
 		errors = append(errors, primaryErrors...)
-		expr := exprOption.TakeOrElse(func() ast.Expr {
+		if expr == nil {
 			token := p.lexer.peek()
 			errors = append(errors, NewError(token.Span, "Expected an expression"))
-			return ast.NewEmpty(token.Span)
-		})
+			expr = ast.NewEmpty(token.Span)
+		}
 		values.Push(expr)
 	}
 
@@ -146,7 +144,7 @@ loop:
 	if len(values) != 1 {
 		panic("parseExpr - expected one value on the stack")
 	}
-	return optional.Some(values.Pop()), errors
+	return values.Pop(), errors
 }
 
 type TokenAndOp struct {
@@ -204,9 +202,9 @@ loop:
 		case OpenBracket, QuestionOpenBracket:
 			p.lexer.consume()
 			// TODO: handle the case when parseExpr() return None correctly
-			indexOption, indexErrors := p.expr()
+			index, indexErrors := p.expr()
 			errors = append(errors, indexErrors...)
-			if indexOption.IsNone() {
+			if index == nil {
 				errors = append(errors, NewError(token.Span, "Expected an expression after '['"))
 				break loop
 			}
@@ -220,7 +218,7 @@ loop:
 				optChain = true
 			}
 			expr = ast.NewIndex(
-				obj, indexOption.Unwrap(), optChain,
+				obj, index, optChain,
 				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
 			)
 		case Dot, QuestionDot:
@@ -256,7 +254,7 @@ loop:
 				}
 			}
 		case BackTick:
-			temp, tempErrors := p.templateLitExpr(token, optional.Some(expr))
+			temp, tempErrors := p.templateLitExpr(token, expr)
 			errors = append(errors, tempErrors...)
 			expr = temp
 		default:
@@ -268,7 +266,7 @@ loop:
 	return expr, errors
 }
 
-func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
+func (p *Parser) objExprKey() (ast.ObjKey, []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
@@ -276,38 +274,33 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
 	switch token.Type {
 	case Identifier, Underscore:
 		p.lexer.consume()
-		return optional.Some[ast.ObjKey](
-			ast.NewIdent(token.Value, token.Span),
-		), []*Error{}
+		return ast.NewIdent(token.Value, token.Span), errors
 	case StrLit:
 		p.lexer.consume()
-		return optional.Some[ast.ObjKey](
-			ast.NewString(token.Value, token.Span),
-		), []*Error{}
+		return ast.NewString(token.Value, token.Span), errors
 	case NumLit:
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
 			errors = append(errors, NewError(token.Span, "Expected a number"))
 		}
-		return optional.Some[ast.ObjKey](
-			ast.NewNumber(value, token.Span),
-		), errors
+		return ast.NewNumber(value, token.Span), errors
 	case OpenBracket:
 		p.lexer.consume()
 		expr, exprErrors := p.expr()
 		errors = append(errors, exprErrors...)
 		_, expectErrors := p.expect(CloseBracket, AlwaysConsume)
 		errors = append(errors, expectErrors...)
-		return optional.Map(expr, func(expr ast.Expr) ast.ObjKey {
-			return &ast.ComputedKey{Expr: expr}
-		}), errors
+		if expr != nil {
+			return &ast.ComputedKey{Expr: expr}, errors
+		}
+		return nil, errors
 	default:
-		return optional.None[ast.ObjKey](), []*Error{NewError(token.Span, "Expected a property name")}
+		return nil, []*Error{NewError(token.Span, "Expected a property name")}
 	}
 }
 
-func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) primaryExpr() (ast.Expr, []*Error) {
 	ops := p.parsePrefix()
 	token := p.lexer.peek()
 	errors := []*Error{}
@@ -326,7 +319,8 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
 				errors = append(errors, NewError(token.Span, "Expected a number"))
-				return optional.None[ast.Expr](), errors
+				// TODO: return an EmptyExpr instead of nil
+				return nil, errors
 			}
 			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
 		case StrLit:
@@ -350,13 +344,13 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 		case OpenParen:
 			p.lexer.consume()
 			// TODO: handle the case when parseExpr() return None
-			exprOption, exprErrors := p.expr()
+			var exprErrors []*Error
+			expr, exprErrors = p.expr()
 			errors = append(errors, exprErrors...)
-			if exprOption.IsNone() {
+			if expr == nil {
 				errors = append(errors, NewError(token.Span, "Expected an expression after '('"))
-				return optional.None[ast.Expr](), errors
+				return nil, errors
 			}
-			expr = exprOption.Unwrap() // safe because we checked for None
 			_, expectErrors := p.expect(CloseParen, AlwaysConsume)
 			errors = append(errors, expectErrors...)
 		case OpenBracket:
@@ -385,11 +379,9 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 			return p.ifElse()
 		case LessThan:
 			// TODO: figure out how to cast this more directly.
-			jsxOption, jsxErrors := p.jsxElement()
+			jsx, jsxErrors := p.jsxElement()
 			errors = append(errors, jsxErrors...)
-			return optional.Map(jsxOption, func(e *ast.JSXElementExpr) ast.Expr {
-				return e
-			}), errors
+			return jsx, errors
 		case
 			Val, Var, Return,
 			CloseBrace, CloseParen, CloseBracket,
@@ -399,7 +391,7 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 			// We could also have a function like `maybeParseExpr()` that is okay
 			// with return `nil` whereas `parseExpr()` would return an error if
 			// `nil` is returned.
-			return optional.None[ast.Expr](), errors
+			return nil, errors
 		default:
 			p.lexer.consume()
 			errors = append(
@@ -418,16 +410,12 @@ func (p *Parser) primaryExpr() (optional.Option[ast.Expr], []*Error) {
 		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End})
 	}
 
-	if expr != nil {
-		return optional.Some(expr), errors
-	} else {
-		return optional.None[ast.Expr](), errors
-	}
+	return expr, errors
 }
 
 // fnExpr = 'fn' '(' param (',' param)* ')' block
 // TODO: dedupe with `fnDecl`
-func (p *Parser) fnExpr(start ast.Location) (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) fnExpr(start ast.Location) (ast.Expr, []*Error) {
 	errors := []*Error{}
 	// TODO: allow an optional identifier
 	// token := parser.lexer.peek()
@@ -456,20 +444,17 @@ func (p *Parser) fnExpr(start ast.Location) (optional.Option[ast.Expr], []*Error
 	errors = append(errors, bodyErrors...)
 	end := body.Span.End
 
-	// TODO: parse return and throws types
-	return optional.Some[ast.Expr](
-		ast.NewFuncExpr(
-			[]*ast.TypeParam{}, // TODO
-			params,
-			optional.None[ast.TypeAnn](),
-			optional.None[ast.TypeAnn](),
-			body,
-			ast.NewSpan(start, end),
-		),
+	return ast.NewFuncExpr(
+		[]*ast.TypeParam{}, // TODO: parse type params
+		params,
+		nil, // TODO: parse return type
+		nil, // TODO: parse throws type
+		body,
+		ast.NewSpan(start, end),
 	), errors
 }
 
-func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
+func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
@@ -477,14 +462,11 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		p.lexer.consume() // consume '...'
 		arg, argErrors := p.expr()
 		errors = append(errors, argErrors...)
-		arg.IfNone(func() {
+		if arg == nil {
 			errors = append(errors, NewError(token.Span, "Expected an expression after '...'"))
-		})
-		if arg.IsSome() {
-			arg := optional.Map(arg, func(arg ast.Expr) ast.ObjExprElem {
-				return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
-			})
-			return arg, errors
+		}
+		if arg != nil {
+			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span())), errors
 		}
 	}
 
@@ -499,12 +481,11 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		mod = "set"
 	}
 
-	objKeyOption, objKeyErrors := p.objExprKey()
+	objKey, objKeyErrors := p.objExprKey()
 	errors = append(errors, objKeyErrors...)
-	if objKeyOption.IsNone() {
-		return optional.None[ast.ObjExprElem](), errors
+	if objKey == nil {
+		return nil, errors
 	}
-	objKey := objKeyOption.Unwrap() // safe because we checked for None
 	token = p.lexer.peek()
 
 	// TODO: loop until we find a ':', '?', '(', ',' or '}' so
@@ -516,32 +497,34 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 		p.lexer.consume() // consume ':'
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
-		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
+		if value != nil {
 			property := ast.NewProperty(
 				objKey,
 				false,
 				false, // TODO: handle readonly
-				optional.Some(value),
+				value,
 				ast.MergeSpans(objKey.Span(), value.Span()),
 			)
-			return property
-		}), errors
+			return property, errors
+		}
+		return nil, errors
 	case Question:
 		p.lexer.consume() // consume '?'
 		_, expectErrors := p.expect(Colon, ConsumeOnMatch)
 		errors = append(errors, expectErrors...)
 		value, valueErrors := p.expr()
 		errors = append(errors, valueErrors...)
-		return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
+		if value != nil {
 			property := ast.NewProperty(
 				objKey,
 				true,
 				false, // TODO: handle readonly
-				optional.Some(value),
+				value,
 				ast.MergeSpans(objKey.Span(), value.Span()),
 			)
-			return property
-		}), errors
+			return property, errors
+		}
+		return nil, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
 		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
@@ -555,34 +538,33 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 
 		span := ast.Span{Start: objKey.Span().Start, End: end}
 
-		// TODO: parse return and throws types
 		fn := ast.NewFuncExpr(
-			[]*ast.TypeParam{}, // TODO
+			[]*ast.TypeParam{}, // TODO: parse type params
 			params,
-			optional.None[ast.TypeAnn](),
-			optional.None[ast.TypeAnn](),
+			nil, // TODO: parse return type
+			nil, // TODO: parse throws type
 			body,
 			span,
 		)
 
 		if mod == "get" {
-			return optional.Some[ast.ObjExprElem](ast.NewGetter(
+			return ast.NewGetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
-			)), errors
+			), errors
 		} else if mod == "set" {
-			return optional.Some[ast.ObjExprElem](ast.NewSetter(
+			return ast.NewSetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
-			)), errors
+			), errors
 		} else {
-			return optional.Some[ast.ObjExprElem](ast.NewMethod(
+			return ast.NewMethod(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
-			)), errors
+			), errors
 		}
 	default:
 		switch objKey.(type) {
@@ -593,72 +575,74 @@ func (p *Parser) objExprElem() (optional.Option[ast.ObjExprElem], []*Error) {
 					objKey,
 					false,
 					false,
-					optional.None[ast.Expr](), // shorthand property
+					nil, // shorthand property
 					objKey.Span(),
 				)
-				return optional.Some[ast.ObjExprElem](property), errors
+				return property, errors
 			default:
 				value, valueErrors := p.expr()
 				errors = append(errors, valueErrors...)
-				if value.IsNone() {
+				if value == nil {
 					errors = append(errors, NewError(token.Span, "Expected a comma, closing brace, or expression"))
-					return optional.None[ast.ObjExprElem](), errors
+					return nil, errors
 				} else {
 					errors = append(errors, NewError(token.Span, "Expected a comma or closing brace"))
 				}
-				return optional.Map(value, func(value ast.Expr) ast.ObjExprElem {
+				if value != nil {
 					property := ast.NewProperty(
 						objKey,
 						false,
 						false,
-						optional.Some(value),
+						value,
 						objKey.Span(),
 					)
-					return property
-				}), errors
+					return property, errors
+				}
+				return nil, errors
 			}
 		default:
 			errors = append(errors, NewError(token.Span, "Expected a comma or closing brace"))
 		}
 	}
-	return optional.None[ast.ObjExprElem](), errors
+	return nil, errors
 }
 
 // <pattern>: <type annotation>
 // <pattern>?: <type annotation>
 // <pattern>?
 // <pattern>
-func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
+func (p *Parser) param() (*ast.Param, []*Error) {
 	pat, errors := p.pattern(true)
-	return optional.Map(pat, func(pat ast.Pat) *ast.Param {
-		token := p.lexer.peek()
+	if pat == nil {
+		return nil, errors
+	}
+	token := p.lexer.peek()
 
-		opt := false
-		if token.Type == Question {
-			p.lexer.consume() // consume '?'
-			opt = true
-		}
+	opt := false
+	if token.Type == Question {
+		p.lexer.consume() // consume '?'
+		opt = true
+	}
 
-		if token.Type == Colon {
-			p.lexer.consume() // consume ':'
-			typeAnn, typeAnnErrors := p.typeAnn()
-			errors = append(errors, typeAnnErrors...)
-			return &ast.Param{
-				Pattern:  pat,
-				TypeAnn:  typeAnn,
-				Optional: opt,
-			}
-		}
-
+	if token.Type == Colon {
+		p.lexer.consume() // consume ':'
+		typeAnn, typeAnnErrors := p.typeAnn()
+		errors = append(errors, typeAnnErrors...)
 		return &ast.Param{
 			Pattern:  pat,
-			TypeAnn:  optional.None[ast.TypeAnn](),
+			TypeAnn:  typeAnn,
 			Optional: opt,
-		}
-	}), errors
+		}, errors
+	}
+
+	return &ast.Param{
+		Pattern:  pat,
+		TypeAnn:  nil,
+		Optional: opt,
+	}, errors
 }
 
-func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (ast.Expr, []*Error) {
+func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) (ast.Expr, []*Error) {
 	p.lexer.consume()
 	quasis := []*ast.Quasi{}
 	exprs := []ast.Expr{}
@@ -676,9 +660,9 @@ func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (a
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
 			expr, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
-			expr.IfSome(func(expr ast.Expr) {
+			if expr != nil {
 				exprs = append(exprs, expr)
-			})
+			}
 			p.lexer.consume() // consumes the closing brace
 		} else {
 			// This case happens when the template literal is not closed which
@@ -690,16 +674,16 @@ func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (a
 			break
 		}
 	}
-	return optional.Map(tag, func(tag ast.Expr) ast.Expr {
+	if tag != nil {
 		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation}
-		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
-	}).OrElse(func() optional.Option[ast.Expr] {
+		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span), errors
+	} else {
 		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation)
-		return optional.Some[ast.Expr](ast.NewTemplateLit(quasis, exprs, span))
-	}).Unwrap(), errors
+		return ast.NewTemplateLit(quasis, exprs, span), errors
+	}
 }
 
-func (p *Parser) ifElse() (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) ifElse() (ast.Expr, []*Error) {
 	start := p.lexer.currentLocation
 
 	p.lexer.consume() // consume 'if'
@@ -710,13 +694,13 @@ func (p *Parser) ifElse() (optional.Option[ast.Expr], []*Error) {
 	if token.Type == OpenBrace {
 		errors = append(errors, NewError(token.Span, "Expected a condition"))
 	} else {
-		condOption, condErrors := p.expr()
+		var condErrors []*Error
+		cond, condErrors = p.expr()
 		errors = append(errors, condErrors...)
-		if condOption.IsNone() {
+		if cond == nil {
 			errors = append(errors, NewError(token.Span, "Expected a valid condition expression"))
-			return optional.None[ast.Expr](), errors
+			return nil, errors
 		}
-		cond = condOption.Unwrap() // safe because we checked for None
 	}
 
 	body, bodyErrors := p.block()
@@ -730,47 +714,41 @@ func (p *Parser) ifElse() (optional.Option[ast.Expr], []*Error) {
 		case If:
 			ifElseResult, ifElseErrors := p.ifElse()
 			errors = append(errors, ifElseErrors...)
-			if ifElseResult.IsNone() {
+			if ifElseResult == nil {
 				errors = append(errors, NewError(token.Span, "Expected a valid expression after 'if'"))
-				return optional.Some[ast.Expr](
-					ast.NewIfElse(
-						cond, body, optional.None[ast.BlockOrExpr](),
-						ast.Span{Start: start, End: token.Span.Start},
-					),
+				return ast.NewIfElse(
+					cond, body, nil,
+					ast.Span{Start: start, End: token.Span.Start},
 				), errors
 			}
-			expr := ifElseResult.Unwrap() // safe because we checked for None
-			alt := ast.BlockOrExpr{
+			expr := ifElseResult
+			alt := &ast.BlockOrExpr{
 				Expr:  expr,
 				Block: nil,
 			}
-			return optional.Some[ast.Expr](
-				ast.NewIfElse(cond, body, optional.Some(alt), ast.Span{Start: start, End: expr.Span().End}),
+			return ast.NewIfElse(
+				cond, body, alt, ast.Span{Start: start, End: expr.Span().End},
 			), errors
 		case OpenBrace:
 			block, blockErrors := p.block()
 			errors = append(errors, blockErrors...)
-			alt := ast.BlockOrExpr{
+			alt := &ast.BlockOrExpr{
 				Expr:  nil,
 				Block: &block,
 			}
-			return optional.Some[ast.Expr](
-				ast.NewIfElse(cond, body, optional.Some(alt), ast.Span{Start: start, End: block.Span.End}),
+			return ast.NewIfElse(
+				cond, body, alt, ast.Span{Start: start, End: block.Span.End},
 			), errors
 		default:
 			errors = append(errors, NewError(token.Span, "Expected an if or an opening brace"))
-			return optional.Some[ast.Expr](
-				ast.NewIfElse(
-					cond, body, optional.None[ast.BlockOrExpr](),
-					ast.Span{Start: start, End: token.Span.Start},
-				),
+			return ast.NewIfElse(
+				cond, body, nil,
+				ast.Span{Start: start, End: token.Span.Start},
 			), errors
 		}
 	}
-	return optional.Some[ast.Expr](
-		ast.NewIfElse(
-			cond, body, optional.None[ast.BlockOrExpr](),
-			ast.Span{Start: start, End: token.Span.Start},
-		),
+	return ast.NewIfElse(
+		cond, body, nil,
+		ast.Span{Start: start, End: token.Span.Start},
 	), errors
 }

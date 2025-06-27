@@ -2,10 +2,9 @@ package parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
-func (p *Parser) jsxElement() (optional.Option[*ast.JSXElementExpr], []*Error) {
+func (p *Parser) jsxElement() (*ast.JSXElementExpr, []*Error) {
 	errors := []*Error{}
 
 	opening, openErrors := p.jsxOpening()
@@ -23,12 +22,12 @@ func (p *Parser) jsxElement() (optional.Option[*ast.JSXElementExpr], []*Error) {
 		errors = append(errors, closingErrors...)
 
 		return ast.NewJSXElement(
-			opening, optional.Some(closing), children, ast.MergeSpans(span, closing.Span()),
+			opening, closing, children, ast.MergeSpans(span, closing.Span()),
 		), errors
 	}
 
 	return ast.NewJSXElement(
-		opening, optional.None[*ast.JSXClosing](), []ast.JSXChild{}, span,
+		opening, nil, []ast.JSXChild{}, span,
 	), errors
 }
 
@@ -120,13 +119,12 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
-			exprOption, exprErrors := p.expr()
+			expr, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
-			if exprOption.IsNone() {
+			if expr == nil {
 				errors := append(errors, NewError(token.Span, "Expected an expression after '{'"))
 				return attrs, errors
 			}
-			expr := exprOption.Unwrap() // safe because we checked for None
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
@@ -201,14 +199,14 @@ func (p *Parser) jsxChildren() ([]ast.JSXChild, []*Error) {
 		case LessThan:
 			jsxElement, jsxErrors := p.jsxElement()
 			errors = append(errors, jsxErrors...)
-			jsxElement.IfSome(func(jsxElement *ast.JSXElementExpr) {
+			if jsxElement != nil {
 				children = append(children, jsxElement)
-			})
+			}
 		case OpenBrace:
 			p.lexer.consume()
-			exprOption, exprErrors := p.expr()
+			expr, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
-			expr := exprOption.Unwrap() // TODO: handle the case when parseExpr() returns None
+			// TODO: handle the case when parseExpr() returns nil
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume()

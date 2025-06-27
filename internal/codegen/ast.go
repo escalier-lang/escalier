@@ -491,7 +491,7 @@ func (s *DeclStmt) SetSpan(span *Span) { s.span = span }
 func (s *DeclStmt) Source() ast.Node   { return s.source }
 
 type ReturnStmt struct {
-	Expr   optional.Option[Expr]
+	Expr   Expr // optional
 	span   *Span
 	source ast.Node
 }
@@ -519,12 +519,12 @@ func (*RestPat) isPat()   {}
 
 type IdentPat struct {
 	Name    string
-	Default optional.Option[Expr]
+	Default Expr // optionaln
 	span    *Span
 	source  ast.Node
 }
 
-func NewIdentPat(name string, _default optional.Option[Expr], source ast.Node) *IdentPat {
+func NewIdentPat(name string, _default Expr, source ast.Node) *IdentPat {
 	return &IdentPat{Name: name, Default: _default, source: source, span: nil}
 }
 func (p *IdentPat) Span() *Span        { return p.span }
@@ -556,12 +556,12 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key     string
 	Value   Pat
-	Default optional.Option[Expr]
+	Default Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjKeyValuePat(key string, value Pat, _default optional.Option[Expr], source ast.Node) *ObjKeyValuePat {
+func NewObjKeyValuePat(key string, value Pat, _default Expr, source ast.Node) *ObjKeyValuePat {
 	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, source: source, span: nil}
 }
 func (p *ObjKeyValuePat) Span() *Span        { return p.span }
@@ -570,12 +570,12 @@ func (p *ObjKeyValuePat) Source() ast.Node   { return p.source }
 
 type ObjShorthandPat struct {
 	Key     string
-	Default optional.Option[Expr]
+	Default Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewObjShorthandPat(key string, _default optional.Option[Expr], source ast.Node) *ObjShorthandPat {
+func NewObjShorthandPat(key string, _default Expr, source ast.Node) *ObjShorthandPat {
 	return &ObjShorthandPat{Key: key, Default: _default, source: source, span: nil}
 }
 func (p *ObjShorthandPat) Span() *Span        { return p.span }

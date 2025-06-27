@@ -2,10 +2,6 @@
 
 package ast
 
-import (
-	"github.com/moznion/go-optional"
-)
-
 //sumtype:decl
 type TypeAnn interface {
 	isTypeAnn()
@@ -36,6 +32,7 @@ func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportType) isTypeAnn()          {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
+func (*EmptyTypeAnn) isTypeAnn()        {}
 
 type LitTypeAnn struct {
 	Lit          Lit
@@ -157,7 +154,7 @@ type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
 	// Name is used to rename keys in the mapped type
 	// It must resolve to a type that can be used as a key
-	Name     optional.Option[TypeAnn]
+	Name     TypeAnn // optional
 	Value    TypeAnn
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
@@ -276,19 +273,19 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 }
 
 type FuncTypeAnn struct {
-	TypeParams   optional.Option[[]TypeParam]
+	TypeParams   []*TypeParam // optional
 	Params       []*Param
 	Return       TypeAnn
-	Throws       optional.Option[TypeAnn]
+	Throws       TypeAnn // optionanl
 	span         Span
 	inferredType Type
 }
 
 func NewFuncTypeAnn(
-	typeParams optional.Option[[]TypeParam],
+	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn,
-	throws optional.Option[TypeAnn],
+	throws TypeAnn,
 	span Span,
 ) *FuncTypeAnn {
 	return &FuncTypeAnn{
@@ -306,9 +303,9 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 			param.Pattern.Accept(v)
 		}
 		t.Return.Accept(v)
-		t.Throws.IfSome(func(throws TypeAnn) {
-			throws.Accept(v)
-		})
+		if t.Throws != nil {
+			t.Throws.Accept(v)
+		}
 	}
 }
 
@@ -495,4 +492,16 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 	if v.VisitTypeAnn(t) {
 		t.Target.Accept(v)
 	}
+}
+
+type EmptyTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewEmptyTypeAnn(span Span) *EmptyTypeAnn {
+	return &EmptyTypeAnn{span: span, inferredType: nil}
+}
+func (t *EmptyTypeAnn) Accept(v Visitor) {
+	v.VisitTypeAnn(t)
 }

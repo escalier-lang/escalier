@@ -286,15 +286,15 @@ func (t *GlobalThisType) String() string {
 
 type TypeParam struct {
 	Name       string
-	Constraint optional.Option[Type]
-	Default    optional.Option[Type]
+	Constraint Type
+	Default    Type
 }
 
 func NewTypeParam(name string) *TypeParam {
 	return &TypeParam{
 		Name:       name,
-		Constraint: optional.None[Type](),
-		Default:    optional.None[Type](),
+		Constraint: nil,
+		Default:    nil,
 	}
 }
 
@@ -349,12 +349,12 @@ func (t *FuncType) String() string {
 				result += ", "
 			}
 			result += param.Name
-			param.Constraint.IfSome(func(constraint Type) {
-				result += ": " + constraint.String()
-			})
-			param.Default.IfSome(func(def Type) {
-				result += " = " + def.String()
-			})
+			if param.Constraint != nil {
+				result += ": " + param.Constraint.String()
+			}
+			if param.Default != nil {
+				result += " = " + param.Default.String()
+			}
 		}
 		result += ">"
 	}

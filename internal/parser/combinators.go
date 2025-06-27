@@ -1,14 +1,12 @@
 package parser
 
-import "github.com/moznion/go-optional"
-
-func parseDelimSeq[T any](
+func parseDelimSeq[T interface{}](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
 	// TODO: update this to return `nil` instead of `optional.None` when there
 	// is no item
-	parserCombinator func() (optional.Option[T], []*Error),
+	parserCombinator func() (T, []*Error),
 ) ([]T, []*Error) {
 	items := []T{}
 	errors := []*Error{}
@@ -21,12 +19,10 @@ func parseDelimSeq[T any](
 
 	item, itemErrors := parserCombinator()
 	errors = append(errors, itemErrors...)
-	if item.IsNone() {
+	if interface{}(item) == nil {
 		return items, errors
 	}
-	item.IfSome(func(item T) {
-		items = append(items, item)
-	})
+	items = append(items, item)
 
 	for {
 		token = p.lexer.peek()
@@ -40,12 +36,10 @@ func parseDelimSeq[T any](
 
 			item, itemErrors := parserCombinator()
 			errors = append(errors, itemErrors...)
-			if item.IsNone() {
+			if interface{}(item) == nil {
 				return items, errors
 			}
-			item.IfSome(func(item T) {
-				items = append(items, item)
-			})
+			items = append(items, item)
 		} else {
 			return items, errors
 		}

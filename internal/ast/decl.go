@@ -1,7 +1,5 @@
 package ast
 
-import "github.com/moznion/go-optional"
-
 type DeclGetters interface {
 	Export() bool
 	Declare() bool
@@ -28,8 +26,8 @@ const (
 type VarDecl struct {
 	Kind    VariableKind
 	Pattern Pat
-	TypeAnn optional.Option[TypeAnn]
-	Init    optional.Option[Expr]
+	TypeAnn TypeAnn // optional
+	Init    Expr    // optional
 	export  bool
 	declare bool
 	span    Span
@@ -38,8 +36,8 @@ type VarDecl struct {
 func NewVarDecl(
 	kind VariableKind,
 	pattern Pat,
-	typeAnn optional.Option[TypeAnn],
-	init optional.Option[Expr],
+	typeAnn TypeAnn,
+	init Expr,
 	export,
 	declare bool,
 	span Span,
@@ -60,16 +58,16 @@ func (d *VarDecl) Span() Span    { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
 	if v.VisitDecl(d) {
 		d.Pattern.Accept(v)
-		d.Init.IfSome(func(expr Expr) {
-			expr.Accept(v)
-		})
+		if d.Init != nil {
+			d.Init.Accept(v)
+		}
 	}
 }
 
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	TypeAnn  optional.Option[TypeAnn]
+	TypeAnn  TypeAnn // optional
 }
 
 func (p *Param) Span() Span {
@@ -79,7 +77,7 @@ func (p *Param) Span() Span {
 type FuncDecl struct {
 	Name *Ident
 	FuncSig
-	Body    optional.Option[Block]
+	Body    *Block // optional
 	export  bool
 	declare bool
 	span    Span
@@ -88,7 +86,7 @@ type FuncDecl struct {
 func NewFuncDecl(
 	name *Ident,
 	params []*Param,
-	body optional.Option[Block],
+	body *Block,
 	export,
 	declare bool,
 	span Span,
@@ -115,11 +113,11 @@ func (d *FuncDecl) Accept(v Visitor) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
 		}
-		d.Body.IfSome(func(body Block) {
-			for _, stmt := range body.Stmts {
+		if d.Body != nil {
+			for _, stmt := range d.Body.Stmts {
 				stmt.Accept(v)
 			}
-		})
+		}
 	}
 }
 

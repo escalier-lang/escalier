@@ -59,7 +59,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
-	if decl.TypeAnn.IsNone() && decl.Init.IsNone() {
+	if decl.TypeAnn == nil && decl.Init == nil {
 		return errors
 	}
 
@@ -68,29 +68,31 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 	// which will be added to a new scope before inferring function expressions
 	// in the expressions.
 
-	decl.TypeAnn.IfSome(func(typeAnn ast.TypeAnn) {
-		taType, taErrors := c.inferTypeAnn(ctx, typeAnn)
+	if decl.TypeAnn != nil {
+		taType, taErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
 		errors = slices.Concat(errors, taErrors)
 
 		unifyErrors := c.unify(ctx, taType, patType)
 		errors = slices.Concat(errors, unifyErrors)
 
-		decl.Init.IfSome(func(init ast.Expr) {
-			initType, initErrors := c.inferExpr(ctx, init)
+		if decl.Init != nil {
+			initType, initErrors := c.inferExpr(ctx, decl.Init)
 			errors = slices.Concat(errors, initErrors)
 
 			unifyErrors = c.unify(ctx, initType, taType)
 			errors = slices.Concat(errors, unifyErrors)
-		})
-	})
-
-	decl.TypeAnn.IfNone(func() {
-		initType, initErrors := c.inferExpr(ctx, decl.Init.Unwrap())
+		}
+	} else {
+		if decl.Init == nil {
+			// TODO: report an error, but set initType to be `unknown`
+			panic("Expected either a type annotation or an initializer expression")
+		}
+		initType, initErrors := c.inferExpr(ctx, decl.Init)
 		errors = slices.Concat(errors, initErrors)
 
 		unifyErrors := c.unify(ctx, initType, patType)
 		errors = slices.Concat(errors, unifyErrors)
-	})
+	}
 
 	maps.Copy(ctx.Scope.Values, bindings)
 	return errors
@@ -102,12 +104,12 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
-	decl.Body.IfSome(func(body ast.Block) {
-		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, &body)
+	if decl.Body != nil {
+		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
 		errors = slices.Concat(errors, bodyErrors)
 		unifyErrors := c.unify(ctx, funcType.Return, returnType)
 		errors = slices.Concat(errors, unifyErrors)
-	})
+	}
 
 	binding := Binding{
 		Source:  optional.Some[ast.BindingSource](decl.Name),
@@ -335,12 +337,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
-				elem.Value.IfSome(func(value ast.Expr) {
-					t, elemErrors := c.inferExpr(ctx, value)
+				if elem.Value != nil {
+					t, elemErrors := c.inferExpr(ctx, elem.Value)
 					errors = slices.Concat(errors, elemErrors)
 					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
-				})
-				elem.Value.IfNone(func() {
+				} else {
 					switch key := elem.Name.(type) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
@@ -358,7 +359,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 							)
 						}
 					}
-				})
+				}
 			default:
 				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
 			}
@@ -535,7 +536,8 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 	}
 
 	var altType Type = NewNeverType()
-	expr.Alt.IfSome(func(alt ast.BlockOrExpr) {
+	if expr.Alt != nil {
+		alt := expr.Alt
 		if alt.Block != nil {
 			for _, stmt := range alt.Block.Stmts {
 				stmtErrors := c.inferStmt(ctx, stmt)
@@ -554,7 +556,7 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 		} else {
 			panic("alt must be a block or expression")
 		}
-	})
+	}
 
 	t := NewUnionType(consType, altType)
 	expr.SetInferredType(t)
@@ -571,13 +573,13 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 		return c.inferDecl(ctx, stmt.Decl)
 	case *ast.ReturnStmt:
 		errors := []Error{}
-		optional.Map(stmt.Expr, func(expr ast.Expr) Type {
-			t, exprErrors := c.inferExpr(ctx, expr)
+		if stmt.Expr != nil {
+			// The inferred type is ignored here, but inferExpr still attaches
+			// the inferred type to the expression.  This is used later on this
+			// file, search for `ReturnVisitor` to see how it is used.
+			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
 			errors = exprErrors
-			return t
-		}).TakeOrElse(func() Type {
-			return NewLitType(&UndefinedLit{})
-		})
+		}
 		return errors
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
@@ -609,13 +611,14 @@ func (c *Checker) inferFuncSig(
 
 		errors = slices.Concat(errors, patErrors)
 
-		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
-			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+		var typeAnn Type
+		if param.TypeAnn == nil {
+			typeAnn = c.FreshVar()
+		} else {
+			typeAnnErrors := []Error{}
+			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
-			return typeAnnType
-		}).TakeOrElse(func() Type {
-			return c.FreshVar()
-		})
+		}
 
 		// TODO: handle type annotations on parameters
 		c.unify(ctx, patType, typeAnn)
@@ -702,11 +705,11 @@ func (c *Checker) inferFuncBody(
 
 	returnTypes := []Type{}
 	for _, returnStmt := range visitor.Returns {
-		returnStmt.Expr.IfSome(func(expr ast.Expr) {
-			returnType, returnErrors := c.inferExpr(ctx, expr)
+		if returnStmt.Expr != nil {
+			returnType, returnErrors := c.inferExpr(ctx, returnStmt.Expr)
 			returnTypes = append(returnTypes, returnType)
 			errors = slices.Concat(errors, returnErrors)
-		})
+		}
 	}
 
 	// TODO: We also need to do dead code analysis to account for unreachable
@@ -902,20 +905,22 @@ func (c *Checker) inferTypeDecl(
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
 	for i, typeParam := range decl.TypeParams {
-		constraint := optional.Map(typeParam.Constraint, func(constraint ast.TypeAnn) Type {
-			constraintType, constraintErrors := c.inferTypeAnn(ctx, constraint)
+		var constraintType Type
+		var defaultType Type
+		if typeParam.Constraint != nil {
+			var constraintErrors []Error
+			constraintType, constraintErrors = c.inferTypeAnn(ctx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
-			return constraintType
-		})
-		default_ := optional.Map(typeParam.Default, func(default_ ast.TypeAnn) Type {
-			defaultType, defaultErrors := c.inferTypeAnn(ctx, default_)
+		}
+		if typeParam.Default != nil {
+			var defaultErrors []Error
+			defaultType, defaultErrors = c.inferTypeAnn(ctx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
-			return defaultType
-		})
+		}
 		typeParams[i] = &TypeParam{
 			Name:       typeParam.Name,
-			Constraint: constraint,
-			Default:    default_,
+			Constraint: constraintType,
+			Default:    defaultType,
 		}
 	}
 
@@ -945,13 +950,14 @@ func (c *Checker) inferFuncTypeAnn(
 
 		// TODO: make type annoations required on parameters in function type
 		// annotations
-		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
-			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+		var typeAnn Type
+		if param.TypeAnn == nil {
+			typeAnn = c.FreshVar()
+		} else {
+			var typeAnnErrors []Error
+			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
-			return typeAnnType
-		}).TakeOrElse(func() Type {
-			return c.FreshVar()
-		})
+		}
 
 		c.unify(ctx, patType, typeAnn)
 

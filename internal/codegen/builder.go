@@ -67,14 +67,15 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 	buildPatternRec = func(p ast.Pat, target Expr) Pat {
 		switch p := p.(type) {
 		case *ast.IdentPat:
-			_default := optional.Map(p.Default, func(e ast.Expr) Expr {
-				defExpr, defStmts := b.buildExpr(e)
+			var defExpr Expr
+			if p.Default != nil {
+				var defStmts []Stmt
+				defExpr, defStmts = b.buildExpr(p.Default)
 				stmts = slices.Concat(stmts, defStmts)
-				return defExpr
-			})
+			}
 			return &IdentPat{
 				Name:    p.Name,
-				Default: _default,
+				Default: defExpr,
 				span:    nil,
 				source:  p,
 			}
@@ -102,24 +103,28 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 						)
 					}
 
+					var defExpr Expr
+					if e.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts = b.buildExpr(e.Default)
+						stmts = slices.Concat(stmts, defStmts)
+					}
 					elems = append(elems, NewObjKeyValuePat(
 						e.Key.Name,
 						buildPatternRec(e.Value, newTarget),
-						optional.Map(e.Default, func(e ast.Expr) Expr {
-							defExpr, defStmts := b.buildExpr(e)
-							stmts = slices.Concat(stmts, defStmts)
-							return defExpr
-						}),
+						defExpr,
 						e,
 					))
 				case *ast.ObjShorthandPat:
+					var defExpr Expr
+					if e.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts = b.buildExpr(e.Default)
+						stmts = slices.Concat(stmts, defStmts)
+					}
 					elems = append(elems, NewObjShorthandPat(
 						e.Key.Name,
-						optional.Map(e.Default, func(e ast.Expr) Expr {
-							defExpr, defStmts := b.buildExpr(e)
-							stmts = slices.Concat(stmts, defStmts)
-							return defExpr
-						}),
+						defExpr,
 						e,
 					))
 				case *ast.ObjRestPat:
@@ -167,14 +172,15 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				tempId := b.NewTempId()
 				tempVar := NewIdentExpr(tempId, nil)
 
-				init := optional.None[Expr]()
+				var init Expr
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
-					init = optional.Map(arg.Default, func(e ast.Expr) Expr {
-						defExpr, defStmts := b.buildExpr(e)
+					if arg.Default != nil {
+						var defStmts []Stmt
+						defExpr, defStmts := b.buildExpr(arg.Default)
 						stmts = slices.Concat(stmts, defStmts)
-						return defExpr
-					})
+						init = defExpr
+					}
 				}
 				tempVarPat := NewIdentPat(tempId, init, p)
 
@@ -193,7 +199,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			)
 
 			decls := []*Declarator{
-				&Declarator{
+				{
 					Pattern: NewTuplePat(tempVarPats, nil),
 					TypeAnn: optional.None[TypeAnn](),
 					Init:    call,
@@ -247,7 +253,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 
 	if pat != nil {
 		decls := []*Declarator{
-			&Declarator{
+			{
 				Pattern: pat,
 				TypeAnn: optional.None[TypeAnn](),
 				Init:    target,
@@ -292,11 +298,12 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 		return b.buildDecl(s.Decl)
 	case *ast.ReturnStmt:
 		stmts := []Stmt{}
-		expr := optional.Map(s.Expr, func(e ast.Expr) Expr {
-			expr, exprStmts := b.buildExpr(e)
+		var expr Expr
+		if s.Expr != nil {
+			var exprStmts []Stmt
+			expr, exprStmts = b.buildExpr(s.Expr)
 			stmts = slices.Concat(stmts, exprStmts)
-			return expr
-		})
+		}
 		stmt := &ReturnStmt{
 			Expr:   expr,
 			span:   nil,
@@ -333,20 +340,22 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		initExpr, initStmts := b.buildExpr(d.Init.Unwrap()) // TOOD: handle the case when Init is None
+		if d.Init == nil {
+			panic("TODO - TransformDecl - VarDecl - Init is nil")
+		}
+		initExpr, initStmts := b.buildExpr(d.Init)
 		// Ignore checks returned by buildPattern
 		_, patStmts := b.buildPattern(d.Pattern, initExpr)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
-		if d.Body.IsNone() {
+		if d.Body == nil {
 			return []Stmt{}
 		}
-		body := d.Body.Unwrap() // okay because we checked IsNone() above
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
-			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(body.Stmts))),
+			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts))),
 			TypeAnn: optional.None[TypeAnn](),
 			declare: decl.Declare(),
 			export:  decl.Export(),
@@ -461,8 +470,8 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			case *ast.PropertyExpr:
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
-				elem.Value.IfSome(func(value ast.Expr) {
-					valueExpr, valueStmts := b.buildExpr(value)
+				if elem.Value != nil {
+					valueExpr, valueStmts := b.buildExpr(elem.Value)
 					stmts = slices.Concat(stmts, valueStmts)
 
 					elems[i] = NewPropertyExpr(
@@ -470,14 +479,13 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 						optional.Some(valueExpr),
 						elem,
 					)
-				})
-				elem.Value.IfNone(func() {
+				} else {
 					elems[i] = NewPropertyExpr(
 						key,
 						optional.None[Expr](),
 						elem,
 					)
-				})
+				}
 			default:
 				panic(fmt.Sprintf("TODO - buildExpr - ObjectExpr - default case: %#v", elem))
 			}
