@@ -441,7 +441,7 @@ func (p *Parser) fnExpr(start ast.Location) (ast.Expr, []*Error) {
 
 	_, expectErrors := p.expect(OpenParen, ConsumeOnMatch)
 	errors = append(errors, expectErrors...)
-	params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+	params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
 	errors = append(errors, seqErrors...)
 	_, expectErrors = p.expect(CloseParen, ConsumeOnMatch)
 	errors = append(errors, expectErrors...)
@@ -450,12 +450,11 @@ func (p *Parser) fnExpr(start ast.Location) (ast.Expr, []*Error) {
 	errors = append(errors, bodyErrors...)
 	end := body.Span.End
 
-	// TODO: parse return and throws types
 	return ast.NewFuncExpr(
-		[]*ast.TypeParam{}, // TODO
+		[]*ast.TypeParam{}, // TODO: parse type params
 		params,
-		optional.None[ast.TypeAnn](),
-		optional.None[ast.TypeAnn](),
+		nil, // TODO: parse return type
+		nil, // TODO: parse throws type
 		body,
 		ast.NewSpan(start, end),
 	), errors
@@ -538,7 +537,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 		return nil, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+		params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
 		errors = append(errors, seqErrors...)
 		_, expectErrors := p.expect(CloseParen, ConsumeOnMatch)
 		errors = append(errors, expectErrors...)
@@ -549,12 +548,11 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 
 		span := ast.Span{Start: objKey.Span().Start, End: end}
 
-		// TODO: parse return and throws types
 		fn := ast.NewFuncExpr(
-			[]*ast.TypeParam{}, // TODO
+			[]*ast.TypeParam{}, // TODO: parse type params
 			params,
-			optional.None[ast.TypeAnn](),
-			optional.None[ast.TypeAnn](),
+			nil, // TODO: parse return type
+			nil, // TODO: parse throws type
 			body,
 			span,
 		)
@@ -624,10 +622,10 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 // <pattern>?: <type annotation>
 // <pattern>?
 // <pattern>
-func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
+func (p *Parser) param() (*ast.Param, []*Error) {
 	pat, errors := p.pattern(true)
 	if pat == nil {
-		return optional.None[*ast.Param](), errors
+		return nil, errors
 	}
 	token := p.lexer.peek()
 
@@ -641,18 +639,18 @@ func (p *Parser) param() (optional.Option[*ast.Param], []*Error) {
 		p.lexer.consume() // consume ':'
 		typeAnn, typeAnnErrors := p.typeAnn()
 		errors = append(errors, typeAnnErrors...)
-		return optional.Some(&ast.Param{
+		return &ast.Param{
 			Pattern:  pat,
-			TypeAnn:  optional.Some(typeAnn),
+			TypeAnn:  typeAnn,
 			Optional: opt,
-		}), errors
+		}, errors
 	}
 
-	return optional.Some(&ast.Param{
+	return &ast.Param{
 		Pattern:  pat,
-		TypeAnn:  optional.None[ast.TypeAnn](),
+		TypeAnn:  nil,
 		Optional: opt,
-	}), errors
+	}, errors
 }
 
 func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (ast.Expr, []*Error) {

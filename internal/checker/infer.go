@@ -611,13 +611,14 @@ func (c *Checker) inferFuncSig(
 
 		errors = slices.Concat(errors, patErrors)
 
-		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
-			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+		var typeAnn Type
+		if param.TypeAnn == nil {
+			typeAnn = c.FreshVar()
+		} else {
+			typeAnnErrors := []Error{}
+			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
-			return typeAnnType
-		}).TakeOrElse(func() Type {
-			return c.FreshVar()
-		})
+		}
 
 		// TODO: handle type annotations on parameters
 		c.unify(ctx, patType, typeAnn)
@@ -949,13 +950,14 @@ func (c *Checker) inferFuncTypeAnn(
 
 		// TODO: make type annoations required on parameters in function type
 		// annotations
-		typeAnn := optional.Map(param.TypeAnn, func(typeAnn ast.TypeAnn) Type {
-			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+		var typeAnn Type
+		if param.TypeAnn == nil {
+			typeAnn = c.FreshVar()
+		} else {
+			var typeAnnErrors []Error
+			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
-			return typeAnnType
-		}).TakeOrElse(func() Type {
-			return c.FreshVar()
-		})
+		}
 
 		c.unify(ctx, patType, typeAnn)
 

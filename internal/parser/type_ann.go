@@ -226,7 +226,7 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			_, tokenErrors := p.expect(OpenParen, AlwaysConsume)
 			errors = append(errors, tokenErrors...)
 
-			funcParams, funcParamsErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+			funcParams, funcParamsErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
 			errors = append(errors, funcParamsErrors...)
 
 			_, tokenErrors = p.expect(CloseParen, AlwaysConsume)
@@ -456,7 +456,7 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		}, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+		params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
 		errors = append(errors, seqErrors...)
 		_, expectErrors := p.expect(CloseParen, ConsumeOnMatch)
 		errors = append(errors, expectErrors...)

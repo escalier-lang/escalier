@@ -281,8 +281,8 @@ func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 type FuncSig struct {
 	TypeParams []*TypeParam
 	Params     []*Param
-	Return     optional.Option[TypeAnn]
-	Throws     optional.Option[TypeAnn]
+	Return     TypeAnn // optional
+	Throws     TypeAnn // optional
 }
 
 type FuncExpr struct {
@@ -295,8 +295,8 @@ type FuncExpr struct {
 func NewFuncExpr(
 	typeParams []*TypeParam,
 	params []*Param,
-	ret optional.Option[TypeAnn],
-	throws optional.Option[TypeAnn],
+	ret TypeAnn, // optional
+	throws TypeAnn, // optional
 	body Block,
 	span Span,
 ) *FuncExpr {
@@ -317,12 +317,12 @@ func (e *FuncExpr) Accept(v Visitor) {
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
 		}
-		e.Return.IfSome(func(ret TypeAnn) {
-			ret.Accept(v)
-		})
-		e.Throws.IfSome(func(throws TypeAnn) {
-			throws.Accept(v)
-		})
+		if e.Return != nil {
+			e.Return.Accept(v)
+		}
+		if e.Throws != nil {
+			e.Throws.Accept(v)
+		}
 		for _, stmt := range e.Body.Stmts {
 			stmt.Accept(v)
 		}

@@ -1,7 +1,5 @@
 package ast
 
-import "github.com/moznion/go-optional"
-
 type DeclGetters interface {
 	Export() bool
 	Declare() bool
@@ -69,7 +67,7 @@ func (d *VarDecl) Accept(v Visitor) {
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	TypeAnn  optional.Option[TypeAnn]
+	TypeAnn  TypeAnn // optional
 }
 
 func (p *Param) Span() Span {

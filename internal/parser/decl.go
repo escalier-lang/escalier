@@ -121,7 +121,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) (ast.Decl
 		p.lexer.consume()
 	}
 
-	params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
+	params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
 	errors = append(errors, seqErrors...)
 
 	token = p.lexer.peek()
