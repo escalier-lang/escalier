@@ -374,12 +374,11 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		mod = "set"
 	}
 
-	objKeyOption, objKeyErrors := p.objExprKey()
+	objKey, objKeyErrors := p.objExprKey()
 	errors = append(errors, objKeyErrors...)
-	if objKeyOption.IsNone() {
+	if objKey == nil {
 		return nil, errors
 	}
-	objKey := objKeyOption.Unwrap() // safe because we checked for None
 	token = p.lexer.peek()
 
 	// nolint: exhaustive

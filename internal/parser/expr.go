@@ -255,7 +255,7 @@ loop:
 				}
 			}
 		case BackTick:
-			temp, tempErrors := p.templateLitExpr(token, optional.Some(expr))
+			temp, tempErrors := p.templateLitExpr(token, expr)
 			errors = append(errors, tempErrors...)
 			expr = temp
 		default:
@@ -267,7 +267,7 @@ loop:
 	return expr, errors
 }
 
-func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
+func (p *Parser) objExprKey() (ast.ObjKey, []*Error) {
 	token := p.lexer.peek()
 	errors := []*Error{}
 
@@ -275,34 +275,30 @@ func (p *Parser) objExprKey() (optional.Option[ast.ObjKey], []*Error) {
 	switch token.Type {
 	case Identifier, Underscore:
 		p.lexer.consume()
-		return optional.Some[ast.ObjKey](
-			ast.NewIdent(token.Value, token.Span),
-		), []*Error{}
+		return ast.NewIdent(token.Value, token.Span), errors
 	case StrLit:
 		p.lexer.consume()
-		return optional.Some[ast.ObjKey](
-			ast.NewString(token.Value, token.Span),
-		), []*Error{}
+		return ast.NewString(token.Value, token.Span), errors
 	case NumLit:
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
 			errors = append(errors, NewError(token.Span, "Expected a number"))
 		}
-		return optional.Some[ast.ObjKey](
-			ast.NewNumber(value, token.Span),
-		), errors
+		return ast.NewNumber(value, token.Span), errors
 	case OpenBracket:
 		p.lexer.consume()
-		expr, exprErrors := p.expr()
+		exprOption, exprErrors := p.expr()
 		errors = append(errors, exprErrors...)
 		_, expectErrors := p.expect(CloseBracket, AlwaysConsume)
 		errors = append(errors, expectErrors...)
-		return optional.Map(expr, func(expr ast.Expr) ast.ObjKey {
-			return &ast.ComputedKey{Expr: expr}
-		}), errors
+		expr := exprOption.Unwrap()
+		if expr != nil {
+			return &ast.ComputedKey{Expr: expr}, errors
+		}
+		return nil, errors
 	default:
-		return optional.None[ast.ObjKey](), []*Error{NewError(token.Span, "Expected a property name")}
+		return nil, []*Error{NewError(token.Span, "Expected a property name")}
 	}
 }
 
@@ -488,12 +484,11 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 		mod = "set"
 	}
 
-	objKeyOption, objKeyErrors := p.objExprKey()
+	objKey, objKeyErrors := p.objExprKey()
 	errors = append(errors, objKeyErrors...)
-	if objKeyOption.IsNone() {
+	if objKey == nil {
 		return nil, errors
 	}
-	objKey := objKeyOption.Unwrap()
 	token = p.lexer.peek()
 
 	// TODO: loop until we find a ':', '?', '(', ',' or '}' so
@@ -653,7 +648,7 @@ func (p *Parser) param() (*ast.Param, []*Error) {
 	}, errors
 }
 
-func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (ast.Expr, []*Error) {
+func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) (ast.Expr, []*Error) {
 	p.lexer.consume()
 	quasis := []*ast.Quasi{}
 	exprs := []ast.Expr{}
@@ -685,13 +680,13 @@ func (p *Parser) templateLitExpr(token *Token, tag optional.Option[ast.Expr]) (a
 			break
 		}
 	}
-	return optional.Map(tag, func(tag ast.Expr) ast.Expr {
+	if tag != nil {
 		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation}
-		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
-	}).OrElse(func() optional.Option[ast.Expr] {
+		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span), errors
+	} else {
 		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation)
-		return optional.Some[ast.Expr](ast.NewTemplateLit(quasis, exprs, span))
-	}).Unwrap(), errors
+		return ast.NewTemplateLit(quasis, exprs, span), errors
+	}
 }
 
 func (p *Parser) ifElse() (ast.Expr, []*Error) {
