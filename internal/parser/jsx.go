@@ -119,13 +119,12 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
-			exprOption, exprErrors := p.expr()
+			expr, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
-			if exprOption.IsNone() {
+			if expr == nil {
 				errors := append(errors, NewError(token.Span, "Expected an expression after '{'"))
 				return attrs, errors
 			}
-			expr := exprOption.Unwrap() // safe because we checked for None
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
@@ -205,9 +204,9 @@ func (p *Parser) jsxChildren() ([]ast.JSXChild, []*Error) {
 			}
 		case OpenBrace:
 			p.lexer.consume()
-			exprOption, exprErrors := p.expr()
+			expr, exprErrors := p.expr()
 			errors = append(errors, exprErrors...)
-			expr := exprOption.Unwrap() // TODO: handle the case when parseExpr() returns None
+			// TODO: handle the case when parseExpr() returns nil
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume()

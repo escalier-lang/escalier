@@ -56,12 +56,12 @@ func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool) (ast.Pat, []
 	var _default ast.Expr
 	if allowIdentDefault && token.Type == Equal {
 		p.lexer.consume()
-		exprOption, exprErrors := p.expr()
+		expr, exprErrors := p.expr()
 		errors = append(errors, exprErrors...)
-		exprOption.IfSome(func(e ast.Expr) {
-			span = ast.MergeSpans(span, e.Span())
-			_default = e
-		})
+		if expr != nil {
+			span = ast.MergeSpans(span, expr.Span())
+			_default = expr
+		}
 	}
 	return ast.NewIdentPat(nameToken.Value, _default, span), errors
 }
@@ -169,8 +169,8 @@ func (p *Parser) objPatElem() (ast.ObjPatElem, []*Error) {
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				exprOption, exprError := p.expr()
-				init = exprOption.Unwrap()
+				expr, exprError := p.expr()
+				init = expr
 				errors = append(errors, exprError...)
 				if init != nil {
 					span = ast.MergeSpans(span, init.Span())
@@ -188,12 +188,12 @@ func (p *Parser) objPatElem() (ast.ObjPatElem, []*Error) {
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				exprOption, exprError := p.expr()
+				expr, exprError := p.expr()
 				errors = append(errors, exprError...)
-				exprOption.IfSome(func(e ast.Expr) {
-					span = ast.MergeSpans(span, e.Span())
-					init = e
-				})
+				if expr != nil {
+					span = ast.MergeSpans(span, expr.Span())
+					init = expr
+				}
 			}
 
 			return ast.NewObjShorthandPat(key, init, span), errors
