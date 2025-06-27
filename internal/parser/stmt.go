@@ -5,7 +5,6 @@ import (
 )
 
 // block = '{' stmt* '}'
-// TODO: return (optional.Option[ast.Block], []*Error)
 func (p *Parser) block() (ast.Block, []*Error) {
 	stmts := []ast.Stmt{}
 	errors := []*Error{}

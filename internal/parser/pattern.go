@@ -39,7 +39,7 @@ func (p *Parser) pattern(allowIdentDefault bool) (ast.Pat, []*Error) {
 func (p *Parser) extractorPat(nameToken *Token) (ast.Pat, []*Error) {
 	errors := []*Error{}
 	p.lexer.consume() // consume '('
-	patArgs, patErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, func() (ast.Pat, []*Error) {
+	patArgs, patErrors := parseDelimSeq(p, CloseParen, Comma, func() (ast.Pat, []*Error) {
 		return p.pattern(true)
 	})
 	errors = append(errors, patErrors...)
@@ -72,7 +72,7 @@ func (p *Parser) tuplePat() (ast.Pat, []*Error) {
 	token := p.lexer.peek()
 	start := token.Span.Start
 	p.lexer.consume() // consume '['
-	patElems, patElemsErrors := parseDelimSeqNonOptional(p, CloseBracket, Comma, func() (ast.Pat, []*Error) {
+	patElems, patElemsErrors := parseDelimSeq(p, CloseBracket, Comma, func() (ast.Pat, []*Error) {
 		return p.pattern(true)
 	})
 	errors = append(errors, patElemsErrors...)
@@ -87,7 +87,7 @@ func (p *Parser) objectPat() (ast.Pat, []*Error) {
 	token := p.lexer.peek()
 	start := token.Span.Start
 	p.lexer.consume() // consume '{'
-	patElems, patElemsErrors := parseDelimSeqNonOptional(p, CloseBrace, Comma, p.objPatElem)
+	patElems, patElemsErrors := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
 	errors = append(errors, patElemsErrors...)
 	end, endErrors := p.expect(CloseBrace, AlwaysConsume)
 	errors = append(errors, endErrors...)

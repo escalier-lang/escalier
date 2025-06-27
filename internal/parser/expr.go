@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 var precedence = map[ast.BinaryOp]int{
@@ -185,7 +184,7 @@ loop:
 		switch token.Type {
 		case OpenParen, QuestionOpenParen:
 			p.lexer.consume()
-			args, argsErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.expr)
+			args, argsErrors := parseDelimSeq(p, CloseParen, Comma, p.expr)
 			errors = append(errors, argsErrors...)
 			terminator := p.lexer.next()
 			if terminator.Type != CloseParen {
@@ -356,14 +355,14 @@ func (p *Parser) primaryExpr() (ast.Expr, []*Error) {
 			errors = append(errors, expectErrors...)
 		case OpenBracket:
 			p.lexer.consume()
-			elems, seqErrors := parseDelimSeqNonOptional(p, CloseBracket, Comma, p.expr)
+			elems, seqErrors := parseDelimSeq(p, CloseBracket, Comma, p.expr)
 			errors = append(errors, seqErrors...)
 			end, endErrors := p.expect(CloseBracket, AlwaysConsume)
 			errors = append(errors, endErrors...)
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end})
 		case OpenBrace:
 			p.lexer.consume()
-			elems, seqErrors := parseDelimSeqNonOptional(p, CloseBrace, Comma, p.objExprElem)
+			elems, seqErrors := parseDelimSeq(p, CloseBrace, Comma, p.objExprElem)
 			errors = append(errors, seqErrors...)
 			end, endErrors := p.expect(CloseBrace, AlwaysConsume)
 			errors = append(errors, endErrors...)
@@ -436,7 +435,7 @@ func (p *Parser) fnExpr(start ast.Location) (ast.Expr, []*Error) {
 
 	_, expectErrors := p.expect(OpenParen, ConsumeOnMatch)
 	errors = append(errors, expectErrors...)
-	params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
+	params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
 	errors = append(errors, seqErrors...)
 	_, expectErrors = p.expect(CloseParen, ConsumeOnMatch)
 	errors = append(errors, expectErrors...)
@@ -528,7 +527,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 		return nil, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
+		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
 		errors = append(errors, seqErrors...)
 		_, expectErrors := p.expect(CloseParen, ConsumeOnMatch)
 		errors = append(errors, expectErrors...)
@@ -718,38 +717,38 @@ func (p *Parser) ifElse() (ast.Expr, []*Error) {
 			if ifElseResult == nil {
 				errors = append(errors, NewError(token.Span, "Expected a valid expression after 'if'"))
 				return ast.NewIfElse(
-					cond, body, optional.None[ast.BlockOrExpr](),
+					cond, body, nil,
 					ast.Span{Start: start, End: token.Span.Start},
 				), errors
 			}
 			expr := ifElseResult
-			alt := ast.BlockOrExpr{
+			alt := &ast.BlockOrExpr{
 				Expr:  expr,
 				Block: nil,
 			}
 			return ast.NewIfElse(
-				cond, body, optional.Some(alt), ast.Span{Start: start, End: expr.Span().End},
+				cond, body, alt, ast.Span{Start: start, End: expr.Span().End},
 			), errors
 		case OpenBrace:
 			block, blockErrors := p.block()
 			errors = append(errors, blockErrors...)
-			alt := ast.BlockOrExpr{
+			alt := &ast.BlockOrExpr{
 				Expr:  nil,
 				Block: &block,
 			}
 			return ast.NewIfElse(
-				cond, body, optional.Some(alt), ast.Span{Start: start, End: block.Span.End},
+				cond, body, alt, ast.Span{Start: start, End: block.Span.End},
 			), errors
 		default:
 			errors = append(errors, NewError(token.Span, "Expected an if or an opening brace"))
 			return ast.NewIfElse(
-				cond, body, optional.None[ast.BlockOrExpr](),
+				cond, body, nil,
 				ast.Span{Start: start, End: token.Span.Start},
 			), errors
 		}
 	}
 	return ast.NewIfElse(
-		cond, body, optional.None[ast.BlockOrExpr](),
+		cond, body, nil,
 		ast.Span{Start: start, End: token.Span.Start},
 	), errors
 }

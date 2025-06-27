@@ -536,7 +536,8 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 	}
 
 	var altType Type = NewNeverType()
-	expr.Alt.IfSome(func(alt ast.BlockOrExpr) {
+	if expr.Alt != nil {
+		alt := expr.Alt
 		if alt.Block != nil {
 			for _, stmt := range alt.Block.Stmts {
 				stmtErrors := c.inferStmt(ctx, stmt)
@@ -555,7 +556,7 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 		} else {
 			panic("alt must be a block or expression")
 		}
-	})
+	}
 
 	t := NewUnionType(consType, altType)
 	expr.SetInferredType(t)

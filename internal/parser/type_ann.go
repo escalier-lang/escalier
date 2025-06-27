@@ -216,7 +216,7 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			if p.lexer.peek().Type == LessThan {
 				p.lexer.consume() // consume '<'
 				var typeParamErrors []*Error
-				typeParams, typeParamErrors = parseDelimSeqNonOptional(p, GreaterThan, Comma, p.typeParam)
+				typeParams, typeParamErrors = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
 				errors = append(errors, typeParamErrors...)
 
 				_, tokenErrors := p.expect(GreaterThan, AlwaysConsume)
@@ -226,7 +226,7 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			_, tokenErrors := p.expect(OpenParen, AlwaysConsume)
 			errors = append(errors, tokenErrors...)
 
-			funcParams, funcParamsErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
+			funcParams, funcParamsErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
 			errors = append(errors, funcParamsErrors...)
 
 			_, tokenErrors = p.expect(CloseParen, AlwaysConsume)
@@ -254,14 +254,14 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
-			elemTypes, elemErrors := parseDelimSeqNonOptional(p, CloseBracket, Comma, p.typeAnn)
+			elemTypes, elemErrors := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
 			errors = append(errors, elemErrors...)
 			end, endErrors := p.expect(CloseBracket, AlwaysConsume)
 			errors = append(errors, endErrors...)
 			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end))
 		case OpenBrace: // object type
 			p.lexer.consume() // consume '{'
-			elems, propErrors := parseDelimSeqNonOptional(p, CloseBrace, Comma, p.objTypeAnnElem)
+			elems, propErrors := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
 			errors = append(errors, propErrors...)
 			end, endErrors := p.expect(CloseBrace, AlwaysConsume)
 			errors = append(errors, endErrors...)
@@ -272,7 +272,7 @@ func (p *Parser) primaryTypeAnn() (ast.TypeAnn, []*Error) {
 			// Try to parse a set of type parameters
 			if p.lexer.peek().Type == LessThan {
 				p.lexer.consume() // consume '<'
-				typeArgs, typeArgErrors := parseDelimSeqNonOptional(p, GreaterThan, Comma, p.typeAnn)
+				typeArgs, typeArgErrors := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
 				end, endErrors := p.expect(GreaterThan, AlwaysConsume)
 				return ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end)),
 					slices.Concat(typeArgErrors, endErrors)
@@ -455,7 +455,7 @@ func (p *Parser) objTypeAnnElem() (ast.ObjTypeAnnElem, []*Error) {
 		}, errors
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params, seqErrors := parseDelimSeqNonOptional(p, CloseParen, Comma, p.param)
+		params, seqErrors := parseDelimSeq(p, CloseParen, Comma, p.param)
 		errors = append(errors, seqErrors...)
 		_, expectErrors := p.expect(CloseParen, ConsumeOnMatch)
 		errors = append(errors, expectErrors...)

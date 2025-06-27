@@ -4,8 +4,6 @@ package ast
 
 import (
 	"math/big"
-
-	"github.com/moznion/go-optional"
 )
 
 //sumtype:decl
@@ -542,12 +540,12 @@ func (e *ObjectExpr) Accept(v Visitor) {
 type IfElseExpr struct {
 	Cond         Expr
 	Cons         Block
-	Alt          optional.Option[BlockOrExpr]
+	Alt          *BlockOrExpr // optional
 	span         Span
 	inferredType Type
 }
 
-func NewIfElse(cond Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfElseExpr {
+func NewIfElse(cond Expr, cons Block, alt *BlockOrExpr, span Span) *IfElseExpr {
 	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfElseExpr) Accept(v Visitor) {
@@ -556,7 +554,8 @@ func (e *IfElseExpr) Accept(v Visitor) {
 		for _, stmt := range e.Cons.Stmts {
 			stmt.Accept(v)
 		}
-		e.Alt.IfSome(func(alt BlockOrExpr) {
+		if e.Alt != nil {
+			alt := e.Alt
 			if alt.Block != nil {
 				for _, stmt := range alt.Block.Stmts {
 					stmt.Accept(v)
@@ -565,7 +564,7 @@ func (e *IfElseExpr) Accept(v Visitor) {
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
 			}
-		})
+		}
 	}
 }
 
@@ -573,12 +572,12 @@ type IfLetExpr struct {
 	Pattern      Pat
 	Target       Expr
 	Cons         Block
-	Alt          optional.Option[BlockOrExpr]
+	Alt          *BlockOrExpr // optional
 	span         Span
 	inferredType Type
 }
 
-func NewIfLet(pattern Pat, target Expr, cons Block, alt optional.Option[BlockOrExpr], span Span) *IfLetExpr {
+func NewIfLet(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span) *IfLetExpr {
 	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfLetExpr) Accept(v Visitor) {
@@ -588,7 +587,8 @@ func (e *IfLetExpr) Accept(v Visitor) {
 		for _, stmt := range e.Cons.Stmts {
 			stmt.Accept(v)
 		}
-		e.Alt.IfSome(func(alt BlockOrExpr) {
+		if e.Alt != nil {
+			alt := e.Alt
 			if alt.Block != nil {
 				for _, stmt := range alt.Block.Stmts {
 					stmt.Accept(v)
@@ -597,13 +597,13 @@ func (e *IfLetExpr) Accept(v Visitor) {
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
 			}
-		})
+		}
 	}
 }
 
 type MatchCase struct {
 	Pattern Pat
-	Guard   optional.Option[Expr]
+	Guard   Expr // optional
 	Body    BlockOrExpr
 	span    Span
 }
@@ -625,9 +625,9 @@ func (e *MatchExpr) Accept(v Visitor) {
 		e.Target.Accept(v)
 		for _, matchCase := range e.Cases {
 			matchCase.Pattern.Accept(v)
-			matchCase.Guard.IfSome(func(guard Expr) {
-				guard.Accept(v)
-			})
+			if matchCase.Guard != nil {
+				matchCase.Guard.Accept(v)
+			}
 			if matchCase.Body.Block != nil {
 				for _, stmt := range matchCase.Body.Block.Stmts {
 					stmt.Accept(v)
@@ -660,12 +660,12 @@ func (e *AssignExpr) Accept(v Visitor) {
 type TryCatchExpr struct {
 	Try          Block
 	Catch        []*MatchCase // optional
-	Finally      optional.Option[*Block]
+	Finally      *Block       // optional
 	span         Span
 	inferredType Type
 }
 
-func NewTryCatch(try Block, catch []*MatchCase, finally optional.Option[*Block], span Span) *TryCatchExpr {
+func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryCatchExpr {
 	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
@@ -675,9 +675,9 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 		}
 		for _, matchCase := range e.Catch {
 			matchCase.Pattern.Accept(v)
-			matchCase.Guard.IfSome(func(guard Expr) {
-				guard.Accept(v)
-			})
+			if matchCase.Guard != nil {
+				matchCase.Guard.Accept(v)
+			}
 			if matchCase.Body.Block != nil {
 				for _, stmt := range matchCase.Body.Block.Stmts {
 					stmt.Accept(v)
@@ -687,11 +687,11 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 				matchCase.Body.Expr.Accept(v)
 			}
 		}
-		e.Finally.IfSome(func(finally *Block) {
-			for _, stmt := range finally.Stmts {
+		if e.Finally != nil {
+			for _, stmt := range e.Finally.Stmts {
 				stmt.Accept(v)
 			}
-		})
+		}
 	}
 }
 

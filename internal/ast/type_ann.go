@@ -2,10 +2,6 @@
 
 package ast
 
-import (
-	"github.com/moznion/go-optional"
-)
-
 //sumtype:decl
 type TypeAnn interface {
 	isTypeAnn()
@@ -158,7 +154,7 @@ type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
 	// Name is used to rename keys in the mapped type
 	// It must resolve to a type that can be used as a key
-	Name     optional.Option[TypeAnn]
+	Name     TypeAnn // optional
 	Value    TypeAnn
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
