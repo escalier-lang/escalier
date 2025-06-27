@@ -470,8 +470,8 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			case *ast.PropertyExpr:
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
-				elem.Value.IfSome(func(value ast.Expr) {
-					valueExpr, valueStmts := b.buildExpr(value)
+				if elem.Value != nil {
+					valueExpr, valueStmts := b.buildExpr(elem.Value)
 					stmts = slices.Concat(stmts, valueStmts)
 
 					elems[i] = NewPropertyExpr(
@@ -479,14 +479,13 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 						optional.Some(valueExpr),
 						elem,
 					)
-				})
-				elem.Value.IfNone(func() {
+				} else {
 					elems[i] = NewPropertyExpr(
 						key,
 						optional.None[Expr](),
 						elem,
 					)
-				})
+				}
 			default:
 				panic(fmt.Sprintf("TODO - buildExpr - ObjectExpr - default case: %#v", elem))
 			}

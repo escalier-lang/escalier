@@ -337,12 +337,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
-				elem.Value.IfSome(func(value ast.Expr) {
-					t, elemErrors := c.inferExpr(ctx, value)
+				if elem.Value != nil {
+					t, elemErrors := c.inferExpr(ctx, elem.Value)
 					errors = slices.Concat(errors, elemErrors)
 					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
-				})
-				elem.Value.IfNone(func() {
+				} else {
 					switch key := elem.Name.(type) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
@@ -360,7 +359,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 							)
 						}
 					}
-				})
+				}
 			default:
 				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
 			}

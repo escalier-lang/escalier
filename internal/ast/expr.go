@@ -491,19 +491,19 @@ type PropertyExpr struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
-	Value    optional.Option[Expr]
+	Value    Expr // optional
 	span     Span
 }
 
-func NewProperty(name ObjKey, optional, readonly bool, value optional.Option[Expr], span Span) *PropertyExpr {
+func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *PropertyExpr {
 	return &PropertyExpr{Name: name, Optional: optional, Readonly: readonly, Value: value, span: span}
 }
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.VisitObjExprElem(e) {
-		e.Value.IfSome(func(value Expr) {
-			value.Accept(v)
-		})
+		if e.Value != nil {
+			e.Value.Accept(v)
+		}
 	}
 }
 

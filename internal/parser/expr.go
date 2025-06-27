@@ -27,28 +27,28 @@ var precedence = map[ast.BinaryOp]int{
 	ast.NullishCoalescing: 3,
 }
 
-func (p *Parser) exprWithMarker(marker Marker) (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) exprWithMarker(marker Marker) (ast.Expr, []*Error) {
 	p.markers.Push(marker)
 	defer p.markers.Pop()
 	return p.exprInternal()
 }
 
 func (p *Parser) nonDelimitedExpr() (ast.Expr, []*Error) {
-	exprOption, exprError := p.exprWithMarker(MarkerExpr)
-	return exprOption.Unwrap(), exprError
+	expr, exprError := p.exprWithMarker(MarkerExpr)
+	return expr, exprError
 }
 
 func (p *Parser) expr() (ast.Expr, []*Error) {
 	expr, errors := p.exprWithMarker(MarkerDelim)
-	expr = expr.OrElse(func() optional.Option[ast.Expr] {
+	if expr == nil {
 		token := p.lexer.peek()
 		errors = append(errors, NewError(token.Span, "Expected an expression"))
-		return optional.Some[ast.Expr](ast.NewEmpty(token.Span))
-	})
-	return expr.Unwrap(), errors
+		return ast.NewEmpty(token.Span), errors
+	}
+	return expr, errors
 }
 
-func (p *Parser) exprInternal() (optional.Option[ast.Expr], []*Error) {
+func (p *Parser) exprInternal() (ast.Expr, []*Error) {
 	select {
 	case <-p.ctx.Done():
 		fmt.Println("Taking too long to parse")
@@ -106,7 +106,7 @@ loop:
 
 		if token.Span.Start.Line != p.lexer.currentLocation.Line {
 			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
-				return optional.Some(values.Pop()), errors
+				return values.Pop(), errors
 			}
 		}
 
@@ -145,7 +145,7 @@ loop:
 	if len(values) != 1 {
 		panic("parseExpr - expected one value on the stack")
 	}
-	return optional.Some(values.Pop()), errors
+	return values.Pop(), errors
 }
 
 type TokenAndOp struct {
@@ -503,7 +503,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 				objKey,
 				false,
 				false, // TODO: handle readonly
-				optional.Some(value),
+				value,
 				ast.MergeSpans(objKey.Span(), value.Span()),
 			)
 			return property, errors
@@ -520,7 +520,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 				objKey,
 				true,
 				false, // TODO: handle readonly
-				optional.Some(value),
+				value,
 				ast.MergeSpans(objKey.Span(), value.Span()),
 			)
 			return property, errors
@@ -576,7 +576,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 					objKey,
 					false,
 					false,
-					optional.None[ast.Expr](), // shorthand property
+					nil, // shorthand property
 					objKey.Span(),
 				)
 				return property, errors
@@ -594,7 +594,7 @@ func (p *Parser) objExprElem() (ast.ObjExprElem, []*Error) {
 						objKey,
 						false,
 						false,
-						optional.Some(value),
+						value,
 						objKey.Span(),
 					)
 					return property, errors
