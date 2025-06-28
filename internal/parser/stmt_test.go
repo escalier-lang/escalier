@@ -86,13 +86,13 @@ func TestParseStmtNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			stmt, errors := parser.stmt()
+			stmt := parser.stmt()
 
 			snaps.MatchSnapshot(t, stmt)
-			if len(errors) > 0 {
-				fmt.Printf("Error[0]: %#v", errors[0])
+			if len(parser.errors) > 0 {
+				fmt.Printf("Error[0]: %#v", parser.errors[0])
 			}
-			assert.Len(t, errors, 0)
+			assert.Len(t, parser.errors, 0)
 		})
 	}
 }
@@ -139,11 +139,11 @@ func TestParseStmtErrorHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			stmt, errors := parser.stmt()
+			stmt := parser.stmt()
 
 			snaps.MatchSnapshot(t, stmt)
-			assert.Greater(t, len(errors), 0)
-			snaps.MatchSnapshot(t, errors)
+			assert.Greater(t, len(parser.errors), 0)
+			snaps.MatchSnapshot(t, parser.errors)
 		})
 	}
 }

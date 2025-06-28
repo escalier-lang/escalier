@@ -5,14 +5,14 @@ import (
 )
 
 // block = '{' stmt* '}'
-func (p *Parser) block() (ast.Block, []*Error) {
+func (p *Parser) block() ast.Block {
 	stmts := []ast.Stmt{}
-	errors := []*Error{}
 	var start ast.Location
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
-		return ast.Block{Stmts: stmts, Span: token.Span}, []*Error{NewError(token.Span, "Expected an opening brace")}
+		p.reportError(token.Span, "Expected an opening brace")
+		return ast.Block{Stmts: stmts, Span: token.Span}
 	} else {
 		start = token.Span.Start
 	}
@@ -23,13 +23,12 @@ func (p *Parser) block() (ast.Block, []*Error) {
 		switch token.Type {
 		case CloseBrace:
 			p.lexer.consume()
-			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}, errors
+			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			stmt, stmtErrors := p.stmt()
-			errors = append(errors, stmtErrors...)
+			stmt := p.stmt()
 			if stmt != nil {
 				stmts = append(stmts, stmt)
 			}
@@ -39,29 +38,29 @@ func (p *Parser) block() (ast.Block, []*Error) {
 }
 
 // stmt = decl | ('return' expr?) | expr
-func (p *Parser) stmt() (ast.Stmt, []*Error) {
+func (p *Parser) stmt() ast.Stmt {
 	token := p.lexer.peek()
 
 	// nolint: exhaustive
 	switch token.Type {
 	case Fn, Var, Val, Type, Declare, Export:
-		decl, declErrors := p.decl()
+		decl := p.decl()
 		if decl == nil {
-			return nil, declErrors
+			return nil
 		}
 		stmt := ast.NewDeclStmt(decl, decl.Span())
-		return stmt, declErrors
+		return stmt
 	case Return:
 		p.lexer.consume()
-		expr, exprErrors := p.nonDelimitedExpr()
+		expr := p.nonDelimitedExpr()
 		if expr == nil {
-			return ast.NewReturnStmt(nil, token.Span), exprErrors
+			return ast.NewReturnStmt(nil, token.Span)
 		}
 		return ast.NewReturnStmt(
 			expr, ast.MergeSpans(token.Span, expr.Span()),
-		), exprErrors
+		)
 	default:
-		expr, exprErrors := p.nonDelimitedExpr()
+		expr := p.nonDelimitedExpr()
 		// If no tokens have been consumed then we've encountered something we
 		// don't know how to parse.
 		nextToken := p.lexer.peek()
@@ -70,8 +69,8 @@ func (p *Parser) stmt() (ast.Stmt, []*Error) {
 			p.lexer.consume()
 		}
 		if expr == nil {
-			return nil, exprErrors
+			return nil
 		}
-		return ast.NewExprStmt(expr, expr.Span()), exprErrors
+		return ast.NewExprStmt(expr, expr.Span())
 	}
 }

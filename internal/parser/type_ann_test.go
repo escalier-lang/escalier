@@ -65,10 +65,10 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			typeAnn, errors := parser.typeAnn()
+			typeAnn := parser.typeAnn()
 
 			snaps.MatchSnapshot(t, typeAnn)
-			assert.Equal(t, errors, []*Error{})
+			assert.Equal(t, parser.errors, []*Error{})
 		})
 	}
 }

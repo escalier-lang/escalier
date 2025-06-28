@@ -7,9 +7,10 @@ import (
 )
 
 type Parser struct {
+	ctx     context.Context
 	lexer   *Lexer
 	markers Stack[Marker]
-	ctx     context.Context
+	errors  []*Error
 }
 
 type Marker int
@@ -24,25 +25,24 @@ func NewParser(ctx context.Context, source Source) *Parser {
 		ctx:     ctx,
 		lexer:   NewLexer(source),
 		markers: Stack[Marker]{},
+		errors:  []*Error{},
 	}
 }
 
 func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	stmts := []ast.Stmt{}
-	errors := []*Error{}
 
 	token := p.lexer.peek()
 	for {
 		//nolint: exhaustive
 		switch token.Type {
 		case EndOfFile:
-			return &ast.Script{Stmts: stmts}, errors
+			return &ast.Script{Stmts: stmts}, p.errors
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			stmt, stmtErrors := p.stmt()
-			errors = append(errors, stmtErrors...)
+			stmt := p.stmt()
 			if stmt != nil {
 				stmts = append(stmts, stmt)
 			}

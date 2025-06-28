@@ -7,9 +7,8 @@ import (
 )
 
 // pattern = identifier | wildcard | tuple | object | rest | literal
-func (p *Parser) pattern(allowIdentDefault bool) (ast.Pat, []*Error) {
+func (p *Parser) pattern(allowIdentDefault bool) ast.Pat {
 	token := p.lexer.peek()
-	errors := []*Error{}
 
 	// nolint: exhaustive
 	switch token.Type {
@@ -23,7 +22,7 @@ func (p *Parser) pattern(allowIdentDefault bool) (ast.Pat, []*Error) {
 		}
 	case Underscore:
 		p.lexer.consume()
-		return ast.NewWildcardPat(token.Span), errors
+		return ast.NewWildcardPat(token.Span)
 	case OpenBracket:
 		return p.tuplePat()
 	case OpenBrace:
@@ -36,120 +35,105 @@ func (p *Parser) pattern(allowIdentDefault bool) (ast.Pat, []*Error) {
 }
 
 // extractorPat = identifier '(' (pattern (',' pattern)*)? ')'
-func (p *Parser) extractorPat(nameToken *Token) (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) extractorPat(nameToken *Token) ast.Pat {
 	p.lexer.consume() // consume '('
-	patArgs, patErrors := parseDelimSeq(p, CloseParen, Comma, func() (ast.Pat, []*Error) {
+	patArgs := parseDelimSeq(p, CloseParen, Comma, func() ast.Pat {
 		return p.pattern(true)
 	})
-	errors = append(errors, patErrors...)
-	end, endErrors := p.expect(CloseParen, AlwaysConsume)
-	errors = append(errors, endErrors...)
-	return ast.NewExtractorPat(nameToken.Value, patArgs, ast.NewSpan(nameToken.Span.Start, end)), errors
+	end := p.expect(CloseParen, AlwaysConsume)
+	return ast.NewExtractorPat(nameToken.Value, patArgs, ast.NewSpan(nameToken.Span.Start, end))
 }
 
 // identPat = identifier ('=' expr)?
-func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool) (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool) ast.Pat {
 	span := nameToken.Span
 	token := p.lexer.peek()
 	var _default ast.Expr
 	if allowIdentDefault && token.Type == Equal {
 		p.lexer.consume()
-		expr, exprErrors := p.expr()
-		errors = append(errors, exprErrors...)
+		expr := p.expr()
 		if expr != nil {
 			span = ast.MergeSpans(span, expr.Span())
 			_default = expr
 		}
 	}
-	return ast.NewIdentPat(nameToken.Value, _default, span), errors
+	return ast.NewIdentPat(nameToken.Value, _default, span)
 }
 
 // tuplePat = '[' (pattern (',' pattern)*)? ']'
-func (p *Parser) tuplePat() (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) tuplePat() ast.Pat {
 	token := p.lexer.peek()
 	start := token.Span.Start
 	p.lexer.consume() // consume '['
-	patElems, patElemsErrors := parseDelimSeq(p, CloseBracket, Comma, func() (ast.Pat, []*Error) {
+	patElems := parseDelimSeq(p, CloseBracket, Comma, func() ast.Pat {
 		return p.pattern(true)
 	})
-	errors = append(errors, patElemsErrors...)
-	end, endErrors := p.expect(CloseBracket, AlwaysConsume)
-	errors = append(errors, endErrors...)
-	return ast.NewTuplePat(patElems, ast.NewSpan(start, end)), errors
+	end := p.expect(CloseBracket, AlwaysConsume)
+	return ast.NewTuplePat(patElems, ast.NewSpan(start, end))
 }
 
 // objectPat = '{' (objPatElem (',' objPatElem)*)? '}'
-func (p *Parser) objectPat() (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) objectPat() ast.Pat {
 	token := p.lexer.peek()
 	start := token.Span.Start
 	p.lexer.consume() // consume '{'
-	patElems, patElemsErrors := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
-	errors = append(errors, patElemsErrors...)
-	end, endErrors := p.expect(CloseBrace, AlwaysConsume)
-	errors = append(errors, endErrors...)
-	return ast.NewObjectPat(patElems, ast.NewSpan(start, end)), errors
+	patElems := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	return ast.NewObjectPat(patElems, ast.NewSpan(start, end))
 }
 
 // restPat = '...' pattern
-func (p *Parser) restPat() (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) restPat() ast.Pat {
 	token := p.lexer.peek()
 	p.lexer.consume() // consume '...'
-	pat, patErrors := p.pattern(true)
-	errors = append(errors, patErrors...)
+	pat := p.pattern(true)
 	span := token.Span
 	if pat == nil {
-		errors = append(errors, NewError(token.Span, "Expected pattern"))
-		return nil, errors
+		p.reportError(token.Span, "Expected pattern")
+		return nil
 	}
 	span = ast.MergeSpans(span, pat.Span())
-	return ast.NewRestPat(pat, span), errors
+	return ast.NewRestPat(pat, span)
 }
 
 // literalPat = string | number | 'true' | 'false' | 'null' | 'undefined'
-func (p *Parser) literalPat() (ast.Pat, []*Error) {
-	errors := []*Error{}
+func (p *Parser) literalPat() ast.Pat {
 	token := p.lexer.peek()
 
 	// nolint: exhaustive
 	switch token.Type {
 	case StrLit:
 		p.lexer.consume()
-		return ast.NewLitPat(&ast.StrLit{Value: token.Value}, token.Span), errors
+		return ast.NewLitPat(&ast.StrLit{Value: token.Value}, token.Span)
 	case NumLit:
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
-			errors = append(errors, NewError(token.Span, "Invalid number"))
-			return nil, errors
+			p.reportError(token.Span, "Invalid number")
+			return nil
 		}
-		return ast.NewLitPat(&ast.NumLit{Value: value}, token.Span), errors
+		return ast.NewLitPat(&ast.NumLit{Value: value}, token.Span)
 	case True:
 		p.lexer.consume()
-		return ast.NewLitPat(&ast.BoolLit{Value: true}, token.Span), errors
+		return ast.NewLitPat(&ast.BoolLit{Value: true}, token.Span)
 	case False:
 		p.lexer.consume()
-		return ast.NewLitPat(&ast.BoolLit{Value: false}, token.Span), errors
+		return ast.NewLitPat(&ast.BoolLit{Value: false}, token.Span)
 	case Null:
 		p.lexer.consume()
-		return ast.NewLitPat(&ast.NullLit{}, token.Span), errors
+		return ast.NewLitPat(&ast.NullLit{}, token.Span)
 	case Undefined:
 		p.lexer.consume()
-		return ast.NewLitPat(&ast.UndefinedLit{}, token.Span), errors
+		return ast.NewLitPat(&ast.UndefinedLit{}, token.Span)
 	default:
 		// TODO: return an invalid pattern
-		errors = append(errors, NewError(token.Span, "Expected a pattern"))
-		return nil, errors
+		p.reportError(token.Span, "Expected a pattern")
+		return nil
 	}
 }
 
-func (p *Parser) objPatElem() (ast.ObjPatElem, []*Error) {
+func (p *Parser) objPatElem() ast.ObjPatElem {
 	token := p.lexer.peek()
-	errors := []*Error{}
 
 	if token.Type == Identifier {
 		p.lexer.consume()
@@ -159,8 +143,7 @@ func (p *Parser) objPatElem() (ast.ObjPatElem, []*Error) {
 		token = p.lexer.peek()
 		if token.Type == Colon {
 			p.lexer.consume()
-			value, valueError := p.pattern(true)
-			errors = append(errors, valueError...)
+			value := p.pattern(true)
 			if value != nil {
 				span = ast.MergeSpans(span, value.Span())
 			}
@@ -169,47 +152,44 @@ func (p *Parser) objPatElem() (ast.ObjPatElem, []*Error) {
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				expr, exprError := p.expr()
+				expr := p.expr()
 				init = expr
-				errors = append(errors, exprError...)
 				if init != nil {
 					span = ast.MergeSpans(span, init.Span())
 				}
 			}
 
 			if value == nil {
-				return nil, errors
+				return nil
 			}
 
 			span = ast.MergeSpans(span, value.Span())
-			return ast.NewObjKeyValuePat(key, value, init, span), errors
+			return ast.NewObjKeyValuePat(key, value, init, span)
 		} else {
 			var init ast.Expr
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
-				expr, exprError := p.expr()
-				errors = append(errors, exprError...)
+				expr := p.expr()
 				if expr != nil {
 					span = ast.MergeSpans(span, expr.Span())
 					init = expr
 				}
 			}
 
-			return ast.NewObjShorthandPat(key, init, span), errors
+			return ast.NewObjShorthandPat(key, init, span)
 		}
 	} else if token.Type == DotDotDot {
 		p.lexer.consume()
 
-		pat, patErrors := p.pattern(true)
-		errors = append(errors, patErrors...)
+		pat := p.pattern(true)
 		if pat == nil {
-			return nil, errors
+			return nil
 		}
 		span := ast.MergeSpans(token.Span, pat.Span())
-		return ast.NewObjRestPat(pat, span), errors
+		return ast.NewObjRestPat(pat, span)
 	} else {
-		errors = append(errors, NewError(token.Span, "Expected identifier or '...'"))
-		return nil, errors
+		p.reportError(token.Span, "Expected identifier or '...'")
+		return nil
 	}
 }

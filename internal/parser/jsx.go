@@ -4,11 +4,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-func (p *Parser) jsxElement() (*ast.JSXElementExpr, []*Error) {
-	errors := []*Error{}
-
-	opening, openErrors := p.jsxOpening()
-	errors = append(errors, openErrors...)
+func (p *Parser) jsxElement() *ast.JSXElementExpr {
+	opening := p.jsxOpening()
 
 	span := ast.Span{
 		Start: opening.Span().Start,
@@ -16,26 +13,21 @@ func (p *Parser) jsxElement() (*ast.JSXElementExpr, []*Error) {
 	}
 
 	if !opening.SelfClose {
-		children, childrenErrors := p.jsxChildren()
-		errors = append(errors, childrenErrors...)
-		closing, closingErrors := p.jsxClosing()
-		errors = append(errors, closingErrors...)
+		children := p.jsxChildren()
+		closing := p.jsxClosing()
 
 		return ast.NewJSXElement(
 			opening, closing, children, ast.MergeSpans(span, closing.Span()),
-		), errors
+		)
 	}
 
-	return ast.NewJSXElement(
-		opening, nil, []ast.JSXChild{}, span,
-	), errors
+	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
 }
 
-func (p *Parser) jsxOpening() (*ast.JSXOpening, []*Error) {
-	errors := []*Error{}
+func (p *Parser) jsxOpening() *ast.JSXOpening {
 	token := p.lexer.next()
 	if token.Type != LessThan {
-		errors = append(errors, NewError(token.Span, "Expected '<'"))
+		p.reportError(token.Span, "Expected '<'")
 	}
 
 	start := token.Span.Start
@@ -53,13 +45,12 @@ func (p *Parser) jsxOpening() (*ast.JSXOpening, []*Error) {
 			Start: start,
 			End:   end,
 		}
-		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span), errors
+		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
 	default:
-		errors = append(errors, NewError(token.Span, "Expected an identifier or '>'"))
+		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
 
-	attrs, attrsErrors := p.jsxAttrs()
-	errors = append(errors, attrsErrors...)
+	attrs := p.jsxAttrs()
 
 	var selfClosing bool
 
@@ -72,7 +63,7 @@ func (p *Parser) jsxOpening() (*ast.JSXOpening, []*Error) {
 	case GreaterThan:
 		// do nothing
 	default:
-		errors = append(errors, NewError(token.Span, "Expected '>' or '/>'"))
+		p.reportError(token.Span, "Expected '>' or '/>'")
 	}
 
 	end := token.Span.End
@@ -82,12 +73,11 @@ func (p *Parser) jsxOpening() (*ast.JSXOpening, []*Error) {
 		End:   end,
 	}
 
-	return ast.NewJSXOpening(name, attrs, selfClosing, span), errors
+	return ast.NewJSXOpening(name, attrs, selfClosing, span)
 }
 
-func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
+func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 	attrs := []*ast.JSXAttr{}
-	errors := []*Error{}
 
 	for {
 		token := p.lexer.peek()
@@ -104,7 +94,7 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 		if token.Type == Equal {
 			p.lexer.consume() // consume equals
 		} else {
-			errors = append(errors, NewError(token.Span, "Expected '='"))
+			p.reportError(token.Span, "Expected '='")
 		}
 
 		var value ast.JSXAttrValue
@@ -119,36 +109,33 @@ func (p *Parser) jsxAttrs() ([]*ast.JSXAttr, []*Error) {
 			value = ast.NewJSXString(token.Value, token.Span)
 		case OpenBrace:
 			p.lexer.consume() // consume '{'
-			expr, exprErrors := p.expr()
-			errors = append(errors, exprErrors...)
+			expr := p.expr()
 			if expr == nil {
-				errors := append(errors, NewError(token.Span, "Expected an expression after '{'"))
-				return attrs, errors
+				p.reportError(token.Span, "Expected an expression after '{'")
+				return attrs
 			}
 			value = ast.NewJSXExprContainer(expr, token.Span)
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume() // consume '}'
 			} else {
-				errors = append(errors, NewError(token.Span, "Expected '}'"))
+				p.reportError(token.Span, "Expected '}'")
 			}
 		default:
-			errors = append(errors, NewError(token.Span, "Expected a string or an expression"))
+			p.reportError(token.Span, "Expected a string or an expression")
 		}
 
 		attr := ast.NewJSXAttr(name, &value, token.Span)
 		attrs = append(attrs, attr)
 	}
 
-	return attrs, errors
+	return attrs
 }
 
-func (p *Parser) jsxClosing() (*ast.JSXClosing, []*Error) {
-	errors := []*Error{}
-
+func (p *Parser) jsxClosing() *ast.JSXClosing {
 	token := p.lexer.next()
 	if token.Type != LessThanSlash {
-		errors = append(errors, NewError(token.Span, "Expected '</'"))
+		p.reportError(token.Span, "Expected '</'")
 	}
 
 	start := token.Span.Start
@@ -166,14 +153,14 @@ func (p *Parser) jsxClosing() (*ast.JSXClosing, []*Error) {
 			Start: start,
 			End:   end,
 		}
-		return ast.NewJSXClosing("", span), errors
+		return ast.NewJSXClosing("", span)
 	default:
-		errors = append(errors, NewError(token.Span, "Expected an identifier or '>'"))
+		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
 
 	token = p.lexer.next()
 	if token.Type != GreaterThan {
-		errors = append(errors, NewError(token.Span, "Expected '>'"))
+		p.reportError(token.Span, "Expected '>'")
 	}
 
 	end := token.Span.End
@@ -182,12 +169,11 @@ func (p *Parser) jsxClosing() (*ast.JSXClosing, []*Error) {
 		End:   end,
 	}
 
-	return ast.NewJSXClosing(name, span), errors
+	return ast.NewJSXClosing(name, span)
 }
 
-func (p *Parser) jsxChildren() ([]ast.JSXChild, []*Error) {
+func (p *Parser) jsxChildren() []ast.JSXChild {
 	children := []ast.JSXChild{}
-	errors := []*Error{}
 
 	for {
 		token := p.lexer.peek()
@@ -195,23 +181,21 @@ func (p *Parser) jsxChildren() ([]ast.JSXChild, []*Error) {
 		//nolint: exhaustive
 		switch token.Type {
 		case LessThanSlash, EndOfFile:
-			return children, errors
+			return children
 		case LessThan:
-			jsxElement, jsxErrors := p.jsxElement()
-			errors = append(errors, jsxErrors...)
+			jsxElement := p.jsxElement()
 			if jsxElement != nil {
 				children = append(children, jsxElement)
 			}
 		case OpenBrace:
 			p.lexer.consume()
-			expr, exprErrors := p.expr()
-			errors = append(errors, exprErrors...)
+			expr := p.expr()
 			// TODO: handle the case when parseExpr() returns nil
 			token = p.lexer.peek()
 			if token.Type == CloseBrace {
 				p.lexer.consume()
 			} else {
-				errors = append(errors, NewError(token.Span, "Expected '}'"))
+				p.reportError(token.Span, "Expected '}'")
 			}
 			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
 		default:

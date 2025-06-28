@@ -6,21 +6,19 @@ func parseDelimSeq[T interface{}](
 	separator TokenType,
 	// TODO: update this to return `nil` instead of `optional.None` when there
 	// is no item
-	parserCombinator func() (T, []*Error),
-) ([]T, []*Error) {
+	parserCombinator func() T,
+) []T {
 	items := []T{}
-	errors := []*Error{}
 
 	// Empty sequence
 	token := p.lexer.peek()
 	if token.Type == terminator {
-		return items, errors
+		return items
 	}
 
-	item, itemErrors := parserCombinator()
-	errors = append(errors, itemErrors...)
+	item := parserCombinator()
 	if interface{}(item) == nil {
-		return items, errors
+		return items
 	}
 	items = append(items, item)
 
@@ -31,17 +29,16 @@ func parseDelimSeq[T interface{}](
 
 			token = p.lexer.peek()
 			if token.Type == terminator {
-				return items, errors
+				return items
 			}
 
-			item, itemErrors := parserCombinator()
-			errors = append(errors, itemErrors...)
+			item := parserCombinator()
 			if interface{}(item) == nil {
-				return items, errors
+				return items
 			}
 			items = append(items, item)
 		} else {
-			return items, errors
+			return items
 		}
 	}
 }
