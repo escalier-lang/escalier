@@ -68,7 +68,7 @@ func (p *Parser) expect(tt TokenType, consume Consume) ast.Location {
 		if consume == ConsumeOnMismatch {
 			p.lexer.consume()
 		}
-		p.errors = append(p.errors, NewError(token.Span, fmt.Sprintf("Expected %s but got %s", TokenMap[tt], TokenMap[token.Type])))
+		p.reportError(token.Span, fmt.Sprintf("Expected %s but got %s", TokenMap[tt], TokenMap[token.Type]))
 		return token.Span.End
 	}
 	if consume == ConsumeOnMatch {

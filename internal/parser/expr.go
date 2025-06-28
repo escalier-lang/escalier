@@ -40,7 +40,7 @@ func (p *Parser) expr() ast.Expr {
 	expr := p.exprWithMarker(MarkerDelim)
 	if expr == nil {
 		token := p.lexer.peek()
-		p.errors = append(p.errors, NewError(token.Span, "Expected an expression"))
+		p.reportError(token.Span, "Expected an expression")
 		return ast.NewEmpty(token.Span)
 	}
 	return expr
@@ -123,7 +123,7 @@ loop:
 		expr := p.primaryExpr()
 		if expr == nil {
 			token := p.lexer.peek()
-			p.errors = append(p.errors, NewError(token.Span, "Expected an expression"))
+			p.reportError(token.Span, "Expected an expression")
 			expr = ast.NewEmpty(token.Span)
 		}
 		values.Push(expr)
@@ -182,7 +182,7 @@ loop:
 			args := parseDelimSeq(p, CloseParen, Comma, p.expr)
 			terminator := p.lexer.next()
 			if terminator.Type != CloseParen {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a closing paren"))
+				p.reportError(token.Span, "Expected a closing paren")
 			}
 			callee := expr
 			optChain := false
@@ -198,12 +198,12 @@ loop:
 			// TODO: handle the case when parseExpr() return None correctly
 			index := p.expr()
 			if index == nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected an expression after '['"))
+				p.reportError(token.Span, "Expected an expression after '['")
 				break loop
 			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a closing bracket"))
+				p.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := expr
 			optChain := false
@@ -241,9 +241,9 @@ loop:
 					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
 				)
 				if token.Type == Dot {
-					p.errors = append(p.errors, NewError(token.Span, "expected an identifier after ."))
+					p.reportError(token.Span, "expected an identifier after .")
 				} else {
-					p.errors = append(p.errors, NewError(token.Span, "expected an identifier after ?."))
+					p.reportError(token.Span, "expected an identifier after ?.")
 				}
 			}
 		case BackTick:
@@ -273,7 +273,7 @@ func (p *Parser) objExprKey() ast.ObjKey {
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
-			p.errors = append(p.errors, NewError(token.Span, "Expected a number"))
+			p.reportError(token.Span, "Expected a number")
 		}
 		return ast.NewNumber(value, token.Span)
 	case OpenBracket:
@@ -285,7 +285,7 @@ func (p *Parser) objExprKey() ast.ObjKey {
 		}
 		return nil
 	default:
-		p.errors = append(p.errors, NewError(token.Span, "Expected a property name"))
+		p.reportError(token.Span, "Expected a property name")
 		return nil
 	}
 }
@@ -307,7 +307,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a number"))
+				p.reportError(token.Span, "Expected a number")
 				// TODO: return an EmptyExpr instead of nil
 				return nil
 			}
@@ -335,7 +335,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			// TODO: handle the case when parseExpr() return None
 			expr = p.expr()
 			if expr == nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected an expression after '('"))
+				p.reportError(token.Span, "Expected an expression after '('")
 				return nil
 			}
 			p.expect(CloseParen, AlwaysConsume)
@@ -434,7 +434,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		p.lexer.consume() // consume '...'
 		arg := p.expr()
 		if arg == nil {
-			p.errors = append(p.errors, NewError(token.Span, "Expected an expression after '...'"))
+			p.reportError(token.Span, "Expected an expression after '...'")
 		}
 		if arg != nil {
 			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
@@ -546,10 +546,10 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			default:
 				value := p.expr()
 				if value == nil {
-					p.errors = append(p.errors, NewError(token.Span, "Expected a comma, closing brace, or expression"))
+					p.reportError(token.Span, "Expected a comma, closing brace, or expression")
 					return nil
 				} else {
-					p.errors = append(p.errors, NewError(token.Span, "Expected a comma or closing brace"))
+					p.reportError(token.Span, "Expected a comma or closing brace")
 				}
 				if value != nil {
 					property := ast.NewProperty(
@@ -564,7 +564,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 				return nil
 			}
 		default:
-			p.errors = append(p.errors, NewError(token.Span, "Expected a comma or closing brace"))
+			p.reportError(token.Span, "Expected a comma or closing brace")
 		}
 	}
 	return nil
@@ -630,7 +630,7 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 			raw = quasi.Value
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
 			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End}
-			p.errors = append(p.errors, NewError(span, "Expected a closing backtick"))
+			p.reportError(span, "Expected a closing backtick")
 			break
 		}
 	}
@@ -651,11 +651,11 @@ func (p *Parser) ifElse() ast.Expr {
 	token := p.lexer.peek()
 	var cond ast.Expr
 	if token.Type == OpenBrace {
-		p.errors = append(p.errors, NewError(token.Span, "Expected a condition"))
+		p.reportError(token.Span, "Expected a condition")
 	} else {
 		cond = p.expr()
 		if cond == nil {
-			p.errors = append(p.errors, NewError(token.Span, "Expected a valid condition expression"))
+			p.reportError(token.Span, "Expected a valid condition expression")
 			return nil
 		}
 	}
@@ -670,7 +670,7 @@ func (p *Parser) ifElse() ast.Expr {
 		case If:
 			ifElseResult := p.ifElse()
 			if ifElseResult == nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a valid expression after 'if'"))
+				p.reportError(token.Span, "Expected a valid expression after 'if'")
 				return ast.NewIfElse(
 					cond, body, nil,
 					ast.Span{Start: start, End: token.Span.Start},
@@ -694,7 +694,7 @@ func (p *Parser) ifElse() ast.Expr {
 				cond, body, alt, ast.Span{Start: start, End: block.Span.End},
 			)
 		default:
-			p.errors = append(p.errors, NewError(token.Span, "Expected an if or an opening brace"))
+			p.reportError(token.Span, "Expected an if or an opening brace")
 			return ast.NewIfElse(
 				cond, body, nil,
 				ast.Span{Start: start, End: token.Span.Start},

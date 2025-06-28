@@ -30,7 +30,7 @@ func (p *Parser) decl() ast.Decl {
 	case Type:
 		return p.typeDecl(start, export, declare)
 	default:
-		p.errors = append(p.errors, NewError(token.Span, "Unexpected token"))
+		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
@@ -50,7 +50,7 @@ func (p *Parser) varDecl(
 
 	pat := p.pattern(false)
 	if pat == nil {
-		p.errors = append(p.errors, NewError(token.Span, "Expected pattern"))
+		p.reportError(token.Span, "Expected pattern")
 		pat = ast.NewIdentPat(
 			"",
 			nil,
@@ -71,14 +71,14 @@ func (p *Parser) varDecl(
 	var init ast.Expr
 	if !declare {
 		if token.Type != Equal {
-			p.errors = append(p.errors, NewError(token.Span, "Expected equals sign"))
+			p.reportError(token.Span, "Expected equals sign")
 			return nil
 		}
 		p.lexer.consume()
 		init = p.nonDelimitedExpr()
 		if init == nil {
 			token := p.lexer.peek()
-			p.errors = append(p.errors, NewError(token.Span, "Expected an expression"))
+			p.reportError(token.Span, "Expected an expression")
 			init = ast.NewEmpty(token.Span)
 		}
 		end = init.Span().End
@@ -98,7 +98,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 		p.lexer.consume()
 		ident = ast.NewIdentifier(token.Value, token.Span)
 	} else {
-		p.errors = append(p.errors, NewError(token.Span, "Expected identifier"))
+		p.reportError(token.Span, "Expected identifier")
 		ident = ast.NewIdentifier(
 			"",
 			ast.Span{Start: token.Span.Start, End: token.Span.Start},
@@ -107,7 +107,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 
 	token = p.lexer.peek()
 	if token.Type != OpenParen {
-		p.errors = append(p.errors, NewError(token.Span, "Expected an opening paren"))
+		p.reportError(token.Span, "Expected an opening paren")
 	} else {
 		p.lexer.consume()
 	}
@@ -116,7 +116,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 
 	token = p.lexer.peek()
 	if token.Type != CloseParen {
-		p.errors = append(p.errors, NewError(token.Span, "Expected a closing paren"))
+		p.reportError(token.Span, "Expected a closing paren")
 	} else {
 		p.lexer.consume()
 	}
@@ -138,7 +138,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	if token.Type != Identifier {
-		p.errors = append(p.errors, NewError(token.Span, "Expected identifier"))
+		p.reportError(token.Span, "Expected identifier")
 		return nil
 	}
 	p.lexer.consume()

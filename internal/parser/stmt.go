@@ -11,7 +11,7 @@ func (p *Parser) block() ast.Block {
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
-		p.errors = append(p.errors, NewError(token.Span, "Expected an opening brace"))
+		p.reportError(token.Span, "Expected an opening brace")
 		return ast.Block{Stmts: stmts, Span: token.Span}
 	} else {
 		start = token.Span.Start

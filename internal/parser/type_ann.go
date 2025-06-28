@@ -119,7 +119,7 @@ loop:
 		typeAnn := p.primaryTypeAnn()
 		if typeAnn == nil {
 			token := p.lexer.peek()
-			p.errors = append(p.errors, NewError(token.Span, "Expected an type annotation"))
+			p.reportError(token.Span, "Expected an type annotation")
 
 			// TODO: add an EmptyTypeAnn to the AST
 			// For now, we panic to indicate that something went wrong
@@ -194,7 +194,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a number"))
+				p.reportError(token.Span, "Expected a number")
 				return nil
 			}
 			typeAnn = ast.NewLitTypeAnn(ast.NewNumber(value, token.Span), token.Span)
@@ -225,10 +225,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 
 			retType := p.typeAnn()
 			if retType == nil {
-				p.errors = append(p.errors, &Error{
-					Span:    token.Span,
-					Message: "expected return type annotation",
-				})
+				p.reportError(token.Span, "expected return type annotation")
 				return nil
 			}
 
@@ -262,10 +259,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 
 			typeAnn = ast.NewRefTypeAnn(token.Value, []ast.TypeAnn{}, token.Span)
 		default:
-			p.errors = append(p.errors, &Error{
-				Span:    token.Span,
-				Message: "expected type annotation",
-			})
+			p.reportError(token.Span, "expected type annotation")
 			p.lexer.consume()
 			return nil
 		}
@@ -292,12 +286,12 @@ loop:
 			// TODO: handle the case when parseExpr() return None correctly
 			index := p.typeAnn()
 			if index == nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected an expression after '['"))
+				p.reportError(token.Span, "Expected an expression after '['")
 				break loop
 			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
-				p.errors = append(p.errors, NewError(token.Span, "Expected a closing bracket"))
+				p.reportError(token.Span, "Expected a closing bracket")
 			}
 			obj := typeAnn
 			typeAnn = ast.NewIndexTypeAnn(
@@ -326,9 +320,9 @@ loop:
 					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
 				)
 				if token.Type == Dot {
-					p.errors = append(p.errors, NewError(token.Span, "expected an identifier after ."))
+					p.reportError(token.Span, "expected an identifier after .")
 				} else {
-					p.errors = append(p.errors, NewError(token.Span, "expected an identifier after ?."))
+					p.reportError(token.Span, "expected an identifier after ?.")
 				}
 			}
 		default:
@@ -361,10 +355,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	// nolint: exhaustive
 	switch token.Type {
 	case CloseBrace:
-		p.errors = append(p.errors, &Error{
-			Span:    token.Span,
-			Message: "expected type annotation",
-		})
+		p.reportError(token.Span, "expected type annotation")
 
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
@@ -374,10 +365,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		}
 		return property
 	case Comma:
-		p.errors = append(p.errors, &Error{
-			Span:    token.Span,
-			Message: "expected type annotation",
-		})
+		p.reportError(token.Span, "expected type annotation")
 
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
@@ -398,10 +386,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 
 		token = p.lexer.peek()
 		if token.Type == Comma {
-			p.errors = append(p.errors, &Error{
-				Span:    token.Span,
-				Message: "expected type annotation",
-			})
+			p.reportError(token.Span, "expected type annotation")
 			return property
 		}
 
@@ -436,10 +421,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 
 		retType := p.typeAnn()
 		if retType == nil {
-			p.errors = append(p.errors, &Error{
-				Span:    token.Span,
-				Message: "expected return type annotation",
-			})
+			p.reportError(token.Span, "expected return type annotation")
 			return nil
 		}
 
@@ -477,10 +459,7 @@ func (p *Parser) typeParam() *ast.TypeParam {
 	token := p.lexer.peek()
 
 	if token.Type != Identifier {
-		p.errors = append(p.errors, &Error{
-			Span:    token.Span,
-			Message: "expected type parameter",
-		})
+		p.reportError(token.Span, "expected type parameter")
 		p.lexer.consume()
 		return nil
 	}

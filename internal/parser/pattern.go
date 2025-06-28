@@ -89,7 +89,7 @@ func (p *Parser) restPat() ast.Pat {
 	pat := p.pattern(true)
 	span := token.Span
 	if pat == nil {
-		p.errors = append(p.errors, NewError(token.Span, "Expected pattern"))
+		p.reportError(token.Span, "Expected pattern")
 		return nil
 	}
 	span = ast.MergeSpans(span, pat.Span())
@@ -109,7 +109,7 @@ func (p *Parser) literalPat() ast.Pat {
 		p.lexer.consume()
 		value, err := strconv.ParseFloat(token.Value, 64)
 		if err != nil {
-			p.errors = append(p.errors, NewError(token.Span, "Invalid number"))
+			p.reportError(token.Span, "Invalid number")
 			return nil
 		}
 		return ast.NewLitPat(&ast.NumLit{Value: value}, token.Span)
@@ -127,7 +127,7 @@ func (p *Parser) literalPat() ast.Pat {
 		return ast.NewLitPat(&ast.UndefinedLit{}, token.Span)
 	default:
 		// TODO: return an invalid pattern
-		p.errors = append(p.errors, NewError(token.Span, "Expected a pattern"))
+		p.reportError(token.Span, "Expected a pattern")
 		return nil
 	}
 }
@@ -189,7 +189,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 		span := ast.MergeSpans(token.Span, pat.Span())
 		return ast.NewObjRestPat(pat, span)
 	} else {
-		p.errors = append(p.errors, NewError(token.Span, "Expected identifier or '...'"))
+		p.reportError(token.Span, "Expected identifier or '...'")
 		return nil
 	}
 }

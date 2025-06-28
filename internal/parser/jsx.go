@@ -27,7 +27,7 @@ func (p *Parser) jsxElement() *ast.JSXElementExpr {
 func (p *Parser) jsxOpening() *ast.JSXOpening {
 	token := p.lexer.next()
 	if token.Type != LessThan {
-		p.errors = append(p.errors, NewError(token.Span, "Expected '<'"))
+		p.reportError(token.Span, "Expected '<'")
 	}
 
 	start := token.Span.Start
@@ -47,7 +47,7 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 		}
 		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
 	default:
-		p.errors = append(p.errors, NewError(token.Span, "Expected an identifier or '>'"))
+		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
 
 	attrs := p.jsxAttrs()
@@ -63,7 +63,7 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 	case GreaterThan:
 		// do nothing
 	default:
-		p.errors = append(p.errors, NewError(token.Span, "Expected '>' or '/>'"))
+		p.reportError(token.Span, "Expected '>' or '/>'")
 	}
 
 	end := token.Span.End
@@ -94,7 +94,7 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 		if token.Type == Equal {
 			p.lexer.consume() // consume equals
 		} else {
-			p.errors = append(p.errors, NewError(token.Span, "Expected '='"))
+			p.reportError(token.Span, "Expected '='")
 		}
 
 		var value ast.JSXAttrValue
@@ -111,7 +111,7 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 			p.lexer.consume() // consume '{'
 			expr := p.expr()
 			if expr == nil {
-				p.errors = append(p.errors, NewError(token.Span, "Expected an expression after '{'"))
+				p.reportError(token.Span, "Expected an expression after '{'")
 				return attrs
 			}
 			value = ast.NewJSXExprContainer(expr, token.Span)
@@ -119,10 +119,10 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 			if token.Type == CloseBrace {
 				p.lexer.consume() // consume '}'
 			} else {
-				p.errors = append(p.errors, NewError(token.Span, "Expected '}'"))
+				p.reportError(token.Span, "Expected '}'")
 			}
 		default:
-			p.errors = append(p.errors, NewError(token.Span, "Expected a string or an expression"))
+			p.reportError(token.Span, "Expected a string or an expression")
 		}
 
 		attr := ast.NewJSXAttr(name, &value, token.Span)
@@ -135,7 +135,7 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 func (p *Parser) jsxClosing() *ast.JSXClosing {
 	token := p.lexer.next()
 	if token.Type != LessThanSlash {
-		p.errors = append(p.errors, NewError(token.Span, "Expected '</'"))
+		p.reportError(token.Span, "Expected '</'")
 	}
 
 	start := token.Span.Start
@@ -155,12 +155,12 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 		}
 		return ast.NewJSXClosing("", span)
 	default:
-		p.errors = append(p.errors, NewError(token.Span, "Expected an identifier or '>'"))
+		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
 
 	token = p.lexer.next()
 	if token.Type != GreaterThan {
-		p.errors = append(p.errors, NewError(token.Span, "Expected '>'"))
+		p.reportError(token.Span, "Expected '>'")
 	}
 
 	end := token.Span.End
@@ -195,7 +195,7 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 			if token.Type == CloseBrace {
 				p.lexer.consume()
 			} else {
-				p.errors = append(p.errors, NewError(token.Span, "Expected '}'"))
+				p.reportError(token.Span, "Expected '}'")
 			}
 			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
 		default:
