@@ -7,25 +7,25 @@ import (
 )
 
 type Parser struct {
-	ctx     context.Context
-	lexer   *Lexer
-	markers Stack[Marker]
-	errors  []*Error
+	ctx      context.Context
+	lexer    *Lexer
+	errors   []*Error
+	exprMode Stack[ExprMode]
 }
 
-type Marker int
+type ExprMode int
 
 const (
-	MarkerExpr Marker = iota
-	MarkerDelim
+	MultiLineExpr = iota
+	SingleLineExpr
 )
 
 func NewParser(ctx context.Context, source Source) *Parser {
 	return &Parser{
-		ctx:     ctx,
-		lexer:   NewLexer(source),
-		markers: Stack[Marker]{},
-		errors:  []*Error{},
+		ctx:      ctx,
+		lexer:    NewLexer(source),
+		errors:   []*Error{},
+		exprMode: Stack[ExprMode]{SingleLineExpr},
 	}
 }
 

@@ -40,6 +40,9 @@ func (p *Parser) block() ast.Block {
 // stmt = decl | ('return' expr?) | expr
 func (p *Parser) stmt() ast.Stmt {
 	token := p.lexer.peek()
+	p.exprMode.Push(SingleLineExpr)
+
+	var stmt ast.Stmt
 
 	// nolint: exhaustive
 	switch token.Type {
@@ -48,19 +51,19 @@ func (p *Parser) stmt() ast.Stmt {
 		if decl == nil {
 			return nil
 		}
-		stmt := ast.NewDeclStmt(decl, decl.Span())
-		return stmt
+		stmt = ast.NewDeclStmt(decl, decl.Span())
 	case Return:
 		p.lexer.consume()
-		expr := p.nonDelimitedExpr()
+		expr := p.exprInternal()
 		if expr == nil {
-			return ast.NewReturnStmt(nil, token.Span)
+			stmt = ast.NewReturnStmt(nil, token.Span)
+		} else {
+			stmt = ast.NewReturnStmt(
+				expr, ast.MergeSpans(token.Span, expr.Span()),
+			)
 		}
-		return ast.NewReturnStmt(
-			expr, ast.MergeSpans(token.Span, expr.Span()),
-		)
 	default:
-		expr := p.nonDelimitedExpr()
+		expr := p.exprInternal()
 		// If no tokens have been consumed then we've encountered something we
 		// don't know how to parse.
 		nextToken := p.lexer.peek()
@@ -69,8 +72,12 @@ func (p *Parser) stmt() ast.Stmt {
 			p.lexer.consume()
 		}
 		if expr == nil {
-			return nil
+			stmt = nil
+		} else {
+			stmt = ast.NewExprStmt(expr, expr.Span())
 		}
-		return ast.NewExprStmt(expr, expr.Span())
 	}
+
+	p.exprMode.Pop()
+	return stmt
 }
