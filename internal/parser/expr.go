@@ -27,16 +27,6 @@ var precedence = map[ast.BinaryOp]int{
 }
 
 func (p *Parser) expr() ast.Expr {
-	expr := p.exprInternal()
-	if expr == nil {
-		token := p.lexer.peek()
-		p.reportError(token.Span, "Expected an expression")
-		return ast.NewEmpty(token.Span)
-	}
-	return expr
-}
-
-func (p *Parser) exprInternal() ast.Expr {
 	select {
 	case <-p.ctx.Done():
 		fmt.Println("Taking too long to parse")
@@ -44,10 +34,24 @@ func (p *Parser) exprInternal() ast.Expr {
 		// continue
 	}
 
+	expr := p.exprWithoutErrorCheck()
+	if expr == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected an expression")
+		return ast.NewEmpty(token.Span)
+	}
+
+	return expr
+}
+
+func (p *Parser) exprWithoutErrorCheck() ast.Expr {
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
 
 	primary := p.primaryExpr()
+
+	// In some situations, expressions are optional which means that we don't
+	// want to raise an error if the primary expression is nil.
 	if primary == nil {
 		return nil
 	}
@@ -326,13 +330,11 @@ func (p *Parser) primaryExpr() ast.Expr {
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
 			p.lexer.consume()
-			// TODO: handle the case when parseExpr() return None
 			p.exprMode.Push(MultiLineExpr)
 			expr = p.expr()
 			p.exprMode.Pop()
 			if expr == nil {
-				p.reportError(token.Span, "Expected an expression after '('")
-				return nil
+				return ast.NewEmpty(token.Span)
 			}
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:

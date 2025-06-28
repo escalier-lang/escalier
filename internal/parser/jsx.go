@@ -111,7 +111,6 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 			p.lexer.consume() // consume '{'
 			expr := p.expr()
 			if expr == nil {
-				p.reportError(token.Span, "Expected an expression after '{'")
 				return attrs
 			}
 			value = ast.NewJSXExprContainer(expr, token.Span)

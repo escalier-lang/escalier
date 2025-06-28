@@ -50,14 +50,3 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 		}
 	}
 }
-
-// func (parser *Parser) reportError(span ast.Span, message string) {
-// 	_, _, line, _ := runtime.Caller(1)
-// 	if os.Getenv("DEBUG") == "true" {
-// 		message = fmt.Sprintf("%s:%d", message, line)
-// 	}
-// 	parser.Errors = append(parser.Errors, &Error{
-// 		Span:    span,
-// 		Message: message,
-// 	})
-// }

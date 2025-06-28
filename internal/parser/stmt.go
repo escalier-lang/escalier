@@ -54,7 +54,7 @@ func (p *Parser) stmt() ast.Stmt {
 		stmt = ast.NewDeclStmt(decl, decl.Span())
 	case Return:
 		p.lexer.consume()
-		expr := p.exprInternal()
+		expr := p.exprWithoutErrorCheck()
 		if expr == nil {
 			stmt = ast.NewReturnStmt(nil, token.Span)
 		} else {
@@ -63,9 +63,12 @@ func (p *Parser) stmt() ast.Stmt {
 			)
 		}
 	default:
-		expr := p.exprInternal()
+		expr := p.exprWithoutErrorCheck()
 		// If no tokens have been consumed then we've encountered something we
-		// don't know how to parse.
+		// don't know how to parse.  In this case we consume the next token and
+		// return nil.  The caller will be parsing multiple statements so the
+		// end result will be that we attempt to parse a statement again starting
+		// with the next token.
 		nextToken := p.lexer.peek()
 		if token.Span.End.Line == nextToken.Span.End.Line &&
 			token.Span.End.Column == nextToken.Span.End.Column {
