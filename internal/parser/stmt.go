@@ -6,24 +6,30 @@ import (
 
 // block = '{' stmt* '}'
 func (p *Parser) block() ast.Block {
-	stmts := []ast.Stmt{}
 	var start ast.Location
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected an opening brace")
-		return ast.Block{Stmts: stmts, Span: token.Span}
+		return ast.Block{Stmts: []ast.Stmt{}, Span: token.Span}
 	} else {
 		start = token.Span.Start
 	}
 
-	token = p.lexer.peek()
+	stmts, end := p.stmts(CloseBrace)
+	return ast.Block{Stmts: *stmts, Span: ast.Span{Start: start, End: end}}
+}
+
+func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
+	stmts := []ast.Stmt{}
+
+	token := p.lexer.peek()
 	for {
-		// nolint: exhaustive
+		//nolint: exhaustive
 		switch token.Type {
-		case CloseBrace:
+		case stopOn:
 			p.lexer.consume()
-			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
+			return &stmts, token.Span.End
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
@@ -31,6 +37,16 @@ func (p *Parser) block() ast.Block {
 			stmt := p.stmt()
 			if stmt != nil {
 				stmts = append(stmts, stmt)
+			} else {
+				nextToken := p.lexer.peek()
+				// If no tokens have been consumed then we've encountered
+				// something we don't know how to parse.  We consume the token
+				// and then try to parse the another statement.
+				if token.Span.End.Line == nextToken.Span.End.Line &&
+					token.Span.End.Column == nextToken.Span.End.Column {
+					p.reportError(token.Span, "Unexpected token")
+					p.lexer.consume()
+				}
 			}
 			token = p.lexer.peek()
 		}
@@ -64,16 +80,6 @@ func (p *Parser) stmt() ast.Stmt {
 		}
 	default:
 		expr := p.exprWithoutErrorCheck()
-		// If no tokens have been consumed then we've encountered something we
-		// don't know how to parse.  In this case we consume the next token and
-		// return nil.  The caller will be parsing multiple statements so the
-		// end result will be that we attempt to parse a statement again starting
-		// with the next token.
-		nextToken := p.lexer.peek()
-		if token.Span.End.Line == nextToken.Span.End.Line &&
-			token.Span.End.Column == nextToken.Span.End.Column {
-			p.lexer.consume()
-		}
 		if expr == nil {
 			stmt = nil
 		} else {
