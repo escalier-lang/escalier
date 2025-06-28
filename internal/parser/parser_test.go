@@ -14,74 +14,74 @@ func TestParseModuleNoErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		// "VarDecls": {
-		// 	input: `
-		// 		val a = 5
-		// 		val b = 10
-		// 		val sum = a + b
-		// 	`,
-		// },
-		// "FuncDecls": {
-		// 	input: `
-		// 		fn add(a, b) {
-		// 			return a + b
-		// 		}
-		// 		fn sub(a, b) {
-		// 			return a - b
-		// 		}
-		// 	`,
-		// },
+		"VarDecls": {
+			input: `
+				val a = 5
+				val b = 10
+				val sum = a + b
+			`,
+		},
+		"FuncDecls": {
+			input: `
+				fn add(a, b) {
+					return a + b
+				}
+				fn sub(a, b) {
+					return a - b
+				}
+			`,
+		},
 		"ExprStmts": {
 			input: `
 				foo()
 				bar()
 			`,
 		},
-		// "SplitExprOnNewline": {
-		// 	input: `
-		// 		var a = x
-		// 		-y
-		// 	`,
-		// },
-		// "MultilineExprInParens": {
-		// 	input: `
-		// 		var a = (x
-		// 		-y)
-		// 	`,
-		// },
-		// "MultilineExprInBrackets": {
-		// 	input: `
-		// 		a[base
-		// 		+offset]
-		// 	`,
-		// },
-		// "SplitExprInNewScope": {
-		// 	input: `
-		// 		val funcs = [
-		// 			fn() {
-		// 				var a = x
-		// 				-y
-		// 			}
-		// 		]
-		// 	`,
-		// },
-		// "IfElse": {
-		// 	input: `
-		// 		val x = if cond {
-		// 			var a = 5
-		// 			-10
-		// 		} else {
-		// 		 	var b = 10
-		// 			-5
-		// 		}
-		// 	`,
-		// },
-		// "MemberAssignment": {
-		// 	input: `
-		// 		p.x = 5
-		// 		p.y = 10
-		// 	`,
-		// },
+		"SplitExprOnNewline": {
+			input: `
+				var a = x
+				-y
+			`,
+		},
+		"MultilineExprInParens": {
+			input: `
+				var a = (x
+				-y)
+			`,
+		},
+		"MultilineExprInBrackets": {
+			input: `
+				a[base
+				+offset]
+			`,
+		},
+		"SplitExprInNewScope": {
+			input: `
+				val funcs = [
+					fn() {
+						var a = x
+						-y
+					}		
+				]
+			`,
+		},
+		"IfElse": {
+			input: `
+				val x = if cond {
+					var a = 5
+					-10
+				} else {
+				 	var b = 10
+					-5
+				}
+			`,
+		},
+		"MemberAssignment": {
+			input: `
+				p.x = 5
+				p.y = 10
+			`,
+		},
 	}
 
 	for name, test := range tests {

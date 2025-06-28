@@ -57,6 +57,7 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 func (p *Parser) stmt() ast.Stmt {
 	token := p.lexer.peek()
 	p.exprMode.Push(SingleLineExpr)
+	defer p.exprMode.Pop()
 
 	var stmt ast.Stmt
 
@@ -87,6 +88,5 @@ func (p *Parser) stmt() ast.Stmt {
 		}
 	}
 
-	p.exprMode.Pop()
 	return stmt
 }

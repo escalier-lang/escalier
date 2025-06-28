@@ -77,12 +77,6 @@ loop:
 			break loop
 		}
 
-		// if token.Span.Start.Line != p.lexer.currentLocation.Line {
-		// 	if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
-		// 		return typeAnns.Pop()
-		// 	}
-		// }
-
 		p.lexer.consume()
 		skipOp := false
 
