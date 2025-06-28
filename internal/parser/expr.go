@@ -32,6 +32,10 @@ func (p *Parser) exprWithMarker(marker Marker) ast.Expr {
 	return p.exprInternal()
 }
 
+// We stop parsing non-delimited expressions when we reach a newline.
+// We can push a paren or bracket to the stack to indicate that we're
+// inside of a delimited expression, and then pop it when we reach the
+// closing delimiter.
 func (p *Parser) nonDelimitedExpr() ast.Expr {
 	return p.exprWithMarker(MarkerExpr)
 }
@@ -551,17 +555,15 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 				} else {
 					p.reportError(token.Span, "Expected a comma or closing brace")
 				}
-				if value != nil {
-					property := ast.NewProperty(
-						objKey,
-						false,
-						false,
-						value,
-						objKey.Span(),
-					)
-					return property
-				}
-				return nil
+
+				property := ast.NewProperty(
+					objKey,
+					false,
+					false,
+					value,
+					objKey.Span(),
+				)
+				return property
 			}
 		default:
 			p.reportError(token.Span, "Expected a comma or closing brace")
