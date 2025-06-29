@@ -6,24 +6,30 @@ import (
 
 // block = '{' stmt* '}'
 func (p *Parser) block() ast.Block {
-	stmts := []ast.Stmt{}
 	var start ast.Location
 
 	token := p.lexer.next()
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected an opening brace")
-		return ast.Block{Stmts: stmts, Span: token.Span}
+		return ast.Block{Stmts: []ast.Stmt{}, Span: token.Span}
 	} else {
 		start = token.Span.Start
 	}
 
-	token = p.lexer.peek()
+	stmts, end := p.stmts(CloseBrace)
+	return ast.Block{Stmts: *stmts, Span: ast.Span{Start: start, End: end}}
+}
+
+func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
+	stmts := []ast.Stmt{}
+
+	token := p.lexer.peek()
 	for {
-		// nolint: exhaustive
+		//nolint: exhaustive
 		switch token.Type {
-		case CloseBrace:
+		case stopOn:
 			p.lexer.consume()
-			return ast.Block{Stmts: stmts, Span: ast.Span{Start: start, End: token.Span.End}}
+			return &stmts, token.Span.End
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
@@ -31,6 +37,16 @@ func (p *Parser) block() ast.Block {
 			stmt := p.stmt()
 			if stmt != nil {
 				stmts = append(stmts, stmt)
+			} else {
+				nextToken := p.lexer.peek()
+				// If no tokens have been consumed then we've encountered
+				// something we don't know how to parse.  We consume the token
+				// and then try to parse the another statement.
+				if token.Span.End.Line == nextToken.Span.End.Line &&
+					token.Span.End.Column == nextToken.Span.End.Column {
+					p.reportError(token.Span, "Unexpected token")
+					p.lexer.consume()
+				}
 			}
 			token = p.lexer.peek()
 		}
@@ -40,6 +56,10 @@ func (p *Parser) block() ast.Block {
 // stmt = decl | ('return' expr?) | expr
 func (p *Parser) stmt() ast.Stmt {
 	token := p.lexer.peek()
+	p.exprMode.Push(SingleLineExpr)
+	defer p.exprMode.Pop()
+
+	var stmt ast.Stmt
 
 	// nolint: exhaustive
 	switch token.Type {
@@ -48,29 +68,25 @@ func (p *Parser) stmt() ast.Stmt {
 		if decl == nil {
 			return nil
 		}
-		stmt := ast.NewDeclStmt(decl, decl.Span())
-		return stmt
+		stmt = ast.NewDeclStmt(decl, decl.Span())
 	case Return:
 		p.lexer.consume()
-		expr := p.nonDelimitedExpr()
+		expr := p.exprWithoutErrorCheck()
 		if expr == nil {
-			return ast.NewReturnStmt(nil, token.Span)
+			stmt = ast.NewReturnStmt(nil, token.Span)
+		} else {
+			stmt = ast.NewReturnStmt(
+				expr, ast.MergeSpans(token.Span, expr.Span()),
+			)
 		}
-		return ast.NewReturnStmt(
-			expr, ast.MergeSpans(token.Span, expr.Span()),
-		)
 	default:
-		expr := p.nonDelimitedExpr()
-		// If no tokens have been consumed then we've encountered something we
-		// don't know how to parse.
-		nextToken := p.lexer.peek()
-		if token.Span.End.Line == nextToken.Span.End.Line &&
-			token.Span.End.Column == nextToken.Span.End.Column {
-			p.lexer.consume()
-		}
+		expr := p.exprWithoutErrorCheck()
 		if expr == nil {
-			return nil
+			stmt = nil
+		} else {
+			stmt = ast.NewExprStmt(expr, expr.Span())
 		}
-		return ast.NewExprStmt(expr, expr.Span())
 	}
+
+	return stmt
 }

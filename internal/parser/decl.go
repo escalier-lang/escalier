@@ -75,7 +75,7 @@ func (p *Parser) varDecl(
 			return nil
 		}
 		p.lexer.consume()
-		init = p.nonDelimitedExpr()
+		init = p.expr()
 		if init == nil {
 			token := p.lexer.peek()
 			p.reportError(token.Span, "Expected an expression")
@@ -150,11 +150,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 
 	typeParams := []*ast.TypeParam{}
 
-	// Pushing a MarkerDelim here enables typeAnn to parse type annotations that
-	// span multiple lines.
-	p.markers.Push(MarkerDelim)
 	typeAnn := p.typeAnn()
-	p.markers.Pop()
 
 	if typeAnn == nil {
 		return nil

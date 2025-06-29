@@ -26,31 +26,7 @@ var precedence = map[ast.BinaryOp]int{
 	ast.NullishCoalescing: 3,
 }
 
-func (p *Parser) exprWithMarker(marker Marker) ast.Expr {
-	p.markers.Push(marker)
-	defer p.markers.Pop()
-	return p.exprInternal()
-}
-
-// We stop parsing non-delimited expressions when we reach a newline.
-// We can push a paren or bracket to the stack to indicate that we're
-// inside of a delimited expression, and then pop it when we reach the
-// closing delimiter.
-func (p *Parser) nonDelimitedExpr() ast.Expr {
-	return p.exprWithMarker(MarkerExpr)
-}
-
 func (p *Parser) expr() ast.Expr {
-	expr := p.exprWithMarker(MarkerDelim)
-	if expr == nil {
-		token := p.lexer.peek()
-		p.reportError(token.Span, "Expected an expression")
-		return ast.NewEmpty(token.Span)
-	}
-	return expr
-}
-
-func (p *Parser) exprInternal() ast.Expr {
 	select {
 	case <-p.ctx.Done():
 		fmt.Println("Taking too long to parse")
@@ -58,10 +34,24 @@ func (p *Parser) exprInternal() ast.Expr {
 		// continue
 	}
 
+	expr := p.exprWithoutErrorCheck()
+	if expr == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected an expression")
+		return ast.NewEmpty(token.Span)
+	}
+
+	return expr
+}
+
+func (p *Parser) exprWithoutErrorCheck() ast.Expr {
 	values := NewStack[ast.Expr]()
 	ops := NewStack[ast.BinaryOp]()
 
 	primary := p.primaryExpr()
+
+	// In some situations, expressions are optional which means that we don't
+	// want to raise an error if the primary expression is nil.
 	if primary == nil {
 		return nil
 	}
@@ -105,7 +95,7 @@ loop:
 		}
 
 		if token.Span.Start.Line != p.lexer.currentLocation.Line {
-			if len(p.markers) == 0 || p.markers.Peek() != MarkerDelim {
+			if len(p.exprMode) == 0 || p.exprMode.Peek() != MultiLineExpr {
 				return values.Pop()
 			}
 		}
@@ -183,7 +173,9 @@ loop:
 		switch token.Type {
 		case OpenParen, QuestionOpenParen:
 			p.lexer.consume()
+			p.exprMode.Push(MultiLineExpr)
 			args := parseDelimSeq(p, CloseParen, Comma, p.expr)
+			p.exprMode.Pop()
 			terminator := p.lexer.next()
 			if terminator.Type != CloseParen {
 				p.reportError(token.Span, "Expected a closing paren")
@@ -199,8 +191,10 @@ loop:
 			)
 		case OpenBracket, QuestionOpenBracket:
 			p.lexer.consume()
+			p.exprMode.Push(MultiLineExpr)
 			// TODO: handle the case when parseExpr() return None correctly
 			index := p.expr()
+			p.exprMode.Pop()
 			if index == nil {
 				p.reportError(token.Span, "Expected an expression after '['")
 				break loop
@@ -336,11 +330,11 @@ func (p *Parser) primaryExpr() ast.Expr {
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:
 			p.lexer.consume()
-			// TODO: handle the case when parseExpr() return None
+			p.exprMode.Push(MultiLineExpr)
 			expr = p.expr()
+			p.exprMode.Pop()
 			if expr == nil {
-				p.reportError(token.Span, "Expected an expression after '('")
-				return nil
+				return ast.NewEmpty(token.Span)
 			}
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
@@ -589,21 +583,25 @@ func (p *Parser) param() *ast.Param {
 		opt = true
 	}
 
+	var param ast.Param
+
 	if token.Type == Colon {
 		p.lexer.consume() // consume ':'
 		typeAnn := p.typeAnn()
-		return &ast.Param{
+		param = ast.Param{
 			Pattern:  pat,
 			TypeAnn:  typeAnn,
 			Optional: opt,
 		}
+	} else {
+		param = ast.Param{
+			Pattern:  pat,
+			TypeAnn:  nil,
+			Optional: opt,
+		}
 	}
 
-	return &ast.Param{
-		Pattern:  pat,
-		TypeAnn:  nil,
-		Optional: opt,
-	}
+	return &param
 }
 
 func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
