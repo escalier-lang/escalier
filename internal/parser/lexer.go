@@ -59,6 +59,8 @@ var keywords = map[string]TokenType{
 	"string":    String,
 	"boolean":   Boolean,
 	"mut":       Mut,
+	"for":       For,
+	"in":        In,
 }
 
 func (lexer *Lexer) next() *Token {

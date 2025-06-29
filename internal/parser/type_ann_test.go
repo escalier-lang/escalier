@@ -58,6 +58,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"BasicObjectType": {
 			input: "{a: A, b?: B, [c]: C, [d]?: D}",
 		},
+		"MappedObjectType": {
+			input: "{[K]: T[K] for K in Keys<T>}",
+		},
 	}
 
 	for name, test := range tests {

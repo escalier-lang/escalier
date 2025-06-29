@@ -363,8 +363,57 @@ loop:
 	return typeAnn
 }
 
-// TODO:
-// - mapped types
+func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
+	// Syntax:
+	// {[K]: T[K] for K in T}
+
+	token := p.lexer.peek()
+	if token.Type == OpenBracket {
+		savedState := p.saveState()
+
+		p.lexer.consume() // consume '['
+		name := p.typeAnn()
+		if name == nil {
+			p.reportError(token.Span, "expected name for mapped type")
+			p.restoreState(savedState)
+			return nil
+		}
+
+		p.expect(CloseBracket, AlwaysConsume)
+		p.expect(Colon, AlwaysConsume)
+
+		value := p.typeAnn()
+
+		p.expect(For, AlwaysConsume)
+		token = p.lexer.peek()
+		var key string
+		if token.Type == Identifier {
+			p.lexer.consume() // consume identifier
+			key = token.Value
+		} else {
+			p.reportError(token.Span, "expected identifier for mapped type key")
+			p.restoreState(savedState)
+			return nil
+		}
+		p.expect(In, AlwaysConsume)
+		constraint := p.typeAnn()
+
+		// TODO: try to parse a mapped type
+		return &ast.MappedTypeAnn{
+			TypeParam: &ast.IndexParamTypeAnn{
+				Name:       key,
+				Constraint: constraint,
+			},
+			Name:     nil, // TODO: handle renaming
+			Value:    value,
+			Optional: nil, // TODO: handle optional
+			ReadOnly: nil, // TODO: handle readonly
+		}
+	}
+
+	return nil
+}
+
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
 
@@ -377,21 +426,9 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		mod = "set"
 	}
 
-	// TODO:
-	// - check if the next token is '['
-	// - if it is do the following:
-	//   - save the current parser state
-	//   - try to parse a mapped type
-	//   - if it fails, restore the parser state and continue parsing a regular
-	//     property
-
-	token = p.lexer.peek()
-	if token.Type == OpenBracket {
-		savedState := p.saveState()
-
-		// TODO: try to parse a mapped type
-
-		p.restoreState(savedState)
+	mappedElem := p.tryParseMappedType()
+	if mappedElem != nil {
+		return mappedElem
 	}
 
 	objKey := p.objExprKey()
