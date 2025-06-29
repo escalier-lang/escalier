@@ -230,6 +230,41 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				nil, // TODO: support throws clause
 				ast.NewSpan(token.Span.Start, retType.Span().End),
 			)
+		case If: // conditional type
+			p.lexer.consume() // consume 'if'
+			checkType := p.typeAnn()
+			if checkType == nil {
+				p.reportError(token.Span, "expected check type for conditional type")
+				return nil
+			}
+			p.expect(Colon, AlwaysConsume)
+			extendsType := p.typeAnn()
+			if extendsType == nil {
+				p.reportError(token.Span, "expected extends type for conditional type")
+				return nil
+			}
+			p.expect(OpenBrace, AlwaysConsume)
+			thenType := p.typeAnn()
+			if thenType == nil {
+				p.reportError(token.Span, "expected then type for conditional type")
+				return nil
+			}
+			p.expect(CloseBrace, AlwaysConsume)
+			p.expect(Else, AlwaysConsume)
+			p.expect(OpenBrace, AlwaysConsume)
+			elseType := p.typeAnn()
+			if elseType == nil {
+				p.reportError(token.Span, "expected else type for conditional type")
+				return nil
+			}
+			p.expect(CloseBrace, AlwaysConsume)
+			typeAnn = ast.NewCondTypeAnn(
+				checkType,
+				extendsType,
+				thenType,
+				elseType,
+				ast.NewSpan(token.Span.Start, elseType.Span().End),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
@@ -328,6 +363,8 @@ loop:
 	return typeAnn
 }
 
+// TODO:
+// - mapped types
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
 
@@ -338,6 +375,23 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	} else if token.Type == Set {
 		p.lexer.consume() // consume 'set'
 		mod = "set"
+	}
+
+	// TODO:
+	// - check if the next token is '['
+	// - if it is do the following:
+	//   - save the current parser state
+	//   - try to parse a mapped type
+	//   - if it fails, restore the parser state and continue parsing a regular
+	//     property
+
+	token = p.lexer.peek()
+	if token.Type == OpenBracket {
+		savedState := p.saveState()
+
+		// TODO: try to parse a mapped type
+
+		p.restoreState(savedState)
 	}
 
 	objKey := p.objExprKey()

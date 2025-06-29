@@ -8,7 +8,7 @@ import (
 )
 
 func TestVarDecls(t *testing.T) {
-	source := parser.Source{
+	source := &parser.Source{
 		Path:     "input.esc",
 		Contents: "val foo = 5\nvar bar = \"hello\"\n",
 	}
@@ -17,7 +17,7 @@ func TestVarDecls(t *testing.T) {
 }
 
 func TestFuncDecls(t *testing.T) {
-	source := parser.Source{
+	source := &parser.Source{
 		Path:     "input.esc",
 		Contents: "fn add(a: number, b: number) {\n  return a + b\n}\nfn sub(a: number, b: number) { return a - b }\nval sum = add(1, 2)\n",
 	}
@@ -26,7 +26,7 @@ func TestFuncDecls(t *testing.T) {
 }
 
 func TestArrays(t *testing.T) {
-	source := parser.Source{
+	source := &parser.Source{
 		Path:     "input.esc",
 		Contents: "val nums = [1, 2, 3]\nval first = nums[0]\n",
 	}
@@ -35,7 +35,7 @@ func TestArrays(t *testing.T) {
 }
 
 func TestMemberAccess(t *testing.T) {
-	source := parser.Source{
+	source := &parser.Source{
 		Path:     "input.esc",
 		Contents: "console.log(\"hello, world\")\n",
 	}

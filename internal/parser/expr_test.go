@@ -144,7 +144,7 @@ func TestParseExprNoErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := Source{
+			source := &Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}
@@ -220,7 +220,7 @@ func TestParseExprErrorHandling(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := Source{
+			source := &Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}

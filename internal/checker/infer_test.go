@@ -96,7 +96,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := parser.Source{
+			source := &parser.Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}
