@@ -43,7 +43,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			continue
 		}
 
-		source := parser.Source{
+		source := &parser.Source{
 			Path:     file,
 			Contents: string(bytes),
 		}

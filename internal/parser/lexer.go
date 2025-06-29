@@ -15,12 +15,12 @@ type Source struct {
 }
 
 type Lexer struct {
-	source          Source
+	source          *Source
 	currentOffset   int
 	currentLocation ast.Location
 }
 
-func NewLexer(source Source) *Lexer {
+func NewLexer(source *Source) *Lexer {
 	return &Lexer{
 		source:          source,
 		currentOffset:   0,
@@ -59,6 +59,8 @@ var keywords = map[string]TokenType{
 	"string":    String,
 	"boolean":   Boolean,
 	"mut":       Mut,
+	"for":       For,
+	"in":        In,
 }
 
 func (lexer *Lexer) next() *Token {
@@ -350,14 +352,24 @@ func isIdentContinue(r rune) bool {
 		!unicode.Is(unicode.Pattern_White_Space, r)
 }
 
+func (lexer *Lexer) saveState() *Lexer {
+	return &Lexer{
+		source:          lexer.source,
+		currentOffset:   lexer.currentOffset,
+		currentLocation: lexer.currentLocation,
+	}
+}
+
+func (lexer *Lexer) restoreState(saved *Lexer) {
+	lexer.source = saved.source
+	lexer.currentOffset = saved.currentOffset
+	lexer.currentLocation = saved.currentLocation
+}
+
 func (lexer *Lexer) peek() *Token {
-	// save the lexer state
-	offset := lexer.currentOffset
-	location := lexer.currentLocation
+	savedState := lexer.saveState()
 	token := lexer.next()
-	// restore the lexer state
-	lexer.currentOffset = offset
-	lexer.currentLocation = location
+	lexer.restoreState(savedState)
 	return token
 }
 

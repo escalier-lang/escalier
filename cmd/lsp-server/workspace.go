@@ -37,7 +37,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 		return nil, fmt.Errorf("unsupported language: %s", doc.LanguageID)
 	}
 
-	source := parser.Source{
+	source := &parser.Source{
 		Path:     uri,
 		Contents: doc.Text,
 	}

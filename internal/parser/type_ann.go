@@ -230,6 +230,41 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				nil, // TODO: support throws clause
 				ast.NewSpan(token.Span.Start, retType.Span().End),
 			)
+		case If: // conditional type
+			p.lexer.consume() // consume 'if'
+			checkType := p.typeAnn()
+			if checkType == nil {
+				p.reportError(token.Span, "expected check type for conditional type")
+				return nil
+			}
+			p.expect(Colon, AlwaysConsume)
+			extendsType := p.typeAnn()
+			if extendsType == nil {
+				p.reportError(token.Span, "expected extends type for conditional type")
+				return nil
+			}
+			p.expect(OpenBrace, AlwaysConsume)
+			thenType := p.typeAnn()
+			if thenType == nil {
+				p.reportError(token.Span, "expected then type for conditional type")
+				return nil
+			}
+			p.expect(CloseBrace, AlwaysConsume)
+			p.expect(Else, AlwaysConsume)
+			p.expect(OpenBrace, AlwaysConsume)
+			elseType := p.typeAnn()
+			if elseType == nil {
+				p.reportError(token.Span, "expected else type for conditional type")
+				return nil
+			}
+			p.expect(CloseBrace, AlwaysConsume)
+			typeAnn = ast.NewCondTypeAnn(
+				checkType,
+				extendsType,
+				thenType,
+				elseType,
+				ast.NewSpan(token.Span.Start, elseType.Span().End),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
@@ -328,6 +363,57 @@ loop:
 	return typeAnn
 }
 
+func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
+	// Syntax:
+	// {[K]: T[K] for K in T}
+
+	token := p.lexer.peek()
+	if token.Type == OpenBracket {
+		savedState := p.saveState()
+
+		p.lexer.consume() // consume '['
+		name := p.typeAnn()
+		if name == nil {
+			p.reportError(token.Span, "expected name for mapped type")
+			p.restoreState(savedState)
+			return nil
+		}
+
+		p.expect(CloseBracket, AlwaysConsume)
+		p.expect(Colon, AlwaysConsume)
+
+		value := p.typeAnn()
+
+		p.expect(For, AlwaysConsume)
+		token = p.lexer.peek()
+		var key string
+		if token.Type == Identifier {
+			p.lexer.consume() // consume identifier
+			key = token.Value
+		} else {
+			p.reportError(token.Span, "expected identifier for mapped type key")
+			p.restoreState(savedState)
+			return nil
+		}
+		p.expect(In, AlwaysConsume)
+		constraint := p.typeAnn()
+
+		// TODO: try to parse a mapped type
+		return &ast.MappedTypeAnn{
+			TypeParam: &ast.IndexParamTypeAnn{
+				Name:       key,
+				Constraint: constraint,
+			},
+			Name:     nil, // TODO: handle renaming
+			Value:    value,
+			Optional: nil, // TODO: handle optional
+			ReadOnly: nil, // TODO: handle readonly
+		}
+	}
+
+	return nil
+}
+
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
 
@@ -338,6 +424,11 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	} else if token.Type == Set {
 		p.lexer.consume() // consume 'set'
 		mod = "set"
+	}
+
+	mappedElem := p.tryParseMappedType()
+	if mappedElem != nil {
+		return mappedElem
 	}
 
 	objKey := p.objExprKey()

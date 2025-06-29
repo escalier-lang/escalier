@@ -52,12 +52,21 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MutableType": {
 			input: "mut A",
 		},
+		"ConditionalType": {
+			input: "if A : B { C } else { D }",
+		},
+		"BasicObjectType": {
+			input: "{a: A, b?: B, [c]: C, [d]?: D}",
+		},
+		"MappedObjectType": {
+			input: "{[K]: T[K] for K in Keys<T>}",
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := Source{
+			source := &Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}

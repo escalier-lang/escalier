@@ -96,6 +96,8 @@ const (
 	EndOfFile
 
 	Mut
+	For
+	In
 )
 
 type Token struct {
