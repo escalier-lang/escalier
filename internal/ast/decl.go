@@ -86,6 +86,7 @@ type FuncDecl struct {
 func NewFuncDecl(
 	name *Ident,
 	params []*Param,
+	returnType TypeAnn, // optional
 	body *Block,
 	export,
 	declare bool,
@@ -96,7 +97,7 @@ func NewFuncDecl(
 		FuncSig: FuncSig{
 			TypeParams: []*TypeParam{}, // TODO
 			Params:     params,
-			Return:     nil, // TODO
+			Return:     returnType,
 			Throws:     nil, // TODO
 		},
 		Body:    body,
