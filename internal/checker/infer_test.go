@@ -204,6 +204,16 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"MutualRecurions": {
+			input: `
+				fn foo() -> number {
+					return bar() + 1
+				}
+				fn bar() -> number {
+					return foo() - 1
+				}
+			`,
+		},
 		// "FuncRecursion": {
 		// 	input: `
 		// 		val fact = fn (n) {

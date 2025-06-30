@@ -803,9 +803,18 @@ func (c *Checker) inferFuncSig(
 		}
 	}
 
+	var returnType Type
+	if sig.Return == nil {
+		returnType = c.FreshVar()
+	} else {
+		var returnErrors []Error
+		returnType, returnErrors = c.inferTypeAnn(ctx, sig.Return)
+		errors = slices.Concat(errors, returnErrors)
+	}
+
 	t := &FuncType{
 		Params:     params,
-		Return:     c.FreshVar(),
+		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
 		Self:       optional.None[Type](),
