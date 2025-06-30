@@ -44,7 +44,7 @@ func (i *Ident) Span() Span {
 
 // TODO add support for imports and exports
 type Module struct {
-	Stmts []Stmt
+	Decls []Decl
 }
 
 type Script struct {
