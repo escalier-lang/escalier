@@ -50,3 +50,37 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	stmts, _ := p.stmts(EndOfFile)
 	return &ast.Script{Stmts: *stmts}, p.errors
 }
+
+// module = decl* <eof>
+func (p *Parser) ParseModule() (*ast.Module, []*Error) {
+	decls := []ast.Decl{}
+
+	token := p.lexer.peek()
+	for {
+		//nolint: exhaustive
+		switch token.Type {
+		case EndOfFile:
+			p.lexer.consume()
+			return &ast.Module{Decls: decls}, p.errors
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
+		default:
+			decl := p.decl()
+			if decl != nil {
+				decls = append(decls, decl)
+			} else {
+				nextToken := p.lexer.peek()
+				// If no tokens have been consumed then we've encountered
+				// something we don't know how to parse.  We consume the token
+				// and then try to parse the another statement.
+				if token.Span.End.Line == nextToken.Span.End.Line &&
+					token.Span.End.Column == nextToken.Span.End.Column {
+					p.reportError(token.Span, "Unexpected token")
+					p.lexer.consume()
+				}
+			}
+			token = p.lexer.peek()
+		}
+	}
+}

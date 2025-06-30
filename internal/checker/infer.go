@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"slices"
+	"strings"
 
 	"maps"
 
@@ -32,8 +33,172 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
 	return ctx.Scope, errors
 }
 
-func (c *Checker) InferModule(ctx Context, m *ast.Module) (map[string]Binding, []Error) {
-	panic("TODO: infer module")
+type QualifiedIdent string
+
+// NewQualifiedIdent creates a QualifiedIdent from a slice of string parts
+func NewQualifiedIdent(parts []string) QualifiedIdent {
+	return QualifiedIdent(strings.Join(parts, "."))
+}
+
+// Parts returns the QualifiedIdent as a slice of string parts
+func (qi QualifiedIdent) Parts() []string {
+	if qi == "" {
+		return []string{}
+	}
+	return strings.Split(string(qi), ".")
+}
+
+// This is similar to Scope, but instead of inheriting from a parent scope,
+// the identifiers are fully qualified with their namespace (e.g. "foo.bar.baz").
+// This makes it easier to build a dependency graph between declarations within
+// the module.
+type Namespace struct {
+	Values map[QualifiedIdent]Binding
+	Types  map[QualifiedIdent]TypeAlias
+}
+
+func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
+	errors := []Error{}
+
+	namespace := Namespace{
+		Values: make(map[QualifiedIdent]Binding),
+		Types:  make(map[QualifiedIdent]TypeAlias),
+	}
+
+	// TODO:
+	// - ensure there are no duplicate declarations in the module
+	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
+
+	// Infer placeholders
+	for _, decl := range m.Decls {
+		if decl == nil {
+			continue
+		}
+
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+			errors = slices.Concat(errors, sigErrors)
+
+			namespace.Values[QualifiedIdent(decl.Name.Name)] = Binding{
+				Source:  optional.Some[ast.BindingSource](decl.Name),
+				Type:    funcType,
+				Mutable: false,
+			}
+		case *ast.VarDecl:
+			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
+			errors = slices.Concat(errors, patErrors)
+
+			// TODO: handle the situation where both decl.Init and decl.TypeAnn
+			// are nit
+
+			if decl.TypeAnn != nil {
+				taType, taErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
+				errors = slices.Concat(errors, taErrors)
+
+				unifyErrors := c.unify(ctx, taType, patType)
+				errors = slices.Concat(errors, unifyErrors)
+			}
+
+			for name, binding := range bindings {
+				namespace.Values[QualifiedIdent(name)] = Binding{
+					Source:  binding.Source,
+					Type:    binding.Type,
+					Mutable: binding.Mutable,
+				}
+			}
+		case *ast.TypeDecl:
+			typeParams := make([]*TypeParam, len(decl.TypeParams))
+			for i, typeParam := range decl.TypeParams {
+				var constraintType Type
+				var defaultType Type
+				if typeParam.Constraint != nil {
+					constraintType = c.FreshVar()
+				}
+				if typeParam.Default != nil {
+					defaultType = c.FreshVar()
+				}
+				typeParams[i] = &TypeParam{
+					Name:       typeParam.Name,
+					Constraint: constraintType,
+					Default:    defaultType,
+				}
+			}
+
+			typeAlias := TypeAlias{
+				Type:       c.FreshVar(),
+				TypeParams: typeParams,
+			}
+
+			namespace.Types[QualifiedIdent(decl.Name.Name)] = typeAlias
+		}
+	}
+
+	// Copy namespace values and type aliases into the current scope
+	for name, typeAlias := range namespace.Types {
+		ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
+	}
+	for name, binding := range namespace.Values {
+		ctx.Scope.setValue(name.Parts()[0], binding)
+	}
+
+	// Infer definitions
+	for _, decl := range m.Decls {
+		if decl == nil {
+			continue
+		}
+
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			// It's okay to re-infer the function signature here since all
+			// function signatures are fully typed for top-level functions
+			// declarations in modules.
+			funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+			errors = slices.Concat(errors, sigErrors)
+
+			// TODO(#93): unify Throws
+			if decl.Body != nil {
+				returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
+				errors = slices.Concat(errors, bodyErrors)
+				unifyErrors := c.unify(ctx, funcType.Return, returnType)
+				errors = slices.Concat(errors, unifyErrors)
+			}
+		case *ast.VarDecl:
+			bindings, declErrors := c.inferVarDecl(ctx, decl)
+			errors = slices.Concat(errors, declErrors)
+
+			// NOTE: The semantics of how function declarations are inferred vs
+			// function expressions in variable declarations is different.  I'm
+			// not sure if it's important to align these or not.
+
+			for name, binding := range bindings {
+				qualifiedName := QualifiedIdent(name)
+				if existingBinding, ok := namespace.Values[qualifiedName]; ok {
+					unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
+					errors = slices.Concat(errors, unifyErrors)
+				} else {
+					// Report an error since this should never happen
+				}
+			}
+		case *ast.TypeDecl:
+			typeAlias, declErrors := c.inferTypeDecl(ctx, decl)
+			errors = slices.Concat(errors, declErrors)
+
+			// TODO:
+			// - unify the Default and Constraint types for each type param
+
+			// Unified the type alias' inferred type with its placeholder type
+			qualifiedName := QualifiedIdent(decl.Name.Name)
+			if existingTypeAlias, ok := namespace.Types[qualifiedName]; ok {
+				unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
+				errors = slices.Concat(errors, unifyErrors)
+			} else {
+				// Report an error since this should never happen
+			}
+		}
+	}
+
+	return namespace, errors
 }
 
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
@@ -45,22 +210,28 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		}
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
-		return c.inferVarDecl(ctx, decl)
+		bindings, errors := c.inferVarDecl(ctx, decl)
+		maps.Copy(ctx.Scope.Values, bindings)
+		return errors
 	case *ast.TypeDecl:
-		return c.inferTypeDecl(ctx, decl)
+		typeAlias, errors := c.inferTypeDecl(ctx, decl)
+		ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+		return errors
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}
 }
 
-func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
+// TODO: refactor this to return the binding map instead of copying them over
+// immediately
+func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Binding, []Error) {
 	errors := []Error{}
 
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
 	if decl.TypeAnn == nil && decl.Init == nil {
-		return errors
+		return nil, errors
 	}
 
 	// TODO: infer a structural placeholder based on the expression and then
@@ -94,8 +265,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) []Error {
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
-	maps.Copy(ctx.Scope.Values, bindings)
-	return errors
+	return bindings, errors
 }
 
 func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
@@ -104,6 +274,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
+	// TODO(#93): unify Throws
 	if decl.Body != nil {
 		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
 		errors = slices.Concat(errors, bodyErrors)
@@ -615,7 +786,7 @@ func (c *Checker) inferFuncSig(
 		if param.TypeAnn == nil {
 			typeAnn = c.FreshVar()
 		} else {
-			typeAnnErrors := []Error{}
+			var typeAnnErrors []Error
 			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
 		}
@@ -679,6 +850,7 @@ func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
 func (v *ReturnVisitor) VisitTypeAnn(t ast.TypeAnn) bool { return true }
 func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
 
+// TODO(#93): infer Throws
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]Binding,
@@ -900,7 +1072,7 @@ func (c *Checker) inferPattern(
 func (c *Checker) inferTypeDecl(
 	ctx Context,
 	decl *ast.TypeDecl,
-) []Error {
+) (TypeAlias, []Error) {
 	errors := []Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
@@ -933,9 +1105,8 @@ func (c *Checker) inferTypeDecl(
 	}
 
 	typeAlias.Type = t
-	ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 
-	return errors
+	return typeAlias, errors
 }
 
 func (c *Checker) inferFuncTypeAnn(
