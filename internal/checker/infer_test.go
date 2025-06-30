@@ -204,7 +204,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
-		"MutualRecurions": {
+		"MutualRecuriveFunctions": {
 			input: `
 				fn foo() -> number {
 					return bar() + 1
@@ -212,6 +212,12 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				fn bar() -> number {
 					return foo() - 1
 				}
+			`,
+		},
+		"MutualRecuriveTypes": {
+			input: `
+				type Foo = { bar: Bar }
+				type Bar = { foo: Foo }
 			`,
 		},
 		// "FuncRecursion": {
