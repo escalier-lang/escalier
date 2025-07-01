@@ -108,8 +108,9 @@ loop:
 				op := ops.Pop()
 				right := values.Pop()
 				left := values.Pop()
+				span := ast.Span{Start: left.Span().Start, End: right.Span().End, SourceID: p.lexer.source.ID}
 
-				values.Push(ast.NewBinary(left, right, op, ast.Span{Start: left.Span().Start, End: right.Span().End}))
+				values.Push(ast.NewBinary(left, right, op, span))
 			}
 		}
 
@@ -127,8 +128,9 @@ loop:
 		op := ops.Pop()
 		right := values.Pop()
 		left := values.Pop()
+		span := ast.Span{Start: left.Span().Start, End: right.Span().End, SourceID: p.lexer.source.ID}
 
-		values.Push(ast.NewBinary(left, right, op, ast.Span{Start: left.Span().Start, End: right.Span().End}))
+		values.Push(ast.NewBinary(left, right, op, span))
 	}
 
 	if len(values) != 1 {
@@ -185,10 +187,8 @@ loop:
 			if token.Type == QuestionOpenParen {
 				optChain = true
 			}
-			expr = ast.NewCall(
-				callee, args, optChain,
-				ast.Span{Start: callee.Span().Start, End: terminator.Span.End},
-			)
+			span := ast.Span{Start: callee.Span().Start, End: terminator.Span.End, SourceID: p.lexer.source.ID}
+			expr = ast.NewCall(callee, args, optChain, span)
 		case OpenBracket, QuestionOpenBracket:
 			p.lexer.consume()
 			p.exprMode.Push(MultiLineExpr)
@@ -208,10 +208,8 @@ loop:
 			if token.Type == QuestionOpenBracket {
 				optChain = true
 			}
-			expr = ast.NewIndex(
-				obj, index, optChain,
-				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
-			)
+			span := ast.Span{Start: obj.Span().Start, End: terminator.Span.End, SourceID: p.lexer.source.ID}
+			expr = ast.NewIndex(obj, index, optChain, span)
 		case Dot, QuestionDot:
 			p.lexer.consume()
 			prop := p.lexer.next()
@@ -226,17 +224,17 @@ loop:
 				prop := ast.NewIdentifier(prop.Value, prop.Span)
 				expr = ast.NewMember(
 					obj, prop, optChain,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
 				)
 			default:
 				obj := expr
 				prop := ast.NewIdentifier(
 					"",
-					ast.Span{Start: token.Span.End, End: token.Span.End},
+					ast.Span{Start: token.Span.End, End: token.Span.End, SourceID: p.lexer.source.ID},
 				)
 				expr = ast.NewMember(
 					obj, prop, optChain,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
 				)
 				if token.Type == Dot {
 					p.reportError(token.Span, "expected an identifier after .")
@@ -341,12 +339,12 @@ func (p *Parser) primaryExpr() ast.Expr {
 			p.lexer.consume()
 			elems := parseDelimSeq(p, CloseBracket, Comma, p.expr)
 			end := p.expect(CloseBracket, AlwaysConsume)
-			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end})
+			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end, SourceID: p.lexer.source.ID})
 		case OpenBrace:
 			p.lexer.consume()
 			elems := parseDelimSeq(p, CloseBrace, Comma, p.objExprElem)
 			end := p.expect(CloseBrace, AlwaysConsume)
-			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: end})
+			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: end, SourceID: p.lexer.source.ID})
 		case BackTick:
 			temp := p.templateLitExpr(token, nil)
 			expr = temp
@@ -383,7 +381,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 
 	for !ops.IsEmpty() {
 		tokenAndOp := ops.Pop()
-		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End})
+		expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End, SourceID: p.lexer.source.ID})
 	}
 
 	return expr
@@ -498,7 +496,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		body := p.block()
 		end := body.Span.End
 
-		span := ast.Span{Start: objKey.Span().Start, End: end}
+		span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
 
 		fn := ast.NewFuncExpr(
 			[]*ast.TypeParam{}, // TODO: parse type params
@@ -629,13 +627,13 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 			// means we've reached the end of the file.
 			raw = quasi.Value
 			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
-			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End}
+			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End, SourceID: p.lexer.source.ID}
 			p.reportError(span, "Expected a closing backtick")
 			break
 		}
 	}
 	if tag != nil {
-		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation}
+		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 	} else {
 		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation)
@@ -673,7 +671,7 @@ func (p *Parser) ifElse() ast.Expr {
 				p.reportError(token.Span, "Expected a valid expression after 'if'")
 				return ast.NewIfElse(
 					cond, body, nil,
-					ast.Span{Start: start, End: token.Span.Start},
+					ast.Span{Start: start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 				)
 			}
 			expr := ifElseResult
@@ -682,7 +680,7 @@ func (p *Parser) ifElse() ast.Expr {
 				Block: nil,
 			}
 			return ast.NewIfElse(
-				cond, body, alt, ast.Span{Start: start, End: expr.Span().End},
+				cond, body, alt, ast.Span{Start: start, End: expr.Span().End, SourceID: p.lexer.source.ID},
 			)
 		case OpenBrace:
 			block := p.block()
@@ -691,18 +689,18 @@ func (p *Parser) ifElse() ast.Expr {
 				Block: &block,
 			}
 			return ast.NewIfElse(
-				cond, body, alt, ast.Span{Start: start, End: block.Span.End},
+				cond, body, alt, ast.Span{Start: start, End: block.Span.End, SourceID: p.lexer.source.ID},
 			)
 		default:
 			p.reportError(token.Span, "Expected an if or an opening brace")
 			return ast.NewIfElse(
 				cond, body, nil,
-				ast.Span{Start: start, End: token.Span.Start},
+				ast.Span{Start: start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 			)
 		}
 	}
 	return ast.NewIfElse(
 		cond, body, nil,
-		ast.Span{Start: start, End: token.Span.Start},
+		ast.Span{Start: start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 	)
 }

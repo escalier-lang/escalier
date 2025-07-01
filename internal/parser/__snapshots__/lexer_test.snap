@@ -3,24 +3,27 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:3},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:3},
+            SourceID: 1,
         },
         Type:  14,
         Value: "fn",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:4},
-            End:   ast.Location{Line:1, Column:7},
+            Start:    ast.Location{Line:1, Column:4},
+            End:      ast.Location{Line:1, Column:7},
+            SourceID: 1,
         },
         Type:  18,
         Value: "var",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:8},
-            End:   ast.Location{Line:1, Column:11},
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:11},
+            SourceID: 1,
         },
         Type:  19,
         Value: "val",
@@ -32,40 +35,45 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:2},
+            SourceID: 1,
         },
         Type:  39,
         Value: "+",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:3},
-            End:   ast.Location{Line:1, Column:4},
+            Start:    ast.Location{Line:1, Column:3},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 1,
         },
         Type:  40,
         Value: "-",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:6},
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 1,
         },
         Type:  41,
         Value: "*",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:7},
-            End:   ast.Location{Line:1, Column:8},
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 1,
         },
         Type:  42,
         Value: "/",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:9},
-            End:   ast.Location{Line:1, Column:10},
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 1,
         },
         Type:  47,
         Value: "=",
@@ -77,16 +85,18 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:4},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 1,
         },
         Type:  0,
         Value: "foo",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:2, Column:1},
-            End:   ast.Location{Line:2, Column:4},
+            Start:    ast.Location{Line:2, Column:1},
+            End:      ast.Location{Line:2, Column:4},
+            SourceID: 1,
         },
         Type:  0,
         Value: "bar",
@@ -98,8 +108,9 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:8},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 1,
         },
         Type:  2,
         Value: "hello",
@@ -111,56 +122,63 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:2},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:2},
+            SourceID: 1,
         },
         Type:  0,
         Value: "a",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:3},
-            End:   ast.Location{Line:1, Column:4},
+            Start:    ast.Location{Line:1, Column:3},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 1,
         },
         Type:  41,
         Value: "*",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:6},
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 1,
         },
         Type:  66,
         Value: "(",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:6},
-            End:   ast.Location{Line:1, Column:7},
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:7},
+            SourceID: 1,
         },
         Type:  0,
         Value: "b",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:8},
-            End:   ast.Location{Line:1, Column:9},
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 1,
         },
         Type:  39,
         Value: "+",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:10},
-            End:   ast.Location{Line:1, Column:11},
+            Start:    ast.Location{Line:1, Column:10},
+            End:      ast.Location{Line:1, Column:11},
+            SourceID: 1,
         },
         Type:  0,
         Value: "c",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:11},
-            End:   ast.Location{Line:1, Column:12},
+            Start:    ast.Location{Line:1, Column:11},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 1,
         },
         Type:  67,
         Value: ")",
@@ -172,24 +190,27 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:7},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:7},
+            SourceID: 1,
         },
         Type:  10,
         Value: "// foo",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:2, Column:1},
-            End:   ast.Location{Line:2, Column:7},
+            Start:    ast.Location{Line:2, Column:1},
+            End:      ast.Location{Line:2, Column:7},
+            SourceID: 1,
         },
         Type:  10,
         Value: "// bar",
     },
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:3, Column:1},
-            End:   ast.Location{Line:3, Column:1},
+            Start:    ast.Location{Line:3, Column:1},
+            End:      ast.Location{Line:3, Column:1},
+            SourceID: 1,
         },
         Type:  73,
         Value: "",
@@ -201,8 +222,9 @@
 []*parser.Token{
     &parser.Token{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:4, Column:2},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:4, Column:2},
+            SourceID: 1,
         },
         Type:  11,
         Value: "/**\n * foo\n * bar\n */",

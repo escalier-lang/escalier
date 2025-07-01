@@ -176,7 +176,7 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	p := parser.NewParser(ctx, &parser.Source{
+	p := parser.NewParser(ctx, &ast.Source{
 		Path:     uri,
 		Contents: contents,
 	})

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
 )
@@ -96,7 +97,7 @@ func TestCheckScriptNoErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &parser.Source{
+			source := &ast.Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}
@@ -239,7 +240,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &parser.Source{
+			source := &ast.Source{
 				Path:     "input.esc",
 				Contents: test.input,
 			}

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
@@ -29,7 +30,7 @@ func TestPrintExpr(t *testing.T) {
 }
 
 func TestPrintModule(t *testing.T) {
-	source := &parser.Source{
+	source := &ast.Source{
 		Path: "input.esc",
 		Contents: `fn add(a, b) { return a + b }
 fn sub(a, b) { return a - b }`,

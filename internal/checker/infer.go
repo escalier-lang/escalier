@@ -57,6 +57,10 @@ type Namespace struct {
 	Types  map[QualifiedIdent]TypeAlias
 }
 
+// A module can contain declarations from mutliple source files.
+// The order of the declarations doesn't matter because we compute the dependency
+// graph and codegen will ensure that the declarations are emitted in the correct
+// order.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	errors := []Error{}
 

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 func build(stdout io.Writer, stderr io.Writer, files []string) {
@@ -43,7 +43,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			continue
 		}
 
-		source := &parser.Source{
+		source := &ast.Source{
 			Path:     file,
 			Contents: string(bytes),
 		}

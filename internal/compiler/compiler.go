@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -19,7 +20,7 @@ type CompilerOutput struct {
 	DTS         string
 }
 
-func Compile(source *parser.Source) CompilerOutput {
+func Compile(source *ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)

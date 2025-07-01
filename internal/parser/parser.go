@@ -20,7 +20,7 @@ const (
 	SingleLineExpr
 )
 
-func NewParser(ctx context.Context, source *Source) *Parser {
+func NewParser(ctx context.Context, source *ast.Source) *Parser {
 	return &Parser{
 		ctx:      ctx,
 		lexer:    NewLexer(source),

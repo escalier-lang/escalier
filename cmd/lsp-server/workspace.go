@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
-	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -37,7 +37,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 		return nil, fmt.Errorf("unsupported language: %s", doc.LanguageID)
 	}
 
-	source := &parser.Source{
+	source := &ast.Source{
 		Path:     uri,
 		Contents: doc.Text,
 	}

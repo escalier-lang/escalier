@@ -54,7 +54,7 @@ func (p *Parser) varDecl(
 		pat = ast.NewIdentPat(
 			"",
 			nil,
-			ast.Span{Start: token.Span.Start, End: token.Span.Start},
+			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 		)
 	}
 	end := pat.Span().End
@@ -84,7 +84,7 @@ func (p *Parser) varDecl(
 		end = init.Span().End
 	}
 
-	span := ast.Span{Start: start, End: end}
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 	return ast.NewVarDecl(kind, pat, typeAnn, init, export, declare, span)
 }
 
@@ -101,7 +101,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 		p.reportError(token.Span, "Expected identifier")
 		ident = ast.NewIdentifier(
 			"",
-			ast.Span{Start: token.Span.Start, End: token.Span.Start},
+			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 		)
 	}
 

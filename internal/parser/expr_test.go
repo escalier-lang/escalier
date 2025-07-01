@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 )
@@ -144,7 +145,8 @@ func TestParseExprNoErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &Source{
+			source := &ast.Source{
+				ID:       1,
 				Path:     "input.esc",
 				Contents: test.input,
 			}
@@ -220,7 +222,8 @@ func TestParseExprErrorHandling(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &Source{
+			source := &ast.Source{
+				ID:       1,
 				Path:     "input.esc",
 				Contents: test.input,
 			}

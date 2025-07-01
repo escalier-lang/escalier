@@ -9,18 +9,13 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-type Source struct {
-	Path     string
-	Contents string
-}
-
 type Lexer struct {
-	source          *Source
+	source          *ast.Source
 	currentOffset   int
 	currentLocation ast.Location
 }
 
-func NewLexer(source *Source) *Lexer {
+func NewLexer(source *ast.Source) *Lexer {
 	return &Lexer{
 		source:          source,
 		currentOffset:   0,
@@ -68,7 +63,7 @@ func (lexer *Lexer) next() *Token {
 	start := lexer.currentLocation
 
 	if startOffset >= len(lexer.source.Contents) {
-		return NewToken(EndOfFile, "", ast.Span{Start: start, End: start})
+		return NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
 	}
 
 	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
@@ -91,23 +86,23 @@ func (lexer *Lexer) next() *Token {
 	var token *Token
 	switch codePoint {
 	case '+':
-		token = NewToken(Plus, "+", ast.Span{Start: start, End: end})
+		token = NewToken(Plus, "+", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '-':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "->") {
 			endOffset++
 			end.Column++
-			token = NewToken(Arrow, "->", ast.Span{Start: start, End: end})
+			token = NewToken(Arrow, "->", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Minus, "-", ast.Span{Start: start, End: end})
+			token = NewToken(Minus, "-", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '*':
-		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end})
+		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '/':
 		// TODO: handle comments, e.g. // and /* */
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "/>") {
 			endOffset++
 			end.Column++
-			token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end})
+			token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "//") {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
@@ -120,7 +115,7 @@ func (lexer *Lexer) next() *Token {
 			endOffset = i
 			end.Column = start.Column + (i - startOffset)
 			value := lexer.source.Contents[startOffset:i]
-			token = NewToken(LineComment, value, ast.Span{Start: start, End: end})
+			token = NewToken(LineComment, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "/*") {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
@@ -139,100 +134,100 @@ func (lexer *Lexer) next() *Token {
 			}
 			endOffset = i
 			value := lexer.source.Contents[startOffset:i]
-			token = NewToken(BlockComment, value, ast.Span{Start: start, End: end})
+			token = NewToken(BlockComment, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Slash, "/", ast.Span{Start: start, End: end})
+			token = NewToken(Slash, "/", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '=':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "==") {
 			endOffset++
 			end.Column++
-			token = NewToken(EqualEqual, "==", ast.Span{Start: start, End: end})
+			token = NewToken(EqualEqual, "==", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "=>") {
 			endOffset++
 			end.Column++
-			token = NewToken(FatArrow, "=>", ast.Span{Start: start, End: end})
+			token = NewToken(FatArrow, "=>", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Equal, "=", ast.Span{Start: start, End: end})
+			token = NewToken(Equal, "=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case ',':
-		token = NewToken(Comma, ",", ast.Span{Start: start, End: end})
+		token = NewToken(Comma, ",", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '(':
-		token = NewToken(OpenParen, "(", ast.Span{Start: start, End: end})
+		token = NewToken(OpenParen, "(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case ')':
-		token = NewToken(CloseParen, ")", ast.Span{Start: start, End: end})
+		token = NewToken(CloseParen, ")", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '{':
-		token = NewToken(OpenBrace, "{", ast.Span{Start: start, End: end})
+		token = NewToken(OpenBrace, "{", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '}':
-		token = NewToken(CloseBrace, "}", ast.Span{Start: start, End: end})
+		token = NewToken(CloseBrace, "}", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '[':
-		token = NewToken(OpenBracket, "[", ast.Span{Start: start, End: end})
+		token = NewToken(OpenBracket, "[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case ']':
-		token = NewToken(CloseBracket, "]", ast.Span{Start: start, End: end})
+		token = NewToken(CloseBracket, "]", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '<':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "<=") {
 			endOffset++
 			end.Column++
-			token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end})
+			token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "</") {
 			endOffset++
 			end.Column++
-			token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end})
+			token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end})
+			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '>':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], ">=") {
 			endOffset++
 			end.Column++
-			token = NewToken(GreaterThanEqual, ">=", ast.Span{Start: start, End: end})
+			token = NewToken(GreaterThanEqual, ">=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end})
+			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '|':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "||") {
 			endOffset++
 			end.Column++
-			token = NewToken(PipePipe, "||", ast.Span{Start: start, End: end})
+			token = NewToken(PipePipe, "||", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Pipe, "|", ast.Span{Start: start, End: end})
+			token = NewToken(Pipe, "|", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '&':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "&&") {
 			endOffset++
 			end.Column++
-			token = NewToken(AmpersandAmpersand, "&&", ast.Span{Start: start, End: end})
+			token = NewToken(AmpersandAmpersand, "&&", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Ampersand, "&", ast.Span{Start: start, End: end})
+			token = NewToken(Ampersand, "&", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '`':
-		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end})
+		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '?':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "?.") {
 			endOffset++
 			end.Column++
-			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?(") {
 			endOffset++
 			end.Column++
-			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?[") {
 			endOffset++
 			end.Column++
-			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end})
+			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Question, "?", ast.Span{Start: start, End: end})
+			token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '!':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
 			endOffset++
 			end.Column++
-			token = NewToken(NotEqual, "!=", ast.Span{Start: start, End: end})
+			token = NewToken(NotEqual, "!=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Bang, "!", ast.Span{Start: start, End: end})
+			token = NewToken(Bang, "!", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case ':':
-		token = NewToken(Colon, ":", ast.Span{Start: start, End: end})
+		token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '"':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -247,7 +242,7 @@ func (lexer *Lexer) next() *Token {
 		endOffset = i + 1                    // + 1 to include the closing quote
 		value := contents[startOffset+1 : i] // without the quotes
 		end.Column = start.Column + (endOffset - startOffset)
-		token = NewToken(StrLit, value, ast.Span{Start: start, End: end})
+		token = NewToken(StrLit, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -279,13 +274,13 @@ func (lexer *Lexer) next() *Token {
 			if strings.HasPrefix(contents[startOffset:], "...") {
 				endOffset += 2
 				end.Column += 2
-				token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end})
+				token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 			} else {
-				token = NewToken(Dot, ".", ast.Span{Start: start, End: end})
+				token = NewToken(Dot, ".", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 			}
 		} else {
 			end.Column = start.Column + (i - startOffset)
-			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end})
+			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	default:
 		c := codePoint
@@ -305,7 +300,7 @@ func (lexer *Lexer) next() *Token {
 
 			value := string(norm.NFC.Bytes([]byte(contents[startOffset:i])))
 			end.Column = start.Column + utf8.RuneCountInString(value)
-			span := ast.Span{Start: start, End: end}
+			span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
 
 			if keyword, ok := keywords[value]; ok {
 				token = NewToken(keyword, value, span)
@@ -315,9 +310,9 @@ func (lexer *Lexer) next() *Token {
 				token = NewToken(Identifier, value, span)
 			}
 		} else if startOffset >= len(lexer.source.Contents) {
-			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start})
+			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Invalid, "", ast.Span{Start: start, End: start})
+			token = NewToken(Invalid, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
 		}
 	}
 
@@ -422,7 +417,7 @@ func (lexer *Lexer) lexQuasi() *Token {
 		value = contents[startOffset:i]
 	}
 
-	return NewToken(Quasi, value, ast.Span{Start: start, End: end})
+	return NewToken(Quasi, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 }
 
 func (lexer *Lexer) lexJSXText() *Token {
@@ -459,7 +454,7 @@ func (lexer *Lexer) lexJSXText() *Token {
 	} else {
 		value = contents[startOffset:endOffset]
 	}
-	return NewToken(JSXText, value, ast.Span{Start: start, End: end})
+	return NewToken(JSXText, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 }
 
 func (lexer *Lexer) Lex() []*Token {

@@ -7,8 +7,9 @@
             Name:    "",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:1},
-                End:   ast.Location{Line:1, Column:1},
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:1},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -17,26 +18,30 @@
             Lit: &ast.NumLit{
                 Value: 5,
                 span:  ast.Span{
-                    Start: ast.Location{Line:1, Column:7},
-                    End:   ast.Location{Line:1, Column:8},
+                    Start:    ast.Location{Line:1, Column:7},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 1,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:7},
-                End:   ast.Location{Line:1, Column:8},
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 1,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:8},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:8},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:8},
+        SourceID: 1,
     },
 }
 ---
@@ -47,8 +52,9 @@
         Name: &ast.Ident{
             Name: "",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:4},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -66,37 +72,43 @@
                         Lit: &ast.NumLit{
                             Value: 5,
                             span:  ast.Span{
-                                Start: ast.Location{Line:1, Column:15},
-                                End:   ast.Location{Line:1, Column:16},
+                                Start:    ast.Location{Line:1, Column:15},
+                                End:      ast.Location{Line:1, Column:16},
+                                SourceID: 1,
                             },
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:15},
-                            End:   ast.Location{Line:1, Column:16},
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:8},
-                        End:   ast.Location{Line:1, Column:16},
+                        Start:    ast.Location{Line:1, Column:8},
+                        End:      ast.Location{Line:1, Column:16},
+                        SourceID: 0,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:7},
-                End:   ast.Location{Line:1, Column:17},
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:17},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:17},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:17},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:17},
+        SourceID: 0,
     },
 }
 ---
@@ -105,15 +117,17 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:5},
-            End:   ast.Location{Line:1, Column:6},
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 1,
         },
         Message: "Expected a pattern",
     },
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:4},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 1,
         },
         Message: "Expected pattern",
     },
@@ -124,8 +138,9 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:4},
-            End:   ast.Location{Line:1, Column:5},
+            Start:    ast.Location{Line:1, Column:4},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 1,
         },
         Message: "Expected identifier",
     },
@@ -140,8 +155,9 @@ nil
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:7},
-            End:   ast.Location{Line:1, Column:8},
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 1,
         },
         Message: "Expected equals sign",
     },
@@ -154,8 +170,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -167,8 +184,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -180,8 +198,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -196,20 +215,23 @@ nil
             Stmts: {
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:13},
-                End:   ast.Location{Line:1, Column:13},
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:13},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:13},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
     },
 }
 ---
@@ -218,8 +240,9 @@ nil
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:13},
-            End:   ast.Location{Line:1, Column:13},
+            Start:    ast.Location{Line:1, Column:13},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 1,
         },
         Message: "Expected an opening brace",
     },
@@ -232,8 +255,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -253,29 +277,33 @@ nil
                             Name:    "a",
                             Default: nil,
                             span:    ast.Span{
-                                Start: ast.Location{Line:2, Column:9},
-                                End:   ast.Location{Line:2, Column:10},
+                                Start:    ast.Location{Line:2, Column:9},
+                                End:      ast.Location{Line:2, Column:10},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         TypeAnn: nil,
                         Init:    &ast.EmptyExpr{
                             span: ast.Span{
-                                Start: ast.Location{Line:3, Column:5},
-                                End:   ast.Location{Line:3, Column:8},
+                                Start:    ast.Location{Line:3, Column:5},
+                                End:      ast.Location{Line:3, Column:8},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         export:  false,
                         declare: false,
                         span:    ast.Span{
-                            Start: ast.Location{Line:2, Column:5},
-                            End:   ast.Location{Line:3, Column:8},
+                            Start:    ast.Location{Line:2, Column:5},
+                            End:      ast.Location{Line:3, Column:8},
+                            SourceID: 1,
                         },
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:2, Column:5},
-                        End:   ast.Location{Line:3, Column:8},
+                        Start:    ast.Location{Line:2, Column:5},
+                        End:      ast.Location{Line:3, Column:8},
+                        SourceID: 1,
                     },
                 },
                 &ast.DeclStmt{
@@ -285,8 +313,9 @@ nil
                             Name:    "b",
                             Default: nil,
                             span:    ast.Span{
-                                Start: ast.Location{Line:3, Column:9},
-                                End:   ast.Location{Line:3, Column:10},
+                                Start:    ast.Location{Line:3, Column:9},
+                                End:      ast.Location{Line:3, Column:10},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -295,26 +324,30 @@ nil
                             Lit: &ast.NumLit{
                                 Value: 5,
                                 span:  ast.Span{
-                                    Start: ast.Location{Line:3, Column:13},
-                                    End:   ast.Location{Line:3, Column:14},
+                                    Start:    ast.Location{Line:3, Column:13},
+                                    End:      ast.Location{Line:3, Column:14},
+                                    SourceID: 1,
                                 },
                             },
                             span: ast.Span{
-                                Start: ast.Location{Line:3, Column:13},
-                                End:   ast.Location{Line:3, Column:14},
+                                Start:    ast.Location{Line:3, Column:13},
+                                End:      ast.Location{Line:3, Column:14},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         export:  false,
                         declare: false,
                         span:    ast.Span{
-                            Start: ast.Location{Line:3, Column:5},
-                            End:   ast.Location{Line:3, Column:14},
+                            Start:    ast.Location{Line:3, Column:5},
+                            End:      ast.Location{Line:3, Column:14},
+                            SourceID: 1,
                         },
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:3, Column:5},
-                        End:   ast.Location{Line:3, Column:14},
+                        Start:    ast.Location{Line:3, Column:5},
+                        End:      ast.Location{Line:3, Column:14},
+                        SourceID: 1,
                     },
                 },
                 &ast.ReturnStmt{
@@ -323,46 +356,53 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:4, Column:12},
-                                End:   ast.Location{Line:4, Column:13},
+                                Start:    ast.Location{Line:4, Column:12},
+                                End:      ast.Location{Line:4, Column:13},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         Op:    "+",
                         Right: &ast.EmptyExpr{
                             span: ast.Span{
-                                Start: ast.Location{Line:5, Column:4},
-                                End:   ast.Location{Line:5, Column:5},
+                                Start:    ast.Location{Line:5, Column:4},
+                                End:      ast.Location{Line:5, Column:5},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:4, Column:12},
-                            End:   ast.Location{Line:5, Column:5},
+                            Start:    ast.Location{Line:4, Column:12},
+                            End:      ast.Location{Line:5, Column:5},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:4, Column:5},
-                        End:   ast.Location{Line:5, Column:5},
+                        Start:    ast.Location{Line:4, Column:5},
+                        End:      ast.Location{Line:5, Column:5},
+                        SourceID: 0,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:10},
-                End:   ast.Location{Line:5, Column:5},
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:5, Column:5},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:5, Column:5},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:5, Column:5},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:5, Column:5},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:5, Column:5},
+        SourceID: 0,
     },
 }
 ---
@@ -371,15 +411,17 @@ nil
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:3, Column:5},
-            End:   ast.Location{Line:3, Column:8},
+            Start:    ast.Location{Line:3, Column:5},
+            End:      ast.Location{Line:3, Column:8},
+            SourceID: 1,
         },
         Message: "Expected an expression",
     },
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:5, Column:4},
-            End:   ast.Location{Line:5, Column:5},
+            Start:    ast.Location{Line:5, Column:4},
+            End:      ast.Location{Line:5, Column:5},
+            SourceID: 1,
         },
         Message: "Expected an expression",
     },
@@ -392,8 +434,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -405,8 +448,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -418,8 +462,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -438,8 +483,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:16},
-                                End:   ast.Location{Line:1, Column:17},
+                                Start:    ast.Location{Line:1, Column:16},
+                                End:      ast.Location{Line:1, Column:17},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -448,38 +494,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:20},
-                                End:   ast.Location{Line:1, Column:21},
+                                Start:    ast.Location{Line:1, Column:20},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:21},
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:21},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:16},
-                        End:   ast.Location{Line:1, Column:21},
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:21},
+                        SourceID: 1,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:14},
-                End:   ast.Location{Line:1, Column:23},
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:23},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:23},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:23},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
     },
 }
 ---
@@ -488,8 +540,9 @@ nil
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:8},
-            End:   ast.Location{Line:1, Column:9},
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 1,
         },
         Message: "Expected an opening paren",
     },
@@ -502,8 +555,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -515,8 +569,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:9},
-                            End:   ast.Location{Line:1, Column:10},
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -528,8 +583,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:12},
-                            End:   ast.Location{Line:1, Column:13},
+                            Start:    ast.Location{Line:1, Column:12},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -548,8 +604,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:16},
-                                End:   ast.Location{Line:1, Column:17},
+                                Start:    ast.Location{Line:1, Column:16},
+                                End:      ast.Location{Line:1, Column:17},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -558,38 +615,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:20},
-                                End:   ast.Location{Line:1, Column:21},
+                                Start:    ast.Location{Line:1, Column:20},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:21},
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:21},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:16},
-                        End:   ast.Location{Line:1, Column:21},
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:21},
+                        SourceID: 1,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:14},
-                End:   ast.Location{Line:1, Column:23},
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:23},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:23},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:23},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
     },
 }
 ---
@@ -598,8 +661,9 @@ nil
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start: ast.Location{Line:1, Column:14},
-            End:   ast.Location{Line:1, Column:15},
+            Start:    ast.Location{Line:1, Column:14},
+            End:      ast.Location{Line:1, Column:15},
+            SourceID: 1,
         },
         Message: "Expected a closing paren",
     },
@@ -612,8 +676,9 @@ nil
         Name: &ast.Ident{
             Name: "MyType",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:6},
-                End:   ast.Location{Line:1, Column:12},
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 1,
             },
         },
         TypeParams: {
@@ -625,8 +690,9 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:2, Column:7},
-                        End:   ast.Location{Line:2, Column:10},
+                        Start:    ast.Location{Line:2, Column:7},
+                        End:      ast.Location{Line:2, Column:10},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
@@ -635,8 +701,9 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:3, Column:7},
-                        End:   ast.Location{Line:3, Column:10},
+                        Start:    ast.Location{Line:3, Column:7},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
@@ -645,28 +712,32 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:4, Column:7},
-                        End:   ast.Location{Line:4, Column:10},
+                        Start:    ast.Location{Line:4, Column:7},
+                        End:      ast.Location{Line:4, Column:10},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:2, Column:7},
-                End:   ast.Location{Line:4, Column:10},
+                Start:    ast.Location{Line:2, Column:7},
+                End:      ast.Location{Line:4, Column:10},
+                SourceID: 0,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:12},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:12},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
     },
 }
 ---
@@ -679,8 +750,9 @@ nil
             Name:    "x",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -689,26 +761,30 @@ nil
             Lit: &ast.NumLit{
                 Value: 5,
                 span:  ast.Span{
-                    Start: ast.Location{Line:1, Column:9},
-                    End:   ast.Location{Line:1, Column:10},
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 1,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:9},
-                End:   ast.Location{Line:1, Column:10},
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 1,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:10},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:10},
+        SourceID: 1,
     },
 }
 ---
@@ -721,8 +797,9 @@ nil
             Name:    "x",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:6},
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -731,26 +808,30 @@ nil
             Lit: &ast.NumLit{
                 Value: 5,
                 span:  ast.Span{
-                    Start: ast.Location{Line:1, Column:9},
-                    End:   ast.Location{Line:1, Column:10},
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 1,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:9},
-                End:   ast.Location{Line:1, Column:10},
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 1,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:10},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:10},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:10},
+        SourceID: 1,
     },
 }
 ---
@@ -763,8 +844,9 @@ nil
             Name:    "x",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:12},
-                End:   ast.Location{Line:1, Column:13},
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -773,26 +855,30 @@ nil
             Lit: &ast.NumLit{
                 Value: 5,
                 span:  ast.Span{
-                    Start: ast.Location{Line:1, Column:16},
-                    End:   ast.Location{Line:1, Column:17},
+                    Start:    ast.Location{Line:1, Column:16},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 1,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:16},
-                End:   ast.Location{Line:1, Column:17},
+                Start:    ast.Location{Line:1, Column:16},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 1,
             },
             inferredType: nil,
         },
         export:  true,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:17},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:17},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:17},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:17},
+        SourceID: 1,
     },
 }
 ---
@@ -803,8 +889,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:12},
-                End:   ast.Location{Line:1, Column:15},
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -816,8 +903,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:17},
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:17},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -829,8 +917,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:19},
-                            End:   ast.Location{Line:1, Column:20},
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:20},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -845,13 +934,15 @@ nil
         export:  false,
         declare: true,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:21},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:21},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:21},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:21},
+        SourceID: 0,
     },
 }
 ---
@@ -862,8 +953,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:19},
-                End:   ast.Location{Line:1, Column:22},
+                Start:    ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:22},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -875,8 +967,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:23},
-                            End:   ast.Location{Line:1, Column:24},
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:24},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -888,8 +981,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:26},
-                            End:   ast.Location{Line:1, Column:27},
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:27},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -904,13 +998,15 @@ nil
         export:  true,
         declare: true,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:28},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:28},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:28},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:28},
+        SourceID: 0,
     },
 }
 ---
@@ -921,8 +1017,9 @@ nil
         Name: &ast.Ident{
             Name: "MyType",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:6},
-                End:   ast.Location{Line:1, Column:12},
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 1,
             },
         },
         TypeParams: {
@@ -934,8 +1031,9 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:15},
-                        End:   ast.Location{Line:1, Column:18},
+                        Start:    ast.Location{Line:1, Column:15},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
@@ -944,8 +1042,9 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:3, Column:7},
-                        End:   ast.Location{Line:3, Column:10},
+                        Start:    ast.Location{Line:3, Column:7},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
@@ -954,28 +1053,32 @@ nil
                     TypeArgs: {
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:5, Column:7},
-                        End:   ast.Location{Line:5, Column:10},
+                        Start:    ast.Location{Line:5, Column:7},
+                        End:      ast.Location{Line:5, Column:10},
+                        SourceID: 1,
                     },
                     inferredType: nil,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:15},
-                End:   ast.Location{Line:5, Column:10},
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:5, Column:10},
+                SourceID: 0,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:12},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:12},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
     },
 }
 ---
@@ -986,8 +1089,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:11},
-                End:   ast.Location{Line:1, Column:14},
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -999,8 +1103,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:15},
-                            End:   ast.Location{Line:1, Column:16},
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1012,8 +1117,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:18},
-                            End:   ast.Location{Line:1, Column:19},
+                            Start:    ast.Location{Line:1, Column:18},
+                            End:      ast.Location{Line:1, Column:19},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1032,8 +1138,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:23},
-                                End:   ast.Location{Line:1, Column:24},
+                                Start:    ast.Location{Line:1, Column:23},
+                                End:      ast.Location{Line:1, Column:24},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1042,38 +1149,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:27},
-                                End:   ast.Location{Line:1, Column:28},
+                                Start:    ast.Location{Line:1, Column:27},
+                                End:      ast.Location{Line:1, Column:28},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:23},
-                            End:   ast.Location{Line:1, Column:28},
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:28},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:23},
-                        End:   ast.Location{Line:1, Column:28},
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 1,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:21},
-                End:   ast.Location{Line:1, Column:30},
+                Start:    ast.Location{Line:1, Column:21},
+                End:      ast.Location{Line:1, Column:30},
+                SourceID: 1,
             },
         },
         export:  true,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:30},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:30},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:30},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:30},
+        SourceID: 0,
     },
 }
 ---
@@ -1084,8 +1197,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -1097,8 +1211,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1110,8 +1225,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1130,8 +1246,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:23},
-                                End:   ast.Location{Line:1, Column:24},
+                                Start:    ast.Location{Line:1, Column:23},
+                                End:      ast.Location{Line:1, Column:24},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1140,38 +1257,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:27},
-                                End:   ast.Location{Line:1, Column:28},
+                                Start:    ast.Location{Line:1, Column:27},
+                                End:      ast.Location{Line:1, Column:28},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:23},
-                            End:   ast.Location{Line:1, Column:28},
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:28},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:16},
-                        End:   ast.Location{Line:1, Column:28},
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 0,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:14},
-                End:   ast.Location{Line:1, Column:30},
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:30},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:30},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:30},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:30},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:30},
+        SourceID: 0,
     },
 }
 ---
@@ -1182,8 +1305,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -1195,8 +1319,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:8},
-                            End:   ast.Location{Line:1, Column:9},
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1208,8 +1333,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1228,8 +1354,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:16},
-                                End:   ast.Location{Line:1, Column:17},
+                                Start:    ast.Location{Line:1, Column:16},
+                                End:      ast.Location{Line:1, Column:17},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1238,38 +1365,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:20},
-                                End:   ast.Location{Line:1, Column:21},
+                                Start:    ast.Location{Line:1, Column:20},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:16},
-                            End:   ast.Location{Line:1, Column:21},
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:21},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:16},
-                        End:   ast.Location{Line:1, Column:21},
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:21},
+                        SourceID: 1,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:14},
-                End:   ast.Location{Line:1, Column:23},
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:23},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:23},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:23},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
     },
 }
 ---
@@ -1282,8 +1415,9 @@ nil
             Name:    "x",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:20},
-                End:   ast.Location{Line:1, Column:21},
+                Start:    ast.Location{Line:1, Column:20},
+                End:      ast.Location{Line:1, Column:21},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -1292,13 +1426,15 @@ nil
         export:  true,
         declare: true,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:21},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:21},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:21},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:21},
+        SourceID: 1,
     },
 }
 ---
@@ -1309,8 +1445,9 @@ nil
         Name: &ast.Ident{
             Name: "MyType",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:6},
-                End:   ast.Location{Line:1, Column:12},
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 1,
             },
         },
         TypeParams: {
@@ -1322,8 +1459,9 @@ nil
                         Name:   "x",
                         Source: nil,
                         span:   ast.Span{
-                            Start: ast.Location{Line:1, Column:17},
-                            End:   ast.Location{Line:1, Column:18},
+                            Start:    ast.Location{Line:1, Column:17},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1331,8 +1469,9 @@ nil
                     Readonly: false,
                     Value:    &ast.NumberTypeAnn{
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:20},
-                            End:   ast.Location{Line:1, Column:26},
+                            Start:    ast.Location{Line:1, Column:20},
+                            End:      ast.Location{Line:1, Column:26},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1342,8 +1481,9 @@ nil
                         Name:   "y",
                         Source: nil,
                         span:   ast.Span{
-                            Start: ast.Location{Line:1, Column:28},
-                            End:   ast.Location{Line:1, Column:29},
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:29},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1351,29 +1491,33 @@ nil
                     Readonly: false,
                     Value:    &ast.StringTypeAnn{
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:31},
-                            End:   ast.Location{Line:1, Column:37},
+                            Start:    ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:37},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:15},
-                End:   ast.Location{Line:1, Column:39},
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:39},
+                SourceID: 0,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:12},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:12},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
     },
 }
 ---
@@ -1386,8 +1530,9 @@ nil
             Name:    "x",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:13},
-                End:   ast.Location{Line:1, Column:14},
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -1396,13 +1541,15 @@ nil
         export:  false,
         declare: true,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:14},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:14},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 1,
     },
 }
 ---
@@ -1415,8 +1562,9 @@ nil
             Name:    "längd",
             Default: nil,
             span:    ast.Span{
-                Start: ast.Location{Line:1, Column:5},
-                End:   ast.Location{Line:1, Column:10},
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 1,
             },
             inferredType: nil,
         },
@@ -1425,26 +1573,30 @@ nil
             Lit: &ast.NumLit{
                 Value: 5,
                 span:  ast.Span{
-                    Start: ast.Location{Line:1, Column:13},
-                    End:   ast.Location{Line:1, Column:14},
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:14},
+                    SourceID: 1,
                 },
             },
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:13},
-                End:   ast.Location{Line:1, Column:14},
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 1,
             },
             inferredType: nil,
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:14},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 1,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:14},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 1,
     },
 }
 ---
@@ -1455,8 +1607,9 @@ nil
         Name: &ast.Ident{
             Name: "до́бра",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:10},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -1468,8 +1621,9 @@ nil
                         Name:    "a",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:11},
-                            End:   ast.Location{Line:1, Column:12},
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1481,8 +1635,9 @@ nil
                         Name:    "b",
                         Default: nil,
                         span:    ast.Span{
-                            Start: ast.Location{Line:1, Column:14},
-                            End:   ast.Location{Line:1, Column:15},
+                            Start:    ast.Location{Line:1, Column:14},
+                            End:      ast.Location{Line:1, Column:15},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
@@ -1501,8 +1656,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:19},
-                                End:   ast.Location{Line:1, Column:20},
+                                Start:    ast.Location{Line:1, Column:19},
+                                End:      ast.Location{Line:1, Column:20},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1511,38 +1667,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:1, Column:23},
-                                End:   ast.Location{Line:1, Column:24},
+                                Start:    ast.Location{Line:1, Column:23},
+                                End:      ast.Location{Line:1, Column:24},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:1, Column:19},
-                            End:   ast.Location{Line:1, Column:24},
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:24},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:1, Column:19},
-                        End:   ast.Location{Line:1, Column:24},
+                        Start:    ast.Location{Line:1, Column:19},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 1,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:17},
-                End:   ast.Location{Line:1, Column:26},
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:1, Column:26},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:26},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:1, Column:26},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:26},
+        SourceID: 0,
     },
 }
 ---
@@ -1553,8 +1715,9 @@ nil
         Name: &ast.Ident{
             Name: "foo",
             span: ast.Span{
-                Start: ast.Location{Line:1, Column:4},
-                End:   ast.Location{Line:1, Column:7},
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 1,
             },
         },
         FuncSig: ast.FuncSig{
@@ -1574,8 +1737,9 @@ nil
                             Name:    "a",
                             Default: nil,
                             span:    ast.Span{
-                                Start: ast.Location{Line:2, Column:9},
-                                End:   ast.Location{Line:2, Column:10},
+                                Start:    ast.Location{Line:2, Column:9},
+                                End:      ast.Location{Line:2, Column:10},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1584,26 +1748,30 @@ nil
                             Lit: &ast.NumLit{
                                 Value: 5,
                                 span:  ast.Span{
-                                    Start: ast.Location{Line:2, Column:13},
-                                    End:   ast.Location{Line:2, Column:14},
+                                    Start:    ast.Location{Line:2, Column:13},
+                                    End:      ast.Location{Line:2, Column:14},
+                                    SourceID: 1,
                                 },
                             },
                             span: ast.Span{
-                                Start: ast.Location{Line:2, Column:13},
-                                End:   ast.Location{Line:2, Column:14},
+                                Start:    ast.Location{Line:2, Column:13},
+                                End:      ast.Location{Line:2, Column:14},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         export:  false,
                         declare: false,
                         span:    ast.Span{
-                            Start: ast.Location{Line:2, Column:5},
-                            End:   ast.Location{Line:2, Column:14},
+                            Start:    ast.Location{Line:2, Column:5},
+                            End:      ast.Location{Line:2, Column:14},
+                            SourceID: 1,
                         },
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:2, Column:5},
-                        End:   ast.Location{Line:2, Column:14},
+                        Start:    ast.Location{Line:2, Column:5},
+                        End:      ast.Location{Line:2, Column:14},
+                        SourceID: 1,
                     },
                 },
                 &ast.DeclStmt{
@@ -1613,8 +1781,9 @@ nil
                             Name:    "b",
                             Default: nil,
                             span:    ast.Span{
-                                Start: ast.Location{Line:3, Column:9},
-                                End:   ast.Location{Line:3, Column:10},
+                                Start:    ast.Location{Line:3, Column:9},
+                                End:      ast.Location{Line:3, Column:10},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1623,26 +1792,30 @@ nil
                             Lit: &ast.NumLit{
                                 Value: 10,
                                 span:  ast.Span{
-                                    Start: ast.Location{Line:3, Column:13},
-                                    End:   ast.Location{Line:3, Column:15},
+                                    Start:    ast.Location{Line:3, Column:13},
+                                    End:      ast.Location{Line:3, Column:15},
+                                    SourceID: 1,
                                 },
                             },
                             span: ast.Span{
-                                Start: ast.Location{Line:3, Column:13},
-                                End:   ast.Location{Line:3, Column:15},
+                                Start:    ast.Location{Line:3, Column:13},
+                                End:      ast.Location{Line:3, Column:15},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         export:  false,
                         declare: false,
                         span:    ast.Span{
-                            Start: ast.Location{Line:3, Column:5},
-                            End:   ast.Location{Line:3, Column:15},
+                            Start:    ast.Location{Line:3, Column:5},
+                            End:      ast.Location{Line:3, Column:15},
+                            SourceID: 1,
                         },
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:3, Column:5},
-                        End:   ast.Location{Line:3, Column:15},
+                        Start:    ast.Location{Line:3, Column:5},
+                        End:      ast.Location{Line:3, Column:15},
+                        SourceID: 1,
                     },
                 },
                 &ast.ReturnStmt{
@@ -1651,8 +1824,9 @@ nil
                             Name:   "a",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:4, Column:12},
-                                End:   ast.Location{Line:4, Column:13},
+                                Start:    ast.Location{Line:4, Column:12},
+                                End:      ast.Location{Line:4, Column:13},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
@@ -1661,38 +1835,44 @@ nil
                             Name:   "b",
                             Source: nil,
                             span:   ast.Span{
-                                Start: ast.Location{Line:4, Column:16},
-                                End:   ast.Location{Line:4, Column:17},
+                                Start:    ast.Location{Line:4, Column:16},
+                                End:      ast.Location{Line:4, Column:17},
+                                SourceID: 1,
                             },
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start: ast.Location{Line:4, Column:12},
-                            End:   ast.Location{Line:4, Column:17},
+                            Start:    ast.Location{Line:4, Column:12},
+                            End:      ast.Location{Line:4, Column:17},
+                            SourceID: 1,
                         },
                         inferredType: nil,
                     },
                     span: ast.Span{
-                        Start: ast.Location{Line:4, Column:5},
-                        End:   ast.Location{Line:4, Column:17},
+                        Start:    ast.Location{Line:4, Column:5},
+                        End:      ast.Location{Line:4, Column:17},
+                        SourceID: 0,
                     },
                 },
             },
             Span: ast.Span{
-                Start: ast.Location{Line:1, Column:10},
-                End:   ast.Location{Line:5, Column:5},
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:5, Column:5},
+                SourceID: 1,
             },
         },
         export:  false,
         declare: false,
         span:    ast.Span{
-            Start: ast.Location{Line:1, Column:1},
-            End:   ast.Location{Line:5, Column:5},
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:5, Column:5},
+            SourceID: 0,
         },
     },
     span: ast.Span{
-        Start: ast.Location{Line:1, Column:1},
-        End:   ast.Location{Line:5, Column:5},
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:5, Column:5},
+        SourceID: 0,
     },
 }
 ---
