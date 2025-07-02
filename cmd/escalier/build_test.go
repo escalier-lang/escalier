@@ -11,15 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func checkFile(t *testing.T, fixtureDir string, fixtureName string, ext string) {
-	actualJs, err := os.ReadFile(fixtureName + ext)
+func checkFile(t *testing.T, fixtureDir string, ext string) {
+	outPath := filepath.Join("dist", "index"+ext)
+	actualJs, err := os.ReadFile(outPath)
 	require.NoError(t, err)
 
 	if os.Getenv("UPDATE_FIXTURES") == "true" {
-		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+ext), actualJs, 0644)
+		err = os.WriteFile(filepath.Join(fixtureDir, outPath), actualJs, 0644)
 		require.NoError(t, err)
 	} else {
-		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+ext))
+		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, outPath))
 		require.NoError(t, err)
 		require.Equal(t, string(expectedJs), string(actualJs))
 	}
@@ -43,12 +44,23 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
+
+	// TODO: find all .esc files in the fixture directory
+	// and pass them to the build function.
 	build(stdout, stderr, []string{fixtureName + ".esc"})
 	fmt.Println("stderr =", stderr.String())
 
-	checkFile(t, fixtureDir, fixtureName, ".js")
-	checkFile(t, fixtureDir, fixtureName, ".d.ts")
-	checkFile(t, fixtureDir, fixtureName, ".esc.map")
+	// create dist/ directory if it doesn't exist
+	if _, err := os.Stat(filepath.Join(fixtureDir, "dist")); os.IsNotExist(err) {
+		err := os.Mkdir(filepath.Join(fixtureDir, "dist"), 0755)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create dist directory")
+		}
+	}
+
+	checkFile(t, fixtureDir, ".js")
+	checkFile(t, fixtureDir, ".d.ts")
+	checkFile(t, fixtureDir, ".esc.map")
 
 	// check errors
 	if stderr.Len() > 0 {

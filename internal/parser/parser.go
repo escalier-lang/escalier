@@ -53,6 +53,11 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 
 // module = decl* <eof>
 func (p *Parser) ParseModule() (*ast.Module, []*Error) {
+	decls := p.decls()
+	return &ast.Module{Decls: decls}, p.errors
+}
+
+func (p *Parser) decls() []ast.Decl {
 	decls := []ast.Decl{}
 
 	token := p.lexer.peek()
@@ -61,7 +66,7 @@ func (p *Parser) ParseModule() (*ast.Module, []*Error) {
 		switch token.Type {
 		case EndOfFile:
 			p.lexer.consume()
-			return &ast.Module{Decls: decls}, p.errors
+			return decls
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			token = p.lexer.peek()
@@ -83,4 +88,24 @@ func (p *Parser) ParseModule() (*ast.Module, []*Error) {
 			token = p.lexer.peek()
 		}
 	}
+}
+
+func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
+	allDecls := []ast.Decl{}
+	allErrors := []*Error{}
+
+	for _, source := range sources {
+		if source == nil {
+			continue
+		}
+		if source.ID == 0 {
+			panic("Source ID must be set")
+		}
+		parser := NewParser(ctx, source)
+		decls := parser.decls()
+		allDecls = append(allDecls, decls...)
+		allErrors = append(allErrors, parser.errors...)
+	}
+
+	return &ast.Module{Decls: allDecls}, allErrors
 }
