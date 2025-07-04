@@ -12,7 +12,7 @@ import (
 )
 
 func checkFile(t *testing.T, fixtureDir string, ext string) {
-	outPath := filepath.Join("dist", "index"+ext)
+	outPath := filepath.Join("build", "lib", "index"+ext)
 	actualJs, err := os.ReadFile(outPath)
 	require.NoError(t, err)
 
@@ -30,11 +30,14 @@ func checkFile(t *testing.T, fixtureDir string, ext string) {
 func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	tmpDir := t.TempDir()
 
-	err := os.Chdir(tmpDir)
+	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)
 	require.NoError(t, err)
 
-	srcFile := filepath.Join(fixtureDir, fixtureName+".esc")
-	destFile := filepath.Join(tmpDir, fixtureName+".esc")
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	srcFile := filepath.Join(fixtureDir, "lib", fixtureName+".esc")
+	destFile := filepath.Join(tmpDir, "lib", fixtureName+".esc")
 
 	input, err := os.ReadFile(srcFile)
 	require.NoError(t, err)
@@ -47,20 +50,27 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 
 	// TODO: find all .esc files in the fixture directory
 	// and pass them to the build function.
-	build(stdout, stderr, []string{fixtureName + ".esc"})
+	files := []string{filepath.Join("lib", fixtureName+".esc")}
+	build(stdout, stderr, files)
 	fmt.Println("stderr =", stderr.String())
 
-	// create dist/ directory if it doesn't exist
-	if _, err := os.Stat(filepath.Join(fixtureDir, "dist")); os.IsNotExist(err) {
-		err := os.Mkdir(filepath.Join(fixtureDir, "dist"), 0755)
+	// create build/ directory if it doesn't exist
+	if _, err := os.Stat(filepath.Join(fixtureDir, "build")); os.IsNotExist(err) {
+		err := os.Mkdir(filepath.Join(fixtureDir, "build"), 0755)
 		if err != nil {
-			fmt.Fprintln(stderr, "failed to create dist directory")
+			fmt.Fprintln(stderr, "failed to create build directory")
+		}
+		if _, err := os.Stat(filepath.Join(fixtureDir, "build", "lib")); os.IsNotExist(err) {
+			err := os.Mkdir(filepath.Join(fixtureDir, "build", "lib"), 0755)
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to create build/lib directory")
+			}
 		}
 	}
 
 	checkFile(t, fixtureDir, ".js")
 	checkFile(t, fixtureDir, ".d.ts")
-	checkFile(t, fixtureDir, ".esc.map")
+	checkFile(t, fixtureDir, ".js.map")
 
 	// check errors
 	if stderr.Len() > 0 {

@@ -2,8 +2,6 @@ package compiler
 
 import (
 	"context"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -52,12 +50,10 @@ func Compile(source *ast.Source) CompilerOutput {
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
 
-	srcFile := "./" + filepath.Base(source.Path)
+	jsFile := "./index.js"
+	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
 
-	jsFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
-	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, jsFile)
-
-	outmap := "./" + filepath.Base(source.Path) + ".map"
+	outmap := "./index.js.map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 	printer = codegen.NewPrinter()
@@ -71,3 +67,55 @@ func Compile(source *ast.Source) CompilerOutput {
 		DTS:         dtsOutput,
 	}
 }
+
+// func CompileLib(sources []*ast.Source) CompilerOutput {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+// 	defer cancel()
+
+// 	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
+
+// 	c := checker.NewChecker()
+// 	inferCtx := checker.Context{
+// 		Filename:   "input.esc",
+// 		Scope:      checker.Prelude(),
+// 		IsAsync:    false,
+// 		IsPatMatch: false,
+// 	}
+// 	scope, typeErrors := c.InferModule(inferCtx, inMod)
+
+// 	if len(parseErrors) > 0 {
+// 		return CompilerOutput{
+// 			JS:          "",
+// 			DTS:         "",
+// 			SourceMap:   "",
+// 			ParseErrors: parseErrors,
+// 			TypeErrors:  typeErrors,
+// 		}
+// 	}
+
+// 	builder := &codegen.Builder{}
+// 	jsMod := builder.BuildModuleJS(inMod)
+// 	dtsMod := builder.BuildModuleDTS(inMod, scope)
+
+// 	printer := codegen.NewPrinter()
+// 	jsOutput := printer.PrintModule(jsMod)
+
+// 	srcFile := "./" + filepath.Base(source.Path)
+
+// 	jsFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
+// 	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, jsFile)
+
+// 	outmap := "./" + filepath.Base(source.Path) + ".map"
+// 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+
+// 	printer = codegen.NewPrinter()
+// 	dtsOutput := printer.PrintModule(dtsMod)
+
+// 	return CompilerOutput{
+// 		ParseErrors: parseErrors,
+// 		TypeErrors:  typeErrors,
+// 		JS:          jsOutput,
+// 		SourceMap:   sourceMap,
+// 		DTS:         dtsOutput,
+// 	}
+// }

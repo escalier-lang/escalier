@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/func_expr.esc"],"sourcesContent":["export val add = fn (a: number, b: number) {\n    return a + b\n}\n"],"names":[],"mappings":"MAAW,AAAA,MAAM,UAAI,OAAW;QAAX,AAAA;QAAW,AAAA;EAC5B,OAAO,AAAA,IAAI"}

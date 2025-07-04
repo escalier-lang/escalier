@@ -1,9 +1,9 @@
-not_enough_elements.esc:1:9: Not enough elements to unpack
+lib/not_enough_elements.esc:1:9: Not enough elements to unpack
 
 1:  val [a, b, c] = [1]
             ^^^^
 
-not_enough_elements.esc:2:13: 1 cannot be assigned to string
+lib/not_enough_elements.esc:2:13: 1 cannot be assigned to string
 
 2:  console.log(a)
                 ^

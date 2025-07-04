@@ -113,3 +113,5 @@ func TestEncodeSegments(t *testing.T) {
 	json := SerializeSourceMap(sourcemap)
 	snaps.MatchSnapshot(t, json)
 }
+
+// TODO: write tests for GenerateSourceMap

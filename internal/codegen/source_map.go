@@ -2,6 +2,9 @@ package codegen
 
 import (
 	"encoding/json"
+	"path/filepath"
+
+	"github.com/escalier-lang/escalier/internal/ast"
 )
 
 type SourceMap struct {
@@ -310,18 +313,30 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	}
 }
 
-func GenerateSourceMap(srcPath string, srcContent string, jsMod *Module, outName string) string {
+func GenerateSourceMap(srcs []*ast.Source, jsMod *Module, outName string) string {
 	s := &SourceMapGenerator{
 		groups: [][]*Segment{},
 	}
 
 	s.TraverseModule(jsMod)
 
+	sources := make([]string, len(srcs))
+	for i, src := range srcs {
+		// Assumes that src.Path is in lib/ or bin/ and the output file is in
+		// build/lib/ or build/bin/.
+		sources[i] = filepath.Join("..", "..", src.Path)
+	}
+
+	sourcesContent := make([]*string, len(srcs))
+	for i, src := range srcs {
+		sourcesContent[i] = &src.Contents
+	}
+
 	sm := SourceMap{
 		Version:        3,
 		File:           outName,
-		Sources:        []string{srcPath},
-		SourcesContent: []*string{&srcContent},
+		Sources:        sources,
+		SourcesContent: sourcesContent,
 		Names:          []string{},
 		Mappings:       EncodeSegments(s.groups),
 	}

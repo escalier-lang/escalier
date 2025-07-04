@@ -81,17 +81,25 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			fmt.Fprintln(stderr, message)
 		}
 
-		// create dist/ directory if it doesn't exist
-		if _, err := os.Stat("dist"); os.IsNotExist(err) {
-			err := os.Mkdir("dist", 0755)
+		// create build/ directory if it doesn't exist
+		if _, err := os.Stat("build"); os.IsNotExist(err) {
+			err := os.Mkdir("build", 0755)
 			if err != nil {
-				fmt.Fprintln(stderr, "failed to create dist directory")
+				fmt.Fprintln(stderr, "failed to create build directory")
 				continue
+			}
+
+			if _, err := os.Stat("build/lib"); os.IsNotExist(err) {
+				err := os.Mkdir("build/lib", 0755)
+				if err != nil {
+					fmt.Fprintln(stderr, "failed to create build/lib directory")
+					continue
+				}
 			}
 		}
 
 		// create .js file
-		jsFile := filepath.Join("dist", "index.js")
+		jsFile := filepath.Join("build", "lib", "index.js")
 		jsOut, err := os.Create(jsFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create .js file")
@@ -106,7 +114,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		}
 
 		// create .d.ts file
-		defFile := filepath.Join("dist", "index.d.ts")
+		defFile := filepath.Join("build", "lib", "index.d.ts")
 		defOut, err := os.Create(defFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create .d.ts file")
@@ -121,7 +129,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		}
 
 		// create sourcemap file
-		mapFile := filepath.Join("dist", "index.esc.map")
+		mapFile := filepath.Join("build", "lib", "index.js.map")
 		mapOut, err := os.Create(mapFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create map file")
