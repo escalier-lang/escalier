@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/logging.esc"],"sourcesContent":["console.log(\"hello, world\")\n"],"names":[],"mappings":"AAAA,AAAA,AAAA,QAAQ,IAAI"}
+{"version":3,"file":"./index.js","sources":["../../lib/logging.esc"],"sourcesContent":["fn main() -\u003e undefined {\n    console.log(\"hello, world\")\n}\n"],"names":[],"mappings":"AAAA;EACI,AAAA,AAAA,QAAQ,IAAI"}

@@ -11,3 +11,4 @@ declare const f: string | undefined;
 export declare const obj3: {foo(msg: string, flag: boolean): string, get bar(): boolean, set bar(value: boolean)};
 declare const g: boolean;
 export declare const obj4: {a: 5, b: "hello", c: true};
+declare function main(): undefined;

@@ -1,10 +1,10 @@
-lib/not_enough_elements.esc:1:9: Not enough elements to unpack
+lib/not_enough_elements.esc:2:13: Not enough elements to unpack
 
-1:  val [a, b, c] = [1]
-            ^^^^
+2:      val [a, b, c] = [1]
+                ^^^^
 
-lib/not_enough_elements.esc:2:13: 1 cannot be assigned to string
+lib/not_enough_elements.esc:3:17: 1 cannot be assigned to string
 
-2:  console.log(a)
-                ^
+3:      console.log(a)
+                    ^
 

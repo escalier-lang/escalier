@@ -112,6 +112,10 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 				}
 			}
 		case *ast.TypeDecl:
+			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
+			// things like:
+			// type Point = {x: number, y: number}
+			// val p: Point = {x: 1, y: 2}
 			typeParams := make([]*TypeParam, len(decl.TypeParams))
 			for i, typeParam := range decl.TypeParams {
 				var constraintType Type
@@ -135,13 +139,17 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			}
 
 			namespace.Types[QualifiedIdent(decl.Name.Name)] = typeAlias
+			// TODO: include .Namespaces in Scope property, but this namespace
+			// shouldn't use qualified names.  We need it though, so that we
+			// can reference symbols in different namespaces, e.g. Foo.Bar.MyType
+			ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		}
 	}
 
 	// Copy namespace values and type aliases into the current scope
-	for name, typeAlias := range namespace.Types {
-		ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
-	}
+	// for name, typeAlias := range namespace.Types {
+	// 	ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
+	// }
 	for name, binding := range namespace.Values {
 		ctx.Scope.setValue(name.Parts()[0], binding)
 	}
@@ -149,6 +157,12 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	// Infer definitions
 	for _, decl := range m.Decls {
 		if decl == nil {
+			continue
+		}
+
+		// Skip declarations that use the `declare` keyword, since they are
+		// already fully typed and don't have a body or initializer to infer.
+		if decl.Declare() {
 			continue
 		}
 
@@ -1187,7 +1201,12 @@ func (c *Checker) inferTypeAnn(
 			t := NewTypeRefType(typeAnn.Name, optional.Some(typeAlias), typeArgs...)
 			return t
 		}).TakeOrElse(func() Type {
-			errors = append(errors, &UnkonwnTypeError{TypeName: typeAnn.Name})
+			// TODO: include type args
+			typeRef := NewTypeRefType(typeAnn.Name, optional.None[TypeAlias](), nil)
+			typeRef.SetProvenance(&ast.NodeProvenance{
+				Node: typeAnn,
+			})
+			errors = append(errors, &UnkonwnTypeError{TypeName: typeAnn.Name, typeRef: typeRef})
 			t := NewNeverType()
 			return t
 		})

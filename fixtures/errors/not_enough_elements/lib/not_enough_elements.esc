@@ -1,2 +1,4 @@
-val [a, b, c] = [1]
-console.log(a)
+fn main() -> undefined {
+    val [a, b, c] = [1]
+    console.log(a)
+}

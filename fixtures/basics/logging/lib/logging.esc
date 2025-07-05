@@ -1,1 +1,3 @@
-console.log("hello, world")
+fn main() -> undefined {
+    console.log("hello, world")
+}

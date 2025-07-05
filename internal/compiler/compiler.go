@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type CompilerOutput struct {
@@ -33,6 +34,18 @@ func Compile(source *ast.Source) CompilerOutput {
 	}
 	scope, typeErrors := c.InferScript(inferCtx, inMod)
 
+	namespace := checker.Namespace{
+		Values: make(map[checker.QualifiedIdent]checker.Binding),
+		Types:  make(map[checker.QualifiedIdent]type_system.TypeAlias),
+	}
+
+	for name, binding := range scope.Values {
+		namespace.Values[checker.QualifiedIdent(name)] = binding
+	}
+	for name, typeAlias := range scope.Types {
+		namespace.Types[checker.QualifiedIdent(name)] = typeAlias
+	}
+
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
 			JS:          "",
@@ -45,7 +58,14 @@ func Compile(source *ast.Source) CompilerOutput {
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
-	dtsMod := builder.BuildDefinitions(inMod, scope)
+	var decls []ast.Decl
+	for _, d := range inMod.Stmts {
+		if ds, ok := d.(*ast.DeclStmt); ok {
+			decls = append(decls, ds.Decl)
+		}
+	}
+
+	dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
@@ -68,54 +88,52 @@ func Compile(source *ast.Source) CompilerOutput {
 	}
 }
 
-// func CompileLib(sources []*ast.Source) CompilerOutput {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-// 	defer cancel()
+func CompileLib(sources []*ast.Source) CompilerOutput {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 
-// 	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
+	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
 
-// 	c := checker.NewChecker()
-// 	inferCtx := checker.Context{
-// 		Filename:   "input.esc",
-// 		Scope:      checker.Prelude(),
-// 		IsAsync:    false,
-// 		IsPatMatch: false,
-// 	}
-// 	scope, typeErrors := c.InferModule(inferCtx, inMod)
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		Filename:   "input.esc",
+		Scope:      checker.Prelude(),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	namespace, typeErrors := c.InferModule(inferCtx, inMod)
 
-// 	if len(parseErrors) > 0 {
-// 		return CompilerOutput{
-// 			JS:          "",
-// 			DTS:         "",
-// 			SourceMap:   "",
-// 			ParseErrors: parseErrors,
-// 			TypeErrors:  typeErrors,
-// 		}
-// 	}
+	if len(parseErrors) > 0 {
+		return CompilerOutput{
+			JS:          "",
+			DTS:         "",
+			SourceMap:   "",
+			ParseErrors: parseErrors,
+			TypeErrors:  typeErrors,
+		}
+	}
 
-// 	builder := &codegen.Builder{}
-// 	jsMod := builder.BuildModuleJS(inMod)
-// 	dtsMod := builder.BuildModuleDTS(inMod, scope)
+	builder := &codegen.Builder{}
+	jsMod := builder.BuildModule(inMod)
+	dtsMod := builder.BuildDefinitions(inMod.Decls, namespace)
 
-// 	printer := codegen.NewPrinter()
-// 	jsOutput := printer.PrintModule(jsMod)
+	printer := codegen.NewPrinter()
+	jsOutput := printer.PrintModule(jsMod)
 
-// 	srcFile := "./" + filepath.Base(source.Path)
+	jsFile := "./index.js"
+	sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
 
-// 	jsFile := strings.TrimSuffix(srcFile, filepath.Ext(srcFile)) + ".js"
-// 	sourceMap := codegen.GenerateSourceMap(srcFile, source.Contents, jsMod, jsFile)
+	outmap := "./index.js.map"
+	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
-// 	outmap := "./" + filepath.Base(source.Path) + ".map"
-// 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+	printer = codegen.NewPrinter()
+	dtsOutput := printer.PrintModule(dtsMod)
 
-// 	printer = codegen.NewPrinter()
-// 	dtsOutput := printer.PrintModule(dtsMod)
-
-// 	return CompilerOutput{
-// 		ParseErrors: parseErrors,
-// 		TypeErrors:  typeErrors,
-// 		JS:          jsOutput,
-// 		SourceMap:   sourceMap,
-// 		DTS:         dtsOutput,
-// 	}
-// }
+	return CompilerOutput{
+		ParseErrors: parseErrors,
+		TypeErrors:  typeErrors,
+		JS:          jsOutput,
+		SourceMap:   sourceMap,
+		DTS:         dtsOutput,
+	}
+}

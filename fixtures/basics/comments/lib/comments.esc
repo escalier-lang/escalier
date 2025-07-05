@@ -8,6 +8,6 @@ val y = (x
  * @param {number} a
  * @param {number} b
  */
-export fn add(a: number, b: number) {
+export fn add(a: number, b: number) -> number {
     return /* sum */ a + b
 }

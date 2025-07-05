@@ -1,1 +1,1 @@
-declare const a: 1, b: undefined, c: undefined;
+declare function main(): undefined;

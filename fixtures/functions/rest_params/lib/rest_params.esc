@@ -1,6 +1,6 @@
-val foo = fn (...args: Array<number>) {
+val foo = fn (...args: Array<number>) -> number {
     return args[0]
 }
-fn bar(...args: Array<string>) {
+fn bar(...args: Array<string>) -> string {
     return args[1]
 }

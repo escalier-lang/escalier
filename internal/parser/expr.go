@@ -410,13 +410,25 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 	params := parseDelimSeq(p, CloseParen, Comma, p.param)
 	p.expect(CloseParen, ConsumeOnMatch)
 
+	var returnType ast.TypeAnn
+	token := p.lexer.peek()
+	if token.Type == Arrow {
+		p.lexer.consume()
+		typeAnn := p.typeAnn()
+		if typeAnn == nil {
+			p.reportError(token.Span, "Expected type annotation after arrow")
+			return nil
+		}
+		returnType = typeAnn
+	}
+
 	body := p.block()
 	end := body.Span.End
 
 	return ast.NewFuncExpr(
 		[]*ast.TypeParam{}, // TODO: parse type params
 		params,
-		nil, // TODO: parse return type
+		returnType,
 		nil, // TODO: parse throws type
 		body,
 		ast.NewSpan(start, end),

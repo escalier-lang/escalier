@@ -45,11 +45,12 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		}
 
 		source := &ast.Source{
+			ID:       1,
 			Path:     file,
 			Contents: string(bytes),
 		}
 
-		output := compiler.Compile(source)
+		output := compiler.CompileLib([]*ast.Source{source})
 
 		lines := strings.Split(source.Contents, "\n")
 
