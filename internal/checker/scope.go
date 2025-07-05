@@ -1,59 +1,59 @@
 package checker
 
 import (
-	"github.com/moznion/go-optional"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
-	Source  optional.Option[ast.BindingSource]
+	Source  ast.BindingSource // optional
 	Type    Type
 	Mutable bool
 }
 
 type Scope struct {
-	Parent optional.Option[*Scope]
-	Values map[string]Binding
-	Types  map[string]TypeAlias
+	Parent *Scope // optional, parent is nil for the root scope
+	Values map[string]*Binding
+	Types  map[string]*TypeAlias
 }
 
-func NewScope(parent optional.Option[*Scope]) *Scope {
+func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Parent: parent,
-		Values: map[string]Binding{},
-		Types:  map[string]TypeAlias{},
+		Values: map[string]*Binding{},
+		Types:  map[string]*TypeAlias{},
 	}
 }
 
-func (s *Scope) getValue(name string) optional.Option[Binding] {
+func (s *Scope) getValue(name string) *Binding {
 	if v, ok := s.Values[name]; ok {
-		return optional.Some(v)
+		return v
 	}
-	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[Binding] {
-		return p.getValue(name)
-	}).Or(optional.None[Binding]())
+	if s.Parent != nil {
+		return s.Parent.getValue(name)
+	}
+	return nil
 }
 
-func (s *Scope) setValue(name string, binding Binding) {
+func (s *Scope) setValue(name string, binding *Binding) {
 	if _, ok := s.Values[name]; ok {
 		panic("value already exists")
 	}
 	s.Values[name] = binding
 }
 
-func (s *Scope) getTypeAlias(name string) optional.Option[TypeAlias] {
+func (s *Scope) getTypeAlias(name string) *TypeAlias {
 	if v, ok := s.Types[name]; ok {
-		return optional.Some(v)
+		return v
 	}
-	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[TypeAlias] {
-		return p.getTypeAlias(name)
-	}).Or(optional.None[TypeAlias]())
+	if s.Parent != nil {
+		return s.Parent.getTypeAlias(name)
+	}
+	return nil
 }
 
-func (s *Scope) setTypeAlias(name string, alias TypeAlias) {
+func (s *Scope) setTypeAlias(name string, alias *TypeAlias) {
 	if _, ok := s.Types[name]; ok {
 		panic("type alias already exists")
 	}

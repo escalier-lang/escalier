@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 type Node interface {
@@ -285,12 +284,12 @@ func (e *SetterExpr) Source() ast.Node   { return e.source }
 
 type PropertyExpr struct {
 	Key    ObjKey
-	Value  optional.Option[Expr]
+	Value  Expr
 	source ast.Node
 	span   *Span
 }
 
-func NewPropertyExpr(key ObjKey, value optional.Option[Expr], source ast.Node) *PropertyExpr {
+func NewPropertyExpr(key ObjKey, value Expr, source ast.Node) *PropertyExpr {
 	return &PropertyExpr{Key: key, Value: value, source: source, span: nil}
 }
 func (e *PropertyExpr) Span() *Span        { return e.span }
@@ -415,7 +414,7 @@ const (
 
 type Declarator struct {
 	Pattern Pat
-	TypeAnn optional.Option[TypeAnn]
+	TypeAnn TypeAnn
 	Init    Expr // TODO: make this an optional
 }
 
@@ -439,15 +438,15 @@ func (d *VarDecl) Source() ast.Node   { return d.source }
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	TypeAnn  optional.Option[TypeAnn]
+	TypeAnn  TypeAnn // optional
 }
 
 // TODO: add support for type params
 type FuncDecl struct {
 	Name    *Identifier
 	Params  []*Param
-	Body    optional.Option[[]Stmt]
-	TypeAnn optional.Option[TypeAnn] // return type annotation
+	Body    []Stmt  // optional
+	TypeAnn TypeAnn // optional, return type annotation, required if `declare` is true
 	export  bool
 	declare bool
 	span    *Span
@@ -618,12 +617,12 @@ func (*TupleRestPat) isTuplePatElem() {}
 
 type TupleElemPat struct {
 	Pattern Pat
-	Default optional.Option[Expr]
+	Default Expr // optional
 	source  ast.Node
 	span    *Span
 }
 
-func NewTupleElemPat(pattern Pat, _default optional.Option[Expr], source ast.Node) *TupleElemPat {
+func NewTupleElemPat(pattern Pat, _default Expr, source ast.Node) *TupleElemPat {
 	return &TupleElemPat{Pattern: pattern, Default: _default, source: source, span: nil}
 }
 func (p *TupleElemPat) Span() *Span        { return p.span }

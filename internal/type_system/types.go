@@ -9,7 +9,6 @@ import (
 	. "github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/moznion/go-optional"
 )
 
 //sumtype:decl
@@ -92,11 +91,11 @@ type TypeAlias struct {
 type TypeRefType struct {
 	Name       string // TODO: Make this a qualified identifier
 	TypeArgs   []Type
-	TypeAlias  optional.Option[TypeAlias] // resolved type alias (definition)
+	TypeAlias  *TypeAlias // optional, resolved type alias (definition)
 	provenance Provenance
 }
 
-func NewTypeRefType(name string, typeAlias optional.Option[TypeAlias], typeArgs ...Type) *TypeRefType {
+func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
 	return &TypeRefType{
 		Name:       name,
 		TypeArgs:   typeArgs,
@@ -314,7 +313,7 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 
 type FuncType struct {
 	TypeParams []*TypeParam
-	Self       optional.Option[Type]
+	Self       Type // optional, used for methods only
 	Params     []*FuncParam
 	Return     Type
 	Throws     Type
@@ -472,7 +471,7 @@ type MappedElemType struct {
 	TypeParam *IndexParamType
 	// TODO: rename this so that we can differentiate between this and the
 	// Name() method thats common to all ObjTypeElems.
-	name     optional.Option[Type]
+	name     Type // optional
 	Value    Type
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
@@ -518,9 +517,9 @@ func (p *PropertyElemType) Accept(v TypeVisitor) {
 }
 func (m *MappedElemType) Accept(v TypeVisitor) {
 	m.TypeParam.Constraint.Accept(v)
-	m.name.IfSome(func(name Type) {
-		name.Accept(v)
-	})
+	if m.name != nil {
+		m.name.Accept(v)
+	}
 	m.Value.Accept(v)
 }
 func (r *RestSpreadElemType) Accept(v TypeVisitor) {

@@ -10,7 +10,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/moznion/go-optional"
 )
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
@@ -53,8 +52,8 @@ func (qi QualifiedIdent) Parts() []string {
 // This makes it easier to build a dependency graph between declarations within
 // the module.
 type Namespace struct {
-	Values map[QualifiedIdent]Binding
-	Types  map[QualifiedIdent]TypeAlias
+	Values map[QualifiedIdent]*Binding
+	Types  map[QualifiedIdent]*TypeAlias
 }
 
 // A module can contain declarations from mutliple source files.
@@ -65,8 +64,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	errors := []Error{}
 
 	namespace := Namespace{
-		Values: make(map[QualifiedIdent]Binding),
-		Types:  make(map[QualifiedIdent]TypeAlias),
+		Values: make(map[QualifiedIdent]*Binding),
+		Types:  make(map[QualifiedIdent]*TypeAlias),
 	}
 
 	// TODO:
@@ -84,8 +83,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			namespace.Values[QualifiedIdent(decl.Name.Name)] = Binding{
-				Source:  optional.Some[ast.BindingSource](decl.Name),
+			namespace.Values[QualifiedIdent(decl.Name.Name)] = &Binding{
+				Source:  decl.Name,
 				Type:    funcType,
 				Mutable: false,
 			}
@@ -105,7 +104,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			}
 
 			for name, binding := range bindings {
-				namespace.Values[QualifiedIdent(name)] = Binding{
+				namespace.Values[QualifiedIdent(name)] = &Binding{
 					Source:  binding.Source,
 					Type:    binding.Type,
 					Mutable: binding.Mutable,
@@ -133,7 +132,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 				}
 			}
 
-			typeAlias := TypeAlias{
+			typeAlias := &TypeAlias{
 				Type:       c.FreshVar(),
 				TypeParams: typeParams,
 			}
@@ -242,7 +241,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 
 // TODO: refactor this to return the binding map instead of copying them over
 // immediately
-func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]Binding, []Error) {
+func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]*Binding, []Error) {
 	errors := []Error{}
 
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
@@ -301,11 +300,11 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	}
 
 	binding := Binding{
-		Source:  optional.Some[ast.BindingSource](decl.Name),
+		Source:  decl.Name,
 		Type:    funcType,
 		Mutable: false,
 	}
-	ctx.Scope.setValue(decl.Name.Name, binding)
+	ctx.Scope.setValue(decl.Name.Name, &binding)
 	return errors
 }
 
@@ -327,13 +326,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			return neverType, errors
 		}
 
-		opOption := ctx.Scope.getValue(string(expr.Op))
-		if opOption.IsNone() {
+		opBinding := ctx.Scope.getValue(string(expr.Op))
+		if opBinding == nil {
 			return neverType, []Error{&UnknownOperatorError{
 				Operator: string(expr.Op),
 			}}
 		}
-		opBinding := opOption.Unwrap()
 
 		// TODO: extract this into a unifyCall method
 		// TODO: handle function overloading
@@ -491,14 +489,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			panic(fmt.Sprintf("Unknown object type: %#v", objType))
 		}
 	case *ast.IdentExpr:
-		if ctx.Scope.getValue(expr.Name).IsSome() {
-			binding := ctx.Scope.getValue(expr.Name).Unwrap()
+		if binding := ctx.Scope.getValue(expr.Name); binding != nil {
 			// We create a new type and set its provenance to be the identifier
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := Prune(binding.Type).WithProvenance(&ast.NodeProvenance{Node: expr})
 			expr.SetInferredType(t)
-			expr.Source = binding.Source.Unwrap()
+			expr.Source = binding.Source
 			return t, nil
 		} else {
 			t := NewNeverType()
@@ -534,8 +531,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					switch key := elem.Name.(type) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
-						if ctx.Scope.getValue(key.Name).IsSome() {
-							binding := ctx.Scope.getValue(key.Name).Unwrap()
+						if binding := ctx.Scope.getValue(key.Name); binding != nil {
 							expr.SetInferredType(binding.Type)
 							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), binding.Type)
 						} else {
@@ -597,13 +593,12 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 		return unionType, errors
 	case *TypeRefType:
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
-		if typeAlias.IsNone() {
+		if typeAlias == nil {
 			errors := []Error{&UnkonwnTypeError{TypeName: t.Name, typeRef: t}}
 			return nil, errors
 		}
-		ta := typeAlias.Unwrap()
 		// TODO: replace type params with type args
-		return c.expandType(ctx, ta.Type)
+		return c.expandType(ctx, typeAlias.Type)
 	default:
 		panic("TODO: expandType - handle other types")
 	}
@@ -788,11 +783,11 @@ func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
-) (*FuncType, map[string]Binding, []Error) {
+) (*FuncType, map[string]*Binding, []Error) {
 	// TODO: handle generic functions
 	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
 	errors := []Error{}
-	bindings := map[string]Binding{}
+	bindings := map[string]*Binding{}
 	params := make([]*FuncParam, len(sig.Params))
 
 	for i, param := range sig.Params {
@@ -835,7 +830,7 @@ func (c *Checker) inferFuncSig(
 		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       optional.None[Type](),
+		Self:       nil,
 	}
 
 	return t, bindings, errors
@@ -880,7 +875,7 @@ func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
 // TODO(#93): infer Throws
 func (c *Checker) inferFuncBody(
 	ctx Context,
-	bindings map[string]Binding,
+	bindings map[string]*Binding,
 	body *ast.Block,
 ) (Type, []Error) {
 
@@ -1001,9 +996,9 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 func (c *Checker) inferPattern(
 	ctx Context,
 	pattern ast.Pat,
-) (Type, map[string]Binding, []Error) {
+) (Type, map[string]*Binding, []Error) {
 
-	bindings := map[string]Binding{}
+	bindings := map[string]*Binding{}
 	var inferPatRec func(ast.Pat) (Type, []Error)
 
 	inferPatRec = func(pat ast.Pat) (Type, []Error) {
@@ -1014,8 +1009,8 @@ func (c *Checker) inferPattern(
 		case *ast.IdentPat:
 			t = c.FreshVar()
 			// TODO: report an error if the name is already bound
-			bindings[p.Name] = Binding{
-				Source:  optional.Some[ast.BindingSource](p),
+			bindings[p.Name] = &Binding{
+				Source:  p,
 				Type:    t,
 				Mutable: false, // TODO
 			}
@@ -1045,8 +1040,8 @@ func (c *Checker) inferPattern(
 					t := c.FreshVar()
 					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
-					bindings[elem.Key.Name] = Binding{
-						Source:  optional.Some[ast.BindingSource](elem.Key),
+					bindings[elem.Key.Name] = &Binding{
+						Source:  elem.Key,
 						Type:    t,
 						Mutable: false, // TODO
 					}
@@ -1059,18 +1054,17 @@ func (c *Checker) inferPattern(
 			}
 			t = NewObjectType(elems)
 		case *ast.ExtractorPat:
-			t = optional.Map(
-				ctx.Scope.getValue(p.Name),
-				func(binding Binding) Type {
-					args := make([]Type, len(p.Args))
-					for i, arg := range p.Args {
-						argType, argErrors := inferPatRec(arg)
-						args[i] = argType
-						errors = append(errors, argErrors...)
-					}
-					return NewExtractorType(binding.Type, args...)
-				},
-			).TakeOrElse(func() Type { return NewNeverType() })
+			if binding := ctx.Scope.getValue(p.Name); binding != nil {
+				args := make([]Type, len(p.Args))
+				for i, arg := range p.Args {
+					argType, argErrors := inferPatRec(arg)
+					args[i] = argType
+					errors = append(errors, argErrors...)
+				}
+				t = NewExtractorType(binding.Type, args...)
+			} else {
+				t = NewNeverType()
+			}
 		case *ast.RestPat:
 			argType, argErrors := inferPatRec(p.Pattern)
 			errors = append(errors, argErrors...)
@@ -1099,7 +1093,7 @@ func (c *Checker) inferPattern(
 func (c *Checker) inferTypeDecl(
 	ctx Context,
 	decl *ast.TypeDecl,
-) (TypeAlias, []Error) {
+) (*TypeAlias, []Error) {
 	errors := []Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
@@ -1131,9 +1125,7 @@ func (c *Checker) inferTypeDecl(
 		TypeParams: typeParams,
 	}
 
-	typeAlias.Type = t
-
-	return typeAlias, errors
+	return &typeAlias, errors
 }
 
 func (c *Checker) inferFuncTypeAnn(
@@ -1175,7 +1167,7 @@ func (c *Checker) inferFuncTypeAnn(
 		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       optional.None[Type](),
+		Self:       nil,
 	}
 
 	return &funcType, errors
@@ -1190,7 +1182,8 @@ func (c *Checker) inferTypeAnn(
 
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
-		t = optional.Map(ctx.Scope.getTypeAlias(typeAnn.Name), func(typeAlias TypeAlias) Type {
+		typeAlias := ctx.Scope.getTypeAlias(typeAnn.Name)
+		if typeAlias != nil {
 			typeArgs := make([]Type, len(typeAnn.TypeArgs))
 			for i, typeArg := range typeAnn.TypeArgs {
 				typeArgType, typeArgErrors := c.inferTypeAnn(ctx, typeArg)
@@ -1198,18 +1191,15 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t := NewTypeRefType(typeAnn.Name, optional.Some(typeAlias), typeArgs...)
-			return t
-		}).TakeOrElse(func() Type {
+			t = NewTypeRefType(typeAnn.Name, typeAlias, typeArgs...)
+		} else {
 			// TODO: include type args
-			typeRef := NewTypeRefType(typeAnn.Name, optional.None[TypeAlias](), nil)
+			typeRef := NewTypeRefType(typeAnn.Name, nil, nil)
 			typeRef.SetProvenance(&ast.NodeProvenance{
 				Node: typeAnn,
 			})
 			errors = append(errors, &UnkonwnTypeError{TypeName: typeAnn.Name, typeRef: typeRef})
-			t := NewNeverType()
-			return t
-		})
+		}
 	case *ast.NumberTypeAnn:
 		t = NewNumType()
 	case *ast.StringTypeAnn:

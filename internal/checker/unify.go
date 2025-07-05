@@ -170,12 +170,31 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				// If both type references have no type arguments, we can unify them
 				// directly.
 
-				// If .TypeAlias is nil, use .Name to look up the definition
-				// of the type alias in the current scope.
+				// Most of the time, type references will have their TypeAlias
+				// field set to whatever type alias they refer to when they were
+				// created.  However, certain type references such as those used
+				// for type parameters in generics may not have this field set.
 
-				// TODO: switch to use pointers for TypeAlias instead of optional
-				typeAlias1 := ref1.TypeAlias.Unwrap()
-				typeAlias2 := ref2.TypeAlias.Unwrap()
+				typeAlias1 := ref1.TypeAlias
+				if typeAlias1 == nil {
+					typeAlias1 = ctx.Scope.getTypeAlias(ref1.Name)
+					if typeAlias1 == nil {
+						return []Error{&UnkonwnTypeError{
+							TypeName: ref1.Name,
+							typeRef:  ref1,
+						}}
+					}
+				}
+				typeAlias2 := ref2.TypeAlias
+				if typeAlias2 == nil {
+					typeAlias2 = ctx.Scope.getTypeAlias(ref2.Name)
+					if typeAlias2 == nil {
+						return []Error{&UnkonwnTypeError{
+							TypeName: ref2.Name,
+							typeRef:  ref2,
+						}}
+					}
+				}
 
 				return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
 			}
@@ -425,18 +444,18 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 	retry := false
 	if typeRef, ok := t1.(*TypeRefType); ok {
-		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t1 = alias.Type
 			retry = true
-		})
+		}
 	}
 	if typeRef, ok := t2.(*TypeRefType); ok {
-		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t2 = alias.Type
 			retry = true
-		})
+		}
 	}
 
 	if retry {

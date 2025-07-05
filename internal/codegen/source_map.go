@@ -216,11 +216,9 @@ func (s *SourceMapGenerator) TraverseDecl(decl Decl) {
 		for _, param := range dk.Params {
 			s.AddSegmentForNode(param.Pattern)
 		}
-		dk.Body.IfSome(func(body []Stmt) {
-			for _, stmt := range body {
-				s.TraverseStmt(stmt)
-			}
-		})
+		for _, stmt := range dk.Body {
+			s.TraverseStmt(stmt)
+		}
 	}
 }
 
@@ -297,9 +295,9 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 				}
 			case *PropertyExpr:
 				s.AddSegmentForNode(elem.Key)
-				elem.Value.IfSome(func(value Expr) {
-					s.TraverseExpr(value)
-				})
+				if elem.Value != nil {
+					s.TraverseExpr(elem.Value)
+				}
 			case *RestSpreadExpr:
 				s.AddSegmentForNode(elem)
 				s.TraverseExpr(elem.Arg)

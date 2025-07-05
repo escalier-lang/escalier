@@ -170,10 +170,10 @@ func (p *Printer) PrintExpr(expr Expr) {
 				p.printMethod(elem.Name, elem.Params, elem.Body)
 			case *PropertyExpr:
 				p.printObjKey(elem.Key)
-				elem.Value.IfSome(func(value Expr) {
+				if elem.Value != nil {
 					p.print(": ")
-					p.PrintExpr(value)
-				})
+					p.PrintExpr(elem.Value)
+				}
 			case *RestSpreadExpr:
 				p.print("...")
 				p.PrintExpr(elem.Arg)
@@ -323,10 +323,10 @@ func (p *Printer) printPattern(pat Pat) {
 
 func (p *Printer) printParam(param *Param) {
 	p.printPattern(param.Pattern)
-	param.TypeAnn.IfSome(func(ta TypeAnn) {
+	if param.TypeAnn != nil {
 		p.print(": ")
-		p.PrintTypeAnn(ta)
-	})
+		p.PrintTypeAnn(param.TypeAnn)
+	}
 }
 
 func (p *Printer) PrintDecl(decl Decl) {
@@ -353,10 +353,10 @@ func (p *Printer) PrintDecl(decl Decl) {
 				p.print(", ")
 			}
 			p.printPattern(decl.Pattern)
-			decl.TypeAnn.IfSome(func(ta TypeAnn) {
+			if decl.TypeAnn != nil {
 				p.print(": ")
-				p.PrintTypeAnn(ta)
-			})
+				p.PrintTypeAnn(decl.TypeAnn)
+			}
 			if decl.Init != nil {
 				p.print(" = ")
 				p.PrintExpr(decl.Init)
@@ -376,17 +376,17 @@ func (p *Printer) PrintDecl(decl Decl) {
 		}
 		p.print(")")
 
-		d.TypeAnn.IfSome(func(ta TypeAnn) {
+		if d.TypeAnn != nil {
 			p.print(": ")
-			p.PrintTypeAnn(ta)
-		})
+			p.PrintTypeAnn(d.TypeAnn)
+		}
 
-		d.Body.IfSome(func(stmts []Stmt) {
+		if d.Body != nil {
 			p.print(" {")
 
 			p.indent++
 
-			for _, stmt := range stmts {
+			for _, stmt := range d.Body {
 				p.NewLine()
 				p.PrintStmt(stmt)
 			}
@@ -395,11 +395,11 @@ func (p *Printer) PrintDecl(decl Decl) {
 			p.NewLine()
 
 			p.print("}")
-		})
+		}
 
-		d.Body.IfNone(func() {
+		if d.Body == nil {
 			p.print(";")
-		})
+		}
 	case *TypeDecl:
 		p.print("type ")
 		p.print(d.Name.Name)
@@ -410,14 +410,14 @@ func (p *Printer) PrintDecl(decl Decl) {
 					p.print(", ")
 				}
 				p.print(param.Name)
-				param.Constraint.IfSome(func(ta TypeAnn) {
+				if param.Constraint != nil {
 					p.print(": ")
-					p.PrintTypeAnn(ta)
-				})
-				param.Default.IfSome(func(t TypeAnn) {
+					p.PrintTypeAnn(param.Constraint)
+				}
+				if param.Default != nil {
 					p.print(" = ")
-					p.PrintTypeAnn(t)
-				})
+					p.PrintTypeAnn(param.Default)
+				}
 			}
 		}
 		p.print(" = ")
@@ -484,10 +484,10 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
-					param.TypeAnn.IfSome(func(ta TypeAnn) {
+					if param.TypeAnn != nil {
 						p.print(": ")
-						p.PrintTypeAnn(ta)
-					})
+						p.PrintTypeAnn(param.TypeAnn)
+					}
 				}
 				p.print(")")
 				p.print(": ")
@@ -501,10 +501,10 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
-					param.TypeAnn.IfSome(func(ta TypeAnn) {
+					if param.TypeAnn != nil {
 						p.print(": ")
-						p.PrintTypeAnn(ta)
-					})
+						p.PrintTypeAnn(param.TypeAnn)
+					}
 				}
 				p.print(")")
 				p.print(": ")
@@ -518,10 +518,10 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 						p.print(", ")
 					}
 					p.printPattern(param.Pattern)
-					param.TypeAnn.IfSome(func(ta TypeAnn) {
+					if param.TypeAnn != nil {
 						p.print(": ")
-						p.PrintTypeAnn(ta)
-					})
+						p.PrintTypeAnn(param.TypeAnn)
+					}
 				}
 				p.print(")")
 				// TypeScript doesn't allow setters to have a return type
@@ -579,10 +579,10 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.print(", ")
 			}
 			p.printPattern(param.Pattern)
-			param.TypeAnn.IfSome(func(ta TypeAnn) {
+			if param.TypeAnn != nil {
 				p.print(": ")
-				p.PrintTypeAnn(ta)
-			})
+				p.PrintTypeAnn(param.TypeAnn)
+			}
 		}
 		p.print(")")
 		p.print(" => ")

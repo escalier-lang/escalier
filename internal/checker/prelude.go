@@ -1,14 +1,11 @@
 package checker
 
 import (
-	"github.com/moznion/go-optional"
-
-	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 func Prelude() *Scope {
-	scope := NewScope(optional.None[*Scope]())
+	scope := NewScope(nil)
 
 	binArithType := &FuncType{
 		Params: []*FuncParam{
@@ -18,7 +15,7 @@ func Prelude() *Scope {
 		Return: NewNumType(),
 	}
 	binArithBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
+		Source:  nil,
 		Type:    binArithType,
 		Mutable: false,
 	}
@@ -31,7 +28,7 @@ func Prelude() *Scope {
 		Return: NewBoolType(),
 	}
 	binACompBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
+		Source:  nil,
 		Type:    binCompType,
 		Mutable: false,
 	}
@@ -44,7 +41,7 @@ func Prelude() *Scope {
 		Return: NewBoolType(),
 	}
 	binLogicBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
+		Source:  nil,
 		Type:    binLogicType,
 		Mutable: false,
 	}
@@ -56,7 +53,7 @@ func Prelude() *Scope {
 	// 	Return: NewNumType(),
 	// }
 	// unaryArithBinding := Binding{
-	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Source:  nil,
 	// 	Type:    unaryArithType,
 	// 	Mutable: false,
 	// }
@@ -68,34 +65,34 @@ func Prelude() *Scope {
 		Return: NewBoolType(),
 	}
 	unaryLogicBinding := Binding{
-		Source:  optional.None[ast.BindingSource](),
+		Source:  nil,
 		Type:    unaryLogicType,
 		Mutable: false,
 	}
 
-	scope.Values["+"] = binArithBinding
-	scope.Values["-"] = binArithBinding
-	scope.Values["*"] = binArithBinding
-	scope.Values["/"] = binArithBinding
+	scope.Values["+"] = &binArithBinding
+	scope.Values["-"] = &binArithBinding
+	scope.Values["*"] = &binArithBinding
+	scope.Values["/"] = &binArithBinding
 
-	scope.Values["=="] = binACompBinding
-	scope.Values["!="] = binACompBinding
-	scope.Values["<"] = binACompBinding
-	scope.Values[">"] = binACompBinding
-	scope.Values["<="] = binACompBinding
-	scope.Values[">="] = binACompBinding
+	scope.Values["=="] = &binACompBinding
+	scope.Values["!="] = &binACompBinding
+	scope.Values["<"] = &binACompBinding
+	scope.Values[">"] = &binACompBinding
+	scope.Values["<="] = &binACompBinding
+	scope.Values[">="] = &binACompBinding
 
-	scope.Values["&&"] = binLogicBinding
-	scope.Values["||"] = binLogicBinding
+	scope.Values["&&"] = &binLogicBinding
+	scope.Values["||"] = &binLogicBinding
 
 	// TODO: uncomment after adding support for calling overloaded functions
 	// scope.Values["-"] = Binding{
-	// 	Source:  optional.None[ast.BindingSource](),
+	// 	Source:  nil,
 	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
 	// 	Mutable: false,
 	// }
 
-	scope.Values["!"] = unaryLogicBinding
+	scope.Values["!"] = &unaryLogicBinding
 
 	var objElems []ObjTypeElem
 
@@ -109,8 +106,8 @@ func Prelude() *Scope {
 		},
 	})
 
-	scope.Values["console"] = Binding{
-		Source:  optional.None[ast.BindingSource](),
+	scope.Values["console"] = &Binding{
+		Source:  nil,
 		Type:    NewObjectType(objElems),
 		Mutable: false,
 	}
@@ -123,7 +120,7 @@ func Prelude() *Scope {
 	}
 	arrayType := NewObjectType([]ObjTypeElem{length})
 	typeParam := NewTypeParam("T")
-	scope.setTypeAlias("Array", TypeAlias{
+	scope.setTypeAlias("Array", &TypeAlias{
 		Type:       arrayType,
 		TypeParams: []*TypeParam{typeParam},
 	})
