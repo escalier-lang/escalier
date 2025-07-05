@@ -1192,10 +1192,10 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t = NewTypeRefType(typeAnn.Name, optional.Some(*typeAlias), typeArgs...)
+			t = NewTypeRefType(typeAnn.Name, typeAlias, typeArgs...)
 		} else {
 			// TODO: include type args
-			typeRef := NewTypeRefType(typeAnn.Name, optional.None[TypeAlias](), nil)
+			typeRef := NewTypeRefType(typeAnn.Name, nil, nil)
 			typeRef.SetProvenance(&ast.NodeProvenance{
 				Node: typeAnn,
 			})
