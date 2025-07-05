@@ -16,29 +16,29 @@ type Binding struct {
 
 type Scope struct {
 	Parent *Scope // optional, parent is nil for the root scope
-	Values map[string]Binding
+	Values map[string]*Binding
 	Types  map[string]TypeAlias
 }
 
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Parent: parent,
-		Values: map[string]Binding{},
+		Values: map[string]*Binding{},
 		Types:  map[string]TypeAlias{},
 	}
 }
 
-func (s *Scope) getValue(name string) optional.Option[Binding] {
+func (s *Scope) getValue(name string) *Binding {
 	if v, ok := s.Values[name]; ok {
-		return optional.Some(v)
+		return v
 	}
 	if s.Parent != nil {
 		return s.Parent.getValue(name)
 	}
-	return optional.None[Binding]()
+	return nil
 }
 
-func (s *Scope) setValue(name string, binding Binding) {
+func (s *Scope) setValue(name string, binding *Binding) {
 	if _, ok := s.Values[name]; ok {
 		panic("value already exists")
 	}

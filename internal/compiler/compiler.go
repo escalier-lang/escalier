@@ -40,7 +40,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	}
 
 	for name, binding := range scope.Values {
-		namespace.Values[checker.QualifiedIdent(name)] = binding
+		namespace.Values[checker.QualifiedIdent(name)] = *binding
 	}
 	for name, typeAlias := range scope.Types {
 		namespace.Types[checker.QualifiedIdent(name)] = typeAlias

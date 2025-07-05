@@ -73,20 +73,20 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
-	scope.Values["+"] = binArithBinding
-	scope.Values["-"] = binArithBinding
-	scope.Values["*"] = binArithBinding
-	scope.Values["/"] = binArithBinding
+	scope.Values["+"] = &binArithBinding
+	scope.Values["-"] = &binArithBinding
+	scope.Values["*"] = &binArithBinding
+	scope.Values["/"] = &binArithBinding
 
-	scope.Values["=="] = binACompBinding
-	scope.Values["!="] = binACompBinding
-	scope.Values["<"] = binACompBinding
-	scope.Values[">"] = binACompBinding
-	scope.Values["<="] = binACompBinding
-	scope.Values[">="] = binACompBinding
+	scope.Values["=="] = &binACompBinding
+	scope.Values["!="] = &binACompBinding
+	scope.Values["<"] = &binACompBinding
+	scope.Values[">"] = &binACompBinding
+	scope.Values["<="] = &binACompBinding
+	scope.Values[">="] = &binACompBinding
 
-	scope.Values["&&"] = binLogicBinding
-	scope.Values["||"] = binLogicBinding
+	scope.Values["&&"] = &binLogicBinding
+	scope.Values["||"] = &binLogicBinding
 
 	// TODO: uncomment after adding support for calling overloaded functions
 	// scope.Values["-"] = Binding{
@@ -95,7 +95,7 @@ func Prelude() *Scope {
 	// 	Mutable: false,
 	// }
 
-	scope.Values["!"] = unaryLogicBinding
+	scope.Values["!"] = &unaryLogicBinding
 
 	var objElems []ObjTypeElem
 
@@ -109,7 +109,7 @@ func Prelude() *Scope {
 		},
 	})
 
-	scope.Values["console"] = Binding{
+	scope.Values["console"] = &Binding{
 		Source:  optional.None[ast.BindingSource](),
 		Type:    NewObjectType(objElems),
 		Mutable: false,
