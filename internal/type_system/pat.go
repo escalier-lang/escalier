@@ -15,7 +15,7 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name string
-	// Default      optional.Option[Expr]
+	// Default      Expr // optional
 }
 
 func NewIdentPat(name string) *IdentPat {
@@ -37,7 +37,7 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key   string
 	Value Pat
-	// Default      optional.Option[Expr]
+	// Default      Expr // optional
 }
 
 func NewObjKeyValuePat(key string, value Pat) *ObjKeyValuePat {
@@ -49,7 +49,7 @@ func (p *ObjKeyValuePat) String() string {
 
 type ObjShorthandPat struct {
 	Key string
-	// Default optional.Option[Expr]
+	// Default Expr // optional
 }
 
 func NewObjShorthandPat(key string) *ObjShorthandPat {

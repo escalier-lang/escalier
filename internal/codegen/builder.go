@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 type Builder struct {
@@ -201,7 +200,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			decls := []*Declarator{
 				{
 					Pattern: NewTuplePat(tempVarPats, nil),
-					TypeAnn: optional.None[TypeAnn](),
+					TypeAnn: nil,
 					Init:    call,
 				},
 			}
@@ -255,7 +254,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 		decls := []*Declarator{
 			{
 				Pattern: pat,
-				TypeAnn: optional.None[TypeAnn](),
+				TypeAnn: nil,
 				Init:    target,
 			},
 		}
@@ -365,8 +364,8 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 		fnDecl := &FuncDecl{
 			Name:    buildIdent(d.Name),
 			Params:  params,
-			Body:    optional.Some(slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts))),
-			TypeAnn: optional.None[TypeAnn](),
+			Body:    slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
+			TypeAnn: nil,
 			declare: decl.Declare(),
 			export:  decl.Export(),
 			span:    nil,
@@ -483,18 +482,9 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 				if elem.Value != nil {
 					valueExpr, valueStmts := b.buildExpr(elem.Value)
 					stmts = slices.Concat(stmts, valueStmts)
-
-					elems[i] = NewPropertyExpr(
-						key,
-						optional.Some(valueExpr),
-						elem,
-					)
+					elems[i] = NewPropertyExpr(key, valueExpr, elem)
 				} else {
-					elems[i] = NewPropertyExpr(
-						key,
-						optional.None[Expr](),
-						elem,
-					)
+					elems[i] = NewPropertyExpr(key, nil, elem)
 				}
 			default:
 				panic(fmt.Sprintf("TODO - buildExpr - ObjectExpr - default case: %#v", elem))
@@ -559,7 +549,7 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 			// TODO: handle param defaults
 			Pattern:  paramPat,
 			Optional: p.Optional,
-			TypeAnn:  optional.None[TypeAnn](),
+			TypeAnn:  nil,
 		})
 	}
 	return outParams, outParamStmts

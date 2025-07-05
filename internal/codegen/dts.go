@@ -7,7 +7,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/moznion/go-optional"
 )
 
 type BindingVisitor struct {
@@ -58,7 +57,7 @@ func (b *Builder) BuildDefinitions(
 				typeAnn := buildTypeAnn(binding.Type)
 				decls = append(decls, &Declarator{
 					Pattern: NewIdentPat(name, nil, nil),
-					TypeAnn: optional.Some(typeAnn),
+					TypeAnn: typeAnn,
 					Init:    nil,
 				})
 			}
@@ -87,7 +86,7 @@ func (b *Builder) BuildDefinitions(
 				Params: funcTypeToParams(funcType),
 				// TODO: Use the type annotation if there is one and if not
 				// fallback to the inferred return type from the binding.
-				TypeAnn: optional.Some(buildTypeAnn(funcType.Return)),
+				TypeAnn: buildTypeAnn(funcType.Return),
 				Body:    nil,
 				declare: true, // Always true for .d.ts files
 				export:  decl.Export(),
@@ -196,7 +195,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 			params[i] = &Param{
 				Pattern:  patToPat(param.Pattern),
 				Optional: param.Optional,
-				TypeAnn:  optional.Some(typeAnn),
+				TypeAnn:  typeAnn,
 			}
 		}
 		return NewFuncTypeAnn(
@@ -332,7 +331,7 @@ func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 		params[i] = &Param{
 			Pattern:  patToPat(param.Pattern),
 			Optional: param.Optional,
-			TypeAnn:  optional.Some(typeAnn),
+			TypeAnn:  typeAnn,
 		}
 	}
 	return params
@@ -345,7 +344,7 @@ func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 		params[i] = &Param{
 			Pattern:  patToPat(param.Pattern),
 			Optional: param.Optional,
-			TypeAnn:  optional.Some(typeAnn),
+			TypeAnn:  typeAnn,
 		}
 	}
 
