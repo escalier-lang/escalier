@@ -17,14 +17,14 @@ type Binding struct {
 type Scope struct {
 	Parent *Scope // optional, parent is nil for the root scope
 	Values map[string]*Binding
-	Types  map[string]TypeAlias
+	Types  map[string]*TypeAlias
 }
 
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Parent: parent,
 		Values: map[string]*Binding{},
-		Types:  map[string]TypeAlias{},
+		Types:  map[string]*TypeAlias{},
 	}
 }
 
@@ -45,17 +45,17 @@ func (s *Scope) setValue(name string, binding *Binding) {
 	s.Values[name] = binding
 }
 
-func (s *Scope) getTypeAlias(name string) optional.Option[TypeAlias] {
+func (s *Scope) getTypeAlias(name string) *TypeAlias {
 	if v, ok := s.Types[name]; ok {
-		return optional.Some(v)
+		return v
 	}
 	if s.Parent != nil {
 		return s.Parent.getTypeAlias(name)
 	}
-	return optional.None[TypeAlias]()
+	return nil
 }
 
-func (s *Scope) setTypeAlias(name string, alias TypeAlias) {
+func (s *Scope) setTypeAlias(name string, alias *TypeAlias) {
 	if _, ok := s.Types[name]; ok {
 		panic("type alias already exists")
 	}

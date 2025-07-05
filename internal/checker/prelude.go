@@ -123,7 +123,7 @@ func Prelude() *Scope {
 	}
 	arrayType := NewObjectType([]ObjTypeElem{length})
 	typeParam := NewTypeParam("T")
-	scope.setTypeAlias("Array", TypeAlias{
+	scope.setTypeAlias("Array", &TypeAlias{
 		Type:       arrayType,
 		TypeParams: []*TypeParam{typeParam},
 	})

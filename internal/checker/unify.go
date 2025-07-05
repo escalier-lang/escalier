@@ -425,18 +425,18 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 	retry := false
 	if typeRef, ok := t1.(*TypeRefType); ok {
-		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t1 = alias.Type
 			retry = true
-		})
+		}
 	}
 	if typeRef, ok := t2.(*TypeRefType); ok {
-		ctx.Scope.getTypeAlias(typeRef.Name).IfSome(func(alias TypeAlias) {
+		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t2 = alias.Type
 			retry = true
-		})
+		}
 	}
 
 	if retry {

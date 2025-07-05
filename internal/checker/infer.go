@@ -53,8 +53,8 @@ func (qi QualifiedIdent) Parts() []string {
 // This makes it easier to build a dependency graph between declarations within
 // the module.
 type Namespace struct {
-	Values map[QualifiedIdent]Binding
-	Types  map[QualifiedIdent]TypeAlias
+	Values map[QualifiedIdent]*Binding
+	Types  map[QualifiedIdent]*TypeAlias
 }
 
 // A module can contain declarations from mutliple source files.
@@ -65,8 +65,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	errors := []Error{}
 
 	namespace := Namespace{
-		Values: make(map[QualifiedIdent]Binding),
-		Types:  make(map[QualifiedIdent]TypeAlias),
+		Values: make(map[QualifiedIdent]*Binding),
+		Types:  make(map[QualifiedIdent]*TypeAlias),
 	}
 
 	// TODO:
@@ -84,7 +84,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			namespace.Values[QualifiedIdent(decl.Name.Name)] = Binding{
+			namespace.Values[QualifiedIdent(decl.Name.Name)] = &Binding{
 				Source:  optional.Some[ast.BindingSource](decl.Name),
 				Type:    funcType,
 				Mutable: false,
@@ -105,7 +105,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			}
 
 			for name, binding := range bindings {
-				namespace.Values[QualifiedIdent(name)] = Binding{
+				namespace.Values[QualifiedIdent(name)] = &Binding{
 					Source:  binding.Source,
 					Type:    binding.Type,
 					Mutable: binding.Mutable,
@@ -133,7 +133,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 				}
 			}
 
-			typeAlias := TypeAlias{
+			typeAlias := &TypeAlias{
 				Type:       c.FreshVar(),
 				TypeParams: typeParams,
 			}
@@ -151,7 +151,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	// 	ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
 	// }
 	for name, binding := range namespace.Values {
-		ctx.Scope.setValue(name.Parts()[0], &binding)
+		ctx.Scope.setValue(name.Parts()[0], binding)
 	}
 
 	// Infer definitions
@@ -594,13 +594,12 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 		return unionType, errors
 	case *TypeRefType:
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
-		if typeAlias.IsNone() {
+		if typeAlias == nil {
 			errors := []Error{&UnkonwnTypeError{TypeName: t.Name, typeRef: t}}
 			return nil, errors
 		}
-		ta := typeAlias.Unwrap()
 		// TODO: replace type params with type args
-		return c.expandType(ctx, ta.Type)
+		return c.expandType(ctx, typeAlias.Type)
 	default:
 		panic("TODO: expandType - handle other types")
 	}
@@ -1095,7 +1094,7 @@ func (c *Checker) inferPattern(
 func (c *Checker) inferTypeDecl(
 	ctx Context,
 	decl *ast.TypeDecl,
-) (TypeAlias, []Error) {
+) (*TypeAlias, []Error) {
 	errors := []Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
@@ -1127,9 +1126,7 @@ func (c *Checker) inferTypeDecl(
 		TypeParams: typeParams,
 	}
 
-	typeAlias.Type = t
-
-	return typeAlias, errors
+	return &typeAlias, errors
 }
 
 func (c *Checker) inferFuncTypeAnn(
@@ -1186,7 +1183,8 @@ func (c *Checker) inferTypeAnn(
 
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
-		t = optional.Map(ctx.Scope.getTypeAlias(typeAnn.Name), func(typeAlias TypeAlias) Type {
+		typeAlias := ctx.Scope.getTypeAlias(typeAnn.Name)
+		if typeAlias != nil {
 			typeArgs := make([]Type, len(typeAnn.TypeArgs))
 			for i, typeArg := range typeAnn.TypeArgs {
 				typeArgType, typeArgErrors := c.inferTypeAnn(ctx, typeArg)
@@ -1194,18 +1192,15 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t := NewTypeRefType(typeAnn.Name, optional.Some(typeAlias), typeArgs...)
-			return t
-		}).TakeOrElse(func() Type {
+			t = NewTypeRefType(typeAnn.Name, optional.Some(*typeAlias), typeArgs...)
+		} else {
 			// TODO: include type args
 			typeRef := NewTypeRefType(typeAnn.Name, optional.None[TypeAlias](), nil)
 			typeRef.SetProvenance(&ast.NodeProvenance{
 				Node: typeAnn,
 			})
 			errors = append(errors, &UnkonwnTypeError{TypeName: typeAnn.Name, typeRef: typeRef})
-			t := NewNeverType()
-			return t
-		})
+		}
 	case *ast.NumberTypeAnn:
 		t = NewNumType()
 	case *ast.StringTypeAnn:

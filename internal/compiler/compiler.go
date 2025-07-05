@@ -35,12 +35,12 @@ func Compile(source *ast.Source) CompilerOutput {
 	scope, typeErrors := c.InferScript(inferCtx, inMod)
 
 	namespace := checker.Namespace{
-		Values: make(map[checker.QualifiedIdent]checker.Binding),
-		Types:  make(map[checker.QualifiedIdent]type_system.TypeAlias),
+		Values: make(map[checker.QualifiedIdent]*checker.Binding),
+		Types:  make(map[checker.QualifiedIdent]*type_system.TypeAlias),
 	}
 
 	for name, binding := range scope.Values {
-		namespace.Values[checker.QualifiedIdent(name)] = *binding
+		namespace.Values[checker.QualifiedIdent(name)] = binding
 	}
 	for name, typeAlias := range scope.Types {
 		namespace.Types[checker.QualifiedIdent(name)] = typeAlias
