@@ -410,14 +410,14 @@ func (p *Printer) PrintDecl(decl Decl) {
 					p.print(", ")
 				}
 				p.print(param.Name)
-				param.Constraint.IfSome(func(ta TypeAnn) {
+				if param.Constraint != nil {
 					p.print(": ")
-					p.PrintTypeAnn(ta)
-				})
-				param.Default.IfSome(func(t TypeAnn) {
+					p.PrintTypeAnn(param.Constraint)
+				}
+				if param.Default != nil {
 					p.print(" = ")
-					p.PrintTypeAnn(t)
-				})
+					p.PrintTypeAnn(param.Default)
+				}
 			}
 		}
 		p.print(" = ")

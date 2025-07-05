@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/moznion/go-optional"
 )
 
 //sumtype:decl
@@ -176,7 +175,7 @@ type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
 	// Name is used to rename keys in the mapped type
 	// It must resolve to a type that can be used as a key
-	Name     optional.Option[TypeAnn]
+	Name     TypeAnn // optional
 	Value    TypeAnn
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
@@ -258,24 +257,24 @@ func (t *TypeRefTypeAnn) Source() ast.Node   { return t.source }
 
 type TypeParam struct {
 	Name       string
-	Constraint optional.Option[TypeAnn]
-	Default    optional.Option[TypeAnn]
+	Constraint TypeAnn // optional
+	Default    TypeAnn // optional
 }
 
 type FuncTypeAnn struct {
-	TypeParams optional.Option[[]TypeParam]
+	TypeParams []*TypeParam // optional
 	Params     []*Param
 	Return     TypeAnn
-	Throws     optional.Option[TypeAnn]
+	Throws     TypeAnn // optional
 	span       *Span
 	source     ast.Node
 }
 
 func NewFuncTypeAnn(
-	typeParams optional.Option[[]TypeParam],
+	typeParams []*TypeParam, // optional
 	params []*Param,
 	ret TypeAnn,
-	throws optional.Option[TypeAnn],
+	throws TypeAnn, // optional
 	span *Span,
 ) *FuncTypeAnn {
 	return &FuncTypeAnn{

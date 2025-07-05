@@ -102,21 +102,21 @@ func (b *Builder) BuildDefinitions(
 		case *ast.TypeDecl:
 			typeParams := make([]*TypeParam, len(decl.TypeParams))
 			for i, param := range decl.TypeParams {
-				constraint := optional.None[TypeAnn]()
+				var constraint TypeAnn
 				if param.Constraint != nil {
 					t := param.Constraint.InferredType()
 					if t == nil {
 						// TODO: report an error if there's no inferred type
 					}
-					constraint = optional.Some(buildTypeAnn(t))
+					constraint = buildTypeAnn(t)
 				}
-				default_ := optional.None[TypeAnn]()
+				var default_ TypeAnn
 				if param.Default != nil {
 					t := param.Default.InferredType()
 					if t == nil {
 						// TODO: report an error if there's no inferred type
 					}
-					default_ = optional.Some(buildTypeAnn(t))
+					default_ = buildTypeAnn(t)
 				}
 
 				typeParams[i] = &TypeParam{
@@ -189,7 +189,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.GlobalThisType:
 		panic("TODO: implement GlobalThisType")
 	case *type_sys.FuncType:
-		typeParams := optional.None[[]TypeParam]()
+		var typeParams []*TypeParam
 		params := make([]*Param, len(t.Params))
 		for i, param := range t.Params {
 			typeAnn := buildTypeAnn(param.Type)
@@ -203,7 +203,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 			typeParams,
 			params,
 			buildTypeAnn(t.Return),
-			optional.None[TypeAnn](),
+			nil,
 			nil,
 		)
 	case *type_sys.ObjectType:
@@ -311,7 +311,7 @@ func buildObjTypeAnnElem(elem type_sys.ObjTypeElem) ObjTypeAnnElem {
 		}
 		return &MappedTypeAnn{
 			TypeParam: typeParam,
-			Name:      optional.None[TypeAnn](),
+			Name:      nil,
 			Value:     buildTypeAnn(elem.Value),
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.ReadOnly),
@@ -350,10 +350,10 @@ func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 	}
 
 	return FuncTypeAnn{
-		TypeParams: optional.None[[]TypeParam](),
+		TypeParams: nil,
 		Params:     params,
 		Return:     buildTypeAnn(funcType.Return),
-		Throws:     optional.None[TypeAnn](),
+		Throws:     nil,
 		span:       nil,
 		source:     nil,
 	}
