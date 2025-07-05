@@ -9,7 +9,6 @@ import (
 	. "github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/moznion/go-optional"
 )
 
 //sumtype:decl
@@ -314,7 +313,7 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 
 type FuncType struct {
 	TypeParams []*TypeParam
-	Self       optional.Option[Type]
+	Self       Type // optional, used for methods only
 	Params     []*FuncParam
 	Return     Type
 	Throws     Type

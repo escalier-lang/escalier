@@ -10,7 +10,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/moznion/go-optional"
 )
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
@@ -85,7 +84,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			errors = slices.Concat(errors, sigErrors)
 
 			namespace.Values[QualifiedIdent(decl.Name.Name)] = &Binding{
-				Source:  optional.Some[ast.BindingSource](decl.Name),
+				Source:  decl.Name,
 				Type:    funcType,
 				Mutable: false,
 			}
@@ -301,7 +300,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	}
 
 	binding := Binding{
-		Source:  optional.Some[ast.BindingSource](decl.Name),
+		Source:  decl.Name,
 		Type:    funcType,
 		Mutable: false,
 	}
@@ -496,7 +495,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			// on the identifier itself instead of the binding source.
 			t := Prune(binding.Type).WithProvenance(&ast.NodeProvenance{Node: expr})
 			expr.SetInferredType(t)
-			expr.Source = binding.Source.Unwrap()
+			expr.Source = binding.Source
 			return t, nil
 		} else {
 			t := NewNeverType()
@@ -831,7 +830,7 @@ func (c *Checker) inferFuncSig(
 		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       optional.None[Type](),
+		Self:       nil,
 	}
 
 	return t, bindings, errors
@@ -1011,7 +1010,7 @@ func (c *Checker) inferPattern(
 			t = c.FreshVar()
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &Binding{
-				Source:  optional.Some[ast.BindingSource](p),
+				Source:  p,
 				Type:    t,
 				Mutable: false, // TODO
 			}
@@ -1042,7 +1041,7 @@ func (c *Checker) inferPattern(
 					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = &Binding{
-						Source:  optional.Some[ast.BindingSource](elem.Key),
+						Source:  elem.Key,
 						Type:    t,
 						Mutable: false, // TODO
 					}
@@ -1168,7 +1167,7 @@ func (c *Checker) inferFuncTypeAnn(
 		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       optional.None[Type](),
+		Self:       nil,
 	}
 
 	return &funcType, errors

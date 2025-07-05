@@ -1,15 +1,13 @@
 package checker
 
 import (
-	"github.com/moznion/go-optional"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
-	Source  optional.Option[ast.BindingSource]
+	Source  ast.BindingSource // optional
 	Type    Type
 	Mutable bool
 }
