@@ -8,8 +8,9 @@ func (p *Parser) jsxElement() *ast.JSXElementExpr {
 	opening := p.jsxOpening()
 
 	span := ast.Span{
-		Start: opening.Span().Start,
-		End:   opening.Span().End,
+		Start:    opening.Span().Start,
+		End:      opening.Span().End,
+		SourceID: p.lexer.source.ID,
 	}
 
 	if !opening.SelfClose {
@@ -42,8 +43,9 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 	case GreaterThan:
 		end := token.Span.End
 		span := ast.Span{
-			Start: start,
-			End:   end,
+			Start:    start,
+			End:      end,
+			SourceID: p.lexer.source.ID,
 		}
 		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
 	default:
@@ -69,8 +71,9 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 	end := token.Span.End
 
 	span := ast.Span{
-		Start: start,
-		End:   end,
+		Start:    start,
+		End:      end,
+		SourceID: p.lexer.source.ID,
 	}
 
 	return ast.NewJSXOpening(name, attrs, selfClosing, span)
@@ -149,8 +152,9 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 	case GreaterThan:
 		end := token.Span.End
 		span := ast.Span{
-			Start: start,
-			End:   end,
+			Start:    start,
+			End:      end,
+			SourceID: p.lexer.source.ID,
 		}
 		return ast.NewJSXClosing("", span)
 	default:
@@ -164,8 +168,9 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 
 	end := token.Span.End
 	span := ast.Span{
-		Start: start,
-		End:   end,
+		Start:    start,
+		End:      end,
+		SourceID: p.lexer.source.ID,
 	}
 
 	return ast.NewJSXClosing(name, span)

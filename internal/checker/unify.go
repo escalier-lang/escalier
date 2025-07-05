@@ -159,15 +159,31 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | FuncType, FuncType -> ...
 	if func1, ok := t1.(*FuncType); ok {
 		if func2, ok := t2.(*FuncType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", func1, func2))
+			panic(fmt.Sprintf("TODO: unify types %#v and %#v", func1.String(), func2.String()))
 			// TODO
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
 	if ref1, ok := t1.(*TypeRefType); ok {
 		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name == ref2.Name {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
-			// TODO
+			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
+				// If both type references have no type arguments, we can unify them
+				// directly.
+
+				// If .TypeAlias is nil, use .Name to look up the definition
+				// of the type alias in the current scope.
+
+				// TODO: switch to use pointers for TypeAlias instead of optional
+				typeAlias1 := ref1.TypeAlias.Unwrap()
+				typeAlias2 := ref2.TypeAlias.Unwrap()
+
+				return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
+			}
+
+			// TODO: handle type args
+			// We need to replace type type params in the type alias's type
+			// with the type args from the type reference.
+			panic(fmt.Sprintf("TODO: unify types %s and %s", ref1.String(), ref2.String()))
 		}
 	}
 	// | TypeRefType, TypeRefType (different alias name) -> ...
@@ -199,8 +215,56 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | LitType, LitType -> ...
 	if lit1, ok := t1.(*LitType); ok {
 		if lit2, ok := t2.(*LitType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", lit1, lit2))
-			// TODO
+			if l1, ok := lit1.Lit.(*NumLit); ok {
+				if l2, ok := lit2.Lit.(*NumLit); ok {
+					if l1.Equal(l2) {
+						return nil
+					} else {
+						return []Error{&CannotUnifyTypesError{
+							T1: lit1,
+							T2: lit2,
+						}}
+					}
+				}
+			}
+			if l1, ok := lit1.Lit.(*StrLit); ok {
+				if l2, ok := lit2.Lit.(*StrLit); ok {
+					if l1.Equal(l2) {
+						return nil
+					} else {
+						return []Error{&CannotUnifyTypesError{
+							T1: lit1,
+							T2: lit2,
+						}}
+					}
+				}
+			}
+			if l1, ok := lit1.Lit.(*BoolLit); ok {
+				if l2, ok := lit2.Lit.(*BoolLit); ok {
+					if l1.Equal(l2) {
+						return nil
+					} else {
+						return []Error{&CannotUnifyTypesError{
+							T1: lit1,
+							T2: lit2,
+						}}
+					}
+				}
+			}
+			if _, ok := lit1.Lit.(*UndefinedLit); ok {
+				if _, ok := lit2.Lit.(*UndefinedLit); ok {
+					return nil
+				}
+			}
+			if _, ok := lit1.Lit.(*NullLit); ok {
+				if _, ok := lit2.Lit.(*NullLit); ok {
+					return nil
+				}
+			}
+			return []Error{&CannotUnifyTypesError{
+				T1: lit1,
+				T2: lit2,
+			}}
 		}
 	}
 	// | LitType (string), TemplateLitType -> ...
@@ -380,7 +444,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 
 	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %s and %s", t1, t2))
+	panic(fmt.Sprintf("TODO: unify types %s and %s", t1.String(), t2.String()))
 }
 
 // TODO: check if t1 is already bound to an instance

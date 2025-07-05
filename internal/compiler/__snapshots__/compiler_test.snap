@@ -4,8 +4,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const foo = 5;\nconst bar = \"hello\";\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;MACN,AAAA,MAAM\"}",
+    JS:         "const foo = 5;\nconst bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;MACN,AAAA,MAAM\"}",
     DTS:        "declare const foo: 5;\ndeclare let bar: \"hello\";\n",
 }
 ---
@@ -15,8 +15,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
+    JS:         "function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
     DTS:        "declare function add(a: number, b: number): number;\ndeclare function sub(a: number, b: number): number;\ndeclare const sum: number;\n",
 }
 ---
@@ -26,8 +26,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}",
+    JS:         "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}",
     DTS:        "declare const nums: [1, 2, 3];\ndeclare const first: 1;\n",
 }
 ---
@@ -37,8 +37,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "console.log(\"hello, world\");\n//# sourceMappingURL=./input.esc.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./input.js\",\"sources\":[\"./input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}",
+    JS:         "console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}",
     DTS:        "",
 }
 ---

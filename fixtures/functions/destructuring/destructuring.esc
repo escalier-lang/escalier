@@ -1,7 +1,0 @@
-type Tuple = [number, string, boolean]
-export val foo = fn ([a, b, c]: Tuple) {
-    return c
-}
-export fn bar([a, b, c]: Tuple) {
-    return c
-}

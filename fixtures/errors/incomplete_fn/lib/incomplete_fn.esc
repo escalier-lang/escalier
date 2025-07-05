@@ -1,0 +1,6 @@
+fn add(a: number, b: number) -> number {
+    return a + b
+}
+// TODO: return `nil` if we can't parse a valid function
+// fn
+val x = 5

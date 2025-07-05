@@ -40,116 +40,112 @@ func findBindings(pat ast.Pat) []string {
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
-	mod *ast.Script,
-	scope *checker.Scope,
+	decls []ast.Decl,
+	namespace checker.Namespace,
+	// scope *checker.Scope,
 ) *Module {
 	stmts := []Stmt{}
 
-	for _, stmt := range mod.Stmts {
-		switch stmt := stmt.(type) {
-		case *ast.DeclStmt:
-			switch decl := stmt.Decl.(type) {
-			case *ast.VarDecl:
-				keys := findBindings(decl.Pattern)
-				sort.Strings(keys)
+	for _, d := range decls {
+		switch decl := d.(type) {
+		case *ast.VarDecl:
+			keys := findBindings(decl.Pattern)
+			sort.Strings(keys)
 
-				decls := make([]*Declarator, 0, len(keys))
-				for _, name := range keys {
-					binding := scope.Values[name]
-					typeAnn := buildTypeAnn(binding.Type)
-					decls = append(decls, &Declarator{
-						Pattern: NewIdentPat(name, nil, nil),
-						TypeAnn: optional.Some(typeAnn),
-						Init:    nil,
-					})
-				}
-
-				varDecl := &VarDecl{
-					Kind:    VariableKind(decl.Kind),
-					Decls:   decls,
-					declare: true, // Always true for .d.ts files
-					export:  decl.Export(),
-					span:    nil,
-					source:  nil,
-				}
-				stmts = append(stmts, &DeclStmt{
-					Decl:   varDecl,
-					span:   nil,
-					source: nil,
-				})
-
-			case *ast.FuncDecl:
-				binding := scope.Values[decl.Name.Name]
-
-				funcType := binding.Type.(*type_sys.FuncType)
-
-				fnDecl := &FuncDecl{
-					Name:   NewIdentifier(decl.Name.Name, decl.Name),
-					Params: funcTypeToParams(funcType),
-					// TODO: Use the type annotation if there is one and if not
-					// fallback to the inferred return type from the binding.
-					TypeAnn: optional.Some(buildTypeAnn(funcType.Return)),
-					Body:    nil,
-					declare: true, // Always true for .d.ts files
-					export:  decl.Export(),
-					span:    nil,
-					source:  nil,
-				}
-				stmts = append(stmts, &DeclStmt{
-					Decl:   fnDecl,
-					span:   nil,
-					source: nil,
-				})
-			case *ast.TypeDecl:
-				typeParams := make([]*TypeParam, len(decl.TypeParams))
-				for i, param := range decl.TypeParams {
-					constraint := optional.None[TypeAnn]()
-					if param.Constraint != nil {
-						t := param.Constraint.InferredType()
-						if t == nil {
-							// TODO: report an error if there's no inferred type
-						}
-						constraint = optional.Some(buildTypeAnn(t))
-					}
-					default_ := optional.None[TypeAnn]()
-					if param.Default != nil {
-						t := param.Default.InferredType()
-						if t == nil {
-							// TODO: report an error if there's no inferred type
-						}
-						default_ = optional.Some(buildTypeAnn(t))
-					}
-
-					typeParams[i] = &TypeParam{
-						Name:       param.Name,
-						Constraint: constraint,
-						Default:    default_,
-					}
-				}
-
-				typeAnnType := decl.TypeAnn.InferredType()
-				if typeAnnType == nil {
-					// TODO: report an error if there's no inferred type
-					continue
-				}
-
-				typeDecl := &TypeDecl{
-					Name:       NewIdentifier(decl.Name.Name, decl.Name),
-					TypeParams: typeParams,
-					TypeAnn:    buildTypeAnn(typeAnnType),
-					declare:    true, // Always true for .d.ts files
-					export:     decl.Export(),
-					span:       nil,
-					source:     nil,
-				}
-				stmts = append(stmts, &DeclStmt{
-					Decl:   typeDecl,
-					span:   nil,
-					source: nil,
+			decls := make([]*Declarator, 0, len(keys))
+			for _, name := range keys {
+				binding := namespace.Values[checker.QualifiedIdent(name)]
+				typeAnn := buildTypeAnn(binding.Type)
+				decls = append(decls, &Declarator{
+					Pattern: NewIdentPat(name, nil, nil),
+					TypeAnn: optional.Some(typeAnn),
+					Init:    nil,
 				})
 			}
-		default:
-			// Ignore other statements
+
+			varDecl := &VarDecl{
+				Kind:    VariableKind(decl.Kind),
+				Decls:   decls,
+				declare: true, // Always true for .d.ts files
+				export:  decl.Export(),
+				span:    nil,
+				source:  nil,
+			}
+			stmts = append(stmts, &DeclStmt{
+				Decl:   varDecl,
+				span:   nil,
+				source: nil,
+			})
+
+		case *ast.FuncDecl:
+			binding := namespace.Values[checker.QualifiedIdent(decl.Name.Name)]
+
+			funcType := binding.Type.(*type_sys.FuncType)
+
+			fnDecl := &FuncDecl{
+				Name:   NewIdentifier(decl.Name.Name, decl.Name),
+				Params: funcTypeToParams(funcType),
+				// TODO: Use the type annotation if there is one and if not
+				// fallback to the inferred return type from the binding.
+				TypeAnn: optional.Some(buildTypeAnn(funcType.Return)),
+				Body:    nil,
+				declare: true, // Always true for .d.ts files
+				export:  decl.Export(),
+				span:    nil,
+				source:  nil,
+			}
+			stmts = append(stmts, &DeclStmt{
+				Decl:   fnDecl,
+				span:   nil,
+				source: nil,
+			})
+		case *ast.TypeDecl:
+			typeParams := make([]*TypeParam, len(decl.TypeParams))
+			for i, param := range decl.TypeParams {
+				constraint := optional.None[TypeAnn]()
+				if param.Constraint != nil {
+					t := param.Constraint.InferredType()
+					if t == nil {
+						// TODO: report an error if there's no inferred type
+					}
+					constraint = optional.Some(buildTypeAnn(t))
+				}
+				default_ := optional.None[TypeAnn]()
+				if param.Default != nil {
+					t := param.Default.InferredType()
+					if t == nil {
+						// TODO: report an error if there's no inferred type
+					}
+					default_ = optional.Some(buildTypeAnn(t))
+				}
+
+				typeParams[i] = &TypeParam{
+					Name:       param.Name,
+					Constraint: constraint,
+					Default:    default_,
+				}
+			}
+
+			typeAnnType := decl.TypeAnn.InferredType()
+			if typeAnnType == nil {
+				// TODO: report an error if there's no inferred type
+				continue
+			}
+
+			typeDecl := &TypeDecl{
+				Name:       NewIdentifier(decl.Name.Name, decl.Name),
+				TypeParams: typeParams,
+				TypeAnn:    buildTypeAnn(typeAnnType),
+				declare:    true, // Always true for .d.ts files
+				export:     decl.Export(),
+				span:       nil,
+				source:     nil,
+			}
+			stmts = append(stmts, &DeclStmt{
+				Decl:   typeDecl,
+				span:   nil,
+				source: nil,
+			})
 		}
 	}
 
@@ -159,7 +155,8 @@ func (b *Builder) BuildDefinitions(
 func buildTypeAnn(t type_sys.Type) TypeAnn {
 	switch t := type_sys.Prune(t).(type) {
 	case *type_sys.TypeVarType:
-		panic("TODO: generalize types before building .d.ts files")
+		msg := fmt.Sprintf("TODO: generalize types before building .d.ts files, t = %s", t.String())
+		panic(msg)
 	case *type_sys.TypeRefType:
 		typeArgs := make([]TypeAnn, len(t.TypeArgs))
 		for i, arg := range t.TypeArgs {

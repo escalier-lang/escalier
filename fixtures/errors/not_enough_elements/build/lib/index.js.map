@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/not_enough_elements.esc"],"sourcesContent":["fn main() -\u003e undefined {\n    val [a, b, c] = [1]\n    console.log(a)\n}\n"],"names":[],"mappings":"AAAA;QACQ,CAAC,AAAA,GAAG,AAAA,GAAG,AAAA,KAAK,CAAC;EACjB,AAAA,AAAA,QAAQ,IAAI"}

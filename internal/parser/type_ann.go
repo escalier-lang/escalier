@@ -325,7 +325,7 @@ loop:
 			obj := typeAnn
 			typeAnn = ast.NewIndexTypeAnn(
 				obj, index,
-				ast.Span{Start: obj.Span().Start, End: terminator.Span.End},
+				ast.Span{Start: obj.Span().Start, End: terminator.Span.End, SourceID: p.lexer.source.ID},
 			)
 		case Dot:
 			p.lexer.consume()
@@ -338,7 +338,7 @@ loop:
 				prop := ast.NewLitTypeAnn(ast.NewString(prop.Value, token.Span), token.Span)
 				typeAnn = ast.NewIndexTypeAnn(
 					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
 				)
 			default:
 				obj := typeAnn
@@ -346,7 +346,7 @@ loop:
 				prop := ast.NewLitTypeAnn(ast.NewString("", token.Span), token.Span)
 				typeAnn = ast.NewIndexTypeAnn(
 					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End},
+					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
 				)
 				if token.Type == Dot {
 					p.reportError(token.Span, "expected an identifier after .")

@@ -1,5 +1,0 @@
-fn add(a, b) {
-    return a + b
-}
-fn
-val x = 5

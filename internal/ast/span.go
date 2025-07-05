@@ -2,6 +2,12 @@ package ast
 
 import "strconv"
 
+type Source struct {
+	Path     string
+	Contents string
+	ID       int
+}
+
 type Location struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
@@ -12,8 +18,9 @@ func (l Location) String() string {
 }
 
 type Span struct {
-	Start Location `json:"start"`
-	End   Location `json:"end"`
+	Start    Location `json:"start"`
+	End      Location `json:"end"`
+	SourceID int
 }
 
 func (s Span) String() string {

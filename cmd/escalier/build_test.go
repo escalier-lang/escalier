@@ -11,15 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func checkFile(t *testing.T, fixtureDir string, fixtureName string, ext string) {
-	actualJs, err := os.ReadFile(fixtureName + ext)
+func checkFile(t *testing.T, fixtureDir string, ext string) {
+	outPath := filepath.Join("build", "lib", "index"+ext)
+	actualJs, err := os.ReadFile(outPath)
 	require.NoError(t, err)
 
 	if os.Getenv("UPDATE_FIXTURES") == "true" {
-		err = os.WriteFile(filepath.Join(fixtureDir, fixtureName+ext), actualJs, 0644)
+		err = os.WriteFile(filepath.Join(fixtureDir, outPath), actualJs, 0644)
 		require.NoError(t, err)
 	} else {
-		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, fixtureName+ext))
+		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, outPath))
 		require.NoError(t, err)
 		require.Equal(t, string(expectedJs), string(actualJs))
 	}
@@ -29,11 +30,14 @@ func checkFile(t *testing.T, fixtureDir string, fixtureName string, ext string) 
 func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	tmpDir := t.TempDir()
 
-	err := os.Chdir(tmpDir)
+	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)
 	require.NoError(t, err)
 
-	srcFile := filepath.Join(fixtureDir, fixtureName+".esc")
-	destFile := filepath.Join(tmpDir, fixtureName+".esc")
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	srcFile := filepath.Join(fixtureDir, "lib", fixtureName+".esc")
+	destFile := filepath.Join(tmpDir, "lib", fixtureName+".esc")
 
 	input, err := os.ReadFile(srcFile)
 	require.NoError(t, err)
@@ -43,12 +47,30 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
-	build(stdout, stderr, []string{fixtureName + ".esc"})
+
+	// TODO: find all .esc files in the fixture directory
+	// and pass them to the build function.
+	files := []string{filepath.Join("lib", fixtureName+".esc")}
+	build(stdout, stderr, files)
 	fmt.Println("stderr =", stderr.String())
 
-	checkFile(t, fixtureDir, fixtureName, ".js")
-	checkFile(t, fixtureDir, fixtureName, ".d.ts")
-	checkFile(t, fixtureDir, fixtureName, ".esc.map")
+	// create build/ directory if it doesn't exist
+	if _, err := os.Stat(filepath.Join(fixtureDir, "build")); os.IsNotExist(err) {
+		err := os.Mkdir(filepath.Join(fixtureDir, "build"), 0755)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create build directory")
+		}
+		if _, err := os.Stat(filepath.Join(fixtureDir, "build", "lib")); os.IsNotExist(err) {
+			err := os.Mkdir(filepath.Join(fixtureDir, "build", "lib"), 0755)
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to create build/lib directory")
+			}
+		}
+	}
+
+	checkFile(t, fixtureDir, ".js")
+	checkFile(t, fixtureDir, ".d.ts")
+	checkFile(t, fixtureDir, ".js.map")
 
 	// check errors
 	if stderr.Len() > 0 {

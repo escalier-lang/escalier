@@ -17,7 +17,8 @@ func (p *Parser) block() ast.Block {
 	}
 
 	stmts, end := p.stmts(CloseBrace)
-	return ast.Block{Stmts: *stmts, Span: ast.Span{Start: start, End: end}}
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+	return ast.Block{Stmts: *stmts, Span: span}
 }
 
 func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {

@@ -5,11 +5,12 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 func build(stdout io.Writer, stderr io.Writer, files []string) {
@@ -43,12 +44,13 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			continue
 		}
 
-		source := &parser.Source{
+		source := &ast.Source{
+			ID:       1,
 			Path:     file,
 			Contents: string(bytes),
 		}
 
-		output := compiler.Compile(source)
+		output := compiler.CompileLib([]*ast.Source{source})
 
 		lines := strings.Split(source.Contents, "\n")
 
@@ -80,8 +82,25 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			fmt.Fprintln(stderr, message)
 		}
 
+		// create build/ directory if it doesn't exist
+		if _, err := os.Stat("build"); os.IsNotExist(err) {
+			err := os.Mkdir("build", 0755)
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to create build directory")
+				continue
+			}
+
+			if _, err := os.Stat("build/lib"); os.IsNotExist(err) {
+				err := os.Mkdir("build/lib", 0755)
+				if err != nil {
+					fmt.Fprintln(stderr, "failed to create build/lib directory")
+					continue
+				}
+			}
+		}
+
 		// create .js file
-		jsFile := strings.TrimSuffix(file, path.Ext(file)) + ".js"
+		jsFile := filepath.Join("build", "lib", "index.js")
 		jsOut, err := os.Create(jsFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create .js file")
@@ -96,7 +115,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		}
 
 		// create .d.ts file
-		defFile := strings.TrimSuffix(file, path.Ext(file)) + ".d.ts"
+		defFile := filepath.Join("build", "lib", "index.d.ts")
 		defOut, err := os.Create(defFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create .d.ts file")
@@ -111,7 +130,7 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		}
 
 		// create sourcemap file
-		mapFile := file + ".map"
+		mapFile := filepath.Join("build", "lib", "index.js.map")
 		mapOut, err := os.Create(mapFile)
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to create map file")
