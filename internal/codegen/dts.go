@@ -81,7 +81,6 @@ func (b *Builder) BuildDefinitions(
 			binding := namespace.Values[checker.QualifiedIdent(decl.Name.Name)]
 
 			funcType := binding.Type.(*type_sys.FuncType)
-			fmt.Printf("Building function declaration for %s with type %s\n", decl.Name.Name, funcType.String())
 
 			fnDecl := &FuncDecl{
 				Name:   NewIdentifier(decl.Name.Name, decl.Name),
