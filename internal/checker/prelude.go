@@ -8,7 +8,7 @@ import (
 )
 
 func Prelude() *Scope {
-	scope := NewScope(optional.None[*Scope]())
+	scope := NewScope(nil)
 
 	binArithType := &FuncType{
 		Params: []*FuncParam{

@@ -2,7 +2,6 @@ package checker
 
 import (
 	"github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/moznion/go-optional"
 )
 
 type Checker struct {
@@ -33,7 +32,7 @@ type Context struct {
 func (ctx *Context) WithParentScope() Context {
 	return Context{
 		Filename:   ctx.Filename,
-		Scope:      NewScope(optional.PtrFromNillable(ctx.Scope)),
+		Scope:      NewScope(ctx.Scope),
 		IsAsync:    ctx.IsAsync,
 		IsPatMatch: ctx.IsPatMatch,
 	}

@@ -15,12 +15,12 @@ type Binding struct {
 }
 
 type Scope struct {
-	Parent optional.Option[*Scope]
+	Parent *Scope // optional, parent is nil for the root scope
 	Values map[string]Binding
 	Types  map[string]TypeAlias
 }
 
-func NewScope(parent optional.Option[*Scope]) *Scope {
+func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Parent: parent,
 		Values: map[string]Binding{},
@@ -32,9 +32,10 @@ func (s *Scope) getValue(name string) optional.Option[Binding] {
 	if v, ok := s.Values[name]; ok {
 		return optional.Some(v)
 	}
-	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[Binding] {
-		return p.getValue(name)
-	}).Or(optional.None[Binding]())
+	if s.Parent != nil {
+		return s.Parent.getValue(name)
+	}
+	return optional.None[Binding]()
 }
 
 func (s *Scope) setValue(name string, binding Binding) {
@@ -48,9 +49,10 @@ func (s *Scope) getTypeAlias(name string) optional.Option[TypeAlias] {
 	if v, ok := s.Types[name]; ok {
 		return optional.Some(v)
 	}
-	return optional.FlatMap(s.Parent, func(p *Scope) optional.Option[TypeAlias] {
-		return p.getTypeAlias(name)
-	}).Or(optional.None[TypeAlias]())
+	if s.Parent != nil {
+		return s.Parent.getTypeAlias(name)
+	}
+	return optional.None[TypeAlias]()
 }
 
 func (s *Scope) setTypeAlias(name string, alias TypeAlias) {
