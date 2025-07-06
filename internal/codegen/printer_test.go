@@ -31,6 +31,7 @@ func TestPrintExpr(t *testing.T) {
 
 func TestPrintModule(t *testing.T) {
 	source := &ast.Source{
+		ID:   0,
 		Path: "input.esc",
 		Contents: `fn add(a, b) { return a + b }
 fn sub(a, b) { return a - b }`,

@@ -431,7 +431,7 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 		returnType,
 		nil, // TODO: parse throws type
 		body,
-		ast.NewSpan(start, end),
+		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }
 
@@ -648,7 +648,7 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 	} else {
-		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation)
+		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
 		return ast.NewTemplateLit(quasis, exprs, span)
 	}
 }

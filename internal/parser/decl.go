@@ -144,7 +144,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 
 	return ast.NewFuncDecl(
 		ident, params, returnType, &body, export, declare,
-		ast.NewSpan(start, end),
+		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }
 
@@ -168,6 +168,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	if typeAnn == nil {
 		return nil
 	}
-	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, ast.NewSpan(start, end))
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, span)
 	return decl
 }

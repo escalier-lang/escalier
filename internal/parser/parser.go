@@ -98,9 +98,6 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		if source == nil {
 			continue
 		}
-		if source.ID == 0 {
-			panic("Source ID must be set")
-		}
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
 		allDecls = append(allDecls, decls...)

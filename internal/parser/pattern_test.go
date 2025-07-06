@@ -59,7 +59,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{
-				ID:       1,
+				ID:       0,
 				Path:     "input.esc",
 				Contents: test.input,
 			}
