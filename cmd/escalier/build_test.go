@@ -178,264 +178,264 @@ func TestBuildFixtureTests(t *testing.T) {
 	}
 }
 
-// func TestBuildErrorHandling(t *testing.T) {
-// 	tests := []struct {
-// 		name           string
-// 		setupFunc      func(t *testing.T) (string, []string) // returns tmpDir and files
-// 		expectedStdout []string
-// 		expectedStderr []string
-// 	}{
-// 		{
-// 			name: "file without .esc extension with valid file",
-// 			setupFunc: func(t *testing.T) (string, []string) {
-// 				tmpDir := t.TempDir()
-// 				err := os.Chdir(tmpDir)
-// 				require.NoError(t, err)
+func TestBuildErrorHandling(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupFunc      func(t *testing.T) (string, []string) // returns tmpDir and files
+		expectedStdout []string
+		expectedStderr []string
+	}{
+		{
+			name: "file without .esc extension with valid file",
+			setupFunc: func(t *testing.T) (string, []string) {
+				tmpDir := t.TempDir()
+				err := os.Chdir(tmpDir)
+				require.NoError(t, err)
 
-// 				// Create a valid .esc file
-// 				validFile := filepath.Join(tmpDir, "valid.esc")
-// 				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-// 				require.NoError(t, err)
+				// Create a valid .esc file
+				validFile := filepath.Join(tmpDir, "valid.esc")
+				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
+				require.NoError(t, err)
 
-// 				// Create a file with wrong extension
-// 				invalidFile := filepath.Join(tmpDir, "test.txt")
-// 				err = os.WriteFile(invalidFile, []byte("some content"), 0644)
-// 				require.NoError(t, err)
+				// Create a file with wrong extension
+				invalidFile := filepath.Join(tmpDir, "test.txt")
+				err = os.WriteFile(invalidFile, []byte("some content"), 0644)
+				require.NoError(t, err)
 
-// 				return tmpDir, []string{validFile, invalidFile}
-// 			},
-// 			expectedStdout: []string{"building module...", "file does not have .esc extension"},
-// 			expectedStderr: []string{},
-// 		},
-// 		{
-// 			name: "non-existent file with valid file",
-// 			setupFunc: func(t *testing.T) (string, []string) {
-// 				tmpDir := t.TempDir()
-// 				err := os.Chdir(tmpDir)
-// 				require.NoError(t, err)
+				return tmpDir, []string{validFile, invalidFile}
+			},
+			expectedStdout: []string{"building module...", "file does not have .esc extension"},
+			expectedStderr: []string{},
+		},
+		{
+			name: "non-existent file with valid file",
+			setupFunc: func(t *testing.T) (string, []string) {
+				tmpDir := t.TempDir()
+				err := os.Chdir(tmpDir)
+				require.NoError(t, err)
 
-// 				// Create a valid .esc file
-// 				validFile := filepath.Join(tmpDir, "valid.esc")
-// 				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-// 				require.NoError(t, err)
+				// Create a valid .esc file
+				validFile := filepath.Join(tmpDir, "valid.esc")
+				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
+				require.NoError(t, err)
 
-// 				return tmpDir, []string{validFile, filepath.Join(tmpDir, "nonexistent.esc")}
-// 			},
-// 			expectedStdout: []string{"building module...", "file does not exist"},
-// 			expectedStderr: []string{},
-// 		},
-// 		{
-// 			name: "file read permission denied with valid file",
-// 			setupFunc: func(t *testing.T) (string, []string) {
-// 				if runtime.GOOS == "windows" {
-// 					t.Skip("Skipping permission test on Windows")
-// 				}
+				return tmpDir, []string{validFile, filepath.Join(tmpDir, "nonexistent.esc")}
+			},
+			expectedStdout: []string{"building module...", "file does not exist"},
+			expectedStderr: []string{},
+		},
+		{
+			name: "file read permission denied with valid file",
+			setupFunc: func(t *testing.T) (string, []string) {
+				if runtime.GOOS == "windows" {
+					t.Skip("Skipping permission test on Windows")
+				}
 
-// 				tmpDir := t.TempDir()
-// 				err := os.Chdir(tmpDir)
-// 				require.NoError(t, err)
+				tmpDir := t.TempDir()
+				err := os.Chdir(tmpDir)
+				require.NoError(t, err)
 
-// 				// Create a valid .esc file
-// 				validFile := filepath.Join(tmpDir, "valid.esc")
-// 				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-// 				require.NoError(t, err)
+				// Create a valid .esc file
+				validFile := filepath.Join(tmpDir, "valid.esc")
+				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
+				require.NoError(t, err)
 
-// 				// Create a file and remove read permissions
-// 				noAccessFile := filepath.Join(tmpDir, "noaccess.esc")
-// 				err = os.WriteFile(noAccessFile, []byte("some content"), 0644)
-// 				require.NoError(t, err)
+				// Create a file and remove read permissions
+				noAccessFile := filepath.Join(tmpDir, "noaccess.esc")
+				err = os.WriteFile(noAccessFile, []byte("some content"), 0644)
+				require.NoError(t, err)
 
-// 				err = os.Chmod(noAccessFile, 0000) // No permissions
-// 				require.NoError(t, err)
+				err = os.Chmod(noAccessFile, 0000) // No permissions
+				require.NoError(t, err)
 
-// 				// Restore permissions in cleanup
-// 				t.Cleanup(func() {
-// 					_ = os.Chmod(noAccessFile, 0644)
-// 				})
+				// Restore permissions in cleanup
+				t.Cleanup(func() {
+					_ = os.Chmod(noAccessFile, 0644)
+				})
 
-// 				return tmpDir, []string{validFile, noAccessFile}
-// 			},
-// 			expectedStdout: []string{"building module...", "failed to open file"},
-// 			expectedStderr: []string{},
-// 		}, {
-// 			name: "build directory creation failure",
-// 			setupFunc: func(t *testing.T) (string, []string) {
-// 				tmpDir := t.TempDir()
-// 				err := os.Chdir(tmpDir)
-// 				require.NoError(t, err)
+				return tmpDir, []string{validFile, noAccessFile}
+			},
+			expectedStdout: []string{"building module...", "failed to open file"},
+			expectedStderr: []string{},
+		}, {
+			name: "build directory creation failure",
+			setupFunc: func(t *testing.T) (string, []string) {
+				tmpDir := t.TempDir()
+				err := os.Chdir(tmpDir)
+				require.NoError(t, err)
 
-// 				// Create a valid .esc file
-// 				filename := filepath.Join(tmpDir, "test.esc")
-// 				err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-// 				require.NoError(t, err)
+				// Create a valid .esc file
+				filename := filepath.Join(tmpDir, "test.esc")
+				err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
+				require.NoError(t, err)
 
-// 				if runtime.GOOS != "windows" {
-// 					// Create a file named "build" to prevent directory creation
-// 					err = os.WriteFile("build", []byte("blocking file"), 0644)
-// 					require.NoError(t, err)
-// 				}
+				if runtime.GOOS != "windows" {
+					// Create a file named "build" to prevent directory creation
+					err = os.WriteFile("build", []byte("blocking file"), 0644)
+					require.NoError(t, err)
+				}
 
-// 				return tmpDir, []string{filename}
-// 			},
-// 			expectedStdout: []string{"building module..."},
-// 			expectedStderr: func() []string {
-// 				if runtime.GOOS == "windows" {
-// 					return []string{} // Windows behavior may differ
-// 				}
-// 				// The error might be "failed to create build directory" or a JS file creation error
-// 				// depending on timing and the exact OS behavior
-// 				return []string{} // We'll check this manually in the test
-// 			}(),
-// 		},
-// 	}
+				return tmpDir, []string{filename}
+			},
+			expectedStdout: []string{"building module..."},
+			expectedStderr: func() []string {
+				if runtime.GOOS == "windows" {
+					return []string{} // Windows behavior may differ
+				}
+				// The error might be "failed to create build directory" or a JS file creation error
+				// depending on timing and the exact OS behavior
+				return []string{} // We'll check this manually in the test
+			}(),
+		},
+	}
 
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			origDir, err := os.Getwd()
-// 			require.NoError(t, err)
-// 			defer func() {
-// 				_ = os.Chdir(origDir)
-// 			}()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origDir, err := os.Getwd()
+			require.NoError(t, err)
+			defer func() {
+				_ = os.Chdir(origDir)
+			}()
 
-// 			tmpDir, files := tt.setupFunc(t)
+			tmpDir, files := tt.setupFunc(t)
 
-// 			stdout := &bytes.Buffer{}
-// 			stderr := &bytes.Buffer{}
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
 
-// 			build(stdout, stderr, files)
+			build(stdout, stderr, files)
 
-// 			stdoutLines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-// 			stderrLines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
+			stdoutLines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+			stderrLines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
 
-// 			// Filter out empty lines
-// 			var filteredStdout []string
-// 			for _, line := range stdoutLines {
-// 				if strings.TrimSpace(line) != "" {
-// 					filteredStdout = append(filteredStdout, line)
-// 				}
-// 			}
+			// Filter out empty lines
+			var filteredStdout []string
+			for _, line := range stdoutLines {
+				if strings.TrimSpace(line) != "" {
+					filteredStdout = append(filteredStdout, line)
+				}
+			}
 
-// 			var filteredStderr []string
-// 			for _, line := range stderrLines {
-// 				if strings.TrimSpace(line) != "" {
-// 					filteredStderr = append(filteredStderr, line)
-// 				}
-// 			}
+			var filteredStderr []string
+			for _, line := range stderrLines {
+				if strings.TrimSpace(line) != "" {
+					filteredStderr = append(filteredStderr, line)
+				}
+			}
 
-// 			if len(tt.expectedStdout) > 0 {
-// 				for _, expected := range tt.expectedStdout {
-// 					found := false
-// 					for _, actual := range filteredStdout {
-// 						if strings.Contains(actual, expected) {
-// 							found = true
-// 							break
-// 						}
-// 					}
-// 					require.True(t, found, "Expected stdout to contain: %s\nActual stdout: %v", expected, filteredStdout)
-// 				}
-// 			}
+			if len(tt.expectedStdout) > 0 {
+				for _, expected := range tt.expectedStdout {
+					found := false
+					for _, actual := range filteredStdout {
+						if strings.Contains(actual, expected) {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "Expected stdout to contain: %s\nActual stdout: %v", expected, filteredStdout)
+				}
+			}
 
-// 			if len(tt.expectedStderr) > 0 {
-// 				for _, expected := range tt.expectedStderr {
-// 					found := false
-// 					for _, actual := range filteredStderr {
-// 						if strings.Contains(actual, expected) {
-// 							found = true
-// 							break
-// 						}
-// 					}
-// 					require.True(t, found, "Expected stderr to contain: %s\nActual stderr: %v", expected, filteredStderr)
-// 				}
-// 			}
+			if len(tt.expectedStderr) > 0 {
+				for _, expected := range tt.expectedStderr {
+					found := false
+					for _, actual := range filteredStderr {
+						if strings.Contains(actual, expected) {
+							found = true
+							break
+						}
+					}
+					require.True(t, found, "Expected stderr to contain: %s\nActual stderr: %v", expected, filteredStderr)
+				}
+			}
 
-// 			// Special case for build directory creation failure test
-// 			if tt.name == "build directory creation failure" && runtime.GOOS != "windows" {
-// 				// Either we should see a build directory creation error or a JS file creation error
-// 				// depending on the exact timing and OS behavior
-// 				errorOutput := stderr.String()
-// 				require.True(t,
-// 					strings.Contains(errorOutput, "failed to create build directory") ||
-// 						strings.Contains(errorOutput, "failed to create .js file"),
-// 					"Expected build or JS file creation error, got: %s", errorOutput)
-// 			}
+			// Special case for build directory creation failure test
+			if tt.name == "build directory creation failure" && runtime.GOOS != "windows" {
+				// Either we should see a build directory creation error or a JS file creation error
+				// depending on the exact timing and OS behavior
+				errorOutput := stderr.String()
+				require.True(t,
+					strings.Contains(errorOutput, "failed to create build directory") ||
+						strings.Contains(errorOutput, "failed to create .js file"),
+					"Expected build or JS file creation error, got: %s", errorOutput)
+			}
 
-// 			// Cleanup
-// 			_ = os.Chdir(origDir)
-// 			_ = os.RemoveAll(tmpDir)
-// 		})
-// 	}
-// }
+			// Cleanup
+			_ = os.Chdir(origDir)
+			_ = os.RemoveAll(tmpDir)
+		})
+	}
+}
 
-// func TestBuildFileSystemErrors(t *testing.T) {
-// 	// origDir, err := os.Getwd()
-// 	// require.NoError(t, err)
-// 	// defer func() {
-// 	// 	_ = os.Chdir(origDir)
-// 	// }()
+func TestBuildFileSystemErrors(t *testing.T) {
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
 
-// 	tmpDir := t.TempDir()
-// 	err := os.Chdir(tmpDir)
-// 	require.NoError(t, err)
+	tmpDir := t.TempDir()
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
 
-// 	// Create a valid .esc file with minimal content
-// 	filename := filepath.Join(tmpDir, "test.esc")
-// 	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-// 	require.NoError(t, err)
+	// Create a valid .esc file with minimal content
+	filename := filepath.Join(tmpDir, "test.esc")
+	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
+	require.NoError(t, err)
 
-// 	// Create build directory first
-// 	err = os.Mkdir("build", 0755)
-// 	require.NoError(t, err)
+	// Create build directory first
+	err = os.Mkdir("build", 0755)
+	require.NoError(t, err)
 
-// 	err = os.Mkdir("build/lib", 0755)
-// 	require.NoError(t, err)
+	err = os.Mkdir("build/lib", 0755)
+	require.NoError(t, err)
 
-// 	if runtime.GOOS != "windows" {
-// 		// Make build/lib directory read-only to cause file creation failures
-// 		err = os.Chmod("build/lib", 0444)
-// 		require.NoError(t, err)
+	if runtime.GOOS != "windows" {
+		// Make build/lib directory read-only to cause file creation failures
+		err = os.Chmod("build/lib", 0444)
+		require.NoError(t, err)
 
-// 		// Restore permissions in cleanup
-// 		defer func() {
-// 			_ = os.Chmod("build/lib", 0755)
-// 		}()
-// 	}
+		// Restore permissions in cleanup
+		defer func() {
+			_ = os.Chmod("build/lib", 0755)
+		}()
+	}
 
-// 	stdout := &bytes.Buffer{}
-// 	stderr := &bytes.Buffer{}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 
-// 	build(stdout, stderr, []string{filename})
+	build(stdout, stderr, []string{filename})
 
-// 	if runtime.GOOS != "windows" {
-// 		stderrOutput := stderr.String()
-// 		// Should fail to create JS file due to read-only directory
-// 		require.Contains(t, stderrOutput, "failed to create .js file")
-// 	}
-// }
+	if runtime.GOOS != "windows" {
+		stderrOutput := stderr.String()
+		// Should fail to create JS file due to read-only directory
+		require.Contains(t, stderrOutput, "failed to create .js file")
+	}
+}
 
-// func TestBuildWithValidFile(t *testing.T) {
-// 	tmpDir := t.TempDir()
-// 	err := os.Chdir(tmpDir)
-// 	require.NoError(t, err)
+func TestBuildWithValidFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.Chdir(tmpDir)
+	require.NoError(t, err)
 
-// 	// Create a valid .esc file
-// 	filename := filepath.Join(tmpDir, "test.esc")
-// 	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-// 	require.NoError(t, err)
+	// Create a valid .esc file
+	filename := filepath.Join(tmpDir, "test.esc")
+	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
+	require.NoError(t, err)
 
-// 	stdout := &bytes.Buffer{}
-// 	stderr := &bytes.Buffer{}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 
-// 	build(stdout, stderr, []string{filename})
+	build(stdout, stderr, []string{filename})
 
-// 	// Should successfully create output files
-// 	stdoutOutput := stdout.String()
-// 	require.Contains(t, stdoutOutput, "building module...")
+	// Should successfully create output files
+	stdoutOutput := stdout.String()
+	require.Contains(t, stdoutOutput, "building module...")
 
-// 	// Check that output files are created
-// 	require.FileExists(t, "build/lib/index.js")
-// 	require.FileExists(t, "build/lib/index.d.ts")
-// 	require.FileExists(t, "build/lib/index.js.map")
-// }
+	// Check that output files are created
+	require.FileExists(t, "build/lib/index.js")
+	require.FileExists(t, "build/lib/index.d.ts")
+	require.FileExists(t, "build/lib/index.js.map")
+}
 
 // func TestBuildMixedValidAndInvalidFiles(t *testing.T) {
 // 	tmpDir := t.TempDir()
