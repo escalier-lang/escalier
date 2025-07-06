@@ -20,9 +20,3 @@ export declare val obj3: {
 val g = obj3.bar
 
 export val obj4 = {a, b, c}
-
-fn main() -> undefined {
-    p.x = 5
-    p.y = 10
-    obj3.bar = "hello"
-}

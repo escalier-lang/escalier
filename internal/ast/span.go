@@ -32,13 +32,13 @@ func (s Span) Contains(loc Location) bool {
 		(s.End.Line > loc.Line || (s.End.Line == loc.Line && s.End.Column >= loc.Column))
 }
 
-func NewSpan(start, end Location) Span {
-	return Span{Start: start, End: end}
+func NewSpan(start, end Location, sourceID int) Span {
+	return Span{Start: start, End: end, SourceID: sourceID}
 }
 
 func MergeSpans(a, b Span) Span {
 	if a.Start.Line < b.Start.Line || (a.Start.Line == b.Start.Line && a.Start.Column < b.Start.Column) {
-		return Span{Start: a.Start, End: b.End}
+		return Span{Start: a.Start, End: b.End, SourceID: a.SourceID}
 	}
-	return Span{Start: b.Start, End: a.End}
+	return Span{Start: b.Start, End: a.End, SourceID: a.SourceID}
 }

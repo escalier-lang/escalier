@@ -3,10 +3,23 @@
         <title>Fixtures</title>
     </head>
     <body>
-        <script src="fixtures/functions/destructuring/build/lib/index.js" type="module"></script>
+        <script src="fixtures/basics/objects/build/lib/index.js" type="module"></script>
         <script>
             debugger;
-            // add(5, 10);
+            const obj2 = {d: 5, e: {f: "hello"}};
+            const obj3 = {
+                flag: false,
+                foo(msg, flag) {
+                    return msg;
+                },
+                get bar() {
+                    return this.flag;
+                },
+                set bar(value) {
+                    this.flag = value;
+                }
+            };
+            main();
         </script>
     </body>
 </html>

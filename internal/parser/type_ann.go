@@ -228,7 +228,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				funcParams,
 				retType,
 				nil, // TODO: support throws clause
-				ast.NewSpan(token.Span.Start, retType.Span().End),
+				ast.NewSpan(token.Span.Start, retType.Span().End, p.lexer.source.ID),
 			)
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
@@ -263,18 +263,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				extendsType,
 				thenType,
 				elseType,
-				ast.NewSpan(token.Span.Start, elseType.Span().End),
+				ast.NewSpan(token.Span.Start, elseType.Span().End, p.lexer.source.ID),
 			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
 			end := p.expect(CloseBracket, AlwaysConsume)
-			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end))
+			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 		case OpenBrace: // object type
 			p.lexer.consume() // consume '{'
 			elems := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
 			end := p.expect(CloseBrace, AlwaysConsume)
-			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end))
+			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 		case Identifier:
 			p.lexer.consume()
 
@@ -283,7 +283,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				p.lexer.consume() // consume '<'
 				typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
 				end := p.expect(GreaterThan, AlwaysConsume)
-				return ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end))
+				return ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 			}
 
 			typeAnn = ast.NewRefTypeAnn(token.Value, []ast.TypeAnn{}, token.Span)

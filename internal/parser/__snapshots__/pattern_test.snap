@@ -5,7 +5,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:6},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -20,7 +20,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:8},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -35,7 +35,7 @@
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:2},
                 End:      ast.Location{Line:1, Column:3},
-                SourceID: 1,
+                SourceID: 0,
             },
             inferredType: nil,
         },
@@ -47,13 +47,13 @@
                     span:  ast.Span{
                         Start:    ast.Location{Line:1, Column:9},
                         End:      ast.Location{Line:1, Column:10},
-                        SourceID: 1,
+                        SourceID: 0,
                     },
                 },
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:9},
                     End:      ast.Location{Line:1, Column:10},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
                 inferredType: nil,
             },
@@ -71,7 +71,7 @@
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:19},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
                 inferredType: nil,
             },
@@ -99,7 +99,7 @@
     span:    ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:2},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -115,7 +115,7 @@
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:5},
                 End:      ast.Location{Line:1, Column:6},
-                SourceID: 1,
+                SourceID: 0,
             },
             inferredType: nil,
         },
@@ -125,7 +125,7 @@
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:9},
-                SourceID: 1,
+                SourceID: 0,
             },
             inferredType: nil,
         },
@@ -148,7 +148,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:5},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -160,7 +160,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:5},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -175,7 +175,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:2},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -186,7 +186,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:2},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -198,7 +198,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:10},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }
@@ -213,14 +213,14 @@
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:3},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
             },
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:2},
                 End:      ast.Location{Line:1, Column:3},
-                SourceID: 1,
+                SourceID: 0,
             },
         },
         &ast.ObjKeyValuePat{
@@ -229,7 +229,7 @@
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:5},
                     End:      ast.Location{Line:1, Column:6},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
             },
             Value: &ast.IdentPat{
@@ -238,7 +238,7 @@
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:8},
                     End:      ast.Location{Line:1, Column:9},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
                 inferredType: nil,
             },
@@ -257,7 +257,7 @@
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:18},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
                 inferredType: nil,
             },
@@ -286,7 +286,7 @@
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:3},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
             },
             Default: &ast.LiteralExpr{
@@ -295,13 +295,13 @@
                     span:  ast.Span{
                         Start:    ast.Location{Line:1, Column:6},
                         End:      ast.Location{Line:1, Column:7},
-                        SourceID: 1,
+                        SourceID: 0,
                     },
                 },
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:7},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
                 inferredType: nil,
             },
@@ -317,7 +317,7 @@
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:9},
                     End:      ast.Location{Line:1, Column:10},
-                    SourceID: 1,
+                    SourceID: 0,
                 },
             },
             Value: &ast.IdentPat{
@@ -328,13 +328,13 @@
                         span:  ast.Span{
                             Start:    ast.Location{Line:1, Column:16},
                             End:      ast.Location{Line:1, Column:23},
-                            SourceID: 1,
+                            SourceID: 0,
                         },
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:16},
                         End:      ast.Location{Line:1, Column:23},
-                        SourceID: 1,
+                        SourceID: 0,
                     },
                     inferredType: nil,
                 },
@@ -368,7 +368,7 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:2},
-        SourceID: 1,
+        SourceID: 0,
     },
     inferredType: nil,
 }

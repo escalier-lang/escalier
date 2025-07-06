@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,21 +38,55 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	srcFile := filepath.Join(fixtureDir, "lib", fixtureName+".esc")
-	destFile := filepath.Join(tmpDir, "lib", fixtureName+".esc")
+	// fine all .esc files in the fixture directory and copy them over to the tmpDir
+	err = filepath.WalkDir(filepath.Join(fixtureDir, "lib"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 
-	input, err := os.ReadFile(srcFile)
-	require.NoError(t, err)
+		// Check if it's a file and ends with .esc
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+			srcFile := path
+			destFile := filepath.Join(tmpDir, "lib", filepath.Base(path))
 
-	err = os.WriteFile(destFile, input, 0644)
-	require.NoError(t, err)
+			input, err := os.ReadFile(srcFile)
+			require.NoError(t, err)
+
+			err = os.WriteFile(destFile, input, 0644)
+			require.NoError(t, err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+		return
+	}
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
 
-	// TODO: find all .esc files in the fixture directory
-	// and pass them to the build function.
-	files := []string{filepath.Join("lib", fixtureName+".esc")}
+	// Find all .esc files in the lib directory
+	var files []string
+	err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Check if it's a file and ends with .esc
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+			files = append(files, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		fmt.Fprintln(stderr, "failed to walk directory:", err)
+		return
+	}
+
 	build(stdout, stderr, files)
 	fmt.Println("stderr =", stderr.String())
 
