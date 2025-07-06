@@ -41,7 +41,8 @@ func (p *Parser) extractorPat(nameToken *Token) ast.Pat {
 		return p.pattern(true)
 	})
 	end := p.expect(CloseParen, AlwaysConsume)
-	return ast.NewExtractorPat(nameToken.Value, patArgs, ast.NewSpan(nameToken.Span.Start, end))
+	span := ast.NewSpan(nameToken.Span.Start, end, p.lexer.source.ID)
+	return ast.NewExtractorPat(nameToken.Value, patArgs, span)
 }
 
 // identPat = identifier ('=' expr)?
@@ -69,7 +70,7 @@ func (p *Parser) tuplePat() ast.Pat {
 		return p.pattern(true)
 	})
 	end := p.expect(CloseBracket, AlwaysConsume)
-	return ast.NewTuplePat(patElems, ast.NewSpan(start, end))
+	return ast.NewTuplePat(patElems, ast.NewSpan(start, end, p.lexer.source.ID))
 }
 
 // objectPat = '{' (objPatElem (',' objPatElem)*)? '}'
@@ -79,7 +80,7 @@ func (p *Parser) objectPat() ast.Pat {
 	p.lexer.consume() // consume '{'
 	patElems := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
 	end := p.expect(CloseBrace, AlwaysConsume)
-	return ast.NewObjectPat(patElems, ast.NewSpan(start, end))
+	return ast.NewObjectPat(patElems, ast.NewSpan(start, end, p.lexer.source.ID))
 }
 
 // restPat = '...' pattern

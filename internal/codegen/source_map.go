@@ -41,6 +41,7 @@ type Segment struct {
 func EncodeSegments(groups [][]*Segment) string {
 	output := ""
 	prevGenStartCol := -1
+	prevSrcIndex := -1
 	prevSrcStartLine := -1
 	prevSrcStartCol := -1
 
@@ -65,7 +66,13 @@ func EncodeSegments(groups [][]*Segment) string {
 				prevGenStartCol = s.GeneratedStartColumn
 			}
 
-			output += VLQEncode(s.SourceIndex) // always 0
+			if prevSrcIndex == -1 {
+				output += VLQEncode(s.SourceIndex)
+				prevSrcIndex = s.SourceIndex
+			} else {
+				output += VLQEncode(s.SourceIndex - prevSrcIndex)
+				prevSrcIndex = s.SourceIndex
+			}
 
 			if prevSrcStartLine == -1 {
 				output += VLQEncode(s.SourceStartLine)
@@ -139,7 +146,7 @@ func (s *SourceMapGenerator) AddSegmentForNode(generated Node) {
 
 	segment := &Segment{
 		GeneratedStartColumn: generated.Span().Start.Column - 1,
-		SourceIndex:          0, // always 0 for now
+		SourceIndex:          sourceSpan.SourceID,
 		SourceStartLine:      sourceSpan.Start.Line - 1,
 		SourceStartColumn:    sourceSpan.Start.Column - 1,
 		NameIndex:            -1, // not used for now

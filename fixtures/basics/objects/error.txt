@@ -1,5 +1,5 @@
-lib/objects.esc:27:16: "hello" cannot be assigned to boolean
+lib/main.esc:4:16: "hello" cannot be assigned to boolean
 
-27:     obj3.bar = "hello"
+4:      obj3.bar = "hello"
                    ^^^^^^^
 

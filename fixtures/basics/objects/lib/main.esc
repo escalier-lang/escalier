@@ -1,0 +1,5 @@
+fn main() -> undefined {
+    p.x = 5
+    p.y = 10
+    obj3.bar = "hello"
+}

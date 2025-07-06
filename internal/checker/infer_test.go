@@ -98,6 +98,7 @@ func TestCheckScriptNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{
+				ID:       0,
 				Path:     "input.esc",
 				Contents: test.input,
 			}
@@ -241,6 +242,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			source := &ast.Source{
+				ID:       0,
 				Path:     "input.esc",
 				Contents: test.input,
 			}
