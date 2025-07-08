@@ -837,6 +837,7 @@ func (c *Checker) inferFuncSig(
 }
 
 type ReturnVisitor struct {
+	ast.DefaulVisitor
 	Returns []*ast.ReturnStmt
 }
 
@@ -868,9 +869,10 @@ func (v *ReturnVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool {
 	// its branches.
 	return true
 }
-func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
-func (v *ReturnVisitor) VisitTypeAnn(t ast.TypeAnn) bool { return true }
-func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
+
+// func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
+// func (v *ReturnVisitor) VisitTypeAnn(t ast.TypeAnn) bool { return true }
+// func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
 
 // TODO(#93): infer Throws
 func (c *Checker) inferFuncBody(
