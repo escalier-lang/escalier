@@ -9,42 +9,6 @@ import (
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
-type BindingVisitor struct {
-	ast.DefaulVisitor
-	Bindings []string
-}
-
-func (v *BindingVisitor) EnterPat(pat ast.Pat) bool {
-	switch pat := pat.(type) {
-	case *ast.IdentPat:
-		v.Bindings = append(v.Bindings, pat.Name)
-	case *ast.ObjectPat:
-		for _, elem := range pat.Elems {
-			switch elem := elem.(type) {
-			case *ast.ObjShorthandPat:
-				v.Bindings = append(v.Bindings, elem.Key.Name)
-			}
-		}
-	}
-	return true
-}
-
-func (v *BindingVisitor) EnterStmt(stmt ast.Stmt) bool               { return false }
-func (v *BindingVisitor) EnterExpr(expr ast.Expr) bool               { return false }
-func (v *BindingVisitor) EnterDecl(decl ast.Decl) bool               { return false }
-func (v *BindingVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool { return false }
-func (v *BindingVisitor) EnterTypeAnn(t ast.TypeAnn) bool            { return false }
-func (v *BindingVisitor) EnterLit(lit ast.Lit) bool                  { return false }
-
-func findBindings(pat ast.Pat) []string {
-	visitor := &BindingVisitor{
-		Bindings: []string{},
-	}
-	pat.Accept(visitor)
-
-	return visitor.Bindings
-}
-
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
@@ -57,7 +21,7 @@ func (b *Builder) BuildDefinitions(
 	for _, d := range decls {
 		switch decl := d.(type) {
 		case *ast.VarDecl:
-			keys := findBindings(decl.Pattern)
+			keys := ast.FindBindings(decl.Pattern)
 			sort.Strings(keys)
 
 			decls := make([]*Declarator, 0, len(keys))

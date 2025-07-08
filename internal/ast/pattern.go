@@ -190,3 +190,40 @@ func (p *WildcardPat) Accept(v Visitor) {
 	v.EnterPat(p)
 	v.ExitPat(p)
 }
+
+type BindingVisitor struct {
+	DefaulVisitor
+	Bindings []string
+}
+
+func (v *BindingVisitor) EnterPat(pat Pat) bool {
+	switch pat := pat.(type) {
+	case *IdentPat:
+		v.Bindings = append(v.Bindings, pat.Name)
+	case *ObjectPat:
+		for _, elem := range pat.Elems {
+			switch elem := elem.(type) {
+			case *ObjShorthandPat:
+				v.Bindings = append(v.Bindings, elem.Key.Name)
+			}
+		}
+	}
+	return true
+}
+
+func (v *BindingVisitor) EnterStmt(stmt Stmt) bool               { return false }
+func (v *BindingVisitor) EnterExpr(expr Expr) bool               { return false }
+func (v *BindingVisitor) EnterDecl(decl Decl) bool               { return false }
+func (v *BindingVisitor) EnterObjExprElem(elem ObjExprElem) bool { return false }
+func (v *BindingVisitor) EnterTypeAnn(t TypeAnn) bool            { return false }
+func (v *BindingVisitor) EnterLit(lit Lit) bool                  { return false }
+
+func FindBindings(pat Pat) []string {
+	visitor := &BindingVisitor{
+		DefaulVisitor: DefaulVisitor{},
+		Bindings:      []string{},
+	}
+	pat.Accept(visitor)
+
+	return visitor.Bindings
+}
