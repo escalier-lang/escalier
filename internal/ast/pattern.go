@@ -27,7 +27,8 @@ func NewIdentPat(name string, _default Expr, span Span) *IdentPat {
 	return &IdentPat{Name: name, Default: _default, span: span, inferredType: nil}
 }
 func (p *IdentPat) Accept(v Visitor) {
-	v.VisitPat(p)
+	v.EnterPat(p)
+	v.ExitPat(p)
 }
 
 type ObjPatElem interface {
@@ -91,7 +92,7 @@ func NewObjectPat(elems []ObjPatElem, span Span) *ObjectPat {
 	return &ObjectPat{Elems: elems, span: span, inferredType: nil}
 }
 func (p *ObjectPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ObjKeyValuePat:
@@ -105,6 +106,7 @@ func (p *ObjectPat) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitPat(p)
 }
 
 type TuplePat struct {
@@ -117,11 +119,12 @@ func NewTuplePat(elems []Pat, span Span) *TuplePat {
 	return &TuplePat{Elems: elems, span: span, inferredType: nil}
 }
 func (p *TuplePat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, elem := range p.Elems {
 			elem.Accept(v)
 		}
 	}
+	v.ExitPat(p)
 }
 
 type ExtractorPat struct {
@@ -135,11 +138,12 @@ func NewExtractorPat(name string, args []Pat, span Span) *ExtractorPat {
 	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil}
 }
 func (p *ExtractorPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, arg := range p.Args {
-			v.VisitPat(arg)
+			arg.Accept(v)
 		}
 	}
+	v.ExitPat(p)
 }
 
 type RestPat struct {
@@ -152,9 +156,10 @@ func NewRestPat(pattern Pat, span Span) *RestPat {
 	return &RestPat{Pattern: pattern, span: span, inferredType: nil}
 }
 func (p *RestPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
-		v.VisitPat(p.Pattern)
+	if v.EnterPat(p) {
+		p.Pattern.Accept(v)
 	}
+	v.ExitPat(p)
 }
 
 type LitPat struct {
@@ -167,9 +172,10 @@ func NewLitPat(lit Lit, span Span) *LitPat {
 	return &LitPat{Lit: lit, span: span, inferredType: nil}
 }
 func (p *LitPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		p.Lit.Accept(v)
 	}
+	v.ExitPat(p)
 }
 
 type WildcardPat struct {
@@ -181,5 +187,6 @@ func NewWildcardPat(span Span) *WildcardPat {
 	return &WildcardPat{span: span, inferredType: nil}
 }
 func (p *WildcardPat) Accept(v Visitor) {
-	v.VisitPat(p)
+	v.EnterPat(p)
+	v.ExitPat(p)
 }

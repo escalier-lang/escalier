@@ -56,12 +56,13 @@ func (d *VarDecl) Export() bool  { return d.export }
 func (d *VarDecl) Declare() bool { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
-	if v.VisitDecl(d) {
+	if v.EnterDecl(d) {
 		d.Pattern.Accept(v)
 		if d.Init != nil {
 			d.Init.Accept(v)
 		}
 	}
+	v.ExitDecl(d)
 }
 
 type Param struct {
@@ -110,7 +111,7 @@ func (d *FuncDecl) Export() bool  { return d.export }
 func (d *FuncDecl) Declare() bool { return d.declare }
 func (d *FuncDecl) Span() Span    { return d.span }
 func (d *FuncDecl) Accept(v Visitor) {
-	if v.VisitDecl(d) {
+	if v.EnterDecl(d) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
 		}
@@ -120,6 +121,7 @@ func (d *FuncDecl) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitDecl(d)
 }
 
 type TypeDecl struct {
@@ -146,7 +148,8 @@ func (d *TypeDecl) Declare() bool { return d.declare }
 func (d *TypeDecl) Span() Span    { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
-	if v.VisitDecl(d) {
+	if v.EnterDecl(d) {
 		d.TypeAnn.Accept(v)
 	}
+	v.ExitDecl(d)
 }

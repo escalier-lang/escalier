@@ -10,22 +10,23 @@ import (
 )
 
 type BindingVisitor struct {
+	ast.DefaulVisitor
 	Bindings []string
 }
 
-func (v *BindingVisitor) VisitPat(pat ast.Pat) bool {
+func (v *BindingVisitor) EnterPat(pat ast.Pat) bool {
 	if ident, ok := pat.(*ast.IdentPat); ok {
 		v.Bindings = append(v.Bindings, ident.Name)
 	}
 	return true
 }
 
-func (v *BindingVisitor) VisitStmt(stmt ast.Stmt) bool               { return false }
-func (v *BindingVisitor) VisitExpr(expr ast.Expr) bool               { return false }
-func (v *BindingVisitor) VisitDecl(decl ast.Decl) bool               { return false }
-func (v *BindingVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool { return false }
-func (v *BindingVisitor) VisitTypeAnn(t ast.TypeAnn) bool            { return false }
-func (v *BindingVisitor) VisitLit(lit ast.Lit) bool                  { return false }
+func (v *BindingVisitor) EnterStmt(stmt ast.Stmt) bool               { return false }
+func (v *BindingVisitor) EnterExpr(expr ast.Expr) bool               { return false }
+func (v *BindingVisitor) EnterDecl(decl ast.Decl) bool               { return false }
+func (v *BindingVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool { return false }
+func (v *BindingVisitor) EnterTypeAnn(t ast.TypeAnn) bool            { return false }
+func (v *BindingVisitor) EnterLit(lit ast.Lit) bool                  { return false }
 
 func findBindings(pat ast.Pat) []string {
 	visitor := &BindingVisitor{

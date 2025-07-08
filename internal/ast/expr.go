@@ -44,7 +44,8 @@ type IgnoreExpr struct {
 }
 
 func (e *IgnoreExpr) Accept(v Visitor) {
-	v.VisitExpr(e)
+	v.EnterExpr(e)
+	v.ExitExpr(e)
 }
 
 type EmptyExpr struct {
@@ -56,7 +57,8 @@ func NewEmpty(span Span) *EmptyExpr {
 	return &EmptyExpr{span: span, inferredType: nil}
 }
 func (e *EmptyExpr) Accept(v Visitor) {
-	v.VisitExpr(e)
+	v.EnterExpr(e)
+	v.ExitExpr(e)
 }
 
 type BinaryOp string
@@ -91,10 +93,11 @@ func NewBinary(left, right Expr, op BinaryOp, span Span) *BinaryExpr {
 	return &BinaryExpr{Left: left, Right: right, Op: op, span: span, inferredType: nil}
 }
 func (e *BinaryExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Left.Accept(v)
 		e.Right.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type UnaryOp int
@@ -116,9 +119,10 @@ func NewUnary(op UnaryOp, arg Expr, span Span) *UnaryExpr {
 	return &UnaryExpr{Op: op, Arg: arg, span: span, inferredType: nil}
 }
 func (e *UnaryExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 //sumtype:decl
@@ -171,7 +175,8 @@ func (l *NumLit) Equal(other Lit) bool {
 	return false
 }
 func (l *NumLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func NewString(value string, span Span) *StrLit {
@@ -185,7 +190,8 @@ func (l *StrLit) Equal(other Lit) bool {
 	return false
 }
 func (l *StrLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func NewBoolean(value bool, span Span) *BoolLit {
@@ -199,7 +205,8 @@ func (l *BoolLit) Equal(other Lit) bool {
 	return false
 }
 func (l *BoolLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func NewBigInt(value big.Int, span Span) *BigIntLit {
@@ -213,7 +220,8 @@ func (l *BigIntLit) Equal(other Lit) bool {
 	return false
 }
 func (l *BigIntLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func NewNull(span Span) *NullLit {
@@ -227,7 +235,8 @@ func (l *NullLit) Equal(other Lit) bool {
 	return false
 }
 func (l *NullLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func NewUndefined(span Span) *UndefinedLit {
@@ -241,11 +250,13 @@ func (l *UndefinedLit) Equal(other Lit) bool {
 	return false
 }
 func (l *UndefinedLit) Accept(v Visitor) {
-	v.VisitLit(l)
+	v.EnterLit(l)
+	v.ExitLit(l)
 }
 
 func (e *LiteralExpr) Accept(v Visitor) {
-	v.VisitExpr(e)
+	v.EnterExpr(e)
+	v.ExitExpr(e)
 }
 
 func NewLitExpr(lit Lit) *LiteralExpr {
@@ -263,7 +274,8 @@ func NewIdent(name string, span Span) *IdentExpr {
 	return &IdentExpr{Name: name, Source: nil, span: span, inferredType: nil}
 }
 func (e *IdentExpr) Accept(v Visitor) {
-	v.VisitExpr(e)
+	v.EnterExpr(e)
+	v.ExitExpr(e)
 }
 
 type TypeParam struct {
@@ -311,7 +323,7 @@ func NewFuncExpr(
 	}
 }
 func (e *FuncExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
 		}
@@ -325,6 +337,7 @@ func (e *FuncExpr) Accept(v Visitor) {
 			stmt.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type CallExpr struct {
@@ -339,12 +352,13 @@ func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 	return &CallExpr{Callee: callee, Args: args, OptChain: optChain, span: span, inferredType: nil}
 }
 func (e *CallExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Callee.Accept(v)
 		for _, arg := range e.Args {
 			arg.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type IndexExpr struct {
@@ -359,10 +373,11 @@ func NewIndex(object, index Expr, optChain bool, span Span) *IndexExpr {
 	return &IndexExpr{Object: object, Index: index, OptChain: optChain, span: span, inferredType: nil}
 }
 func (e *IndexExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Object.Accept(v)
 		e.Index.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type MemberExpr struct {
@@ -377,9 +392,10 @@ func NewMember(object Expr, prop *Ident, optChain bool, span Span) *MemberExpr {
 	return &MemberExpr{Object: object, Prop: prop, OptChain: optChain, span: span, inferredType: nil}
 }
 func (e *MemberExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Object.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type TupleExpr struct {
@@ -392,11 +408,12 @@ func NewArray(elems []Expr, span Span) *TupleExpr {
 	return &TupleExpr{Elems: elems, span: span, inferredType: nil}
 }
 func (e *TupleExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, elem := range e.Elems {
 			elem.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type ObjExprElem interface {
@@ -420,9 +437,10 @@ type CallableExpr struct {
 
 func (e *CallableExpr) Span() Span { return e.span }
 func (e *CallableExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Fn.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type ConstructorExpr struct {
@@ -432,9 +450,10 @@ type ConstructorExpr struct {
 
 func (e *ConstructorExpr) Span() Span { return e.span }
 func (e *ConstructorExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Fn.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type MethodExpr struct {
@@ -448,9 +467,10 @@ func NewMethod(name ObjKey, fn *FuncExpr, span Span) *MethodExpr {
 }
 func (e *MethodExpr) Span() Span { return e.span }
 func (e *MethodExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Fn.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type GetterExpr struct {
@@ -464,9 +484,10 @@ func NewGetter(name ObjKey, fn *FuncExpr, span Span) *GetterExpr {
 }
 func (e *GetterExpr) Span() Span { return e.span }
 func (e *GetterExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Fn.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type SetterExpr struct {
@@ -480,9 +501,10 @@ func NewSetter(name ObjKey, fn *FuncExpr, span Span) *SetterExpr {
 }
 func (e *SetterExpr) Span() Span { return e.span }
 func (e *SetterExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Fn.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type PropertyExpr struct {
@@ -498,11 +520,12 @@ func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *P
 }
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		if e.Value != nil {
 			e.Value.Accept(v)
 		}
 	}
+	v.ExitObjExprElem(e)
 }
 
 type RestSpreadExpr struct {
@@ -515,9 +538,10 @@ func NewRestSpread(value Expr, span Span) *RestSpreadExpr {
 }
 func (e *RestSpreadExpr) Span() Span { return e.span }
 func (e *RestSpreadExpr) Accept(v Visitor) {
-	if v.VisitObjExprElem(e) {
+	if v.EnterObjExprElem(e) {
 		e.Value.Accept(v)
 	}
+	v.ExitObjExprElem(e)
 }
 
 type ObjectExpr struct {
@@ -530,11 +554,12 @@ func NewObject(elems []ObjExprElem, span Span) *ObjectExpr {
 	return &ObjectExpr{Elems: elems, span: span, inferredType: nil}
 }
 func (e *ObjectExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, elem := range e.Elems {
 			elem.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type IfElseExpr struct {
@@ -549,7 +574,7 @@ func NewIfElse(cond Expr, cons Block, alt *BlockOrExpr, span Span) *IfElseExpr {
 	return &IfElseExpr{Cond: cond, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfElseExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Cond.Accept(v)
 		for _, stmt := range e.Cons.Stmts {
 			stmt.Accept(v)
@@ -566,6 +591,7 @@ func (e *IfElseExpr) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type IfLetExpr struct {
@@ -581,7 +607,7 @@ func NewIfLet(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span)
 	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (e *IfLetExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Pattern.Accept(v)
 		e.Target.Accept(v)
 		for _, stmt := range e.Cons.Stmts {
@@ -599,6 +625,7 @@ func (e *IfLetExpr) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type MatchCase struct {
@@ -621,7 +648,7 @@ func NewMatch(target Expr, cases []*MatchCase, span Span) *MatchExpr {
 	return &MatchExpr{Target: target, Cases: cases, span: span, inferredType: nil}
 }
 func (e *MatchExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Target.Accept(v)
 		for _, matchCase := range e.Cases {
 			matchCase.Pattern.Accept(v)
@@ -638,6 +665,7 @@ func (e *MatchExpr) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type AssignExpr struct {
@@ -651,10 +679,11 @@ func NewAssign(left, right Expr, span Span) *AssignExpr {
 	return &AssignExpr{Left: left, Right: right, span: span, inferredType: nil}
 }
 func (e *AssignExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Left.Accept(v)
 		e.Right.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type TryCatchExpr struct {
@@ -669,7 +698,7 @@ func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryC
 	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, stmt := range e.Try.Stmts {
 			stmt.Accept(v)
 		}
@@ -693,6 +722,7 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type ThrowExpr struct {
@@ -705,9 +735,10 @@ func NewThrow(arg Expr, span Span) *ThrowExpr {
 	return &ThrowExpr{Arg: arg, span: span, inferredType: nil}
 }
 func (e *ThrowExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type DoExpr struct {
@@ -720,11 +751,12 @@ func NewDo(body Block, span Span) *DoExpr {
 	return &DoExpr{Body: body, span: span, inferredType: nil}
 }
 func (e *DoExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, stmt := range e.Body.Stmts {
 			stmt.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type AwaitExpr struct {
@@ -738,9 +770,10 @@ func NewAwait(arg Expr, span Span) *AwaitExpr {
 	return &AwaitExpr{Arg: arg, Throws: nil, span: span, inferredType: nil}
 }
 func (e *AwaitExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
 	}
+	v.ExitExpr(e)
 }
 
 type TemplateLitExpr struct {
@@ -754,11 +787,12 @@ func NewTemplateLit(quasis []*Quasi, exprs []Expr, span Span) *TemplateLitExpr {
 	return &TemplateLitExpr{Quasis: quasis, Exprs: exprs, span: span, inferredType: nil}
 }
 func (e *TemplateLitExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		for _, expr := range e.Exprs {
 			expr.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type TaggedTemplateLitExpr struct {
@@ -773,12 +807,13 @@ func NewTaggedTemplateLit(tag Expr, quasis []*Quasi, exprs []Expr, span Span) *T
 	return &TaggedTemplateLitExpr{Tag: tag, Quasis: quasis, Exprs: exprs, span: span, inferredType: nil}
 }
 func (e *TaggedTemplateLitExpr) Accept(v Visitor) {
-	if v.VisitExpr(e) {
+	if v.EnterExpr(e) {
 		e.Tag.Accept(v)
 		for _, expr := range e.Exprs {
 			expr.Accept(v)
 		}
 	}
+	v.ExitExpr(e)
 }
 
 type JSXElementExpr struct {
@@ -793,7 +828,8 @@ func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild
 	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {
-	v.VisitExpr(e) // TODO: expand visitor to handle JSX
+	v.EnterExpr(e) // TODO: expand visitor to handle JSX
+	v.ExitExpr(e)
 }
 
 type JSXFragmentExpr struct {
@@ -808,7 +844,8 @@ func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChil
 	return &JSXFragmentExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXFragmentExpr) Accept(v Visitor) {
-	v.VisitExpr(e) // TODO: expand visitor to handle JSX
+	v.EnterExpr(e) // TODO: expand visitor to handle JSX
+	v.ExitExpr(e)
 }
 
 type Block struct {

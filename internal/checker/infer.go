@@ -841,14 +841,14 @@ type ReturnVisitor struct {
 	Returns []*ast.ReturnStmt
 }
 
-func (v *ReturnVisitor) VisitStmt(stmt ast.Stmt) bool {
+func (v *ReturnVisitor) EnterStmt(stmt ast.Stmt) bool {
 	if returnStmt, ok := stmt.(*ast.ReturnStmt); ok {
 		v.Returns = append(v.Returns, returnStmt)
 	}
 
 	return true
 }
-func (v *ReturnVisitor) VisitExpr(expr ast.Expr) bool {
+func (v *ReturnVisitor) EnterExpr(expr ast.Expr) bool {
 	// Don't visit function expressions since we don't want to include any
 	// return statements inside them.
 	if _, ok := expr.(*ast.FuncExpr); ok {
@@ -856,7 +856,7 @@ func (v *ReturnVisitor) VisitExpr(expr ast.Expr) bool {
 	}
 	return true
 }
-func (v *ReturnVisitor) VisitDecl(decl ast.Decl) bool {
+func (v *ReturnVisitor) EnterDecl(decl ast.Decl) bool {
 	// Don't visit function declarations since we don't want to include any
 	// return statements inside them.
 	if _, ok := decl.(*ast.FuncDecl); ok {
@@ -864,15 +864,15 @@ func (v *ReturnVisitor) VisitDecl(decl ast.Decl) bool {
 	}
 	return true
 }
-func (v *ReturnVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool {
+func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	// An expression like if/else could have a return statement inside one of
 	// its branches.
 	return true
 }
 
-// func (v *ReturnVisitor) VisitPat(pat ast.Pat) bool       { return true }
-// func (v *ReturnVisitor) VisitTypeAnn(t ast.TypeAnn) bool { return true }
-// func (v *ReturnVisitor) VisitLit(lit ast.Lit) bool       { return true }
+// func (v *ReturnVisitor) EnterPat(pat ast.Pat) bool       { return true }
+// func (v *ReturnVisitor) EnterTypeAnn(t ast.TypeAnn) bool { return true }
+// func (v *ReturnVisitor) EnterLit(lit ast.Lit) bool       { return true }
 
 // TODO(#93): infer Throws
 func (c *Checker) inferFuncBody(
