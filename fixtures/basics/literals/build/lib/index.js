@@ -1,6 +1,6 @@
-const nums = [5, 1.23, -1];
+export const nums = [5, 1.23, -1];
 const name = "world";
-const str = "world";
+export const str = "world";
 const bools = [true, false];
-const other = [null, undefined];
+export const other = [null, undefined];
 //# sourceMappingURL=./index.js.map

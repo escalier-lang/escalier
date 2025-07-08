@@ -3,23 +3,29 @@ package ast
 import (
 	"reflect"
 	"testing"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // Helper function to create an empty span for testing
 func emptySpan() Span {
-	return Span{}
+	return Span{
+		Start:    Location{Line: 0, Column: 0},
+		End:      Location{Line: 0, Column: 0},
+		SourceID: 0,
+	}
 }
 
 func TestFindBindings(t *testing.T) {
 	tests := []struct {
 		name     string
 		pat      Pat
-		expected []string
+		expected set.Set[string]
 	}{
 		{
 			name:     "simple identifier pattern",
 			pat:      NewIdentPat("x", nil, emptySpan()),
-			expected: []string{"x"},
+			expected: set.FromSlice([]string{"x"}),
 		},
 		{
 			name: "tuple pattern with identifiers",
@@ -28,7 +34,7 @@ func TestFindBindings(t *testing.T) {
 				NewIdentPat("b", nil, emptySpan()),
 				NewIdentPat("c", nil, emptySpan()),
 			}, emptySpan()),
-			expected: []string{"a", "b", "c"},
+			expected: set.FromSlice([]string{"a", "b", "c"}),
 		},
 		{
 			name: "nested tuple pattern",
@@ -39,47 +45,47 @@ func TestFindBindings(t *testing.T) {
 					NewIdentPat("z", nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
-			expected: []string{"x", "y", "z"},
+			expected: set.FromSlice([]string{"x", "y", "z"}),
 		},
 		{
 			name: "object pattern with key-value pairs",
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
-					&Ident{Name: "key1"},
+					&Ident{Name: "key1", span: emptySpan()},
 					NewIdentPat("value1", nil, emptySpan()),
 					nil,
 					emptySpan(),
 				),
 				NewObjKeyValuePat(
-					&Ident{Name: "key2"},
+					&Ident{Name: "key2", span: emptySpan()},
 					NewIdentPat("value2", nil, emptySpan()),
 					nil,
 					emptySpan(),
 				),
 			}, emptySpan()),
-			expected: []string{"value1", "value2"},
+			expected: set.FromSlice([]string{"value1", "value2"}),
 		},
 		{
 			name: "object pattern with shorthand",
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjShorthandPat(
-					&Ident{Name: "shorthand1"},
+					&Ident{Name: "shorthand1", span: emptySpan()},
 					nil,
 					emptySpan(),
 				),
 				NewObjShorthandPat(
-					&Ident{Name: "shorthand2"},
+					&Ident{Name: "shorthand2", span: emptySpan()},
 					nil,
 					emptySpan(),
 				),
 			}, emptySpan()),
-			expected: []string{"shorthand1", "shorthand2"},
+			expected: set.FromSlice([]string{"shorthand1", "shorthand2"}),
 		},
 		{
 			name: "object pattern with rest",
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
-					&Ident{Name: "key"},
+					&Ident{Name: "key", span: emptySpan()},
 					NewIdentPat("value", nil, emptySpan()),
 					nil,
 					emptySpan(),
@@ -89,7 +95,7 @@ func TestFindBindings(t *testing.T) {
 					emptySpan(),
 				),
 			}, emptySpan()),
-			expected: []string{"value", "rest"},
+			expected: set.FromSlice([]string{"value", "rest"}),
 		},
 		{
 			name: "rest pattern",
@@ -97,14 +103,14 @@ func TestFindBindings(t *testing.T) {
 				NewIdentPat("rest", nil, emptySpan()),
 				emptySpan(),
 			),
-			expected: []string{"rest"},
+			expected: set.FromSlice([]string{"rest"}),
 		},
 		{
 			name: "extractor pattern",
 			pat: NewExtractorPat("Some", []Pat{
 				NewIdentPat("inner", nil, emptySpan()),
 			}, emptySpan()),
-			expected: []string{"inner"},
+			expected: set.FromSlice([]string{"inner"}),
 		},
 		{
 			name: "nested extractor pattern",
@@ -113,7 +119,7 @@ func TestFindBindings(t *testing.T) {
 					NewIdentPat("value", nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
-			expected: []string{"value"},
+			expected: set.FromSlice([]string{"value"}),
 		},
 		{
 			name: "literal pattern",
@@ -121,12 +127,12 @@ func TestFindBindings(t *testing.T) {
 				NewNumber(42, emptySpan()),
 				emptySpan(),
 			),
-			expected: []string{}, // Literal patterns don't create bindings
+			expected: set.FromSlice([]string{}), // Literal patterns don't create bindings
 		},
 		{
 			name:     "wildcard pattern",
 			pat:      NewWildcardPat(emptySpan()),
-			expected: []string{}, // Wildcard patterns don't create bindings
+			expected: set.FromSlice([]string{}), // Wildcard patterns don't create bindings
 		},
 		{
 			name: "complex nested pattern",
@@ -134,7 +140,7 @@ func TestFindBindings(t *testing.T) {
 				NewIdentPat("first", nil, emptySpan()),
 				NewObjectPat([]ObjPatElem{
 					NewObjKeyValuePat(
-						&Ident{Name: "nested"},
+						&Ident{Name: "nested", span: emptySpan()},
 						NewTuplePat([]Pat{
 							NewIdentPat("x", nil, emptySpan()),
 							NewIdentPat("y", nil, emptySpan()),
@@ -152,7 +158,7 @@ func TestFindBindings(t *testing.T) {
 					emptySpan(),
 				),
 			}, emptySpan()),
-			expected: []string{"first", "x", "y", "objRest", "tupleRest"},
+			expected: set.FromSlice([]string{"first", "x", "y", "objRest", "tupleRest"}),
 		},
 		{
 			name: "mixed patterns with literals and wildcards",
@@ -162,7 +168,7 @@ func TestFindBindings(t *testing.T) {
 				NewWildcardPat(emptySpan()),
 				NewIdentPat("another", nil, emptySpan()),
 			}, emptySpan()),
-			expected: []string{"valid", "another"},
+			expected: set.FromSlice([]string{"valid", "another"}),
 		},
 	}
 
@@ -186,14 +192,14 @@ func TestFindBindingsOrder(t *testing.T) {
 	}, emptySpan())
 
 	result := FindBindings(pat)
-	expected := []string{"third", "first", "second"}
+	expected := set.FromSlice([]string{"third", "first", "second"})
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("FindBindings() order = %v, expected %v", result, expected)
 	}
 }
 
-func TestFindBindingsDuplicates(t *testing.T) {
+func TestFindBindingsNoDuplicates(t *testing.T) {
 	// Test behavior with duplicate identifier names
 	pat := NewTuplePat([]Pat{
 		NewIdentPat("x", nil, emptySpan()),
@@ -202,7 +208,7 @@ func TestFindBindingsDuplicates(t *testing.T) {
 	}, emptySpan())
 
 	result := FindBindings(pat)
-	expected := []string{"x", "x", "y"} // Should include duplicates
+	expected := set.FromSlice([]string{"x", "y"})
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("FindBindings() with duplicates = %v, expected %v", result, expected)

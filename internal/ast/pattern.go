@@ -2,6 +2,8 @@
 
 package ast
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 type Pat interface {
 	isPat()
 	Node
@@ -193,18 +195,18 @@ func (p *WildcardPat) Accept(v Visitor) {
 
 type BindingVisitor struct {
 	DefaulVisitor
-	Bindings []string
+	Bindings set.Set[string]
 }
 
 func (v *BindingVisitor) EnterPat(pat Pat) bool {
 	switch pat := pat.(type) {
 	case *IdentPat:
-		v.Bindings = append(v.Bindings, pat.Name)
+		v.Bindings.Add(pat.Name)
 	case *ObjectPat:
 		for _, elem := range pat.Elems {
 			switch elem := elem.(type) {
 			case *ObjShorthandPat:
-				v.Bindings = append(v.Bindings, elem.Key.Name)
+				v.Bindings.Add(elem.Key.Name)
 			}
 		}
 	}
@@ -218,10 +220,10 @@ func (v *BindingVisitor) EnterObjExprElem(elem ObjExprElem) bool { return false 
 func (v *BindingVisitor) EnterTypeAnn(t TypeAnn) bool            { return false }
 func (v *BindingVisitor) EnterLit(lit Lit) bool                  { return false }
 
-func FindBindings(pat Pat) []string {
+func FindBindings(pat Pat) set.Set[string] {
 	visitor := &BindingVisitor{
 		DefaulVisitor: DefaulVisitor{},
-		Bindings:      []string{},
+		Bindings:      set.NewSet[string](),
 	}
 	pat.Accept(visitor)
 

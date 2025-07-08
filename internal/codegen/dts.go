@@ -21,7 +21,7 @@ func (b *Builder) BuildDefinitions(
 	for _, d := range decls {
 		switch decl := d.(type) {
 		case *ast.VarDecl:
-			keys := ast.FindBindings(decl.Pattern)
+			keys := ast.FindBindings(decl.Pattern).ToSlice()
 			sort.Strings(keys)
 
 			decls := make([]*Declarator, 0, len(keys))
