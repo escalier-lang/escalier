@@ -15,8 +15,16 @@ type BindingVisitor struct {
 }
 
 func (v *BindingVisitor) EnterPat(pat ast.Pat) bool {
-	if ident, ok := pat.(*ast.IdentPat); ok {
-		v.Bindings = append(v.Bindings, ident.Name)
+	switch pat := pat.(type) {
+	case *ast.IdentPat:
+		v.Bindings = append(v.Bindings, pat.Name)
+	case *ast.ObjectPat:
+		for _, elem := range pat.Elems {
+			switch elem := elem.(type) {
+			case *ast.ObjShorthandPat:
+				v.Bindings = append(v.Bindings, elem.Key.Name)
+			}
+		}
 	}
 	return true
 }

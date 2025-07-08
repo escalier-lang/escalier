@@ -870,10 +870,6 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
-// func (v *ReturnVisitor) EnterPat(pat ast.Pat) bool       { return true }
-// func (v *ReturnVisitor) EnterTypeAnn(t ast.TypeAnn) bool { return true }
-// func (v *ReturnVisitor) EnterLit(lit ast.Lit) bool       { return true }
-
 // TODO(#93): infer Throws
 func (c *Checker) inferFuncBody(
 	ctx Context,

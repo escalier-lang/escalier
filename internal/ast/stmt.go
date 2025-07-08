@@ -20,6 +20,7 @@ func (s *ExprStmt) Accept(v Visitor) {
 	if v.EnterStmt(s) {
 		s.Expr.Accept(v)
 	}
+	v.ExitStmt(s)
 }
 
 type DeclStmt struct {
@@ -36,6 +37,7 @@ func (s *DeclStmt) Accept(v Visitor) {
 	if v.EnterStmt(s) {
 		s.Decl.Accept(v)
 	}
+	v.ExitStmt(s)
 }
 
 type ReturnStmt struct {
@@ -54,4 +56,5 @@ func (s *ReturnStmt) Accept(v Visitor) {
 			s.Expr.Accept(v)
 		}
 	}
+	v.ExitStmt(s)
 }
