@@ -9,33 +9,6 @@ import (
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
-type BindingVisitor struct {
-	Bindings []string
-}
-
-func (v *BindingVisitor) VisitPat(pat ast.Pat) bool {
-	if ident, ok := pat.(*ast.IdentPat); ok {
-		v.Bindings = append(v.Bindings, ident.Name)
-	}
-	return true
-}
-
-func (v *BindingVisitor) VisitStmt(stmt ast.Stmt) bool               { return false }
-func (v *BindingVisitor) VisitExpr(expr ast.Expr) bool               { return false }
-func (v *BindingVisitor) VisitDecl(decl ast.Decl) bool               { return false }
-func (v *BindingVisitor) VisitObjExprElem(elem ast.ObjExprElem) bool { return false }
-func (v *BindingVisitor) VisitTypeAnn(t ast.TypeAnn) bool            { return false }
-func (v *BindingVisitor) VisitLit(lit ast.Lit) bool                  { return false }
-
-func findBindings(pat ast.Pat) []string {
-	visitor := &BindingVisitor{
-		Bindings: []string{},
-	}
-	pat.Accept(visitor)
-
-	return visitor.Bindings
-}
-
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
@@ -48,7 +21,7 @@ func (b *Builder) BuildDefinitions(
 	for _, d := range decls {
 		switch decl := d.(type) {
 		case *ast.VarDecl:
-			keys := findBindings(decl.Pattern)
+			keys := ast.FindBindings(decl.Pattern).ToSlice()
 			sort.Strings(keys)
 
 			decls := make([]*Declarator, 0, len(keys))

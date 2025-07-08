@@ -17,9 +17,10 @@ func NewExprStmt(expr Expr, span Span) *ExprStmt {
 func (*ExprStmt) isStmt()      {}
 func (s *ExprStmt) Span() Span { return s.span }
 func (s *ExprStmt) Accept(v Visitor) {
-	if v.VisitStmt(s) {
+	if v.EnterStmt(s) {
 		s.Expr.Accept(v)
 	}
+	v.ExitStmt(s)
 }
 
 type DeclStmt struct {
@@ -33,9 +34,10 @@ func NewDeclStmt(decl Decl, span Span) *DeclStmt {
 func (*DeclStmt) isStmt()      {}
 func (s *DeclStmt) Span() Span { return s.span }
 func (s *DeclStmt) Accept(v Visitor) {
-	if v.VisitStmt(s) {
+	if v.EnterStmt(s) {
 		s.Decl.Accept(v)
 	}
+	v.ExitStmt(s)
 }
 
 type ReturnStmt struct {
@@ -49,9 +51,10 @@ func NewReturnStmt(expr Expr, span Span) *ReturnStmt {
 func (*ReturnStmt) isStmt()      {}
 func (s *ReturnStmt) Span() Span { return s.span }
 func (s *ReturnStmt) Accept(v Visitor) {
-	if v.VisitStmt(s) {
+	if v.EnterStmt(s) {
 		if s.Expr != nil {
 			s.Expr.Accept(v)
 		}
 	}
+	v.ExitStmt(s)
 }

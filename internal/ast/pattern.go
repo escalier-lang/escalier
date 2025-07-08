@@ -2,6 +2,8 @@
 
 package ast
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 type Pat interface {
 	isPat()
 	Node
@@ -27,7 +29,8 @@ func NewIdentPat(name string, _default Expr, span Span) *IdentPat {
 	return &IdentPat{Name: name, Default: _default, span: span, inferredType: nil}
 }
 func (p *IdentPat) Accept(v Visitor) {
-	v.VisitPat(p)
+	v.EnterPat(p)
+	v.ExitPat(p)
 }
 
 type ObjPatElem interface {
@@ -91,7 +94,7 @@ func NewObjectPat(elems []ObjPatElem, span Span) *ObjectPat {
 	return &ObjectPat{Elems: elems, span: span, inferredType: nil}
 }
 func (p *ObjectPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ObjKeyValuePat:
@@ -105,6 +108,7 @@ func (p *ObjectPat) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitPat(p)
 }
 
 type TuplePat struct {
@@ -117,11 +121,12 @@ func NewTuplePat(elems []Pat, span Span) *TuplePat {
 	return &TuplePat{Elems: elems, span: span, inferredType: nil}
 }
 func (p *TuplePat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, elem := range p.Elems {
 			elem.Accept(v)
 		}
 	}
+	v.ExitPat(p)
 }
 
 type ExtractorPat struct {
@@ -135,11 +140,12 @@ func NewExtractorPat(name string, args []Pat, span Span) *ExtractorPat {
 	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil}
 }
 func (p *ExtractorPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		for _, arg := range p.Args {
-			v.VisitPat(arg)
+			arg.Accept(v)
 		}
 	}
+	v.ExitPat(p)
 }
 
 type RestPat struct {
@@ -152,9 +158,10 @@ func NewRestPat(pattern Pat, span Span) *RestPat {
 	return &RestPat{Pattern: pattern, span: span, inferredType: nil}
 }
 func (p *RestPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
-		v.VisitPat(p.Pattern)
+	if v.EnterPat(p) {
+		p.Pattern.Accept(v)
 	}
+	v.ExitPat(p)
 }
 
 type LitPat struct {
@@ -167,9 +174,10 @@ func NewLitPat(lit Lit, span Span) *LitPat {
 	return &LitPat{Lit: lit, span: span, inferredType: nil}
 }
 func (p *LitPat) Accept(v Visitor) {
-	if v.VisitPat(p) {
+	if v.EnterPat(p) {
 		p.Lit.Accept(v)
 	}
+	v.ExitPat(p)
 }
 
 type WildcardPat struct {
@@ -181,5 +189,43 @@ func NewWildcardPat(span Span) *WildcardPat {
 	return &WildcardPat{span: span, inferredType: nil}
 }
 func (p *WildcardPat) Accept(v Visitor) {
-	v.VisitPat(p)
+	v.EnterPat(p)
+	v.ExitPat(p)
+}
+
+type BindingVisitor struct {
+	DefaulVisitor
+	Bindings set.Set[string]
+}
+
+func (v *BindingVisitor) EnterPat(pat Pat) bool {
+	switch pat := pat.(type) {
+	case *IdentPat:
+		v.Bindings.Add(pat.Name)
+	case *ObjectPat:
+		for _, elem := range pat.Elems {
+			switch elem := elem.(type) {
+			case *ObjShorthandPat:
+				v.Bindings.Add(elem.Key.Name)
+			}
+		}
+	}
+	return true
+}
+
+func (v *BindingVisitor) EnterStmt(stmt Stmt) bool               { return false }
+func (v *BindingVisitor) EnterExpr(expr Expr) bool               { return false }
+func (v *BindingVisitor) EnterDecl(decl Decl) bool               { return false }
+func (v *BindingVisitor) EnterObjExprElem(elem ObjExprElem) bool { return false }
+func (v *BindingVisitor) EnterTypeAnn(t TypeAnn) bool            { return false }
+func (v *BindingVisitor) EnterLit(lit Lit) bool                  { return false }
+
+func FindBindings(pat Pat) set.Set[string] {
+	visitor := &BindingVisitor{
+		DefaulVisitor: DefaulVisitor{},
+		Bindings:      set.NewSet[string](),
+	}
+	pat.Accept(visitor)
+
+	return visitor.Bindings
 }

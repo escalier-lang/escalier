@@ -1,4 +1,4 @@
-const foo = function (temp1) {
+export const foo = function (temp1) {
   const [a, b, c] = temp1;
   return c;
 };

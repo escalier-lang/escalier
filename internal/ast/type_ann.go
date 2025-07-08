@@ -44,9 +44,10 @@ func NewLitTypeAnn(lit Lit, span Span) *LitTypeAnn {
 	return &LitTypeAnn{Lit: lit, span: span, inferredType: nil}
 }
 func (t *LitTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Lit.Accept(v)
 	}
+	v.ExitTypeAnn(t)
 }
 
 type NumberTypeAnn struct {
@@ -58,7 +59,8 @@ func NewNumberTypeAnn(span Span) *NumberTypeAnn {
 	return &NumberTypeAnn{span: span, inferredType: nil}
 }
 func (t *NumberTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type StringTypeAnn struct {
@@ -70,7 +72,8 @@ func NewStringTypeAnn(span Span) *StringTypeAnn {
 	return &StringTypeAnn{span: span, inferredType: nil}
 }
 func (t *StringTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type BooleanTypeAnn struct {
@@ -82,7 +85,8 @@ func NewBooleanTypeAnn(span Span) *BooleanTypeAnn {
 	return &BooleanTypeAnn{span: span, inferredType: nil}
 }
 func (t *BooleanTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type UnknownTypeAnn struct {
@@ -94,7 +98,8 @@ func NewUnknownTypeAnn(span Span) *UnknownTypeAnn {
 	return &UnknownTypeAnn{span: span, inferredType: nil}
 }
 func (t *UnknownTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type NeverTypeAnn struct {
@@ -106,7 +111,8 @@ func NewNeverTypeAnn(span Span) *NeverTypeAnn {
 	return &NeverTypeAnn{span: span, inferredType: nil}
 }
 func (t *NeverTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type ObjTypeAnnElem interface{ isObjTypeAnnElem() }
@@ -178,7 +184,7 @@ func NewObjectTypeAnn(elems []ObjTypeAnnElem, span Span) *ObjectTypeAnn {
 	return &ObjectTypeAnn{Elems: elems, span: span, inferredType: nil}
 }
 func (t *ObjectTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, elem := range t.Elems {
 			switch e := (elem).(type) {
 			case *CallableTypeAnn:
@@ -201,6 +207,7 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 			}
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type TupleTypeAnn struct {
@@ -213,11 +220,12 @@ func NewTupleTypeAnn(elems []TypeAnn, span Span) *TupleTypeAnn {
 	return &TupleTypeAnn{Elems: elems, span: span, inferredType: nil}
 }
 func (t *TupleTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, elem := range t.Elems {
 			elem.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type UnionTypeAnn struct {
@@ -230,11 +238,12 @@ func NewUnionTypeAnn(types []TypeAnn, span Span) *UnionTypeAnn {
 	return &UnionTypeAnn{Types: types, span: span, inferredType: nil}
 }
 func (t *UnionTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, typ := range t.Types {
 			typ.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type IntersectionTypeAnn struct {
@@ -247,11 +256,12 @@ func NewIntersectionTypeAnn(types []TypeAnn, span Span) *IntersectionTypeAnn {
 	return &IntersectionTypeAnn{Types: types, span: span, inferredType: nil}
 }
 func (t *IntersectionTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, typ := range t.Types {
 			typ.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type TypeRefTypeAnn struct {
@@ -265,11 +275,12 @@ func NewRefTypeAnn(name string, typeArgs []TypeAnn, span Span) *TypeRefTypeAnn {
 	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span, inferredType: nil}
 }
 func (t *TypeRefTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, typeArg := range t.TypeArgs {
 			typeArg.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type FuncTypeAnn struct {
@@ -298,7 +309,7 @@ func NewFuncTypeAnn(
 	}
 }
 func (t *FuncTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, param := range t.Params {
 			param.Pattern.Accept(v)
 		}
@@ -307,6 +318,7 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 			t.Throws.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type KeyOfTypeAnn struct {
@@ -319,9 +331,10 @@ func NewKeyOfTypeAnn(typ TypeAnn, span Span) *KeyOfTypeAnn {
 	return &KeyOfTypeAnn{Type: typ, span: span, inferredType: nil}
 }
 func (t *KeyOfTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Type.Accept(v)
 	}
+	v.ExitTypeAnn(t)
 }
 
 type TypeOfTypeAnn struct {
@@ -334,7 +347,8 @@ func NewTypeOfTypeAnn(value QualIdent, span Span) *TypeOfTypeAnn {
 	return &TypeOfTypeAnn{Value: value, span: span, inferredType: nil}
 }
 func (t *TypeOfTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type IndexTypeAnn struct {
@@ -348,10 +362,11 @@ func NewIndexTypeAnn(target TypeAnn, index TypeAnn, span Span) *IndexTypeAnn {
 	return &IndexTypeAnn{Target: target, Index: index, span: span, inferredType: nil}
 }
 func (t *IndexTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Target.Accept(v)
 		t.Index.Accept(v)
 	}
+	v.ExitTypeAnn(t)
 }
 
 type CondTypeAnn struct {
@@ -367,12 +382,13 @@ func NewCondTypeAnn(check, extends, cons, alt TypeAnn, span Span) *CondTypeAnn {
 	return &CondTypeAnn{Check: check, Extends: extends, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
 func (t *CondTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Check.Accept(v)
 		t.Extends.Accept(v)
 		t.Cons.Accept(v)
 		t.Alt.Accept(v)
 	}
+	v.ExitTypeAnn(t)
 }
 
 type MatchTypeAnn struct {
@@ -391,13 +407,14 @@ func NewMatchTypeAnn(target TypeAnn, cases []*MatchTypeAnnCase, span Span) *Matc
 	return &MatchTypeAnn{Target: target, Cases: cases, span: span, inferredType: nil}
 }
 func (t *MatchTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Target.Accept(v)
 		for _, c := range t.Cases {
 			c.Extends.Accept(v)
 			c.Cons.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type InferTypeAnn struct {
@@ -410,7 +427,8 @@ func NewInferTypeAnn(name string, span Span) *InferTypeAnn {
 	return &InferTypeAnn{Name: name, span: span, inferredType: nil}
 }
 func (t *InferTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type WildcardTypeAnn struct {
@@ -422,7 +440,8 @@ func NewWildcardTypeAnn(span Span) *WildcardTypeAnn {
 	return &WildcardTypeAnn{span: span, inferredType: nil}
 }
 func (t *WildcardTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type Quasi struct {
@@ -441,11 +460,12 @@ func NewTemplateLitTypeAnn(quasis []*Quasi, typeAnns []TypeAnn, span Span) *Temp
 	return &TemplateLitTypeAnn{Quasis: quasis, TypeAnns: typeAnns, span: span, inferredType: nil}
 }
 func (t *TemplateLitTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, typeAnn := range t.TypeAnns {
 			typeAnn.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type IntrinsicTypeAnn struct {
@@ -457,7 +477,8 @@ func NewIntrinsicTypeAnn(span Span) *IntrinsicTypeAnn {
 	return &IntrinsicTypeAnn{span: span, inferredType: nil}
 }
 func (t *IntrinsicTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }
 
 type ImportType struct {
@@ -472,11 +493,12 @@ func NewImportType(source string, qualifier QualIdent, typeArgs []TypeAnn, span 
 	return &ImportType{Source: source, Qualifier: qualifier, TypeArgs: typeArgs, span: span, inferredType: nil}
 }
 func (t *ImportType) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		for _, typeArg := range t.TypeArgs {
 			typeArg.Accept(v)
 		}
 	}
+	v.ExitTypeAnn(t)
 }
 
 type MutableTypeAnn struct {
@@ -489,9 +511,10 @@ func NewMutableTypeAnn(target TypeAnn, span Span) *MutableTypeAnn {
 	return &MutableTypeAnn{Target: target, span: span, inferredType: nil}
 }
 func (t *MutableTypeAnn) Accept(v Visitor) {
-	if v.VisitTypeAnn(t) {
+	if v.EnterTypeAnn(t) {
 		t.Target.Accept(v)
 	}
+	v.ExitTypeAnn(t)
 }
 
 type EmptyTypeAnn struct {
@@ -503,5 +526,6 @@ func NewEmptyTypeAnn(span Span) *EmptyTypeAnn {
 	return &EmptyTypeAnn{span: span, inferredType: nil}
 }
 func (t *EmptyTypeAnn) Accept(v Visitor) {
-	v.VisitTypeAnn(t)
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
 }

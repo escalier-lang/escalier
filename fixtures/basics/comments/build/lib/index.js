@@ -1,4 +1,4 @@
-const x = 5;
+export const x = 5;
 const y = x + 5;
 export function add(temp1, temp2) {
   const a = temp1;

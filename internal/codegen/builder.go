@@ -56,7 +56,7 @@ func Zip[T, U any](ts []T, us []U) []Pair[T, U] {
 	return pairs
 }
 
-func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
+func (b *Builder) buildPattern(p ast.Pat, target Expr, export bool) ([]Expr, []Stmt) {
 
 	var checks []Expr
 	var stmts []Stmt
@@ -209,7 +209,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 				Kind:    VariableKind(ast.ValKind),
 				Decls:   decls,
 				declare: false,
-				export:  false,
+				export:  export,
 				span:    nil,
 				source:  nil, // TODO
 			}
@@ -223,7 +223,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
-				argChecks, argStmts := b.buildPattern(arg, temp)
+				argChecks, argStmts := b.buildPattern(arg, temp, export)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
 			}
@@ -263,7 +263,7 @@ func (b *Builder) buildPattern(p ast.Pat, target Expr) ([]Expr, []Stmt) {
 			Kind:    VariableKind(ast.ValKind),
 			Decls:   decls,
 			declare: false, // TODO
-			export:  false, // TODO
+			export:  export,
 			span:    nil,
 			source:  nil,
 		}
@@ -354,7 +354,7 @@ func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr)
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export())
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
@@ -537,11 +537,11 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		switch pat := p.Pattern.(type) {
 		case *ast.RestPat:
-			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, nil))
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, nil), false)
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, nil))
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, nil), false)
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 		}
 
