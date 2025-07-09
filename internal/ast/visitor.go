@@ -8,6 +8,7 @@ type Visitor interface {
 	EnterStmt(s Stmt) bool
 	EnterDecl(d Decl) bool
 	EnterTypeAnn(t TypeAnn) bool
+	EnterBlock(b Block) bool
 
 	ExitLit(l Lit)
 	ExitPat(p Pat)
@@ -16,6 +17,7 @@ type Visitor interface {
 	ExitStmt(s Stmt)
 	ExitDecl(d Decl)
 	ExitTypeAnn(t TypeAnn)
+	ExitBlock(b Block)
 }
 
 type DefaulVisitor struct{}
@@ -48,6 +50,10 @@ func (v *DefaulVisitor) EnterTypeAnn(t TypeAnn) bool {
 	return true
 }
 
+func (v *DefaulVisitor) EnterBlock(b Block) bool {
+	return true
+}
+
 func (v *DefaulVisitor) ExitLit(l Lit)                 {}
 func (v *DefaulVisitor) ExitPat(p Pat)                 {}
 func (v *DefaulVisitor) ExitExpr(e Expr)               {}
@@ -55,3 +61,4 @@ func (v *DefaulVisitor) ExitObjExprElem(e ObjExprElem) {}
 func (v *DefaulVisitor) ExitStmt(s Stmt)               {}
 func (v *DefaulVisitor) ExitDecl(d Decl)               {}
 func (v *DefaulVisitor) ExitTypeAnn(t TypeAnn)         {}
+func (v *DefaulVisitor) ExitBlock(b Block)             {}

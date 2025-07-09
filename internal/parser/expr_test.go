@@ -140,6 +140,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncCall": {
 			input: "foo()",
 		},
+		"MethodCall": {
+			input: "foo.bar()/baz",
+		},
 	}
 
 	for name, test := range tests {
