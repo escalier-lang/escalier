@@ -5,10 +5,22 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
+type DepKind int
+
+const (
+	DepKindValue DepKind = iota
+	DepKindType
+)
+
+type DepBinding struct {
+	Name string
+	Kind DepKind
+}
+
 // ModuleBindingVisitor collects all binding names introduced by a module
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
-	Bindings map[string]ast.Decl
+	Bindings map[DepBinding]ast.Decl
 }
 
 // EnterDecl visits declarations and extracts binding names
@@ -18,17 +30,20 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 		// Extract bindings from the pattern
 		patternBindings := ast.FindBindings(d.Pattern)
 		for binding := range patternBindings {
-			v.Bindings[binding] = d
+			depBinding := DepBinding{Name: binding, Kind: DepKindValue}
+			v.Bindings[depBinding] = d
 		}
 	case *ast.FuncDecl:
 		// Function declarations introduce a binding with the function name
 		if d.Name != nil && d.Name.Name != "" {
-			v.Bindings[d.Name.Name] = d
+			depBinding := DepBinding{Name: d.Name.Name, Kind: DepKindValue}
+			v.Bindings[depBinding] = d
 		}
 	case *ast.TypeDecl:
 		// Type declarations introduce a binding with the type name
 		if d.Name != nil && d.Name.Name != "" {
-			v.Bindings[d.Name.Name] = d
+			depBinding := DepBinding{Name: d.Name.Name, Kind: DepKindType}
+			v.Bindings[depBinding] = d
 		}
 	}
 	return false // Don't traverse into the declaration's body
@@ -44,10 +59,10 @@ func (v *ModuleBindingVisitor) EnterLit(lit ast.Lit) bool                  { ret
 func (v *ModuleBindingVisitor) EnterBlock(block ast.Block) bool            { return false }
 
 // FindModuleBindings returns all binding names introduced by a module
-func FindModuleBindings(module *ast.Module) map[string]ast.Decl {
+func FindModuleBindings(module *ast.Module) map[DepBinding]ast.Decl {
 	visitor := &ModuleBindingVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
-		Bindings:      make(map[string]ast.Decl),
+		Bindings:      make(map[DepBinding]ast.Decl),
 	}
 
 	// Visit all declarations in the module
@@ -61,9 +76,9 @@ func FindModuleBindings(module *ast.Module) map[string]ast.Decl {
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
 	ast.DefaulVisitor
-	ValidBindings set.Set[string]   // Valid dependencies from the current module
-	Dependencies  set.Set[string]   // Found dependencies
-	LocalBindings []set.Set[string] // Stack of local scopes
+	ValidBindings set.Set[DepBinding] // Valid dependencies from the current module
+	Dependencies  set.Set[DepBinding] // Found dependencies
+	LocalBindings []set.Set[string]   // Stack of local scopes (still strings for local scope)
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -101,8 +116,8 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		// Check if this identifier is a valid dependency
-		if v.ValidBindings.Contains(e.Name) && !v.isLocalBinding(e.Name) {
-			v.Dependencies.Add(e.Name)
+		if binding, exists := v.hasValidBinding(e.Name); exists && !v.isLocalBinding(e.Name) {
+			v.Dependencies.Add(binding)
 		}
 		return false // Don't traverse into IdentExpr
 	case *ast.FuncExpr:
@@ -144,8 +159,8 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Check if this type reference is a valid dependency
-		if v.ValidBindings.Contains(t.Name) && !v.isLocalBinding(t.Name) {
-			v.Dependencies.Add(t.Name)
+		if binding, exists := v.hasValidBinding(t.Name); exists && !v.isLocalBinding(t.Name) {
+			v.Dependencies.Add(binding)
 		}
 		return true // Continue traversing type arguments
 	default:
@@ -186,13 +201,23 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 	return false
 }
 
+// hasValidBinding checks if a binding name exists in ValidBindings
+func (v *DependencyVisitor) hasValidBinding(name string) (DepBinding, bool) {
+	for binding := range v.ValidBindings {
+		if binding.Name == name {
+			return binding, true
+		}
+	}
+	return DepBinding{}, false
+}
+
 // FindDeclDependencies finds all IdentExpr dependencies in a declaration
 // that are valid module-level bindings, while properly handling scope
-func FindDeclDependencies(decl ast.Decl, validBindings set.Set[string]) set.Set[string] {
+func FindDeclDependencies(decl ast.Decl, validBindings set.Set[DepBinding]) set.Set[DepBinding] {
 	visitor := &DependencyVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
 		ValidBindings: validBindings,
-		Dependencies:  set.NewSet[string](),
+		Dependencies:  set.NewSet[DepBinding](),
 		LocalBindings: make([]set.Set[string], 0),
 	}
 

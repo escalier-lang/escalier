@@ -14,34 +14,50 @@ import (
 func TestFindModuleBindings(t *testing.T) {
 	tests := map[string]struct {
 		input    string
-		expected []string
+		expected []DepBinding
 	}{
 		"VarDecl_SimpleIdent": {
 			input: `
 				val a = 5
 				var b = 10
 			`,
-			expected: []string{"a", "b"},
+			expected: []DepBinding{
+				{Name: "a", Kind: DepKindValue},
+				{Name: "b", Kind: DepKindValue},
+			},
 		},
 		"VarDecl_TupleDestructuring": {
 			input: `
 				val [x, y] = [1, 2]
 				var [first, second] = getTuple()
 			`,
-			expected: []string{"x", "y", "first", "second"},
+			expected: []DepBinding{
+				{Name: "x", Kind: DepKindValue},
+				{Name: "y", Kind: DepKindValue},
+				{Name: "first", Kind: DepKindValue},
+				{Name: "second", Kind: DepKindValue},
+			},
 		},
 		"VarDecl_ObjectDestructuring": {
 			input: `
 				val {name, age} = person
 				var {x: width, y: height} = dimensions
 			`,
-			expected: []string{"name", "age", "width", "height"},
+			expected: []DepBinding{
+				{Name: "name", Kind: DepKindValue},
+				{Name: "age", Kind: DepKindValue},
+				{Name: "width", Kind: DepKindValue},
+				{Name: "height", Kind: DepKindValue},
+			},
 		},
 		"VarDecl_ObjectShorthand": {
 			input: `
 				val {foo, bar} = obj
 			`,
-			expected: []string{"foo", "bar"},
+			expected: []DepBinding{
+				{Name: "foo", Kind: DepKindValue},
+				{Name: "bar", Kind: DepKindValue},
+			},
 		},
 		"FuncDecl_Simple": {
 			input: `
@@ -52,14 +68,20 @@ func TestFindModuleBindings(t *testing.T) {
 					return x * y
 				}
 			`,
-			expected: []string{"add", "multiply"},
+			expected: []DepBinding{
+				{Name: "add", Kind: DepKindValue},
+				{Name: "multiply", Kind: DepKindValue},
+			},
 		},
 		"TypeDecl_Simple": {
 			input: `
 				type Point = {x: number, y: number}
 				type Color = "red" | "green" | "blue"
 			`,
-			expected: []string{"Point", "Color"},
+			expected: []DepBinding{
+				{Name: "Point", Kind: DepKindType},
+				{Name: "Color", Kind: DepKindType},
+			},
 		},
 		"Mixed_Declarations": {
 			input: `
@@ -70,25 +92,42 @@ func TestFindModuleBindings(t *testing.T) {
 				}
 				var [admin, guest] = [createUser("admin", 25), defaultUser]
 			`,
-			expected: []string{"User", "defaultUser", "createUser", "admin", "guest"},
+			expected: []DepBinding{
+				{Name: "User", Kind: DepKindType},
+				{Name: "defaultUser", Kind: DepKindValue},
+				{Name: "createUser", Kind: DepKindValue},
+				{Name: "admin", Kind: DepKindValue},
+				{Name: "guest", Kind: DepKindValue},
+			},
 		},
 		"Empty_Module": {
 			input:    ``,
-			expected: []string{},
+			expected: []DepBinding{},
 		},
 		"VarDecl_NestedPatterns": {
 			input: `
 				val {user: {name, profile: {email}}} = data
 				val [first, {x, y}] = coordinates
 			`,
-			expected: []string{"name", "email", "first", "x", "y"},
+			expected: []DepBinding{
+				{Name: "name", Kind: DepKindValue},
+				{Name: "email", Kind: DepKindValue},
+				{Name: "first", Kind: DepKindValue},
+				{Name: "x", Kind: DepKindValue},
+				{Name: "y", Kind: DepKindValue},
+			},
 		},
 		"VarDecl_RestPatterns": {
 			input: `
 				val [head, ...tail] = list
 				val {id, ...rest} = object
 			`,
-			expected: []string{"head", "tail", "id", "rest"},
+			expected: []DepBinding{
+				{Name: "head", Kind: DepKindValue},
+				{Name: "tail", Kind: DepKindValue},
+				{Name: "id", Kind: DepKindValue},
+				{Name: "rest", Kind: DepKindValue},
+			},
 		},
 	}
 
@@ -112,10 +151,10 @@ func TestFindModuleBindings(t *testing.T) {
 			// Find bindings
 			bindings := FindModuleBindings(module)
 
-			// Extract binding names from the map
-			actualBindings := make([]string, 0, len(bindings))
-			for name := range bindings {
-				actualBindings = append(actualBindings, name)
+			// Extract binding objects from the map
+			actualBindings := make([]DepBinding, 0, len(bindings))
+			for binding := range bindings {
+				actualBindings = append(actualBindings, binding)
 			}
 
 			// Sort both slices for reliable comparison
@@ -129,7 +168,7 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 	// Test edge cases with empty or missing names
 	tests := map[string]struct {
 		setupModule func() *ast.Module
-		expected    []string
+		expected    []DepBinding
 	}{
 		"FuncDecl_NilName": {
 			setupModule: func() *ast.Module {
@@ -155,7 +194,7 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 					},
 				}
 			},
-			expected: []string{},
+			expected: []DepBinding{},
 		},
 		"FuncDecl_EmptyName": {
 			setupModule: func() *ast.Module {
@@ -181,7 +220,7 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 					},
 				}
 			},
-			expected: []string{},
+			expected: []DepBinding{},
 		},
 		"TypeDecl_NilName": {
 			setupModule: func() *ast.Module {
@@ -197,7 +236,7 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 					},
 				}
 			},
-			expected: []string{},
+			expected: []DepBinding{},
 		},
 		"TypeDecl_EmptyName": {
 			setupModule: func() *ast.Module {
@@ -213,7 +252,7 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 					},
 				}
 			},
-			expected: []string{},
+			expected: []DepBinding{},
 		},
 	}
 
@@ -223,10 +262,10 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 			module := test.setupModule()
 			bindings := FindModuleBindings(module)
 
-			// Extract binding names from the map
-			actualBindings := make([]string, 0, len(bindings))
-			for name := range bindings {
-				actualBindings = append(actualBindings, name)
+			// Extract binding objects from the map
+			actualBindings := make([]DepBinding, 0, len(bindings))
+			for binding := range bindings {
+				actualBindings = append(actualBindings, binding)
 			}
 
 			assert.ElementsMatch(t, test.expected, actualBindings,
@@ -245,38 +284,38 @@ func TestFindModuleBindings_NilModule(t *testing.T) {
 func TestFindDeclDependencies(t *testing.T) {
 	tests := map[string]struct {
 		declCode      string
-		validBindings []string
-		expectedDeps  []string
+		validBindings []DepBinding
+		expectedDeps  []DepBinding
 		declType      string // "var", "func", or "type"
 	}{
 		"VarDecl_SimpleDependency": {
 			declCode:      `val result = globalVar + 5`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{"globalVar"},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
 			declType:      "var",
 		},
 		"VarDecl_MultipleDependencies": {
 			declCode:      `val result = globalVar + otherVar * thirdVar`,
-			validBindings: []string{"globalVar", "otherVar", "thirdVar", "unused"},
-			expectedDeps:  []string{"globalVar", "otherVar", "thirdVar"},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}, {Name: "thirdVar", Kind: DepKindValue}, {Name: "unused", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}, {Name: "thirdVar", Kind: DepKindValue}},
 			declType:      "var",
 		},
 		"VarDecl_NoDependencies": {
 			declCode:      `val result = 42`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 			declType:      "var",
 		},
 		"VarDecl_NonValidDependency": {
 			declCode:      `val result = unknownVar + 5`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 			declType:      "var",
 		},
 		"VarDecl_WithFunctionCall": {
 			declCode:      `val result = myFunction(globalVar, 5)`,
-			validBindings: []string{"myFunction", "globalVar"},
-			expectedDeps:  []string{"myFunction", "globalVar"},
+			validBindings: []DepBinding{{Name: "myFunction", Kind: DepKindValue}, {Name: "globalVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "myFunction", Kind: DepKindValue}, {Name: "globalVar", Kind: DepKindValue}},
 			declType:      "var",
 		},
 		"VarDecl_IfElseScope": {
@@ -286,24 +325,24 @@ func TestFindDeclDependencies(t *testing.T) {
 			} else {
 				false
 			}`,
-			validBindings: []string{"globalVar", "cond"},
-			expectedDeps:  []string{"cond"},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "cond", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "cond", Kind: DepKindValue}},
 			declType:      "var",
 		},
 		"FuncDecl_SimpleDependency": {
 			declCode: `fn testFunc(a, b) {
 				return globalVar + a
 			}`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{"globalVar"},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
 			declType:      "func",
 		},
 		"FuncDecl_ParameterShadowing": {
 			declCode: `fn testFunc(globalVar, b) {
 				return globalVar + b
 			}`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{}, // globalVar is shadowed by parameter
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{}, // globalVar is shadowed by parameter
 			declType:      "func",
 		},
 		"FuncDecl_LocalVariableShadowing": {
@@ -311,8 +350,8 @@ func TestFindDeclDependencies(t *testing.T) {
 				val globalVar = 10
 				return globalVar + a
 			}`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{}, // globalVar is shadowed by local variable
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{}, // globalVar is shadowed by local variable
 			declType:      "func",
 		},
 		"FuncDecl_NestedScope": {
@@ -322,8 +361,8 @@ func TestFindDeclDependencies(t *testing.T) {
 					return local + otherVar + x
 				}
 			}`,
-			validBindings: []string{"globalVar", "otherVar"},
-			expectedDeps:  []string{"globalVar", "otherVar"},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "otherVar", Kind: DepKindValue}},
 			declType:      "func",
 		},
 		"FuncDecl_ParameterInNestedFunction": {
@@ -332,40 +371,40 @@ func TestFindDeclDependencies(t *testing.T) {
 					return a + c + globalVar
 				}
 			}`,
-			validBindings: []string{"globalVar", "a"},
-			expectedDeps:  []string{"globalVar"}, // 'a' is a parameter, not a dependency
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "a", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}}, // 'a' is a parameter, not a dependency
 			declType:      "func",
 		},
 		"TypeDecl_SimpleDependency": {
 			declCode:      `type MyType = BaseType`,
-			validBindings: []string{"BaseType", "OtherType"},
-			expectedDeps:  []string{"BaseType"},
+			validBindings: []DepBinding{{Name: "BaseType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "BaseType", Kind: DepKindType}},
 			declType:      "type",
 		},
 		"TypeDecl_ComplexType": {
 			declCode:      `type MyType = {field: BaseType, other: OtherType}`,
-			validBindings: []string{"BaseType", "OtherType", "UnusedType"},
-			expectedDeps:  []string{"BaseType", "OtherType"},
+			validBindings: []DepBinding{{Name: "BaseType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}, {Name: "UnusedType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "BaseType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
 			declType:      "type",
 		},
 		"TypeDecl_NoDependencies": {
 			declCode:      `type MyType = string`,
-			validBindings: []string{"BaseType", "OtherType"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "BaseType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{},
 			declType:      "type",
 		},
 		"VarDecl_NoInitializer": {
 			declCode:      `declare var result: number`,
-			validBindings: []string{"globalVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 			declType:      "var",
 		},
 		"FuncDecl_NoBody": {
 			declCode: `fn testFunc(a, b) {
 				return a + b
 			}`,
-			validBindings: []string{"globalVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 			declType:      "func",
 		},
 	}
@@ -402,7 +441,7 @@ func TestFindDeclDependencies(t *testing.T) {
 			assert.Len(t, module.Decls, 1, "Module should have exactly one declaration")
 
 			// Create valid bindings set
-			validBindings := set.NewSet[string]()
+			validBindings := set.NewSet[DepBinding]()
 			for _, binding := range test.validBindings {
 				validBindings.Add(binding)
 			}
@@ -422,8 +461,8 @@ func TestFindDeclDependencies(t *testing.T) {
 func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 	tests := map[string]struct {
 		setupDecl     func() ast.Decl
-		validBindings []string
-		expectedDeps  []string
+		validBindings []DepBinding
+		expectedDeps  []DepBinding
 	}{
 		"VarDecl_NilInit": {
 			setupDecl: func() ast.Decl {
@@ -439,8 +478,8 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 					},
 				}
 			},
-			validBindings: []string{"globalVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 		},
 		"FuncDecl_NilBody": {
 			setupDecl: func() ast.Decl {
@@ -455,8 +494,8 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 					Body: nil, // No body
 				}
 			},
-			validBindings: []string{"globalVar"},
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{},
 		},
 		"EmptyValidBindings": {
 			setupDecl: func() ast.Decl {
@@ -473,8 +512,8 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 					TypeAnn: nil,
 				}
 			},
-			validBindings: []string{}, // No valid bindings
-			expectedDeps:  []string{},
+			validBindings: []DepBinding{}, // No valid bindings
+			expectedDeps:  []DepBinding{},
 		},
 	}
 
@@ -484,7 +523,7 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			decl := test.setupDecl()
 
 			// Create valid bindings set
-			validBindings := set.NewSet[string]()
+			validBindings := set.NewSet[DepBinding]()
 			for _, binding := range test.validBindings {
 				validBindings.Add(binding)
 			}
