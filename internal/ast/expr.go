@@ -519,6 +519,18 @@ func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *P
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
+		switch key := e.Name.(type) {
+		case *IdentExpr:
+			// We don't want these keys to be treated as identifiers
+			// key.Accept(v)
+		case *StrLit:
+			key.Accept(v)
+		case *NumLit:
+			key.Accept(v)
+		case *ComputedKey:
+			key.Accept(v)
+		}
+
 		if e.Value != nil {
 			e.Value.Accept(v)
 		}

@@ -329,6 +329,17 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{{Name: "cond", Kind: DepKindValue}},
 			declType:      "var",
 		},
+		"VarDecl_IfElseScopeUseGlobalBeforeLocalDecl": {
+			declCode: `val result = if cond {
+				globalVar = true
+				val globalVar = 5
+			} else {
+				false
+			}`,
+			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "cond", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "globalVar", Kind: DepKindValue}, {Name: "cond", Kind: DepKindValue}},
+			declType:      "var",
+		},
 		"FuncDecl_SimpleDependency": {
 			declCode: `fn testFunc(a, b) {
 				return globalVar + a
@@ -406,6 +417,31 @@ func TestFindDeclDependencies(t *testing.T) {
 			validBindings: []DepBinding{{Name: "globalVar", Kind: DepKindValue}},
 			expectedDeps:  []DepBinding{},
 			declType:      "func",
+		},
+		"VarDecl_WithTypeAnnotation": {
+			declCode:      `val p: Point = {x: 5, y: 10}`,
+			validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "Point", Kind: DepKindType}},
+			declType:      "var",
+		},
+		"VarDecl_ComputedKeys": {
+			declCode:      `val p: Point = {[x]: 5, [y]: 10}`,
+			validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			declType:      "var",
+		},
+		// TODO: handle property shorthand correctly
+		// "VarDecl_PropertyShorthand": {
+		// 	declCode:      `val p: Point = {x, y}`,
+		// 	validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+		// 	expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+		// 	declType:      "var",
+		// },
+		"VarDecl_IgnoresNonPropertyShorthandKeys": {
+			declCode:      `val p: Point = {x: a, y: b}`,
+			validBindings: []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			declType:      "var",
 		},
 	}
 
@@ -538,4 +574,178 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 				"Expected dependencies %v, got %v", test.expectedDeps, actualDeps)
 		})
 	}
+}
+
+func TestBuildDepGraph(t *testing.T) {
+	tests := map[string]struct {
+		input                string
+		expectedBindings     []DepBinding
+		expectedDependencies map[string][]string // binding name -> dependency names
+	}{
+		"Simple_Dependencies": {
+			input: `
+				type User = {name: string, age: number}
+				val defaultAge = 18
+				fn createUser(name) {
+					return {name: name, age: defaultAge}
+				}
+				val admin = createUser("admin")
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "User", Kind: DepKindType},
+				{Name: "defaultAge", Kind: DepKindValue},
+				{Name: "createUser", Kind: DepKindValue},
+				{Name: "admin", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"User":       {},
+				"defaultAge": {},
+				"createUser": {"defaultAge"},
+				"admin":      {"createUser"},
+			},
+		},
+		"Type_Dependencies": {
+			input: `
+				type Point = {x: number, y: number}
+				type Shape = {center: Point, radius: number}
+				val origin: Point = {x: 0, y: 0}
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "Point", Kind: DepKindType},
+				{Name: "Shape", Kind: DepKindType},
+				{Name: "origin", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"Point":  {},
+				"Shape":  {"Point"},
+				"origin": {"Point"},
+			},
+		},
+		"No_Dependencies": {
+			input: `
+				val a = 5
+				val b = 10
+				type StringType = string
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "a", Kind: DepKindValue},
+				{Name: "b", Kind: DepKindValue},
+				{Name: "StringType", Kind: DepKindType},
+			},
+			expectedDependencies: map[string][]string{
+				"a":          {},
+				"b":          {},
+				"StringType": {},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := parser.NewParser(ctx, source)
+			module, errors := parser.ParseModule()
+
+			// Ensure parsing was successful
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			// Build dependency graph
+			depGraph := BuildDepGraph(module)
+
+			// Verify bindings
+			actualBindings := depGraph.AllBindings()
+			assert.ElementsMatch(t, test.expectedBindings, actualBindings,
+				"Expected bindings %v, got %v", test.expectedBindings, actualBindings)
+
+			// Verify dependencies
+			for bindingName, expectedDeps := range test.expectedDependencies {
+				// Find the binding by name
+				var binding DepBinding
+				var found bool
+				for _, b := range actualBindings {
+					if b.Name == bindingName {
+						binding = b
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "Binding %s not found", bindingName)
+
+				// Get actual dependencies
+				actualDeps := depGraph.GetDependencies(binding)
+				actualDepNames := make([]string, 0, len(actualDeps))
+				for dep := range actualDeps {
+					actualDepNames = append(actualDepNames, dep.Name)
+				}
+
+				assert.ElementsMatch(t, expectedDeps, actualDepNames,
+					"Expected dependencies for %s: %v, got %v", bindingName, expectedDeps, actualDepNames)
+			}
+		})
+	}
+}
+
+func TestDepGraph_HelperMethods(t *testing.T) {
+	input := `
+		val x = 5
+		val y = x + 10
+		fn double(n) {
+			return n * 2
+		}
+		val result = double(y)
+	`
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "test.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	parser := parser.NewParser(ctx, source)
+	module, errors := parser.ParseModule()
+
+	assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+	depGraph := BuildDepGraph(module)
+
+	// Test HasBinding
+	xBinding := DepBinding{Name: "x", Kind: DepKindValue}
+	assert.True(t, depGraph.HasBinding(xBinding), "Should have binding x")
+
+	nonExistentBinding := DepBinding{Name: "nonexistent", Kind: DepKindValue}
+	assert.False(t, depGraph.HasBinding(nonExistentBinding), "Should not have nonexistent binding")
+
+	// Test GetBinding
+	decl, exists := depGraph.GetBinding(xBinding)
+	assert.True(t, exists, "Should find binding x")
+	assert.NotNil(t, decl, "Declaration should not be nil")
+
+	_, exists = depGraph.GetBinding(nonExistentBinding)
+	assert.False(t, exists, "Should not find nonexistent binding")
+
+	// Test GetDependents
+	xDependents := depGraph.GetDependents(xBinding)
+	assert.True(t, xDependents.Contains(DepBinding{Name: "y", Kind: DepKindValue}),
+		"y should depend on x")
+
+	// Test AllBindings
+	allBindings := depGraph.AllBindings()
+	assert.Len(t, allBindings, 4, "Should have 4 bindings")
+
+	expectedNames := []string{"x", "y", "double", "result"}
+	actualNames := make([]string, len(allBindings))
+	for i, binding := range allBindings {
+		actualNames[i] = binding.Name
+	}
+	assert.ElementsMatch(t, expectedNames, actualNames, "Should have expected binding names")
 }

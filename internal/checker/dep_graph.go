@@ -224,7 +224,11 @@ func FindDeclDependencies(decl ast.Decl, validBindings set.Set[DepBinding]) set.
 	// Handle different declaration types
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		// For variable declarations, visit the initializer if present
+		// For variable declarations, visit the type annotation if present
+		if d.TypeAnn != nil {
+			d.TypeAnn.Accept(visitor)
+		}
+		// Visit the initializer if present
 		if d.Init != nil {
 			d.Init.Accept(visitor)
 		}
@@ -249,4 +253,75 @@ func FindDeclDependencies(decl ast.Decl, validBindings set.Set[DepBinding]) set.
 	}
 
 	return visitor.Dependencies
+}
+
+type DepGraph struct {
+	Bindings map[DepBinding]ast.Decl            // All bindings in the module
+	Deps     map[DepBinding]set.Set[DepBinding] // Dependencies for each binding
+}
+
+// BuildDepGraph builds a dependency graph for a module
+func BuildDepGraph(module *ast.Module) *DepGraph {
+	// First, find all bindings in the module
+	bindings := FindModuleBindings(module)
+
+	// Create a set of all valid bindings for dependency resolution
+	validBindings := set.NewSet[DepBinding]()
+	for binding := range bindings {
+		validBindings.Add(binding)
+	}
+
+	// Build the dependency map
+	deps := make(map[DepBinding]set.Set[DepBinding])
+
+	// For each declaration, find its dependencies
+	for binding, decl := range bindings {
+		dependencies := FindDeclDependencies(decl, validBindings)
+		deps[binding] = dependencies
+	}
+
+	return &DepGraph{
+		Bindings: bindings,
+		Deps:     deps,
+	}
+}
+
+// GetDependencies returns the dependencies for a given binding
+func (g *DepGraph) GetDependencies(binding DepBinding) set.Set[DepBinding] {
+	if deps, exists := g.Deps[binding]; exists {
+		return deps
+	}
+	return set.NewSet[DepBinding]()
+}
+
+// GetBinding returns the declaration for a given binding
+func (g *DepGraph) GetBinding(binding DepBinding) (ast.Decl, bool) {
+	decl, exists := g.Bindings[binding]
+	return decl, exists
+}
+
+// HasBinding checks if a binding exists in the graph
+func (g *DepGraph) HasBinding(binding DepBinding) bool {
+	_, exists := g.Bindings[binding]
+	return exists
+}
+
+// AllBindings returns all bindings in the graph
+func (g *DepGraph) AllBindings() []DepBinding {
+	bindings := make([]DepBinding, 0, len(g.Bindings))
+	for binding := range g.Bindings {
+		bindings = append(bindings, binding)
+	}
+	return bindings
+}
+
+// GetDependents returns all bindings that depend on the given binding
+func (g *DepGraph) GetDependents(target DepBinding) set.Set[DepBinding] {
+	dependents := set.NewSet[DepBinding]()
+	for binding, deps := range g.Deps {
+		if deps.Contains(target) {
+			dependents.Add(binding)
+		}
+	}
+	return dependents
 }
