@@ -58,6 +58,11 @@ func (v *mockVisitor) EnterTypeAnn(t TypeAnn) bool {
 	return !v.skipNodes["TypeAnn"]
 }
 
+func (v *mockVisitor) EnterBlock(b Block) bool {
+	v.enterCalls = append(v.enterCalls, "EnterBlock")
+	return !v.skipNodes["Block"]
+}
+
 func (v *mockVisitor) ExitLit(l Lit) {
 	v.exitCalls = append(v.exitCalls, "ExitLit")
 }
@@ -86,6 +91,10 @@ func (v *mockVisitor) ExitTypeAnn(t TypeAnn) {
 	v.exitCalls = append(v.exitCalls, "ExitTypeAnn")
 }
 
+func (v *mockVisitor) ExitBlock(b Block) {
+	v.exitCalls = append(v.exitCalls, "ExitBlock")
+}
+
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	visitor := &DefaulVisitor{}
 
@@ -111,6 +120,9 @@ func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	if !visitor.EnterTypeAnn(nil) {
 		t.Error("EnterTypeAnn should return true")
 	}
+	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}}) {
+		t.Error("EnterBlock should return true")
+	}
 }
 
 func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
@@ -130,6 +142,7 @@ func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
 	visitor.ExitStmt(nil)
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
+	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
 }
 
 func TestEmptyExpr_Accept(t *testing.T) {
@@ -278,6 +291,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.EnterStmt(nil)
 	visitor.EnterDecl(nil)
 	visitor.EnterTypeAnn(nil)
+	visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
 
 	// Test Exit methods with nil
 	visitor.ExitLit(nil)
@@ -287,6 +301,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.ExitStmt(nil)
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
+	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
 }
 
 // Benchmark basic visitor traversal

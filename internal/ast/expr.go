@@ -333,9 +333,7 @@ func (e *FuncExpr) Accept(v Visitor) {
 		if e.Throws != nil {
 			e.Throws.Accept(v)
 		}
-		for _, stmt := range e.Body.Stmts {
-			stmt.Accept(v)
-		}
+		e.Body.Accept(v)
 	}
 	v.ExitExpr(e)
 }
@@ -521,6 +519,18 @@ func NewProperty(name ObjKey, optional, readonly bool, value Expr, span Span) *P
 func (e *PropertyExpr) Span() Span { return e.span }
 func (e *PropertyExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
+		switch key := e.Name.(type) {
+		case *IdentExpr:
+			// We don't want these keys to be treated as identifiers
+			// key.Accept(v)
+		case *StrLit:
+			key.Accept(v)
+		case *NumLit:
+			key.Accept(v)
+		case *ComputedKey:
+			key.Accept(v)
+		}
+
 		if e.Value != nil {
 			e.Value.Accept(v)
 		}
@@ -576,15 +586,11 @@ func NewIfElse(cond Expr, cons Block, alt *BlockOrExpr, span Span) *IfElseExpr {
 func (e *IfElseExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Cond.Accept(v)
-		for _, stmt := range e.Cons.Stmts {
-			stmt.Accept(v)
-		}
+		e.Cons.Accept(v)
 		if e.Alt != nil {
 			alt := e.Alt
 			if alt.Block != nil {
-				for _, stmt := range alt.Block.Stmts {
-					stmt.Accept(v)
-				}
+				alt.Block.Accept(v)
 			}
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
@@ -610,15 +616,11 @@ func (e *IfLetExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Pattern.Accept(v)
 		e.Target.Accept(v)
-		for _, stmt := range e.Cons.Stmts {
-			stmt.Accept(v)
-		}
+		e.Cons.Accept(v)
 		if e.Alt != nil {
 			alt := e.Alt
 			if alt.Block != nil {
-				for _, stmt := range alt.Block.Stmts {
-					stmt.Accept(v)
-				}
+				alt.Block.Accept(v)
 			}
 			if alt.Expr != nil {
 				alt.Expr.Accept(v)
@@ -656,9 +658,7 @@ func (e *MatchExpr) Accept(v Visitor) {
 				matchCase.Guard.Accept(v)
 			}
 			if matchCase.Body.Block != nil {
-				for _, stmt := range matchCase.Body.Block.Stmts {
-					stmt.Accept(v)
-				}
+				matchCase.Body.Block.Accept(v)
 			}
 			if matchCase.Body.Expr != nil {
 				matchCase.Body.Expr.Accept(v)
@@ -699,27 +699,21 @@ func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryC
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
-		for _, stmt := range e.Try.Stmts {
-			stmt.Accept(v)
-		}
+		e.Try.Accept(v)
 		for _, matchCase := range e.Catch {
 			matchCase.Pattern.Accept(v)
 			if matchCase.Guard != nil {
 				matchCase.Guard.Accept(v)
 			}
 			if matchCase.Body.Block != nil {
-				for _, stmt := range matchCase.Body.Block.Stmts {
-					stmt.Accept(v)
-				}
+				matchCase.Body.Block.Accept(v)
 			}
 			if matchCase.Body.Expr != nil {
 				matchCase.Body.Expr.Accept(v)
 			}
 		}
 		if e.Finally != nil {
-			for _, stmt := range e.Finally.Stmts {
-				stmt.Accept(v)
-			}
+			e.Finally.Accept(v)
 		}
 	}
 	v.ExitExpr(e)
@@ -752,9 +746,7 @@ func NewDo(body Block, span Span) *DoExpr {
 }
 func (e *DoExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
-		for _, stmt := range e.Body.Stmts {
-			stmt.Accept(v)
-		}
+		e.Body.Accept(v)
 	}
 	v.ExitExpr(e)
 }
@@ -851,6 +843,15 @@ func (e *JSXFragmentExpr) Accept(v Visitor) {
 type Block struct {
 	Stmts []Stmt
 	Span  Span
+}
+
+func (b *Block) Accept(v Visitor) {
+	if v.EnterBlock(*b) {
+		for _, stmt := range b.Stmts {
+			stmt.Accept(v)
+		}
+	}
+	v.ExitBlock(*b)
 }
 
 type BlockOrExpr struct {

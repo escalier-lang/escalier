@@ -3428,3 +3428,63 @@
     inferredType: nil,
 }
 ---
+
+[TestParseExprNoErrors/MethodCall - 1]
+&ast.BinaryExpr{
+    Left: &ast.CallExpr{
+        Callee: &ast.MemberExpr{
+            Object: &ast.IdentExpr{
+                Name:   "foo",
+                Source: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:1, Column:1},
+                    End:      ast.Location{Line:1, Column:4},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Prop: &ast.Ident{
+                Name: "bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            OptChain: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Args: {
+        },
+        OptChain: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Op:    "/",
+    Right: &ast.IdentExpr{
+        Name:   "baz",
+        Source: nil,
+        span:   ast.Span{
+            Start:    ast.Location{Line:1, Column:11},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
