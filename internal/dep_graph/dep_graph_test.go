@@ -1,4 +1,4 @@
-package checker
+package dep_graph
 
 import (
 	"context"
