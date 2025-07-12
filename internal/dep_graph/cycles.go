@@ -87,6 +87,10 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	// Find all strongly connected components (cycles)
 	cycles := g.findStronglyConnectedComponents()
 
+	// Pre-compute bindings used outside function bodies (only once for all cycles)
+	var usedOutsideFunctionBodies set.Set[DepBinding]
+	var hasComputedUsage bool
+
 	for _, cycle := range cycles {
 		// Check if cycle contains only type bindings
 		allTypes := true
@@ -126,8 +130,14 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 				isProblematic = true
 			} else {
 				// Value-only cycle: check if any value is used outside function bodies
+				// Compute usage info only if we haven't done so yet and we need it
+				if !hasComputedUsage {
+					usedOutsideFunctionBodies = g.findBindingsUsedOutsideFunctionBodies()
+					hasComputedUsage = true
+				}
+
 				for _, binding := range cycle {
-					if binding.Kind == DepKindValue && g.isBindingUsedOutsideFunctionBodies(binding) {
+					if binding.Kind == DepKindValue && usedOutsideFunctionBodies.Contains(binding) {
 						isProblematic = true
 						break
 					}
@@ -152,63 +162,76 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	return problematicCycles
 }
 
-// isBindingUsedOutsideFunctionBodies checks if a binding is used outside function bodies in any declaration
-func (g *DepGraph) isBindingUsedOutsideFunctionBodies(targetBinding DepBinding) bool {
-	// Check all declarations to see if they use the target binding outside function bodies
+// findBindingsUsedOutsideFunctionBodies finds all bindings that are used outside function bodies in any declaration
+// This function traverses the AST only once and returns a set of all such bindings
+func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
+	// Create a set to track bindings used outside function bodies
+	usedOutsideFunctionBodies := set.NewSet[DepBinding]()
+
+	// Create a map for fast lookup of existing bindings by name
+	bindingsByName := make(map[string][]DepBinding)
+	for binding := range g.Bindings {
+		bindingsByName[binding.Name] = append(bindingsByName[binding.Name], binding)
+	}
+
+	// Check all declarations to see if they use any bindings outside function bodies
 	for _, decl := range g.Bindings {
-		visitor := &FunctionBodyUsageVisitor{
-			DefaulVisitor:           ast.DefaulVisitor{},
-			TargetBinding:           targetBinding.Name,
-			FunctionDepth:           0,
-			LocalBindings:           make([]set.Set[string], 0),
-			UsedOutsideFunctionBody: false,
+		visitor := &AllBindingsUsageVisitor{
+			DefaulVisitor:                   ast.DefaulVisitor{},
+			FunctionDepth:                   0,
+			LocalBindings:                   make([]set.Set[string], 0),
+			BindingsUsedOutsideFunctionBody: usedOutsideFunctionBodies,
+			BindingsByName:                  bindingsByName, // Only track bindings that exist
 		}
 
 		decl.Accept(visitor)
-
-		if visitor.UsedOutsideFunctionBody {
-			return true
-		}
 	}
 
-	return false
+	return usedOutsideFunctionBodies
 }
 
-// FunctionBodyUsageVisitor checks if a target binding is used outside function bodies
-type FunctionBodyUsageVisitor struct {
+// AllBindingsUsageVisitor checks if any bindings are used outside function bodies
+type AllBindingsUsageVisitor struct {
 	ast.DefaulVisitor
-	TargetBinding           string            // Name of the binding to track
-	FunctionDepth           int               // Track nesting depth in function bodies
-	LocalBindings           []set.Set[string] // Stack of local scopes
-	UsedOutsideFunctionBody bool              // Set to true if target binding is used outside function body
+	FunctionDepth                   int                     // Track nesting depth in function bodies
+	LocalBindings                   []set.Set[string]       // Stack of local scopes
+	BindingsUsedOutsideFunctionBody set.Set[DepBinding]     // Set of bindings used outside function body
+	BindingsByName                  map[string][]DepBinding // Map of existing bindings by name
 }
 
 // EnterExpr handles expressions to track usage
-func (v *FunctionBodyUsageVisitor) EnterExpr(expr ast.Expr) bool {
+func (v *AllBindingsUsageVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		// Check if this is our target binding used outside function body
-		if e.Name == v.TargetBinding && !v.isLocalBinding(e.Name) {
-			if v.FunctionDepth == 0 {
-				v.UsedOutsideFunctionBody = true
+		// Check if this is a valid binding used outside function body
+		if bindings, exists := v.BindingsByName[e.Name]; exists && !v.isLocalBinding(e.Name) && v.FunctionDepth == 0 {
+			// Add only the actual bindings that exist for this name
+			for _, binding := range bindings {
+				v.BindingsUsedOutsideFunctionBody.Add(binding)
 			}
 		}
 		return false
 	case *ast.CallExpr:
-		// Check if the callee is our target binding
+		// Check if the callee is a valid binding
 		if ident, ok := e.Callee.(*ast.IdentExpr); ok {
-			if ident.Name == v.TargetBinding && !v.isLocalBinding(ident.Name) {
-				if v.FunctionDepth == 0 {
-					v.UsedOutsideFunctionBody = true
+			if bindings, exists := v.BindingsByName[ident.Name]; exists && !v.isLocalBinding(ident.Name) && v.FunctionDepth == 0 {
+				// Only add value bindings for function calls
+				for _, binding := range bindings {
+					if binding.Kind == DepKindValue {
+						v.BindingsUsedOutsideFunctionBody.Add(binding)
+					}
 				}
 			}
 		}
 		// Check for method calls
 		if member, ok := e.Callee.(*ast.MemberExpr); ok {
 			if ident, ok := member.Object.(*ast.IdentExpr); ok {
-				if ident.Name == v.TargetBinding && !v.isLocalBinding(ident.Name) {
-					if v.FunctionDepth == 0 {
-						v.UsedOutsideFunctionBody = true
+				if bindings, exists := v.BindingsByName[ident.Name]; exists && !v.isLocalBinding(ident.Name) && v.FunctionDepth == 0 {
+					// Only add value bindings for member expressions
+					for _, binding := range bindings {
+						if binding.Kind == DepKindValue {
+							v.BindingsUsedOutsideFunctionBody.Add(binding)
+						}
 					}
 				}
 			}
@@ -217,9 +240,12 @@ func (v *FunctionBodyUsageVisitor) EnterExpr(expr ast.Expr) bool {
 	case *ast.MemberExpr:
 		// Check member access like obj.prop
 		if ident, ok := e.Object.(*ast.IdentExpr); ok {
-			if ident.Name == v.TargetBinding && !v.isLocalBinding(ident.Name) {
-				if v.FunctionDepth == 0 {
-					v.UsedOutsideFunctionBody = true
+			if bindings, exists := v.BindingsByName[ident.Name]; exists && !v.isLocalBinding(ident.Name) && v.FunctionDepth == 0 {
+				// Only add value bindings for member expressions
+				for _, binding := range bindings {
+					if binding.Kind == DepKindValue {
+						v.BindingsUsedOutsideFunctionBody.Add(binding)
+					}
 				}
 			}
 		}
@@ -244,7 +270,7 @@ func (v *FunctionBodyUsageVisitor) EnterExpr(expr ast.Expr) bool {
 }
 
 // ExitExpr handles exiting expression scopes
-func (v *FunctionBodyUsageVisitor) ExitExpr(expr ast.Expr) {
+func (v *AllBindingsUsageVisitor) ExitExpr(expr ast.Expr) {
 	switch expr.(type) {
 	case *ast.FuncExpr:
 		// Exit function expression scope
@@ -254,7 +280,7 @@ func (v *FunctionBodyUsageVisitor) ExitExpr(expr ast.Expr) {
 }
 
 // EnterDecl handles function declarations which introduce function body scope
-func (v *FunctionBodyUsageVisitor) EnterDecl(decl ast.Decl) bool {
+func (v *AllBindingsUsageVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		if d.Body != nil {
@@ -276,7 +302,7 @@ func (v *FunctionBodyUsageVisitor) EnterDecl(decl ast.Decl) bool {
 }
 
 // ExitDecl handles exiting declaration scopes
-func (v *FunctionBodyUsageVisitor) ExitDecl(decl ast.Decl) {
+func (v *AllBindingsUsageVisitor) ExitDecl(decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		if d.Body != nil {
@@ -288,37 +314,49 @@ func (v *FunctionBodyUsageVisitor) ExitDecl(decl ast.Decl) {
 }
 
 // EnterBlock handles entering blocks which introduce new scopes
-func (v *FunctionBodyUsageVisitor) EnterBlock(block ast.Block) bool {
+func (v *AllBindingsUsageVisitor) EnterBlock(block ast.Block) bool {
 	v.pushScope()
 	return true
 }
 
 // ExitBlock handles exiting blocks which end scopes
-func (v *FunctionBodyUsageVisitor) ExitBlock(block ast.Block) {
+func (v *AllBindingsUsageVisitor) ExitBlock(block ast.Block) {
 	v.popScope()
 }
 
 // EnterTypeAnn handles type annotations to track usage
-func (v *FunctionBodyUsageVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
-	// Type annotations are always outside function bodies (at declaration level)
-	// So we should continue traversing them to find any usage
-	return true
+func (v *AllBindingsUsageVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
+	switch t := typeAnn.(type) {
+	case *ast.TypeRefTypeAnn:
+		// Type references are always outside function bodies (at declaration level)
+		if bindings, exists := v.BindingsByName[t.Name]; exists && !v.isLocalBinding(t.Name) && v.FunctionDepth == 0 {
+			// Only add type bindings for type references
+			for _, binding := range bindings {
+				if binding.Kind == DepKindType {
+					v.BindingsUsedOutsideFunctionBody.Add(binding)
+				}
+			}
+		}
+		return true
+	default:
+		return true
+	}
 }
 
 // pushScope adds a new local scope
-func (v *FunctionBodyUsageVisitor) pushScope() {
+func (v *AllBindingsUsageVisitor) pushScope() {
 	v.LocalBindings = append(v.LocalBindings, set.NewSet[string]())
 }
 
 // popScope removes the current local scope
-func (v *FunctionBodyUsageVisitor) popScope() {
+func (v *AllBindingsUsageVisitor) popScope() {
 	if len(v.LocalBindings) > 0 {
 		v.LocalBindings = v.LocalBindings[:len(v.LocalBindings)-1]
 	}
 }
 
 // isLocalBinding checks if a binding is in any local scope
-func (v *FunctionBodyUsageVisitor) isLocalBinding(name string) bool {
+func (v *AllBindingsUsageVisitor) isLocalBinding(name string) bool {
 	for _, scope := range v.LocalBindings {
 		if scope.Contains(name) {
 			return true
