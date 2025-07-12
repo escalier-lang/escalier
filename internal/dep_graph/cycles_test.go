@@ -90,8 +90,26 @@ func TestFindCycles(t *testing.T) {
 		},
 		"FunctionExpressionCallCycle_OutsideFunction_Problematic": {
 			input: `
-				val c = fn() { return d }
-				val d = c()
+				val a = fn() { return b }
+				val b = a()
+			`,
+			expectedCycles:    1,
+			expectProblematic: true,
+			description:       "Function expression call cycles outside function bodies should be problematic",
+		},
+		"FunctionWithParamCallCycle_OutsideFunction_Problematic": {
+			input: `
+				fn a(c: number) { return b }
+				val b = a()
+			`,
+			expectedCycles:    1,
+			expectProblematic: true,
+			description:       "Function call cycles outside function bodies should be problematic",
+		},
+		"FunctionWithParamExpressionCallCycle_OutsideFunction_Problematic": {
+			input: `
+				val a = fn(c: number) { return b }
+				val b = a()
 			`,
 			expectedCycles:    1,
 			expectProblematic: true,
