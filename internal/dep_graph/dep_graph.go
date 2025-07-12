@@ -120,6 +120,10 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 			v.Dependencies.Add(binding)
 		}
 		return false // Don't traverse into IdentExpr
+	case *ast.MemberExpr:
+		// For member expressions like obj.prop, we need to check the object part
+		// Continue traversing to find any identifier dependencies
+		return true
 	case *ast.FuncExpr:
 		// Function expression introduces a new scope for parameters
 		v.pushScope()
@@ -163,6 +167,18 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 			v.Dependencies.Add(binding)
 		}
 		return true // Continue traversing type arguments
+	case *ast.ObjectTypeAnn:
+		// Handle object type annotations which may contain computed keys
+		for _, elem := range t.Elems {
+			if prop, ok := elem.(*ast.PropertyTypeAnn); ok {
+				// Check if the property key is a computed key that references other bindings
+				if compKey, ok := prop.Name.(*ast.ComputedKey); ok {
+					// Traverse the computed key expression to find dependencies
+					compKey.Expr.Accept(v)
+				}
+			}
+		}
+		return true // Continue traversing other elements
 	default:
 		return true
 	}
