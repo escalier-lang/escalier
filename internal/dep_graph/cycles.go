@@ -115,7 +115,8 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 
 		isProblematic := false
 
-		// If it's a mixed cycle (has both types and values), it's always problematic
+		// This branch handles both mixed cycles (always problematic) and value-only cycles
+		// (problematic if any value is used outside function bodies).
 		if hasValue && !allTypes {
 			hasType := false
 			for _, binding := range cycle {
