@@ -213,6 +213,24 @@ func (v *DependencyVisitor) ExitBlock(block ast.Block) {
 	v.popScope()
 }
 
+func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	// TODO: Figure out a better solution for dealing with property shorthand.
+	if prop, ok := elem.(*ast.PropertyExpr); ok {
+		if prop.Value == nil {
+			switch key := prop.Name.(type) {
+			case *ast.IdentExpr:
+				// Check if this identifier is a valid dependency
+				if declID, exists := v.hasValidBinding(key.Name); exists && !v.isLocalBinding(key.Name) {
+					v.Dependencies.Add(declID)
+				}
+			}
+			return false // Don't traverse into IdentExpr
+		}
+	}
+
+	return true
+}
+
 // pushScope adds a new local scope
 func (v *DependencyVisitor) pushScope() {
 	v.LocalBindings = append(v.LocalBindings, set.NewSet[string]())

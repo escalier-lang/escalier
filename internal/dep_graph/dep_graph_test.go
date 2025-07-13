@@ -431,13 +431,12 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
 			declType:      "var",
 		},
-		// TODO: handle property shorthand correctly
-		// "VarDecl_PropertyShorthand": {
-		// 	declCode:      `val p: Point = {x, y}`,
-		// 	validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
-		// 	expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
-		// 	declType:      "var",
-		// },
+		"VarDecl_PropertyShorthand": {
+			declCode:      `val p: Point = {x, y}`,
+			validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			declType:      "var",
+		},
 		"VarDecl_IgnoresNonPropertyShorthandKeys": {
 			declCode:      `val p: Point = {x: a, y: b}`,
 			validBindings: []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
