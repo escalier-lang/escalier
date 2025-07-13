@@ -3,6 +3,7 @@ package dep_graph
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/tidwall/btree"
 )
 
 type DepKind int
@@ -32,15 +33,15 @@ func generateDeclID() DeclID {
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
-	Declarations map[DeclID]ast.Decl   // Map from unique ID to declaration
-	Bindings     map[DepBinding]DeclID // Map from binding to declaration ID
+	Decls    btree.Map[DeclID, ast.Decl] // Map from unique ID to declaration
+	Bindings map[DepBinding]DeclID       // Map from binding to declaration ID
 }
 
 // EnterDecl visits declarations and assigns unique IDs
 func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	// Generate a unique ID for this declaration
 	declID := generateDeclID()
-	v.Declarations[declID] = decl
+	v.Decls.Set(declID, decl)
 
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -76,10 +77,11 @@ func (v *ModuleBindingVisitor) EnterLit(lit ast.Lit) bool                  { ret
 func (v *ModuleBindingVisitor) EnterBlock(block ast.Block) bool            { return false }
 
 // FindModuleBindings returns all bindings and declarations in a module with unique IDs
-func FindModuleBindings(module *ast.Module) (map[DeclID]ast.Decl, map[DepBinding]DeclID) {
+func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], map[DepBinding]DeclID) {
+	var decls btree.Map[DeclID, ast.Decl]
 	visitor := &ModuleBindingVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
-		Declarations:  make(map[DeclID]ast.Decl),
+		Decls:         decls,
 		Bindings:      make(map[DepBinding]DeclID),
 	}
 
@@ -88,7 +90,7 @@ func FindModuleBindings(module *ast.Module) (map[DeclID]ast.Decl, map[DepBinding
 		decl.Accept(visitor)
 	}
 
-	return visitor.Declarations, visitor.Bindings
+	return visitor.Decls, visitor.Bindings
 }
 
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
@@ -308,29 +310,35 @@ func FindDeclDependencies(decl ast.Decl, validBindings map[DepBinding]DeclID) se
 }
 
 type DepGraph struct {
-	Declarations map[DeclID]ast.Decl        // All declarations in the module
-	Bindings     map[DepBinding]DeclID      // Map from binding to declaration ID
-	Deps         map[DeclID]set.Set[DeclID] // Dependencies for each declaration ID
+	// We use a btree.Map because insert order is not guaranteed in Go maps,
+	// and we want to maintain a consistent order for declarations.  This is so
+	// that codegen is deterministic.
+	Decls    btree.Map[DeclID, ast.Decl] // All declarations in the module
+	Deps     map[DeclID]set.Set[DeclID]  // Dependencies for each declaration ID
+	Bindings map[DepBinding]DeclID       // Map from binding to declaration ID
 }
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
-	// First, find all declarations and bindings in the module
-	declarations, bindings := FindModuleBindings(module)
+	// First, find all decls and bindings in the module
+	decls, bindings := FindModuleBindings(module)
 
 	// Build the dependency map
 	deps := make(map[DeclID]set.Set[DeclID])
 
 	// For each declaration, find its dependencies
-	for declID, decl := range declarations {
+	iter := decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		declID := iter.Key()
+		decl := iter.Value()
 		dependencies := FindDeclDependencies(decl, bindings)
 		deps[declID] = dependencies
 	}
 
 	return &DepGraph{
-		Declarations: declarations,
-		Bindings:     bindings,
-		Deps:         deps,
+		Decls:    decls,
+		Bindings: bindings,
+		Deps:     deps,
 	}
 }
 
@@ -352,8 +360,7 @@ func (g *DepGraph) GetDependenciesForBinding(binding DepBinding) set.Set[DeclID]
 
 // GetDeclaration returns the declaration for a given declaration ID
 func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
-	decl, exists := g.Declarations[declID]
-	return decl, exists
+	return g.Decls.Get(declID)
 }
 
 // GetBinding returns the declaration for a given binding (for backward compatibility)
@@ -372,7 +379,7 @@ func (g *DepGraph) HasBinding(binding DepBinding) bool {
 
 // HasDeclaration checks if a declaration ID exists in the graph
 func (g *DepGraph) HasDeclaration(declID DeclID) bool {
-	_, exists := g.Declarations[declID]
+	_, exists := g.Decls.Get(declID)
 	return exists
 }
 
@@ -387,8 +394,10 @@ func (g *DepGraph) AllBindings() []DepBinding {
 
 // AllDeclarations returns all declaration IDs in the graph
 func (g *DepGraph) AllDeclarations() []DeclID {
-	declIDs := make([]DeclID, 0, len(g.Declarations))
-	for declID := range g.Declarations {
+	declIDs := make([]DeclID, 0, g.Decls.Len())
+	iter := g.Decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		declID := iter.Key()
 		declIDs = append(declIDs, declID)
 	}
 	return declIDs

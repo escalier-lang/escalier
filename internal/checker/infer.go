@@ -84,21 +84,6 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 }
 
 func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Namespace, []Error) {
-	// pretty print the dependency graph
-	for declID, depIDs := range depGraph.Deps {
-		decl := depGraph.Declarations[declID]
-		var deps []string
-		for depID := range depIDs {
-			decl := depGraph.Declarations[depID]
-			deps = append(deps, PrintDeclIdent(decl))
-		}
-		if len(deps) == 0 {
-			fmt.Printf("%s => (none)\n", PrintDeclIdent(decl))
-		} else {
-			fmt.Printf("%s => %s\n", PrintDeclIdent(decl), deps)
-		}
-	}
-
 	cycles := depGraph.FindCycles()
 	fmt.Printf("Found %d cycles\n", len(cycles))
 
@@ -147,7 +132,8 @@ func (c *Checker) InferComponent(
 	// Find decls for the component
 	decls := make([]ast.Decl, 0, len(component))
 	for _, declID := range component {
-		decls = append(decls, depGraph.Declarations[declID])
+		decl, _ := depGraph.Decls.Get(declID)
+		decls = append(decls, decl)
 	}
 
 	// Infer placeholders

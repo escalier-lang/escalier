@@ -6,26 +6,8 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
-	"github.com/escalier-lang/escalier/internal/dep_graph"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
-
-func (b *Builder) BuilderDepGraphDefinitions(
-	depGraph *dep_graph.DepGraph,
-	namespace checker.Namespace,
-) *Module {
-	components := depGraph.FindStronglyConnectedComponents(0)
-
-	var decls []ast.Decl
-	for _, component := range components {
-		for _, declID := range component {
-			decl := depGraph.Declarations[declID]
-			decls = append(decls, decl)
-		}
-	}
-
-	return b.BuildDefinitions(decls, namespace)
-}
 
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.

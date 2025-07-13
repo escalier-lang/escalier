@@ -115,9 +115,18 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		}
 	}
 
+	components := depGraph.FindStronglyConnectedComponents(0)
+	var decls []ast.Decl
+	for _, component := range components {
+		for _, declID := range component {
+			decl, _ := depGraph.Decls.Get(declID)
+			decls = append(decls, decl)
+		}
+	}
+
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildDepGraph(depGraph)
-	dtsMod := builder.BuilderDepGraphDefinitions(depGraph, namespace)
+	jsMod := builder.BuildDecls(decls)
+	dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)

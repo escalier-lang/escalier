@@ -72,7 +72,9 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 	}
 
 	// Run the algorithm for all unvisited nodes
-	for declID := range g.Declarations {
+	iter := g.Decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		declID := iter.Key()
 		if _, exists := indices[declID]; !exists {
 			strongConnect(declID)
 		}
@@ -224,7 +226,9 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
 	}
 
 	// Check all declarations to see if they use any bindings outside function bodies
-	for _, decl := range g.Declarations {
+	iter := g.Decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		decl := iter.Value()
 		visitor := &AllBindingsUsageVisitor{
 			DefaulVisitor:                   ast.DefaulVisitor{},
 			FunctionDepth:                   0,

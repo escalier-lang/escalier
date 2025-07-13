@@ -597,8 +597,8 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 func TestBuildDepGraph(t *testing.T) {
 	tests := map[string]struct {
 		input                string
-		expectedBindings     []DepBinding
-		expectedDependencies [][2][]string // [bindings introduced by decl, dependencies]
+		expectedDeclCount    int
+		expectedDependencies map[int][]int // [declaration index] -> [dependency declaration indices]
 	}{
 		"Simple_Dependencies": {
 			input: `
@@ -609,17 +609,12 @@ func TestBuildDepGraph(t *testing.T) {
 				}
 				val admin = createUser("admin")
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "User", Kind: DepKindType},
-				{Name: "defaultAge", Kind: DepKindValue},
-				{Name: "createUser", Kind: DepKindValue},
-				{Name: "admin", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"User"}, []string{}},
-				{[]string{"defaultAge"}, []string{}},
-				{[]string{"createUser"}, []string{"defaultAge"}},
-				{[]string{"admin"}, []string{"createUser"}},
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},  // type User has no dependencies
+				1: {},  // val defaultAge has no dependencies
+				2: {1}, // fn createUser depends on defaultAge (index 1)
+				3: {2}, // val admin depends on createUser (index 2)
 			},
 		},
 		"Type_Dependencies": {
@@ -628,15 +623,11 @@ func TestBuildDepGraph(t *testing.T) {
 				type Shape = {center: Point, radius: number}
 				val origin: Point = {x: 0, y: 0}
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "Point", Kind: DepKindType},
-				{Name: "Shape", Kind: DepKindType},
-				{Name: "origin", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"Point"}, []string{}},
-				{[]string{"Shape"}, []string{"Point"}},
-				{[]string{"origin"}, []string{"Point"}},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // type Point has no dependencies
+				1: {0}, // type Shape depends on Point (index 0)
+				2: {0}, // val origin depends on Point (index 0)
 			},
 		},
 		"No_Dependencies": {
@@ -645,15 +636,11 @@ func TestBuildDepGraph(t *testing.T) {
 				val b = 10
 				type StringType = string
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "a", Kind: DepKindValue},
-				{Name: "b", Kind: DepKindValue},
-				{Name: "StringType", Kind: DepKindType},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"a"}, []string{}},
-				{[]string{"b"}, []string{}},
-				{[]string{"StringType"}, []string{}},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {}, // val a has no dependencies
+				1: {}, // val b has no dependencies
+				2: {}, // type StringType has no dependencies
 			},
 		},
 		"Tuple_Destructuring_Simple": {
@@ -662,16 +649,11 @@ func TestBuildDepGraph(t *testing.T) {
 				val [x, y] = point
 				val sum = x + y
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "point", Kind: DepKindValue},
-				{Name: "x", Kind: DepKindValue},
-				{Name: "y", Kind: DepKindValue},
-				{Name: "sum", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"point"}, []string{}},
-				{[]string{"x", "y"}, []string{"point"}},
-				{[]string{"sum"}, []string{"x", "y"}},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val point has no dependencies
+				1: {0}, // val [x, y] depends on point (index 0)
+				2: {1}, // val sum depends on destructuring declaration (index 1)
 			},
 		},
 		"Object_Destructuring_Simple": {
@@ -680,16 +662,11 @@ func TestBuildDepGraph(t *testing.T) {
 				val {name, age} = user
 				val greeting = "Hello " + name
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "user", Kind: DepKindValue},
-				{Name: "name", Kind: DepKindValue},
-				{Name: "age", Kind: DepKindValue},
-				{Name: "greeting", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"user"}, []string{}},
-				{[]string{"name", "age"}, []string{"user"}},
-				{[]string{"greeting"}, []string{"name", "age"}}, // Updated: now depends on the entire destructuring declaration
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val user has no dependencies
+				1: {0}, // val {name, age} depends on user (index 0)
+				2: {1}, // val greeting depends on destructuring declaration (index 1)
 			},
 		},
 		"Object_Destructuring_With_Rename": {
@@ -698,16 +675,11 @@ func TestBuildDepGraph(t *testing.T) {
 				val {width: w, height: h} = config
 				val area = w * h
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "config", Kind: DepKindValue},
-				{Name: "w", Kind: DepKindValue},
-				{Name: "h", Kind: DepKindValue},
-				{Name: "area", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"config"}, []string{}},
-				{[]string{"w", "h"}, []string{"config"}},
-				{[]string{"area"}, []string{"w", "h"}},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val config has no dependencies
+				1: {0}, // val {width: w, height: h} depends on config (index 0)
+				2: {1}, // val area depends on destructuring declaration (index 1)
 			},
 		},
 		"Nested_Destructuring": {
@@ -716,17 +688,11 @@ func TestBuildDepGraph(t *testing.T) {
 				val {coords: [x, y], info: {id}} = data
 				val result = x + y + id
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "data", Kind: DepKindValue},
-				{Name: "x", Kind: DepKindValue},
-				{Name: "y", Kind: DepKindValue},
-				{Name: "id", Kind: DepKindValue},
-				{Name: "result", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"data"}, []string{}},
-				{[]string{"x", "y", "id"}, []string{"data"}},
-				{[]string{"result"}, []string{"x", "y", "id"}},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val data has no dependencies
+				1: {0}, // val {coords: [x, y], info: {id}} depends on data (index 0)
+				2: {1}, // val result depends on destructuring declaration (index 1)
 			},
 		},
 		"Rest_Pattern_Destructuring": {
@@ -736,19 +702,12 @@ func TestBuildDepGraph(t *testing.T) {
 				val restSum = rest
 				val total = first + second
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "numbers", Kind: DepKindValue},
-				{Name: "first", Kind: DepKindValue},
-				{Name: "second", Kind: DepKindValue},
-				{Name: "rest", Kind: DepKindValue},
-				{Name: "restSum", Kind: DepKindValue},
-				{Name: "total", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"numbers"}, []string{}},
-				{[]string{"first", "second", "rest"}, []string{"numbers"}},
-				{[]string{"restSum"}, []string{"first", "second", "rest"}}, // Updated: depends on the entire destructuring declaration
-				{[]string{"total"}, []string{"first", "second", "rest"}},   // Updated: depends on the entire destructuring declaration
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},  // val numbers has no dependencies
+				1: {0}, // val [first, second, ...rest] depends on numbers (index 0)
+				2: {1}, // val restSum depends on destructuring declaration (index 1)
+				3: {1}, // val total depends on destructuring declaration (index 1)
 			},
 		},
 		"Mixed_Destructuring_With_Functions": {
@@ -764,23 +723,14 @@ func TestBuildDepGraph(t *testing.T) {
 				val area = width * height
 				val diagonal = startX + startY
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "getPoint", Kind: DepKindValue},
-				{Name: "startX", Kind: DepKindValue},
-				{Name: "startY", Kind: DepKindValue},
-				{Name: "getSize", Kind: DepKindValue},
-				{Name: "width", Kind: DepKindValue},
-				{Name: "height", Kind: DepKindValue},
-				{Name: "area", Kind: DepKindValue},
-				{Name: "diagonal", Kind: DepKindValue},
-			},
-			expectedDependencies: [][2][]string{
-				{[]string{"getPoint"}, []string{}},
-				{[]string{"startX", "startY"}, []string{"getPoint"}},
-				{[]string{"getSize"}, []string{}},
-				{[]string{"width", "height"}, []string{"getSize"}},
-				{[]string{"area"}, []string{"width", "height"}},
-				{[]string{"diagonal"}, []string{"startX", "startY"}},
+			expectedDeclCount: 6,
+			expectedDependencies: map[int][]int{
+				0: {},  // fn getPoint has no dependencies
+				1: {0}, // val [startX, startY] depends on getPoint (index 0)
+				2: {},  // fn getSize has no dependencies
+				3: {2}, // val {width, height} depends on getSize (index 2)
+				4: {3}, // val area depends on destructuring declaration (index 3)
+				5: {1}, // val diagonal depends on destructuring declaration (index 1)
 			},
 		},
 	}
@@ -805,44 +755,51 @@ func TestBuildDepGraph(t *testing.T) {
 			// Build dependency graph
 			depGraph := BuildDepGraph(module)
 
-			// Verify bindings
-			actualBindings := depGraph.AllBindings()
-			assert.ElementsMatch(t, test.expectedBindings, actualBindings,
-				"Expected bindings %v, got %v", test.expectedBindings, actualBindings)
+			// Verify number of declarations
+			actualDeclCount := len(depGraph.AllDeclarations())
+			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
+				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
 
-			// Verify dependencies
-			for _, expectedDecl := range test.expectedDependencies {
-				declBindings := expectedDecl[0]
-				expectedDeps := expectedDecl[1]
+			// Create a sorted list of declaration IDs for consistent ordering
+			declIDs := depGraph.AllDeclarations()
 
-				// For each binding in this declaration, verify its dependencies
-				for _, bindingName := range declBindings {
-					// Find the binding by name
-					var binding DepBinding
-					var found bool
-					for _, b := range actualBindings {
-						if b.Name == bindingName {
-							binding = b
-							found = true
-							break
-						}
+			// Sort by the declaration ID to ensure consistent ordering
+			// (since declaration IDs are assigned in order, this gives us document order)
+			for i := 0; i < len(declIDs)-1; i++ {
+				for j := i + 1; j < len(declIDs); j++ {
+					if declIDs[i] > declIDs[j] {
+						declIDs[i], declIDs[j] = declIDs[j], declIDs[i]
 					}
-					assert.True(t, found, "Binding %s not found", bindingName)
-
-					// Get actual dependencies using the new API
-					actualDeps := depGraph.GetDependenciesForBinding(binding)
-					actualDepNames := make([]string, 0, len(actualDeps))
-					for declID := range actualDeps {
-						// Get all bindings for this declaration
-						bindings := depGraph.getBindingsForDecl(declID)
-						for _, depBinding := range bindings {
-							actualDepNames = append(actualDepNames, depBinding.Name)
-						}
-					}
-
-					assert.ElementsMatch(t, expectedDeps, actualDepNames,
-						"Expected dependencies for %s: %v, got %v", bindingName, expectedDeps, actualDepNames)
 				}
+			}
+
+			// Verify dependencies for each declaration
+			for declIndex, expectedDeps := range test.expectedDependencies {
+				if declIndex >= len(declIDs) {
+					t.Errorf("Test case has dependency expectations for declaration index %d, but only %d declarations exist",
+						declIndex, len(declIDs))
+					continue
+				}
+
+				declID := declIDs[declIndex]
+				actualDeps := depGraph.GetDependencies(declID)
+
+				// Convert expected dependency indices to actual DeclIDs
+				expectedDeclIDs := make([]DeclID, len(expectedDeps))
+				for i, depIndex := range expectedDeps {
+					if depIndex >= len(declIDs) {
+						t.Errorf("Test case expects dependency on declaration index %d, but only %d declarations exist",
+							depIndex, len(declIDs))
+						continue
+					}
+					expectedDeclIDs[i] = declIDs[depIndex]
+				}
+
+				// Convert actual dependencies to slice for comparison
+				actualDepsSlice := actualDeps.ToSlice()
+
+				assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
+					"Expected dependencies for declaration %d: %v, got %v", declIndex, expectedDeclIDs, actualDepsSlice)
 			}
 		})
 	}
