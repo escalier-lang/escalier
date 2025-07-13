@@ -11,8 +11,14 @@ type CycleInfo struct {
 	Message string       // Description of why this cycle is problematic
 }
 
-// findStronglyConnectedComponents uses Tarjan's algorithm to find SCCs
-func (g *DepGraph) findStronglyConnectedComponents() [][]DepBinding {
+// FindStronglyConnectedComponents uses Tarjan's algorithm to find SCCs
+// The returned components appear in topological order, meaning that if component
+// A depends on component B, then A will appear after B in the result.
+//
+// The threshold parameter specifies the minimimum size of a strongly connected
+// component to be reported. If a component has size equal to threshold, it is
+// reported only if it contains a self-reference, e.g. a function that calls itself.
+func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DepBinding {
 	// Tarjan's algorithm implementation
 	index := 0
 	stack := make([]DepBinding, 0)
@@ -58,7 +64,8 @@ func (g *DepGraph) findStronglyConnectedComponents() [][]DepBinding {
 				}
 			}
 			// Report cycles: either multiple bindings OR a self-reference
-			if len(scc) > 1 || (len(scc) == 1 && g.GetDependencies(scc[0]).Contains(scc[0])) {
+			if len(scc) > threshold || (len(scc) == threshold &&
+				g.GetDependencies(scc[0]).Contains(scc[0])) {
 				sccs = append(sccs, scc)
 			}
 		}
@@ -85,7 +92,7 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	var problematicCycles []CycleInfo
 
 	// Find all strongly connected components (cycles)
-	cycles := g.findStronglyConnectedComponents()
+	cycles := g.FindStronglyConnectedComponents(1)
 
 	// Pre-compute bindings used outside function bodies (only once for all cycles)
 	var usedOutsideFunctionBodies set.Set[DepBinding]

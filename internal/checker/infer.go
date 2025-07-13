@@ -9,6 +9,7 @@ import (
 	"maps"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -61,19 +62,71 @@ type Namespace struct {
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
-	errors := []Error{}
+	depGraph := dep_graph.BuildDepGraph(m)
+
+	// pretty print the dependency graph
+	for decl, deps := range depGraph.Deps {
+		fmt.Printf("%s => %#v\n", decl.Name, deps)
+	}
+
+	cycles := depGraph.FindCycles()
+	fmt.Printf("Found %d cycles\n", len(cycles))
+
+	components := depGraph.FindStronglyConnectedComponents(0)
+	fmt.Printf("Found %d strongly connected components\n", len(components))
+	for _, comp := range components {
+		fmt.Printf("Component: %v\n", comp)
+	}
+
+	// Define a module scope so that declarations don't leak into the global scope
+	ctx = ctx.WithParentScope()
+
+	// Infer declarations in the module
+	errors := c.InferDecls(ctx, m.Decls)
+
+	// for _, component := range components {
+	// 	declsErrors := c.InferDecls(ctx, depGraph, component)
+	// 	errors = slices.Concat(errors, declsErrors)
+	// }
 
 	namespace := Namespace{
 		Values: make(map[QualifiedIdent]*Binding),
 		Types:  make(map[QualifiedIdent]*TypeAlias),
 	}
 
+	for name, binding := range ctx.Scope.Values {
+		namespace.Values[QualifiedIdent(name)] = binding
+	}
+
+	for name, typeAlias := range ctx.Scope.Types {
+		namespace.Types[QualifiedIdent(name)] = typeAlias
+	}
+
+	return namespace, errors
+}
+
+func (c *Checker) InferDecls(ctx Context, decls []ast.Decl) []Error {
+	errors := []Error{}
+
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
 	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
 
+	// TODO: re-enable after updating dep_graph to key'd by decl ID instead of
+	// a string.
+	// decls := make([]ast.Decl, 0, len(components))
+	// addedDecls := make(map[ast.Decl]bool)
+	// for _, binding := range components {
+	// 	decl := depGraph.Bindings[binding]
+	// 	if addedDecls[decl] {
+	// 		continue
+	// 	}
+	// 	decls = append(decls, decl)
+	// 	addedDecls[decl] = true
+	// }
+
 	// Infer placeholders
-	for _, decl := range m.Decls {
+	for _, decl := range decls {
 		if decl == nil {
 			continue
 		}
@@ -83,11 +136,11 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			namespace.Values[QualifiedIdent(decl.Name.Name)] = &Binding{
+			ctx.Scope.setValue(decl.Name.Name, &Binding{
 				Source:  decl.Name,
 				Type:    funcType,
 				Mutable: false,
-			}
+			})
 		case *ast.VarDecl:
 			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 			errors = slices.Concat(errors, patErrors)
@@ -104,11 +157,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			}
 
 			for name, binding := range bindings {
-				namespace.Values[QualifiedIdent(name)] = &Binding{
-					Source:  binding.Source,
-					Type:    binding.Type,
-					Mutable: binding.Mutable,
-				}
+				ctx.Scope.setValue(name, binding)
 			}
 		case *ast.TypeDecl:
 			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
@@ -137,7 +186,6 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 				TypeParams: typeParams,
 			}
 
-			namespace.Types[QualifiedIdent(decl.Name.Name)] = typeAlias
 			// TODO: include .Namespaces in Scope property, but this namespace
 			// shouldn't use qualified names.  We need it though, so that we
 			// can reference symbols in different namespaces, e.g. Foo.Bar.MyType
@@ -145,16 +193,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 		}
 	}
 
-	// Copy namespace values and type aliases into the current scope
-	// for name, typeAlias := range namespace.Types {
-	// 	ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
-	// }
-	for name, binding := range namespace.Values {
-		ctx.Scope.setValue(name.Parts()[0], binding)
-	}
-
 	// Infer definitions
-	for _, decl := range m.Decls {
+	for _, decl := range decls {
 		if decl == nil {
 			continue
 		}
@@ -189,13 +229,9 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			// not sure if it's important to align these or not.
 
 			for name, binding := range bindings {
-				qualifiedName := QualifiedIdent(name)
-				if existingBinding, ok := namespace.Values[qualifiedName]; ok {
-					unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
-					errors = slices.Concat(errors, unifyErrors)
-				} else {
-					// Report an error since this should never happen
-				}
+				existingBinding := ctx.Scope.getValue(name)
+				unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
+				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.TypeDecl:
 			typeAlias, declErrors := c.inferTypeDecl(ctx, decl)
@@ -205,17 +241,13 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			// - unify the Default and Constraint types for each type param
 
 			// Unified the type alias' inferred type with its placeholder type
-			qualifiedName := QualifiedIdent(decl.Name.Name)
-			if existingTypeAlias, ok := namespace.Types[qualifiedName]; ok {
-				unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
-				errors = slices.Concat(errors, unifyErrors)
-			} else {
-				// Report an error since this should never happen
-			}
+			existingTypeAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
+			unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
+			errors = slices.Concat(errors, unifyErrors)
 		}
 	}
 
-	return namespace, errors
+	return errors
 }
 
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
