@@ -7,6 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -93,6 +94,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	defer cancel()
 
 	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
+	depGraph := dep_graph.BuildDepGraph(inMod)
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
@@ -101,7 +103,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	namespace, typeErrors := c.InferModule(inferCtx, inMod)
+	namespace, typeErrors := c.InferDepGraph(inferCtx, depGraph)
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
@@ -114,8 +116,8 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	}
 
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildModule(inMod)
-	dtsMod := builder.BuildDefinitions(inMod.Decls, namespace)
+	jsMod := builder.BuildDepGraph(depGraph)
+	dtsMod := builder.BuilderDepGraphDefinitions(depGraph, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)

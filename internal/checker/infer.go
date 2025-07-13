@@ -80,7 +80,10 @@ func PrintDeclIdent(decl ast.Decl) string {
 // order.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	depGraph := dep_graph.BuildDepGraph(m)
+	return c.InferDepGraph(ctx, depGraph)
+}
 
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Namespace, []Error) {
 	// pretty print the dependency graph
 	for declID, depIDs := range depGraph.Deps {
 		decl := depGraph.Declarations[declID]

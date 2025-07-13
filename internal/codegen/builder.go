@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 )
 
 type Builder struct {
@@ -329,6 +330,23 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 	for _, d := range mod.Decls {
 		stmts = slices.Concat(stmts, b.buildDecl(d))
 	}
+	return &Module{
+		Stmts: stmts,
+	}
+}
+
+func (b *Builder) BuildDepGraph(depGraph *dep_graph.DepGraph) *Module {
+	var stmts []Stmt
+
+	components := depGraph.FindStronglyConnectedComponents(0)
+
+	for _, component := range components {
+		for _, declID := range component {
+			decl := depGraph.Declarations[declID]
+			stmts = slices.Concat(stmts, b.buildDecl(decl))
+		}
+	}
+
 	return &Module{
 		Stmts: stmts,
 	}
