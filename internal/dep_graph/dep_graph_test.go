@@ -638,6 +638,142 @@ func TestBuildDepGraph(t *testing.T) {
 				"StringType": {},
 			},
 		},
+		"Tuple_Destructuring_Simple": {
+			input: `
+				val point = [10, 20]
+				val [x, y] = point
+				val sum = x + y
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "point", Kind: DepKindValue},
+				{Name: "x", Kind: DepKindValue},
+				{Name: "y", Kind: DepKindValue},
+				{Name: "sum", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"point": {},
+				"x":     {"point"},
+				"y":     {"point"},
+				"sum":   {"x", "y"},
+			},
+		},
+		"Object_Destructuring_Simple": {
+			input: `
+				val user = {name: "Alice", age: 30}
+				val {name, age} = user
+				val greeting = "Hello " + name
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "user", Kind: DepKindValue},
+				{Name: "name", Kind: DepKindValue},
+				{Name: "age", Kind: DepKindValue},
+				{Name: "greeting", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"user":     {},
+				"name":     {"user"},
+				"age":      {"user"},
+				"greeting": {"name"},
+			},
+		},
+		"Object_Destructuring_With_Rename": {
+			input: `
+				val config = {width: 100, height: 50}
+				val {width: w, height: h} = config
+				val area = w * h
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "config", Kind: DepKindValue},
+				{Name: "w", Kind: DepKindValue},
+				{Name: "h", Kind: DepKindValue},
+				{Name: "area", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"config": {},
+				"w":      {"config"},
+				"h":      {"config"},
+				"area":   {"w", "h"},
+			},
+		},
+		"Nested_Destructuring": {
+			input: `
+				val data = {coords: [5, 10], info: {id: 1}}
+				val {coords: [x, y], info: {id}} = data
+				val result = x + y + id
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "data", Kind: DepKindValue},
+				{Name: "x", Kind: DepKindValue},
+				{Name: "y", Kind: DepKindValue},
+				{Name: "id", Kind: DepKindValue},
+				{Name: "result", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"data":   {},
+				"x":      {"data"},
+				"y":      {"data"},
+				"id":     {"data"},
+				"result": {"x", "y", "id"},
+			},
+		},
+		"Rest_Pattern_Destructuring": {
+			input: `
+				val numbers = [1, 2, 3, 4, 5]
+				val [first, second, ...rest] = numbers
+				val restSum = rest
+				val total = first + second
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "numbers", Kind: DepKindValue},
+				{Name: "first", Kind: DepKindValue},
+				{Name: "second", Kind: DepKindValue},
+				{Name: "rest", Kind: DepKindValue},
+				{Name: "restSum", Kind: DepKindValue},
+				{Name: "total", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"numbers": {},
+				"first":   {"numbers"},
+				"second":  {"numbers"},
+				"rest":    {"numbers"},
+				"restSum": {"rest"},
+				"total":   {"first", "second"},
+			},
+		},
+		"Mixed_Destructuring_With_Functions": {
+			input: `
+				fn getPoint() {
+					return [100, 200]
+				}
+				val [startX, startY] = getPoint()
+				fn getSize() {
+					return {width: 50, height: 30}
+				}
+				val {width, height} = getSize()
+				val area = width * height
+				val diagonal = startX + startY
+			`,
+			expectedBindings: []DepBinding{
+				{Name: "getPoint", Kind: DepKindValue},
+				{Name: "startX", Kind: DepKindValue},
+				{Name: "startY", Kind: DepKindValue},
+				{Name: "getSize", Kind: DepKindValue},
+				{Name: "width", Kind: DepKindValue},
+				{Name: "height", Kind: DepKindValue},
+				{Name: "area", Kind: DepKindValue},
+				{Name: "diagonal", Kind: DepKindValue},
+			},
+			expectedDependencies: map[string][]string{
+				"getPoint": {},
+				"startX":   {"getPoint"},
+				"startY":   {"getPoint"},
+				"getSize":  {},
+				"width":    {"getSize"},
+				"height":   {"getSize"},
+				"area":     {"width", "height"},
+				"diagonal": {"startX", "startY"},
+			},
+		},
 	}
 
 	for name, test := range tests {
