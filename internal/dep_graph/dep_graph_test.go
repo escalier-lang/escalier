@@ -755,13 +755,13 @@ func TestBuildDepGraph(t *testing.T) {
 			// Build dependency graph
 			depGraph := BuildDepGraph(module)
 
-			// Verify number of declarations
-			actualDeclCount := len(depGraph.AllDeclarations())
-			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
-				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
-
 			// Create a sorted list of declaration IDs for consistent ordering
 			declIDs := depGraph.AllDeclarations()
+
+			// Verify number of declarations
+			actualDeclCount := len(declIDs)
+			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
+				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
 
 			// Sort by the declaration ID to ensure consistent ordering
 			// (since declaration IDs are assigned in order, this gives us document order)
@@ -803,64 +803,4 @@ func TestBuildDepGraph(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDepGraph_HelperMethods(t *testing.T) {
-	input := `
-		val x = 5
-		val y = x + 10
-		fn double(n) {
-			return n * 2
-		}
-		val result = double(y)
-	`
-
-	source := &ast.Source{
-		ID:       0,
-		Path:     "test.esc",
-		Contents: input,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	parser := parser.NewParser(ctx, source)
-	module, errors := parser.ParseModule()
-
-	assert.Len(t, errors, 0, "Parser errors: %v", errors)
-
-	depGraph := BuildDepGraph(module)
-
-	// Test HasBinding
-	xBinding := DepBinding{Name: "x", Kind: DepKindValue}
-	assert.True(t, depGraph.HasBinding(xBinding), "Should have binding x")
-
-	nonExistentBinding := DepBinding{Name: "nonexistent", Kind: DepKindValue}
-	assert.False(t, depGraph.HasBinding(nonExistentBinding), "Should not have nonexistent binding")
-
-	// Test GetBinding
-	decl, exists := depGraph.GetBinding(xBinding)
-	assert.True(t, exists, "Should find binding x")
-	assert.NotNil(t, decl, "Declaration should not be nil")
-
-	_, exists = depGraph.GetBinding(nonExistentBinding)
-	assert.False(t, exists, "Should not find nonexistent binding")
-
-	// Test GetDependents using the new API
-	xDependents := depGraph.GetDependentsForBinding(xBinding)
-	yBinding := DepBinding{Name: "y", Kind: DepKindValue}
-	yDeclID, yExists := depGraph.Bindings[yBinding]
-	assert.True(t, yExists, "Should find y binding")
-	assert.True(t, xDependents.Contains(yDeclID),
-		"y should depend on x")
-
-	// Test AllBindings
-	allBindings := depGraph.AllBindings()
-	assert.Len(t, allBindings, 4, "Should have 4 bindings")
-
-	expectedNames := []string{"x", "y", "double", "result"}
-	actualNames := make([]string, len(allBindings))
-	for i, binding := range allBindings {
-		actualNames[i] = binding.Name
-	}
-	assert.ElementsMatch(t, expectedNames, actualNames, "Should have expected binding names")
 }

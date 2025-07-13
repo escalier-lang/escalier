@@ -350,46 +350,9 @@ func (g *DepGraph) GetDependencies(declID DeclID) set.Set[DeclID] {
 	return set.NewSet[DeclID]()
 }
 
-// GetDependenciesForBinding returns the dependencies for a given binding
-func (g *DepGraph) GetDependenciesForBinding(binding DepBinding) set.Set[DeclID] {
-	if declID, exists := g.Bindings[binding]; exists {
-		return g.GetDependencies(declID)
-	}
-	return set.NewSet[DeclID]()
-}
-
 // GetDeclaration returns the declaration for a given declaration ID
 func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 	return g.Decls.Get(declID)
-}
-
-// GetBinding returns the declaration for a given binding (for backward compatibility)
-func (g *DepGraph) GetBinding(binding DepBinding) (ast.Decl, bool) {
-	if declID, exists := g.Bindings[binding]; exists {
-		return g.GetDeclaration(declID)
-	}
-	return nil, false
-}
-
-// HasBinding checks if a binding exists in the graph
-func (g *DepGraph) HasBinding(binding DepBinding) bool {
-	_, exists := g.Bindings[binding]
-	return exists
-}
-
-// HasDeclaration checks if a declaration ID exists in the graph
-func (g *DepGraph) HasDeclaration(declID DeclID) bool {
-	_, exists := g.Decls.Get(declID)
-	return exists
-}
-
-// AllBindings returns all bindings in the graph
-func (g *DepGraph) AllBindings() []DepBinding {
-	bindings := make([]DepBinding, 0, len(g.Bindings))
-	for binding := range g.Bindings {
-		bindings = append(bindings, binding)
-	}
-	return bindings
 }
 
 // AllDeclarations returns all declaration IDs in the graph
@@ -412,12 +375,4 @@ func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
 		}
 	}
 	return dependents
-}
-
-// GetDependentsForBinding returns all declaration IDs that depend on the given binding
-func (g *DepGraph) GetDependentsForBinding(target DepBinding) set.Set[DeclID] {
-	if declID, exists := g.Bindings[target]; exists {
-		return g.GetDependents(declID)
-	}
-	return set.NewSet[DeclID]()
 }
