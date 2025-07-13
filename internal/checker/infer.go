@@ -108,13 +108,11 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	// Define a module scope so that declarations don't leak into the global scope
 	ctx = ctx.WithParentScope()
 
-	// Infer declarations in the module
-	errors := c.InferDecls(ctx, m.Decls)
-
-	// for _, component := range components {
-	// 	declsErrors := c.InferDecls(ctx, depGraph, component)
-	// 	errors = slices.Concat(errors, declsErrors)
-	// }
+	var errors []Error
+	for _, component := range components {
+		declsErrors := c.InferComponent(ctx, depGraph, component)
+		errors = slices.Concat(errors, declsErrors)
+	}
 
 	namespace := Namespace{
 		Values: make(map[QualifiedIdent]*Binding),
@@ -132,25 +130,22 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	return namespace, errors
 }
 
-func (c *Checker) InferDecls(ctx Context, decls []ast.Decl) []Error {
+func (c *Checker) InferComponent(
+	ctx Context,
+	depGraph *dep_graph.DepGraph,
+	component []dep_graph.DeclID,
+) []Error {
 	errors := []Error{}
 
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
 	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
 
-	// TODO: re-enable after updating dep_graph to key'd by decl ID instead of
-	// a string.
-	// decls := make([]ast.Decl, 0, len(components))
-	// addedDecls := make(map[ast.Decl]bool)
-	// for _, binding := range components {
-	// 	decl := depGraph.Bindings[binding]
-	// 	if addedDecls[decl] {
-	// 		continue
-	// 	}
-	// 	decls = append(decls, decl)
-	// 	addedDecls[decl] = true
-	// }
+	// Find decls for the component
+	decls := make([]ast.Decl, 0, len(component))
+	for _, declID := range component {
+		decls = append(decls, depGraph.Declarations[declID])
+	}
 
 	// Infer placeholders
 	for _, decl := range decls {
