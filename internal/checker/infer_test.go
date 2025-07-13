@@ -160,6 +160,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val {x, y} = {x: "foo", y: "bar"}
 			`,
 		},
+		"ObjectDeclWithDeps": {
+			input: `
+			    val foo = "foo"
+				val bar = "bar"
+				val {x, y} = {x: foo, y: bar}
+			`,
+		},
 		"IfElseExpr": {
 			input: `
 				val a = 5

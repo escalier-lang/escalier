@@ -17,33 +17,50 @@ type DepBinding struct {
 	Kind DepKind
 }
 
-// ModuleBindingVisitor collects all binding names introduced by a module
-type ModuleBindingVisitor struct {
-	ast.DefaulVisitor
-	Bindings map[DepBinding]ast.Decl
+// DeclID represents a unique identifier for each declaration
+type DeclID int
+
+var nextDeclID DeclID = 1
+
+// generateDeclID generates a new unique declaration ID
+func generateDeclID() DeclID {
+	id := nextDeclID
+	nextDeclID++
+	return id
 }
 
-// EnterDecl visits declarations and extracts binding names
+// ModuleBindingVisitor collects all declarations with unique IDs and their bindings
+type ModuleBindingVisitor struct {
+	ast.DefaulVisitor
+	Declarations map[DeclID]ast.Decl   // Map from unique ID to declaration
+	Bindings     map[DepBinding]DeclID // Map from binding to declaration ID
+}
+
+// EnterDecl visits declarations and assigns unique IDs
 func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
+	// Generate a unique ID for this declaration
+	declID := generateDeclID()
+	v.Declarations[declID] = decl
+
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		// Extract bindings from the pattern
 		patternBindings := ast.FindBindings(d.Pattern)
 		for binding := range patternBindings {
 			depBinding := DepBinding{Name: binding, Kind: DepKindValue}
-			v.Bindings[depBinding] = d
+			v.Bindings[depBinding] = declID
 		}
 	case *ast.FuncDecl:
 		// Function declarations introduce a binding with the function name
 		if d.Name != nil && d.Name.Name != "" {
 			depBinding := DepBinding{Name: d.Name.Name, Kind: DepKindValue}
-			v.Bindings[depBinding] = d
+			v.Bindings[depBinding] = declID
 		}
 	case *ast.TypeDecl:
 		// Type declarations introduce a binding with the type name
 		if d.Name != nil && d.Name.Name != "" {
 			depBinding := DepBinding{Name: d.Name.Name, Kind: DepKindType}
-			v.Bindings[depBinding] = d
+			v.Bindings[depBinding] = declID
 		}
 	}
 	return false // Don't traverse into the declaration's body
@@ -58,11 +75,12 @@ func (v *ModuleBindingVisitor) EnterTypeAnn(t ast.TypeAnn) bool            { ret
 func (v *ModuleBindingVisitor) EnterLit(lit ast.Lit) bool                  { return false }
 func (v *ModuleBindingVisitor) EnterBlock(block ast.Block) bool            { return false }
 
-// FindModuleBindings returns all binding names introduced by a module
-func FindModuleBindings(module *ast.Module) map[DepBinding]ast.Decl {
+// FindModuleBindings returns all bindings and declarations in a module with unique IDs
+func FindModuleBindings(module *ast.Module) (map[DeclID]ast.Decl, map[DepBinding]DeclID) {
 	visitor := &ModuleBindingVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
-		Bindings:      make(map[DepBinding]ast.Decl),
+		Declarations:  make(map[DeclID]ast.Decl),
+		Bindings:      make(map[DepBinding]DeclID),
 	}
 
 	// Visit all declarations in the module
@@ -70,15 +88,15 @@ func FindModuleBindings(module *ast.Module) map[DepBinding]ast.Decl {
 		decl.Accept(visitor)
 	}
 
-	return visitor.Bindings
+	return visitor.Declarations, visitor.Bindings
 }
 
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
 	ast.DefaulVisitor
-	ValidBindings set.Set[DepBinding] // Valid dependencies from the current module
-	Dependencies  set.Set[DepBinding] // Found dependencies
-	LocalBindings []set.Set[string]   // Stack of local scopes (still strings for local scope)
+	ValidBindings map[DepBinding]DeclID // Valid dependencies from the current module
+	Dependencies  set.Set[DeclID]       // Found dependencies by declaration ID
+	LocalBindings []set.Set[string]     // Stack of local scopes (still strings for local scope)
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -116,8 +134,8 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		// Check if this identifier is a valid dependency
-		if binding, exists := v.hasValidBinding(e.Name); exists && !v.isLocalBinding(e.Name) {
-			v.Dependencies.Add(binding)
+		if declID, exists := v.hasValidBinding(e.Name); exists && !v.isLocalBinding(e.Name) {
+			v.Dependencies.Add(declID)
 		}
 		return false // Don't traverse into IdentExpr
 	case *ast.MemberExpr:
@@ -163,8 +181,8 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Check if this type reference is a valid dependency
-		if binding, exists := v.hasValidBinding(t.Name); exists && !v.isLocalBinding(t.Name) {
-			v.Dependencies.Add(binding)
+		if declID, exists := v.hasValidBinding(t.Name); exists && !v.isLocalBinding(t.Name) {
+			v.Dependencies.Add(declID)
 		}
 		return true // Continue traversing type arguments
 	case *ast.ObjectTypeAnn:
@@ -217,23 +235,23 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 	return false
 }
 
-// hasValidBinding checks if a binding name exists in ValidBindings
-func (v *DependencyVisitor) hasValidBinding(name string) (DepBinding, bool) {
-	for binding := range v.ValidBindings {
+// hasValidBinding checks if a binding name exists in ValidBindings and returns the DeclID
+func (v *DependencyVisitor) hasValidBinding(name string) (DeclID, bool) {
+	for binding, declID := range v.ValidBindings {
 		if binding.Name == name {
-			return binding, true
+			return declID, true
 		}
 	}
-	return DepBinding{}, false
+	return 0, false
 }
 
 // FindDeclDependencies finds all IdentExpr dependencies in a declaration
 // that are valid module-level bindings, while properly handling scope
-func FindDeclDependencies(decl ast.Decl, validBindings set.Set[DepBinding]) set.Set[DepBinding] {
+func FindDeclDependencies(decl ast.Decl, validBindings map[DepBinding]DeclID) set.Set[DeclID] {
 	visitor := &DependencyVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
 		ValidBindings: validBindings,
-		Dependencies:  set.NewSet[DepBinding](),
+		Dependencies:  set.NewSet[DeclID](),
 		LocalBindings: make([]set.Set[string], 0),
 	}
 
@@ -272,53 +290,71 @@ func FindDeclDependencies(decl ast.Decl, validBindings set.Set[DepBinding]) set.
 }
 
 type DepGraph struct {
-	Bindings map[DepBinding]ast.Decl            // All bindings in the module
-	Deps     map[DepBinding]set.Set[DepBinding] // Dependencies for each binding
+	Declarations map[DeclID]ast.Decl        // All declarations in the module
+	Bindings     map[DepBinding]DeclID      // Map from binding to declaration ID
+	Deps         map[DeclID]set.Set[DeclID] // Dependencies for each declaration ID
 }
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
-	// First, find all bindings in the module
-	bindings := FindModuleBindings(module)
-
-	// Create a set of all valid bindings for dependency resolution
-	validBindings := set.NewSet[DepBinding]()
-	for binding := range bindings {
-		validBindings.Add(binding)
-	}
+	// First, find all declarations and bindings in the module
+	declarations, bindings := FindModuleBindings(module)
 
 	// Build the dependency map
-	deps := make(map[DepBinding]set.Set[DepBinding])
+	deps := make(map[DeclID]set.Set[DeclID])
 
 	// For each declaration, find its dependencies
-	for binding, decl := range bindings {
-		dependencies := FindDeclDependencies(decl, validBindings)
-		deps[binding] = dependencies
+	for declID, decl := range declarations {
+		dependencies := FindDeclDependencies(decl, bindings)
+		deps[declID] = dependencies
 	}
 
 	return &DepGraph{
-		Bindings: bindings,
-		Deps:     deps,
+		Declarations: declarations,
+		Bindings:     bindings,
+		Deps:         deps,
 	}
 }
 
-// GetDependencies returns the dependencies for a given binding
-func (g *DepGraph) GetDependencies(binding DepBinding) set.Set[DepBinding] {
-	if deps, exists := g.Deps[binding]; exists {
+// GetDependencies returns the dependencies for a given declaration ID
+func (g *DepGraph) GetDependencies(declID DeclID) set.Set[DeclID] {
+	if deps, exists := g.Deps[declID]; exists {
 		return deps
 	}
-	return set.NewSet[DepBinding]()
+	return set.NewSet[DeclID]()
 }
 
-// GetBinding returns the declaration for a given binding
-func (g *DepGraph) GetBinding(binding DepBinding) (ast.Decl, bool) {
-	decl, exists := g.Bindings[binding]
+// GetDependenciesForBinding returns the dependencies for a given binding
+func (g *DepGraph) GetDependenciesForBinding(binding DepBinding) set.Set[DeclID] {
+	if declID, exists := g.Bindings[binding]; exists {
+		return g.GetDependencies(declID)
+	}
+	return set.NewSet[DeclID]()
+}
+
+// GetDeclaration returns the declaration for a given declaration ID
+func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
+	decl, exists := g.Declarations[declID]
 	return decl, exists
+}
+
+// GetBinding returns the declaration for a given binding (for backward compatibility)
+func (g *DepGraph) GetBinding(binding DepBinding) (ast.Decl, bool) {
+	if declID, exists := g.Bindings[binding]; exists {
+		return g.GetDeclaration(declID)
+	}
+	return nil, false
 }
 
 // HasBinding checks if a binding exists in the graph
 func (g *DepGraph) HasBinding(binding DepBinding) bool {
 	_, exists := g.Bindings[binding]
+	return exists
+}
+
+// HasDeclaration checks if a declaration ID exists in the graph
+func (g *DepGraph) HasDeclaration(declID DeclID) bool {
+	_, exists := g.Declarations[declID]
 	return exists
 }
 
@@ -331,13 +367,30 @@ func (g *DepGraph) AllBindings() []DepBinding {
 	return bindings
 }
 
-// GetDependents returns all bindings that depend on the given binding
-func (g *DepGraph) GetDependents(target DepBinding) set.Set[DepBinding] {
-	dependents := set.NewSet[DepBinding]()
-	for binding, deps := range g.Deps {
+// AllDeclarations returns all declaration IDs in the graph
+func (g *DepGraph) AllDeclarations() []DeclID {
+	declIDs := make([]DeclID, 0, len(g.Declarations))
+	for declID := range g.Declarations {
+		declIDs = append(declIDs, declID)
+	}
+	return declIDs
+}
+
+// GetDependents returns all declaration IDs that depend on the given declaration ID
+func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
+	dependents := set.NewSet[DeclID]()
+	for declID, deps := range g.Deps {
 		if deps.Contains(target) {
-			dependents.Add(binding)
+			dependents.Add(declID)
 		}
 	}
 	return dependents
+}
+
+// GetDependentsForBinding returns all declaration IDs that depend on the given binding
+func (g *DepGraph) GetDependentsForBinding(target DepBinding) set.Set[DeclID] {
+	if declID, exists := g.Bindings[target]; exists {
+		return g.GetDependents(declID)
+	}
+	return set.NewSet[DeclID]()
 }

@@ -57,6 +57,23 @@ type Namespace struct {
 	Types  map[QualifiedIdent]*TypeAlias
 }
 
+func PrintDeclIdent(decl ast.Decl) string {
+	// Print the identifier of the declaration, e.g. "foo.bar.baz"
+	// This is used for debugging and logging purposes.
+	switch decl := decl.(type) {
+	case *ast.FuncDecl:
+		return decl.Name.Name
+	case *ast.VarDecl:
+		// get all bindings introduced by the decl
+		bindings := ast.FindBindings(decl.Pattern)
+		return strings.Join(bindings.ToSlice(), ", ")
+	case *ast.TypeDecl:
+		return decl.Name.Name
+	default:
+		return fmt.Sprintf("%T", decl)
+	}
+}
+
 // A module can contain declarations from mutliple source files.
 // The order of the declarations doesn't matter because we compute the dependency
 // graph and codegen will ensure that the declarations are emitted in the correct
@@ -65,8 +82,18 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 	depGraph := dep_graph.BuildDepGraph(m)
 
 	// pretty print the dependency graph
-	for decl, deps := range depGraph.Deps {
-		fmt.Printf("%s => %#v\n", decl.Name, deps)
+	for declID, depIDs := range depGraph.Deps {
+		decl := depGraph.Declarations[declID]
+		var deps []string
+		for depID := range depIDs {
+			decl := depGraph.Declarations[depID]
+			deps = append(deps, PrintDeclIdent(decl))
+		}
+		if len(deps) == 0 {
+			fmt.Printf("%s => (none)\n", PrintDeclIdent(decl))
+		} else {
+			fmt.Printf("%s => %s\n", PrintDeclIdent(decl), deps)
+		}
 	}
 
 	cycles := depGraph.FindCycles()
