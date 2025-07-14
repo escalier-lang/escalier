@@ -923,7 +923,8 @@ func (c *Checker) inferFuncBody(
 	}
 
 	visitor := &ReturnVisitor{
-		Returns: []*ast.ReturnStmt{},
+		DefaulVisitor: ast.DefaulVisitor{},
+		Returns:       []*ast.ReturnStmt{},
 	}
 
 	for _, stmt := range body.Stmts {
