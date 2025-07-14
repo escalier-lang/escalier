@@ -508,7 +508,9 @@ func TestFindDeclDependencies(t *testing.T) {
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
-			for declID := range dependencies {
+			iter := dependencies.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				declID := iter.Key()
 				// Find the binding that corresponds to this DeclID
 				found := false
 				valueIter := valueBindings.Iter()
@@ -621,7 +623,9 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
-			for declID := range dependencies {
+			iter := dependencies.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				declID := iter.Key()
 				// Find the binding that corresponds to this DeclID
 				found := false
 				valueIter := valueBindings.Iter()
@@ -855,7 +859,11 @@ func TestBuildDepGraph(t *testing.T) {
 				}
 
 				// Convert actual dependencies to slice for comparison
-				actualDepsSlice := actualDeps.ToSlice()
+				actualDepsSlice := make([]DeclID, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
 
 				assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
 					"Expected dependencies for declaration %d: %v, got %v", declIndex, expectedDeclIDs, actualDepsSlice)

@@ -99,7 +99,7 @@ type DependencyVisitor struct {
 	ast.DefaulVisitor
 	ValueBindings btree.Map[string, DeclID] // Valid value dependencies from the current module
 	TypeBindings  btree.Map[string, DeclID] // Valid type dependencies from the current module
-	Dependencies  set.Set[DeclID]           // Found dependencies by declaration ID
+	Dependencies  btree.Set[DeclID]         // Found dependencies by declaration ID
 	LocalBindings []set.Set[string]         // Stack of local scopes (still strings for local scope)
 }
 
@@ -140,7 +140,7 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		// Check if this identifier is a valid dependency
 		if declID, exists := v.ValueBindings.Get(e.Name); exists &&
 			!v.isLocalBinding(e.Name) {
-			v.Dependencies.Add(declID)
+			v.Dependencies.Insert(declID)
 		}
 		return false // Don't traverse into IdentExpr
 	case *ast.MemberExpr:
@@ -188,7 +188,7 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 		// Check if this type reference is a valid dependency
 		if declID, exists := v.TypeBindings.Get(t.Name); exists &&
 			!v.isLocalBinding(t.Name) {
-			v.Dependencies.Add(declID)
+			v.Dependencies.Insert(declID)
 		}
 		return true // Continue traversing type arguments
 	case *ast.ObjectTypeAnn:
@@ -228,7 +228,7 @@ func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 				// Check if this identifier is a valid dependency
 				if declID, exists := v.ValueBindings.Get(key.Name); exists &&
 					!v.isLocalBinding(key.Name) {
-					v.Dependencies.Add(declID)
+					v.Dependencies.Insert(declID)
 				}
 			}
 			return false // Don't traverse into IdentExpr
@@ -262,12 +262,17 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 
 // FindDeclDependencies finds all IdentExpr dependencies in a declaration
 // that are valid module-level bindings, while properly handling scope
-func FindDeclDependencies(decl ast.Decl, valueBindings btree.Map[string, DeclID], typeBindings btree.Map[string, DeclID]) set.Set[DeclID] {
+func FindDeclDependencies(
+	decl ast.Decl,
+	valueBindings btree.Map[string, DeclID],
+	typeBindings btree.Map[string, DeclID],
+) btree.Set[DeclID] {
+	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
 		DefaulVisitor: ast.DefaulVisitor{},
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
-		Dependencies:  set.NewSet[DeclID](),
+		Dependencies:  dependencies,
 		LocalBindings: make([]set.Set[string], 0),
 	}
 
@@ -309,10 +314,10 @@ type DepGraph struct {
 	// We use a btree.Map because insert order is not guaranteed in Go maps,
 	// and we want to maintain a consistent order for declarations.  This is so
 	// that codegen is deterministic.
-	Decls         btree.Map[DeclID, ast.Decl] // All declarations in the module
-	Deps          map[DeclID]set.Set[DeclID]  // Dependencies for each declaration ID
-	ValueBindings btree.Map[string, DeclID]   // Map from value binding name to declaration ID
-	TypeBindings  btree.Map[string, DeclID]   // Map from type binding name to declaration ID
+	Decls         btree.Map[DeclID, ast.Decl]          // All declarations in the module
+	Deps          btree.Map[DeclID, btree.Set[DeclID]] // Dependencies for each declaration ID
+	ValueBindings btree.Map[string, DeclID]            // Map from value binding name to declaration ID
+	TypeBindings  btree.Map[string, DeclID]            // Map from type binding name to declaration ID
 }
 
 // BuildDepGraph builds a dependency graph for a module
@@ -321,7 +326,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
 	// Build the dependency map
-	deps := make(map[DeclID]set.Set[DeclID])
+	var deps btree.Map[DeclID, btree.Set[DeclID]]
 
 	// For each declaration, find its dependencies
 	iter := decls.Iter()
@@ -329,7 +334,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		declID := iter.Key()
 		decl := iter.Value()
 		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
-		deps[declID] = dependencies
+		deps.Set(declID, dependencies)
 	}
 
 	return &DepGraph{
@@ -341,11 +346,12 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 }
 
 // GetDependencies returns the dependencies for a given declaration ID
-func (g *DepGraph) GetDependencies(declID DeclID) set.Set[DeclID] {
-	if deps, exists := g.Deps[declID]; exists {
+func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
+	if deps, exists := g.Deps.Get(declID); exists {
 		return deps
 	}
-	return set.NewSet[DeclID]()
+	var result btree.Set[DeclID]
+	return result
 }
 
 // GetDeclaration returns the declaration for a given declaration ID
@@ -367,7 +373,10 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 // GetDependents returns all declaration IDs that depend on the given declaration ID
 func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
 	dependents := set.NewSet[DeclID]()
-	for declID, deps := range g.Deps {
+	iter := g.Deps.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		declID := iter.Key()
+		deps := iter.Value()
 		if deps.Contains(target) {
 			dependents.Add(declID)
 		}
