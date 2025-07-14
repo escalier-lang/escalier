@@ -34,6 +34,7 @@ func (e CalleeIsNotCallableError) isError()       {}
 func (e InvalidNumberOfArgumentsError) isError()  {}
 func (e ExpectedObjectError) isError()            {}
 func (e ExpectedArrayError) isError()             {}
+func (e CyclicDependencyError) isError()          {}
 
 type UnimplementedError struct {
 	message string
@@ -204,6 +205,15 @@ func (e ExpectedArrayError) Span() ast.Span {
 }
 func (e ExpectedArrayError) Message() string {
 	return "Expected an array type, but got: " + e.Type.String()
+}
+
+type CyclicDependencyError struct{}
+
+func (e CyclicDependencyError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e CyclicDependencyError) Message() string {
+	return "Cyclic dependency detected"
 }
 
 // TODO: make this a sum type so that different error type can reference other

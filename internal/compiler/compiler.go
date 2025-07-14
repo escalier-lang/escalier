@@ -7,6 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -93,6 +94,19 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	defer cancel()
 
 	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
+	depGraph := dep_graph.BuildDepGraph(inMod)
+
+	// Make sure there are no cycles in the dependency graph before proceeding.
+	cycles := depGraph.FindCycles()
+	if len(cycles) > 0 {
+		return CompilerOutput{
+			JS:          "",
+			DTS:         "",
+			SourceMap:   "",
+			ParseErrors: nil,
+			TypeErrors:  []checker.Error{checker.CyclicDependencyError{}},
+		}
+	}
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
@@ -101,7 +115,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	namespace, typeErrors := c.InferModule(inferCtx, inMod)
+	namespace, typeErrors := c.InferDepGraph(inferCtx, depGraph)
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
@@ -113,9 +127,18 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		}
 	}
 
+	components := depGraph.FindStronglyConnectedComponents(0)
+	var decls []ast.Decl
+	for _, component := range components {
+		for _, declID := range component {
+			decl, _ := depGraph.Decls.Get(declID)
+			decls = append(decls, decl)
+		}
+	}
+
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildModule(inMod)
-	dtsMod := builder.BuildDefinitions(inMod.Decls, namespace)
+	jsMod := builder.BuildDecls(decls)
+	dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)

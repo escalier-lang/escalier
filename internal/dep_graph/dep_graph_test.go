@@ -2,13 +2,14 @@ package dep_graph
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/btree"
 )
 
 func TestFindModuleBindings(t *testing.T) {
@@ -149,12 +150,20 @@ func TestFindModuleBindings(t *testing.T) {
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
 			// Find bindings
-			bindings := FindModuleBindings(module)
+			declarations, valueBindings, typeBindings := FindModuleBindings(module)
+			_ = declarations // suppress unused variable warning for now
 
-			// Extract binding objects from the map
-			actualBindings := make([]DepBinding, 0, len(bindings))
-			for binding := range bindings {
-				actualBindings = append(actualBindings, binding)
+			// Combine bindings for comparison
+			actualBindings := make([]DepBinding, 0, valueBindings.Len()+typeBindings.Len())
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				name := valueIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindValue})
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				name := typeIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindType})
 			}
 
 			// Sort both slices for reliable comparison
@@ -260,12 +269,20 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			module := test.setupModule()
-			bindings := FindModuleBindings(module)
+			declarations, valueBindings, typeBindings := FindModuleBindings(module)
+			_ = declarations // suppress unused variable warning for now
 
-			// Extract binding objects from the map
-			actualBindings := make([]DepBinding, 0, len(bindings))
-			for binding := range bindings {
-				actualBindings = append(actualBindings, binding)
+			// Combine bindings for comparison
+			actualBindings := make([]DepBinding, 0, valueBindings.Len()+typeBindings.Len())
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				name := valueIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindValue})
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				name := typeIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindType})
 			}
 
 			assert.ElementsMatch(t, test.expected, actualBindings,
@@ -430,13 +447,12 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
 			declType:      "var",
 		},
-		// TODO: handle property shorthand correctly
-		// "VarDecl_PropertyShorthand": {
-		// 	declCode:      `val p: Point = {x, y}`,
-		// 	validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
-		// 	expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
-		// 	declType:      "var",
-		// },
+		"VarDecl_PropertyShorthand": {
+			declCode:      `val p: Point = {x, y}`,
+			validBindings: []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "x", Kind: DepKindValue}, {Name: "y", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
+			declType:      "var",
+		},
 		"VarDecl_IgnoresNonPropertyShorthandKeys": {
 			declCode:      `val p: Point = {x: a, y: b}`,
 			validBindings: []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
@@ -476,17 +492,50 @@ func TestFindDeclDependencies(t *testing.T) {
 			assert.NotNil(t, module, "Module should not be nil")
 			assert.Len(t, module.Decls, 1, "Module should have exactly one declaration")
 
-			// Create valid bindings set
-			validBindings := set.NewSet[DepBinding]()
-			for _, binding := range test.validBindings {
-				validBindings.Add(binding)
+			// Create valid bindings maps (split by kind)
+			var valueBindings btree.Map[string, DeclID]
+			var typeBindings btree.Map[string, DeclID]
+			for i, binding := range test.validBindings {
+				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				if binding.Kind == DepKindValue {
+					valueBindings.Set(binding.Name, declID)
+				} else if binding.Kind == DepKindType {
+					typeBindings.Set(binding.Name, declID)
+				}
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(module.Decls[0], validBindings)
+			dependencies := FindDeclDependencies(module.Decls[0], valueBindings, typeBindings)
 
-			// Convert dependencies set to slice for comparison
-			actualDeps := dependencies.ToSlice()
+			// Convert dependencies to bindings for comparison
+			actualDeps := make([]DepBinding, 0)
+			iter := dependencies.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				declID := iter.Key()
+				// Find the binding that corresponds to this DeclID
+				found := false
+				valueIter := valueBindings.Iter()
+				for ok := valueIter.First(); ok; ok = valueIter.Next() {
+					name := valueIter.Key()
+					id := valueIter.Value()
+					if id == declID {
+						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
+						found = true
+						break
+					}
+				}
+				if !found {
+					typeIter := typeBindings.Iter()
+					for ok := typeIter.First(); ok; ok = typeIter.Next() {
+						name := typeIter.Key()
+						id := typeIter.Value()
+						if id == declID {
+							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
+							break
+						}
+					}
+				}
+			}
 
 			assert.ElementsMatch(t, test.expectedDeps, actualDeps,
 				"Expected dependencies %v, got %v", test.expectedDeps, actualDeps)
@@ -558,17 +607,50 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			t.Parallel()
 			decl := test.setupDecl()
 
-			// Create valid bindings set
-			validBindings := set.NewSet[DepBinding]()
-			for _, binding := range test.validBindings {
-				validBindings.Add(binding)
+			// Create valid bindings maps (split by kind)
+			var valueBindings btree.Map[string, DeclID]
+			var typeBindings btree.Map[string, DeclID]
+			for i, binding := range test.validBindings {
+				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				if binding.Kind == DepKindValue {
+					valueBindings.Set(binding.Name, declID)
+				} else if binding.Kind == DepKindType {
+					typeBindings.Set(binding.Name, declID)
+				}
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, validBindings)
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
 
-			// Convert dependencies set to slice for comparison
-			actualDeps := dependencies.ToSlice()
+			// Convert dependencies to bindings for comparison
+			actualDeps := make([]DepBinding, 0)
+			iter := dependencies.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				declID := iter.Key()
+				// Find the binding that corresponds to this DeclID
+				found := false
+				valueIter := valueBindings.Iter()
+				for ok := valueIter.First(); ok; ok = valueIter.Next() {
+					name := valueIter.Key()
+					id := valueIter.Value()
+					if id == declID {
+						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
+						found = true
+						break
+					}
+				}
+				if !found {
+					typeIter := typeBindings.Iter()
+					for ok := typeIter.First(); ok; ok = typeIter.Next() {
+						name := typeIter.Key()
+						id := typeIter.Value()
+						if id == declID {
+							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
+							break
+						}
+					}
+				}
+			}
 
 			assert.ElementsMatch(t, test.expectedDeps, actualDeps,
 				"Expected dependencies %v, got %v", test.expectedDeps, actualDeps)
@@ -579,8 +661,8 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 func TestBuildDepGraph(t *testing.T) {
 	tests := map[string]struct {
 		input                string
-		expectedBindings     []DepBinding
-		expectedDependencies map[string][]string // binding name -> dependency names
+		expectedDeclCount    int
+		expectedDependencies map[int][]int // [declaration index] -> [dependency declaration indices]
 	}{
 		"Simple_Dependencies": {
 			input: `
@@ -591,17 +673,12 @@ func TestBuildDepGraph(t *testing.T) {
 				}
 				val admin = createUser("admin")
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "User", Kind: DepKindType},
-				{Name: "defaultAge", Kind: DepKindValue},
-				{Name: "createUser", Kind: DepKindValue},
-				{Name: "admin", Kind: DepKindValue},
-			},
-			expectedDependencies: map[string][]string{
-				"User":       {},
-				"defaultAge": {},
-				"createUser": {"defaultAge"},
-				"admin":      {"createUser"},
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},  // type User has no dependencies
+				1: {},  // val defaultAge has no dependencies
+				2: {1}, // fn createUser depends on defaultAge (index 1)
+				3: {2}, // val admin depends on createUser (index 2)
 			},
 		},
 		"Type_Dependencies": {
@@ -610,15 +687,11 @@ func TestBuildDepGraph(t *testing.T) {
 				type Shape = {center: Point, radius: number}
 				val origin: Point = {x: 0, y: 0}
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "Point", Kind: DepKindType},
-				{Name: "Shape", Kind: DepKindType},
-				{Name: "origin", Kind: DepKindValue},
-			},
-			expectedDependencies: map[string][]string{
-				"Point":  {},
-				"Shape":  {"Point"},
-				"origin": {"Point"},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // type Point has no dependencies
+				1: {0}, // type Shape depends on Point (index 0)
+				2: {0}, // val origin depends on Point (index 0)
 			},
 		},
 		"No_Dependencies": {
@@ -627,15 +700,101 @@ func TestBuildDepGraph(t *testing.T) {
 				val b = 10
 				type StringType = string
 			`,
-			expectedBindings: []DepBinding{
-				{Name: "a", Kind: DepKindValue},
-				{Name: "b", Kind: DepKindValue},
-				{Name: "StringType", Kind: DepKindType},
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {}, // val a has no dependencies
+				1: {}, // val b has no dependencies
+				2: {}, // type StringType has no dependencies
 			},
-			expectedDependencies: map[string][]string{
-				"a":          {},
-				"b":          {},
-				"StringType": {},
+		},
+		"Tuple_Destructuring_Simple": {
+			input: `
+				val point = [10, 20]
+				val [x, y] = point
+				val sum = x + y
+			`,
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val point has no dependencies
+				1: {0}, // val [x, y] depends on point (index 0)
+				2: {1}, // val sum depends on destructuring declaration (index 1)
+			},
+		},
+		"Object_Destructuring_Simple": {
+			input: `
+				val user = {name: "Alice", age: 30}
+				val {name, age} = user
+				val greeting = "Hello " + name
+			`,
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val user has no dependencies
+				1: {0}, // val {name, age} depends on user (index 0)
+				2: {1}, // val greeting depends on destructuring declaration (index 1)
+			},
+		},
+		"Object_Destructuring_With_Rename": {
+			input: `
+				val config = {width: 100, height: 50}
+				val {width: w, height: h} = config
+				val area = w * h
+			`,
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val config has no dependencies
+				1: {0}, // val {width: w, height: h} depends on config (index 0)
+				2: {1}, // val area depends on destructuring declaration (index 1)
+			},
+		},
+		"Nested_Destructuring": {
+			input: `
+				val data = {coords: [5, 10], info: {id: 1}}
+				val {coords: [x, y], info: {id}} = data
+				val result = x + y + id
+			`,
+			expectedDeclCount: 3,
+			expectedDependencies: map[int][]int{
+				0: {},  // val data has no dependencies
+				1: {0}, // val {coords: [x, y], info: {id}} depends on data (index 0)
+				2: {1}, // val result depends on destructuring declaration (index 1)
+			},
+		},
+		"Rest_Pattern_Destructuring": {
+			input: `
+				val numbers = [1, 2, 3, 4, 5]
+				val [first, second, ...rest] = numbers
+				val restSum = rest
+				val total = first + second
+			`,
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},  // val numbers has no dependencies
+				1: {0}, // val [first, second, ...rest] depends on numbers (index 0)
+				2: {1}, // val restSum depends on destructuring declaration (index 1)
+				3: {1}, // val total depends on destructuring declaration (index 1)
+			},
+		},
+		"Mixed_Destructuring_With_Functions": {
+			input: `
+				fn getPoint() {
+					return [100, 200]
+				}
+				val [startX, startY] = getPoint()
+				fn getSize() {
+					return {width: 50, height: 30}
+				}
+				val {width, height} = getSize()
+				val area = width * height
+				val diagonal = startX + startY
+			`,
+			expectedDeclCount: 6,
+			expectedDependencies: map[int][]int{
+				0: {},  // fn getPoint has no dependencies
+				1: {0}, // val [startX, startY] depends on getPoint (index 0)
+				2: {},  // fn getSize has no dependencies
+				3: {2}, // val {width, height} depends on getSize (index 2)
+				4: {3}, // val area depends on destructuring declaration (index 3)
+				5: {1}, // val diagonal depends on destructuring declaration (index 1)
 			},
 		},
 	}
@@ -660,92 +819,50 @@ func TestBuildDepGraph(t *testing.T) {
 			// Build dependency graph
 			depGraph := BuildDepGraph(module)
 
-			// Verify bindings
-			actualBindings := depGraph.AllBindings()
-			assert.ElementsMatch(t, test.expectedBindings, actualBindings,
-				"Expected bindings %v, got %v", test.expectedBindings, actualBindings)
+			// Create a sorted list of declaration IDs for consistent ordering
+			declIDs := depGraph.AllDeclarations()
 
-			// Verify dependencies
-			for bindingName, expectedDeps := range test.expectedDependencies {
-				// Find the binding by name
-				var binding DepBinding
-				var found bool
-				for _, b := range actualBindings {
-					if b.Name == bindingName {
-						binding = b
-						found = true
-						break
+			// Verify number of declarations
+			actualDeclCount := len(declIDs)
+			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
+				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
+
+			// Sort by the declaration ID to ensure consistent ordering
+			// (since declaration IDs are assigned in order, this gives us document order)
+			slices.Sort(declIDs)
+
+			// Verify dependencies for each declaration
+			for declIndex, expectedDeps := range test.expectedDependencies {
+				if declIndex >= len(declIDs) {
+					t.Errorf("Test case has dependency expectations for declaration index %d, but only %d declarations exist",
+						declIndex, len(declIDs))
+					continue
+				}
+
+				declID := declIDs[declIndex]
+				actualDeps := depGraph.GetDependencies(declID)
+
+				// Convert expected dependency indices to actual DeclIDs
+				expectedDeclIDs := make([]DeclID, len(expectedDeps))
+				for i, depIndex := range expectedDeps {
+					if depIndex >= len(declIDs) {
+						t.Errorf("Test case expects dependency on declaration index %d, but only %d declarations exist",
+							depIndex, len(declIDs))
+						continue
 					}
-				}
-				assert.True(t, found, "Binding %s not found", bindingName)
-
-				// Get actual dependencies
-				actualDeps := depGraph.GetDependencies(binding)
-				actualDepNames := make([]string, 0, len(actualDeps))
-				for dep := range actualDeps {
-					actualDepNames = append(actualDepNames, dep.Name)
+					expectedDeclIDs[i] = declIDs[depIndex]
 				}
 
-				assert.ElementsMatch(t, expectedDeps, actualDepNames,
-					"Expected dependencies for %s: %v, got %v", bindingName, expectedDeps, actualDepNames)
+				// Convert actual dependencies to slice for comparison
+				actualDepsSlice := make([]DeclID, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+
+				assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
+					"Expected dependencies for declaration %d: %v, got %v", declIndex, expectedDeclIDs, actualDepsSlice)
 			}
 		})
 	}
-}
-
-func TestDepGraph_HelperMethods(t *testing.T) {
-	input := `
-		val x = 5
-		val y = x + 10
-		fn double(n) {
-			return n * 2
-		}
-		val result = double(y)
-	`
-
-	source := &ast.Source{
-		ID:       0,
-		Path:     "test.esc",
-		Contents: input,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	parser := parser.NewParser(ctx, source)
-	module, errors := parser.ParseModule()
-
-	assert.Len(t, errors, 0, "Parser errors: %v", errors)
-
-	depGraph := BuildDepGraph(module)
-
-	// Test HasBinding
-	xBinding := DepBinding{Name: "x", Kind: DepKindValue}
-	assert.True(t, depGraph.HasBinding(xBinding), "Should have binding x")
-
-	nonExistentBinding := DepBinding{Name: "nonexistent", Kind: DepKindValue}
-	assert.False(t, depGraph.HasBinding(nonExistentBinding), "Should not have nonexistent binding")
-
-	// Test GetBinding
-	decl, exists := depGraph.GetBinding(xBinding)
-	assert.True(t, exists, "Should find binding x")
-	assert.NotNil(t, decl, "Declaration should not be nil")
-
-	_, exists = depGraph.GetBinding(nonExistentBinding)
-	assert.False(t, exists, "Should not find nonexistent binding")
-
-	// Test GetDependents
-	xDependents := depGraph.GetDependents(xBinding)
-	assert.True(t, xDependents.Contains(DepBinding{Name: "y", Kind: DepKindValue}),
-		"y should depend on x")
-
-	// Test AllBindings
-	allBindings := depGraph.AllBindings()
-	assert.Len(t, allBindings, 4, "Should have 4 bindings")
-
-	expectedNames := []string{"x", "y", "double", "result"}
-	actualNames := make([]string, len(allBindings))
-	for i, binding := range allBindings {
-		actualNames[i] = binding.Name
-	}
-	assert.ElementsMatch(t, expectedNames, actualNames, "Should have expected binding names")
 }

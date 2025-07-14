@@ -7,22 +7,28 @@ import (
 
 // CycleInfo represents information about a problematic cycle
 type CycleInfo struct {
-	Cycle   []DepBinding // The bindings involved in the cycle
-	Message string       // Description of why this cycle is problematic
+	Cycle   []DeclID // The declaration IDs involved in the cycle
+	Message string   // Description of why this cycle is problematic
 }
 
-// findStronglyConnectedComponents uses Tarjan's algorithm to find SCCs
-func (g *DepGraph) findStronglyConnectedComponents() [][]DepBinding {
+// FindStronglyConnectedComponents uses Tarjan's algorithm to find SCCs
+// The returned components appear in topological order, meaning that if component
+// A depends on component B, then A will appear after B in the result.
+//
+// The threshold parameter specifies the minimimum size of a strongly connected
+// component to be reported. If a component has size equal to threshold, it is
+// reported only if it contains a self-reference, e.g. a function that calls itself.
+func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 	// Tarjan's algorithm implementation
 	index := 0
-	stack := make([]DepBinding, 0)
-	indices := make(map[DepBinding]int)
-	lowlinks := make(map[DepBinding]int)
-	onStack := make(map[DepBinding]bool)
-	sccs := make([][]DepBinding, 0)
+	stack := make([]DeclID, 0)
+	indices := make(map[DeclID]int)
+	lowlinks := make(map[DeclID]int)
+	onStack := make(map[DeclID]bool)
+	sccs := make([][]DeclID, 0)
 
-	var strongConnect func(DepBinding)
-	strongConnect = func(v DepBinding) {
+	var strongConnect func(DeclID)
+	strongConnect = func(v DeclID) {
 		indices[v] = index
 		lowlinks[v] = index
 		index++
@@ -30,7 +36,10 @@ func (g *DepGraph) findStronglyConnectedComponents() [][]DepBinding {
 		onStack[v] = true
 
 		// Consider successors of v
-		for w := range g.GetDependencies(v) {
+		deps := g.GetDependencies(v)
+		iter := deps.Iter()
+		for ok := iter.First(); ok; ok = iter.Next() {
+			w := iter.Key()
 			if _, exists := indices[w]; !exists {
 				// Successor w has not yet been visited; recurse on it
 				strongConnect(w)
@@ -47,31 +56,88 @@ func (g *DepGraph) findStronglyConnectedComponents() [][]DepBinding {
 
 		// If v is a root node, pop the stack and create an SCC
 		if lowlinks[v] == indices[v] {
-			var scc []DepBinding
+			var scc []DeclID
 			for {
 				w := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
 				onStack[w] = false
 				scc = append(scc, w)
-				if w.Name == v.Name && w.Kind == v.Kind {
+				if w == v {
 					break
 				}
 			}
 			// Report cycles: either multiple bindings OR a self-reference
-			if len(scc) > 1 || (len(scc) == 1 && g.GetDependencies(scc[0]).Contains(scc[0])) {
+			deps := g.GetDependencies(scc[0])
+			if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
 				sccs = append(sccs, scc)
 			}
 		}
 	}
 
 	// Run the algorithm for all unvisited nodes
-	for binding := range g.Bindings {
-		if _, exists := indices[binding]; !exists {
-			strongConnect(binding)
+	iter := g.Decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		declID := iter.Key()
+		if _, exists := indices[declID]; !exists {
+			strongConnect(declID)
 		}
 	}
 
 	return sccs
+}
+
+// getBindingsForDecl returns all bindings associated with a declaration ID
+func (g *DepGraph) getBindingsForDecl(declID DeclID) []DepBinding {
+	var bindings []DepBinding
+	iter := g.ValueBindings.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		id := iter.Value()
+		if id == declID {
+			bindings = append(bindings, DepBinding{Name: name, Kind: DepKindValue})
+		}
+	}
+	iter = g.TypeBindings.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		id := iter.Value()
+		if id == declID {
+			bindings = append(bindings, DepBinding{Name: name, Kind: DepKindType})
+		}
+	}
+	return bindings
+}
+
+// hasValueBinding checks if a declaration has any value bindings
+func (g *DepGraph) hasValueBinding(declID DeclID) bool {
+	bindings := g.getBindingsForDecl(declID)
+	for _, binding := range bindings {
+		if binding.Kind == DepKindValue {
+			return true
+		}
+	}
+	return false
+}
+
+// hasTypeBinding checks if a declaration has any type bindings
+func (g *DepGraph) hasTypeBinding(declID DeclID) bool {
+	bindings := g.getBindingsForDecl(declID)
+	for _, binding := range bindings {
+		if binding.Kind == DepKindType {
+			return true
+		}
+	}
+	return false
+}
+
+// getDeclNames returns all binding names for a declaration
+func (g *DepGraph) getDeclNames(declID DeclID) []string {
+	bindings := g.getBindingsForDecl(declID)
+	names := make([]string, len(bindings))
+	for i, binding := range bindings {
+		names[i] = binding.Name
+	}
+	return names
 }
 
 // FindCycles detects problematic cycles in the dependency graph.
@@ -85,26 +151,23 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	var problematicCycles []CycleInfo
 
 	// Find all strongly connected components (cycles)
-	cycles := g.findStronglyConnectedComponents()
+	cycles := g.FindStronglyConnectedComponents(1)
 
 	// Pre-compute bindings used outside function bodies (only once for all cycles)
 	var usedOutsideFunctionBodies set.Set[DepBinding]
 	var hasComputedUsage bool
 
 	for _, cycle := range cycles {
-		// Check if cycle contains only type bindings
-		allTypes := true
+		// Check if cycle contains any value bindings
 		hasValue := false
-		for _, binding := range cycle {
-			if binding.Kind != DepKindType {
-				allTypes = false
-			}
-			if binding.Kind == DepKindValue {
+		for _, declID := range cycle {
+			if g.hasValueBinding(declID) {
 				hasValue = true
+				break
 			}
 		}
 
-		if allTypes {
+		if !hasValue {
 			// Type-only cycles are allowed, skip
 			continue
 		}
@@ -117,10 +180,10 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 
 		// This branch handles both mixed cycles (always problematic) and value-only cycles
 		// (problematic if any value is used outside function bodies).
-		if hasValue && !allTypes {
+		if hasValue {
 			hasType := false
-			for _, binding := range cycle {
-				if binding.Kind == DepKindType {
+			for _, declID := range cycle {
+				if g.hasTypeBinding(declID) {
 					hasType = true
 					break
 				}
@@ -137,9 +200,15 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 					hasComputedUsage = true
 				}
 
-				for _, binding := range cycle {
-					if binding.Kind == DepKindValue && usedOutsideFunctionBodies.Contains(binding) {
-						isProblematic = true
+				for _, declID := range cycle {
+					bindings := g.getBindingsForDecl(declID)
+					for _, binding := range bindings {
+						if binding.Kind == DepKindValue && usedOutsideFunctionBodies.Contains(binding) {
+							isProblematic = true
+							break
+						}
+					}
+					if isProblematic {
 						break
 					}
 				}
@@ -147,12 +216,6 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 		}
 
 		if isProblematic {
-			// Create a descriptive message
-			names := make([]string, len(cycle))
-			for i, binding := range cycle {
-				names[i] = binding.Name
-			}
-
 			problematicCycles = append(problematicCycles, CycleInfo{
 				Cycle:   cycle,
 				Message: "Cycle detected between bindings that are used outside of function bodies",
@@ -171,12 +234,23 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
 
 	// Create a map for fast lookup of existing bindings by name
 	bindingsByName := make(map[string][]DepBinding)
-	for binding := range g.Bindings {
-		bindingsByName[binding.Name] = append(bindingsByName[binding.Name], binding)
+	valueIter := g.ValueBindings.Iter()
+	for ok := valueIter.First(); ok; ok = valueIter.Next() {
+		name := valueIter.Key()
+		binding := DepBinding{Name: name, Kind: DepKindValue}
+		bindingsByName[name] = append(bindingsByName[name], binding)
+	}
+	typeIter := g.TypeBindings.Iter()
+	for ok := typeIter.First(); ok; ok = typeIter.Next() {
+		name := typeIter.Key()
+		binding := DepBinding{Name: name, Kind: DepKindType}
+		bindingsByName[name] = append(bindingsByName[name], binding)
 	}
 
 	// Check all declarations to see if they use any bindings outside function bodies
-	for _, decl := range g.Bindings {
+	iter := g.Decls.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		decl := iter.Value()
 		visitor := &AllBindingsUsageVisitor{
 			DefaulVisitor:                   ast.DefaulVisitor{},
 			FunctionDepth:                   0,

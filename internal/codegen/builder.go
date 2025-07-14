@@ -334,6 +334,18 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 	}
 }
 
+func (b *Builder) BuildDecls(decls []ast.Decl) *Module {
+	var stmts []Stmt
+
+	for _, decl := range decls {
+		stmts = slices.Concat(stmts, b.buildDecl(decl))
+	}
+
+	return &Module{
+		Stmts: stmts,
+	}
+}
+
 func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 	var res []Stmt
 	for _, s := range stmts {

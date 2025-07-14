@@ -356,11 +356,12 @@ func TestFindCycles_EdgeCases(t *testing.T) {
 			t.Logf("Test: %s", test.description)
 			t.Logf("Found %d problematic cycles", len(cycles))
 			for i, cycle := range cycles {
-				names := make([]string, len(cycle.Cycle))
-				for j, binding := range cycle.Cycle {
-					names[j] = binding.Name
+				var allNames []string
+				for _, declID := range cycle.Cycle {
+					names := depGraph.getDeclNames(declID)
+					allNames = append(allNames, names...)
 				}
-				t.Logf("Cycle %d: %v - %s", i+1, names, cycle.Message)
+				t.Logf("Cycle %d: %v - %s", i+1, allNames, cycle.Message)
 			}
 		})
 	}

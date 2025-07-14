@@ -9,6 +9,7 @@ import (
 	"maps"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -56,24 +57,80 @@ type Namespace struct {
 	Types  map[QualifiedIdent]*TypeAlias
 }
 
+func PrintDeclIdent(decl ast.Decl) string {
+	// Print the identifier of the declaration, e.g. "foo.bar.baz"
+	// This is used for debugging and logging purposes.
+	switch decl := decl.(type) {
+	case *ast.FuncDecl:
+		return decl.Name.Name
+	case *ast.VarDecl:
+		// get all bindings introduced by the decl
+		bindings := ast.FindBindings(decl.Pattern)
+		return strings.Join(bindings.ToSlice(), ", ")
+	case *ast.TypeDecl:
+		return decl.Name.Name
+	default:
+		return fmt.Sprintf("%T", decl)
+	}
+}
+
 // A module can contain declarations from mutliple source files.
 // The order of the declarations doesn't matter because we compute the dependency
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
-	errors := []Error{}
+	depGraph := dep_graph.BuildDepGraph(m)
+	return c.InferDepGraph(ctx, depGraph)
+}
+
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Namespace, []Error) {
+	components := depGraph.FindStronglyConnectedComponents(0)
+
+	// Define a module scope so that declarations don't leak into the global scope
+	ctx = ctx.WithParentScope()
+
+	var errors []Error
+	for _, component := range components {
+		declsErrors := c.InferComponent(ctx, depGraph, component)
+		errors = slices.Concat(errors, declsErrors)
+	}
 
 	namespace := Namespace{
 		Values: make(map[QualifiedIdent]*Binding),
 		Types:  make(map[QualifiedIdent]*TypeAlias),
 	}
 
+	for name, binding := range ctx.Scope.Values {
+		namespace.Values[QualifiedIdent(name)] = binding
+	}
+
+	for name, typeAlias := range ctx.Scope.Types {
+		namespace.Types[QualifiedIdent(name)] = typeAlias
+	}
+
+	return namespace, errors
+}
+
+func (c *Checker) InferComponent(
+	ctx Context,
+	depGraph *dep_graph.DepGraph,
+	component []dep_graph.DeclID,
+) []Error {
+	errors := []Error{}
+
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
 	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
 
+	// Find decls for the component
+	decls := make([]ast.Decl, 0, len(component))
+	for _, declID := range component {
+		decl, _ := depGraph.Decls.Get(declID)
+		decls = append(decls, decl)
+	}
+
 	// Infer placeholders
-	for _, decl := range m.Decls {
+	for _, decl := range decls {
 		if decl == nil {
 			continue
 		}
@@ -83,11 +140,11 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			namespace.Values[QualifiedIdent(decl.Name.Name)] = &Binding{
+			ctx.Scope.setValue(decl.Name.Name, &Binding{
 				Source:  decl.Name,
 				Type:    funcType,
 				Mutable: false,
-			}
+			})
 		case *ast.VarDecl:
 			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 			errors = slices.Concat(errors, patErrors)
@@ -104,11 +161,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			}
 
 			for name, binding := range bindings {
-				namespace.Values[QualifiedIdent(name)] = &Binding{
-					Source:  binding.Source,
-					Type:    binding.Type,
-					Mutable: binding.Mutable,
-				}
+				ctx.Scope.setValue(name, binding)
 			}
 		case *ast.TypeDecl:
 			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
@@ -137,7 +190,6 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 				TypeParams: typeParams,
 			}
 
-			namespace.Types[QualifiedIdent(decl.Name.Name)] = typeAlias
 			// TODO: include .Namespaces in Scope property, but this namespace
 			// shouldn't use qualified names.  We need it though, so that we
 			// can reference symbols in different namespaces, e.g. Foo.Bar.MyType
@@ -145,16 +197,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 		}
 	}
 
-	// Copy namespace values and type aliases into the current scope
-	// for name, typeAlias := range namespace.Types {
-	// 	ctx.Scope.setTypeAlias(name.Parts()[0], typeAlias)
-	// }
-	for name, binding := range namespace.Values {
-		ctx.Scope.setValue(name.Parts()[0], binding)
-	}
-
 	// Infer definitions
-	for _, decl := range m.Decls {
+	for _, decl := range decls {
 		if decl == nil {
 			continue
 		}
@@ -189,13 +233,9 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			// not sure if it's important to align these or not.
 
 			for name, binding := range bindings {
-				qualifiedName := QualifiedIdent(name)
-				if existingBinding, ok := namespace.Values[qualifiedName]; ok {
-					unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
-					errors = slices.Concat(errors, unifyErrors)
-				} else {
-					// Report an error since this should never happen
-				}
+				existingBinding := ctx.Scope.getValue(name)
+				unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
+				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.TypeDecl:
 			typeAlias, declErrors := c.inferTypeDecl(ctx, decl)
@@ -205,17 +245,13 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 			// - unify the Default and Constraint types for each type param
 
 			// Unified the type alias' inferred type with its placeholder type
-			qualifiedName := QualifiedIdent(decl.Name.Name)
-			if existingTypeAlias, ok := namespace.Types[qualifiedName]; ok {
-				unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
-				errors = slices.Concat(errors, unifyErrors)
-			} else {
-				// Report an error since this should never happen
-			}
+			existingTypeAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
+			unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
+			errors = slices.Concat(errors, unifyErrors)
 		}
 	}
 
-	return namespace, errors
+	return errors
 }
 
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
