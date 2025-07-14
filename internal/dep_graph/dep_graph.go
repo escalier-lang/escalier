@@ -21,27 +21,26 @@ type DepBinding struct {
 // DeclID represents a unique identifier for each declaration
 type DeclID int
 
-var nextDeclID DeclID = 1
-
-// generateDeclID generates a new unique declaration ID
-func generateDeclID() DeclID {
-	id := nextDeclID
-	nextDeclID++
-	return id
-}
-
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
 	Decls         btree.Map[DeclID, ast.Decl] // Map from unique ID to declaration
 	ValueBindings btree.Map[string, DeclID]   // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID]   // Map from type binding name to declaration ID
+	nextDeclID    DeclID                      // Next unique ID to assign
+}
+
+func (v *ModuleBindingVisitor) generateDeclID() DeclID {
+	// Generate a unique ID for this declaration
+	id := v.nextDeclID
+	v.nextDeclID++
+	return id
 }
 
 // EnterDecl visits declarations and assigns unique IDs
 func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	// Generate a unique ID for this declaration
-	declID := generateDeclID()
+	declID := v.generateDeclID()
 	v.Decls.Set(declID, decl)
 
 	switch d := decl.(type) {
@@ -84,6 +83,7 @@ func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.
 		Decls:         decls,
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
+		nextDeclID:    1, // Start IDs from 1
 	}
 
 	// Visit all declarations in the module
