@@ -62,8 +62,9 @@ func (v *Visitor) EnterTypeAnn(t ast.TypeAnn) bool {
 
 func findNodeInScript(script *ast.Script, loc ast.Location) ast.Node {
 	visitor := &Visitor{
-		Cursor: loc,
-		Node:   nil,
+		DefaulVisitor: ast.DefaulVisitor{},
+		Cursor:        loc,
+		Node:          nil,
 	}
 	for _, stmt := range script.Stmts {
 		stmt.Accept(visitor)
