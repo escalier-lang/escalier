@@ -96,6 +96,18 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	inMod, parseErrors := parser.ParseLibFiles(ctx, sources)
 	depGraph := dep_graph.BuildDepGraph(inMod)
 
+	// Make sure there are no cycles in the dependency graph before proceeding.
+	cycles := depGraph.FindCycles()
+	if len(cycles) > 0 {
+		return CompilerOutput{
+			JS:          "",
+			DTS:         "",
+			SourceMap:   "",
+			ParseErrors: nil,
+			TypeErrors:  []checker.Error{checker.CyclicDependencyError{}},
+		}
+	}
+
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
 		Filename:   "input.esc",

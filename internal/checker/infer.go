@@ -84,14 +84,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
 }
 
 func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Namespace, []Error) {
-	cycles := depGraph.FindCycles()
-	fmt.Printf("Found %d cycles\n", len(cycles))
-
 	components := depGraph.FindStronglyConnectedComponents(0)
-	fmt.Printf("Found %d strongly connected components\n", len(components))
-	for _, comp := range components {
-		fmt.Printf("Component: %v\n", comp)
-	}
 
 	// Define a module scope so that declarations don't leak into the global scope
 	ctx = ctx.WithParentScope()
