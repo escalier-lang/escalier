@@ -6,7 +6,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/moznion/go-optional"
 )
 
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
@@ -340,7 +339,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			namedElems2 := make(map[ObjTypeKey]Type)
 			keys1 := []ObjTypeKey{} // original order of keys in obj2
 
-			restType := optional.None[Type]()
+			var restType Type
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
@@ -371,7 +370,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				case *PropertyElemType:
 					namedElems2[elem.Name] = elem.Value
 				case *RestSpreadElemType:
-					restType = optional.Some(elem.Value)
+					restType = elem.Value
 				default: // skip other types of elems
 				}
 			}
@@ -390,7 +389,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				}
 			}
 
-			restType.IfSome(func(restType Type) {
+			if restType != nil {
 				restElems := []ObjTypeElem{}
 				for _, key := range keys1 {
 					if _, ok := usedKeys[key]; !ok {
@@ -407,7 +406,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 				unifyErrors := c.unify(ctx, restType, objType)
 				errors = slices.Concat(errors, unifyErrors)
-			})
+			}
 
 			return errors
 		}
