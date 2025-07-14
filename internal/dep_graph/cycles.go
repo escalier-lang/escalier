@@ -68,8 +68,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 			}
 			// Report cycles: either multiple bindings OR a self-reference
 			deps := g.GetDependencies(scc[0])
-			if len(scc) > threshold || (len(scc) == threshold &&
-				(&deps).Contains(scc[0])) {
+			if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
 				sccs = append(sccs, scc)
 			}
 		}
@@ -159,17 +158,16 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 	var hasComputedUsage bool
 
 	for _, cycle := range cycles {
-		// Check if cycle contains only type bindings
-		allTypes := true
+		// Check if cycle contains any value bindings
 		hasValue := false
 		for _, declID := range cycle {
 			if g.hasValueBinding(declID) {
-				allTypes = false
 				hasValue = true
+				break
 			}
 		}
 
-		if allTypes {
+		if !hasValue {
 			// Type-only cycles are allowed, skip
 			continue
 		}
@@ -182,7 +180,7 @@ func (g *DepGraph) FindCycles() []CycleInfo {
 
 		// This branch handles both mixed cycles (always problematic) and value-only cycles
 		// (problematic if any value is used outside function bodies).
-		if hasValue && !allTypes {
+		if hasValue {
 			hasType := false
 			for _, declID := range cycle {
 				if g.hasTypeBinding(declID) {

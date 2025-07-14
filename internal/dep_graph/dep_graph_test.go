@@ -2,6 +2,7 @@ package dep_graph
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -828,13 +829,7 @@ func TestBuildDepGraph(t *testing.T) {
 
 			// Sort by the declaration ID to ensure consistent ordering
 			// (since declaration IDs are assigned in order, this gives us document order)
-			for i := 0; i < len(declIDs)-1; i++ {
-				for j := i + 1; j < len(declIDs); j++ {
-					if declIDs[i] > declIDs[j] {
-						declIDs[i], declIDs[j] = declIDs[j], declIDs[i]
-					}
-				}
-			}
+			slices.Sort(declIDs)
 
 			// Verify dependencies for each declaration
 			for declIndex, expectedDeps := range test.expectedDependencies {
