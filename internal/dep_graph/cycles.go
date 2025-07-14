@@ -86,9 +86,20 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 // getBindingsForDecl returns all bindings associated with a declaration ID
 func (g *DepGraph) getBindingsForDecl(declID DeclID) []DepBinding {
 	var bindings []DepBinding
-	for binding, id := range g.Bindings {
+	iter := g.ValueBindings.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		id := iter.Value()
 		if id == declID {
-			bindings = append(bindings, binding)
+			bindings = append(bindings, DepBinding{Name: name, Kind: DepKindValue})
+		}
+	}
+	iter = g.TypeBindings.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		id := iter.Value()
+		if id == declID {
+			bindings = append(bindings, DepBinding{Name: name, Kind: DepKindType})
 		}
 	}
 	return bindings
@@ -221,8 +232,17 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
 
 	// Create a map for fast lookup of existing bindings by name
 	bindingsByName := make(map[string][]DepBinding)
-	for binding := range g.Bindings {
-		bindingsByName[binding.Name] = append(bindingsByName[binding.Name], binding)
+	valueIter := g.ValueBindings.Iter()
+	for ok := valueIter.First(); ok; ok = valueIter.Next() {
+		name := valueIter.Key()
+		binding := DepBinding{Name: name, Kind: DepKindValue}
+		bindingsByName[name] = append(bindingsByName[name], binding)
+	}
+	typeIter := g.TypeBindings.Iter()
+	for ok := typeIter.First(); ok; ok = typeIter.Next() {
+		name := typeIter.Key()
+		binding := DepBinding{Name: name, Kind: DepKindType}
+		bindingsByName[name] = append(bindingsByName[name], binding)
 	}
 
 	// Check all declarations to see if they use any bindings outside function bodies

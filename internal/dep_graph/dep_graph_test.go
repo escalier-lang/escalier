@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/btree"
 )
 
 func TestFindModuleBindings(t *testing.T) {
@@ -148,13 +149,20 @@ func TestFindModuleBindings(t *testing.T) {
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
 			// Find bindings
-			declarations, bindings := FindModuleBindings(module)
+			declarations, valueBindings, typeBindings := FindModuleBindings(module)
 			_ = declarations // suppress unused variable warning for now
 
-			// Extract binding objects from the map
-			actualBindings := make([]DepBinding, 0, len(bindings))
-			for binding := range bindings {
-				actualBindings = append(actualBindings, binding)
+			// Combine bindings for comparison
+			actualBindings := make([]DepBinding, 0, valueBindings.Len()+typeBindings.Len())
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				name := valueIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindValue})
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				name := typeIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindType})
 			}
 
 			// Sort both slices for reliable comparison
@@ -260,13 +268,20 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			module := test.setupModule()
-			declarations, bindings := FindModuleBindings(module)
+			declarations, valueBindings, typeBindings := FindModuleBindings(module)
 			_ = declarations // suppress unused variable warning for now
 
-			// Extract binding objects from the map
-			actualBindings := make([]DepBinding, 0, len(bindings))
-			for binding := range bindings {
-				actualBindings = append(actualBindings, binding)
+			// Combine bindings for comparison
+			actualBindings := make([]DepBinding, 0, valueBindings.Len()+typeBindings.Len())
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				name := valueIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindValue})
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				name := typeIter.Key()
+				actualBindings = append(actualBindings, DepBinding{Name: name, Kind: DepKindType})
 			}
 
 			assert.ElementsMatch(t, test.expected, actualBindings,
@@ -476,23 +491,45 @@ func TestFindDeclDependencies(t *testing.T) {
 			assert.NotNil(t, module, "Module should not be nil")
 			assert.Len(t, module.Decls, 1, "Module should have exactly one declaration")
 
-			// Create valid bindings map (map from binding to mock DeclID)
-			validBindings := make(map[DepBinding]DeclID)
+			// Create valid bindings maps (split by kind)
+			var valueBindings btree.Map[string, DeclID]
+			var typeBindings btree.Map[string, DeclID]
 			for i, binding := range test.validBindings {
-				validBindings[binding] = DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				if binding.Kind == DepKindValue {
+					valueBindings.Set(binding.Name, declID)
+				} else if binding.Kind == DepKindType {
+					typeBindings.Set(binding.Name, declID)
+				}
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(module.Decls[0], validBindings)
+			dependencies := FindDeclDependencies(module.Decls[0], valueBindings, typeBindings)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
 			for declID := range dependencies {
 				// Find the binding that corresponds to this DeclID
-				for binding, id := range validBindings {
+				found := false
+				valueIter := valueBindings.Iter()
+				for ok := valueIter.First(); ok; ok = valueIter.Next() {
+					name := valueIter.Key()
+					id := valueIter.Value()
 					if id == declID {
-						actualDeps = append(actualDeps, binding)
+						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
+						found = true
 						break
+					}
+				}
+				if !found {
+					typeIter := typeBindings.Iter()
+					for ok := typeIter.First(); ok; ok = typeIter.Next() {
+						name := typeIter.Key()
+						id := typeIter.Value()
+						if id == declID {
+							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
+							break
+						}
 					}
 				}
 			}
@@ -567,23 +604,45 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			t.Parallel()
 			decl := test.setupDecl()
 
-			// Create valid bindings map (map from binding to mock DeclID)
-			validBindings := make(map[DepBinding]DeclID)
+			// Create valid bindings maps (split by kind)
+			var valueBindings btree.Map[string, DeclID]
+			var typeBindings btree.Map[string, DeclID]
 			for i, binding := range test.validBindings {
-				validBindings[binding] = DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				if binding.Kind == DepKindValue {
+					valueBindings.Set(binding.Name, declID)
+				} else if binding.Kind == DepKindType {
+					typeBindings.Set(binding.Name, declID)
+				}
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, validBindings)
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
 			for declID := range dependencies {
 				// Find the binding that corresponds to this DeclID
-				for binding, id := range validBindings {
+				found := false
+				valueIter := valueBindings.Iter()
+				for ok := valueIter.First(); ok; ok = valueIter.Next() {
+					name := valueIter.Key()
+					id := valueIter.Value()
 					if id == declID {
-						actualDeps = append(actualDeps, binding)
+						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
+						found = true
 						break
+					}
+				}
+				if !found {
+					typeIter := typeBindings.Iter()
+					for ok := typeIter.First(); ok; ok = typeIter.Next() {
+						name := typeIter.Key()
+						id := typeIter.Value()
+						if id == declID {
+							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
+							break
+						}
 					}
 				}
 			}
