@@ -139,7 +139,6 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 
 		ns, _ := mod.Namespaces.Get(nsName)
 		ns.Decls = append(ns.Decls, decls...)
-		// allDecls = append(allDecls, decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}
 

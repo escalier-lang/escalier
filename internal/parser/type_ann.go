@@ -614,10 +614,6 @@ func getQualIdentSpan(qi ast.QualIdent) ast.Span {
 		rightSpan := q.Right.Span()
 		return ast.MergeSpans(leftSpan, rightSpan)
 	default:
-		return ast.Span{
-			Start:    ast.Location{Line: 0, Column: 0},
-			End:      ast.Location{Line: 0, Column: 0},
-			SourceID: 0,
-		}
+		panic("getQualIdentSpan - unknown QualIdent type")
 	}
 }

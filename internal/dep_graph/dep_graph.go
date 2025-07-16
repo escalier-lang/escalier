@@ -1,6 +1,8 @@
 package dep_graph
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
@@ -184,12 +186,8 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 				v.Dependencies.Insert(declID)
 				return false // Don't traverse further since we found the qualified dependency
 			}
-			// Also check if it's a type dependency (for cases where qualified types are used in expressions)
-			if declID, exists := v.TypeBindings.Get(qualifiedName); exists &&
-				!v.isLocalBinding(qualifiedName) {
-				v.Dependencies.Insert(declID)
-				return false // Don't traverse further since we found the qualified dependency
-			}
+			// NOTE: MemberExprs are value-only AST nodes so we don't bother
+			// checking if it's a type dependency.
 		}
 		// If no qualified name match, continue traversing to find dependencies in sub-expressions
 		return true
@@ -446,20 +444,6 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 	return declIDs
 }
 
-// GetDependents returns all declaration IDs that depend on the given declaration ID
-func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
-	dependents := set.NewSet[DeclID]()
-	iter := g.Deps.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		declID := iter.Key()
-		deps := iter.Value()
-		if deps.Contains(target) {
-			dependents.Add(declID)
-		}
-	}
-	return dependents
-}
-
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
 // Returns empty string if the expression doesn't form a valid qualified identifier chain
 func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
@@ -490,10 +474,12 @@ func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
 		return ""
 	}
 
-	// Join parts with dots
-	result := parts[0]
+	// Build the qualified name using strings.Builder for efficient concatenation
+	var builder strings.Builder
+	builder.WriteString(parts[0])
 	for i := 1; i < len(parts); i++ {
-		result += "." + parts[i]
+		builder.WriteByte('.')
+		builder.WriteString(parts[i])
 	}
-	return result
+	return builder.String()
 }
