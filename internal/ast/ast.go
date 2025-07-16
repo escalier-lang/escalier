@@ -39,7 +39,7 @@ func QualIdentToString(qi QualIdent) string {
 	case *Ident:
 		return q.Name
 	case *Member:
-		left := QualIdentToString(*q.Left)
+		left := QualIdentToString(q.Left)
 		return left + "." + q.Right.Name
 	default:
 		return ""
@@ -47,7 +47,7 @@ func QualIdentToString(qi QualIdent) string {
 }
 
 type Member struct {
-	Left  *QualIdent
+	Left  QualIdent
 	Right *Ident
 }
 

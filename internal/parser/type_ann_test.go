@@ -50,6 +50,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"IndexedTypeWithDot": {
 			input: "A.B",
 		},
+		"QualifiedTypeRef": {
+			input: "Foo.Bar",
+		},
+		"DeepQualifiedTypeRef": {
+			input: "Foo.Bar.Baz",
+		},
+		"QualifiedTypeRefWithTypeArgs": {
+			input: "Foo.Bar<T, U>",
+		},
 		"MutableType": {
 			input: "mut A",
 		},

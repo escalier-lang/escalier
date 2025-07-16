@@ -278,17 +278,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Identifier:
 			p.lexer.consume()
 
+			// Parse qualified identifier (e.g., Foo.Bar.Baz)
+			qualIdent := p.parseQualifiedIdent(token)
+
 			// Try to parse a set of type parameters
 			if p.lexer.peek().Type == LessThan {
 				p.lexer.consume() // consume '<'
 				typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
 				end := p.expect(GreaterThan, AlwaysConsume)
-				ident := ast.NewIdentifier(token.Value, token.Span)
-				return ast.NewRefTypeAnn(ident, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+				return ast.NewRefTypeAnn(qualIdent, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 			}
 
-			ident := ast.NewIdentifier(token.Value, token.Span)
-			typeAnn = ast.NewRefTypeAnn(ident, []ast.TypeAnn{}, token.Span)
+			typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 		default:
 			p.reportError(token.Span, "expected type annotation")
 			p.lexer.consume()
@@ -569,4 +570,54 @@ func (p *Parser) typeParam() *ast.TypeParam {
 
 	typeParam := ast.NewTypeParam(name, constraint, default_)
 	return &typeParam
+}
+
+// parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz
+func (p *Parser) parseQualifiedIdent(firstToken *Token) ast.QualIdent {
+	// Start with the first identifier
+	var qualIdent ast.QualIdent = ast.NewIdentifier(firstToken.Value, firstToken.Span)
+
+	// Check if there are more parts separated by dots
+	for p.lexer.peek().Type == Dot {
+		// Save state to peek ahead
+		savedState := p.lexer.saveState()
+		p.lexer.consume() // consume the dot
+		nextToken := p.lexer.peek()
+
+		// If the next token is not an identifier, restore state and break
+		if nextToken.Type != Identifier {
+			p.lexer.restoreState(savedState)
+			break
+		}
+
+		// It is an identifier, so consume it
+		nextToken = p.lexer.next()
+		nextIdent := ast.NewIdentifier(nextToken.Value, nextToken.Span)
+
+		// Create a Member with the current qualified identifier as left and new identifier as right
+		qualIdent = &ast.Member{
+			Left:  qualIdent,
+			Right: nextIdent,
+		}
+	}
+
+	return qualIdent
+}
+
+// getQualIdentSpan returns the span of a qualified identifier
+func getQualIdentSpan(qi ast.QualIdent) ast.Span {
+	switch q := qi.(type) {
+	case *ast.Ident:
+		return q.Span()
+	case *ast.Member:
+		leftSpan := getQualIdentSpan(q.Left)
+		rightSpan := q.Right.Span()
+		return ast.MergeSpans(leftSpan, rightSpan)
+	default:
+		return ast.Span{
+			Start:    ast.Location{Line: 0, Column: 0},
+			End:      ast.Location{Line: 0, Column: 0},
+			SourceID: 0,
+		}
+	}
 }

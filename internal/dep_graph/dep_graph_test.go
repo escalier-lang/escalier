@@ -678,22 +678,22 @@ func TestFindDeclDependencies(t *testing.T) {
 			},
 			declType: "var",
 		},
-		// "VarDecl_QualifiedTypeAndValueMixed": {
-		// 	declCode: `val config: app.Config = app.createConfig(defaults.host, defaults.port)`,
-		// 	validBindings: []DepBinding{
-		// 		{Name: "app.Config", Kind: DepKindType},
-		// 		{Name: "app.createConfig", Kind: DepKindValue},
-		// 		{Name: "defaults.host", Kind: DepKindValue},
-		// 		{Name: "defaults.port", Kind: DepKindValue},
-		// 	},
-		// 	expectedDeps: []DepBinding{
-		// 		{Name: "app.Config", Kind: DepKindType},
-		// 		{Name: "app.createConfig", Kind: DepKindValue},
-		// 		{Name: "defaults.host", Kind: DepKindValue},
-		// 		{Name: "defaults.port", Kind: DepKindValue},
-		// 	},
-		// 	declType: "var",
-		// },
+		"VarDecl_QualifiedTypeAndValueMixed": {
+			declCode: `val config: app.Config = app.createConfig(defaults.host, defaults.port)`,
+			validBindings: []DepBinding{
+				{Name: "app.Config", Kind: DepKindType},
+				{Name: "app.createConfig", Kind: DepKindValue},
+				{Name: "defaults.host", Kind: DepKindValue},
+				{Name: "defaults.port", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "app.Config", Kind: DepKindType},
+				{Name: "app.createConfig", Kind: DepKindValue},
+				{Name: "defaults.host", Kind: DepKindValue},
+				{Name: "defaults.port", Kind: DepKindValue},
+			},
+			declType: "var",
+		},
 		"FuncDecl_QualifiedDependencies": {
 			declCode: `fn processData(input) {
 				val processed = utils.transform(input)
@@ -726,26 +726,26 @@ func TestFindDeclDependencies(t *testing.T) {
 			},
 			declType: "func",
 		},
-		// "TypeDecl_QualifiedTypeDependencies": {
-		// 	declCode:      `type Response = {data: api.Data, meta: core.Meta}`,
-		// 	validBindings: []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}, {Name: "unused.Type", Kind: DepKindType}},
-		// 	expectedDeps:  []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}},
-		// 	declType:      "type",
-		// },
-		// "TypeDecl_NestedQualifiedTypes": {
-		// 	declCode:      `type Complex = {nested: {inner: models.User, config: settings.AppConfig}, items: Array<data.Item>}`,
-		// 	validBindings: []DepBinding{
-		// 		{Name: "models.User", Kind: DepKindType},
-		// 		{Name: "settings.AppConfig", Kind: DepKindType},
-		// 		{Name: "data.Item", Kind: DepKindType},
-		// 	},
-		// 	expectedDeps: []DepBinding{
-		// 		{Name: "models.User", Kind: DepKindType},
-		// 		{Name: "settings.AppConfig", Kind: DepKindType},
-		// 		{Name: "data.Item", Kind: DepKindType},
-		// 	},
-		// 	declType: "type",
-		// },
+		"TypeDecl_QualifiedTypeDependencies": {
+			declCode:      `type Response = {data: api.Data, meta: core.Meta}`,
+			validBindings: []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}, {Name: "unused.Type", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}},
+			declType:      "type",
+		},
+		"TypeDecl_NestedQualifiedTypes": {
+			declCode: `type Complex = {nested: {inner: models.User, config: settings.AppConfig}, items: Array<data.Item>}`,
+			validBindings: []DepBinding{
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "settings.AppConfig", Kind: DepKindType},
+				{Name: "data.Item", Kind: DepKindType},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "settings.AppConfig", Kind: DepKindType},
+				{Name: "data.Item", Kind: DepKindType},
+			},
+			declType: "type",
+		},
 		"VarDecl_QualifiedNonValidDependency": {
 			declCode:      `val result = unknown.module.func() + 5`,
 			validBindings: []DepBinding{{Name: "known.func", Kind: DepKindValue}, {Name: "other.var", Kind: DepKindValue}},
