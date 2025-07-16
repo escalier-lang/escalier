@@ -160,8 +160,23 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		}
 		return false // Don't traverse into IdentExpr
 	case *ast.MemberExpr:
-		// For member expressions like obj.prop, we need to check the object part
-		// Continue traversing to find any identifier dependencies
+		// For member expressions like obj.prop, check if the full qualified name exists in bindings
+		qualifiedName := v.buildQualifiedName(e)
+		if qualifiedName != "" {
+			// Check if the qualified name is a valid value dependency
+			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+				!v.isLocalBinding(qualifiedName) {
+				v.Dependencies.Insert(declID)
+				return false // Don't traverse further since we found the qualified dependency
+			}
+			// Also check if it's a type dependency (for cases where qualified types are used in expressions)
+			if declID, exists := v.TypeBindings.Get(qualifiedName); exists &&
+				!v.isLocalBinding(qualifiedName) {
+				v.Dependencies.Insert(declID)
+				return false // Don't traverse further since we found the qualified dependency
+			}
+		}
+		// If no qualified name match, continue traversing to find dependencies in sub-expressions
 		return true
 	case *ast.FuncExpr:
 		// Function expression introduces a new scope for parameters
@@ -398,4 +413,42 @@ func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
 		}
 	}
 	return dependents
+}
+
+// buildQualifiedName constructs a qualified name from a MemberExpr chain
+// Returns empty string if the expression doesn't form a valid qualified identifier chain
+func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
+	parts := make([]string, 0)
+
+	// Walk the chain backwards, collecting property names
+	current := expr
+	for current != nil {
+		if current.Prop == nil {
+			return "" // Invalid member expression
+		}
+		parts = append([]string{current.Prop.Name}, parts...) // Prepend to build left-to-right
+
+		// Check if the object is another MemberExpr
+		if memberObj, ok := current.Object.(*ast.MemberExpr); ok {
+			current = memberObj
+		} else if identObj, ok := current.Object.(*ast.IdentExpr); ok {
+			// Base case: we've reached an identifier
+			parts = append([]string{identObj.Name}, parts...) // Prepend the base identifier
+			break
+		} else {
+			// Not a simple qualified name chain (e.g., function call result, complex expression)
+			return ""
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Join parts with dots
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		result += "." + parts[i]
+	}
+	return result
 }

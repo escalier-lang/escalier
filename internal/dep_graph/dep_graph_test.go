@@ -657,6 +657,101 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
 			declType:      "var",
 		},
+		"VarDecl_QualifiedValueDependency": {
+			declCode:      `val result = foo.bar + 5`,
+			validBindings: []DepBinding{{Name: "foo.bar", Kind: DepKindValue}, {Name: "other.func", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "foo.bar", Kind: DepKindValue}},
+			declType:      "var",
+		},
+		"VarDecl_MultipleQualifiedDependencies": {
+			declCode: `val result = utils.math.add(data.values.first, data.values.second)`,
+			validBindings: []DepBinding{
+				{Name: "utils.math.add", Kind: DepKindValue},
+				{Name: "data.values.first", Kind: DepKindValue},
+				{Name: "data.values.second", Kind: DepKindValue},
+				{Name: "other.unused", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.math.add", Kind: DepKindValue},
+				{Name: "data.values.first", Kind: DepKindValue},
+				{Name: "data.values.second", Kind: DepKindValue},
+			},
+			declType: "var",
+		},
+		// "VarDecl_QualifiedTypeAndValueMixed": {
+		// 	declCode: `val config: app.Config = app.createConfig(defaults.host, defaults.port)`,
+		// 	validBindings: []DepBinding{
+		// 		{Name: "app.Config", Kind: DepKindType},
+		// 		{Name: "app.createConfig", Kind: DepKindValue},
+		// 		{Name: "defaults.host", Kind: DepKindValue},
+		// 		{Name: "defaults.port", Kind: DepKindValue},
+		// 	},
+		// 	expectedDeps: []DepBinding{
+		// 		{Name: "app.Config", Kind: DepKindType},
+		// 		{Name: "app.createConfig", Kind: DepKindValue},
+		// 		{Name: "defaults.host", Kind: DepKindValue},
+		// 		{Name: "defaults.port", Kind: DepKindValue},
+		// 	},
+		// 	declType: "var",
+		// },
+		"FuncDecl_QualifiedDependencies": {
+			declCode: `fn processData(input) {
+				val processed = utils.transform(input)
+				return storage.save(processed, config.outputPath)
+			}`,
+			validBindings: []DepBinding{
+				{Name: "utils.transform", Kind: DepKindValue},
+				{Name: "storage.save", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.transform", Kind: DepKindValue},
+				{Name: "storage.save", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			declType: "func",
+		},
+		"FuncDecl_QualifiedWithLocalShadowing": {
+			declCode: `fn testFunc(config) {
+				val result = utils.process(config)
+				return result + config.outputPath
+			}`,
+			validBindings: []DepBinding{
+				{Name: "utils.process", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.process", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue}, // config.outputPath should still be detected as qualified name
+			},
+			declType: "func",
+		},
+		// "TypeDecl_QualifiedTypeDependencies": {
+		// 	declCode:      `type Response = {data: api.Data, meta: core.Meta}`,
+		// 	validBindings: []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}, {Name: "unused.Type", Kind: DepKindType}},
+		// 	expectedDeps:  []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}},
+		// 	declType:      "type",
+		// },
+		// "TypeDecl_NestedQualifiedTypes": {
+		// 	declCode:      `type Complex = {nested: {inner: models.User, config: settings.AppConfig}, items: Array<data.Item>}`,
+		// 	validBindings: []DepBinding{
+		// 		{Name: "models.User", Kind: DepKindType},
+		// 		{Name: "settings.AppConfig", Kind: DepKindType},
+		// 		{Name: "data.Item", Kind: DepKindType},
+		// 	},
+		// 	expectedDeps: []DepBinding{
+		// 		{Name: "models.User", Kind: DepKindType},
+		// 		{Name: "settings.AppConfig", Kind: DepKindType},
+		// 		{Name: "data.Item", Kind: DepKindType},
+		// 	},
+		// 	declType: "type",
+		// },
+		"VarDecl_QualifiedNonValidDependency": {
+			declCode:      `val result = unknown.module.func() + 5`,
+			validBindings: []DepBinding{{Name: "known.func", Kind: DepKindValue}, {Name: "other.var", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{}, // unknown.module.func is not in validBindings
+			declType:      "var",
+		},
 	}
 
 	for name, test := range tests {
