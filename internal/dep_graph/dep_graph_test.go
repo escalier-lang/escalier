@@ -190,6 +190,134 @@ func TestFindModuleBindings(t *testing.T) {
 				{Name: "rest", Kind: DepKindValue},
 			},
 		},
+		"MultipleFiles_SameDirectory": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val mainVar = 42
+						fn mainFunc() {
+							return "main"
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "utils.esc",
+					Contents: `
+						type Helper = string
+						val utilVar = "utility"
+						fn utilFunc(x) {
+							return x * 2
+						}
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "mainVar", Kind: DepKindValue},
+				{Name: "mainFunc", Kind: DepKindValue},
+				{Name: "Helper", Kind: DepKindType},
+				{Name: "utilVar", Kind: DepKindValue},
+				{Name: "utilFunc", Kind: DepKindValue},
+			},
+		},
+		"MultipleFiles_WithSubdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val config = {name: "app", version: "1.0"}
+						fn start() {
+							return config
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "foo/math.esc",
+					Contents: `
+						type Vector = {x: number, y: number}
+						fn add(a, b) {
+							return a + b
+						}
+						val PI = 3.14159
+					`,
+				},
+				{
+					ID:   2,
+					Path: "bar/string.esc",
+					Contents: `
+						fn concat(a, b) {
+							return a + b
+						}
+						var delimiter = ","
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "config", Kind: DepKindValue},
+				{Name: "start", Kind: DepKindValue},
+				{Name: "foo.Vector", Kind: DepKindType},
+				{Name: "foo.add", Kind: DepKindValue},
+				{Name: "foo.PI", Kind: DepKindValue},
+				{Name: "bar.concat", Kind: DepKindValue},
+				{Name: "bar.delimiter", Kind: DepKindValue},
+			},
+		},
+		"MultipleFiles_NestedSubdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "index.esc",
+					Contents: `
+						type App = {name: string}
+						val app: App = {name: "MyApp"}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/engine.esc",
+					Contents: `
+						fn initialize() {
+							return true
+						}
+						type Engine = {running: boolean}
+					`,
+				},
+				{
+					ID:   2,
+					Path: "core/utils/helpers.esc",
+					Contents: `
+						val [first, second] = [1, 2]
+						fn helper(x) {
+							return x
+						}
+					`,
+				},
+				{
+					ID:   3,
+					Path: "models/user.esc",
+					Contents: `
+						type User = {id: number, name: string}
+						val {defaultId, defaultName} = {defaultId: 0, defaultName: "Unknown"}
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "App", Kind: DepKindType},
+				{Name: "app", Kind: DepKindValue},
+				{Name: "core.initialize", Kind: DepKindValue},
+				{Name: "core.Engine", Kind: DepKindType},
+				{Name: "core.utils.first", Kind: DepKindValue},
+				{Name: "core.utils.second", Kind: DepKindValue},
+				{Name: "core.utils.helper", Kind: DepKindValue},
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "models.defaultId", Kind: DepKindValue},
+				{Name: "models.defaultName", Kind: DepKindValue},
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -729,19 +857,25 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 
 func TestBuildDepGraph(t *testing.T) {
 	tests := map[string]struct {
-		input                string
+		sources              []*ast.Source
 		expectedDeclCount    int
 		expectedDependencies map[int][]int // [declaration index] -> [dependency declaration indices]
 	}{
 		"Simple_Dependencies": {
-			input: `
-				type User = {name: string, age: number}
-				val defaultAge = 18
-				fn createUser(name) {
-					return {name: name, age: defaultAge}
-				}
-				val admin = createUser("admin")
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type User = {name: string, age: number}
+						val defaultAge = 18
+						fn createUser(name) {
+							return {name: name, age: defaultAge}
+						}
+						val admin = createUser("admin")
+					`,
+				},
+			},
 			expectedDeclCount: 4,
 			expectedDependencies: map[int][]int{
 				0: {},  // type User has no dependencies
@@ -751,11 +885,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Type_Dependencies": {
-			input: `
-				type Point = {x: number, y: number}
-				type Shape = {center: Point, radius: number}
-				val origin: Point = {x: 0, y: 0}
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Point = {x: number, y: number}
+						type Shape = {center: Point, radius: number}
+						val origin: Point = {x: 0, y: 0}
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // type Point has no dependencies
@@ -764,11 +904,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"No_Dependencies": {
-			input: `
-				val a = 5
-				val b = 10
-				type StringType = string
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val a = 5
+						val b = 10
+						type StringType = string
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {}, // val a has no dependencies
@@ -777,11 +923,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Tuple_Destructuring_Simple": {
-			input: `
-				val point = [10, 20]
-				val [x, y] = point
-				val sum = x + y
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val point = [10, 20]
+						val [x, y] = point
+						val sum = x + y
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val point has no dependencies
@@ -790,11 +942,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Object_Destructuring_Simple": {
-			input: `
-				val user = {name: "Alice", age: 30}
-				val {name, age} = user
-				val greeting = "Hello " + name
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val user = {name: "Alice", age: 30}
+						val {name, age} = user
+						val greeting = "Hello " + name
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val user has no dependencies
@@ -803,11 +961,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Object_Destructuring_With_Rename": {
-			input: `
-				val config = {width: 100, height: 50}
-				val {width: w, height: h} = config
-				val area = w * h
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val config = {width: 100, height: 50}
+						val {width: w, height: h} = config
+						val area = w * h
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val config has no dependencies
@@ -816,11 +980,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Nested_Destructuring": {
-			input: `
-				val data = {coords: [5, 10], info: {id: 1}}
-				val {coords: [x, y], info: {id}} = data
-				val result = x + y + id
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val data = {coords: [5, 10], info: {id: 1}}
+						val {coords: [x, y], info: {id}} = data
+						val result = x + y + id
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val data has no dependencies
@@ -829,12 +999,18 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Rest_Pattern_Destructuring": {
-			input: `
-				val numbers = [1, 2, 3, 4, 5]
-				val [first, second, ...rest] = numbers
-				val restSum = rest
-				val total = first + second
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val numbers = [1, 2, 3, 4, 5]
+						val [first, second, ...rest] = numbers
+						val restSum = rest
+						val total = first + second
+					`,
+				},
+			},
 			expectedDeclCount: 4,
 			expectedDependencies: map[int][]int{
 				0: {},  // val numbers has no dependencies
@@ -844,18 +1020,24 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Mixed_Destructuring_With_Functions": {
-			input: `
-				fn getPoint() {
-					return [100, 200]
-				}
-				val [startX, startY] = getPoint()
-				fn getSize() {
-					return {width: 50, height: 30}
-				}
-				val {width, height} = getSize()
-				val area = width * height
-				val diagonal = startX + startY
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn getPoint() {
+							return [100, 200]
+						}
+						val [startX, startY] = getPoint()
+						fn getSize() {
+							return {width: 50, height: 30}
+						}
+						val {width, height} = getSize()
+						val area = width * height
+						val diagonal = startX + startY
+					`,
+				},
+			},
 			expectedDeclCount: 6,
 			expectedDependencies: map[int][]int{
 				0: {},  // fn getPoint has no dependencies
@@ -866,20 +1048,185 @@ func TestBuildDepGraph(t *testing.T) {
 				5: {1}, // val diagonal depends on destructuring declaration (index 1)
 			},
 		},
+		"Multiple_Files_Simple_Dependencies": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val config = {debug: true, version: "1.0"}
+						val app = createApp(config)
+					`,
+				},
+				{
+					ID:   1,
+					Path: "utils.esc",
+					Contents: `
+						fn createApp(config) {
+							return {name: "MyApp", config: config}
+						}
+						val helper = "utility"
+					`,
+				},
+			},
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},     // val config (main.esc) has no dependencies
+				1: {0, 2}, // val app (main.esc) depends on config (index 0) and utils.createApp (index 2)
+				2: {},     // fn utils.createApp has no dependencies
+				3: {},     // val utils.helper has no dependencies
+			},
+		},
+		// "Multiple_Files_With_Subdirectories": {
+		// 	sources: []*ast.Source{
+		// 		{
+		// 			ID:   0,
+		// 			Path: "main.esc",
+		// 			Contents: `
+		// 				type Config = {name: string, version: string}
+		// 				val config: Config = {name: "app", version: "1.0"}
+		// 				val calculator = math.operations.add(5, 3)
+		// 				val greeting = strings.format("Hello {}", config.name)
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   1,
+		// 			Path: "math/operations.esc",
+		// 			Contents: `
+		// 				fn add(a, b) {
+		// 					return a + b
+		// 				}
+		// 				fn multiply(a, b) {
+		// 					return a * b
+		// 				}
+		// 				val PI = 3.14159
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   2,
+		// 			Path: "strings/format.esc",
+		// 			Contents: `
+		// 				fn format(template, value) {
+		// 					return template + " " + value
+		// 				}
+		// 				type Template = string
+		// 			`,
+		// 		},
+		// 	},
+		// 	expectedDeclCount: 8,
+		// 	expectedDependencies: map[int][]int{
+		// 		0: {},  // type Config (main.esc) has no dependencies
+		// 		1: {0}, // val config (main.esc) depends on Config (index 0)
+		// 		2: {3}, // val calculator (main.esc) depends on math.operations.add (index 3)
+		// 		3: {6}, // val greeting (main.esc) depends on strings.format (index 6)
+		// 		4: {},  // fn math.operations.add has no dependencies
+		// 		5: {},  // fn math.operations.multiply has no dependencies
+		// 		6: {},  // val math.operations.PI has no dependencies
+		// 		7: {},  // fn strings.format has no dependencies
+		// 		8: {},  // type strings.Template has no dependencies
+		// 	},
+		// },
+		// "Multiple_Files_Cross_Directory_Dependencies": {
+		// 	sources: []*ast.Source{
+		// 		{
+		// 			ID:   0,
+		// 			Path: "index.esc",
+		// 			Contents: `
+		// 				val result = core.engine.process(models.user.defaultUser)
+		// 				type Result = {success: boolean, data: models.User}
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   1,
+		// 			Path: "core/engine.esc",
+		// 			Contents: `
+		// 				fn process(user) {
+		// 					return {success: true, data: user}
+		// 				}
+		// 				val engine: Engine = {running: true}
+		// 				type Engine = {running: boolean}
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   2,
+		// 			Path: "models/user.esc",
+		// 			Contents: `
+		// 				type User = {id: number, name: string}
+		// 				val defaultUser: User = {id: 0, name: "Guest"}
+		// 				fn createUser(name) {
+		// 					return {id: 1, name: name}
+		// 				}
+		// 			`,
+		// 		},
+		// 	},
+		// 	expectedDeclCount: 8,
+		// 	expectedDependencies: map[int][]int{
+		// 		0: {2, 6}, // val result depends on core.engine.process (index 2) and models.user.defaultUser (index 6)
+		// 		1: {5},    // type Result depends on models.User (index 5)
+		// 		2: {},     // fn core.engine.process has no dependencies
+		// 		3: {4},    // val core.engine.engine depends on core.Engine (index 4)
+		// 		4: {},     // type core.Engine has no dependencies
+		// 		5: {},     // type models.User has no dependencies
+		// 		6: {5},    // val models.user.defaultUser depends on models.User (index 5)
+		// 		7: {},     // fn models.user.createUser has no dependencies
+		// 	},
+		// },
+		// "Multiple_Files_Nested_Subdirectories": {
+		// 	sources: []*ast.Source{
+		// 		{
+		// 			ID:   0,
+		// 			Path: "app.esc",
+		// 			Contents: `
+		// 				val server = core.network.http.createServer(8080)
+		// 				val database = core.storage.db.connect("localhost")
+		// 				type App = {server: core.network.http.Server, db: core.storage.db.Database}
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   1,
+		// 			Path: "core/network/http.esc",
+		// 			Contents: `
+		// 				type Server = {port: number, running: boolean}
+		// 				fn createServer(port) {
+		// 					return {port: port, running: false}
+		// 				}
+		// 				val defaultPort = 3000
+		// 			`,
+		// 		},
+		// 		{
+		// 			ID:   2,
+		// 			Path: "core/storage/db.esc",
+		// 			Contents: `
+		// 				type Database = {host: string, connected: boolean}
+		// 				fn connect(host) {
+		// 					return {host: host, connected: true}
+		// 				}
+		// 				val maxConnections = 100
+		// 			`,
+		// 		},
+		// 	},
+		// 	expectedDeclCount: 9,
+		// 	expectedDependencies: map[int][]int{
+		// 		0: {4},    // val server depends on core.network.http.createServer (index 4)
+		// 		1: {7},    // val database depends on core.storage.db.connect (index 7)
+		// 		2: {3, 6}, // type App depends on core.network.http.Server (index 3) and core.storage.db.Database (index 6)
+		// 		3: {},     // type core.network.http.Server has no dependencies
+		// 		4: {},     // fn core.network.http.createServer has no dependencies
+		// 		5: {},     // val core.network.http.defaultPort has no dependencies
+		// 		6: {},     // type core.storage.db.Database has no dependencies
+		// 		7: {},     // fn core.storage.db.connect has no dependencies
+		// 		8: {},     // val core.storage.db.maxConnections has no dependencies
+		// 	},
+		// },
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "test.esc",
-				Contents: test.input,
-			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)

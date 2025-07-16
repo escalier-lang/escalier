@@ -2,9 +2,36 @@ package parser
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
+
+// deriveNamespaceFromPath derives a namespace name from a file path
+// Examples:
+//   - "main.esc" -> ""
+//   - "foo/math.esc" -> "foo"
+//   - "bar/string.esc" -> "bar"
+//   - "core/utils/helpers.esc" -> "core.utils"
+func deriveNamespaceFromPath(path string) string {
+	// remove "lib/" prefix if it exists
+	path = strings.TrimPrefix(path, "lib/")
+
+	// Get the directory part of the path
+	dir := filepath.Dir(path)
+
+	// If it's the current directory ".", return empty namespace
+	if dir == "." || dir == "" {
+		return ""
+	}
+
+	// Replace path separators with dots
+	namespace := strings.ReplaceAll(dir, "/", ".")
+	namespace = strings.ReplaceAll(namespace, "\\", ".") // Handle Windows paths
+
+	return namespace
+}
 
 type Parser struct {
 	ctx      context.Context
@@ -93,7 +120,12 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 	allErrors := []*Error{}
 
 	for _, source := range sources {
-		nsName := "" // TODO: determine the namespace based on the source path
+		if source == nil {
+			continue
+		}
+
+		// Determine the namespace based on the source path
+		nsName := deriveNamespaceFromPath(source.Path)
 
 		if _, ok := namespaces[nsName]; !ok {
 			mod.Namespaces[nsName] = &ast.Namespace{
@@ -101,9 +133,6 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 			}
 		}
 
-		if source == nil {
-			continue
-		}
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
 
