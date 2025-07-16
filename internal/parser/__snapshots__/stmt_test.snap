@@ -686,7 +686,14 @@ nil
         TypeAnn: &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
-                    Name:     "Foo",
+                    Name: &ast.Ident{
+                        Name: "Foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:7},
+                            End:      ast.Location{Line:2, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -697,7 +704,14 @@ nil
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "Bar",
+                    Name: &ast.Ident{
+                        Name: "Bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:7},
+                            End:      ast.Location{Line:3, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -708,7 +722,14 @@ nil
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "Baz",
+                    Name: &ast.Ident{
+                        Name: "Baz",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:7},
+                            End:      ast.Location{Line:4, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -1027,7 +1048,14 @@ nil
         TypeAnn: &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
-                    Name:     "Foo",
+                    Name: &ast.Ident{
+                        Name: "Foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -1038,7 +1066,14 @@ nil
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "Bar",
+                    Name: &ast.Ident{
+                        Name: "Bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:7},
+                            End:      ast.Location{Line:3, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -1049,7 +1084,14 @@ nil
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "Baz",
+                    Name: &ast.Ident{
+                        Name: "Baz",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:5, Column:7},
+                            End:      ast.Location{Line:5, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{

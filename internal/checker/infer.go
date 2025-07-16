@@ -1217,7 +1217,8 @@ func (c *Checker) inferTypeAnn(
 
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
-		typeAlias := ctx.Scope.getTypeAlias(typeAnn.Name)
+		typeName := ast.QualIdentToString(typeAnn.Name)
+		typeAlias := ctx.Scope.getTypeAlias(typeName)
 		if typeAlias != nil {
 			typeArgs := make([]Type, len(typeAnn.TypeArgs))
 			for i, typeArg := range typeAnn.TypeArgs {
@@ -1226,14 +1227,14 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t = NewTypeRefType(typeAnn.Name, typeAlias, typeArgs...)
+			t = NewTypeRefType(typeName, typeAlias, typeArgs...)
 		} else {
 			// TODO: include type args
-			typeRef := NewTypeRefType(typeAnn.Name, nil, nil)
+			typeRef := NewTypeRefType(typeName, nil, nil)
 			typeRef.SetProvenance(&ast.NodeProvenance{
 				Node: typeAnn,
 			})
-			errors = append(errors, &UnkonwnTypeError{TypeName: typeAnn.Name, typeRef: typeRef})
+			errors = append(errors, &UnkonwnTypeError{TypeName: typeName, typeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
 		t = NewNumType()

@@ -33,6 +33,19 @@ type QualIdent interface{ isQualIdent() }
 func (*Ident) isQualIdent()  {}
 func (*Member) isQualIdent() {}
 
+// QualIdentToString converts a QualIdent to its string representation
+func QualIdentToString(qi QualIdent) string {
+	switch q := qi.(type) {
+	case *Ident:
+		return q.Name
+	case *Member:
+		left := QualIdentToString(*q.Left)
+		return left + "." + q.Right.Name
+	default:
+		return ""
+	}
+}
+
 type Member struct {
 	Left  *QualIdent
 	Right *Ident

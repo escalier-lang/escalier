@@ -283,10 +283,12 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				p.lexer.consume() // consume '<'
 				typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
 				end := p.expect(GreaterThan, AlwaysConsume)
-				return ast.NewRefTypeAnn(token.Value, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+				ident := ast.NewIdentifier(token.Value, token.Span)
+				return ast.NewRefTypeAnn(ident, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 			}
 
-			typeAnn = ast.NewRefTypeAnn(token.Value, []ast.TypeAnn{}, token.Span)
+			ident := ast.NewIdentifier(token.Value, token.Span)
+			typeAnn = ast.NewRefTypeAnn(ident, []ast.TypeAnn{}, token.Span)
 		default:
 			p.reportError(token.Span, "expected type annotation")
 			p.lexer.consume()

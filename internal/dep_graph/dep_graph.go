@@ -217,8 +217,9 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Check if this type reference is a valid dependency
-		if declID, exists := v.TypeBindings.Get(t.Name); exists &&
-			!v.isLocalBinding(t.Name) {
+		typeName := ast.QualIdentToString(t.Name)
+		if declID, exists := v.TypeBindings.Get(typeName); exists &&
+			!v.isLocalBinding(typeName) {
 			v.Dependencies.Insert(declID)
 		}
 		return true // Continue traversing type arguments
