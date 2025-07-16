@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/tidwall/btree"
 )
 
 // deriveNamespaceFromPath derives a namespace name from a file path
@@ -112,7 +113,7 @@ func (p *Parser) decls() []ast.Decl {
 }
 
 func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
-	namespaces := make(map[string]*ast.Namespace)
+	var namespaces btree.Map[string, *ast.Namespace]
 	mod := &ast.Module{
 		Namespaces: namespaces,
 	}
@@ -127,16 +128,17 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		// Determine the namespace based on the source path
 		nsName := deriveNamespaceFromPath(source.Path)
 
-		if _, ok := namespaces[nsName]; !ok {
-			mod.Namespaces[nsName] = &ast.Namespace{
+		if _, exists := mod.Namespaces.Get(nsName); !exists {
+			mod.Namespaces.Set(nsName, &ast.Namespace{
 				Decls: []ast.Decl{},
-			}
+			})
 		}
 
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
 
-		mod.Namespaces[nsName].Decls = append(mod.Namespaces[nsName].Decls, decls...)
+		ns, _ := mod.Namespaces.Get(nsName)
+		ns.Decls = append(ns.Decls, decls...)
 		// allDecls = append(allDecls, decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}

@@ -1,6 +1,9 @@
 package ast
 
-import "github.com/escalier-lang/escalier/internal/type_system"
+import (
+	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tidwall/btree"
+)
 
 type Node interface {
 	Span() Span
@@ -60,7 +63,7 @@ type Namespace struct {
 	Decls []Decl
 }
 type Module struct {
-	Namespaces map[string]*Namespace
+	Namespaces btree.Map[string, *Namespace]
 }
 
 type Script struct {

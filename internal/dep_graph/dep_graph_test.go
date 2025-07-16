@@ -363,101 +363,101 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 	}{
 		"FuncDecl_NilName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
-					Namespaces: map[string]*ast.Namespace{
-						"": {
-							Decls: []ast.Decl{
-								&ast.FuncDecl{
-									Name: nil, // Function with nil name
-									FuncSig: ast.FuncSig{
-										TypeParams: []*ast.TypeParam{},
-										Params:     []*ast.Param{},
-										Return:     nil,
-										Throws:     nil,
-									},
-									Body: &ast.Block{
-										Stmts: []ast.Stmt{},
-										Span: ast.Span{
-											Start:    ast.Location{Line: 1, Column: 1},
-											End:      ast.Location{Line: 1, Column: 1},
-											SourceID: 0,
-										},
-									},
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
+					Decls: []ast.Decl{
+						&ast.FuncDecl{
+							Name: nil, // Function with nil name
+							FuncSig: ast.FuncSig{
+								TypeParams: []*ast.TypeParam{},
+								Params:     []*ast.Param{},
+								Return:     nil,
+								Throws:     nil,
+							},
+							Body: &ast.Block{
+								Stmts: []ast.Stmt{},
+								Span: ast.Span{
+									Start:    ast.Location{Line: 1, Column: 1},
+									End:      ast.Location{Line: 1, Column: 1},
+									SourceID: 0,
 								},
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"FuncDecl_EmptyName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
-					Namespaces: map[string]*ast.Namespace{
-						"": {
-							Decls: []ast.Decl{
-								&ast.FuncDecl{
-									Name: &ast.Ident{Name: ""}, // Function with empty name
-									FuncSig: ast.FuncSig{
-										TypeParams: []*ast.TypeParam{},
-										Params:     []*ast.Param{},
-										Return:     nil,
-										Throws:     nil,
-									},
-									Body: &ast.Block{
-										Stmts: []ast.Stmt{},
-										Span: ast.Span{
-											Start:    ast.Location{Line: 1, Column: 1},
-											End:      ast.Location{Line: 1, Column: 1},
-											SourceID: 0,
-										},
-									},
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
+					Decls: []ast.Decl{
+						&ast.FuncDecl{
+							Name: &ast.Ident{Name: ""}, // Function with empty name
+							FuncSig: ast.FuncSig{
+								TypeParams: []*ast.TypeParam{},
+								Params:     []*ast.Param{},
+								Return:     nil,
+								Throws:     nil,
+							},
+							Body: &ast.Block{
+								Stmts: []ast.Stmt{},
+								Span: ast.Span{
+									Start:    ast.Location{Line: 1, Column: 1},
+									End:      ast.Location{Line: 1, Column: 1},
+									SourceID: 0,
 								},
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"TypeDecl_NilName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
-					Namespaces: map[string]*ast.Namespace{
-						"": {
-							Decls: []ast.Decl{
-								&ast.TypeDecl{
-									Name:       nil, // Type with nil name
-									TypeParams: []*ast.TypeParam{},
-									TypeAnn: &ast.LitTypeAnn{
-										Lit: &ast.StrLit{Value: "test"},
-									},
-								},
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
+					Decls: []ast.Decl{
+						&ast.TypeDecl{
+							Name:       nil, // Type with nil name
+							TypeParams: []*ast.TypeParam{},
+							TypeAnn: &ast.LitTypeAnn{
+								Lit: &ast.StrLit{Value: "test"},
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"TypeDecl_EmptyName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
-					Namespaces: map[string]*ast.Namespace{
-						"": {
-							Decls: []ast.Decl{
-								&ast.TypeDecl{
-									Name:       &ast.Ident{Name: ""}, // Type with empty name
-									TypeParams: []*ast.TypeParam{},
-									TypeAnn: &ast.LitTypeAnn{
-										Lit: &ast.StrLit{Value: "test"},
-									},
-								},
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
+					Decls: []ast.Decl{
+						&ast.TypeDecl{
+							Name:       &ast.Ident{Name: ""}, // Type with empty name
+							TypeParams: []*ast.TypeParam{},
+							TypeAnn: &ast.LitTypeAnn{
+								Lit: &ast.StrLit{Value: "test"},
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
@@ -782,7 +782,10 @@ func TestFindDeclDependencies(t *testing.T) {
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 			assert.NotNil(t, module, "Module should not be nil")
-			assert.Len(t, module.Namespaces[""].Decls, 1, "Module should have exactly one declaration")
+
+			emptyNS, exists := module.Namespaces.Get("")
+			assert.True(t, exists, "Module should have empty namespace")
+			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
 
 			// Create valid bindings maps (split by kind)
 			var valueBindings btree.Map[string, DeclID]
@@ -797,7 +800,8 @@ func TestFindDeclDependencies(t *testing.T) {
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(module.Namespaces[""].Decls[0], valueBindings, typeBindings)
+			emptyNS2, _ := module.Namespaces.Get("")
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -912,7 +916,7 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -1172,147 +1176,147 @@ func TestBuildDepGraph(t *testing.T) {
 				3: {},     // val utils.helper has no dependencies
 			},
 		},
-		// "Multiple_Files_With_Subdirectories": {
-		// 	sources: []*ast.Source{
-		// 		{
-		// 			ID:   0,
-		// 			Path: "main.esc",
-		// 			Contents: `
-		// 				type Config = {name: string, version: string}
-		// 				val config: Config = {name: "app", version: "1.0"}
-		// 				val calculator = math.operations.add(5, 3)
-		// 				val greeting = strings.format("Hello {}", config.name)
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   1,
-		// 			Path: "math/operations.esc",
-		// 			Contents: `
-		// 				fn add(a, b) {
-		// 					return a + b
-		// 				}
-		// 				fn multiply(a, b) {
-		// 					return a * b
-		// 				}
-		// 				val PI = 3.14159
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   2,
-		// 			Path: "strings/format.esc",
-		// 			Contents: `
-		// 				fn format(template, value) {
-		// 					return template + " " + value
-		// 				}
-		// 				type Template = string
-		// 			`,
-		// 		},
-		// 	},
-		// 	expectedDeclCount: 8,
-		// 	expectedDependencies: map[int][]int{
-		// 		0: {},  // type Config (main.esc) has no dependencies
-		// 		1: {0}, // val config (main.esc) depends on Config (index 0)
-		// 		2: {3}, // val calculator (main.esc) depends on math.operations.add (index 3)
-		// 		3: {6}, // val greeting (main.esc) depends on strings.format (index 6)
-		// 		4: {},  // fn math.operations.add has no dependencies
-		// 		5: {},  // fn math.operations.multiply has no dependencies
-		// 		6: {},  // val math.operations.PI has no dependencies
-		// 		7: {},  // fn strings.format has no dependencies
-		// 		8: {},  // type strings.Template has no dependencies
-		// 	},
-		// },
-		// "Multiple_Files_Cross_Directory_Dependencies": {
-		// 	sources: []*ast.Source{
-		// 		{
-		// 			ID:   0,
-		// 			Path: "index.esc",
-		// 			Contents: `
-		// 				val result = core.engine.process(models.user.defaultUser)
-		// 				type Result = {success: boolean, data: models.User}
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   1,
-		// 			Path: "core/engine.esc",
-		// 			Contents: `
-		// 				fn process(user) {
-		// 					return {success: true, data: user}
-		// 				}
-		// 				val engine: Engine = {running: true}
-		// 				type Engine = {running: boolean}
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   2,
-		// 			Path: "models/user.esc",
-		// 			Contents: `
-		// 				type User = {id: number, name: string}
-		// 				val defaultUser: User = {id: 0, name: "Guest"}
-		// 				fn createUser(name) {
-		// 					return {id: 1, name: name}
-		// 				}
-		// 			`,
-		// 		},
-		// 	},
-		// 	expectedDeclCount: 8,
-		// 	expectedDependencies: map[int][]int{
-		// 		0: {2, 6}, // val result depends on core.engine.process (index 2) and models.user.defaultUser (index 6)
-		// 		1: {5},    // type Result depends on models.User (index 5)
-		// 		2: {},     // fn core.engine.process has no dependencies
-		// 		3: {4},    // val core.engine.engine depends on core.Engine (index 4)
-		// 		4: {},     // type core.Engine has no dependencies
-		// 		5: {},     // type models.User has no dependencies
-		// 		6: {5},    // val models.user.defaultUser depends on models.User (index 5)
-		// 		7: {},     // fn models.user.createUser has no dependencies
-		// 	},
-		// },
-		// "Multiple_Files_Nested_Subdirectories": {
-		// 	sources: []*ast.Source{
-		// 		{
-		// 			ID:   0,
-		// 			Path: "app.esc",
-		// 			Contents: `
-		// 				val server = core.network.http.createServer(8080)
-		// 				val database = core.storage.db.connect("localhost")
-		// 				type App = {server: core.network.http.Server, db: core.storage.db.Database}
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   1,
-		// 			Path: "core/network/http.esc",
-		// 			Contents: `
-		// 				type Server = {port: number, running: boolean}
-		// 				fn createServer(port) {
-		// 					return {port: port, running: false}
-		// 				}
-		// 				val defaultPort = 3000
-		// 			`,
-		// 		},
-		// 		{
-		// 			ID:   2,
-		// 			Path: "core/storage/db.esc",
-		// 			Contents: `
-		// 				type Database = {host: string, connected: boolean}
-		// 				fn connect(host) {
-		// 					return {host: host, connected: true}
-		// 				}
-		// 				val maxConnections = 100
-		// 			`,
-		// 		},
-		// 	},
-		// 	expectedDeclCount: 9,
-		// 	expectedDependencies: map[int][]int{
-		// 		0: {4},    // val server depends on core.network.http.createServer (index 4)
-		// 		1: {7},    // val database depends on core.storage.db.connect (index 7)
-		// 		2: {3, 6}, // type App depends on core.network.http.Server (index 3) and core.storage.db.Database (index 6)
-		// 		3: {},     // type core.network.http.Server has no dependencies
-		// 		4: {},     // fn core.network.http.createServer has no dependencies
-		// 		5: {},     // val core.network.http.defaultPort has no dependencies
-		// 		6: {},     // type core.storage.db.Database has no dependencies
-		// 		7: {},     // fn core.storage.db.connect has no dependencies
-		// 		8: {},     // val core.storage.db.maxConnections has no dependencies
-		// 	},
-		// },
+		"Multiple_Files_With_Subdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						type Config = {name: string, version: string}
+						val config: Config = {name: "app", version: "1.0"}
+						val calculator = math.add(5, 3)
+						val greeting = strings.format("Hello {}", config.name)
+					`,
+				},
+				{
+					ID:   1,
+					Path: "math/operations.esc",
+					Contents: `
+						fn add(a, b) {
+							return a + b
+						}
+						fn multiply(a, b) {
+							return a * b
+						}
+						val PI = 3.14159
+					`,
+				},
+				{
+					ID:   2,
+					Path: "strings/format.esc",
+					Contents: `
+						fn format(template, value) {
+							return template + " " + value
+						}
+						type Template = string
+					`,
+				},
+			},
+			expectedDeclCount: 9,
+			expectedDependencies: map[int][]int{
+				0: {},     // type Config (main.esc) has no dependencies
+				1: {0},    // val config (main.esc) depends on Config (index 0)
+				2: {4},    // val calculator (main.esc) depends on math.add (index 4)
+				3: {1, 7}, // val greeting (main.esc) depends on strings.format (index 7) and config (index 1)
+				4: {},     // fn math.add has no dependencies
+				5: {},     // fn math.multiply has no dependencies
+				6: {},     // val math.PI has no dependencies
+				7: {},     // fn strings.format has no dependencies
+				8: {},     // type strings.Template has no dependencies
+			},
+		},
+		"Multiple_Files_Cross_Directory_Dependencies": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "index.esc",
+					Contents: `
+						val result = core.process(models.defaultUser)
+						type Result = {success: boolean, data: models.User}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/engine.esc",
+					Contents: `
+						fn process(user) {
+							return {success: true, data: user}
+						}
+						val engine: Engine = {running: true}
+						type Engine = {running: boolean}
+					`,
+				},
+				{
+					ID:   2,
+					Path: "models/user.esc",
+					Contents: `
+						type User = {id: number, name: string}
+						val defaultUser: User = {id: 0, name: "Guest"}
+						fn createUser(name) {
+							return {id: 1, name: name}
+						}
+					`,
+				},
+			},
+			expectedDeclCount: 8,
+			expectedDependencies: map[int][]int{
+				0: {2, 6}, // val result depends on core.engine.process (index 2) and models.user.defaultUser (index 6)
+				1: {5},    // type Result depends on models.User (index 5)
+				2: {},     // fn core.engine.process has no dependencies
+				3: {4},    // val core.engine.engine depends on core.Engine (index 4)
+				4: {},     // type core.Engine has no dependencies
+				5: {},     // type models.User has no dependencies
+				6: {5},    // val models.defaultUser depends on models.User (index 5)
+				7: {},     // fn models.createUser has no dependencies
+			},
+		},
+		"Multiple_Files_Nested_Subdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "app.esc",
+					Contents: `
+						val server = core.network.createServer(8080)
+						val database = core.storage.connect("localhost")
+						type App = {server: core.network.Server, db: core.storage.Database}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/network/http.esc",
+					Contents: `
+						type Server = {port: number, running: boolean}
+						fn createServer(port) {
+							return {port: port, running: false}
+						}
+						val defaultPort = 3000
+					`,
+				},
+				{
+					ID:   2,
+					Path: "core/storage/db.esc",
+					Contents: `
+						type Database = {host: string, connected: boolean}
+						fn connect(host) {
+							return {host: host, connected: true}
+						}
+						val maxConnections = 100
+					`,
+				},
+			},
+			expectedDeclCount: 9,
+			expectedDependencies: map[int][]int{
+				0: {4},    // val server depends on core.network.http.createServer (index 4)
+				1: {7},    // val database depends on core.storage.db.connect (index 7)
+				2: {3, 6}, // type App depends on core.network.http.Server (index 3) and core.storage.db.Database (index 6)
+				3: {},     // type core.network.http.Server has no dependencies
+				4: {},     // fn core.network.http.createServer has no dependencies
+				5: {},     // val core.network.http.defaultPort has no dependencies
+				6: {},     // type core.storage.db.Database has no dependencies
+				7: {},     // fn core.storage.db.connect has no dependencies
+				8: {},     // val core.storage.db.maxConnections has no dependencies
+			},
+		},
 	}
 
 	for name, test := range tests {
