@@ -51,12 +51,6 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	return &ast.Script{Stmts: *stmts}, p.errors
 }
 
-// module = decl* <eof>
-func (p *Parser) ParseModule() (*ast.Module, []*Error) {
-	decls := p.decls()
-	return &ast.Module{Decls: decls}, p.errors
-}
-
 func (p *Parser) decls() []ast.Decl {
 	decls := []ast.Decl{}
 
@@ -91,18 +85,32 @@ func (p *Parser) decls() []ast.Decl {
 }
 
 func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
-	allDecls := []ast.Decl{}
+	namespaces := make(map[string]*ast.Namespace)
+	mod := &ast.Module{
+		Namespaces: namespaces,
+	}
+
 	allErrors := []*Error{}
 
 	for _, source := range sources {
+		nsName := "" // TODO: determine the namespace based on the source path
+
+		if _, ok := namespaces[nsName]; !ok {
+			mod.Namespaces[nsName] = &ast.Namespace{
+				Decls: []ast.Decl{},
+			}
+		}
+
 		if source == nil {
 			continue
 		}
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
-		allDecls = append(allDecls, decls...)
+
+		mod.Namespaces[nsName].Decls = append(mod.Namespaces[nsName].Decls, decls...)
+		// allDecls = append(allDecls, decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}
 
-	return &ast.Module{Decls: allDecls}, allErrors
+	return mod, allErrors
 }

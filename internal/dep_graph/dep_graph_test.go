@@ -14,24 +14,36 @@ import (
 
 func TestFindModuleBindings(t *testing.T) {
 	tests := map[string]struct {
-		input    string
+		sources  []*ast.Source
 		expected []DepBinding
 	}{
 		"VarDecl_SimpleIdent": {
-			input: `
-				val a = 5
-				var b = 10
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val a = 5
+						var b = 10
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "a", Kind: DepKindValue},
 				{Name: "b", Kind: DepKindValue},
 			},
 		},
 		"VarDecl_TupleDestructuring": {
-			input: `
-				val [x, y] = [1, 2]
-				var [first, second] = getTuple()
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val [x, y] = [1, 2]
+						var [first, second] = getTuple()
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "x", Kind: DepKindValue},
 				{Name: "y", Kind: DepKindValue},
@@ -40,10 +52,16 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_ObjectDestructuring": {
-			input: `
-				val {name, age} = person
-				var {x: width, y: height} = dimensions
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {name, age} = person
+						var {x: width, y: height} = dimensions
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "name", Kind: DepKindValue},
 				{Name: "age", Kind: DepKindValue},
@@ -52,47 +70,71 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_ObjectShorthand": {
-			input: `
-				val {foo, bar} = obj
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {foo, bar} = obj
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "foo", Kind: DepKindValue},
 				{Name: "bar", Kind: DepKindValue},
 			},
 		},
 		"FuncDecl_Simple": {
-			input: `
-				fn add(a, b) {
-					return a + b
-				}
-				fn multiply(x, y) {
-					return x * y
-				}
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn add(a, b) {
+							return a + b
+						}
+						fn multiply(x, y) {
+							return x * y
+						}
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "add", Kind: DepKindValue},
 				{Name: "multiply", Kind: DepKindValue},
 			},
 		},
 		"TypeDecl_Simple": {
-			input: `
-				type Point = {x: number, y: number}
-				type Color = "red" | "green" | "blue"
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Point = {x: number, y: number}
+						type Color = "red" | "green" | "blue"
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "Point", Kind: DepKindType},
 				{Name: "Color", Kind: DepKindType},
 			},
 		},
 		"Mixed_Declarations": {
-			input: `
-				type User = {name: string, age: number}
-				val defaultUser = {name: "John", age: 30}
-				fn createUser(name, age) {
-					return {name, age}
-				}
-				var [admin, guest] = [createUser("admin", 25), defaultUser]
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type User = {name: string, age: number}
+						val defaultUser = {name: "John", age: 30}
+						fn createUser(name, age) {
+							return {name, age}
+						}
+						var [admin, guest] = [createUser("admin", 25), defaultUser]
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "User", Kind: DepKindType},
 				{Name: "defaultUser", Kind: DepKindValue},
@@ -102,14 +144,26 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"Empty_Module": {
-			input:    ``,
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "test.esc",
+					Contents: ``,
+				},
+			},
 			expected: []DepBinding{},
 		},
 		"VarDecl_NestedPatterns": {
-			input: `
-				val {user: {name, profile: {email}}} = data
-				val [first, {x, y}] = coordinates
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {user: {name, profile: {email}}} = data
+						val [first, {x, y}] = coordinates
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "name", Kind: DepKindValue},
 				{Name: "email", Kind: DepKindValue},
@@ -119,10 +173,16 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_RestPatterns": {
-			input: `
-				val [head, ...tail] = list
-				val {id, ...rest} = object
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val [head, ...tail] = list
+						val {id, ...rest} = object
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "head", Kind: DepKindValue},
 				{Name: "tail", Kind: DepKindValue},
@@ -135,16 +195,10 @@ func TestFindModuleBindings(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "test.esc",
-				Contents: test.input,
-			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -182,21 +236,25 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		"FuncDecl_NilName": {
 			setupModule: func() *ast.Module {
 				return &ast.Module{
-					Decls: []ast.Decl{
-						&ast.FuncDecl{
-							Name: nil, // Function with nil name
-							FuncSig: ast.FuncSig{
-								TypeParams: []*ast.TypeParam{},
-								Params:     []*ast.Param{},
-								Return:     nil,
-								Throws:     nil,
-							},
-							Body: &ast.Block{
-								Stmts: []ast.Stmt{},
-								Span: ast.Span{
-									Start:    ast.Location{Line: 1, Column: 1},
-									End:      ast.Location{Line: 1, Column: 1},
-									SourceID: 0,
+					Namespaces: map[string]*ast.Namespace{
+						"": {
+							Decls: []ast.Decl{
+								&ast.FuncDecl{
+									Name: nil, // Function with nil name
+									FuncSig: ast.FuncSig{
+										TypeParams: []*ast.TypeParam{},
+										Params:     []*ast.Param{},
+										Return:     nil,
+										Throws:     nil,
+									},
+									Body: &ast.Block{
+										Stmts: []ast.Stmt{},
+										Span: ast.Span{
+											Start:    ast.Location{Line: 1, Column: 1},
+											End:      ast.Location{Line: 1, Column: 1},
+											SourceID: 0,
+										},
+									},
 								},
 							},
 						},
@@ -208,21 +266,25 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		"FuncDecl_EmptyName": {
 			setupModule: func() *ast.Module {
 				return &ast.Module{
-					Decls: []ast.Decl{
-						&ast.FuncDecl{
-							Name: &ast.Ident{Name: ""}, // Function with empty name
-							FuncSig: ast.FuncSig{
-								TypeParams: []*ast.TypeParam{},
-								Params:     []*ast.Param{},
-								Return:     nil,
-								Throws:     nil,
-							},
-							Body: &ast.Block{
-								Stmts: []ast.Stmt{},
-								Span: ast.Span{
-									Start:    ast.Location{Line: 1, Column: 1},
-									End:      ast.Location{Line: 1, Column: 1},
-									SourceID: 0,
+					Namespaces: map[string]*ast.Namespace{
+						"": {
+							Decls: []ast.Decl{
+								&ast.FuncDecl{
+									Name: &ast.Ident{Name: ""}, // Function with empty name
+									FuncSig: ast.FuncSig{
+										TypeParams: []*ast.TypeParam{},
+										Params:     []*ast.Param{},
+										Return:     nil,
+										Throws:     nil,
+									},
+									Body: &ast.Block{
+										Stmts: []ast.Stmt{},
+										Span: ast.Span{
+											Start:    ast.Location{Line: 1, Column: 1},
+											End:      ast.Location{Line: 1, Column: 1},
+											SourceID: 0,
+										},
+									},
 								},
 							},
 						},
@@ -234,12 +296,16 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		"TypeDecl_NilName": {
 			setupModule: func() *ast.Module {
 				return &ast.Module{
-					Decls: []ast.Decl{
-						&ast.TypeDecl{
-							Name:       nil, // Type with nil name
-							TypeParams: []*ast.TypeParam{},
-							TypeAnn: &ast.LitTypeAnn{
-								Lit: &ast.StrLit{Value: "test"},
+					Namespaces: map[string]*ast.Namespace{
+						"": {
+							Decls: []ast.Decl{
+								&ast.TypeDecl{
+									Name:       nil, // Type with nil name
+									TypeParams: []*ast.TypeParam{},
+									TypeAnn: &ast.LitTypeAnn{
+										Lit: &ast.StrLit{Value: "test"},
+									},
+								},
 							},
 						},
 					},
@@ -250,12 +316,16 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 		"TypeDecl_EmptyName": {
 			setupModule: func() *ast.Module {
 				return &ast.Module{
-					Decls: []ast.Decl{
-						&ast.TypeDecl{
-							Name:       &ast.Ident{Name: ""}, // Type with empty name
-							TypeParams: []*ast.TypeParam{},
-							TypeAnn: &ast.LitTypeAnn{
-								Lit: &ast.StrLit{Value: "test"},
+					Namespaces: map[string]*ast.Namespace{
+						"": {
+							Decls: []ast.Decl{
+								&ast.TypeDecl{
+									Name:       &ast.Ident{Name: ""}, // Type with empty name
+									TypeParams: []*ast.TypeParam{},
+									TypeAnn: &ast.LitTypeAnn{
+										Lit: &ast.StrLit{Value: "test"},
+									},
+								},
 							},
 						},
 					},
@@ -484,13 +554,12 @@ func TestFindDeclDependencies(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 			assert.NotNil(t, module, "Module should not be nil")
-			assert.Len(t, module.Decls, 1, "Module should have exactly one declaration")
+			assert.Len(t, module.Namespaces[""].Decls, 1, "Module should have exactly one declaration")
 
 			// Create valid bindings maps (split by kind)
 			var valueBindings btree.Map[string, DeclID]
@@ -505,7 +574,7 @@ func TestFindDeclDependencies(t *testing.T) {
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(module.Decls[0], valueBindings, typeBindings)
+			dependencies := FindDeclDependencies(module.Namespaces[""].Decls[0], valueBindings, typeBindings)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -810,8 +879,7 @@ func TestBuildDepGraph(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)

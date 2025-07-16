@@ -20,8 +20,7 @@ func parseModule(input string) *ast.Module {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	p := parser.NewParser(ctx, source)
-	module, errors := p.ParseModule()
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	if len(errors) > 0 {
 		panic(errors[0])
 	}

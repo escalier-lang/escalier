@@ -43,8 +43,11 @@ func (i *Ident) Span() Span {
 }
 
 // TODO add support for imports and exports
-type Module struct {
+type Namespace struct {
 	Decls []Decl
+}
+type Module struct {
+	Namespaces map[string]*Namespace
 }
 
 type Script struct {

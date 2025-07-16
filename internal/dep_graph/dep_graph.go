@@ -28,6 +28,7 @@ type ModuleBindingVisitor struct {
 	ValueBindings btree.Map[string, DeclID]   // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID]   // Map from type binding name to declaration ID
 	nextDeclID    DeclID                      // Next unique ID to assign
+	currentNSName string                      // Current namespace being visited
 }
 
 func (v *ModuleBindingVisitor) generateDeclID() DeclID {
@@ -46,19 +47,30 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		// Extract bindings from the pattern
-		patternBindings := ast.FindBindings(d.Pattern)
-		for binding := range patternBindings {
-			v.ValueBindings.Set(binding, declID)
+		bindingNames := ast.FindBindings(d.Pattern)
+		for name := range bindingNames {
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.ValueBindings.Set(name, declID)
 		}
 	case *ast.FuncDecl:
 		// Function declarations introduce a binding with the function name
 		if d.Name != nil && d.Name.Name != "" {
-			v.ValueBindings.Set(d.Name.Name, declID)
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.ValueBindings.Set(name, declID)
 		}
 	case *ast.TypeDecl:
 		// Type declarations introduce a binding with the type name
 		if d.Name != nil && d.Name.Name != "" {
-			v.TypeBindings.Set(d.Name.Name, declID)
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.TypeBindings.Set(name, declID)
 		}
 	}
 	return false // Don't traverse into the declaration's body
@@ -83,12 +95,16 @@ func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.
 		Decls:         decls,
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
-		nextDeclID:    1, // Start IDs from 1
+		nextDeclID:    1,  // Start IDs from 1
+		currentNSName: "", // Default namespace
 	}
 
 	// Visit all declarations in the module
-	for _, decl := range module.Decls {
-		decl.Accept(visitor)
+	for nsName, ns := range module.Namespaces {
+		for _, decl := range ns.Decls {
+			visitor.currentNSName = nsName
+			decl.Accept(visitor)
+		}
 	}
 
 	return visitor.Decls, visitor.ValueBindings, visitor.TypeBindings
