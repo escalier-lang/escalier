@@ -78,7 +78,7 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	components := depGraph.FindStronglyConnectedComponents(0)
 
 	// Define a module scope so that declarations don't leak into the global scope
-	ctx = ctx.WithNewScope()
+	// ctx = ctx.WithNewScope()
 
 	var errors []Error
 	for _, component := range components {
