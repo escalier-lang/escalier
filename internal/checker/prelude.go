@@ -5,7 +5,7 @@ import (
 )
 
 func Prelude() *Scope {
-	scope := NewScope(nil)
+	scope := NewScope()
 
 	binArithType := &FuncType{
 		Params: []*FuncParam{

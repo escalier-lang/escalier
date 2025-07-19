@@ -15,7 +15,7 @@ import (
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
 	errors := []Error{}
-	ctx = ctx.WithParentScope()
+	ctx = ctx.WithNewScope()
 
 	for _, stmt := range m.Stmts {
 		switch stmt := stmt.(type) {
@@ -78,7 +78,7 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	components := depGraph.FindStronglyConnectedComponents(0)
 
 	// Define a module scope so that declarations don't leak into the global scope
-	ctx = ctx.WithParentScope()
+	ctx = ctx.WithNewScope()
 
 	var errors []Error
 	for _, component := range components {
@@ -89,30 +89,18 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	return ctx.Scope.Namespace, errors
 }
 
-func getNamespace(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) *Namespace {
-	nsName, ok := depGraph.GetNamespace(declID)
-
-	if !ok {
-		panic(fmt.Sprintf("Namespace not found for declaration %v", declID))
+func getDeclCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) Context {
+	nsName, _ := depGraph.DeclNamespace.Get(declID)
+	if nsName == "" {
+		return ctx
 	}
-
 	ns := ctx.Scope.Namespace
-	if ns == nil {
-		panic("No default namespace")
+	declCtx := ctx
+	for part := range strings.SplitSeq(nsName, ".") {
+		ns = ns.Namespaces[part]
+		declCtx = declCtx.WithNewScopeAndNamespace(ns)
 	}
-
-	if nsName != "" {
-		fmt.Printf("Namespace name: %s\n", nsName)
-		for part := range strings.SplitSeq(nsName, ".") {
-			ns = ns.Namespaces[part]
-		}
-	}
-
-	if ns == nil {
-		panic(fmt.Sprintf("Namespace %s not found in scope", nsName))
-	}
-
-	return ns
+	return declCtx
 }
 
 func (c *Checker) InferComponent(
@@ -124,23 +112,18 @@ func (c *Checker) InferComponent(
 
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
-	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
 
 	// Infer placeholders
 	for _, declID := range component {
-		ns := getNamespace(ctx, depGraph, declID)
+		declCtx := getDeclCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.Decls.Get(declID)
-
-		if decl == nil {
-			continue
-		}
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+			funcType, _, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			ctx.Scope.setValueInNamespace(ns, decl.Name.Name, &Binding{
+			declCtx.Scope.setValue(decl.Name.Name, &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
 				Type:    funcType,
 				Mutable: false,
@@ -150,18 +133,18 @@ func (c *Checker) InferComponent(
 			errors = slices.Concat(errors, patErrors)
 
 			// TODO: handle the situation where both decl.Init and decl.TypeAnn
-			// are nit
+			// are nil
 
 			if decl.TypeAnn != nil {
-				taType, taErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
+				taType, taErrors := c.inferTypeAnn(declCtx, decl.TypeAnn)
 				errors = slices.Concat(errors, taErrors)
 
-				unifyErrors := c.unify(ctx, taType, patType)
+				unifyErrors := c.unify(declCtx, taType, patType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
 			for name, binding := range bindings {
-				ctx.Scope.setValueInNamespace(ns, name, binding)
+				declCtx.Scope.setValue(name, binding)
 			}
 		case *ast.TypeDecl:
 			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
@@ -190,16 +173,13 @@ func (c *Checker) InferComponent(
 				TypeParams: typeParams,
 			}
 
-			// TODO: include .Namespaces in Scope property, but this namespace
-			// shouldn't use qualified names.  We need it though, so that we
-			// can reference symbols in different namespaces, e.g. Foo.Bar.MyType
-			ctx.Scope.setTypeAliasInNamespace(ns, decl.Name.Name, typeAlias)
+			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		}
 	}
 
 	// Infer definitions
 	for _, declID := range component {
-		ns := getNamespace(ctx, depGraph, declID)
+		declCtx := getDeclCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.Decls.Get(declID)
 
 		if decl == nil {
@@ -217,18 +197,18 @@ func (c *Checker) InferComponent(
 			// It's okay to re-infer the function signature here since all
 			// function signatures are fully typed for top-level functions
 			// declarations in modules.
-			funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+			funcType, paramBindings, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
 			// TODO(#93): unify Throws
 			if decl.Body != nil {
-				returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
+				returnType, bodyErrors := c.inferFuncBody(declCtx, paramBindings, decl.Body)
 				errors = slices.Concat(errors, bodyErrors)
-				unifyErrors := c.unify(ctx, funcType.Return, returnType)
+				unifyErrors := c.unify(declCtx, funcType.Return, returnType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.VarDecl:
-			bindings, declErrors := c.inferVarDecl(ctx, decl)
+			bindings, declErrors := c.inferVarDecl(declCtx, decl)
 			errors = slices.Concat(errors, declErrors)
 
 			// NOTE: The semantics of how function declarations are inferred vs
@@ -236,20 +216,20 @@ func (c *Checker) InferComponent(
 			// not sure if it's important to align these or not.
 
 			for name, binding := range bindings {
-				existingBinding := ns.Values[name]
-				unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
+				existingBinding := declCtx.Scope.getValue(name)
+				unifyErrors := c.unify(declCtx, existingBinding.Type, binding.Type)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.TypeDecl:
-			typeAlias, declErrors := c.inferTypeDecl(ctx, decl)
+			typeAlias, declErrors := c.inferTypeDecl(declCtx, decl)
 			errors = slices.Concat(errors, declErrors)
 
 			// TODO:
 			// - unify the Default and Constraint types for each type param
 
 			// Unified the type alias' inferred type with its placeholder type
-			existingTypeAlias := ns.Types[decl.Name.Name]
-			unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
+			existingTypeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
+			unifyErrors := c.unify(declCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
 		}
 	}
@@ -931,7 +911,7 @@ func (c *Checker) inferFuncBody(
 	body *ast.Block,
 ) (Type, []Error) {
 
-	ctx = ctx.WithParentScope()
+	ctx = ctx.WithNewScope()
 	maps.Copy(ctx.Scope.Namespace.Values, bindings)
 
 	errors := []Error{}

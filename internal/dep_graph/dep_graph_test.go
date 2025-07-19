@@ -959,6 +959,7 @@ func TestBuildDepGraph(t *testing.T) {
 		sources              []*ast.Source
 		expectedDeclCount    int
 		expectedDependencies map[int][]int // [declaration index] -> [dependency declaration indices]
+		expectedNamespaces   []string      // expected namespace names
 	}{
 		"Simple_Dependencies": {
 			sources: []*ast.Source{
@@ -982,6 +983,7 @@ func TestBuildDepGraph(t *testing.T) {
 				2: {1}, // fn createUser depends on defaultAge (index 1)
 				3: {2}, // val admin depends on createUser (index 2)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Type_Dependencies": {
 			sources: []*ast.Source{
@@ -1001,6 +1003,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {0}, // type Shape depends on Point (index 0)
 				2: {0}, // val origin depends on Point (index 0)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"No_Dependencies": {
 			sources: []*ast.Source{
@@ -1020,6 +1023,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {}, // val b has no dependencies
 				2: {}, // type StringType has no dependencies
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Tuple_Destructuring_Simple": {
 			sources: []*ast.Source{
@@ -1039,6 +1043,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {0}, // val [x, y] depends on point (index 0)
 				2: {1}, // val sum depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Object_Destructuring_Simple": {
 			sources: []*ast.Source{
@@ -1058,6 +1063,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {0}, // val {name, age} depends on user (index 0)
 				2: {1}, // val greeting depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Object_Destructuring_With_Rename": {
 			sources: []*ast.Source{
@@ -1077,6 +1083,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {0}, // val {width: w, height: h} depends on config (index 0)
 				2: {1}, // val area depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Nested_Destructuring": {
 			sources: []*ast.Source{
@@ -1096,6 +1103,7 @@ func TestBuildDepGraph(t *testing.T) {
 				1: {0}, // val {coords: [x, y], info: {id}} depends on data (index 0)
 				2: {1}, // val result depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Rest_Pattern_Destructuring": {
 			sources: []*ast.Source{
@@ -1117,6 +1125,7 @@ func TestBuildDepGraph(t *testing.T) {
 				2: {1}, // val restSum depends on destructuring declaration (index 1)
 				3: {1}, // val total depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Mixed_Destructuring_With_Functions": {
 			sources: []*ast.Source{
@@ -1146,6 +1155,7 @@ func TestBuildDepGraph(t *testing.T) {
 				4: {3}, // val area depends on destructuring declaration (index 3)
 				5: {1}, // val diagonal depends on destructuring declaration (index 1)
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Multiple_Files_Simple_Dependencies": {
 			sources: []*ast.Source{
@@ -1175,6 +1185,7 @@ func TestBuildDepGraph(t *testing.T) {
 				2: {},     // fn utils.createApp has no dependencies
 				3: {},     // val utils.helper has no dependencies
 			},
+			expectedNamespaces: []string{""},
 		},
 		"Multiple_Files_With_Subdirectories": {
 			sources: []*ast.Source{
@@ -1224,6 +1235,7 @@ func TestBuildDepGraph(t *testing.T) {
 				7: {},     // fn strings.format has no dependencies
 				8: {},     // type strings.Template has no dependencies
 			},
+			expectedNamespaces: []string{"", "math", "strings"},
 		},
 		"Multiple_Files_Cross_Directory_Dependencies": {
 			sources: []*ast.Source{
@@ -1269,6 +1281,7 @@ func TestBuildDepGraph(t *testing.T) {
 				6: {5},    // val models.defaultUser depends on models.User (index 5)
 				7: {},     // fn models.createUser has no dependencies
 			},
+			expectedNamespaces: []string{"", "core", "models"},
 		},
 		"Multiple_Files_Nested_Subdirectories": {
 			sources: []*ast.Source{
@@ -1316,6 +1329,7 @@ func TestBuildDepGraph(t *testing.T) {
 				7: {},     // fn core.storage.db.connect has no dependencies
 				8: {},     // val core.storage.db.maxConnections has no dependencies
 			},
+			expectedNamespaces: []string{"", "core.network", "core.storage"},
 		},
 	}
 
@@ -1344,6 +1358,11 @@ func TestBuildDepGraph(t *testing.T) {
 			// Sort by the declaration ID to ensure consistent ordering
 			// (since declaration IDs are assigned in order, this gives us document order)
 			slices.Sort(declIDs)
+
+			// Verify namespaces
+			actualNamespaces := depGraph.AllNamespaces()
+			assert.ElementsMatch(t, test.expectedNamespaces, actualNamespaces,
+				"Expected namespaces %v, got %v", test.expectedNamespaces, actualNamespaces)
 
 			// Verify dependencies for each declaration
 			for declIndex, expectedDeps := range test.expectedDependencies {

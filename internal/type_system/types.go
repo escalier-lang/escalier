@@ -969,6 +969,14 @@ type Namespace struct {
 	Namespaces map[string]*Namespace
 }
 
+func NewNamespace() *Namespace {
+	return &Namespace{
+		Values:     make(map[string]*Binding),
+		Types:      make(map[string]*TypeAlias),
+		Namespaces: make(map[string]*Namespace),
+	}
+}
+
 type NamespaceType struct {
 	Namespace  *Namespace
 	provenance Provenance

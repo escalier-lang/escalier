@@ -9,14 +9,24 @@ type Scope struct {
 	Namespace *Namespace
 }
 
-func NewScope(parent *Scope) *Scope {
+func NewScope() *Scope {
 	return &Scope{
-		Parent: parent,
-		Namespace: &Namespace{
-			Values:     make(map[string]*Binding),
-			Types:      make(map[string]*TypeAlias),
-			Namespaces: make(map[string]*Namespace),
-		},
+		Parent:    nil,
+		Namespace: NewNamespace(),
+	}
+}
+
+func (s *Scope) WithNewScope() *Scope {
+	return &Scope{
+		Parent:    s,
+		Namespace: NewNamespace(),
+	}
+}
+
+func (s *Scope) WithNewScopeAndNamespace(ns *Namespace) *Scope {
+	return &Scope{
+		Parent:    s,
+		Namespace: ns,
 	}
 }
 
@@ -28,13 +38,6 @@ func (s *Scope) getValue(name string) *Binding {
 		return s.Parent.getValue(name)
 	}
 	return nil
-}
-
-func (s *Scope) setValueInNamespace(ns *Namespace, name string, binding *Binding) {
-	if _, ok := ns.Values[name]; ok {
-		panic("value already exists")
-	}
-	ns.Values[name] = binding
 }
 
 func (s *Scope) setValue(name string, binding *Binding) {
@@ -69,13 +72,6 @@ func (s *Scope) getTypeAlias(name string) *TypeAlias {
 		return s.Parent.getTypeAlias(name)
 	}
 	return nil
-}
-
-func (s *Scope) setTypeAliasInNamespace(ns *Namespace, name string, alias *TypeAlias) {
-	if _, ok := ns.Types[name]; ok {
-		panic("type alias already exists")
-	}
-	ns.Types[name] = alias
 }
 
 func (s *Scope) setTypeAlias(name string, alias *TypeAlias) {

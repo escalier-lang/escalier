@@ -450,6 +450,22 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 	return declIDs
 }
 
+// AllNamespaces returns all unique namespace names in the graph
+func (g *DepGraph) AllNamespaces() []string {
+	namespaces := make(map[string]bool)
+	iter := g.DeclNamespace.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		namespace := iter.Value()
+		namespaces[namespace] = true
+	}
+
+	result := make([]string, 0, len(namespaces))
+	for namespace := range namespaces {
+		result = append(result, namespace)
+	}
+	return result
+}
+
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
 // Returns empty string if the expression doesn't form a valid qualified identifier chain
 func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
