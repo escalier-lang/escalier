@@ -4,8 +4,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// decl = 'export'? 'declare'? (varDecl | fnDecl)
-func (p *Parser) decl() ast.Decl {
+// Decl = 'export'? 'declare'? (varDecl | fnDecl)
+func (p *Parser) Decl() ast.Decl {
 	export := false
 	declare := false
 

@@ -4,6 +4,8 @@ package ast
 
 import (
 	"math/big"
+
+	"github.com/escalier-lang/escalier/internal/provenance"
 )
 
 //sumtype:decl
@@ -265,7 +267,7 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 
 type IdentExpr struct {
 	Name         string
-	Source       BindingSource
+	Source       provenance.Provenance
 	span         Span
 	inferredType Type
 }

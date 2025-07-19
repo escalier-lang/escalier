@@ -57,9 +57,16 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 		if node.Source == nil {
 			return nil, fmt.Errorf("textDocument/definition: node.Decl is nil")
 		}
+		var span ast.Span
+		switch provenance := node.Source.(type) {
+		case *ast.NodeProvenance:
+			span = provenance.Node.Span()
+		default:
+			panic(fmt.Sprintf("textDocument/definition: unexpected provenance type %T", node.Source))
+		}
 		loc := protocol.Location{
 			URI:   params.TextDocument.URI,
-			Range: spanToRange(node.Source.Span()),
+			Range: spanToRange(span),
 		}
 
 		return loc, nil

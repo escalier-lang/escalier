@@ -1,30 +1,32 @@
 package checker
 
 import (
-	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
-
-// We want to model both `let x = 5` as well as `fn (x: number) => x`
-type Binding struct {
-	Source  ast.BindingSource // optional
-	Type    Type
-	Mutable bool
-}
 
 type Scope struct {
 	Parent    *Scope // optional, parent is nil for the root scope
 	Namespace *Namespace
 }
 
-func NewScope(parent *Scope) *Scope {
+func NewScope() *Scope {
 	return &Scope{
-		Parent: parent,
-		Namespace: &Namespace{
-			Values:     make(map[string]*Binding),
-			Types:      make(map[string]*TypeAlias),
-			Namespaces: make(map[string]*Namespace),
-		},
+		Parent:    nil,
+		Namespace: NewNamespace(),
+	}
+}
+
+func (s *Scope) WithNewScope() *Scope {
+	return &Scope{
+		Parent:    s,
+		Namespace: NewNamespace(),
+	}
+}
+
+func (s *Scope) WithNewScopeAndNamespace(ns *Namespace) *Scope {
+	return &Scope{
+		Parent:    s,
+		Namespace: ns,
 	}
 }
 

@@ -179,3 +179,11 @@ func (t *IntrinsicType) WithProvenance(p Provenance) Type {
 	result.provenance = p
 	return &result
 }
+
+func (t *NamespaceType) Provenance() Provenance     { return t.provenance }
+func (t *NamespaceType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *NamespaceType) WithProvenance(p Provenance) Type {
+	result := *t // Create a copy of the struct
+	result.provenance = p
+	return &result
+}

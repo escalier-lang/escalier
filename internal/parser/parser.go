@@ -93,7 +93,7 @@ func (p *Parser) decls() []ast.Decl {
 			p.lexer.consume()
 			token = p.lexer.peek()
 		default:
-			decl := p.decl()
+			decl := p.Decl()
 			if decl != nil {
 				decls = append(decls, decl)
 			} else {

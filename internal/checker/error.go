@@ -35,6 +35,7 @@ func (e InvalidNumberOfArgumentsError) isError()  {}
 func (e ExpectedObjectError) isError()            {}
 func (e ExpectedArrayError) isError()             {}
 func (e CyclicDependencyError) isError()          {}
+func (e UnknownPropertyError) isError()           {}
 
 type UnimplementedError struct {
 	message string
@@ -214,6 +215,19 @@ func (e CyclicDependencyError) Span() ast.Span {
 }
 func (e CyclicDependencyError) Message() string {
 	return "Cyclic dependency detected"
+}
+
+type UnknownPropertyError struct {
+	ObjectType Type
+	Property   string
+	span       ast.Span
+}
+
+func (e UnknownPropertyError) Span() ast.Span {
+	return e.span
+}
+func (e UnknownPropertyError) Message() string {
+	return "Unknown property '" + e.Property + "' in object type " + e.ObjectType.String()
 }
 
 // TODO: make this a sum type so that different error type can reference other
