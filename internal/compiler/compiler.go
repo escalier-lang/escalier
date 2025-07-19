@@ -9,7 +9,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
-	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type CompilerOutput struct {
@@ -35,17 +34,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	}
 	scope, typeErrors := c.InferScript(inferCtx, inMod)
 
-	namespace := checker.Namespace{
-		Values: make(map[checker.QualifiedIdent]*checker.Binding),
-		Types:  make(map[checker.QualifiedIdent]*type_system.TypeAlias),
-	}
-
-	for name, binding := range scope.Values {
-		namespace.Values[checker.QualifiedIdent(name)] = binding
-	}
-	for name, typeAlias := range scope.Types {
-		namespace.Types[checker.QualifiedIdent(name)] = typeAlias
-	}
+	namespace := scope.Namespace
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{

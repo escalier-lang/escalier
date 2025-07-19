@@ -130,7 +130,7 @@ func TestCheckScriptNoErrors(t *testing.T) {
 			// TODO: short term - print each of the binding's types and store
 			// them in a map and the snapshot the map.
 			// TODO: long term - generate a .d.ts file from the bindings
-			for name, binding := range scope.Values {
+			for name, binding := range scope.Namespace.Values {
 				assert.NotNil(t, binding)
 				fmt.Printf("%s = %s\n", name, binding.Type.String())
 				fmt.Printf("%#v\n", binding.Type.Provenance())
