@@ -70,29 +70,29 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
-	scope.Values["+"] = &binArithBinding
-	scope.Values["-"] = &binArithBinding
-	scope.Values["*"] = &binArithBinding
-	scope.Values["/"] = &binArithBinding
+	scope.Namespace.Values["+"] = &binArithBinding
+	scope.Namespace.Values["-"] = &binArithBinding
+	scope.Namespace.Values["*"] = &binArithBinding
+	scope.Namespace.Values["/"] = &binArithBinding
 
-	scope.Values["=="] = &binACompBinding
-	scope.Values["!="] = &binACompBinding
-	scope.Values["<"] = &binACompBinding
-	scope.Values[">"] = &binACompBinding
-	scope.Values["<="] = &binACompBinding
-	scope.Values[">="] = &binACompBinding
+	scope.Namespace.Values["=="] = &binACompBinding
+	scope.Namespace.Values["!="] = &binACompBinding
+	scope.Namespace.Values["<"] = &binACompBinding
+	scope.Namespace.Values[">"] = &binACompBinding
+	scope.Namespace.Values["<="] = &binACompBinding
+	scope.Namespace.Values[">="] = &binACompBinding
 
-	scope.Values["&&"] = &binLogicBinding
-	scope.Values["||"] = &binLogicBinding
+	scope.Namespace.Values["&&"] = &binLogicBinding
+	scope.Namespace.Values["||"] = &binLogicBinding
 
 	// TODO: uncomment after adding support for calling overloaded functions
-	// scope.Values["-"] = Binding{
+	// scope.Namespace.Values["-"] = Binding{
 	// 	Source:  nil,
 	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
 	// 	Mutable: false,
 	// }
 
-	scope.Values["!"] = &unaryLogicBinding
+	scope.Namespace.Values["!"] = &unaryLogicBinding
 
 	var objElems []ObjTypeElem
 
@@ -106,7 +106,7 @@ func Prelude() *Scope {
 		},
 	})
 
-	scope.Values["console"] = &Binding{
+	scope.Namespace.Values["console"] = &Binding{
 		Source:  nil,
 		Type:    NewObjectType(objElems),
 		Mutable: false,

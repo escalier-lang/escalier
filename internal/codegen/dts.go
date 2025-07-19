@@ -13,7 +13,7 @@ import (
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
 	decls []ast.Decl,
-	namespace checker.Namespace,
+	namespace *checker.Namespace,
 	// scope *checker.Scope,
 ) *Module {
 	stmts := []Stmt{}
@@ -26,7 +26,7 @@ func (b *Builder) BuildDefinitions(
 
 			decls := make([]*Declarator, 0, len(keys))
 			for _, name := range keys {
-				binding := namespace.Values[checker.QualifiedIdent(name)]
+				binding := namespace.Values[name]
 				typeAnn := buildTypeAnn(binding.Type)
 				decls = append(decls, &Declarator{
 					Pattern: NewIdentPat(name, nil, nil),
@@ -50,7 +50,7 @@ func (b *Builder) BuildDefinitions(
 			})
 
 		case *ast.FuncDecl:
-			binding := namespace.Values[checker.QualifiedIdent(decl.Name.Name)]
+			binding := namespace.Values[decl.Name.Name]
 
 			funcType := binding.Type.(*type_sys.FuncType)
 

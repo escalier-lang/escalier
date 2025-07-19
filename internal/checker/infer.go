@@ -53,8 +53,9 @@ func (qi QualifiedIdent) Parts() []string {
 // This makes it easier to build a dependency graph between declarations within
 // the module.
 type Namespace struct {
-	Values map[QualifiedIdent]*Binding
-	Types  map[QualifiedIdent]*TypeAlias
+	Values     map[string]*Binding
+	Types      map[string]*TypeAlias
+	Namespaces map[string]*Namespace
 }
 
 func PrintDeclIdent(decl ast.Decl) string {
@@ -78,12 +79,12 @@ func PrintDeclIdent(decl ast.Decl) string {
 // The order of the declarations doesn't matter because we compute the dependency
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
-func (c *Checker) InferModule(ctx Context, m *ast.Module) (Namespace, []Error) {
+func (c *Checker) InferModule(ctx Context, m *ast.Module) (*Namespace, []Error) {
 	depGraph := dep_graph.BuildDepGraph(m)
 	return c.InferDepGraph(ctx, depGraph)
 }
 
-func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Namespace, []Error) {
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Namespace, []Error) {
 	components := depGraph.FindStronglyConnectedComponents(0)
 
 	// Define a module scope so that declarations don't leak into the global scope
@@ -95,20 +96,7 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (Name
 		errors = slices.Concat(errors, declsErrors)
 	}
 
-	namespace := Namespace{
-		Values: make(map[QualifiedIdent]*Binding),
-		Types:  make(map[QualifiedIdent]*TypeAlias),
-	}
-
-	for name, binding := range ctx.Scope.Values {
-		namespace.Values[QualifiedIdent(name)] = binding
-	}
-
-	for name, typeAlias := range ctx.Scope.Types {
-		namespace.Types[QualifiedIdent(name)] = typeAlias
-	}
-
-	return namespace, errors
+	return ctx.Scope.Namespace, errors
 }
 
 func (c *Checker) InferComponent(
@@ -264,7 +252,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		bindings, errors := c.inferVarDecl(ctx, decl)
-		maps.Copy(ctx.Scope.Values, bindings)
+		maps.Copy(ctx.Scope.Namespace.Values, bindings)
 		return errors
 	case *ast.TypeDecl:
 		typeAlias, errors := c.inferTypeDecl(ctx, decl)
@@ -914,7 +902,7 @@ func (c *Checker) inferFuncBody(
 ) (Type, []Error) {
 
 	ctx = ctx.WithParentScope()
-	maps.Copy(ctx.Scope.Values, bindings)
+	maps.Copy(ctx.Scope.Namespace.Values, bindings)
 
 	errors := []Error{}
 	for _, stmt := range body.Stmts {
@@ -1186,7 +1174,7 @@ func (c *Checker) inferFuncTypeAnn(
 
 		c.unify(ctx, patType, typeAnn)
 
-		maps.Copy(ctx.Scope.Values, patBindings)
+		maps.Copy(ctx.Scope.Namespace.Values, patBindings)
 
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
