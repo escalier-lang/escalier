@@ -78,6 +78,7 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	components := depGraph.FindStronglyConnectedComponents(0)
 
 	// Define a module scope so that declarations don't leak into the global scope
+	// TODO: Move this call before the call to InferDepGraph
 	// ctx = ctx.WithNewScope()
 
 	var errors []Error
@@ -89,6 +90,9 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	return ctx.Scope.Namespace, errors
 }
 
+// getDeclCtx returns a new Context with the namespace set to the namespace of
+// the declaration with the given declID. If the namespace doesn't exist yet, it
+// creates one.
 func getDeclCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) Context {
 	nsName, _ := depGraph.DeclNamespace.Get(declID)
 	if nsName == "" {
@@ -97,6 +101,9 @@ func getDeclCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.Decl
 	ns := ctx.Scope.Namespace
 	declCtx := ctx
 	for part := range strings.SplitSeq(nsName, ".") {
+		if _, ok := ns.Namespaces[part]; !ok {
+			ns.Namespaces[part] = NewNamespace()
+		}
 		ns = ns.Namespaces[part]
 		declCtx = declCtx.WithNewScopeAndNamespace(ns)
 	}

@@ -632,14 +632,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("PI", helperDeclID)
 				depGraph.ValueBindings.Set("circleArea", areaDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				mathNS := NewNamespace()
-				rootNS.Namespaces["math"] = mathNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -727,18 +722,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("log", utilsDeclID)
 				depGraph.TypeBindings.Set("Point", geometryDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				mathNS := NewNamespace()
-				utilsNS := NewNamespace()
-				geometryNS := NewNamespace()
-				rootNS.Namespaces["math"] = mathNS
-				rootNS.Namespaces["utils"] = utilsNS
-				rootNS.Namespaces["geometry"] = geometryNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -833,18 +819,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("circleArea", areaDeclID)
 				depGraph.ValueBindings.Set("calculateArea", calcDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				mathNS := NewNamespace()
-				geometryNS := NewNamespace()
-				utilsNS := NewNamespace()
-				rootNS.Namespaces["math"] = mathNS
-				rootNS.Namespaces["geometry"] = geometryNS
-				rootNS.Namespaces["utils"] = utilsNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -923,14 +900,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("isEven", isEvenDeclID)
 				depGraph.ValueBindings.Set("isOdd", isOddDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				mathNS := NewNamespace()
-				rootNS.Namespaces["math"] = mathNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1003,16 +975,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("aFunc", aDeclID)
 				depGraph.ValueBindings.Set("helper", bDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				aNS := NewNamespace()
-				bNS := NewNamespace()
-				rootNS.Namespaces["a"] = aNS
-				rootNS.Namespaces["b"] = bNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1101,16 +1066,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("useGlobal", nestedDeclID)
 				depGraph.ValueBindings.Set("useGlobalTwice", nested2DeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				utilsNS := NewNamespace()
-				nestedNS := NewNamespace()
-				rootNS.Namespaces["utils"] = utilsNS
-				utilsNS.Namespaces["nested"] = nestedNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1203,18 +1161,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph.ValueBindings.Set("ORIGIN", originDeclID)
 				depGraph.ValueBindings.Set("distanceFromOrigin", distanceDeclID)
 
-				// Create context with nested namespaces
-				rootNS := NewNamespace()
-				typesNS := NewNamespace()
-				constantsNS := NewNamespace()
-				functionsNS := NewNamespace()
-				rootNS.Namespaces["types"] = typesNS
-				rootNS.Namespaces["constants"] = constantsNS
-				rootNS.Namespaces["functions"] = functionsNS
-
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: rootNS,
+					Namespace: NewNamespace(),
 				}
 
 				inferCtx := Context{
