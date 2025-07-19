@@ -30,6 +30,13 @@ func (s *Scope) getValue(name string) *Binding {
 	return nil
 }
 
+func (s *Scope) setValueInNamespace(ns *Namespace, name string, binding *Binding) {
+	if _, ok := ns.Values[name]; ok {
+		panic("value already exists")
+	}
+	ns.Values[name] = binding
+}
+
 func (s *Scope) setValue(name string, binding *Binding) {
 	if _, ok := s.Namespace.Values[name]; ok {
 		panic("value already exists")
@@ -62,6 +69,13 @@ func (s *Scope) getTypeAlias(name string) *TypeAlias {
 		return s.Parent.getTypeAlias(name)
 	}
 	return nil
+}
+
+func (s *Scope) setTypeAliasInNamespace(ns *Namespace, name string, alias *TypeAlias) {
+	if _, ok := ns.Types[name]; ok {
+		panic("type alias already exists")
+	}
+	ns.Types[name] = alias
 }
 
 func (s *Scope) setTypeAlias(name string, alias *TypeAlias) {

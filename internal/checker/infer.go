@@ -89,6 +89,32 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	return ctx.Scope.Namespace, errors
 }
 
+func getNamespace(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) *Namespace {
+	nsName, ok := depGraph.GetNamespace(declID)
+
+	if !ok {
+		panic(fmt.Sprintf("Namespace not found for declaration %v", declID))
+	}
+
+	ns := ctx.Scope.Namespace
+	if ns == nil {
+		panic("No default namespace")
+	}
+
+	if nsName != "" {
+		fmt.Printf("Namespace name: %s\n", nsName)
+		for part := range strings.SplitSeq(nsName, ".") {
+			ns = ns.Namespaces[part]
+		}
+	}
+
+	if ns == nil {
+		panic(fmt.Sprintf("Namespace %s not found in scope", nsName))
+	}
+
+	return ns
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
@@ -100,15 +126,11 @@ func (c *Checker) InferComponent(
 	// - ensure there are no duplicate declarations in the module
 	// - handle namespaces inside of modules, e.g. `foo.bar.baz`
 
-	// Find decls for the component
-	decls := make([]ast.Decl, 0, len(component))
-	for _, declID := range component {
-		decl, _ := depGraph.Decls.Get(declID)
-		decls = append(decls, decl)
-	}
-
 	// Infer placeholders
-	for _, decl := range decls {
+	for _, declID := range component {
+		ns := getNamespace(ctx, depGraph, declID)
+		decl, _ := depGraph.Decls.Get(declID)
+
 		if decl == nil {
 			continue
 		}
@@ -118,7 +140,7 @@ func (c *Checker) InferComponent(
 			funcType, _, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 			errors = slices.Concat(errors, sigErrors)
 
-			ctx.Scope.setValue(decl.Name.Name, &Binding{
+			ctx.Scope.setValueInNamespace(ns, decl.Name.Name, &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
 				Type:    funcType,
 				Mutable: false,
@@ -139,7 +161,7 @@ func (c *Checker) InferComponent(
 			}
 
 			for name, binding := range bindings {
-				ctx.Scope.setValue(name, binding)
+				ctx.Scope.setValueInNamespace(ns, name, binding)
 			}
 		case *ast.TypeDecl:
 			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
@@ -171,12 +193,15 @@ func (c *Checker) InferComponent(
 			// TODO: include .Namespaces in Scope property, but this namespace
 			// shouldn't use qualified names.  We need it though, so that we
 			// can reference symbols in different namespaces, e.g. Foo.Bar.MyType
-			ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+			ctx.Scope.setTypeAliasInNamespace(ns, decl.Name.Name, typeAlias)
 		}
 	}
 
 	// Infer definitions
-	for _, decl := range decls {
+	for _, declID := range component {
+		ns := getNamespace(ctx, depGraph, declID)
+		decl, _ := depGraph.Decls.Get(declID)
+
 		if decl == nil {
 			continue
 		}
@@ -211,7 +236,7 @@ func (c *Checker) InferComponent(
 			// not sure if it's important to align these or not.
 
 			for name, binding := range bindings {
-				existingBinding := ctx.Scope.getValue(name)
+				existingBinding := ns.Values[name]
 				unifyErrors := c.unify(ctx, existingBinding.Type, binding.Type)
 				errors = slices.Concat(errors, unifyErrors)
 			}
@@ -223,7 +248,7 @@ func (c *Checker) InferComponent(
 			// - unify the Default and Constraint types for each type param
 
 			// Unified the type alias' inferred type with its placeholder type
-			existingTypeAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
+			existingTypeAlias := ns.Types[decl.Name.Name]
 			unifyErrors := c.unify(ctx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
 		}

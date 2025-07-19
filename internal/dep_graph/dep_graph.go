@@ -376,6 +376,7 @@ type DepGraph struct {
 	Deps          btree.Map[DeclID, btree.Set[DeclID]] // Dependencies for each declaration ID
 	ValueBindings btree.Map[string, DeclID]            // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID]            // Map from type binding name to declaration ID
+	DeclNamespace btree.Map[DeclID, string]            // Map from declaration ID to namespace
 }
 
 // BuildDepGraph builds a dependency graph for a module
@@ -385,18 +386,17 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 
 	// Build the dependency map
 	var deps btree.Map[DeclID, btree.Set[DeclID]]
+	var declNamespace btree.Map[DeclID, string]
 
 	// We need to track which namespace each declaration belongs to
 	// Create a map from DeclID to namespace by re-traversing the module
-	declToNamespace := make(map[DeclID]string)
-
 	nextDeclID := DeclID(1)
 	nsIter := module.Namespaces.Iter()
 	for ok := nsIter.First(); ok; ok = nsIter.Next() {
 		nsName := nsIter.Key()
 		ns := nsIter.Value()
 		for range ns.Decls {
-			declToNamespace[nextDeclID] = nsName
+			declNamespace.Set(nextDeclID, nsName)
 			nextDeclID++
 		}
 	}
@@ -406,7 +406,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	for ok := iter.First(); ok; ok = iter.Next() {
 		declID := iter.Key()
 		decl := iter.Value()
-		namespace := declToNamespace[declID]
+		namespace, _ := declNamespace.Get(declID)
 		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, namespace)
 		deps.Set(declID, dependencies)
 	}
@@ -416,6 +416,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
 		Deps:          deps,
+		DeclNamespace: declNamespace,
 	}
 }
 
@@ -431,6 +432,11 @@ func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
 // GetDeclaration returns the declaration for a given declaration ID
 func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 	return g.Decls.Get(declID)
+}
+
+// GetNamespace returns the namespace for a given declaration ID
+func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
+	return g.DeclNamespace.Get(declID)
 }
 
 // AllDeclarations returns all declaration IDs in the graph
