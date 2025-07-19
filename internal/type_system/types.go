@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -46,6 +47,7 @@ func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
 func (*IntrinsicType) isType()    {}
+func (*NamespaceType) isType()    {}
 
 func Prune(t Type) Type {
 	switch t := t.(type) {
@@ -948,4 +950,58 @@ func (t *IntrinsicType) Equal(other Type) bool {
 }
 func (t *IntrinsicType) String() string {
 	return t.Name
+}
+
+// We want to model both `let x = 5` as well as `fn (x: number) => x`
+type Binding struct {
+	Source  provenance.Provenance // optional
+	Type    Type
+	Mutable bool
+}
+
+// This is similar to Scope, but instead of inheriting from a parent scope,
+// the identifiers are fully qualified with their namespace (e.g. "foo.bar.baz").
+// This makes it easier to build a dependency graph between declarations within
+// the module.
+type Namespace struct {
+	Values     map[string]*Binding
+	Types      map[string]*TypeAlias
+	Namespaces map[string]*Namespace
+}
+
+type NamespaceType struct {
+	Namespace  *Namespace
+	provenance Provenance
+}
+
+func (t *NamespaceType) Accept(v TypeVisitor) {
+	for _, binding := range t.Namespace.Values {
+		binding.Type.Accept(v)
+	}
+	for _, typeAlias := range t.Namespace.Types {
+		typeAlias.Type.Accept(v)
+	}
+	v.VisitType(t)
+}
+func (t *NamespaceType) Equal(other Type) bool {
+	if other, ok := other.(*NamespaceType); ok {
+		// nolint: exhaustruct
+		return cmp.Equal(t, other, cmpopts.IgnoreFields(NamespaceType{}, "provenance"))
+	}
+	return false
+}
+func (t *NamespaceType) String() string {
+	result := "namespace {"
+	if len(t.Namespace.Values) > 0 {
+		for name, binding := range t.Namespace.Values {
+			result += name + ": " + binding.Type.String() + ", "
+		}
+	}
+	if len(t.Namespace.Types) > 0 {
+		for name, typeAlias := range t.Namespace.Types {
+			result += name + ": " + typeAlias.Type.String() + ", "
+		}
+	}
+	result += "}"
+	return result
 }

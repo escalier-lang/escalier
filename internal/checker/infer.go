@@ -48,16 +48,6 @@ func (qi QualifiedIdent) Parts() []string {
 	return strings.Split(string(qi), ".")
 }
 
-// This is similar to Scope, but instead of inheriting from a parent scope,
-// the identifiers are fully qualified with their namespace (e.g. "foo.bar.baz").
-// This makes it easier to build a dependency graph between declarations within
-// the module.
-type Namespace struct {
-	Values     map[string]*Binding
-	Types      map[string]*TypeAlias
-	Namespaces map[string]*Namespace
-}
-
 func PrintDeclIdent(decl ast.Decl) string {
 	// Print the identifier of the declaration, e.g. "foo.bar.baz"
 	// This is used for debugging and logging purposes.
@@ -129,7 +119,7 @@ func (c *Checker) InferComponent(
 			errors = slices.Concat(errors, sigErrors)
 
 			ctx.Scope.setValue(decl.Name.Name, &Binding{
-				Source:  decl.Name,
+				Source:  &ast.NodeProvenance{Node: decl},
 				Type:    funcType,
 				Mutable: false,
 			})
@@ -324,7 +314,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	}
 
 	binding := Binding{
-		Source:  decl.Name,
+		Source:  &ast.NodeProvenance{Node: decl},
 		Type:    funcType,
 		Mutable: false,
 	}
@@ -636,7 +626,7 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 	objType, expandErrors := c.expandType(ctx, objType)
 	errors = slices.Concat(errors, expandErrors)
 
-	var propType Type = NewNeverType()
+	var propType Type
 
 	switch t := objType.(type) {
 	case *ObjectType:
@@ -704,8 +694,23 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 		if len(definedElems) > 1 {
 			panic("TODO: handle getting property from union type with multiple defined elements")
 		}
+	case *NamespaceType:
+		for name, binding := range t.Namespace.Values {
+			if name == prop.Name {
+				propType = binding.Type
+			}
+		}
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
+	}
+
+	if propType == nil {
+		errors = append(errors, &UnknownPropertyError{
+			ObjectType: objType,
+			Property:   prop.Name,
+			span:       prop.Span(),
+		})
+		propType = NewNeverType()
 	}
 
 	return propType, errors
@@ -1033,7 +1038,7 @@ func (c *Checker) inferPattern(
 			t = c.FreshVar()
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &Binding{
-				Source:  p,
+				Source:  &ast.NodeProvenance{Node: p},
 				Type:    t,
 				Mutable: false, // TODO
 			}
@@ -1064,7 +1069,7 @@ func (c *Checker) inferPattern(
 					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = &Binding{
-						Source:  elem.Key,
+						Source:  &ast.NodeProvenance{Node: elem.Key},
 						Type:    t,
 						Mutable: false, // TODO
 					}
