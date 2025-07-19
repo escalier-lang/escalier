@@ -1,6 +1,8 @@
 package dep_graph
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
@@ -28,6 +30,7 @@ type ModuleBindingVisitor struct {
 	ValueBindings btree.Map[string, DeclID]   // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID]   // Map from type binding name to declaration ID
 	nextDeclID    DeclID                      // Next unique ID to assign
+	currentNSName string                      // Current namespace being visited
 }
 
 func (v *ModuleBindingVisitor) generateDeclID() DeclID {
@@ -46,19 +49,30 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		// Extract bindings from the pattern
-		patternBindings := ast.FindBindings(d.Pattern)
-		for binding := range patternBindings {
-			v.ValueBindings.Set(binding, declID)
+		bindingNames := ast.FindBindings(d.Pattern)
+		for name := range bindingNames {
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.ValueBindings.Set(name, declID)
 		}
 	case *ast.FuncDecl:
 		// Function declarations introduce a binding with the function name
 		if d.Name != nil && d.Name.Name != "" {
-			v.ValueBindings.Set(d.Name.Name, declID)
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.ValueBindings.Set(name, declID)
 		}
 	case *ast.TypeDecl:
 		// Type declarations introduce a binding with the type name
 		if d.Name != nil && d.Name.Name != "" {
-			v.TypeBindings.Set(d.Name.Name, declID)
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.TypeBindings.Set(name, declID)
 		}
 	}
 	return false // Don't traverse into the declaration's body
@@ -83,12 +97,19 @@ func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.
 		Decls:         decls,
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
-		nextDeclID:    1, // Start IDs from 1
+		nextDeclID:    1,  // Start IDs from 1
+		currentNSName: "", // Default namespace
 	}
 
 	// Visit all declarations in the module
-	for _, decl := range module.Decls {
-		decl.Accept(visitor)
+	iter := module.Namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		nsName := iter.Key()
+		ns := iter.Value()
+		for _, decl := range ns.Decls {
+			visitor.currentNSName = nsName
+			decl.Accept(visitor)
+		}
 	}
 
 	return visitor.Decls, visitor.ValueBindings, visitor.TypeBindings
@@ -97,10 +118,11 @@ func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
 	ast.DefaulVisitor
-	ValueBindings btree.Map[string, DeclID] // Valid value dependencies from the current module
-	TypeBindings  btree.Map[string, DeclID] // Valid type dependencies from the current module
-	Dependencies  btree.Set[DeclID]         // Found dependencies by declaration ID
-	LocalBindings []set.Set[string]         // Stack of local scopes (still strings for local scope)
+	ValueBindings    btree.Map[string, DeclID] // Valid value dependencies from the current module
+	TypeBindings     btree.Map[string, DeclID] // Valid type dependencies from the current module
+	Dependencies     btree.Set[DeclID]         // Found dependencies by declaration ID
+	LocalBindings    []set.Set[string]         // Stack of local scopes (still strings for local scope)
+	CurrentNamespace string                    // Current namespace being analyzed
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -138,14 +160,36 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		// Check if this identifier is a valid dependency
+		// If we're in a non-empty namespace, first try the qualified name (current namespace)
+		if v.CurrentNamespace != "" {
+			qualifiedName := v.CurrentNamespace + "." + e.Name
+			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+				!v.isLocalBinding(e.Name) {
+				v.Dependencies.Insert(declID)
+				return false
+			}
+		}
+		// Then try the unqualified name (global namespace or explicit global reference)
 		if declID, exists := v.ValueBindings.Get(e.Name); exists &&
 			!v.isLocalBinding(e.Name) {
 			v.Dependencies.Insert(declID)
+			return false
 		}
 		return false // Don't traverse into IdentExpr
 	case *ast.MemberExpr:
-		// For member expressions like obj.prop, we need to check the object part
-		// Continue traversing to find any identifier dependencies
+		// For member expressions like obj.prop, check if the full qualified name exists in bindings
+		qualifiedName := v.buildQualifiedName(e)
+		if qualifiedName != "" {
+			// Check if the qualified name is a valid value dependency
+			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+				!v.isLocalBinding(qualifiedName) {
+				v.Dependencies.Insert(declID)
+				return false // Don't traverse further since we found the qualified dependency
+			}
+			// NOTE: MemberExprs are value-only AST nodes so we don't bother
+			// checking if it's a type dependency.
+		}
+		// If no qualified name match, continue traversing to find dependencies in sub-expressions
 		return true
 	case *ast.FuncExpr:
 		// Function expression introduces a new scope for parameters
@@ -186,9 +230,21 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Check if this type reference is a valid dependency
-		if declID, exists := v.TypeBindings.Get(t.Name); exists &&
-			!v.isLocalBinding(t.Name) {
+		typeName := ast.QualIdentToString(t.Name)
+		// If we're in a non-empty namespace, first try the qualified name (current namespace)
+		if v.CurrentNamespace != "" {
+			qualifiedTypeName := v.CurrentNamespace + "." + typeName
+			if declID, exists := v.TypeBindings.Get(qualifiedTypeName); exists &&
+				!v.isLocalBinding(typeName) {
+				v.Dependencies.Insert(declID)
+				return true
+			}
+		}
+		// Then try the unqualified name (global namespace or explicit global reference)
+		if declID, exists := v.TypeBindings.Get(typeName); exists &&
+			!v.isLocalBinding(typeName) {
 			v.Dependencies.Insert(declID)
+			return true
 		}
 		return true // Continue traversing type arguments
 	case *ast.ObjectTypeAnn:
@@ -266,14 +322,16 @@ func FindDeclDependencies(
 	decl ast.Decl,
 	valueBindings btree.Map[string, DeclID],
 	typeBindings btree.Map[string, DeclID],
+	currentNamespace string,
 ) btree.Set[DeclID] {
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		ValueBindings: valueBindings,
-		TypeBindings:  typeBindings,
-		Dependencies:  dependencies,
-		LocalBindings: make([]set.Set[string], 0),
+		DefaulVisitor:    ast.DefaulVisitor{},
+		ValueBindings:    valueBindings,
+		TypeBindings:     typeBindings,
+		Dependencies:     dependencies,
+		LocalBindings:    make([]set.Set[string], 0),
+		CurrentNamespace: currentNamespace,
 	}
 
 	// Handle different declaration types
@@ -328,12 +386,28 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	// Build the dependency map
 	var deps btree.Map[DeclID, btree.Set[DeclID]]
 
+	// We need to track which namespace each declaration belongs to
+	// Create a map from DeclID to namespace by re-traversing the module
+	declToNamespace := make(map[DeclID]string)
+
+	nextDeclID := DeclID(1)
+	nsIter := module.Namespaces.Iter()
+	for ok := nsIter.First(); ok; ok = nsIter.Next() {
+		nsName := nsIter.Key()
+		ns := nsIter.Value()
+		for range ns.Decls {
+			declToNamespace[nextDeclID] = nsName
+			nextDeclID++
+		}
+	}
+
 	// For each declaration, find its dependencies
 	iter := decls.Iter()
 	for ok := iter.First(); ok; ok = iter.Next() {
 		declID := iter.Key()
 		decl := iter.Value()
-		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
+		namespace := declToNamespace[declID]
+		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, namespace)
 		deps.Set(declID, dependencies)
 	}
 
@@ -370,16 +444,42 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 	return declIDs
 }
 
-// GetDependents returns all declaration IDs that depend on the given declaration ID
-func (g *DepGraph) GetDependents(target DeclID) set.Set[DeclID] {
-	dependents := set.NewSet[DeclID]()
-	iter := g.Deps.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		declID := iter.Key()
-		deps := iter.Value()
-		if deps.Contains(target) {
-			dependents.Add(declID)
+// buildQualifiedName constructs a qualified name from a MemberExpr chain
+// Returns empty string if the expression doesn't form a valid qualified identifier chain
+func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
+	parts := make([]string, 0)
+
+	// Walk the chain backwards, collecting property names
+	current := expr
+	for current != nil {
+		if current.Prop == nil {
+			return "" // Invalid member expression
+		}
+		parts = append([]string{current.Prop.Name}, parts...) // Prepend to build left-to-right
+
+		// Check if the object is another MemberExpr
+		if memberObj, ok := current.Object.(*ast.MemberExpr); ok {
+			current = memberObj
+		} else if identObj, ok := current.Object.(*ast.IdentExpr); ok {
+			// Base case: we've reached an identifier
+			parts = append([]string{identObj.Name}, parts...) // Prepend the base identifier
+			break
+		} else {
+			// Not a simple qualified name chain (e.g., function call result, complex expression)
+			return ""
 		}
 	}
-	return dependents
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Build the qualified name using strings.Builder for efficient concatenation
+	var builder strings.Builder
+	builder.WriteString(parts[0])
+	for i := 1; i < len(parts); i++ {
+		builder.WriteByte('.')
+		builder.WriteString(parts[i])
+	}
+	return builder.String()
 }

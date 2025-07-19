@@ -265,13 +265,13 @@ func (t *IntersectionTypeAnn) Accept(v Visitor) {
 }
 
 type TypeRefTypeAnn struct {
-	Name         string
+	Name         QualIdent
 	TypeArgs     []TypeAnn
 	span         Span
 	inferredType Type
 }
 
-func NewRefTypeAnn(name string, typeArgs []TypeAnn, span Span) *TypeRefTypeAnn {
+func NewRefTypeAnn(name QualIdent, typeArgs []TypeAnn, span Span) *TypeRefTypeAnn {
 	return &TypeRefTypeAnn{Name: name, TypeArgs: typeArgs, span: span, inferredType: nil}
 }
 func (t *TypeRefTypeAnn) Accept(v Visitor) {

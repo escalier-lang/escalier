@@ -404,7 +404,8 @@ func (v *AllBindingsUsageVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Type references are always outside function bodies (at declaration level)
-		if bindings, exists := v.BindingsByName[t.Name]; exists && !v.isLocalBinding(t.Name) && v.FunctionDepth == 0 {
+		typeName := ast.QualIdentToString(t.Name)
+		if bindings, exists := v.BindingsByName[typeName]; exists && !v.isLocalBinding(typeName) && v.FunctionDepth == 0 {
 			// Only add type bindings for type references
 			for _, binding := range bindings {
 				if binding.Kind == DepKindType {

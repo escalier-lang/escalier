@@ -14,24 +14,36 @@ import (
 
 func TestFindModuleBindings(t *testing.T) {
 	tests := map[string]struct {
-		input    string
+		sources  []*ast.Source
 		expected []DepBinding
 	}{
 		"VarDecl_SimpleIdent": {
-			input: `
-				val a = 5
-				var b = 10
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val a = 5
+						var b = 10
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "a", Kind: DepKindValue},
 				{Name: "b", Kind: DepKindValue},
 			},
 		},
 		"VarDecl_TupleDestructuring": {
-			input: `
-				val [x, y] = [1, 2]
-				var [first, second] = getTuple()
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val [x, y] = [1, 2]
+						var [first, second] = getTuple()
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "x", Kind: DepKindValue},
 				{Name: "y", Kind: DepKindValue},
@@ -40,10 +52,16 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_ObjectDestructuring": {
-			input: `
-				val {name, age} = person
-				var {x: width, y: height} = dimensions
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {name, age} = person
+						var {x: width, y: height} = dimensions
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "name", Kind: DepKindValue},
 				{Name: "age", Kind: DepKindValue},
@@ -52,47 +70,71 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_ObjectShorthand": {
-			input: `
-				val {foo, bar} = obj
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {foo, bar} = obj
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "foo", Kind: DepKindValue},
 				{Name: "bar", Kind: DepKindValue},
 			},
 		},
 		"FuncDecl_Simple": {
-			input: `
-				fn add(a, b) {
-					return a + b
-				}
-				fn multiply(x, y) {
-					return x * y
-				}
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn add(a, b) {
+							return a + b
+						}
+						fn multiply(x, y) {
+							return x * y
+						}
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "add", Kind: DepKindValue},
 				{Name: "multiply", Kind: DepKindValue},
 			},
 		},
 		"TypeDecl_Simple": {
-			input: `
-				type Point = {x: number, y: number}
-				type Color = "red" | "green" | "blue"
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Point = {x: number, y: number}
+						type Color = "red" | "green" | "blue"
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "Point", Kind: DepKindType},
 				{Name: "Color", Kind: DepKindType},
 			},
 		},
 		"Mixed_Declarations": {
-			input: `
-				type User = {name: string, age: number}
-				val defaultUser = {name: "John", age: 30}
-				fn createUser(name, age) {
-					return {name, age}
-				}
-				var [admin, guest] = [createUser("admin", 25), defaultUser]
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type User = {name: string, age: number}
+						val defaultUser = {name: "John", age: 30}
+						fn createUser(name, age) {
+							return {name, age}
+						}
+						var [admin, guest] = [createUser("admin", 25), defaultUser]
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "User", Kind: DepKindType},
 				{Name: "defaultUser", Kind: DepKindValue},
@@ -102,14 +144,26 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"Empty_Module": {
-			input:    ``,
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "test.esc",
+					Contents: ``,
+				},
+			},
 			expected: []DepBinding{},
 		},
 		"VarDecl_NestedPatterns": {
-			input: `
-				val {user: {name, profile: {email}}} = data
-				val [first, {x, y}] = coordinates
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val {user: {name, profile: {email}}} = data
+						val [first, {x, y}] = coordinates
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "name", Kind: DepKindValue},
 				{Name: "email", Kind: DepKindValue},
@@ -119,10 +173,16 @@ func TestFindModuleBindings(t *testing.T) {
 			},
 		},
 		"VarDecl_RestPatterns": {
-			input: `
-				val [head, ...tail] = list
-				val {id, ...rest} = object
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val [head, ...tail] = list
+						val {id, ...rest} = object
+					`,
+				},
+			},
 			expected: []DepBinding{
 				{Name: "head", Kind: DepKindValue},
 				{Name: "tail", Kind: DepKindValue},
@@ -130,21 +190,143 @@ func TestFindModuleBindings(t *testing.T) {
 				{Name: "rest", Kind: DepKindValue},
 			},
 		},
+		"MultipleFiles_SameDirectory": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val mainVar = 42
+						fn mainFunc() {
+							return "main"
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "utils.esc",
+					Contents: `
+						type Helper = string
+						val utilVar = "utility"
+						fn utilFunc(x) {
+							return x * 2
+						}
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "mainVar", Kind: DepKindValue},
+				{Name: "mainFunc", Kind: DepKindValue},
+				{Name: "Helper", Kind: DepKindType},
+				{Name: "utilVar", Kind: DepKindValue},
+				{Name: "utilFunc", Kind: DepKindValue},
+			},
+		},
+		"MultipleFiles_WithSubdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val config = {name: "app", version: "1.0"}
+						fn start() {
+							return config
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "foo/math.esc",
+					Contents: `
+						type Vector = {x: number, y: number}
+						fn add(a, b) {
+							return a + b
+						}
+						val PI = 3.14159
+					`,
+				},
+				{
+					ID:   2,
+					Path: "bar/string.esc",
+					Contents: `
+						fn concat(a, b) {
+							return a + b
+						}
+						var delimiter = ","
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "config", Kind: DepKindValue},
+				{Name: "start", Kind: DepKindValue},
+				{Name: "foo.Vector", Kind: DepKindType},
+				{Name: "foo.add", Kind: DepKindValue},
+				{Name: "foo.PI", Kind: DepKindValue},
+				{Name: "bar.concat", Kind: DepKindValue},
+				{Name: "bar.delimiter", Kind: DepKindValue},
+			},
+		},
+		"MultipleFiles_NestedSubdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "index.esc",
+					Contents: `
+						type App = {name: string}
+						val app: App = {name: "MyApp"}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/engine.esc",
+					Contents: `
+						fn initialize() {
+							return true
+						}
+						type Engine = {running: boolean}
+					`,
+				},
+				{
+					ID:   2,
+					Path: "core/utils/helpers.esc",
+					Contents: `
+						val [first, second] = [1, 2]
+						fn helper(x) {
+							return x
+						}
+					`,
+				},
+				{
+					ID:   3,
+					Path: "models/user.esc",
+					Contents: `
+						type User = {id: number, name: string}
+						val {defaultId, defaultName} = {defaultId: 0, defaultName: "Unknown"}
+					`,
+				},
+			},
+			expected: []DepBinding{
+				{Name: "App", Kind: DepKindType},
+				{Name: "app", Kind: DepKindValue},
+				{Name: "core.initialize", Kind: DepKindValue},
+				{Name: "core.Engine", Kind: DepKindType},
+				{Name: "core.utils.first", Kind: DepKindValue},
+				{Name: "core.utils.second", Kind: DepKindValue},
+				{Name: "core.utils.helper", Kind: DepKindValue},
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "models.defaultId", Kind: DepKindValue},
+				{Name: "models.defaultName", Kind: DepKindValue},
+			},
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "test.esc",
-				Contents: test.input,
-			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -181,7 +363,10 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 	}{
 		"FuncDecl_NilName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
 					Decls: []ast.Decl{
 						&ast.FuncDecl{
 							Name: nil, // Function with nil name
@@ -201,13 +386,17 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"FuncDecl_EmptyName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
 					Decls: []ast.Decl{
 						&ast.FuncDecl{
 							Name: &ast.Ident{Name: ""}, // Function with empty name
@@ -227,13 +416,17 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"TypeDecl_NilName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
 					Decls: []ast.Decl{
 						&ast.TypeDecl{
 							Name:       nil, // Type with nil name
@@ -243,13 +436,17 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
 		"TypeDecl_EmptyName": {
 			setupModule: func() *ast.Module {
-				return &ast.Module{
+				module := &ast.Module{
+					Namespaces: btree.Map[string, *ast.Namespace]{},
+				}
+				module.Namespaces.Set("", &ast.Namespace{
 					Decls: []ast.Decl{
 						&ast.TypeDecl{
 							Name:       &ast.Ident{Name: ""}, // Type with empty name
@@ -259,7 +456,8 @@ func TestFindModuleBindings_EmptyNames(t *testing.T) {
 							},
 						},
 					},
-				}
+				})
+				return module
 			},
 			expected: []DepBinding{},
 		},
@@ -459,6 +657,101 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{{Name: "a", Kind: DepKindValue}, {Name: "b", Kind: DepKindValue}, {Name: "Point", Kind: DepKindType}},
 			declType:      "var",
 		},
+		"VarDecl_QualifiedValueDependency": {
+			declCode:      `val result = foo.bar + 5`,
+			validBindings: []DepBinding{{Name: "foo.bar", Kind: DepKindValue}, {Name: "other.func", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{{Name: "foo.bar", Kind: DepKindValue}},
+			declType:      "var",
+		},
+		"VarDecl_MultipleQualifiedDependencies": {
+			declCode: `val result = utils.math.add(data.values.first, data.values.second)`,
+			validBindings: []DepBinding{
+				{Name: "utils.math.add", Kind: DepKindValue},
+				{Name: "data.values.first", Kind: DepKindValue},
+				{Name: "data.values.second", Kind: DepKindValue},
+				{Name: "other.unused", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.math.add", Kind: DepKindValue},
+				{Name: "data.values.first", Kind: DepKindValue},
+				{Name: "data.values.second", Kind: DepKindValue},
+			},
+			declType: "var",
+		},
+		"VarDecl_QualifiedTypeAndValueMixed": {
+			declCode: `val config: app.Config = app.createConfig(defaults.host, defaults.port)`,
+			validBindings: []DepBinding{
+				{Name: "app.Config", Kind: DepKindType},
+				{Name: "app.createConfig", Kind: DepKindValue},
+				{Name: "defaults.host", Kind: DepKindValue},
+				{Name: "defaults.port", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "app.Config", Kind: DepKindType},
+				{Name: "app.createConfig", Kind: DepKindValue},
+				{Name: "defaults.host", Kind: DepKindValue},
+				{Name: "defaults.port", Kind: DepKindValue},
+			},
+			declType: "var",
+		},
+		"FuncDecl_QualifiedDependencies": {
+			declCode: `fn processData(input) {
+				val processed = utils.transform(input)
+				return storage.save(processed, config.outputPath)
+			}`,
+			validBindings: []DepBinding{
+				{Name: "utils.transform", Kind: DepKindValue},
+				{Name: "storage.save", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.transform", Kind: DepKindValue},
+				{Name: "storage.save", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			declType: "func",
+		},
+		"FuncDecl_QualifiedWithLocalShadowing": {
+			declCode: `fn testFunc(config) {
+				val result = utils.process(config)
+				return result + config.outputPath
+			}`,
+			validBindings: []DepBinding{
+				{Name: "utils.process", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "utils.process", Kind: DepKindValue},
+				{Name: "config.outputPath", Kind: DepKindValue}, // config.outputPath should still be detected as qualified name
+			},
+			declType: "func",
+		},
+		"TypeDecl_QualifiedTypeDependencies": {
+			declCode:      `type Response = {data: api.Data, meta: core.Meta}`,
+			validBindings: []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}, {Name: "unused.Type", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "api.Data", Kind: DepKindType}, {Name: "core.Meta", Kind: DepKindType}},
+			declType:      "type",
+		},
+		"TypeDecl_NestedQualifiedTypes": {
+			declCode: `type Complex = {nested: {inner: models.User, config: settings.AppConfig}, items: Array<data.Item>}`,
+			validBindings: []DepBinding{
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "settings.AppConfig", Kind: DepKindType},
+				{Name: "data.Item", Kind: DepKindType},
+			},
+			expectedDeps: []DepBinding{
+				{Name: "models.User", Kind: DepKindType},
+				{Name: "settings.AppConfig", Kind: DepKindType},
+				{Name: "data.Item", Kind: DepKindType},
+			},
+			declType: "type",
+		},
+		"VarDecl_QualifiedNonValidDependency": {
+			declCode:      `val result = unknown.module.func() + 5`,
+			validBindings: []DepBinding{{Name: "known.func", Kind: DepKindValue}, {Name: "other.var", Kind: DepKindValue}},
+			expectedDeps:  []DepBinding{}, // unknown.module.func is not in validBindings
+			declType:      "var",
+		},
 	}
 
 	for name, test := range tests {
@@ -484,13 +777,15 @@ func TestFindDeclDependencies(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 			assert.NotNil(t, module, "Module should not be nil")
-			assert.Len(t, module.Decls, 1, "Module should have exactly one declaration")
+
+			emptyNS, exists := module.Namespaces.Get("")
+			assert.True(t, exists, "Module should have empty namespace")
+			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
 
 			// Create valid bindings maps (split by kind)
 			var valueBindings btree.Map[string, DeclID]
@@ -505,7 +800,8 @@ func TestFindDeclDependencies(t *testing.T) {
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(module.Decls[0], valueBindings, typeBindings)
+			emptyNS2, _ := module.Namespaces.Get("")
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -620,7 +916,7 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings)
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -660,19 +956,25 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 
 func TestBuildDepGraph(t *testing.T) {
 	tests := map[string]struct {
-		input                string
+		sources              []*ast.Source
 		expectedDeclCount    int
 		expectedDependencies map[int][]int // [declaration index] -> [dependency declaration indices]
 	}{
 		"Simple_Dependencies": {
-			input: `
-				type User = {name: string, age: number}
-				val defaultAge = 18
-				fn createUser(name) {
-					return {name: name, age: defaultAge}
-				}
-				val admin = createUser("admin")
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type User = {name: string, age: number}
+						val defaultAge = 18
+						fn createUser(name) {
+							return {name: name, age: defaultAge}
+						}
+						val admin = createUser("admin")
+					`,
+				},
+			},
 			expectedDeclCount: 4,
 			expectedDependencies: map[int][]int{
 				0: {},  // type User has no dependencies
@@ -682,11 +984,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Type_Dependencies": {
-			input: `
-				type Point = {x: number, y: number}
-				type Shape = {center: Point, radius: number}
-				val origin: Point = {x: 0, y: 0}
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Point = {x: number, y: number}
+						type Shape = {center: Point, radius: number}
+						val origin: Point = {x: 0, y: 0}
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // type Point has no dependencies
@@ -695,11 +1003,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"No_Dependencies": {
-			input: `
-				val a = 5
-				val b = 10
-				type StringType = string
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val a = 5
+						val b = 10
+						type StringType = string
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {}, // val a has no dependencies
@@ -708,11 +1022,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Tuple_Destructuring_Simple": {
-			input: `
-				val point = [10, 20]
-				val [x, y] = point
-				val sum = x + y
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val point = [10, 20]
+						val [x, y] = point
+						val sum = x + y
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val point has no dependencies
@@ -721,11 +1041,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Object_Destructuring_Simple": {
-			input: `
-				val user = {name: "Alice", age: 30}
-				val {name, age} = user
-				val greeting = "Hello " + name
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val user = {name: "Alice", age: 30}
+						val {name, age} = user
+						val greeting = "Hello " + name
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val user has no dependencies
@@ -734,11 +1060,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Object_Destructuring_With_Rename": {
-			input: `
-				val config = {width: 100, height: 50}
-				val {width: w, height: h} = config
-				val area = w * h
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val config = {width: 100, height: 50}
+						val {width: w, height: h} = config
+						val area = w * h
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val config has no dependencies
@@ -747,11 +1079,17 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Nested_Destructuring": {
-			input: `
-				val data = {coords: [5, 10], info: {id: 1}}
-				val {coords: [x, y], info: {id}} = data
-				val result = x + y + id
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val data = {coords: [5, 10], info: {id: 1}}
+						val {coords: [x, y], info: {id}} = data
+						val result = x + y + id
+					`,
+				},
+			},
 			expectedDeclCount: 3,
 			expectedDependencies: map[int][]int{
 				0: {},  // val data has no dependencies
@@ -760,12 +1098,18 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Rest_Pattern_Destructuring": {
-			input: `
-				val numbers = [1, 2, 3, 4, 5]
-				val [first, second, ...rest] = numbers
-				val restSum = rest
-				val total = first + second
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val numbers = [1, 2, 3, 4, 5]
+						val [first, second, ...rest] = numbers
+						val restSum = rest
+						val total = first + second
+					`,
+				},
+			},
 			expectedDeclCount: 4,
 			expectedDependencies: map[int][]int{
 				0: {},  // val numbers has no dependencies
@@ -775,18 +1119,24 @@ func TestBuildDepGraph(t *testing.T) {
 			},
 		},
 		"Mixed_Destructuring_With_Functions": {
-			input: `
-				fn getPoint() {
-					return [100, 200]
-				}
-				val [startX, startY] = getPoint()
-				fn getSize() {
-					return {width: 50, height: 30}
-				}
-				val {width, height} = getSize()
-				val area = width * height
-				val diagonal = startX + startY
-			`,
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn getPoint() {
+							return [100, 200]
+						}
+						val [startX, startY] = getPoint()
+						fn getSize() {
+							return {width: 50, height: 30}
+						}
+						val {width, height} = getSize()
+						val area = width * height
+						val diagonal = startX + startY
+					`,
+				},
+			},
 			expectedDeclCount: 6,
 			expectedDependencies: map[int][]int{
 				0: {},  // fn getPoint has no dependencies
@@ -797,21 +1147,185 @@ func TestBuildDepGraph(t *testing.T) {
 				5: {1}, // val diagonal depends on destructuring declaration (index 1)
 			},
 		},
+		"Multiple_Files_Simple_Dependencies": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val config = {debug: true, version: "1.0"}
+						val app = createApp(config)
+					`,
+				},
+				{
+					ID:   1,
+					Path: "utils.esc",
+					Contents: `
+						fn createApp(config) {
+							return {name: "MyApp", config: config}
+						}
+						val helper = "utility"
+					`,
+				},
+			},
+			expectedDeclCount: 4,
+			expectedDependencies: map[int][]int{
+				0: {},     // val config (main.esc) has no dependencies
+				1: {0, 2}, // val app (main.esc) depends on config (index 0) and utils.createApp (index 2)
+				2: {},     // fn utils.createApp has no dependencies
+				3: {},     // val utils.helper has no dependencies
+			},
+		},
+		"Multiple_Files_With_Subdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						type Config = {name: string, version: string}
+						val config: Config = {name: "app", version: "1.0"}
+						val calculator = math.add(5, 3)
+						val greeting = strings.format("Hello {}", config.name)
+					`,
+				},
+				{
+					ID:   1,
+					Path: "math/operations.esc",
+					Contents: `
+						fn add(a, b) {
+							return a + b
+						}
+						fn multiply(a, b) {
+							return a * b
+						}
+						val PI = 3.14159
+					`,
+				},
+				{
+					ID:   2,
+					Path: "strings/format.esc",
+					Contents: `
+						fn format(template, value) {
+							return template + " " + value
+						}
+						type Template = string
+					`,
+				},
+			},
+			expectedDeclCount: 9,
+			expectedDependencies: map[int][]int{
+				0: {},     // type Config (main.esc) has no dependencies
+				1: {0},    // val config (main.esc) depends on Config (index 0)
+				2: {4},    // val calculator (main.esc) depends on math.add (index 4)
+				3: {1, 7}, // val greeting (main.esc) depends on strings.format (index 7) and config (index 1)
+				4: {},     // fn math.add has no dependencies
+				5: {},     // fn math.multiply has no dependencies
+				6: {},     // val math.PI has no dependencies
+				7: {},     // fn strings.format has no dependencies
+				8: {},     // type strings.Template has no dependencies
+			},
+		},
+		"Multiple_Files_Cross_Directory_Dependencies": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "index.esc",
+					Contents: `
+						val result = core.process(models.defaultUser)
+						type Result = {success: boolean, data: models.User}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/engine.esc",
+					Contents: `
+						fn process(user) {
+							return {success: true, data: user}
+						}
+						val engine: Engine = {running: true}
+						type Engine = {running: boolean}
+					`,
+				},
+				{
+					ID:   2,
+					Path: "models/user.esc",
+					Contents: `
+						type User = {id: number, name: string}
+						val defaultUser: User = {id: 0, name: "Guest"}
+						fn createUser(name) {
+							return {id: 1, name: name}
+						}
+					`,
+				},
+			},
+			expectedDeclCount: 8,
+			expectedDependencies: map[int][]int{
+				0: {2, 6}, // val result depends on core.engine.process (index 2) and models.user.defaultUser (index 6)
+				1: {5},    // type Result depends on models.User (index 5)
+				2: {},     // fn core.engine.process has no dependencies
+				3: {4},    // val core.engine.engine depends on core.Engine (index 4)
+				4: {},     // type core.Engine has no dependencies
+				5: {},     // type models.User has no dependencies
+				6: {5},    // val models.defaultUser depends on models.User (index 5)
+				7: {},     // fn models.createUser has no dependencies
+			},
+		},
+		"Multiple_Files_Nested_Subdirectories": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "app.esc",
+					Contents: `
+						val server = core.network.createServer(8080)
+						val database = core.storage.connect("localhost")
+						type App = {server: core.network.Server, db: core.storage.Database}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "core/network/http.esc",
+					Contents: `
+						type Server = {port: number, running: boolean}
+						fn createServer(port) {
+							return {port: port, running: false}
+						}
+						val defaultPort = 3000
+					`,
+				},
+				{
+					ID:   2,
+					Path: "core/storage/db.esc",
+					Contents: `
+						type Database = {host: string, connected: boolean}
+						fn connect(host) {
+							return {host: host, connected: true}
+						}
+						val maxConnections = 100
+					`,
+				},
+			},
+			expectedDeclCount: 9,
+			expectedDependencies: map[int][]int{
+				0: {4},    // val server depends on core.network.http.createServer (index 4)
+				1: {7},    // val database depends on core.storage.db.connect (index 7)
+				2: {3, 6}, // type App depends on core.network.http.Server (index 3) and core.storage.db.Database (index 6)
+				3: {},     // type core.network.http.Server has no dependencies
+				4: {},     // fn core.network.http.createServer has no dependencies
+				5: {},     // val core.network.http.defaultPort has no dependencies
+				6: {},     // type core.storage.db.Database has no dependencies
+				7: {},     // fn core.storage.db.connect has no dependencies
+				8: {},     // val core.storage.db.maxConnections has no dependencies
+			},
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "test.esc",
-				Contents: test.input,
-			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			parser := parser.NewParser(ctx, source)
-			module, errors := parser.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
@@ -863,6 +1377,157 @@ func TestBuildDepGraph(t *testing.T) {
 				assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
 					"Expected dependencies for declaration %d: %v, got %v", declIndex, expectedDeclIDs, actualDepsSlice)
 			}
+		})
+	}
+}
+
+// TestFindDeclDependencies_NamespaceResolution tests the namespace-specific
+// identifier resolution logic covered in the selected code.
+func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
+	tests := map[string]struct {
+		declCode      string
+		validBindings []DepBinding
+		expectedDeps  []DepBinding
+		declType      string
+		namespace     string // namespace context for dependency resolution
+	}{
+		"VarDecl_NamespaceQualifiedDependency": {
+			declCode: `val result = myVar + 5`,
+			validBindings: []DepBinding{
+				{Name: "myNamespace.myVar", Kind: DepKindValue}, // Qualified name in namespace
+				{Name: "myVar", Kind: DepKindValue},             // Unqualified name in global namespace
+			},
+			expectedDeps: []DepBinding{{Name: "myNamespace.myVar", Kind: DepKindValue}}, // Should prefer namespace-qualified
+			declType:     "var",
+			namespace:    "myNamespace", // Test within a namespace
+		},
+		"VarDecl_FallbackToGlobalNamespace": {
+			declCode: `val result = globalVar + 5`,
+			validBindings: []DepBinding{
+				{Name: "myNamespace.otherVar", Kind: DepKindValue}, // Different qualified name
+				{Name: "globalVar", Kind: DepKindValue},            // Unqualified name in global namespace
+			},
+			expectedDeps: []DepBinding{{Name: "globalVar", Kind: DepKindValue}}, // Should fallback to global
+			declType:     "var",
+			namespace:    "myNamespace", // Test within a namespace but fallback to global
+		},
+		"VarDecl_NoLocalBinding": {
+			declCode: `val result = if (true) {
+				val myVar = 42
+				globalVar + 5  // Reference globalVar, not the local myVar
+			} else {
+				0
+			}`,
+			validBindings: []DepBinding{
+				{Name: "myNamespace.globalVar", Kind: DepKindValue}, // Qualified name in namespace
+				{Name: "globalVar", Kind: DepKindValue},             // Unqualified name in global namespace
+			},
+			expectedDeps: []DepBinding{{Name: "myNamespace.globalVar", Kind: DepKindValue}}, // Should prefer namespace-qualified and ignore local myVar
+			declType:     "var",
+			namespace:    "myNamespace", // Test within a namespace
+		},
+		"TypeDecl_NamespaceQualifiedTypeDependency": {
+			declCode: `type MyType = BaseType`,
+			validBindings: []DepBinding{
+				{Name: "myNamespace.BaseType", Kind: DepKindType}, // Qualified name in namespace
+				{Name: "BaseType", Kind: DepKindType},             // Unqualified name in global namespace
+			},
+			expectedDeps: []DepBinding{{Name: "myNamespace.BaseType", Kind: DepKindType}}, // Should prefer namespace-qualified
+			declType:     "type",
+			namespace:    "myNamespace", // Test within a namespace
+		},
+		"VarDecl_EmptyNamespaceFallsBackToGlobal": {
+			declCode: `val result = globalVar + 5`,
+			validBindings: []DepBinding{
+				{Name: "globalVar", Kind: DepKindValue}, // Unqualified name in global namespace
+			},
+			expectedDeps: []DepBinding{{Name: "globalVar", Kind: DepKindValue}}, // Should find global
+			declType:     "var",
+			namespace:    "", // Empty namespace context
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create a module with the declaration
+			var moduleCode string
+			switch test.declType {
+			case "var":
+				moduleCode = test.declCode
+			case "func":
+				moduleCode = test.declCode
+			case "type":
+				moduleCode = test.declCode
+			}
+
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: moduleCode,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			// Ensure parsing was successful
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+			assert.NotNil(t, module, "Module should not be nil")
+
+			emptyNS, exists := module.Namespaces.Get("")
+			assert.True(t, exists, "Module should have empty namespace")
+			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
+
+			// Create valid bindings maps (split by kind)
+			var valueBindings btree.Map[string, DeclID]
+			var typeBindings btree.Map[string, DeclID]
+			for i, binding := range test.validBindings {
+				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+				if binding.Kind == DepKindValue {
+					valueBindings.Set(binding.Name, declID)
+				} else if binding.Kind == DepKindType {
+					typeBindings.Set(binding.Name, declID)
+				}
+			}
+
+			// Find dependencies using the test namespace context
+			emptyNS2, _ := module.Namespaces.Get("")
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace)
+
+			// Convert dependencies to bindings for comparison
+			actualDeps := make([]DepBinding, 0)
+			iter := dependencies.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				declID := iter.Key()
+				// Find the binding that corresponds to this DeclID
+				found := false
+				valueIter := valueBindings.Iter()
+				for ok := valueIter.First(); ok; ok = valueIter.Next() {
+					name := valueIter.Key()
+					id := valueIter.Value()
+					if id == declID {
+						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
+						found = true
+						break
+					}
+				}
+				if !found {
+					typeIter := typeBindings.Iter()
+					for ok := typeIter.First(); ok; ok = typeIter.Next() {
+						name := typeIter.Key()
+						id := typeIter.Value()
+						if id == declID {
+							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
+							break
+						}
+					}
+				}
+			}
+
+			assert.ElementsMatch(t, test.expectedDeps, actualDeps,
+				"Expected dependencies %v, got %v", test.expectedDeps, actualDeps)
 		})
 	}
 }

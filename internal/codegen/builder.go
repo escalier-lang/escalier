@@ -326,8 +326,13 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 
 func (b *Builder) BuildModule(mod *ast.Module) *Module {
 	var stmts []Stmt
-	for _, d := range mod.Decls {
-		stmts = slices.Concat(stmts, b.buildDecl(d))
+	if ns, ok := mod.Namespaces.Get(""); ok {
+		// If the module has a default namespace, we build its declarations.
+		for _, d := range ns.Decls {
+			stmts = slices.Concat(stmts, b.buildDecl(d))
+		}
+	} else {
+		panic("TODO - TransformModule - default namespace is missing")
 	}
 	return &Module{
 		Stmts: stmts,

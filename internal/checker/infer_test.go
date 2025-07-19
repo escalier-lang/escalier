@@ -256,8 +256,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
-			p := parser.NewParser(ctx, source)
-			module, errors := p.ParseModule()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 
 			if len(errors) > 0 {
 				for i, err := range errors {

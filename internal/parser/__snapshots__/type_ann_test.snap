@@ -189,7 +189,14 @@
             },
             Optional: false,
             TypeAnn:  &ast.TypeRefTypeAnn{
-                Name:     "T",
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -213,7 +220,14 @@
             },
             Optional: false,
             TypeAnn:  &ast.TypeRefTypeAnn{
-                Name:     "U",
+                Name: &ast.Ident{
+                    Name: "U",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:35},
+                        End:      ast.Location{Line:1, Column:36},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -249,7 +263,14 @@
         &ast.IntersectionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
-                    Name:     "A",
+                    Name: &ast.Ident{
+                        Name: "A",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:1},
+                            End:      ast.Location{Line:1, Column:2},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -260,7 +281,14 @@
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "B",
+                    Name: &ast.Ident{
+                        Name: "B",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:5},
+                            End:      ast.Location{Line:1, Column:6},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -281,7 +309,14 @@
         &ast.IntersectionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
-                    Name:     "X",
+                    Name: &ast.Ident{
+                        Name: "X",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -292,7 +327,14 @@
                     inferredType: nil,
                 },
                 &ast.TypeRefTypeAnn{
-                    Name:     "Y",
+                    Name: &ast.Ident{
+                        Name: "Y",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:13},
+                            End:      ast.Location{Line:1, Column:14},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -324,7 +366,14 @@
 &ast.IntersectionTypeAnn{
     Types: {
         &ast.TypeRefTypeAnn{
-            Name:     "A",
+            Name: &ast.Ident{
+                Name: "A",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:1},
+                    End:      ast.Location{Line:1, Column:2},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -335,7 +384,14 @@
             inferredType: nil,
         },
         &ast.TypeRefTypeAnn{
-            Name:     "B",
+            Name: &ast.Ident{
+                Name: "B",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:6},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -346,7 +402,14 @@
             inferredType: nil,
         },
         &ast.TypeRefTypeAnn{
-            Name:     "C",
+            Name: &ast.Ident{
+                Name: "C",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -370,7 +433,14 @@
 &ast.UnionTypeAnn{
     Types: {
         &ast.TypeRefTypeAnn{
-            Name:     "A",
+            Name: &ast.Ident{
+                Name: "A",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:1},
+                    End:      ast.Location{Line:1, Column:2},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -381,7 +451,14 @@
             inferredType: nil,
         },
         &ast.TypeRefTypeAnn{
-            Name:     "B",
+            Name: &ast.Ident{
+                Name: "B",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:6},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -392,7 +469,14 @@
             inferredType: nil,
         },
         &ast.TypeRefTypeAnn{
-            Name:     "C",
+            Name: &ast.Ident{
+                Name: "C",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 0,
+                },
+            },
             TypeArgs: {
             },
             span: ast.Span{
@@ -413,37 +497,30 @@
 ---
 
 [TestParseTypeAnnNoErrors/IndexedTypeWithDot - 1]
-&ast.IndexTypeAnn{
-    Target: &ast.TypeRefTypeAnn{
-        Name:     "A",
-        TypeArgs: {
-        },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:2},
-            SourceID: 0,
-        },
-        inferredType: nil,
-    },
-    Index: &ast.LitTypeAnn{
-        Lit: &ast.StrLit{
-            Value: "B",
-            span:  ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:3},
+&ast.TypeRefTypeAnn{
+    Name: &ast.Member{
+        Left: &ast.Ident{
+            Name: "A",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:2},
                 SourceID: 0,
             },
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:3},
-            SourceID: 0,
+        Right: &ast.Ident{
+            Name: "B",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
         },
-        inferredType: nil,
+    },
+    TypeArgs: {
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:3},
+        End:      ast.Location{Line:1, Column:4},
         SourceID: 0,
     },
     inferredType: nil,
@@ -453,7 +530,14 @@
 [TestParseTypeAnnNoErrors/IndexedTypeWithBrackets - 1]
 &ast.IndexTypeAnn{
     Target: &ast.TypeRefTypeAnn{
-        Name:     "A",
+        Name: &ast.Ident{
+            Name: "A",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:2},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -464,7 +548,14 @@
         inferredType: nil,
     },
     Index: &ast.TypeRefTypeAnn{
-        Name:     "B",
+        Name: &ast.Ident{
+            Name: "B",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -486,7 +577,14 @@
 [TestParseTypeAnnNoErrors/MutableType - 1]
 &ast.MutableTypeAnn{
     Target: &ast.TypeRefTypeAnn{
-        Name:     "A",
+        Name: &ast.Ident{
+            Name: "A",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -508,7 +606,14 @@
 [TestParseTypeAnnNoErrors/ConditionalType - 1]
 &ast.CondTypeAnn{
     Check: &ast.TypeRefTypeAnn{
-        Name:     "A",
+        Name: &ast.Ident{
+            Name: "A",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -519,7 +624,14 @@
         inferredType: nil,
     },
     Extends: &ast.TypeRefTypeAnn{
-        Name:     "B",
+        Name: &ast.Ident{
+            Name: "B",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -530,7 +642,14 @@
         inferredType: nil,
     },
     Cons: &ast.TypeRefTypeAnn{
-        Name:     "C",
+        Name: &ast.Ident{
+            Name: "C",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -541,7 +660,14 @@
         inferredType: nil,
     },
     Alt: &ast.TypeRefTypeAnn{
-        Name:     "D",
+        Name: &ast.Ident{
+            Name: "D",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:23},
+                End:      ast.Location{Line:1, Column:24},
+                SourceID: 0,
+            },
+        },
         TypeArgs: {
         },
         span: ast.Span{
@@ -577,7 +703,14 @@
             Optional: false,
             Readonly: false,
             Value:    &ast.TypeRefTypeAnn{
-                Name:     "A",
+                Name: &ast.Ident{
+                    Name: "A",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:5},
+                        End:      ast.Location{Line:1, Column:6},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -602,7 +735,14 @@
             Optional: true,
             Readonly: false,
             Value:    &ast.TypeRefTypeAnn{
-                Name:     "B",
+                Name: &ast.Ident{
+                    Name: "B",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:12},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -629,7 +769,14 @@
             Optional: false,
             Readonly: false,
             Value:    &ast.TypeRefTypeAnn{
-                Name:     "C",
+                Name: &ast.Ident{
+                    Name: "C",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:20},
+                        End:      ast.Location{Line:1, Column:21},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -656,7 +803,14 @@
             Optional: true,
             Readonly: false,
             Value:    &ast.TypeRefTypeAnn{
-                Name:     "D",
+                Name: &ast.Ident{
+                    Name: "D",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                },
                 TypeArgs: {
                 },
                 span: ast.Span{
@@ -684,10 +838,24 @@
             TypeParam: &ast.IndexParamTypeAnn{
                 Name:       "K",
                 Constraint: &ast.TypeRefTypeAnn{
-                    Name:     "Keys",
+                    Name: &ast.Ident{
+                        Name: "Keys",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:21},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                         &ast.TypeRefTypeAnn{
-                            Name:     "T",
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:26},
+                                    End:      ast.Location{Line:1, Column:27},
+                                    SourceID: 0,
+                                },
+                            },
                             TypeArgs: {
                             },
                             span: ast.Span{
@@ -709,7 +877,14 @@
             Name:  nil,
             Value: &ast.IndexTypeAnn{
                 Target: &ast.TypeRefTypeAnn{
-                    Name:     "T",
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:7},
+                            End:      ast.Location{Line:1, Column:8},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -720,7 +895,14 @@
                     inferredType: nil,
                 },
                 Index: &ast.TypeRefTypeAnn{
-                    Name:     "K",
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
                     TypeArgs: {
                     },
                     span: ast.Span{
@@ -744,6 +926,145 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/QualifiedTypeRefWithTypeArgs - 1]
+&ast.TypeRefTypeAnn{
+    Name: &ast.Member{
+        Left: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
+        },
+        Right: &ast.Ident{
+            Name: "Bar",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeArgs: {
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "T",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "U",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/QualifiedTypeRef - 1]
+&ast.TypeRefTypeAnn{
+    Name: &ast.Member{
+        Left: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
+        },
+        Right: &ast.Ident{
+            Name: "Bar",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeArgs: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:8},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/DeepQualifiedTypeRef - 1]
+&ast.TypeRefTypeAnn{
+    Name: &ast.Member{
+        Left: &ast.Member{
+            Left: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:1},
+                    End:      ast.Location{Line:1, Column:4},
+                    SourceID: 0,
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+        },
+        Right: &ast.Ident{
+            Name: "Baz",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeArgs: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
         SourceID: 0,
     },
     inferredType: nil,
