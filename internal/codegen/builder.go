@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/tidwall/btree"
 )
 
 type Builder struct {
@@ -339,16 +342,118 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 	}
 }
 
-func (b *Builder) BuildDecls(decls []ast.Decl) *Module {
+func (b *Builder) BuildDecls(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) *Module {
 	var stmts []Stmt
 
-	for _, decl := range decls {
+	nsStmts := b.buildNamespaceStatements(declIDs, depGraph)
+	stmts = slices.Concat(stmts, nsStmts)
+
+	for _, declID := range declIDs {
+		decl, _ := depGraph.Decls.Get(declID)
 		stmts = slices.Concat(stmts, b.buildDecl(decl))
 	}
 
 	return &Module{
 		Stmts: stmts,
 	}
+}
+
+// buildNamespaceStatements generates statements to create namespace objects
+// for all namespaces used by the given declarations
+func (b *Builder) buildNamespaceStatements(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) []Stmt {
+	// Collect all unique namespaces from the declarations
+	var namespaces btree.Map[string, bool]
+	for _, declID := range declIDs {
+		if ns, exists := depGraph.DeclNamespace.Get(declID); exists && ns != "" {
+			namespaces.Set(ns, true)
+		}
+	}
+
+	// Track which namespace segments have been defined to avoid redefinition
+	definedNamespaces := make(map[string]bool)
+	var stmts []Stmt
+
+	// For each namespace, generate the hierarchy of statements
+	iter := namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		namespace := iter.Key()
+		stmts = slices.Concat(stmts, b.buildNamespaceHierarchy(namespace, definedNamespaces))
+	}
+
+	return stmts
+}
+
+// buildNamespaceHierarchy generates statements to create a namespace hierarchy
+// For "foo.bar.baz", it generates: const foo = {}; foo.bar = {}; foo.bar.baz = {};
+func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces map[string]bool) []Stmt {
+	if namespace == "" {
+		return []Stmt{}
+	}
+
+	parts := strings.Split(namespace, ".")
+	var stmts []Stmt
+
+	// Build each level of the namespace hierarchy
+	for i := 1; i <= len(parts); i++ {
+		currentNS := strings.Join(parts[:i], ".")
+
+		// Skip if this namespace level has already been defined
+		if definedNamespaces[currentNS] {
+			continue
+		}
+		definedNamespaces[currentNS] = true
+
+		if i == 1 {
+			// First level: const foo = {};
+			pattern := NewIdentPat(parts[0], nil, nil)
+			init := NewObjectExpr([]ObjExprElem{}, nil)
+
+			decl := &VarDecl{
+				Kind: VariableKind(ast.ValKind),
+				Decls: []*Declarator{
+					{
+						Pattern: pattern,
+						TypeAnn: nil,
+						Init:    init,
+					},
+				},
+				declare: false,
+				export:  false,
+				span:    nil,
+				source:  nil,
+			}
+
+			stmt := &DeclStmt{
+				Decl:   decl,
+				span:   nil,
+				source: nil,
+			}
+			stmts = append(stmts, stmt)
+		} else {
+			// Subsequent levels: foo.bar = {}; foo.bar.baz = {};
+			// Build the left side (foo.bar.baz)
+			var left Expr = NewIdentExpr(parts[0], nil)
+			for j := 1; j < i; j++ {
+				left = NewMemberExpr(left, NewIdentifier(parts[j], nil), false, nil)
+			}
+
+			// Right side is an empty object
+			right := NewObjectExpr([]ObjExprElem{}, nil)
+
+			// Create assignment expression
+			assignExpr := NewBinaryExpr(left, Assign, right, nil)
+
+			// Wrap in expression statement
+			stmt := &ExprStmt{
+				Expr:   assignExpr,
+				span:   nil,
+				source: nil,
+			}
+			stmts = append(stmts, stmt)
+		}
+	}
+
+	return stmts
 }
 
 func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
@@ -360,6 +465,10 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 }
 
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
+	return b.buildDeclWithNamespace(decl, "")
+}
+
+func (b *Builder) buildDeclWithNamespace(decl ast.Decl, ns string) []Stmt {
 	if decl.Declare() {
 		return []Stmt{}
 	}

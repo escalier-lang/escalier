@@ -31,9 +31,9 @@ func Compile(source *ast.Source) CompilerOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	scope, typeErrors := c.InferScript(inferCtx, inMod)
+	_, typeErrors := c.InferScript(inferCtx, inMod)
 
-	namespace := scope.Namespace
+	// namespace := scope.Namespace
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
@@ -54,7 +54,9 @@ func Compile(source *ast.Source) CompilerOutput {
 		}
 	}
 
-	dtsMod := builder.BuildDefinitions(decls, namespace)
+	// TODO: Create a separate version of BuildDefinitions that works with just
+	// the decls slice instead of the dep_graph.
+	// dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
@@ -66,7 +68,8 @@ func Compile(source *ast.Source) CompilerOutput {
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 	printer = codegen.NewPrinter()
-	dtsOutput := printer.PrintModule(dtsMod)
+	// dtsOutput := printer.PrintModule(dtsMod)
+	dtsOutput := ""
 
 	return CompilerOutput{
 		ParseErrors: parseErrors,
@@ -115,17 +118,14 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	}
 
 	components := depGraph.FindStronglyConnectedComponents(0)
-	var decls []ast.Decl
+	var declIDs []dep_graph.DeclID
 	for _, component := range components {
-		for _, declID := range component {
-			decl, _ := depGraph.Decls.Get(declID)
-			decls = append(decls, decl)
-		}
+		declIDs = append(declIDs, component...)
 	}
 
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildDecls(decls)
-	dtsMod := builder.BuildDefinitions(decls, namespace)
+	jsMod := builder.BuildDecls(declIDs, depGraph)
+	dtsMod := builder.BuildDefinitions(declIDs, depGraph, namespace)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
