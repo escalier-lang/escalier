@@ -27,7 +27,6 @@ func Compile(source *ast.Source) CompilerOutput {
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
-		Filename:   "input.esc",
 		Scope:      checker.Prelude(),
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -99,7 +98,6 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
-		Filename:   "input.esc",
 		Scope:      checker.Prelude(),
 		IsAsync:    false,
 		IsPatMatch: false,

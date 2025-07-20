@@ -192,7 +192,6 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
-		Filename:   uri,
 		Scope:      checker.Prelude(),
 		IsAsync:    false,
 		IsPatMatch: false,
