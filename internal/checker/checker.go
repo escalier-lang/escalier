@@ -29,10 +29,19 @@ type Context struct {
 	IsPatMatch bool
 }
 
-func (ctx *Context) WithParentScope() Context {
+func (ctx *Context) WithNewScope() Context {
 	return Context{
 		Filename:   ctx.Filename,
-		Scope:      NewScope(ctx.Scope),
+		Scope:      ctx.Scope.WithNewScope(),
+		IsAsync:    ctx.IsAsync,
+		IsPatMatch: ctx.IsPatMatch,
+	}
+}
+
+func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
+	return Context{
+		Filename:   ctx.Filename,
+		Scope:      ctx.Scope.WithNewScopeAndNamespace(ns),
 		IsAsync:    ctx.IsAsync,
 		IsPatMatch: ctx.IsPatMatch,
 	}

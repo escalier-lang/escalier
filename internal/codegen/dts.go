@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -13,8 +12,7 @@ import (
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
 	decls []ast.Decl,
-	namespace *checker.Namespace,
-	// scope *checker.Scope,
+	namespace *type_sys.Namespace,
 ) *Module {
 	stmts := []Stmt{}
 
