@@ -119,7 +119,6 @@ func TestCheckScriptNoErrors(t *testing.T) {
 			assert.Len(t, errors, 0)
 
 			inferCtx := Context{
-				Filename:   "input.esc",
 				Scope:      Prelude(),
 				IsAsync:    false,
 				IsPatMatch: false,
@@ -269,7 +268,6 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			assert.Len(t, errors, 0)
 
 			inferCtx := Context{
-				Filename:   "input.esc",
 				Scope:      Prelude(),
 				IsAsync:    false,
 				IsPatMatch: false,
@@ -347,7 +345,6 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 			assert.Len(t, errors, 0)
 
 			inferCtx := Context{
-				Filename:   "input.esc",
 				Scope:      Prelude(),
 				IsAsync:    false,
 				IsPatMatch: false,
@@ -389,7 +386,6 @@ func TestGetDeclCtx(t *testing.T) {
 	}
 
 	rootCtx := Context{
-		Filename:   "test.esc",
 		Scope:      rootScope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -455,7 +451,6 @@ func TestGetDeclCtx(t *testing.T) {
 			assert.Equal(t, rootNS, currentScope.Namespace)
 
 			// Verify other context fields are preserved
-			assert.Equal(t, rootCtx.Filename, resultCtx.Filename)
 			assert.Equal(t, rootCtx.IsAsync, resultCtx.IsAsync)
 			assert.Equal(t, rootCtx.IsPatMatch, resultCtx.IsPatMatch)
 		})
@@ -471,7 +466,6 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 	}
 
 	rootCtx := Context{
-		Filename:   "test.esc",
 		Scope:      rootScope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -488,7 +482,6 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 
 	// Should return the same context since no namespace mapping exists
 	assert.Equal(t, rootCtx.Scope.Namespace, resultCtx.Scope.Namespace)
-	assert.Equal(t, rootCtx.Filename, resultCtx.Filename)
 	assert.Equal(t, rootCtx.IsAsync, resultCtx.IsAsync)
 	assert.Equal(t, rootCtx.IsPatMatch, resultCtx.IsPatMatch)
 }
@@ -521,7 +514,6 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	}
 
 	rootCtx := Context{
-		Filename:   "test.esc",
 		Scope:      rootScope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -638,7 +630,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -728,7 +719,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -825,7 +815,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -906,7 +895,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -981,7 +969,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -1072,7 +1059,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,
@@ -1167,7 +1153,6 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				inferCtx := Context{
-					Filename:   "test.esc",
 					Scope:      rootScope,
 					IsAsync:    false,
 					IsPatMatch: false,

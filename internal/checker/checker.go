@@ -23,7 +23,6 @@ func (c *Checker) FreshVar() *type_system.TypeVarType {
 }
 
 type Context struct {
-	Filename   string
 	Scope      *Scope
 	IsAsync    bool
 	IsPatMatch bool
@@ -31,7 +30,6 @@ type Context struct {
 
 func (ctx *Context) WithNewScope() Context {
 	return Context{
-		Filename:   ctx.Filename,
 		Scope:      ctx.Scope.WithNewScope(),
 		IsAsync:    ctx.IsAsync,
 		IsPatMatch: ctx.IsPatMatch,
@@ -40,7 +38,6 @@ func (ctx *Context) WithNewScope() Context {
 
 func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
 	return Context{
-		Filename:   ctx.Filename,
 		Scope:      ctx.Scope.WithNewScopeAndNamespace(ns),
 		IsAsync:    ctx.IsAsync,
 		IsPatMatch: ctx.IsPatMatch,
