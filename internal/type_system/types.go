@@ -5,6 +5,7 @@ package type_system
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/provenance"
@@ -999,17 +1000,24 @@ func (t *NamespaceType) Equal(other Type) bool {
 	return false
 }
 func (t *NamespaceType) String() string {
-	result := "namespace {"
+	var builder strings.Builder
+	builder.WriteString("namespace {")
 	if len(t.Namespace.Values) > 0 {
 		for name, binding := range t.Namespace.Values {
-			result += name + ": " + binding.Type.String() + ", "
+			builder.WriteString(name)
+			builder.WriteString(": ")
+			builder.WriteString(binding.Type.String())
+			builder.WriteString(", ")
 		}
 	}
 	if len(t.Namespace.Types) > 0 {
 		for name, typeAlias := range t.Namespace.Types {
-			result += name + ": " + typeAlias.Type.String() + ", "
+			builder.WriteString(name)
+			builder.WriteString(": ")
+			builder.WriteString(typeAlias.Type.String())
+			builder.WriteString(", ")
 		}
 	}
-	result += "}"
-	return result
+	builder.WriteString("}")
+	return builder.String()
 }

@@ -452,18 +452,14 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 
 // AllNamespaces returns all unique namespace names in the graph
 func (g *DepGraph) AllNamespaces() []string {
-	namespaces := make(map[string]bool)
+	namespaces := set.NewSet[string]()
 	iter := g.DeclNamespace.Iter()
 	for ok := iter.First(); ok; ok = iter.Next() {
 		namespace := iter.Value()
-		namespaces[namespace] = true
+		namespaces.Add(namespace)
 	}
 
-	result := make([]string, 0, len(namespaces))
-	for namespace := range namespaces {
-		result = append(result, namespace)
-	}
-	return result
+	return namespaces.ToSlice()
 }
 
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
