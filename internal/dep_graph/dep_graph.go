@@ -372,6 +372,7 @@ type DepGraph struct {
 	// We use a btree.Map because insert order is not guaranteed in Go maps,
 	// and we want to maintain a consistent order for declarations.  This is so
 	// that codegen is deterministic.
+	// NOTE: Binding names are fully qualified.
 	Decls         btree.Map[DeclID, ast.Decl]          // All declarations in the module
 	Deps          btree.Map[DeclID, btree.Set[DeclID]] // Dependencies for each declaration ID
 	ValueBindings btree.Map[string, DeclID]            // Map from value binding name to declaration ID

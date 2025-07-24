@@ -124,7 +124,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 	}
 
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildDecls(declIDs, depGraph)
+	jsMod := builder.BuildTopLevelDecls(declIDs, depGraph)
 	dtsMod := builder.BuildDefinitions(declIDs, depGraph, namespace)
 
 	printer := codegen.NewPrinter()

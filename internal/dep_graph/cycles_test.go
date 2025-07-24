@@ -357,7 +357,7 @@ func TestFindCycles_EdgeCases(t *testing.T) {
 			for i, cycle := range cycles {
 				var allNames []string
 				for _, declID := range cycle.Cycle {
-					names := depGraph.getDeclNames(declID)
+					names := depGraph.GetDeclNames(declID)
 					allNames = append(allNames, names...)
 				}
 				t.Logf("Cycle %d: %v - %s", i+1, allNames, cycle.Message)

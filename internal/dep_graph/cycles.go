@@ -131,7 +131,7 @@ func (g *DepGraph) hasTypeBinding(declID DeclID) bool {
 }
 
 // getDeclNames returns all binding names for a declaration
-func (g *DepGraph) getDeclNames(declID DeclID) []string {
+func (g *DepGraph) GetDeclNames(declID DeclID) []string {
 	bindings := g.getBindingsForDecl(declID)
 	names := make([]string, len(bindings))
 	for i, binding := range bindings {

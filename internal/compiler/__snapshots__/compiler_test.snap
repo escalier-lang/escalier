@@ -4,8 +4,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const foo = 5;\nconst bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;MACN,AAAA,MAAM\"}",
+    JS:         "const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}",
     DTS:        "",
 }
 ---
