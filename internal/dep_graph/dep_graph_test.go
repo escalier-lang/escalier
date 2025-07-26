@@ -803,7 +803,9 @@ func TestFindDeclDependencies(t *testing.T) {
 			// Find dependencies
 			emptyNS2, _ := module.Namespaces.Get("")
 			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "", namespaceManager) // Convert dependencies to bindings for comparison
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "", namespaceManager)
+
+			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
 			iter := dependencies.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
@@ -918,7 +920,9 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 
 			// Find dependencies
 			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "", namespaceManager) // Convert dependencies to bindings for comparison
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "", namespaceManager)
+
+			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
 			iter := dependencies.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
@@ -1515,7 +1519,9 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 			// Find dependencies using the test namespace context
 			emptyNS2, _ := module.Namespaces.Get("")
 			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace, namespaceManager) // Convert dependencies to bindings for comparison
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace, namespaceManager)
+
+			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
 			iter := dependencies.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
