@@ -12,7 +12,9 @@ import (
 )
 
 type Builder struct {
-	tempId int
+	tempId           int
+	depGraph         *dep_graph.DepGraph
+	namespaceManager *dep_graph.NamespaceManager
 }
 
 func (b *Builder) NewTempId() string {
@@ -357,6 +359,19 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 }
 
 func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) *Module {
+	// Set up builder state
+	b.depGraph = depGraph
+
+	// Create namespace manager and populate it from the dependency graph
+	b.namespaceManager = dep_graph.NewNamespaceManager()
+	iter := depGraph.DeclNamespace.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		namespace := iter.Value()
+		if namespace != "" {
+			b.namespaceManager.GetNamespaceID(namespace) // This will register the namespace
+		}
+	}
+
 	var stmts []Stmt
 
 	nsStmts := b.buildNamespaceStatements(declIDs, depGraph)
@@ -598,7 +613,11 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
-		return NewIdentExpr(expr.Name, expr.Namespace, expr), []Stmt{}
+		var namespaceStr string
+		if b.namespaceManager != nil {
+			namespaceStr = b.namespaceManager.GetNamespaceString(expr.Namespace)
+		}
+		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.CallExpr:
 		calleeExpr, calleeStmts := b.buildExpr(expr.Callee)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)

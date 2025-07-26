@@ -317,7 +317,7 @@
         &ast.JSXExprContainer{
             Expr: &ast.IdentExpr{
                 Name:      "msg",
-                Namespace: "",
+                Namespace: 0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
@@ -389,7 +389,7 @@
                     &ast.JSXExprContainer{
                         Expr: &ast.IdentExpr{
                             Name:      "foo",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:14},

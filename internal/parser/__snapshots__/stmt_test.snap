@@ -354,7 +354,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:4, Column:12},
@@ -482,7 +482,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:16},
@@ -494,7 +494,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:20},
@@ -605,7 +605,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:16},
@@ -617,7 +617,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:20},
@@ -1183,7 +1183,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:23},
@@ -1195,7 +1195,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:27},
@@ -1293,7 +1293,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:23},
@@ -1305,7 +1305,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:27},
@@ -1403,7 +1403,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:16},
@@ -1415,7 +1415,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:20},
@@ -1510,7 +1510,7 @@ nil
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name:      "x",
-                        Namespace: "",
+                        Namespace: 0,
                         Source:    nil,
                         span:      ast.Span{
                             Start:    ast.Location{Line:1, Column:17},
@@ -1533,7 +1533,7 @@ nil
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name:      "y",
-                        Namespace: "",
+                        Namespace: 0,
                         Source:    nil,
                         span:      ast.Span{
                             Start:    ast.Location{Line:1, Column:28},
@@ -1709,7 +1709,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:19},
@@ -1721,7 +1721,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:23},
@@ -1879,7 +1879,7 @@ nil
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name:      "a",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:4, Column:12},
@@ -1891,7 +1891,7 @@ nil
                         Op:    "+",
                         Right: &ast.IdentExpr{
                             Name:      "b",
-                            Namespace: "",
+                            Namespace: 0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:4, Column:16},

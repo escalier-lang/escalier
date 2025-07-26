@@ -692,7 +692,7 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name:      "a",
-                Namespace: "",
+                Namespace: 0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -725,7 +725,7 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name:      "b",
-                Namespace: "",
+                Namespace: 0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:8},
@@ -759,7 +759,7 @@
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
                     Name:      "c",
-                    Namespace: "",
+                    Namespace: 0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:16},
@@ -794,7 +794,7 @@
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
                     Name:      "d",
-                    Namespace: "",
+                    Namespace: 0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:24},
