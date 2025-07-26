@@ -381,13 +381,14 @@ func (e *LitExpr) SetSpan(span *Span) { e.span = span }
 func (e *LitExpr) Source() ast.Node   { return e.source }
 
 type IdentExpr struct {
-	Name   string
-	span   *Span
-	source ast.Node
+	Name      string
+	Namespace string
+	span      *Span
+	source    ast.Node
 }
 
-func NewIdentExpr(name string, source ast.Node) *IdentExpr {
-	return &IdentExpr{Name: name, source: source, span: nil}
+func NewIdentExpr(name string, namespace string, source ast.Node) *IdentExpr {
+	return &IdentExpr{Name: name, Namespace: namespace, source: source, span: nil}
 }
 func (e *IdentExpr) Span() *Span        { return e.span }
 func (e *IdentExpr) SetSpan(span *Span) { e.span = span }

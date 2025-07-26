@@ -3,9 +3,10 @@
 &ast.ExprStmt{
     Expr: &ast.CallExpr{
         Callee: &ast.IdentExpr{
-            Name:   "foo",
-            Source: nil,
-            span:   ast.Span{
+            Name:      "foo",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
                 Start:    ast.Location{Line:2, Column:5},
                 End:      ast.Location{Line:2, Column:8},
                 SourceID: 0,
@@ -129,9 +130,10 @@
                 &ast.ReturnStmt{
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
-                            Name:   "a",
-                            Source: nil,
-                            span:   ast.Span{
+                            Name:      "a",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
                                 Start:    ast.Location{Line:3, Column:13},
                                 End:      ast.Location{Line:3, Column:14},
                                 SourceID: 0,
@@ -140,9 +142,10 @@
                         },
                         Op:    "+",
                         Right: &ast.IdentExpr{
-                            Name:   "b",
-                            Source: nil,
-                            span:   ast.Span{
+                            Name:      "b",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
                                 Start:    ast.Location{Line:3, Column:17},
                                 End:      ast.Location{Line:3, Column:18},
                                 SourceID: 0,
@@ -201,9 +204,10 @@
         },
         TypeAnn: nil,
         Init:    &ast.IdentExpr{
-            Name:   "x",
-            Source: nil,
-            span:   ast.Span{
+            Name:      "x",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
                 Start:    ast.Location{Line:2, Column:13},
                 End:      ast.Location{Line:2, Column:14},
                 SourceID: 0,
@@ -243,9 +247,10 @@
         TypeAnn: nil,
         Init:    &ast.BinaryExpr{
             Left: &ast.IdentExpr{
-                Name:   "x",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "x",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:2, Column:14},
                     End:      ast.Location{Line:2, Column:15},
                     SourceID: 0,
@@ -254,9 +259,10 @@
             },
             Op:    "-",
             Right: &ast.IdentExpr{
-                Name:   "y",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "y",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:7},
                     SourceID: 0,
@@ -290,9 +296,10 @@
 &ast.ExprStmt{
     Expr: &ast.IndexExpr{
         Object: &ast.IdentExpr{
-            Name:   "a",
-            Source: nil,
-            span:   ast.Span{
+            Name:      "a",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
                 Start:    ast.Location{Line:2, Column:5},
                 End:      ast.Location{Line:2, Column:6},
                 SourceID: 0,
@@ -301,9 +308,10 @@
         },
         Index: &ast.BinaryExpr{
             Left: &ast.IdentExpr{
-                Name:   "base",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "base",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:2, Column:7},
                     End:      ast.Location{Line:2, Column:11},
                     SourceID: 0,
@@ -312,9 +320,10 @@
             },
             Op:    "+",
             Right: &ast.IdentExpr{
-                Name:   "offset",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "offset",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:12},
                     SourceID: 0,
@@ -387,9 +396,10 @@
                                     },
                                     TypeAnn: nil,
                                     Init:    &ast.IdentExpr{
-                                        Name:   "x",
-                                        Source: nil,
-                                        span:   ast.Span{
+                                        Name:      "x",
+                                        Namespace: 0,
+                                        Source:    nil,
+                                        span:      ast.Span{
                                             Start:    ast.Location{Line:4, Column:15},
                                             End:      ast.Location{Line:4, Column:16},
                                             SourceID: 0,
@@ -414,9 +424,10 @@
                                 Expr: &ast.UnaryExpr{
                                     Op:  1,
                                     Arg: &ast.IdentExpr{
-                                        Name:   "y",
-                                        Source: nil,
-                                        span:   ast.Span{
+                                        Name:      "y",
+                                        Namespace: 0,
+                                        Source:    nil,
+                                        span:      ast.Span{
                                             Start:    ast.Location{Line:5, Column:8},
                                             End:      ast.Location{Line:5, Column:9},
                                             SourceID: 0,
@@ -478,9 +489,10 @@
 &ast.ExprStmt{
     Expr: &ast.CallExpr{
         Callee: &ast.IdentExpr{
-            Name:   "bar",
-            Source: nil,
-            span:   ast.Span{
+            Name:      "bar",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
                 Start:    ast.Location{Line:3, Column:5},
                 End:      ast.Location{Line:3, Column:8},
                 SourceID: 0,
@@ -569,9 +581,10 @@
         TypeAnn: nil,
         Init:    &ast.BinaryExpr{
             Left: &ast.IdentExpr{
-                Name:   "a",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "a",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:4, Column:15},
                     End:      ast.Location{Line:4, Column:16},
                     SourceID: 0,
@@ -580,9 +593,10 @@
             },
             Op:    "+",
             Right: &ast.IdentExpr{
-                Name:   "b",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "b",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:4, Column:19},
                     End:      ast.Location{Line:4, Column:20},
                     SourceID: 0,
@@ -664,9 +678,10 @@
                 &ast.ReturnStmt{
                     Expr: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
-                            Name:   "a",
-                            Source: nil,
-                            span:   ast.Span{
+                            Name:      "a",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
                                 Start:    ast.Location{Line:6, Column:13},
                                 End:      ast.Location{Line:6, Column:14},
                                 SourceID: 0,
@@ -675,9 +690,10 @@
                         },
                         Op:    "-",
                         Right: &ast.IdentExpr{
-                            Name:   "b",
-                            Source: nil,
-                            span:   ast.Span{
+                            Name:      "b",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
                                 Start:    ast.Location{Line:6, Column:17},
                                 End:      ast.Location{Line:6, Column:18},
                                 SourceID: 0,
@@ -737,9 +753,10 @@
         TypeAnn: nil,
         Init:    &ast.IfElseExpr{
             Cond: &ast.IdentExpr{
-                Name:   "cond",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "cond",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:2, Column:16},
                     End:      ast.Location{Line:2, Column:20},
                     SourceID: 0,
@@ -947,9 +964,10 @@
     Expr: &ast.UnaryExpr{
         Op:  1,
         Arg: &ast.IdentExpr{
-            Name:   "y",
-            Source: nil,
-            span:   ast.Span{
+            Name:      "y",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
                 Start:    ast.Location{Line:3, Column:6},
                 End:      ast.Location{Line:3, Column:7},
                 SourceID: 0,
@@ -976,9 +994,10 @@
     Expr: &ast.BinaryExpr{
         Left: &ast.MemberExpr{
             Object: &ast.IdentExpr{
-                Name:   "p",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "p",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:6},
                     SourceID: 0,
@@ -1038,9 +1057,10 @@
     Expr: &ast.BinaryExpr{
         Left: &ast.MemberExpr{
             Object: &ast.IdentExpr{
-                Name:   "p",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "p",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:6},
                     SourceID: 0,

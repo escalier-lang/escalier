@@ -12,7 +12,9 @@ import (
 )
 
 type Builder struct {
-	tempId int
+	tempId           int
+	depGraph         *dep_graph.DepGraph
+	namespaceManager *dep_graph.NamespaceManager
 }
 
 func (b *Builder) NewTempId() string {
@@ -59,13 +61,20 @@ func Zip[T, U any](ts []T, us []U) []Pair[T, U] {
 	return pairs
 }
 
+func fullyQualifyName(name, nsName string) string {
+	if nsName == "" {
+		return name
+	}
+	return strings.ReplaceAll(nsName, ".", "__") + "__" + name
+}
+
 // TODO: return a pattern instead of passing in the VariableKind
 func (b *Builder) buildPattern(
 	p ast.Pat,
 	target Expr,
 	export bool,
 	kind ast.VariableKind,
-	nsParts []string,
+	nsName string,
 ) ([]Expr, []Stmt) {
 
 	var checks []Expr
@@ -82,12 +91,8 @@ func (b *Builder) buildPattern(
 				defExpr, defStmts = b.buildExpr(p.Default)
 				stmts = slices.Concat(stmts, defStmts)
 			}
-			name := p.Name
-			if len(nsParts) > 0 {
-				name = strings.Join(nsParts, "__") + "__" + name
-			}
 			return &IdentPat{
-				Name:    name,
+				Name:    fullyQualifyName(p.Name, nsName),
 				Default: defExpr,
 				span:    nil,
 				source:  p,
@@ -122,12 +127,8 @@ func (b *Builder) buildPattern(
 						defExpr, defStmts = b.buildExpr(e.Default)
 						stmts = slices.Concat(stmts, defStmts)
 					}
-					name := e.Key.Name
-					if len(nsParts) > 0 {
-						name = strings.Join(nsParts, "__") + "__" + name
-					}
 					elems = append(elems, NewObjKeyValuePat(
-						name,
+						fullyQualifyName(e.Key.Name, nsName),
 						buildPatternRec(e.Value, newTarget),
 						defExpr,
 						e,
@@ -139,12 +140,8 @@ func (b *Builder) buildPattern(
 						defExpr, defStmts = b.buildExpr(e.Default)
 						stmts = slices.Concat(stmts, defStmts)
 					}
-					name := e.Key.Name
-					if len(nsParts) > 0 {
-						name = strings.Join(nsParts, "__") + "__" + name
-					}
 					elems = append(elems, NewObjShorthandPat(
-						name,
+						fullyQualifyName(e.Key.Name, nsName),
 						defExpr,
 						e,
 					))
@@ -191,7 +188,7 @@ func (b *Builder) buildPattern(
 
 			for _, arg := range p.Args {
 				tempId := b.NewTempId()
-				tempVar := NewIdentExpr(tempId, nil)
+				tempVar := NewIdentExpr(tempId, "", nil)
 
 				var init Expr
 				switch arg := arg.(type) {
@@ -208,12 +205,12 @@ func (b *Builder) buildPattern(
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
 			}
-			extractor := NewIdentExpr(p.Name, p)
+			extractor := NewIdentExpr(p.Name, "", p)
 			subject := target
-			receiver := NewIdentExpr("undefined", nil)
+			receiver := NewIdentExpr("undefined", "", nil)
 
 			call := NewCallExpr(
-				NewIdentExpr("InvokeCustomMatcherOrThrow", nil),
+				NewIdentExpr("InvokeCustomMatcherOrThrow", "", nil),
 				[]Expr{extractor, subject, receiver},
 				false,
 				nil, // TODO: source
@@ -245,7 +242,7 @@ func (b *Builder) buildPattern(
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
-				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsParts)
+				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
 			}
@@ -362,6 +359,19 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 }
 
 func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) *Module {
+	// Set up builder state
+	b.depGraph = depGraph
+
+	// Create namespace manager and populate it from the dependency graph
+	b.namespaceManager = dep_graph.NewNamespaceManager()
+	iter := depGraph.DeclNamespace.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		namespace := iter.Value()
+		if namespace != "" {
+			b.namespaceManager.GetNamespaceID(namespace) // This will register the namespace
+		}
+	}
+
 	var stmts []Stmt
 
 	nsStmts := b.buildNamespaceStatements(declIDs, depGraph)
@@ -376,12 +386,7 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 		}
 
 		nsName, _ := depGraph.DeclNamespace.Get(declID)
-		var nsParts []string
-		if nsName != "" {
-			nsParts = strings.Split(nsName, ".")
-		}
-
-		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsParts))
+		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)
 
@@ -393,9 +398,9 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 			parts := strings.Split(name, ".")
 			dunderName := strings.Join(parts, "__")
 			assignExpr := NewBinaryExpr(
-				NewIdentExpr(name, nil),
+				NewIdentExpr(name, "", nil),
 				Assign,
-				NewIdentExpr(dunderName, nil),
+				NewIdentExpr(dunderName, "", nil),
 				nil,
 			)
 
@@ -494,7 +499,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces ma
 		} else {
 			// Subsequent levels: foo.bar = {}; foo.bar.baz = {};
 			// Build the left side (foo.bar.baz)
-			var left Expr = NewIdentExpr(parts[0], nil)
+			var left Expr = NewIdentExpr(parts[0], "", nil)
 			for j := 1; j < i; j++ {
 				left = NewMemberExpr(left, NewIdentifier(parts[j], nil), false, nil)
 			}
@@ -527,10 +532,10 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 }
 
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
-	return b.buildDeclWithNamespace(decl, []string{})
+	return b.buildDeclWithNamespace(decl, "")
 }
 
-func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsParts []string) []Stmt {
+func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	if decl.Declare() {
 		return []Stmt{}
 	}
@@ -542,20 +547,16 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsParts []string) []Stmt
 		}
 		initExpr, initStmts := b.buildExpr(d.Init)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsParts)
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
 		}
-		name := d.Name.Name
-		if len(nsParts) > 0 {
-			name = strings.Join(nsParts, "__") + "__" + name
-		}
 		fnDecl := &FuncDecl{
 			Name: &Identifier{
-				Name:   name,
+				Name:   fullyQualifyName(d.Name.Name, nsName),
 				span:   nil,
 				source: d.Name,
 			},
@@ -612,7 +613,11 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
-		return NewIdentExpr(expr.Name, expr), []Stmt{}
+		var namespaceStr string
+		if b.namespaceManager != nil {
+			namespaceStr = b.namespaceManager.GetNamespaceString(expr.Namespace)
+		}
+		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.CallExpr:
 		calleeExpr, calleeStmts := b.buildExpr(expr.Callee)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
@@ -710,7 +715,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	switch k := key.(type) {
 	case *ast.IdentExpr:
-		return NewIdentExpr(k.Name, key), []Stmt{}
+		return NewIdentExpr(k.Name, "", key), []Stmt{}
 	case *ast.StrLit:
 		return NewStrLit(k.Value, key), []Stmt{}
 	case *ast.NumLit:
@@ -733,11 +738,11 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		switch pat := p.Pattern.(type) {
 		case *ast.RestPat:
-			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 		}
 

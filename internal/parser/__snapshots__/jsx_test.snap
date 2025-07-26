@@ -316,9 +316,10 @@
         },
         &ast.JSXExprContainer{
             Expr: &ast.IdentExpr{
-                Name:   "msg",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "msg",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:17},
                     SourceID: 0,
@@ -387,9 +388,10 @@
                 Children: {
                     &ast.JSXExprContainer{
                         Expr: &ast.IdentExpr{
-                            Name:   "foo",
-                            Source: nil,
-                            span:   ast.Span{
+                            Name:      "foo",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:14},
                                 End:      ast.Location{Line:1, Column:17},
                                 SourceID: 0,

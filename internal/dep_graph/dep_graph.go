@@ -23,6 +23,43 @@ type DepBinding struct {
 // DeclID represents a unique identifier for each declaration
 type DeclID int
 
+// NamespaceManager manages namespace IDs and their string representations
+type NamespaceManager struct {
+	namespaces []string // Index is the NamespaceID, value is the namespace string
+	nextID     ast.NamespaceID
+}
+
+func NewNamespaceManager() *NamespaceManager {
+	nm := &NamespaceManager{
+		namespaces: make([]string, 1), // Start with capacity for root namespace
+		nextID:     1,                 // 0 is reserved for root namespace
+	}
+	// Register root namespace at index 0
+	nm.namespaces[0] = ""
+	return nm
+}
+
+func (nm *NamespaceManager) GetNamespaceID(namespace string) ast.NamespaceID {
+	// Check if namespace already exists
+	for i, ns := range nm.namespaces {
+		if ns == namespace {
+			return ast.NamespaceID(i)
+		}
+	}
+	// Create new namespace ID
+	id := nm.nextID
+	nm.nextID++
+	nm.namespaces = append(nm.namespaces, namespace)
+	return id
+}
+
+func (nm *NamespaceManager) GetNamespaceString(id ast.NamespaceID) string {
+	if int(id) < len(nm.namespaces) {
+		return nm.namespaces[id]
+	}
+	return ""
+}
+
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
@@ -123,6 +160,7 @@ type DependencyVisitor struct {
 	Dependencies     btree.Set[DeclID]         // Found dependencies by declaration ID
 	LocalBindings    []set.Set[string]         // Stack of local scopes (still strings for local scope)
 	CurrentNamespace string                    // Current namespace being analyzed
+	NamespaceManager *NamespaceManager         // Manager for namespace IDs
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -165,6 +203,7 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 			qualifiedName := v.CurrentNamespace + "." + e.Name
 			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
 				!v.isLocalBinding(e.Name) {
+				e.Namespace = v.NamespaceManager.GetNamespaceID(v.CurrentNamespace) // Allows us to codegen a fully qualified name
 				v.Dependencies.Insert(declID)
 				return false
 			}
@@ -323,6 +362,7 @@ func FindDeclDependencies(
 	valueBindings btree.Map[string, DeclID],
 	typeBindings btree.Map[string, DeclID],
 	currentNamespace string,
+	namespaceManager *NamespaceManager,
 ) btree.Set[DeclID] {
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
@@ -332,6 +372,7 @@ func FindDeclDependencies(
 		Dependencies:     dependencies,
 		LocalBindings:    make([]set.Set[string], 0),
 		CurrentNamespace: currentNamespace,
+		NamespaceManager: namespaceManager,
 	}
 
 	// Handle different declaration types
@@ -382,6 +423,9 @@ type DepGraph struct {
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
+	// Create namespace manager
+	namespaceManager := NewNamespaceManager()
+
 	// First, find all decls and bindings in the module
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
@@ -408,7 +452,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		declID := iter.Key()
 		decl := iter.Value()
 		namespace, _ := declNamespace.Get(declID)
-		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, namespace)
+		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, namespace, namespaceManager)
 		deps.Set(declID, dependencies)
 	}
 

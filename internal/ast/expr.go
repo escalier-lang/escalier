@@ -8,6 +8,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/provenance"
 )
 
+// NamespaceID represents a unique identifier for a namespace
+type NamespaceID int
+
+const RootNamespaceID NamespaceID = 0
+
 //sumtype:decl
 type Expr interface {
 	isExpr()
@@ -267,13 +272,18 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 
 type IdentExpr struct {
 	Name         string
+	Namespace    NamespaceID
 	Source       provenance.Provenance
 	span         Span
 	inferredType Type
 }
 
 func NewIdent(name string, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Source: nil, span: span, inferredType: nil}
+	return &IdentExpr{Name: name, Namespace: RootNamespaceID, Source: nil, span: span, inferredType: nil}
+}
+
+func NewIdentWithNamespace(name string, namespace NamespaceID, span Span) *IdentExpr {
+	return &IdentExpr{Name: name, Namespace: namespace, Source: nil, span: span, inferredType: nil}
 }
 func (e *IdentExpr) Accept(v Visitor) {
 	v.EnterExpr(e)

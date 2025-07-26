@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -327,11 +326,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			decl := parseDecl(t, test.declSource)
 
 			builder := &Builder{tempId: 0}
-			var nsParts []string
-			if test.ns != "" {
-				nsParts = strings.Split(test.ns, ".")
-			}
-			stmts := builder.buildDeclWithNamespace(decl, nsParts)
+			stmts := builder.buildDeclWithNamespace(decl, test.ns)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -349,28 +344,44 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 
 func TestBuildDecls(t *testing.T) {
 	tests := map[string]struct {
-		declSources []string
-		namespaces  []string // corresponding namespace for each declaration
-		expected    string
+		sources  []*ast.Source
+		expected string
 	}{
 		"Single_Decl_No_Namespace": {
-			declSources: []string{"val x = 42"},
-			namespaces:  []string{""},
-			expected:    "const x = 42;",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "main.esc",
+					Contents: "val x = 42",
+				},
+			},
+			expected: "const x = 42;",
 		},
 		"Single_Decl_With_Namespace": {
-			declSources: []string{"val x = 42"},
-			namespaces:  []string{"foo"},
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "foo/x.esc",
+					Contents: "val x = 42",
+				},
+			},
 			expected: `const foo = {};
 const foo__x = 42;
 foo.x = foo__x;`,
 		},
 		"Multiple_Decls_Same_Namespace": {
-			declSources: []string{
-				"val x = 42",
-				"fn double(n) { return n * 2 }",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "math/x.esc",
+					Contents: "val x = 42",
+				},
+				{
+					ID:       1,
+					Path:     "math/double.esc",
+					Contents: "fn double(n) { return n * 2 }",
+				},
 			},
-			namespaces: []string{"math", "math"},
 			expected: `const math = {};
 const math__x = 42;
 math.x = math__x;
@@ -381,11 +392,18 @@ function math__double(temp1) {
 math.double = math__double;`,
 		},
 		"Multiple_Decls_Different_Namespaces": {
-			declSources: []string{
-				"val PI = 3.14159",
-				"val message = \"hello\"",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "math/pi.esc",
+					Contents: "val PI = 3.14159",
+				},
+				{
+					ID:       1,
+					Path:     "strings/message.esc",
+					Contents: "val message = \"hello\"",
+				},
 			},
-			namespaces: []string{"math", "strings"},
 			expected: `const math = {};
 const strings = {};
 const math__PI = 3.14159;
@@ -394,44 +412,65 @@ const strings__message = "hello";
 strings.message = strings__message;`,
 		},
 		"Nested_Namespaces": {
-			declSources: []string{
-				"val add = 42",
-				"val PI = 3.14",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "utils/math/add.esc",
+					Contents: "val add = 42",
+				},
+				{
+					ID:       1,
+					Path:     "constants/math/pi.esc",
+					Contents: "val PI = 3.14",
+				},
 			},
-			namespaces: []string{"utils.math", "constants.math"},
 			expected: `const constants = {};
 constants.math = {};
 const utils = {};
 utils.math = {};
-const utils__math__add = 42;
-utils.math.add = utils__math__add;
 const constants__math__PI = 3.14;
-constants.math.PI = constants__math__PI;`,
+constants.math.PI = constants__math__PI;
+const utils__math__add = 42;
+utils.math.add = utils__math__add;`,
 		},
 		"Mixed_Namespace_Levels": {
-			declSources: []string{
-				"val config = {debug: true}",
-				"fn log(msg) { console.log(msg) }",
-				"val VERSION = \"1.0.0\"",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "config.esc",
+					Contents: "val config = {debug: true}",
+				},
+				{
+					ID:       1,
+					Path:     "utils/log.esc",
+					Contents: "fn log(msg) { console.log(msg) }",
+				},
+				{
+					ID:       2,
+					Path:     "constants/app/version.esc",
+					Contents: "val VERSION = \"1.0.0\"",
+				},
 			},
-			namespaces: []string{"", "utils", "constants.app"},
 			expected: `const constants = {};
 constants.app = {};
 const utils = {};
 const config = {debug: true};
+const constants__app__VERSION = "1.0.0";
+constants.app.VERSION = constants__app__VERSION;
 function utils__log(temp1) {
   const msg = temp1;
   console.log(msg);
 }
-utils.log = utils__log;
-const constants__app__VERSION = "1.0.0";
-constants.app.VERSION = constants__app__VERSION;`,
+utils.log = utils__log;`,
 		},
 		"Function_With_Complex_Namespace": {
-			declSources: []string{
-				"fn processData(input) { return input }",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "services/data/processing/process.esc",
+					Contents: "fn processData(input) { return input }",
+				},
 			},
-			namespaces: []string{"services.data.processing"},
 			expected: `const services = {};
 services.data = {};
 services.data.processing = {};
@@ -442,22 +481,36 @@ function services__data__processing__processData(temp1) {
 services.data.processing.processData = services__data__processing__processData;`,
 		},
 		"Variable_Destructuring_With_Namespace": {
-			declSources: []string{
-				"val {x, y} = getPoint()",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "coords/point.esc",
+					Contents: "val {x, y} = getPoint()",
+				},
 			},
-			namespaces: []string{"coords"},
 			expected: `const coords = {};
 const {coords__x, coords__y} = getPoint();
 coords.x = coords__x;
 coords.y = coords__y;`,
 		},
 		"Multiple_Declarations_Overlapping_Namespaces": {
-			declSources: []string{
-				"val user = {name: \"Alice\"}",
-				"fn createUser(name) { return {name} }",
-				"val defaultUser = null",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "models/user/user.esc",
+					Contents: "val user = {name: \"Alice\"}",
+				},
+				{
+					ID:       1,
+					Path:     "models/user/create.esc",
+					Contents: "fn createUser(name) { return {name} }",
+				},
+				{
+					ID:       2,
+					Path:     "models/user/defaults/default.esc",
+					Contents: "val defaultUser = null",
+				},
 			},
-			namespaces: []string{"models.user", "models.user", "models.user.defaults"},
 			expected: `const models = {};
 models.user = {};
 models.user.defaults = {};
@@ -472,22 +525,36 @@ const models__user__defaults__defaultUser = null;
 models.user.defaults.defaultUser = models__user__defaults__defaultUser;`,
 		},
 		"Type_Declaration_Skip": {
-			declSources: []string{
-				"type User = {name: string, age: number}",
-				"val admin = {name: \"admin\", age: 30}",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "types/user.esc",
+					Contents: "type User = {name: string, age: number}",
+				},
+				{
+					ID:       1,
+					Path:     "data/admin.esc",
+					Contents: "val admin = {name: \"admin\", age: 30}",
+				},
 			},
-			namespaces: []string{"types", "data"},
 			expected: `const data = {};
 const types = {};
 const data__admin = {name: "admin", age: 30};
 data.admin = data__admin;`,
 		},
 		"Var_Declaration_With_Namespace": {
-			declSources: []string{
-				"var counter = 0",
-				"var isEnabled = true",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "state/app/counter.esc",
+					Contents: "var counter = 0",
+				},
+				{
+					ID:       1,
+					Path:     "state/ui/enabled.esc",
+					Contents: "var isEnabled = true",
+				},
 			},
-			namespaces: []string{"state.app", "state.ui"},
 			expected: `const state = {};
 state.app = {};
 state.ui = {};
@@ -496,89 +563,32 @@ state.app.counter = state__app__counter;
 let state__ui__isEnabled = true;
 state.ui.isEnabled = state__ui__isEnabled;`,
 		},
-		// 		"Declared_Functions_Skip": {
-		// 			declSources: []string{
-		// 				"declare fn external()",
-		// 				"fn internal() { return 42 }",
-		// 			},
-		// 			namespaces: []string{"api", "utils"},
-		// 			expected: `const utils = {};
-		// function utils__internal() {
-		//   return 42;
-		// }
-		// utils.internal = utils__internal;`,
-		// 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// Create a mock dependency graph with test data
-			depGraph := &dep_graph.DepGraph{
-				Decls:         btree.Map[dep_graph.DeclID, ast.Decl]{},
-				Deps:          btree.Map[dep_graph.DeclID, btree.Set[dep_graph.DeclID]]{},
-				ValueBindings: btree.Map[string, dep_graph.DeclID]{},
-				TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
-				DeclNamespace: btree.Map[dep_graph.DeclID, string]{},
-			}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
 
-			var declIDs []dep_graph.DeclID
+			// Parse the module using ParseLibFiles
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
-			// Parse declarations and populate the dependency graph
-			for i, source := range test.declSources {
-				declID := dep_graph.DeclID(i + 1)
-				decl := parseDecl(t, source)
+			// Ensure parsing was successful
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-				// Store the declaration
-				depGraph.Decls.Set(declID, decl)
-				depGraph.DeclNamespace.Set(declID, test.namespaces[i])
-				declIDs = append(declIDs, declID)
+			// Build dependency graph using BuildDepGraph
+			depGraph := dep_graph.BuildDepGraph(module)
 
-				// Extract bindings and add them to the dependency graph
-				switch d := decl.(type) {
-				case *ast.VarDecl:
-					bindingNames := ast.FindBindings(d.Pattern)
-					for name := range bindingNames {
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.FuncDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.TypeDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.TypeBindings.Set(qualifiedName, declID)
-					}
-				}
+			// Get all declaration IDs and sort them for consistent ordering
+			declIDs := depGraph.AllDeclarations()
 
-				// Create empty dependencies for each declaration
-				var deps btree.Set[dep_graph.DeclID]
-				depGraph.Deps.Set(declID, deps)
-			}
-
-			// Create a builder and test BuildDecls
+			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0}
-			module := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
-			for i, stmt := range module.Stmts {
+			for i, stmt := range outModule.Stmts {
 				if i > 0 {
 					printer.NewLine()
 				}
@@ -592,154 +602,107 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
-		declSources  []string
-		namespaces   []string
-		dependencies map[int][]int // map[declIndex][]dependsOnDeclIndices
-		expected     string
+		sources  []*ast.Source
+		expected string
 	}{
 		"Simple_Dependency_Same_Namespace": {
-			declSources: []string{
-				"val base = 10",
-				"val derived = base * 2",
-			},
-			namespaces: []string{"math", "math"},
-			dependencies: map[int][]int{
-				0: {},  // base has no dependencies
-				1: {0}, // derived depends on base
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "math/base.esc",
+					Contents: "val base = 10",
+				},
+				{
+					ID:       1,
+					Path:     "math/derived.esc",
+					Contents: "val derived = base * 2",
+				},
 			},
 			expected: `const math = {};
 const math__base = 10;
-const math__derived = math__base * 2;
 math.base = math__base;
+const math__derived = math__base * 2;
 math.derived = math__derived;`,
 		},
 		"Cross_Namespace_Dependencies": {
-			declSources: []string{
-				"val PI = 3.14159",
-				"fn circleArea(r) { return PI * r * r }",
-			},
-			namespaces: []string{"constants", "geometry"},
-			dependencies: map[int][]int{
-				0: {},  // PI has no dependencies
-				1: {0}, // circleArea depends on PI
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "constants/pi.esc",
+					Contents: "val PI = 3.14159",
+				},
+				{
+					ID:       1,
+					Path:     "geometry/circle.esc",
+					Contents: "fn circleArea(r) { return constants.PI * r * r }",
+				},
 			},
 			expected: `const constants = {};
 const geometry = {};
 const constants__PI = 3.14159;
+constants.PI = constants__PI;
 function geometry__circleArea(temp1) {
   const r = temp1;
-  return constants__PI * r * r;
+  return constants.PI * r * r;
 }
-constants.PI = constants__PI;
 geometry.circleArea = geometry__circleArea;`,
 		},
 		"Complex_Dependency_Chain": {
-			declSources: []string{
-				"val config = {multiplier: 2}",
-				"val factor = config.multiplier",
-				"fn calculate(x) { return x * factor }",
-			},
-			namespaces: []string{"app", "app.utils", "app.utils"},
-			dependencies: map[int][]int{
-				0: {},  // config has no dependencies
-				1: {0}, // factor depends on config
-				2: {1}, // calculate depends on factor
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "app/config.esc",
+					Contents: "val config = {multiplier: 2}",
+				},
+				{
+					ID:       1,
+					Path:     "app/utils/factor.esc",
+					Contents: "val factor = app.config.multiplier",
+				},
+				{
+					ID:       2,
+					Path:     "app/utils/calculate.esc",
+					Contents: "fn calculate(x) { return x * app.utils.factor }",
+				},
 			},
 			expected: `const app = {};
 app.utils = {};
 const app__config = {multiplier: 2};
-const app__utils__factor = app__config.multiplier;
+app.config = app__config;
+const app__utils__factor = app.config.multiplier;
+app.utils.factor = app__utils__factor;
 function app__utils__calculate(temp1) {
   const x = temp1;
-  return x * app__utils__factor;
+  return x * app.utils.factor;
 }
-app.config = app__config;
-app.utils.factor = app__utils__factor;
 app.utils.calculate = app__utils__calculate;`,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// TODO: Remove this once variable references are fully qualified
-			t.Skipf("Skipping test %s", name)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
 
-			// Create a mock dependency graph with test data
-			depGraph := &dep_graph.DepGraph{
-				Decls:         btree.Map[dep_graph.DeclID, ast.Decl]{},
-				Deps:          btree.Map[dep_graph.DeclID, btree.Set[dep_graph.DeclID]]{},
-				ValueBindings: btree.Map[string, dep_graph.DeclID]{},
-				TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
-				DeclNamespace: btree.Map[dep_graph.DeclID, string]{},
-			}
+			// Parse the module using ParseLibFiles
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
-			var declIDs []dep_graph.DeclID
+			// Ensure parsing was successful
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			// Parse declarations and populate the dependency graph
-			for i, source := range test.declSources {
-				declID := dep_graph.DeclID(i + 1)
-				decl := parseDecl(t, source)
+			// Build dependency graph using BuildDepGraph
+			depGraph := dep_graph.BuildDepGraph(module)
 
-				// Store the declaration
-				depGraph.Decls.Set(declID, decl)
-				depGraph.DeclNamespace.Set(declID, test.namespaces[i])
-				declIDs = append(declIDs, declID)
+			// Get all declaration IDs and sort them for consistent ordering
+			declIDs := depGraph.AllDeclarations()
 
-				// Extract bindings and add them to the dependency graph
-				switch d := decl.(type) {
-				case *ast.VarDecl:
-					bindingNames := ast.FindBindings(d.Pattern)
-					for name := range bindingNames {
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.FuncDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.TypeDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.TypeBindings.Set(qualifiedName, declID)
-					}
-				}
-			}
-
-			// Set up dependencies
-			for declIndex, depIndices := range test.dependencies {
-				declID := dep_graph.DeclID(declIndex + 1)
-				var deps btree.Set[dep_graph.DeclID]
-
-				for _, depIndex := range depIndices {
-					depDeclID := dep_graph.DeclID(depIndex + 1)
-					deps.Insert(depDeclID)
-				}
-
-				depGraph.Deps.Set(declID, deps)
-			}
-
-			// Create a builder and test BuildDecls
+			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0}
-			module := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
-			for i, stmt := range module.Stmts {
+			for i, stmt := range outModule.Stmts {
 				if i > 0 {
 					printer.NewLine()
 				}
@@ -753,29 +716,37 @@ app.utils.calculate = app__utils__calculate;`,
 
 func TestBuildDecls_EdgeCases(t *testing.T) {
 	tests := map[string]struct {
-		declSources []string
-		namespaces  []string
-		expected    string
+		sources  []*ast.Source
+		expected string
 	}{
 		"Empty_Declarations": {
-			declSources: []string{},
-			namespaces:  []string{},
-			expected:    "",
+			sources:  []*ast.Source{},
+			expected: "",
 		},
 		"Only_Type_Declarations": {
-			declSources: []string{
-				"type User = {name: string}",
-				"type Config = {debug: boolean}",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "models/user.esc",
+					Contents: "type User = {name: string}",
+				},
+				{
+					ID:       1,
+					Path:     "app/config.esc",
+					Contents: "type Config = {debug: boolean}",
+				},
 			},
-			namespaces: []string{"models", "app"},
 			expected: `const app = {};
 const models = {};`,
 		},
 		"Deep_Namespace_Hierarchy": {
-			declSources: []string{
-				"val constant = \"deep\"",
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "company/project/module/submodule/utils/constant.esc",
+					Contents: "val constant = \"deep\"",
+				},
 			},
-			namespaces: []string{"company.project.module.submodule.utils"},
 			expected: `const company = {};
 company.project = {};
 company.project.module = {};
@@ -788,73 +759,28 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// Create a mock dependency graph with test data
-			depGraph := &dep_graph.DepGraph{
-				Decls:         btree.Map[dep_graph.DeclID, ast.Decl]{},
-				Deps:          btree.Map[dep_graph.DeclID, btree.Set[dep_graph.DeclID]]{},
-				ValueBindings: btree.Map[string, dep_graph.DeclID]{},
-				TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
-				DeclNamespace: btree.Map[dep_graph.DeclID, string]{},
-			}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
 
-			var declIDs []dep_graph.DeclID
+			// Parse the module using ParseLibFiles
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
 
-			// Parse declarations and populate the dependency graph
-			for i, source := range test.declSources {
-				declID := dep_graph.DeclID(i + 1)
-				decl := parseDecl(t, source)
+			// Ensure parsing was successful
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-				// Store the declaration
-				depGraph.Decls.Set(declID, decl)
-				depGraph.DeclNamespace.Set(declID, test.namespaces[i])
-				declIDs = append(declIDs, declID)
+			// Build dependency graph using BuildDepGraph
+			depGraph := dep_graph.BuildDepGraph(module)
 
-				// Extract bindings and add them to the dependency graph
-				switch d := decl.(type) {
-				case *ast.VarDecl:
-					bindingNames := ast.FindBindings(d.Pattern)
-					for name := range bindingNames {
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.FuncDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.ValueBindings.Set(qualifiedName, declID)
-					}
-				case *ast.TypeDecl:
-					if d.Name != nil && d.Name.Name != "" {
-						name := d.Name.Name
-						// Create fully qualified name if in namespace
-						qualifiedName := name
-						if test.namespaces[i] != "" {
-							qualifiedName = test.namespaces[i] + "." + name
-						}
-						depGraph.TypeBindings.Set(qualifiedName, declID)
-					}
-				}
+			// Get all declaration IDs and sort them for consistent ordering
+			declIDs := depGraph.AllDeclarations()
 
-				// Create empty dependencies for each declaration
-				var deps btree.Set[dep_graph.DeclID]
-				depGraph.Deps.Set(declID, deps)
-			}
-
-			// Create a builder and test BuildDecls
+			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0}
-			module := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
-			for i, stmt := range module.Stmts {
+			for i, stmt := range outModule.Stmts {
 				if i > 0 {
 					printer.NewLine()
 				}

@@ -95,7 +95,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *LitExpr:
 		p.PrintLit(e.Lit)
 	case *IdentExpr:
-		p.print(e.Name)
+		p.print(fullyQualifyName(e.Name, e.Namespace))
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)

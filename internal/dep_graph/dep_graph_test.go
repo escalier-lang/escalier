@@ -792,16 +792,18 @@ func TestFindDeclDependencies(t *testing.T) {
 			var typeBindings btree.Map[string, DeclID]
 			for i, binding := range test.validBindings {
 				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
-				if binding.Kind == DepKindValue {
+				switch binding.Kind {
+				case DepKindValue:
 					valueBindings.Set(binding.Name, declID)
-				} else if binding.Kind == DepKindType {
+				case DepKindType:
 					typeBindings.Set(binding.Name, declID)
 				}
 			}
 
 			// Find dependencies
 			emptyNS2, _ := module.Namespaces.Get("")
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "")
+			namespaceManager := NewNamespaceManager()
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "", namespaceManager)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -908,15 +910,17 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			var typeBindings btree.Map[string, DeclID]
 			for i, binding := range test.validBindings {
 				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
-				if binding.Kind == DepKindValue {
+				switch binding.Kind {
+				case DepKindValue:
 					valueBindings.Set(binding.Name, declID)
-				} else if binding.Kind == DepKindType {
+				case DepKindType:
 					typeBindings.Set(binding.Name, declID)
 				}
 			}
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "")
+			namespaceManager := NewNamespaceManager()
+			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "", namespaceManager)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -1504,16 +1508,18 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 			var typeBindings btree.Map[string, DeclID]
 			for i, binding := range test.validBindings {
 				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
-				if binding.Kind == DepKindValue {
+				switch binding.Kind {
+				case DepKindValue:
 					valueBindings.Set(binding.Name, declID)
-				} else if binding.Kind == DepKindType {
+				case DepKindType:
 					typeBindings.Set(binding.Name, declID)
 				}
 			}
 
 			// Find dependencies using the test namespace context
 			emptyNS2, _ := module.Namespaces.Get("")
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace)
+			namespaceManager := NewNamespaceManager()
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace, namespaceManager)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
