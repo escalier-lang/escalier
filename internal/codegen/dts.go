@@ -5,18 +5,21 @@ import (
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
-	decls []ast.Decl,
+	declIDs []dep_graph.DeclID,
+	depGraph *dep_graph.DepGraph,
 	namespace *type_sys.Namespace,
 ) *Module {
 	stmts := []Stmt{}
 
-	for _, d := range decls {
+	for _, declID := range declIDs {
+		d, _ := depGraph.Decls.Get(declID)
 		switch decl := d.(type) {
 		case *ast.VarDecl:
 			keys := ast.FindBindings(decl.Pattern).ToSlice()

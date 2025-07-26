@@ -1083,6 +1083,100 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 			},
 		},
 		{
+			name: "root namespace consuming declarations from nested namespaces",
+			setup: func() (*dep_graph.DepGraph, Context) {
+				// math.utils namespace declares helper function
+				helperSource := &ast.Source{
+					ID:       0,
+					Path:     "math/utils/helper.esc",
+					Contents: "fn square(x: number): number { return x * x }",
+				}
+				// math namespace declares constant
+				piSource := &ast.Source{
+					ID:       1,
+					Path:     "math/constants.esc",
+					Contents: "val PI = 3.14159",
+				}
+				// root namespace declares function that uses both nested declarations
+				rootFuncSource := &ast.Source{
+					ID:       2,
+					Path:     "calculator.esc",
+					Contents: "fn circleArea(radius: number): number { return math.PI * math.utils.square(radius) }",
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				defer cancel()
+
+				helperParser := parser.NewParser(ctx, helperSource)
+				helperDecl := helperParser.Decl()
+
+				piParser := parser.NewParser(ctx, piSource)
+				piDecl := piParser.Decl()
+
+				rootFuncParser := parser.NewParser(ctx, rootFuncSource)
+				rootFuncDecl := rootFuncParser.Decl()
+
+				// Create dependency graph manually
+				depGraph := newTestDepGraph()
+
+				// Set up declarations
+				helperDeclID := dep_graph.DeclID(1)
+				piDeclID := dep_graph.DeclID(2)
+				rootFuncDeclID := dep_graph.DeclID(3)
+				depGraph.Decls.Set(helperDeclID, helperDecl)
+				depGraph.Decls.Set(piDeclID, piDecl)
+				depGraph.Decls.Set(rootFuncDeclID, rootFuncDecl)
+
+				// Set up namespaces - nested vs root
+				depGraph.DeclNamespace.Set(helperDeclID, "math.utils")
+				depGraph.DeclNamespace.Set(piDeclID, "math")
+				depGraph.DeclNamespace.Set(rootFuncDeclID, "") // root namespace
+
+				// Set up dependencies - root function depends on both nested declarations
+				rootFuncDeps := btree.Set[dep_graph.DeclID]{}
+				rootFuncDeps.Insert(helperDeclID) // circleArea depends on square
+				rootFuncDeps.Insert(piDeclID)     // circleArea depends on PI
+				depGraph.Deps.Set(rootFuncDeclID, rootFuncDeps)
+
+				// Set up value bindings
+				depGraph.ValueBindings.Set("square", helperDeclID)
+				depGraph.ValueBindings.Set("PI", piDeclID)
+				depGraph.ValueBindings.Set("circleArea", rootFuncDeclID)
+
+				rootScope := &Scope{
+					Parent:    nil,
+					Namespace: NewNamespace(),
+				}
+
+				inferCtx := Context{
+					Scope:      rootScope,
+					IsAsync:    false,
+					IsPatMatch: false,
+				}
+
+				return depGraph, inferCtx
+			},
+			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+				assert.Len(t, errors, 0, "Should handle root namespace consuming nested declarations")
+
+				// Check root namespace contains the main function
+				assert.Contains(t, resultNS.Values, "circleArea", "Root namespace should contain circleArea")
+
+				// Check nested namespace structure exists and contains dependencies
+				assert.Contains(t, resultNS.Namespaces, "math", "Should have math namespace")
+				mathNS := resultNS.Namespaces["math"]
+				assert.Contains(t, mathNS.Values, "PI", "Math namespace should contain PI")
+
+				assert.Contains(t, mathNS.Namespaces, "utils", "Math should have utils namespace")
+				utilsNS := mathNS.Namespaces["utils"]
+				assert.Contains(t, utilsNS.Values, "square", "Math.utils namespace should contain square")
+
+				// Verify the root function can access nested declarations
+				circleAreaBinding := resultNS.Values["circleArea"]
+				assert.NotNil(t, circleAreaBinding, "circleArea binding should exist")
+			},
+		},
+		{
 			name: "mixed value and type dependencies across namespaces",
 			setup: func() (*dep_graph.DepGraph, Context) {
 				// types namespace declares Point type
