@@ -12,9 +12,8 @@ import (
 )
 
 type Builder struct {
-	tempId           int
-	depGraph         *dep_graph.DepGraph
-	namespaceManager *dep_graph.NamespaceManager
+	tempId   int
+	depGraph *dep_graph.DepGraph
 }
 
 func (b *Builder) NewTempId() string {
@@ -362,30 +361,20 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 	// Set up builder state
 	b.depGraph = depGraph
 
-	// Create namespace manager and populate it from the dependency graph
-	b.namespaceManager = dep_graph.NewNamespaceManager()
-	iter := depGraph.DeclNamespace.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		namespace := iter.Value()
-		if namespace != "" {
-			b.namespaceManager.GetNamespaceID(namespace) // This will register the namespace
-		}
-	}
-
 	var stmts []Stmt
 
 	nsStmts := b.buildNamespaceStatements(declIDs, depGraph)
 	stmts = slices.Concat(stmts, nsStmts)
 
 	for _, declID := range declIDs {
-		decl, _ := depGraph.Decls.Get(declID)
+		decl, _ := depGraph.GetDeclaration(declID)
 
 		// if decl is a type declaration skip it
 		if _, ok := decl.(*ast.TypeDecl); ok {
 			continue
 		}
 
-		nsName, _ := depGraph.DeclNamespace.Get(declID)
+		nsName, _ := depGraph.GetNamespace(declID)
 		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)
@@ -431,7 +420,7 @@ func (b *Builder) buildNamespaceStatements(declIDs []dep_graph.DeclID, depGraph 
 	// Collect all unique namespaces from the declarations
 	var namespaces btree.Map[string, bool]
 	for _, declID := range declIDs {
-		if ns, exists := depGraph.DeclNamespace.Get(declID); exists && ns != "" {
+		if ns, exists := depGraph.GetNamespace(declID); exists && ns != "" {
 			namespaces.Set(ns, true)
 		}
 	}
@@ -614,8 +603,8 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
 		var namespaceStr string
-		if b.namespaceManager != nil {
-			namespaceStr = b.namespaceManager.GetNamespaceString(expr.Namespace)
+		if b.depGraph != nil {
+			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.CallExpr:

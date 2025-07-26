@@ -95,20 +95,21 @@ models.utils.validation = {};`,
 		t.Run(name, func(t *testing.T) {
 			// Create a mock dependency graph
 			depGraph := &dep_graph.DepGraph{
-				Decls:         btree.Map[dep_graph.DeclID, ast.Decl]{},
-				Deps:          btree.Map[dep_graph.DeclID, btree.Set[dep_graph.DeclID]]{},
+				Decls:         []ast.Decl{},
+				DeclDeps:      []btree.Set[dep_graph.DeclID]{},
 				ValueBindings: btree.Map[string, dep_graph.DeclID]{},
 				TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
-				DeclNamespace: btree.Map[dep_graph.DeclID, string]{},
+				DeclNamespace: make([]string, 1000), // Large enough for test DeclIDs
+				Namespaces:    []string{},
 			}
 
-			// Populate the DeclNamespace map
+			// Populate the DeclNamespace slice
 			for declID, namespace := range test.declNamespaces {
-				depGraph.DeclNamespace.Set(declID, namespace)
+				depGraph.DeclNamespace[declID] = namespace // Use DeclID as slice index
 			}
 
 			// Create a builder and test the method
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: depGraph}
 			stmts := builder.buildNamespaceStatements(test.declIDs, depGraph)
 
 			// Use the printer to generate the output
@@ -161,7 +162,7 @@ very.deep.nested.namespace.structure = {};`,
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: nil}
 			definedNamespaces := make(map[string]bool)
 			stmts := builder.buildNamespaceHierarchy(test.namespace, definedNamespaces)
 
@@ -180,7 +181,7 @@ very.deep.nested.namespace.structure = {};`,
 }
 
 func TestBuildNamespaceHierarchy_AvoidRedefinition(t *testing.T) {
-	builder := &Builder{tempId: 0}
+	builder := &Builder{tempId: 0, depGraph: nil}
 	definedNamespaces := make(map[string]bool)
 
 	// First call should generate all statements
@@ -325,7 +326,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			// Parse the declaration from source string
 			decl := parseDecl(t, test.declSource)
 
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: nil}
 			stmts := builder.buildDeclWithNamespace(decl, test.ns)
 
 			// Use the printer to generate the output
@@ -583,7 +584,7 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 			declIDs := depGraph.AllDeclarations()
 
 			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: depGraph}
 			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
@@ -697,7 +698,7 @@ app.utils.calculate = app__utils__calculate;`,
 			declIDs := depGraph.AllDeclarations()
 
 			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: depGraph}
 			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
@@ -775,7 +776,7 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 			declIDs := depGraph.AllDeclarations()
 
 			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0}
+			builder := &Builder{tempId: 0, depGraph: depGraph}
 			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
 
 			// Use the printer to generate the output
