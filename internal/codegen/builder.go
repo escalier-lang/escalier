@@ -59,13 +59,20 @@ func Zip[T, U any](ts []T, us []U) []Pair[T, U] {
 	return pairs
 }
 
+func fullyQualifyName(name, nsName string) string {
+	if nsName == "" {
+		return name
+	}
+	return strings.ReplaceAll(nsName, ".", "__") + "__" + name
+}
+
 // TODO: return a pattern instead of passing in the VariableKind
 func (b *Builder) buildPattern(
 	p ast.Pat,
 	target Expr,
 	export bool,
 	kind ast.VariableKind,
-	nsParts []string,
+	nsName string,
 ) ([]Expr, []Stmt) {
 
 	var checks []Expr
@@ -82,12 +89,8 @@ func (b *Builder) buildPattern(
 				defExpr, defStmts = b.buildExpr(p.Default)
 				stmts = slices.Concat(stmts, defStmts)
 			}
-			name := p.Name
-			if len(nsParts) > 0 {
-				name = strings.Join(nsParts, "__") + "__" + name
-			}
 			return &IdentPat{
-				Name:    name,
+				Name:    fullyQualifyName(p.Name, nsName),
 				Default: defExpr,
 				span:    nil,
 				source:  p,
@@ -122,12 +125,8 @@ func (b *Builder) buildPattern(
 						defExpr, defStmts = b.buildExpr(e.Default)
 						stmts = slices.Concat(stmts, defStmts)
 					}
-					name := e.Key.Name
-					if len(nsParts) > 0 {
-						name = strings.Join(nsParts, "__") + "__" + name
-					}
 					elems = append(elems, NewObjKeyValuePat(
-						name,
+						fullyQualifyName(e.Key.Name, nsName),
 						buildPatternRec(e.Value, newTarget),
 						defExpr,
 						e,
@@ -139,12 +138,8 @@ func (b *Builder) buildPattern(
 						defExpr, defStmts = b.buildExpr(e.Default)
 						stmts = slices.Concat(stmts, defStmts)
 					}
-					name := e.Key.Name
-					if len(nsParts) > 0 {
-						name = strings.Join(nsParts, "__") + "__" + name
-					}
 					elems = append(elems, NewObjShorthandPat(
-						name,
+						fullyQualifyName(e.Key.Name, nsName),
 						defExpr,
 						e,
 					))
@@ -245,7 +240,7 @@ func (b *Builder) buildPattern(
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
-				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsParts)
+				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
 			}
@@ -376,12 +371,7 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 		}
 
 		nsName, _ := depGraph.DeclNamespace.Get(declID)
-		var nsParts []string
-		if nsName != "" {
-			nsParts = strings.Split(nsName, ".")
-		}
-
-		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsParts))
+		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)
 
@@ -527,10 +517,10 @@ func (b *Builder) buildStmts(stmts []ast.Stmt) []Stmt {
 }
 
 func (b *Builder) buildDecl(decl ast.Decl) []Stmt {
-	return b.buildDeclWithNamespace(decl, []string{})
+	return b.buildDeclWithNamespace(decl, "")
 }
 
-func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsParts []string) []Stmt {
+func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	if decl.Declare() {
 		return []Stmt{}
 	}
@@ -542,20 +532,16 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsParts []string) []Stmt
 		}
 		initExpr, initStmts := b.buildExpr(d.Init)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsParts)
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
 		}
-		name := d.Name.Name
-		if len(nsParts) > 0 {
-			name = strings.Join(nsParts, "__") + "__" + name
-		}
 		fnDecl := &FuncDecl{
 			Name: &Identifier{
-				Name:   name,
+				Name:   fullyQualifyName(d.Name.Name, nsName),
 				span:   nil,
 				source: d.Name,
 			},
@@ -733,11 +719,11 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		switch pat := p.Pattern.(type) {
 		case *ast.RestPat:
-			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 		}
 

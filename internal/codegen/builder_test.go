@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -327,11 +326,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			decl := parseDecl(t, test.declSource)
 
 			builder := &Builder{tempId: 0}
-			var nsParts []string
-			if test.ns != "" {
-				nsParts = strings.Split(test.ns, ".")
-			}
-			stmts := builder.buildDeclWithNamespace(decl, nsParts)
+			stmts := builder.buildDeclWithNamespace(decl, test.ns)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
