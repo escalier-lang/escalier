@@ -19,7 +19,7 @@ func (b *Builder) BuildDefinitions(
 	stmts := []Stmt{}
 
 	for _, declID := range declIDs {
-		d, _ := depGraph.Decls.Get(declID)
+		d, _ := depGraph.GetDeclaration(declID)
 		switch decl := d.(type) {
 		case *ast.VarDecl:
 			keys := ast.FindBindings(decl.Pattern).ToSlice()

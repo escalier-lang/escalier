@@ -27,11 +27,11 @@ type DeclID int
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
-	Decls         btree.Map[DeclID, ast.Decl] // Map from unique ID to declaration
-	ValueBindings btree.Map[string, DeclID]   // Map from value binding name to declaration ID
-	TypeBindings  btree.Map[string, DeclID]   // Map from type binding name to declaration ID
-	nextDeclID    DeclID                      // Next unique ID to assign
-	currentNSName string                      // Current namespace being visited
+	Decls         []ast.Decl                // Slice of declarations, indexed by DeclID-1
+	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
+	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
+	nextDeclID    DeclID                    // Next unique ID to assign
+	currentNSName string                    // Current namespace being visited
 }
 
 func (v *ModuleBindingVisitor) generateDeclID() DeclID {
@@ -45,7 +45,7 @@ func (v *ModuleBindingVisitor) generateDeclID() DeclID {
 func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	// Generate a unique ID for this declaration
 	declID := v.generateDeclID()
-	v.Decls.Set(declID, decl)
+	v.Decls = append(v.Decls, decl) // Append to slice, DeclID-1 will be the index
 
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -89,8 +89,8 @@ func (v *ModuleBindingVisitor) EnterLit(lit ast.Lit) bool                  { ret
 func (v *ModuleBindingVisitor) EnterBlock(block ast.Block) bool            { return false }
 
 // FindModuleBindings returns all bindings and declarations in a module with unique IDs
-func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.Map[string, DeclID], btree.Map[string, DeclID]) {
-	var decls btree.Map[DeclID, ast.Decl]
+func FindModuleBindings(module *ast.Module) ([]ast.Decl, btree.Map[string, DeclID], btree.Map[string, DeclID]) {
+	var decls []ast.Decl
 	var valueBindings btree.Map[string, DeclID]
 	var typeBindings btree.Map[string, DeclID]
 	visitor := &ModuleBindingVisitor{
@@ -368,16 +368,16 @@ func FindDeclDependencies(
 }
 
 type DepGraph struct {
-	// We use a btree.Map because insert order is not guaranteed in Go maps,
-	// and we want to maintain a consistent order for declarations.  This is so
-	// that codegen is deterministic.
+	// We use a slice to maintain a consistent order for declarations.  This is so
+	// that codegen is deterministic. DeclID values start from 1, so we use DeclID-1
+	// as the slice index.
 	// NOTE: Binding names are fully qualified.
-	Decls         btree.Map[DeclID, ast.Decl]          // All declarations in the module
-	Deps          btree.Map[DeclID, btree.Set[DeclID]] // Dependencies for each declaration ID
-	ValueBindings btree.Map[string, DeclID]            // Map from value binding name to declaration ID
-	TypeBindings  btree.Map[string, DeclID]            // Map from type binding name to declaration ID
-	DeclNamespace btree.Map[DeclID, string]            // Map from declaration ID to namespace
-	NamespaceMap  []string                             // Index is the NamespaceID, value is the namespace string
+	Decls         []ast.Decl                // All declarations in the module, indexed by DeclID-1
+	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID-1
+	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID-1
+	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
+	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
+	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
 }
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
@@ -385,31 +385,31 @@ type DepGraph struct {
 // and provides a consistent way to create DepGraph instances.
 func NewDepGraph(namespaceMap []string) *DepGraph {
 	return &DepGraph{
-		Decls:         btree.Map[DeclID, ast.Decl]{},
-		Deps:          btree.Map[DeclID, btree.Set[DeclID]]{},
+		Decls:         []ast.Decl{},
+		DeclDeps:      []btree.Set[DeclID]{},
+		DeclNamespace: []string{},
+		Namespaces:    namespaceMap,
 		ValueBindings: btree.Map[string, DeclID]{},
 		TypeBindings:  btree.Map[string, DeclID]{},
-		DeclNamespace: btree.Map[DeclID, string]{},
-		NamespaceMap:  namespaceMap,
 	}
 }
 
 // collectNamespaces collects all namespace names from a module and returns a namespace map
 func collectNamespaces(module *ast.Module) []string {
-	namespaceMap := make([]string, 1) // Start with capacity for root namespace
-	namespaceMap[0] = ""              // Register root namespace at index 0
+	namespaces := make([]string, 1) // Start with capacity for root namespace
+	namespaces[0] = ""              // Register root namespace at index 0
 
 	nsIter := module.Namespaces.Iter()
 	for ok := nsIter.First(); ok; ok = nsIter.Next() {
 		nsName := nsIter.Key()
 		// Check if namespace already exists
-		if !slices.Contains(namespaceMap, nsName) {
+		if !slices.Contains(namespaces, nsName) {
 			// Add new namespace
-			namespaceMap = append(namespaceMap, nsName)
+			namespaces = append(namespaces, nsName)
 		}
 	}
 
-	return namespaceMap
+	return namespaces
 }
 
 // BuildDepGraph builds a dependency graph for a module
@@ -423,17 +423,19 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	// Find all decls and bindings in the module
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
-	var declNamespace btree.Map[DeclID, string]
+	// We need to track which namespace each declaration belongs to
+	// Create a slice with space for all declarations
+	declNamespace := make([]string, len(decls))
 
 	// We need to track which namespace each declaration belongs to
 	// Create a map from DeclID to namespace by re-traversing the module
-	nextDeclID := DeclID(1)
+	var nextDeclID DeclID
 	nsIterForDecls := module.Namespaces.Iter()
 	for ok := nsIterForDecls.First(); ok; ok = nsIterForDecls.Next() {
 		nsName := nsIterForDecls.Key()
 		ns := nsIterForDecls.Value()
 		for range ns.Decls {
-			declNamespace.Set(nextDeclID, nsName)
+			declNamespace[nextDeclID] = nsName // Use DeclID-1 as slice index
 			nextDeclID++
 		}
 	}
@@ -444,14 +446,14 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	depGraph.TypeBindings = typeBindings
 	depGraph.DeclNamespace = declNamespace
 
+	// Initialize DeclDeps slice with the correct size
+	depGraph.DeclDeps = make([]btree.Set[DeclID], len(decls))
+
 	// For each declaration, find its dependencies
-	declIter := decls.Iter()
-	for ok := declIter.First(); ok; ok = declIter.Next() {
-		declID := declIter.Key()
-		decl := declIter.Value()
-		namespace, _ := declNamespace.Get(declID)
+	for i, decl := range decls {
+		namespace := declNamespace[i] // Use slice index directly
 		dependencies := FindDeclDependencies(decl, depGraph, namespace)
-		depGraph.Deps.Set(declID, dependencies)
+		depGraph.DeclDeps[i] = dependencies // Use slice index directly
 	}
 
 	return depGraph
@@ -459,27 +461,36 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 
 // GetDependencies returns the dependencies for a given declaration ID
 func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
-	if deps, exists := g.Deps.Get(declID); exists {
-		return deps
+	index := int(declID - 1) // Convert DeclID to slice index
+	if index < 0 || index >= len(g.DeclDeps) {
+		var result btree.Set[DeclID]
+		return result
 	}
-	var result btree.Set[DeclID]
-	return result
+	return g.DeclDeps[index]
 }
 
 // GetDeclaration returns the declaration for a given declaration ID
 func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
-	return g.Decls.Get(declID)
+	index := int(declID - 1) // Convert DeclID to slice index
+	if index < 0 || index >= len(g.Decls) {
+		return nil, false
+	}
+	return g.Decls[index], true
 }
 
 // GetNamespace returns the namespace for a given declaration ID
 func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
-	return g.DeclNamespace.Get(declID)
+	index := int(declID - 1) // Convert DeclID to slice index
+	if index < 0 || index >= len(g.DeclNamespace) {
+		return "", false
+	}
+	return g.DeclNamespace[index], true
 }
 
 // GetNamespaceID returns the namespace ID for a given namespace string
 func (g *DepGraph) GetNamespaceID(namespace string) ast.NamespaceID {
 	// Check if namespace exists, return 0 if not found
-	for i, ns := range g.NamespaceMap {
+	for i, ns := range g.Namespaces {
 		if ns == namespace {
 			return ast.NamespaceID(i)
 		}
@@ -489,18 +500,17 @@ func (g *DepGraph) GetNamespaceID(namespace string) ast.NamespaceID {
 
 // GetNamespaceString returns the namespace string for a given namespace ID
 func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
-	if int(id) < len(g.NamespaceMap) {
-		return g.NamespaceMap[id]
+	if int(id) < len(g.Namespaces) {
+		return g.Namespaces[id]
 	}
 	return ""
 }
 
 // AllDeclarations returns all declaration IDs in the graph
 func (g *DepGraph) AllDeclarations() []DeclID {
-	declIDs := make([]DeclID, 0, g.Decls.Len())
-	iter := g.Decls.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		declID := iter.Key()
+	declIDs := make([]DeclID, 0, len(g.Decls))
+	for i := range g.Decls {
+		declID := DeclID(i + 1) // Convert slice index to DeclID
 		declIDs = append(declIDs, declID)
 	}
 	return declIDs
@@ -509,9 +519,7 @@ func (g *DepGraph) AllDeclarations() []DeclID {
 // AllNamespaces returns all unique namespace names in the graph
 func (g *DepGraph) AllNamespaces() []string {
 	namespaces := set.NewSet[string]()
-	iter := g.DeclNamespace.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		namespace := iter.Value()
+	for _, namespace := range g.DeclNamespace {
 		namespaces.Add(namespace)
 	}
 

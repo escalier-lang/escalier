@@ -19,6 +19,10 @@ func createTestDepGraph(validBindings []DepBinding) *DepGraph {
 	namespaces := []string{""} // Test with just root namespace
 	testDepGraph := NewDepGraph(namespaces)
 
+	// Ensure the DeclNamespace slice is large enough for test DeclIDs (starting from 100)
+	maxDeclID := len(validBindings) + 100
+	testDepGraph.DeclNamespace = make([]string, maxDeclID)
+
 	for i, binding := range validBindings {
 		declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
 		switch binding.Kind {
@@ -28,7 +32,7 @@ func createTestDepGraph(validBindings []DepBinding) *DepGraph {
 			testDepGraph.TypeBindings.Set(binding.Name, declID)
 		}
 		// Set empty namespace for test bindings
-		testDepGraph.DeclNamespace.Set(declID, "")
+		testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
 	}
 
 	return testDepGraph
@@ -936,16 +940,21 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			testDepGraph := NewDepGraph(namespaces)
 			testDepGraph.ValueBindings = valueBindings
 			testDepGraph.TypeBindings = typeBindings
+
+			// Ensure the DeclNamespace slice is large enough for test DeclIDs (starting from 100)
+			maxDeclID := len(test.validBindings) + 100
+			testDepGraph.DeclNamespace = make([]string, maxDeclID)
+
 			// Set empty namespace for test bindings
 			valueIter := valueBindings.Iter()
 			for ok := valueIter.First(); ok; ok = valueIter.Next() {
 				declID := valueIter.Value()
-				testDepGraph.DeclNamespace.Set(declID, "")
+				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
 			}
 			typeIter := typeBindings.Iter()
 			for ok := typeIter.First(); ok; ok = typeIter.Next() {
 				declID := typeIter.Value()
-				testDepGraph.DeclNamespace.Set(declID, "")
+				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
 			}
 
 			// Find dependencies
@@ -1551,16 +1560,21 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 			testDepGraph := NewDepGraph(namespaces)
 			testDepGraph.ValueBindings = valueBindings
 			testDepGraph.TypeBindings = typeBindings
+
+			// Ensure the DeclNamespace slice is large enough for test DeclIDs (starting from 100)
+			maxDeclID := len(test.validBindings) + 100
+			testDepGraph.DeclNamespace = make([]string, maxDeclID)
+
 			// Set empty namespace for test bindings
 			valueIter := valueBindings.Iter()
 			for ok := valueIter.First(); ok; ok = valueIter.Next() {
 				declID := valueIter.Value()
-				testDepGraph.DeclNamespace.Set(declID, "")
+				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
 			}
 			typeIter := typeBindings.Iter()
 			for ok := typeIter.First(); ok; ok = typeIter.Next() {
 				declID := typeIter.Value()
-				testDepGraph.DeclNamespace.Set(declID, "")
+				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
 			}
 
 			// Find dependencies using the test namespace context

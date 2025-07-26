@@ -367,14 +367,14 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 	stmts = slices.Concat(stmts, nsStmts)
 
 	for _, declID := range declIDs {
-		decl, _ := depGraph.Decls.Get(declID)
+		decl, _ := depGraph.GetDeclaration(declID)
 
 		// if decl is a type declaration skip it
 		if _, ok := decl.(*ast.TypeDecl); ok {
 			continue
 		}
 
-		nsName, _ := depGraph.DeclNamespace.Get(declID)
+		nsName, _ := depGraph.GetNamespace(declID)
 		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)
@@ -420,7 +420,7 @@ func (b *Builder) buildNamespaceStatements(declIDs []dep_graph.DeclID, depGraph 
 	// Collect all unique namespaces from the declarations
 	var namespaces btree.Map[string, bool]
 	for _, declID := range declIDs {
-		if ns, exists := depGraph.DeclNamespace.Get(declID); exists && ns != "" {
+		if ns, exists := depGraph.GetNamespace(declID); exists && ns != "" {
 			namespaces.Set(ns, true)
 		}
 	}
