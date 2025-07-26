@@ -32,7 +32,7 @@ func createTestDepGraph(validBindings []DepBinding) *DepGraph {
 			testDepGraph.TypeBindings.Set(binding.Name, declID)
 		}
 		// Set empty namespace for test bindings
-		testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
+		testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 	}
 
 	return testDepGraph
@@ -949,12 +949,12 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			valueIter := valueBindings.Iter()
 			for ok := valueIter.First(); ok; ok = valueIter.Next() {
 				declID := valueIter.Value()
-				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
+				testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 			}
 			typeIter := typeBindings.Iter()
 			for ok := typeIter.First(); ok; ok = typeIter.Next() {
 				declID := typeIter.Value()
-				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
+				testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 			}
 
 			// Find dependencies
@@ -1569,12 +1569,12 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 			valueIter := valueBindings.Iter()
 			for ok := valueIter.First(); ok; ok = valueIter.Next() {
 				declID := valueIter.Value()
-				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
+				testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 			}
 			typeIter := typeBindings.Iter()
 			for ok := typeIter.First(); ok; ok = typeIter.Next() {
 				declID := typeIter.Value()
-				testDepGraph.DeclNamespace[declID-1] = "" // Use DeclID-1 as slice index
+				testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 			}
 
 			// Find dependencies using the test namespace context

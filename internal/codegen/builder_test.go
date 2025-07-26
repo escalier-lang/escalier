@@ -105,7 +105,7 @@ models.utils.validation = {};`,
 
 			// Populate the DeclNamespace slice
 			for declID, namespace := range test.declNamespaces {
-				depGraph.DeclNamespace[declID-1] = namespace // Use DeclID-1 as slice index
+				depGraph.DeclNamespace[declID] = namespace // Use DeclID as slice index
 			}
 
 			// Create a builder and test the method

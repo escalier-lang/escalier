@@ -76,7 +76,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 
 	// Run the algorithm for all unvisited nodes
 	for i := range g.Decls {
-		declID := DeclID(i + 1) // Convert slice index to DeclID
+		declID := DeclID(i) // DeclID is now the slice index directly
 		if _, exists := indices[declID]; !exists {
 			strongConnect(declID)
 		}

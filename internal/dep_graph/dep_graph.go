@@ -27,7 +27,7 @@ type DeclID int
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
 	ast.DefaulVisitor
-	Decls         []ast.Decl                // Slice of declarations, indexed by DeclID-1
+	Decls         []ast.Decl                // Slice of declarations, indexed by DeclID
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
 	nextDeclID    DeclID                    // Next unique ID to assign
@@ -45,7 +45,7 @@ func (v *ModuleBindingVisitor) generateDeclID() DeclID {
 func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	// Generate a unique ID for this declaration
 	declID := v.generateDeclID()
-	v.Decls = append(v.Decls, decl) // Append to slice, DeclID-1 will be the index
+	v.Decls = append(v.Decls, decl) // Append to slice, DeclID will be the index
 
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -98,7 +98,7 @@ func FindModuleBindings(module *ast.Module) ([]ast.Decl, btree.Map[string, DeclI
 		Decls:         decls,
 		ValueBindings: valueBindings,
 		TypeBindings:  typeBindings,
-		nextDeclID:    1,  // Start IDs from 1
+		nextDeclID:    0,  // Start IDs from 0
 		currentNSName: "", // Default namespace
 	}
 
@@ -369,12 +369,12 @@ func FindDeclDependencies(
 
 type DepGraph struct {
 	// We use a slice to maintain a consistent order for declarations.  This is so
-	// that codegen is deterministic. DeclID values start from 1, so we use DeclID-1
-	// as the slice index.
+	// that codegen is deterministic. DeclID values start from 0, so we use DeclID
+	// as the slice index directly.
 	// NOTE: Binding names are fully qualified.
-	Decls         []ast.Decl                // All declarations in the module, indexed by DeclID-1
-	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID-1
-	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID-1
+	Decls         []ast.Decl                // All declarations in the module, indexed by DeclID
+	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID
+	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID
 	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
@@ -435,7 +435,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		nsName := nsIterForDecls.Key()
 		ns := nsIterForDecls.Value()
 		for range ns.Decls {
-			declNamespace[nextDeclID] = nsName // Use DeclID-1 as slice index
+			declNamespace[nextDeclID] = nsName // Use DeclID as slice index
 			nextDeclID++
 		}
 	}
@@ -461,7 +461,7 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 
 // GetDependencies returns the dependencies for a given declaration ID
 func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
-	index := int(declID - 1) // Convert DeclID to slice index
+	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclDeps) {
 		var result btree.Set[DeclID]
 		return result
@@ -471,7 +471,7 @@ func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
 
 // GetDeclaration returns the declaration for a given declaration ID
 func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
-	index := int(declID - 1) // Convert DeclID to slice index
+	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.Decls) {
 		return nil, false
 	}
@@ -480,7 +480,7 @@ func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 
 // GetNamespace returns the namespace for a given declaration ID
 func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
-	index := int(declID - 1) // Convert DeclID to slice index
+	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclNamespace) {
 		return "", false
 	}
@@ -510,7 +510,7 @@ func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
 func (g *DepGraph) AllDeclarations() []DeclID {
 	declIDs := make([]DeclID, 0, len(g.Decls))
 	for i := range g.Decls {
-		declID := DeclID(i + 1) // Convert slice index to DeclID
+		declID := DeclID(i) // DeclID is now the slice index directly
 		declIDs = append(declIDs, declID)
 	}
 	return declIDs

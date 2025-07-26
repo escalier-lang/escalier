@@ -430,7 +430,7 @@ func TestGetDeclCtx(t *testing.T) {
 
 			// Create a declaration ID and set its namespace
 			declID := dep_graph.DeclID(42)
-			depGraph.DeclNamespace[declID-1] = test.declNamespace
+			depGraph.DeclNamespace[declID] = test.declNamespace
 
 			// Call getDeclCtx
 			resultCtx := getDeclCtx(rootCtx, depGraph, declID)
@@ -522,7 +522,7 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	// Create dep graph with deeply nested namespace
 	depGraph := newTestDepGraph()
 	declID := dep_graph.DeclID(456)
-	depGraph.DeclNamespace[declID-1] = "foo.bar.baz.qux"
+	depGraph.DeclNamespace[declID] = "foo.bar.baz.qux"
 
 	// Call getDeclCtx
 	resultCtx := getDeclCtx(rootCtx, depGraph, declID)
@@ -605,20 +605,20 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				// Create dependency graph manually
 				depGraph := newTestDepGraph()
 
-				// Set up declarations (append in order, DeclID 1 = index 0, DeclID 2 = index 1)
-				helperDeclID := dep_graph.DeclID(1)
-				areaDeclID := dep_graph.DeclID(2)
-				depGraph.Decls = append(depGraph.Decls, helperDecl) // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, areaDecl)   // DeclID 2
+				// Set up declarations (append in order, DeclID 0 = index 0, DeclID 1 = index 1)
+				helperDeclID := dep_graph.DeclID(0)
+				areaDeclID := dep_graph.DeclID(1)
+				depGraph.Decls = append(depGraph.Decls, helperDecl) // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, areaDecl)   // DeclID 1
 
 				// Both in math namespace
-				depGraph.DeclNamespace[helperDeclID-1] = "math"
-				depGraph.DeclNamespace[areaDeclID-1] = "math"
+				depGraph.DeclNamespace[helperDeclID] = "math"
+				depGraph.DeclNamespace[areaDeclID] = "math"
 
 				// Set up dependencies - circleArea depends on PI
 				areaDeps := btree.Set[dep_graph.DeclID]{}
 				areaDeps.Insert(helperDeclID)
-				depGraph.DeclDeps[areaDeclID-1] = areaDeps
+				depGraph.DeclDeps[areaDeclID] = areaDeps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("PI", helperDeclID)
@@ -691,22 +691,22 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				mathDeclID := dep_graph.DeclID(1)
-				utilsDeclID := dep_graph.DeclID(2)
-				geometryDeclID := dep_graph.DeclID(3)
-				depGraph.Decls = append(depGraph.Decls, mathDecl)     // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, utilsDecl)    // DeclID 2
-				depGraph.Decls = append(depGraph.Decls, geometryDecl) // DeclID 3
+				mathDeclID := dep_graph.DeclID(0)
+				utilsDeclID := dep_graph.DeclID(1)
+				geometryDeclID := dep_graph.DeclID(2)
+				depGraph.Decls = append(depGraph.Decls, mathDecl)     // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, utilsDecl)    // DeclID 1
+				depGraph.Decls = append(depGraph.Decls, geometryDecl) // DeclID 2
 
 				// Different namespaces
-				depGraph.DeclNamespace[mathDeclID-1] = "math"
-				depGraph.DeclNamespace[utilsDeclID-1] = "utils"
-				depGraph.DeclNamespace[geometryDeclID-1] = "geometry"
+				depGraph.DeclNamespace[mathDeclID] = "math"
+				depGraph.DeclNamespace[utilsDeclID] = "utils"
+				depGraph.DeclNamespace[geometryDeclID] = "geometry"
 
 				// No dependencies between them
-				depGraph.DeclDeps[mathDeclID-1] = btree.Set[dep_graph.DeclID]{}
-				depGraph.DeclDeps[utilsDeclID-1] = btree.Set[dep_graph.DeclID]{}
-				depGraph.DeclDeps[geometryDeclID-1] = btree.Set[dep_graph.DeclID]{}
+				depGraph.DeclDeps[mathDeclID] = btree.Set[dep_graph.DeclID]{}
+				depGraph.DeclDeps[utilsDeclID] = btree.Set[dep_graph.DeclID]{}
+				depGraph.DeclDeps[geometryDeclID] = btree.Set[dep_graph.DeclID]{}
 
 				// Set up bindings
 				depGraph.ValueBindings.Set("E", mathDeclID)
@@ -783,26 +783,26 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				piDeclID := dep_graph.DeclID(1)
-				areaDeclID := dep_graph.DeclID(2)
-				calcDeclID := dep_graph.DeclID(3)
-				depGraph.Decls = append(depGraph.Decls, piDecl)   // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, areaDecl) // DeclID 2
-				depGraph.Decls = append(depGraph.Decls, calcDecl) // DeclID 3
+				piDeclID := dep_graph.DeclID(0)
+				areaDeclID := dep_graph.DeclID(1)
+				calcDeclID := dep_graph.DeclID(2)
+				depGraph.Decls = append(depGraph.Decls, piDecl)   // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, areaDecl) // DeclID 1
+				depGraph.Decls = append(depGraph.Decls, calcDecl) // DeclID 2
 
 				// Different namespaces
-				depGraph.DeclNamespace[piDeclID-1] = "math"
-				depGraph.DeclNamespace[areaDeclID-1] = "geometry"
-				depGraph.DeclNamespace[calcDeclID-1] = "utils"
+				depGraph.DeclNamespace[piDeclID] = "math"
+				depGraph.DeclNamespace[areaDeclID] = "geometry"
+				depGraph.DeclNamespace[calcDeclID] = "utils"
 
 				// Set up dependency chain: utils -> geometry -> math
 				areaDeps := btree.Set[dep_graph.DeclID]{}
 				areaDeps.Insert(piDeclID)
-				depGraph.DeclDeps[areaDeclID-1] = areaDeps
+				depGraph.DeclDeps[areaDeclID] = areaDeps
 
 				calcDeps := btree.Set[dep_graph.DeclID]{}
 				calcDeps.Insert(areaDeclID)
-				depGraph.DeclDeps[calcDeclID-1] = calcDeps
+				depGraph.DeclDeps[calcDeclID] = calcDeps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("PI", piDeclID)
@@ -867,23 +867,23 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations
-				isEvenDeclID := dep_graph.DeclID(1)
-				isOddDeclID := dep_graph.DeclID(2)
-				depGraph.Decls = append(depGraph.Decls, isEvenDecl) // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, isOddDecl)  // DeclID 2
+				isEvenDeclID := dep_graph.DeclID(0)
+				isOddDeclID := dep_graph.DeclID(1)
+				depGraph.Decls = append(depGraph.Decls, isEvenDecl) // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, isOddDecl)  // DeclID 1
 
 				// Both in math namespace (same namespace enables mutual reference)
-				depGraph.DeclNamespace[isEvenDeclID-1] = "math"
-				depGraph.DeclNamespace[isOddDeclID-1] = "math"
+				depGraph.DeclNamespace[isEvenDeclID] = "math"
+				depGraph.DeclNamespace[isOddDeclID] = "math"
 
 				// Set up mutual dependencies
 				isEvenDeps := btree.Set[dep_graph.DeclID]{}
 				isEvenDeps.Insert(isOddDeclID)
-				depGraph.DeclDeps[isEvenDeclID-1] = isEvenDeps
+				depGraph.DeclDeps[isEvenDeclID] = isEvenDeps
 
 				isOddDeps := btree.Set[dep_graph.DeclID]{}
 				isOddDeps.Insert(isEvenDeclID)
-				depGraph.DeclDeps[isOddDeclID-1] = isOddDeps
+				depGraph.DeclDeps[isOddDeclID] = isOddDeps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("isEven", isEvenDeclID)
@@ -941,23 +941,23 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				aDeclID := dep_graph.DeclID(1)
-				bDeclID := dep_graph.DeclID(2)
-				depGraph.Decls = append(depGraph.Decls, aDecl) // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, bDecl) // DeclID 2
+				aDeclID := dep_graph.DeclID(0)
+				bDeclID := dep_graph.DeclID(1)
+				depGraph.Decls = append(depGraph.Decls, aDecl) // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, bDecl) // DeclID 1
 
 				// Different namespaces
-				depGraph.DeclNamespace[aDeclID-1] = "a"
-				depGraph.DeclNamespace[bDeclID-1] = "b"
+				depGraph.DeclNamespace[aDeclID] = "a"
+				depGraph.DeclNamespace[bDeclID] = "b"
 
 				// Set up circular cross-namespace dependencies
 				aDeps := btree.Set[dep_graph.DeclID]{}
 				aDeps.Insert(bDeclID) // aFunc depends on helper
-				depGraph.DeclDeps[aDeclID-1] = aDeps
+				depGraph.DeclDeps[aDeclID] = aDeps
 
 				bDeps := btree.Set[dep_graph.DeclID]{}
 				bDeps.Insert(aDeclID) // helper depends on aFunc
-				depGraph.DeclDeps[bDeclID-1] = bDeps
+				depGraph.DeclDeps[bDeclID] = bDeps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("aFunc", aDeclID)
@@ -1027,26 +1027,26 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				globalDeclID := dep_graph.DeclID(1)
-				nestedDeclID := dep_graph.DeclID(2)
-				nested2DeclID := dep_graph.DeclID(3)
-				depGraph.Decls = append(depGraph.Decls, globalDecl)  // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, nestedDecl)  // DeclID 2
-				depGraph.Decls = append(depGraph.Decls, nested2Decl) // DeclID 3
+				globalDeclID := dep_graph.DeclID(0)
+				nestedDeclID := dep_graph.DeclID(1)
+				nested2DeclID := dep_graph.DeclID(2)
+				depGraph.Decls = append(depGraph.Decls, globalDecl)  // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, nestedDecl)  // DeclID 1
+				depGraph.Decls = append(depGraph.Decls, nested2Decl) // DeclID 2
 
 				// Different namespace levels - root vs nested
-				depGraph.DeclNamespace[globalDeclID-1] = "" // root namespace
-				depGraph.DeclNamespace[nestedDeclID-1] = "utils.nested"
-				depGraph.DeclNamespace[nested2DeclID-1] = "utils.nested"
+				depGraph.DeclNamespace[globalDeclID] = "" // root namespace
+				depGraph.DeclNamespace[nestedDeclID] = "utils.nested"
+				depGraph.DeclNamespace[nested2DeclID] = "utils.nested"
 
 				// Set up dependency chain
 				nestedDeps := btree.Set[dep_graph.DeclID]{}
 				nestedDeps.Insert(globalDeclID)
-				depGraph.DeclDeps[nestedDeclID-1] = nestedDeps
+				depGraph.DeclDeps[nestedDeclID] = nestedDeps
 
 				nested2Deps := btree.Set[dep_graph.DeclID]{}
 				nested2Deps.Insert(nestedDeclID)
-				depGraph.DeclDeps[nested2DeclID-1] = nested2Deps
+				depGraph.DeclDeps[nested2DeclID] = nested2Deps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("GLOBAL_CONSTANT", globalDeclID)
@@ -1120,23 +1120,23 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				helperDeclID := dep_graph.DeclID(1)
-				piDeclID := dep_graph.DeclID(2)
-				rootFuncDeclID := dep_graph.DeclID(3)
-				depGraph.Decls = append(depGraph.Decls, helperDecl)   // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, piDecl)       // DeclID 2
-				depGraph.Decls = append(depGraph.Decls, rootFuncDecl) // DeclID 3
+				helperDeclID := dep_graph.DeclID(0)
+				piDeclID := dep_graph.DeclID(1)
+				rootFuncDeclID := dep_graph.DeclID(2)
+				depGraph.Decls = append(depGraph.Decls, helperDecl)   // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, piDecl)       // DeclID 1
+				depGraph.Decls = append(depGraph.Decls, rootFuncDecl) // DeclID 2
 
 				// Set up namespaces - nested vs root
-				depGraph.DeclNamespace[helperDeclID-1] = "math.utils"
-				depGraph.DeclNamespace[piDeclID-1] = "math"
-				depGraph.DeclNamespace[rootFuncDeclID-1] = "" // root namespace
+				depGraph.DeclNamespace[helperDeclID] = "math.utils"
+				depGraph.DeclNamespace[piDeclID] = "math"
+				depGraph.DeclNamespace[rootFuncDeclID] = "" // root namespace
 
 				// Set up dependencies - root function depends on both nested declarations
 				rootFuncDeps := btree.Set[dep_graph.DeclID]{}
 				rootFuncDeps.Insert(helperDeclID) // circleArea depends on square
 				rootFuncDeps.Insert(piDeclID)     // circleArea depends on PI
-				depGraph.DeclDeps[rootFuncDeclID-1] = rootFuncDeps
+				depGraph.DeclDeps[rootFuncDeclID] = rootFuncDeps
 
 				// Set up value bindings
 				depGraph.ValueBindings.Set("square", helperDeclID)
@@ -1214,27 +1214,27 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				depGraph := newTestDepGraph()
 
 				// Set up declarations (append in order)
-				pointDeclID := dep_graph.DeclID(1)
-				originDeclID := dep_graph.DeclID(2)
-				distanceDeclID := dep_graph.DeclID(3)
-				depGraph.Decls = append(depGraph.Decls, pointDecl)    // DeclID 1
-				depGraph.Decls = append(depGraph.Decls, originDecl)   // DeclID 2
-				depGraph.Decls = append(depGraph.Decls, distanceDecl) // DeclID 3
+				pointDeclID := dep_graph.DeclID(0)
+				originDeclID := dep_graph.DeclID(1)
+				distanceDeclID := dep_graph.DeclID(2)
+				depGraph.Decls = append(depGraph.Decls, pointDecl)    // DeclID 0
+				depGraph.Decls = append(depGraph.Decls, originDecl)   // DeclID 1
+				depGraph.Decls = append(depGraph.Decls, distanceDecl) // DeclID 2
 
 				// Different namespaces
-				depGraph.DeclNamespace[pointDeclID-1] = "types"
-				depGraph.DeclNamespace[originDeclID-1] = "constants"
-				depGraph.DeclNamespace[distanceDeclID-1] = "functions"
+				depGraph.DeclNamespace[pointDeclID] = "types"
+				depGraph.DeclNamespace[originDeclID] = "constants"
+				depGraph.DeclNamespace[distanceDeclID] = "functions"
 
 				// Set up dependency chains
 				originDeps := btree.Set[dep_graph.DeclID]{}
 				originDeps.Insert(pointDeclID) // ORIGIN depends on Point type
-				depGraph.DeclDeps[originDeclID-1] = originDeps
+				depGraph.DeclDeps[originDeclID] = originDeps
 
 				distanceDeps := btree.Set[dep_graph.DeclID]{}
 				distanceDeps.Insert(pointDeclID)  // distanceFromOrigin depends on Point type
 				distanceDeps.Insert(originDeclID) // distanceFromOrigin depends on ORIGIN value
-				depGraph.DeclDeps[distanceDeclID-1] = distanceDeps
+				depGraph.DeclDeps[distanceDeclID] = distanceDeps
 
 				// Set up bindings
 				depGraph.TypeBindings.Set("Point", pointDeclID)
