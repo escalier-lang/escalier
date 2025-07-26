@@ -267,13 +267,14 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 
 type IdentExpr struct {
 	Name         string
+	Namespace    string
 	Source       provenance.Provenance
 	span         Span
 	inferredType Type
 }
 
 func NewIdent(name string, span Span) *IdentExpr {
-	return &IdentExpr{Name: name, Source: nil, span: span, inferredType: nil}
+	return &IdentExpr{Name: name, Namespace: "", Source: nil, span: span, inferredType: nil}
 }
 func (e *IdentExpr) Accept(v Visitor) {
 	v.EnterExpr(e)

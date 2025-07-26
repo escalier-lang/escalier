@@ -165,6 +165,7 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 			qualifiedName := v.CurrentNamespace + "." + e.Name
 			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
 				!v.isLocalBinding(e.Name) {
+				e.Namespace = v.CurrentNamespace // Allows us to codegen a fully qualified name
 				v.Dependencies.Insert(declID)
 				return false
 			}

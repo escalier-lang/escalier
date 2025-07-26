@@ -191,7 +191,7 @@ func (b *Builder) buildPattern(
 
 			for _, arg := range p.Args {
 				tempId := b.NewTempId()
-				tempVar := NewIdentExpr(tempId, nil)
+				tempVar := NewIdentExpr(tempId, "", nil)
 
 				var init Expr
 				switch arg := arg.(type) {
@@ -208,12 +208,12 @@ func (b *Builder) buildPattern(
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
 			}
-			extractor := NewIdentExpr(p.Name, p)
+			extractor := NewIdentExpr(p.Name, "", p)
 			subject := target
-			receiver := NewIdentExpr("undefined", nil)
+			receiver := NewIdentExpr("undefined", "", nil)
 
 			call := NewCallExpr(
-				NewIdentExpr("InvokeCustomMatcherOrThrow", nil),
+				NewIdentExpr("InvokeCustomMatcherOrThrow", "", nil),
 				[]Expr{extractor, subject, receiver},
 				false,
 				nil, // TODO: source
@@ -393,9 +393,9 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 			parts := strings.Split(name, ".")
 			dunderName := strings.Join(parts, "__")
 			assignExpr := NewBinaryExpr(
-				NewIdentExpr(name, nil),
+				NewIdentExpr(name, "", nil),
 				Assign,
-				NewIdentExpr(dunderName, nil),
+				NewIdentExpr(dunderName, "", nil),
 				nil,
 			)
 
@@ -494,7 +494,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces ma
 		} else {
 			// Subsequent levels: foo.bar = {}; foo.bar.baz = {};
 			// Build the left side (foo.bar.baz)
-			var left Expr = NewIdentExpr(parts[0], nil)
+			var left Expr = NewIdentExpr(parts[0], "", nil)
 			for j := 1; j < i; j++ {
 				left = NewMemberExpr(left, NewIdentifier(parts[j], nil), false, nil)
 			}
@@ -612,7 +612,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
-		return NewIdentExpr(expr.Name, expr), []Stmt{}
+		return NewIdentExpr(expr.Name, expr.Namespace, expr), []Stmt{}
 	case *ast.CallExpr:
 		calleeExpr, calleeStmts := b.buildExpr(expr.Callee)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
@@ -710,7 +710,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	switch k := key.(type) {
 	case *ast.IdentExpr:
-		return NewIdentExpr(k.Name, key), []Stmt{}
+		return NewIdentExpr(k.Name, "", key), []Stmt{}
 	case *ast.StrLit:
 		return NewStrLit(k.Value, key), []Stmt{}
 	case *ast.NumLit:
@@ -733,11 +733,11 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		switch pat := p.Pattern.(type) {
 		case *ast.RestPat:
-			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, []string{})
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, nil), false, ast.ValKind, []string{})
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, []string{})
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 		}
 

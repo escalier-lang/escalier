@@ -691,9 +691,10 @@
     Elems: {
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
-                Name:   "a",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "a",
+                Namespace: "",
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:3},
                     SourceID: 0,
@@ -723,9 +724,10 @@
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
-                Name:   "b",
-                Source: nil,
-                span:   ast.Span{
+                Name:      "b",
+                Namespace: "",
+                Source:    nil,
+                span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:8},
                     End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
@@ -756,9 +758,10 @@
         &ast.PropertyTypeAnn{
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
-                    Name:   "c",
-                    Source: nil,
-                    span:   ast.Span{
+                    Name:      "c",
+                    Namespace: "",
+                    Source:    nil,
+                    span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:16},
                         End:      ast.Location{Line:1, Column:17},
                         SourceID: 0,
@@ -790,9 +793,10 @@
         &ast.PropertyTypeAnn{
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
-                    Name:   "d",
-                    Source: nil,
-                    span:   ast.Span{
+                    Name:      "d",
+                    Namespace: "",
+                    Source:    nil,
+                    span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:24},
                         End:      ast.Location{Line:1, Column:25},
                         SourceID: 0,

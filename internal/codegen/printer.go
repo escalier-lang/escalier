@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode"
 )
 
@@ -95,6 +96,9 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *LitExpr:
 		p.PrintLit(e.Lit)
 	case *IdentExpr:
+		if e.Namespace != "" {
+			p.print(strings.ReplaceAll(e.Namespace, ".", "__") + "__")
+		}
 		p.print(e.Name)
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
