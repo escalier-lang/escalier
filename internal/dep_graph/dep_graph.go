@@ -1,6 +1,7 @@
 package dep_graph
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -22,43 +23,6 @@ type DepBinding struct {
 
 // DeclID represents a unique identifier for each declaration
 type DeclID int
-
-// NamespaceManager manages namespace IDs and their string representations
-type NamespaceManager struct {
-	namespaces []string // Index is the NamespaceID, value is the namespace string
-	nextID     ast.NamespaceID
-}
-
-func NewNamespaceManager() *NamespaceManager {
-	nm := &NamespaceManager{
-		namespaces: make([]string, 1), // Start with capacity for root namespace
-		nextID:     1,                 // 0 is reserved for root namespace
-	}
-	// Register root namespace at index 0
-	nm.namespaces[0] = ""
-	return nm
-}
-
-func (nm *NamespaceManager) GetNamespaceID(namespace string) ast.NamespaceID {
-	// Check if namespace already exists
-	for i, ns := range nm.namespaces {
-		if ns == namespace {
-			return ast.NamespaceID(i)
-		}
-	}
-	// Create new namespace ID
-	id := nm.nextID
-	nm.nextID++
-	nm.namespaces = append(nm.namespaces, namespace)
-	return id
-}
-
-func (nm *NamespaceManager) GetNamespaceString(id ast.NamespaceID) string {
-	if int(id) < len(nm.namespaces) {
-		return nm.namespaces[id]
-	}
-	return ""
-}
 
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
@@ -155,12 +119,10 @@ func FindModuleBindings(module *ast.Module) (btree.Map[DeclID, ast.Decl], btree.
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
 	ast.DefaulVisitor
-	ValueBindings    btree.Map[string, DeclID] // Valid value dependencies from the current module
-	TypeBindings     btree.Map[string, DeclID] // Valid type dependencies from the current module
-	Dependencies     btree.Set[DeclID]         // Found dependencies by declaration ID
-	LocalBindings    []set.Set[string]         // Stack of local scopes (still strings for local scope)
-	CurrentNamespace string                    // Current namespace being analyzed
-	NamespaceManager *NamespaceManager         // Manager for namespace IDs
+	DepGraph         *DepGraph         // The dependency graph containing all module bindings
+	Dependencies     btree.Set[DeclID] // Found dependencies by declaration ID
+	LocalBindings    []set.Set[string] // Stack of local scopes (still strings for local scope)
+	CurrentNamespace string            // Current namespace being analyzed
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -201,15 +163,15 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		// If we're in a non-empty namespace, first try the qualified name (current namespace)
 		if v.CurrentNamespace != "" {
 			qualifiedName := v.CurrentNamespace + "." + e.Name
-			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+			if declID, exists := v.DepGraph.ValueBindings.Get(qualifiedName); exists &&
 				!v.isLocalBinding(e.Name) {
-				e.Namespace = v.NamespaceManager.GetNamespaceID(v.CurrentNamespace) // Allows us to codegen a fully qualified name
+				e.Namespace = v.DepGraph.GetNamespaceID(v.CurrentNamespace) // Allows us to codegen a fully qualified name
 				v.Dependencies.Insert(declID)
 				return false
 			}
 		}
 		// Then try the unqualified name (global namespace or explicit global reference)
-		if declID, exists := v.ValueBindings.Get(e.Name); exists &&
+		if declID, exists := v.DepGraph.ValueBindings.Get(e.Name); exists &&
 			!v.isLocalBinding(e.Name) {
 			v.Dependencies.Insert(declID)
 			return false
@@ -220,7 +182,7 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		qualifiedName := v.buildQualifiedName(e)
 		if qualifiedName != "" {
 			// Check if the qualified name is a valid value dependency
-			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+			if declID, exists := v.DepGraph.ValueBindings.Get(qualifiedName); exists &&
 				!v.isLocalBinding(qualifiedName) {
 				v.Dependencies.Insert(declID)
 				return false // Don't traverse further since we found the qualified dependency
@@ -273,14 +235,14 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 		// If we're in a non-empty namespace, first try the qualified name (current namespace)
 		if v.CurrentNamespace != "" {
 			qualifiedTypeName := v.CurrentNamespace + "." + typeName
-			if declID, exists := v.TypeBindings.Get(qualifiedTypeName); exists &&
+			if declID, exists := v.DepGraph.TypeBindings.Get(qualifiedTypeName); exists &&
 				!v.isLocalBinding(typeName) {
 				v.Dependencies.Insert(declID)
 				return true
 			}
 		}
 		// Then try the unqualified name (global namespace or explicit global reference)
-		if declID, exists := v.TypeBindings.Get(typeName); exists &&
+		if declID, exists := v.DepGraph.TypeBindings.Get(typeName); exists &&
 			!v.isLocalBinding(typeName) {
 			v.Dependencies.Insert(declID)
 			return true
@@ -321,7 +283,7 @@ func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 			switch key := prop.Name.(type) {
 			case *ast.IdentExpr:
 				// Check if this identifier is a valid dependency
-				if declID, exists := v.ValueBindings.Get(key.Name); exists &&
+				if declID, exists := v.DepGraph.ValueBindings.Get(key.Name); exists &&
 					!v.isLocalBinding(key.Name) {
 					v.Dependencies.Insert(declID)
 				}
@@ -359,20 +321,16 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 // that are valid module-level bindings, while properly handling scope
 func FindDeclDependencies(
 	decl ast.Decl,
-	valueBindings btree.Map[string, DeclID],
-	typeBindings btree.Map[string, DeclID],
+	depGraph *DepGraph,
 	currentNamespace string,
-	namespaceManager *NamespaceManager,
 ) btree.Set[DeclID] {
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
 		DefaulVisitor:    ast.DefaulVisitor{},
-		ValueBindings:    valueBindings,
-		TypeBindings:     typeBindings,
+		DepGraph:         depGraph,
 		Dependencies:     dependencies,
 		LocalBindings:    make([]set.Set[string], 0),
 		CurrentNamespace: currentNamespace,
-		NamespaceManager: namespaceManager,
 	}
 
 	// Handle different declaration types
@@ -419,50 +377,84 @@ type DepGraph struct {
 	ValueBindings btree.Map[string, DeclID]            // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID]            // Map from type binding name to declaration ID
 	DeclNamespace btree.Map[DeclID, string]            // Map from declaration ID to namespace
+	NamespaceMap  []string                             // Index is the NamespaceID, value is the namespace string
+}
+
+// NewDepGraph creates a new DepGraph with initialized empty maps.
+// This constructor ensures all required maps are properly initialized
+// and provides a consistent way to create DepGraph instances.
+func NewDepGraph(namespaceMap []string) *DepGraph {
+	return &DepGraph{
+		Decls:         btree.Map[DeclID, ast.Decl]{},
+		Deps:          btree.Map[DeclID, btree.Set[DeclID]]{},
+		ValueBindings: btree.Map[string, DeclID]{},
+		TypeBindings:  btree.Map[string, DeclID]{},
+		DeclNamespace: btree.Map[DeclID, string]{},
+		NamespaceMap:  namespaceMap,
+	}
+}
+
+// collectNamespaces collects all namespace names from a module and returns a namespace map
+func collectNamespaces(module *ast.Module) []string {
+	namespaceMap := make([]string, 1) // Start with capacity for root namespace
+	namespaceMap[0] = ""              // Register root namespace at index 0
+
+	nsIter := module.Namespaces.Iter()
+	for ok := nsIter.First(); ok; ok = nsIter.Next() {
+		nsName := nsIter.Key()
+		// Check if namespace already exists
+		if !slices.Contains(namespaceMap, nsName) {
+			// Add new namespace
+			namespaceMap = append(namespaceMap, nsName)
+		}
+	}
+
+	return namespaceMap
 }
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
-	// Create namespace manager
-	namespaceManager := NewNamespaceManager()
+	// Collect all namespaces from the module
+	namespaceMap := collectNamespaces(module)
 
-	// First, find all decls and bindings in the module
+	// Create a DepGraph with initialized maps and namespaces
+	depGraph := NewDepGraph(namespaceMap)
+
+	// Find all decls and bindings in the module
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
-	// Build the dependency map
-	var deps btree.Map[DeclID, btree.Set[DeclID]]
 	var declNamespace btree.Map[DeclID, string]
 
 	// We need to track which namespace each declaration belongs to
 	// Create a map from DeclID to namespace by re-traversing the module
 	nextDeclID := DeclID(1)
-	nsIter := module.Namespaces.Iter()
-	for ok := nsIter.First(); ok; ok = nsIter.Next() {
-		nsName := nsIter.Key()
-		ns := nsIter.Value()
+	nsIterForDecls := module.Namespaces.Iter()
+	for ok := nsIterForDecls.First(); ok; ok = nsIterForDecls.Next() {
+		nsName := nsIterForDecls.Key()
+		ns := nsIterForDecls.Value()
 		for range ns.Decls {
 			declNamespace.Set(nextDeclID, nsName)
 			nextDeclID++
 		}
 	}
 
+	// Populate the DepGraph with declarations and bindings
+	depGraph.Decls = decls
+	depGraph.ValueBindings = valueBindings
+	depGraph.TypeBindings = typeBindings
+	depGraph.DeclNamespace = declNamespace
+
 	// For each declaration, find its dependencies
-	iter := decls.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		declID := iter.Key()
-		decl := iter.Value()
+	declIter := decls.Iter()
+	for ok := declIter.First(); ok; ok = declIter.Next() {
+		declID := declIter.Key()
+		decl := declIter.Value()
 		namespace, _ := declNamespace.Get(declID)
-		dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, namespace, namespaceManager)
-		deps.Set(declID, dependencies)
+		dependencies := FindDeclDependencies(decl, depGraph, namespace)
+		depGraph.Deps.Set(declID, dependencies)
 	}
 
-	return &DepGraph{
-		Decls:         decls,
-		ValueBindings: valueBindings,
-		TypeBindings:  typeBindings,
-		Deps:          deps,
-		DeclNamespace: declNamespace,
-	}
+	return depGraph
 }
 
 // GetDependencies returns the dependencies for a given declaration ID
@@ -482,6 +474,25 @@ func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 // GetNamespace returns the namespace for a given declaration ID
 func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
 	return g.DeclNamespace.Get(declID)
+}
+
+// GetNamespaceID returns the namespace ID for a given namespace string
+func (g *DepGraph) GetNamespaceID(namespace string) ast.NamespaceID {
+	// Check if namespace exists, return 0 if not found
+	for i, ns := range g.NamespaceMap {
+		if ns == namespace {
+			return ast.NamespaceID(i)
+		}
+	}
+	return 0 // Return 0 (root namespace) if not found
+}
+
+// GetNamespaceString returns the namespace string for a given namespace ID
+func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
+	if int(id) < len(g.NamespaceMap) {
+		return g.NamespaceMap[id]
+	}
+	return ""
 }
 
 // AllDeclarations returns all declaration IDs in the graph

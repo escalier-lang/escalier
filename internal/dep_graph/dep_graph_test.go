@@ -12,6 +12,28 @@ import (
 	"github.com/tidwall/btree"
 )
 
+// createTestDepGraph creates a DepGraph for testing with the given bindings.
+// It automatically assigns DeclIDs starting from 100 and sets all bindings
+// to the empty namespace for simplicity in tests.
+func createTestDepGraph(validBindings []DepBinding) *DepGraph {
+	namespaces := []string{""} // Test with just root namespace
+	testDepGraph := NewDepGraph(namespaces)
+
+	for i, binding := range validBindings {
+		declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
+		switch binding.Kind {
+		case DepKindValue:
+			testDepGraph.ValueBindings.Set(binding.Name, declID)
+		case DepKindType:
+			testDepGraph.TypeBindings.Set(binding.Name, declID)
+		}
+		// Set empty namespace for test bindings
+		testDepGraph.DeclNamespace.Set(declID, "")
+	}
+
+	return testDepGraph
+}
+
 func TestFindModuleBindings(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source
@@ -787,23 +809,12 @@ func TestFindDeclDependencies(t *testing.T) {
 			assert.True(t, exists, "Module should have empty namespace")
 			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
 
-			// Create valid bindings maps (split by kind)
-			var valueBindings btree.Map[string, DeclID]
-			var typeBindings btree.Map[string, DeclID]
-			for i, binding := range test.validBindings {
-				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
-				switch binding.Kind {
-				case DepKindValue:
-					valueBindings.Set(binding.Name, declID)
-				case DepKindType:
-					typeBindings.Set(binding.Name, declID)
-				}
-			}
+			// Create a test DepGraph
+			testDepGraph := createTestDepGraph(test.validBindings)
 
 			// Find dependencies
 			emptyNS2, _ := module.Namespaces.Get("")
-			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, "", namespaceManager)
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], testDepGraph, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -812,7 +823,7 @@ func TestFindDeclDependencies(t *testing.T) {
 				declID := iter.Key()
 				// Find the binding that corresponds to this DeclID
 				found := false
-				valueIter := valueBindings.Iter()
+				valueIter := testDepGraph.ValueBindings.Iter()
 				for ok := valueIter.First(); ok; ok = valueIter.Next() {
 					name := valueIter.Key()
 					id := valueIter.Value()
@@ -823,7 +834,7 @@ func TestFindDeclDependencies(t *testing.T) {
 					}
 				}
 				if !found {
-					typeIter := typeBindings.Iter()
+					typeIter := testDepGraph.TypeBindings.Iter()
 					for ok := typeIter.First(); ok; ok = typeIter.Next() {
 						name := typeIter.Key()
 						id := typeIter.Value()
@@ -889,8 +900,9 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 						Default: nil,
 					},
 					Init: &ast.IdentExpr{
-						Name:   "someVar",
-						Source: nil,
+						Name:      "someVar",
+						Source:    nil,
+						Namespace: 0,
 					},
 					TypeAnn: nil,
 				}
@@ -908,6 +920,7 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			// Create valid bindings maps (split by kind)
 			var valueBindings btree.Map[string, DeclID]
 			var typeBindings btree.Map[string, DeclID]
+
 			for i, binding := range test.validBindings {
 				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
 				switch binding.Kind {
@@ -918,9 +931,25 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 				}
 			}
 
+			// Create a test DepGraph
+			namespaces := []string{""} // Test with just root namespace
+			testDepGraph := NewDepGraph(namespaces)
+			testDepGraph.ValueBindings = valueBindings
+			testDepGraph.TypeBindings = typeBindings
+			// Set empty namespace for test bindings
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				declID := valueIter.Value()
+				testDepGraph.DeclNamespace.Set(declID, "")
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				declID := typeIter.Value()
+				testDepGraph.DeclNamespace.Set(declID, "")
+			}
+
 			// Find dependencies
-			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(decl, valueBindings, typeBindings, "", namespaceManager)
+			dependencies := FindDeclDependencies(decl, testDepGraph, "")
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -1506,6 +1535,7 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 			// Create valid bindings maps (split by kind)
 			var valueBindings btree.Map[string, DeclID]
 			var typeBindings btree.Map[string, DeclID]
+
 			for i, binding := range test.validBindings {
 				declID := DeclID(i + 100) // Use arbitrary DeclIDs starting from 100
 				switch binding.Kind {
@@ -1516,10 +1546,26 @@ func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
 				}
 			}
 
+			// Create a test DepGraph
+			namespaces := []string{""} // Test with just root namespace
+			testDepGraph := NewDepGraph(namespaces)
+			testDepGraph.ValueBindings = valueBindings
+			testDepGraph.TypeBindings = typeBindings
+			// Set empty namespace for test bindings
+			valueIter := valueBindings.Iter()
+			for ok := valueIter.First(); ok; ok = valueIter.Next() {
+				declID := valueIter.Value()
+				testDepGraph.DeclNamespace.Set(declID, "")
+			}
+			typeIter := typeBindings.Iter()
+			for ok := typeIter.First(); ok; ok = typeIter.Next() {
+				declID := typeIter.Value()
+				testDepGraph.DeclNamespace.Set(declID, "")
+			}
+
 			// Find dependencies using the test namespace context
 			emptyNS2, _ := module.Namespaces.Get("")
-			namespaceManager := NewNamespaceManager()
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], valueBindings, typeBindings, test.namespace, namespaceManager)
+			dependencies := FindDeclDependencies(emptyNS2.Decls[0], testDepGraph, test.namespace)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
