@@ -1,0 +1,1 @@
+fn calculate(x) { return x * app.utils.factor }

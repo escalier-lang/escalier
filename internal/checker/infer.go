@@ -626,6 +626,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 		// TODO: replace type params with type args
 		return c.expandType(ctx, typeAlias.Type)
 	default:
+		fmt.Printf("expandType: unexpected type %s\n", t.String())
 		panic("TODO: expandType - handle other types")
 	}
 }
