@@ -1410,3 +1410,101 @@ func TestBuildDepGraph(t *testing.T) {
 		})
 	}
 }
+
+func TestDependencyVisitor_LocalValueAndTypeBindings(t *testing.T) {
+	// This test verifies that the DependencyVisitor correctly differentiates
+	// between local value bindings and local type bindings
+	tests := map[string]struct {
+		source        string
+		validBindings []DepBinding
+		expectedDeps  []string // Names of expected dependencies
+		description   string
+	}{
+		"ValueBinding_ShadowsGlobal": {
+			source: `
+				val globalVar = 42
+				fn test() {
+					val globalVar = 10  // Local value binding shadows global
+					val result = globalVar + 1  // Should refer to local, not global
+				}
+			`,
+			validBindings: []DepBinding{
+				{Name: "globalVar", Kind: DepKindValue},
+			},
+			expectedDeps: []string{}, // No dependencies because global is shadowed
+			description:  "Local value bindings should shadow global value bindings",
+		},
+		"TypeBinding_NotShadowed": {
+			source: `
+				type Point = {x: number, y: number}
+				val p: Point = {x: 5, y: 10}  // Should depend on global Point
+			`,
+			validBindings: []DepBinding{
+				{Name: "Point", Kind: DepKindType},
+			},
+			expectedDeps: []string{"Point"}, // Should depend on global type
+			description:  "Type annotations should refer to global types when not shadowed",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: test.source,
+			}
+
+			sources := []*ast.Source{source}
+			module, errors := parser.ParseLibFiles(ctx, sources)
+			assert.Len(t, errors, 0, "Parse errors: %v", errors)
+
+			// Get the variable declaration with type annotation
+			var targetDecl ast.Decl
+			iter := module.Namespaces.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				ns := iter.Value()
+				for _, decl := range ns.Decls {
+					if vd, ok := decl.(*ast.VarDecl); ok && vd.TypeAnn != nil {
+						targetDecl = vd
+					} else if fd, ok := decl.(*ast.FuncDecl); ok {
+						targetDecl = fd
+					}
+				}
+			}
+			assert.NotNil(t, targetDecl, "Should find a target declaration")
+
+			// Create test dependency graph
+			testDepGraph := createTestDepGraph(targetDecl, test.validBindings)
+
+			// Find dependencies for the function declaration
+			declID := DeclID(0) // The function is at index 0 in our test setup
+			actualDeps := FindDeclDependencies(declID, testDepGraph)
+
+			// Convert expected dependency names to DeclIDs
+			expectedDeclIDs := make([]DeclID, 0)
+			for _, depName := range test.expectedDeps {
+				for i, binding := range test.validBindings {
+					if binding.Name == depName {
+						expectedDeclIDs = append(expectedDeclIDs, DeclID(i+100))
+						break
+					}
+				}
+			}
+
+			// Convert actual dependencies to slice for comparison
+			actualDepsSlice := make([]DeclID, 0, actualDeps.Len())
+			iter2 := actualDeps.Iter()
+			for ok := iter2.First(); ok; ok = iter2.Next() {
+				actualDepsSlice = append(actualDepsSlice, iter2.Key())
+			}
+
+			assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
+				"Test %s failed: %s. Expected dependencies: %v, got %v",
+				name, test.description, expectedDeclIDs, actualDepsSlice)
+		})
+	}
+}
