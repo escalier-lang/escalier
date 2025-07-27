@@ -9,43 +9,44 @@ import (
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
-	"github.com/tidwall/btree"
 )
 
 func TestBuildNamespaceStatements(t *testing.T) {
 	tests := map[string]struct {
-		declNamespaces map[dep_graph.DeclID]string
-		declIDs        []dep_graph.DeclID
-		expected       string
+		namespaces []string
+		declIDs    []dep_graph.DeclID
+		expected   string
 	}{
 		"EmptyNamespaces": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "",
-				2: "",
+			namespaces: []string{
+				"",
 			},
 			declIDs:  []dep_graph.DeclID{1, 2},
 			expected: "",
 		},
 		"SingleLevelNamespace": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "foo",
-				2: "bar",
+			namespaces: []string{
+				"",
+				"bar",
+				"foo",
 			},
 			declIDs: []dep_graph.DeclID{1, 2},
 			expected: `const bar = {};
 const foo = {};`,
 		},
 		"TwoLevelNamespace": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "foo.bar",
+			namespaces: []string{
+				"",
+				"foo.bar",
 			},
 			declIDs: []dep_graph.DeclID{1},
 			expected: `const foo = {};
 foo.bar = {};`,
 		},
 		"ThreeLevelNamespace": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "foo.bar.baz",
+			namespaces: []string{
+				"",
+				"foo.bar.baz",
 			},
 			declIDs: []dep_graph.DeclID{1},
 			expected: `const foo = {};
@@ -53,11 +54,12 @@ foo.bar = {};
 foo.bar.baz = {};`,
 		},
 		"MixedNamespaceLevels": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "foo",
-				2: "foo.bar",
-				3: "foo.bar.baz",
-				4: "qux",
+			namespaces: []string{
+				"",
+				"foo",
+				"foo.bar",
+				"foo.bar.baz",
+				"qux",
 			},
 			declIDs: []dep_graph.DeclID{1, 2, 3, 4},
 			expected: `const foo = {};
@@ -66,10 +68,11 @@ foo.bar.baz = {};
 const qux = {};`,
 		},
 		"DuplicateNamespaces": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "foo.bar",
-				2: "foo.bar",
-				3: "foo.baz",
+			namespaces: []string{
+				"",
+				"foo.bar",
+				"foo.bar",
+				"foo.baz",
 			},
 			declIDs: []dep_graph.DeclID{1, 2, 3},
 			expected: `const foo = {};
@@ -77,10 +80,10 @@ foo.bar = {};
 foo.baz = {};`,
 		},
 		"OverlappingNamespaces": {
-			declNamespaces: map[dep_graph.DeclID]string{
-				1: "models.User",
-				2: "models.Post",
-				3: "models.utils.validation",
+			namespaces: []string{
+				"models.Post",
+				"models.User",
+				"models.utils.validation",
 			},
 			declIDs: []dep_graph.DeclID{1, 2, 3},
 			expected: `const models = {};
@@ -94,23 +97,11 @@ models.utils.validation = {};`,
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Create a mock dependency graph
-			depGraph := &dep_graph.DepGraph{
-				Decls:         []ast.Decl{},
-				DeclDeps:      []btree.Set[dep_graph.DeclID]{},
-				ValueBindings: btree.Map[string, dep_graph.DeclID]{},
-				TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
-				DeclNamespace: make([]string, 1000), // Large enough for test DeclIDs
-				Namespaces:    []string{},
-			}
-
-			// Populate the DeclNamespace slice
-			for declID, namespace := range test.declNamespaces {
-				depGraph.DeclNamespace[declID] = namespace // Use DeclID as slice index
-			}
+			depGraph := dep_graph.NewDepGraph(test.namespaces)
 
 			// Create a builder and test the method
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			stmts := builder.buildNamespaceStatements(test.declIDs, depGraph)
+			stmts := builder.buildNamespaceStatements(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -580,12 +571,9 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 			// Build dependency graph using BuildDepGraph
 			depGraph := dep_graph.BuildDepGraph(module)
 
-			// Get all declaration IDs and sort them for consistent ordering
-			declIDs := depGraph.AllDeclarations()
-
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -694,12 +682,9 @@ app.utils.calculate = app__utils__calculate;`,
 			// Build dependency graph using BuildDepGraph
 			depGraph := dep_graph.BuildDepGraph(module)
 
-			// Get all declaration IDs and sort them for consistent ordering
-			declIDs := depGraph.AllDeclarations()
-
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -772,12 +757,9 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 			// Build dependency graph using BuildDepGraph
 			depGraph := dep_graph.BuildDepGraph(module)
 
-			// Get all declaration IDs and sort them for consistent ordering
-			declIDs := depGraph.AllDeclarations()
-
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(declIDs, depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()

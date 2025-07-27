@@ -320,10 +320,12 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 // FindDeclDependencies finds all IdentExpr dependencies in a declaration
 // that are valid module-level bindings, while properly handling scope
 func FindDeclDependencies(
-	decl ast.Decl,
+	declID DeclID,
 	depGraph *DepGraph,
-	currentNamespace string,
 ) btree.Set[DeclID] {
+	decl, _ := depGraph.GetDeclaration(declID)
+	currentNamespace := depGraph.DeclNamespace[declID]
+
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
 		DefaulVisitor:    ast.DefaulVisitor{},
@@ -376,6 +378,7 @@ type DepGraph struct {
 	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID
 	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID
 	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
+	Components    [][]DeclID                // Strongly connected components of declarations
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
 }
@@ -389,6 +392,7 @@ func NewDepGraph(namespaceMap []string) *DepGraph {
 		DeclDeps:      []btree.Set[DeclID]{},
 		DeclNamespace: []string{},
 		Namespaces:    namespaceMap,
+		Components:    [][]DeclID{},
 		ValueBindings: btree.Map[string, DeclID]{},
 		TypeBindings:  btree.Map[string, DeclID]{},
 	}
@@ -414,12 +418,6 @@ func collectNamespaces(module *ast.Module) []string {
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
-	// Collect all namespaces from the module
-	namespaceMap := collectNamespaces(module)
-
-	// Create a DepGraph with initialized maps and namespaces
-	depGraph := NewDepGraph(namespaceMap)
-
 	// Find all decls and bindings in the module
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
@@ -440,6 +438,12 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		}
 	}
 
+	// Collect all namespaces from the module
+	namespaceMap := collectNamespaces(module)
+
+	// Create a DepGraph with initialized maps and namespaces
+	depGraph := NewDepGraph(namespaceMap)
+
 	// Populate the DepGraph with declarations and bindings
 	depGraph.Decls = decls
 	depGraph.ValueBindings = valueBindings
@@ -450,11 +454,13 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	depGraph.DeclDeps = make([]btree.Set[DeclID], len(decls))
 
 	// For each declaration, find its dependencies
-	for i, decl := range decls {
-		namespace := declNamespace[i] // Use slice index directly
-		dependencies := FindDeclDependencies(decl, depGraph, namespace)
-		depGraph.DeclDeps[i] = dependencies // Use slice index directly
+	for i := range decls {
+		declID := DeclID(i) // Use slice index directly as DeclID
+		dependencies := FindDeclDependencies(declID, depGraph)
+		depGraph.DeclDeps[declID] = dependencies // Use slice index directly
 	}
+
+	depGraph.Components = depGraph.FindStronglyConnectedComponents(0)
 
 	return depGraph
 }
