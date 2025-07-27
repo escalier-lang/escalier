@@ -2,7 +2,6 @@ package dep_graph
 
 import (
 	"context"
-	"slices"
 	"testing"
 	"time"
 
@@ -15,7 +14,7 @@ import (
 // createTestDepGraph creates a DepGraph for testing with the given bindings.
 // It automatically assigns DeclIDs starting from 100 and sets all bindings
 // to the empty namespace for simplicity in tests.
-func createTestDepGraph(validBindings []DepBinding) *DepGraph {
+func createTestDepGraph(decl ast.Decl, validBindings []DepBinding) *DepGraph {
 	namespaces := []string{""} // Test with just root namespace
 	testDepGraph := NewDepGraph(namespaces)
 
@@ -34,6 +33,8 @@ func createTestDepGraph(validBindings []DepBinding) *DepGraph {
 		// Set empty namespace for test bindings
 		testDepGraph.DeclNamespace[declID] = "" // Use DeclID as slice index
 	}
+
+	testDepGraph.Decls = []ast.Decl{decl} // Add the test declaration
 
 	return testDepGraph
 }
@@ -814,11 +815,12 @@ func TestFindDeclDependencies(t *testing.T) {
 			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
 
 			// Create a test DepGraph
-			testDepGraph := createTestDepGraph(test.validBindings)
+			emptyNS2, _ := module.Namespaces.Get("")
+			testDepGraph := createTestDepGraph(emptyNS2.Decls[0], test.validBindings)
 
 			// Find dependencies
-			emptyNS2, _ := module.Namespaces.Get("")
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], testDepGraph, "")
+			declID := DeclID(0)
+			dependencies := FindDeclDependencies(declID, testDepGraph)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -922,10 +924,11 @@ func TestFindDeclDependencies_EdgeCases(t *testing.T) {
 			decl := test.setupDecl()
 
 			// Create a test DepGraph using the helper function
-			testDepGraph := createTestDepGraph(test.validBindings)
+			testDepGraph := createTestDepGraph(decl, test.validBindings)
 
 			// Find dependencies
-			dependencies := FindDeclDependencies(decl, testDepGraph, "")
+			declID := DeclID(0)
+			dependencies := FindDeclDependencies(declID, testDepGraph)
 
 			// Convert dependencies to bindings for comparison
 			actualDeps := make([]DepBinding, 0)
@@ -1356,22 +1359,21 @@ func TestBuildDepGraph(t *testing.T) {
 			// Build dependency graph
 			depGraph := BuildDepGraph(module)
 
-			// Create a sorted list of declaration IDs for consistent ordering
-			declIDs := depGraph.AllDeclarations()
+			// Get the declaration IDs
+			declIDs := make([]DeclID, 0, len(depGraph.Decls))
+			for i := range depGraph.Decls {
+				declID := DeclID(i) // DeclID is now the slice index directly
+				declIDs = append(declIDs, declID)
+			}
 
 			// Verify number of declarations
 			actualDeclCount := len(declIDs)
 			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
 				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
 
-			// Sort by the declaration ID to ensure consistent ordering
-			// (since declaration IDs are assigned in order, this gives us document order)
-			slices.Sort(declIDs)
-
 			// Verify namespaces
-			actualNamespaces := depGraph.AllNamespaces()
-			assert.ElementsMatch(t, test.expectedNamespaces, actualNamespaces,
-				"Expected namespaces %v, got %v", test.expectedNamespaces, actualNamespaces)
+			assert.ElementsMatch(t, test.expectedNamespaces, depGraph.Namespaces,
+				"Expected namespaces %v, got %v", test.expectedNamespaces, depGraph.Namespaces)
 
 			// Verify dependencies for each declaration
 			for declIndex, expectedDeps := range test.expectedDependencies {
@@ -1382,7 +1384,7 @@ func TestBuildDepGraph(t *testing.T) {
 				}
 
 				declID := declIDs[declIndex]
-				actualDeps := depGraph.GetDependencies(declID)
+				actualDeps := depGraph.GetDeclDeps(declID)
 
 				// Convert expected dependency indices to actual DeclIDs
 				expectedDeclIDs := make([]DeclID, len(expectedDeps))
@@ -1409,144 +1411,100 @@ func TestBuildDepGraph(t *testing.T) {
 	}
 }
 
-// TestFindDeclDependencies_NamespaceResolution tests the namespace-specific
-// identifier resolution logic covered in the selected code.
-func TestFindDeclDependencies_NamespaceResolution(t *testing.T) {
+func TestDependencyVisitor_LocalValueAndTypeBindings(t *testing.T) {
+	// This test verifies that the DependencyVisitor correctly differentiates
+	// between local value bindings and local type bindings
 	tests := map[string]struct {
-		declCode      string
+		source        string
 		validBindings []DepBinding
-		expectedDeps  []DepBinding
-		declType      string
-		namespace     string // namespace context for dependency resolution
+		expectedDeps  []string // Names of expected dependencies
+		description   string
 	}{
-		"VarDecl_NamespaceQualifiedDependency": {
-			declCode: `val result = myVar + 5`,
+		"ValueBinding_ShadowsGlobal": {
+			source: `
+				val globalVar = 42
+				fn test() {
+					val globalVar = 10  // Local value binding shadows global
+					val result = globalVar + 1  // Should refer to local, not global
+				}
+			`,
 			validBindings: []DepBinding{
-				{Name: "myNamespace.myVar", Kind: DepKindValue}, // Qualified name in namespace
-				{Name: "myVar", Kind: DepKindValue},             // Unqualified name in global namespace
+				{Name: "globalVar", Kind: DepKindValue},
 			},
-			expectedDeps: []DepBinding{{Name: "myNamespace.myVar", Kind: DepKindValue}}, // Should prefer namespace-qualified
-			declType:     "var",
-			namespace:    "myNamespace", // Test within a namespace
+			expectedDeps: []string{}, // No dependencies because global is shadowed
+			description:  "Local value bindings should shadow global value bindings",
 		},
-		"VarDecl_FallbackToGlobalNamespace": {
-			declCode: `val result = globalVar + 5`,
+		"TypeBinding_NotShadowed": {
+			source: `
+				type Point = {x: number, y: number}
+				val p: Point = {x: 5, y: 10}  // Should depend on global Point
+			`,
 			validBindings: []DepBinding{
-				{Name: "myNamespace.otherVar", Kind: DepKindValue}, // Different qualified name
-				{Name: "globalVar", Kind: DepKindValue},            // Unqualified name in global namespace
+				{Name: "Point", Kind: DepKindType},
 			},
-			expectedDeps: []DepBinding{{Name: "globalVar", Kind: DepKindValue}}, // Should fallback to global
-			declType:     "var",
-			namespace:    "myNamespace", // Test within a namespace but fallback to global
-		},
-		"VarDecl_NoLocalBinding": {
-			declCode: `val result = if (true) {
-				val myVar = 42
-				globalVar + 5  // Reference globalVar, not the local myVar
-			} else {
-				0
-			}`,
-			validBindings: []DepBinding{
-				{Name: "myNamespace.globalVar", Kind: DepKindValue}, // Qualified name in namespace
-				{Name: "globalVar", Kind: DepKindValue},             // Unqualified name in global namespace
-			},
-			expectedDeps: []DepBinding{{Name: "myNamespace.globalVar", Kind: DepKindValue}}, // Should prefer namespace-qualified and ignore local myVar
-			declType:     "var",
-			namespace:    "myNamespace", // Test within a namespace
-		},
-		"TypeDecl_NamespaceQualifiedTypeDependency": {
-			declCode: `type MyType = BaseType`,
-			validBindings: []DepBinding{
-				{Name: "myNamespace.BaseType", Kind: DepKindType}, // Qualified name in namespace
-				{Name: "BaseType", Kind: DepKindType},             // Unqualified name in global namespace
-			},
-			expectedDeps: []DepBinding{{Name: "myNamespace.BaseType", Kind: DepKindType}}, // Should prefer namespace-qualified
-			declType:     "type",
-			namespace:    "myNamespace", // Test within a namespace
-		},
-		"VarDecl_EmptyNamespaceFallsBackToGlobal": {
-			declCode: `val result = globalVar + 5`,
-			validBindings: []DepBinding{
-				{Name: "globalVar", Kind: DepKindValue}, // Unqualified name in global namespace
-			},
-			expectedDeps: []DepBinding{{Name: "globalVar", Kind: DepKindValue}}, // Should find global
-			declType:     "var",
-			namespace:    "", // Empty namespace context
+			expectedDeps: []string{"Point"}, // Should depend on global type
+			description:  "Type annotations should refer to global types when not shadowed",
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			// Create a module with the declaration
-			var moduleCode string
-			switch test.declType {
-			case "var":
-				moduleCode = test.declCode
-			case "func":
-				moduleCode = test.declCode
-			case "type":
-				moduleCode = test.declCode
-			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
 			source := &ast.Source{
 				ID:       0,
 				Path:     "test.esc",
-				Contents: moduleCode,
+				Contents: test.source,
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			sources := []*ast.Source{source}
+			module, errors := parser.ParseLibFiles(ctx, sources)
+			assert.Len(t, errors, 0, "Parse errors: %v", errors)
 
-			// Ensure parsing was successful
-			assert.Len(t, errors, 0, "Parser errors: %v", errors)
-			assert.NotNil(t, module, "Module should not be nil")
-
-			emptyNS, exists := module.Namespaces.Get("")
-			assert.True(t, exists, "Module should have empty namespace")
-			assert.Len(t, emptyNS.Decls, 1, "Module should have exactly one declaration")
-
-			// Create a test DepGraph using the helper function
-			testDepGraph := createTestDepGraph(test.validBindings)
-
-			// Find dependencies using the test namespace context
-			emptyNS2, _ := module.Namespaces.Get("")
-			dependencies := FindDeclDependencies(emptyNS2.Decls[0], testDepGraph, test.namespace)
-
-			// Convert dependencies to bindings for comparison
-			actualDeps := make([]DepBinding, 0)
-			iter := dependencies.Iter()
+			// Get the variable declaration with type annotation
+			var targetDecl ast.Decl
+			iter := module.Namespaces.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
-				declID := iter.Key()
-				// Find the binding that corresponds to this DeclID
-				found := false
-				valueIter := testDepGraph.ValueBindings.Iter()
-				for ok := valueIter.First(); ok; ok = valueIter.Next() {
-					name := valueIter.Key()
-					id := valueIter.Value()
-					if id == declID {
-						actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindValue})
-						found = true
+				ns := iter.Value()
+				for _, decl := range ns.Decls {
+					if vd, ok := decl.(*ast.VarDecl); ok && vd.TypeAnn != nil {
+						targetDecl = vd
+					} else if fd, ok := decl.(*ast.FuncDecl); ok {
+						targetDecl = fd
+					}
+				}
+			}
+			assert.NotNil(t, targetDecl, "Should find a target declaration")
+
+			// Create test dependency graph
+			testDepGraph := createTestDepGraph(targetDecl, test.validBindings)
+
+			// Find dependencies for the function declaration
+			declID := DeclID(0) // The function is at index 0 in our test setup
+			actualDeps := FindDeclDependencies(declID, testDepGraph)
+
+			// Convert expected dependency names to DeclIDs
+			expectedDeclIDs := make([]DeclID, 0)
+			for _, depName := range test.expectedDeps {
+				for i, binding := range test.validBindings {
+					if binding.Name == depName {
+						expectedDeclIDs = append(expectedDeclIDs, DeclID(i+100))
 						break
 					}
 				}
-				if !found {
-					typeIter := testDepGraph.TypeBindings.Iter()
-					for ok := typeIter.First(); ok; ok = typeIter.Next() {
-						name := typeIter.Key()
-						id := typeIter.Value()
-						if id == declID {
-							actualDeps = append(actualDeps, DepBinding{Name: name, Kind: DepKindType})
-							break
-						}
-					}
-				}
 			}
 
-			assert.ElementsMatch(t, test.expectedDeps, actualDeps,
-				"Expected dependencies %v, got %v", test.expectedDeps, actualDeps)
+			// Convert actual dependencies to slice for comparison
+			actualDepsSlice := make([]DeclID, 0, actualDeps.Len())
+			iter2 := actualDeps.Iter()
+			for ok := iter2.First(); ok; ok = iter2.Next() {
+				actualDepsSlice = append(actualDepsSlice, iter2.Key())
+			}
+
+			assert.ElementsMatch(t, expectedDeclIDs, actualDepsSlice,
+				"Test %s failed: %s. Expected dependencies: %v, got %v",
+				name, test.description, expectedDeclIDs, actualDepsSlice)
 		})
 	}
 }

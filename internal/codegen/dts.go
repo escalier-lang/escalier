@@ -9,25 +9,32 @@ import (
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// declIDs must be sorted according to reverse topological order based on the
+// the strongly connected components of the dependency graph.  The reason why
+// we pass this in is because we don't want to compute the strongly connected
+// components more than once and BuildTopLevelDecls needs this information as well.
 // TODO: Update this function to group bindings from the same declaration together
 // and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
-	declIDs []dep_graph.DeclID,
 	depGraph *dep_graph.DepGraph,
-	namespace *type_sys.Namespace,
+	moduleNS *type_sys.Namespace,
 ) *Module {
 	stmts := []Stmt{}
 
-	for _, declID := range declIDs {
-		d, _ := depGraph.GetDeclaration(declID)
-		switch decl := d.(type) {
+	var topoDeclIDs []dep_graph.DeclID
+	for _, component := range depGraph.Components {
+		topoDeclIDs = append(topoDeclIDs, component...)
+	}
+
+	for _, declID := range topoDeclIDs {
+		switch decl := depGraph.Decls[declID].(type) {
 		case *ast.VarDecl:
 			keys := ast.FindBindings(decl.Pattern).ToSlice()
 			sort.Strings(keys)
 
 			decls := make([]*Declarator, 0, len(keys))
 			for _, name := range keys {
-				binding := namespace.Values[name]
+				binding := moduleNS.Values[name]
 				typeAnn := buildTypeAnn(binding.Type)
 				decls = append(decls, &Declarator{
 					Pattern: NewIdentPat(name, nil, nil),
@@ -51,7 +58,7 @@ func (b *Builder) BuildDefinitions(
 			})
 
 		case *ast.FuncDecl:
-			binding := namespace.Values[decl.Name.Name]
+			binding := moduleNS.Values[decl.Name.Name]
 
 			funcType := binding.Type.(*type_sys.FuncType)
 

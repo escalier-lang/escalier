@@ -94,7 +94,7 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 // the declaration with the given declID. If the namespace doesn't exist yet, it
 // creates one.
 func getDeclCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) Context {
-	nsName, _ := depGraph.GetNamespace(declID)
+	nsName, _ := depGraph.GetDeclNamespace(declID)
 	if nsName == "" {
 		return ctx
 	}
@@ -123,7 +123,7 @@ func (c *Checker) InferComponent(
 	// Infer placeholders
 	for _, declID := range component {
 		declCtx := getDeclCtx(ctx, depGraph, declID)
-		decl, _ := depGraph.GetDeclaration(declID)
+		decl, _ := depGraph.GetDecl(declID)
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
@@ -187,7 +187,7 @@ func (c *Checker) InferComponent(
 	// Infer definitions
 	for _, declID := range component {
 		declCtx := getDeclCtx(ctx, depGraph, declID)
-		decl, _ := depGraph.GetDeclaration(declID)
+		decl, _ := depGraph.GetDecl(declID)
 
 		if decl == nil {
 			continue

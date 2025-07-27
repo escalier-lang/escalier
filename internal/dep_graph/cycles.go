@@ -36,7 +36,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 		onStack[v] = true
 
 		// Consider successors of v
-		deps := g.GetDependencies(v)
+		deps := g.GetDeclDeps(v)
 		iter := deps.Iter()
 		for ok := iter.First(); ok; ok = iter.Next() {
 			w := iter.Key()
@@ -67,7 +67,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]DeclID {
 				}
 			}
 			// Report cycles: either multiple bindings OR a self-reference
-			deps := g.GetDependencies(scc[0])
+			deps := g.GetDeclDeps(scc[0])
 			if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
 				sccs = append(sccs, scc)
 			}

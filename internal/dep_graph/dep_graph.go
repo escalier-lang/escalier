@@ -116,13 +116,21 @@ func FindModuleBindings(module *ast.Module) ([]ast.Decl, btree.Map[string, DeclI
 	return visitor.Decls, visitor.ValueBindings, visitor.TypeBindings
 }
 
+// LocalScope represents a single scope with separate value and type bindings
+type LocalScope struct {
+	ValueBindings set.Set[string] // Local value bindings in this scope
+	TypeBindings  set.Set[string] // Local type bindings in this scope
+}
+
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
 	ast.DefaulVisitor
-	DepGraph         *DepGraph         // The dependency graph containing all module bindings
-	Dependencies     btree.Set[DeclID] // Found dependencies by declaration ID
-	LocalBindings    []set.Set[string] // Stack of local scopes (still strings for local scope)
-	CurrentNamespace string            // Current namespace being analyzed
+	ValueBindings    btree.Map[string, DeclID]  // Map from value binding name to declaration ID
+	TypeBindings     btree.Map[string, DeclID]  // Map from type binding name to declaration ID
+	NamespaceMap     map[string]ast.NamespaceID // Map from namespace name to ID
+	Dependencies     btree.Set[DeclID]          // Found dependencies by declaration ID
+	LocalScopes      []LocalScope               // Stack of local scopes with separate value/type bindings
+	CurrentNamespace string                     // Current namespace being analyzed
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -130,17 +138,23 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 	switch s := stmt.(type) {
 	case *ast.DeclStmt:
 		// Declaration statement introduces bindings in the current scope
-		if len(v.LocalBindings) > 0 {
+		if len(v.LocalScopes) > 0 {
+			currentScope := &v.LocalScopes[len(v.LocalScopes)-1]
 			switch decl := s.Decl.(type) {
 			case *ast.VarDecl:
 				bindings := ast.FindBindings(decl.Pattern)
 				for binding := range bindings {
-					v.LocalBindings[len(v.LocalBindings)-1].Add(binding)
+					currentScope.ValueBindings.Add(binding)
 				}
 			case *ast.FuncDecl:
 				// Function declarations introduce a binding with the function name
 				if decl.Name != nil && decl.Name.Name != "" {
-					v.LocalBindings[len(v.LocalBindings)-1].Add(decl.Name.Name)
+					currentScope.ValueBindings.Add(decl.Name.Name)
+				}
+			case *ast.TypeDecl:
+				// Type declarations introduce a binding with the type name
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
 				}
 			}
 		}
@@ -163,16 +177,16 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		// If we're in a non-empty namespace, first try the qualified name (current namespace)
 		if v.CurrentNamespace != "" {
 			qualifiedName := v.CurrentNamespace + "." + e.Name
-			if declID, exists := v.DepGraph.ValueBindings.Get(qualifiedName); exists &&
-				!v.isLocalBinding(e.Name) {
-				e.Namespace = v.DepGraph.GetNamespaceID(v.CurrentNamespace) // Allows us to codegen a fully qualified name
+			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+				!v.isLocalValueBinding(e.Name) {
+				e.Namespace = v.NamespaceMap[v.CurrentNamespace] // Allows us to codegen a fully qualified name
 				v.Dependencies.Insert(declID)
 				return false
 			}
 		}
 		// Then try the unqualified name (global namespace or explicit global reference)
-		if declID, exists := v.DepGraph.ValueBindings.Get(e.Name); exists &&
-			!v.isLocalBinding(e.Name) {
+		if declID, exists := v.ValueBindings.Get(e.Name); exists &&
+			!v.isLocalValueBinding(e.Name) {
 			v.Dependencies.Insert(declID)
 			return false
 		}
@@ -182,8 +196,8 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		qualifiedName := v.buildQualifiedName(e)
 		if qualifiedName != "" {
 			// Check if the qualified name is a valid value dependency
-			if declID, exists := v.DepGraph.ValueBindings.Get(qualifiedName); exists &&
-				!v.isLocalBinding(qualifiedName) {
+			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+				!v.isLocalValueBinding(qualifiedName) {
 				v.Dependencies.Insert(declID)
 				return false // Don't traverse further since we found the qualified dependency
 			}
@@ -196,11 +210,12 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		// Function expression introduces a new scope for parameters
 		v.pushScope()
 		// Add parameters to the current scope
-		if len(v.LocalBindings) > 0 {
+		if len(v.LocalScopes) > 0 {
+			currentScope := &v.LocalScopes[len(v.LocalScopes)-1]
 			for _, param := range e.Params {
 				bindings := ast.FindBindings(param.Pattern)
 				for binding := range bindings {
-					v.LocalBindings[len(v.LocalBindings)-1].Add(binding)
+					currentScope.ValueBindings.Add(binding)
 				}
 			}
 		}
@@ -235,15 +250,15 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 		// If we're in a non-empty namespace, first try the qualified name (current namespace)
 		if v.CurrentNamespace != "" {
 			qualifiedTypeName := v.CurrentNamespace + "." + typeName
-			if declID, exists := v.DepGraph.TypeBindings.Get(qualifiedTypeName); exists &&
-				!v.isLocalBinding(typeName) {
+			if declID, exists := v.TypeBindings.Get(qualifiedTypeName); exists &&
+				!v.isLocalTypeBinding(typeName) {
 				v.Dependencies.Insert(declID)
 				return true
 			}
 		}
 		// Then try the unqualified name (global namespace or explicit global reference)
-		if declID, exists := v.DepGraph.TypeBindings.Get(typeName); exists &&
-			!v.isLocalBinding(typeName) {
+		if declID, exists := v.TypeBindings.Get(typeName); exists &&
+			!v.isLocalTypeBinding(typeName) {
 			v.Dependencies.Insert(declID)
 			return true
 		}
@@ -283,8 +298,8 @@ func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 			switch key := prop.Name.(type) {
 			case *ast.IdentExpr:
 				// Check if this identifier is a valid dependency
-				if declID, exists := v.DepGraph.ValueBindings.Get(key.Name); exists &&
-					!v.isLocalBinding(key.Name) {
+				if declID, exists := v.ValueBindings.Get(key.Name); exists &&
+					!v.isLocalValueBinding(key.Name) {
 					v.Dependencies.Insert(declID)
 				}
 			}
@@ -297,20 +312,34 @@ func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 
 // pushScope adds a new local scope
 func (v *DependencyVisitor) pushScope() {
-	v.LocalBindings = append(v.LocalBindings, set.NewSet[string]())
+	newScope := LocalScope{
+		ValueBindings: set.NewSet[string](),
+		TypeBindings:  set.NewSet[string](),
+	}
+	v.LocalScopes = append(v.LocalScopes, newScope)
 }
 
 // popScope removes the current local scope
 func (v *DependencyVisitor) popScope() {
-	if len(v.LocalBindings) > 0 {
-		v.LocalBindings = v.LocalBindings[:len(v.LocalBindings)-1]
+	if len(v.LocalScopes) > 0 {
+		v.LocalScopes = v.LocalScopes[:len(v.LocalScopes)-1]
 	}
 }
 
-// isLocalBinding checks if a binding is in any local scope
-func (v *DependencyVisitor) isLocalBinding(name string) bool {
-	for _, scope := range v.LocalBindings {
-		if scope.Contains(name) {
+// isLocalValueBinding checks if a binding is a value binding in any local scope
+func (v *DependencyVisitor) isLocalValueBinding(name string) bool {
+	for _, scope := range v.LocalScopes {
+		if scope.ValueBindings.Contains(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLocalTypeBinding checks if a binding is a type binding in any local scope
+func (v *DependencyVisitor) isLocalTypeBinding(name string) bool {
+	for _, scope := range v.LocalScopes {
+		if scope.TypeBindings.Contains(name) {
 			return true
 		}
 	}
@@ -320,17 +349,26 @@ func (v *DependencyVisitor) isLocalBinding(name string) bool {
 // FindDeclDependencies finds all IdentExpr dependencies in a declaration
 // that are valid module-level bindings, while properly handling scope
 func FindDeclDependencies(
-	decl ast.Decl,
+	declID DeclID,
 	depGraph *DepGraph,
-	currentNamespace string,
 ) btree.Set[DeclID] {
+	decl, _ := depGraph.GetDecl(declID)
+	currentNamespace := depGraph.DeclNamespace[declID]
+
+	namespaceMap := make(map[string]ast.NamespaceID)
+	for i, nsName := range depGraph.Namespaces {
+		namespaceMap[nsName] = ast.NamespaceID(i)
+	}
+
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
 		DefaulVisitor:    ast.DefaulVisitor{},
-		DepGraph:         depGraph,
+		ValueBindings:    depGraph.ValueBindings,
+		TypeBindings:     depGraph.TypeBindings,
+		NamespaceMap:     namespaceMap,
 		Dependencies:     dependencies,
-		LocalBindings:    make([]set.Set[string], 0),
 		CurrentNamespace: currentNamespace,
+		LocalScopes:      make([]LocalScope, 0),
 	}
 
 	// Handle different declaration types
@@ -349,10 +387,13 @@ func FindDeclDependencies(
 		if d.Body != nil {
 			visitor.pushScope()
 			// Add parameters to the function scope
-			for _, param := range d.Params {
-				bindings := ast.FindBindings(param.Pattern)
-				for binding := range bindings {
-					visitor.LocalBindings[len(visitor.LocalBindings)-1].Add(binding)
+			if len(visitor.LocalScopes) > 0 {
+				currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
+				for _, param := range d.Params {
+					bindings := ast.FindBindings(param.Pattern)
+					for binding := range bindings {
+						currentScope.ValueBindings.Add(binding)
+					}
 				}
 			}
 			// Visit the function body (block scope will be handled by EnterBlock/ExitBlock)
@@ -375,6 +416,7 @@ type DepGraph struct {
 	Decls         []ast.Decl                // All declarations in the module, indexed by DeclID
 	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID
 	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID
+	Components    [][]DeclID                // Strongly connected components of declarations
 	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
@@ -388,6 +430,7 @@ func NewDepGraph(namespaceMap []string) *DepGraph {
 		Decls:         []ast.Decl{},
 		DeclDeps:      []btree.Set[DeclID]{},
 		DeclNamespace: []string{},
+		Components:    [][]DeclID{},
 		Namespaces:    namespaceMap,
 		ValueBindings: btree.Map[string, DeclID]{},
 		TypeBindings:  btree.Map[string, DeclID]{},
@@ -414,12 +457,6 @@ func collectNamespaces(module *ast.Module) []string {
 
 // BuildDepGraph builds a dependency graph for a module
 func BuildDepGraph(module *ast.Module) *DepGraph {
-	// Collect all namespaces from the module
-	namespaceMap := collectNamespaces(module)
-
-	// Create a DepGraph with initialized maps and namespaces
-	depGraph := NewDepGraph(namespaceMap)
-
 	// Find all decls and bindings in the module
 	decls, valueBindings, typeBindings := FindModuleBindings(module)
 
@@ -440,6 +477,12 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 		}
 	}
 
+	// Collect all namespaces from the module
+	namespaceMap := collectNamespaces(module)
+
+	// Create a DepGraph with initialized maps and namespaces
+	depGraph := NewDepGraph(namespaceMap)
+
 	// Populate the DepGraph with declarations and bindings
 	depGraph.Decls = decls
 	depGraph.ValueBindings = valueBindings
@@ -450,17 +493,19 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	depGraph.DeclDeps = make([]btree.Set[DeclID], len(decls))
 
 	// For each declaration, find its dependencies
-	for i, decl := range decls {
-		namespace := declNamespace[i] // Use slice index directly
-		dependencies := FindDeclDependencies(decl, depGraph, namespace)
-		depGraph.DeclDeps[i] = dependencies // Use slice index directly
+	for i := range decls {
+		declID := DeclID(i) // Use slice index directly as DeclID
+		dependencies := FindDeclDependencies(declID, depGraph)
+		depGraph.DeclDeps[declID] = dependencies // Use slice index directly
 	}
+
+	depGraph.Components = depGraph.FindStronglyConnectedComponents(0)
 
 	return depGraph
 }
 
-// GetDependencies returns the dependencies for a given declaration ID
-func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
+// GetDeclDeps returns the dependencies for a given declaration ID
+func (g *DepGraph) GetDeclDeps(declID DeclID) btree.Set[DeclID] {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclDeps) {
 		var result btree.Set[DeclID]
@@ -469,8 +514,8 @@ func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
 	return g.DeclDeps[index]
 }
 
-// GetDeclaration returns the declaration for a given declaration ID
-func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
+// GetDecl returns the declaration for a given declaration ID
+func (g *DepGraph) GetDecl(declID DeclID) (ast.Decl, bool) {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.Decls) {
 		return nil, false
@@ -478,8 +523,8 @@ func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 	return g.Decls[index], true
 }
 
-// GetNamespace returns the namespace for a given declaration ID
-func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
+// GetDeclNamespace returns the namespace for a given declaration ID
+func (g *DepGraph) GetDeclNamespace(declID DeclID) (string, bool) {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclNamespace) {
 		return "", false
@@ -504,26 +549,6 @@ func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
 		return g.Namespaces[id]
 	}
 	return ""
-}
-
-// AllDeclarations returns all declaration IDs in the graph
-func (g *DepGraph) AllDeclarations() []DeclID {
-	declIDs := make([]DeclID, 0, len(g.Decls))
-	for i := range g.Decls {
-		declID := DeclID(i) // DeclID is now the slice index directly
-		declIDs = append(declIDs, declID)
-	}
-	return declIDs
-}
-
-// AllNamespaces returns all unique namespace names in the graph
-func (g *DepGraph) AllNamespaces() []string {
-	namespaces := set.NewSet[string]()
-	for _, namespace := range g.DeclNamespace {
-		namespaces.Add(namespace)
-	}
-
-	return namespaces.ToSlice()
 }
 
 // buildQualifiedName constructs a qualified name from a MemberExpr chain

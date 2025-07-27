@@ -8,7 +8,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
-	"github.com/tidwall/btree"
 )
 
 type Builder struct {
@@ -357,24 +356,33 @@ func (b *Builder) BuildModule(mod *ast.Module) *Module {
 	}
 }
 
-func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) *Module {
+// declIDs must be sorted according to reverse topological order based on the
+// the strongly connected components of the dependency graph.  The reason why
+// we pass this in is because we don't want to compute the strongly connected
+// components more than once and BuildDefinitions needs this information as well.
+func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
 
 	var stmts []Stmt
 
-	nsStmts := b.buildNamespaceStatements(declIDs, depGraph)
+	nsStmts := b.buildNamespaceStatements(depGraph)
 	stmts = slices.Concat(stmts, nsStmts)
 
-	for _, declID := range declIDs {
-		decl, _ := depGraph.GetDeclaration(declID)
+	var topoDeclIDs []dep_graph.DeclID
+	for _, component := range depGraph.Components {
+		topoDeclIDs = append(topoDeclIDs, component...)
+	}
+
+	for _, declID := range topoDeclIDs {
+		decl, _ := depGraph.GetDecl(declID)
 
 		// if decl is a type declaration skip it
 		if _, ok := decl.(*ast.TypeDecl); ok {
 			continue
 		}
 
-		nsName, _ := depGraph.GetNamespace(declID)
+		nsName, _ := depGraph.GetDeclNamespace(declID)
 		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)
@@ -416,23 +424,16 @@ func (b *Builder) BuildTopLevelDecls(declIDs []dep_graph.DeclID, depGraph *dep_g
 
 // buildNamespaceStatements generates statements to create namespace objects
 // for all namespaces used by the given declarations
-func (b *Builder) buildNamespaceStatements(declIDs []dep_graph.DeclID, depGraph *dep_graph.DepGraph) []Stmt {
-	// Collect all unique namespaces from the declarations
-	var namespaces btree.Map[string, bool]
-	for _, declID := range declIDs {
-		if ns, exists := depGraph.GetNamespace(declID); exists && ns != "" {
-			namespaces.Set(ns, true)
-		}
-	}
-
+func (b *Builder) buildNamespaceStatements(depGraph *dep_graph.DepGraph) []Stmt {
 	// Track which namespace segments have been defined to avoid redefinition
 	definedNamespaces := make(map[string]bool)
 	var stmts []Stmt
 
 	// For each namespace, generate the hierarchy of statements
-	iter := namespaces.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		namespace := iter.Key()
+	for _, namespace := range depGraph.Namespaces {
+		if namespace == "" {
+			continue // Skip the root namespace
+		}
 		stmts = slices.Concat(stmts, b.buildNamespaceHierarchy(namespace, definedNamespaces))
 	}
 

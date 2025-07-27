@@ -105,7 +105,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	namespace, typeErrors := c.InferDepGraph(inferCtx, depGraph)
+	moduleNS, typeErrors := c.InferDepGraph(inferCtx, depGraph)
 
 	if len(parseErrors) > 0 {
 		return CompilerOutput{
@@ -117,15 +117,9 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 		}
 	}
 
-	components := depGraph.FindStronglyConnectedComponents(0)
-	var declIDs []dep_graph.DeclID
-	for _, component := range components {
-		declIDs = append(declIDs, component...)
-	}
-
 	builder := &codegen.Builder{}
-	jsMod := builder.BuildTopLevelDecls(declIDs, depGraph)
-	dtsMod := builder.BuildDefinitions(declIDs, depGraph, namespace)
+	jsMod := builder.BuildTopLevelDecls(depGraph)
+	dtsMod := builder.BuildDefinitions(depGraph, moduleNS)
 
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
