@@ -97,7 +97,7 @@ func (b *Builder) BuildDefinitions(
 }
 
 // buildDeclStmt creates a DeclStmt for a given declaration
-func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isRootNamespace bool) Stmt {
+func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isTopLevel bool) Stmt {
 	switch decl := decl.(type) {
 	case *ast.VarDecl:
 		keys := ast.FindBindings(decl.Pattern).ToSlice()
@@ -112,11 +112,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 				continue
 			}
 
-			// Extract the local name from the qualified name for the pattern
-			localName := name
-			if lastDot := strings.LastIndex(name, "."); lastDot != -1 {
-				localName = name[lastDot+1:]
-			}
+			localName := extractLocalName(name)
 
 			typeAnn := buildTypeAnn(binding.Type)
 			decls = append(decls, &Declarator{
@@ -133,7 +129,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		varDecl := &VarDecl{
 			Kind:    VariableKind(decl.Kind),
 			Decls:   decls,
-			declare: isRootNamespace, // Only add declare modifier for root namespace
+			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
 			span:    nil,
 			source:  nil,
@@ -156,11 +152,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			return nil
 		}
 
-		// Extract the local name for the function declaration
-		localName := decl.Name.Name
-		if lastDot := strings.LastIndex(decl.Name.Name, "."); lastDot != -1 {
-			localName = decl.Name.Name[lastDot+1:]
-		}
+		localName := extractLocalName(decl.Name.Name)
 
 		fnDecl := &FuncDecl{
 			Name:   NewIdentifier(localName, decl.Name),
@@ -169,7 +161,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			// fallback to the inferred return type from the binding.
 			TypeAnn: buildTypeAnn(funcType.Return),
 			Body:    nil,
-			declare: isRootNamespace, // Only add declare modifier for root namespace
+			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
 			span:    nil,
 			source:  nil,
@@ -210,17 +202,13 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			return nil
 		}
 
-		// Extract the local name for the type declaration
-		localName := decl.Name.Name
-		if lastDot := strings.LastIndex(decl.Name.Name, "."); lastDot != -1 {
-			localName = decl.Name.Name[lastDot+1:]
-		}
+		localName := extractLocalName(decl.Name.Name)
 
 		typeDecl := &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
 			TypeParams: typeParams,
 			TypeAnn:    buildTypeAnn(typeAnnType),
-			declare:    isRootNamespace, // Only add declare modifier for root namespace
+			declare:    isTopLevel, // Only add declare modifier for root namespace
 			export:     decl.Export(),
 			span:       nil,
 			source:     nil,
@@ -469,15 +457,7 @@ func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 }
 
 func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
-	params := make([]*Param, len(funcType.Params))
-	for i, param := range funcType.Params {
-		typeAnn := buildTypeAnn(param.Type)
-		params[i] = &Param{
-			Pattern:  patToPat(param.Pattern),
-			Optional: param.Optional,
-			TypeAnn:  typeAnn,
-		}
-	}
+	params := funcTypeToParams(funcType)
 
 	return FuncTypeAnn{
 		TypeParams: nil,
@@ -571,6 +551,14 @@ func patToPat(pat type_sys.Pat) Pat {
 	default:
 		panic(fmt.Sprintf("unknown pattern type: %#v", pat))
 	}
+}
+
+// extractLocalName extracts the local name from a qualified name by removing the namespace prefix
+func extractLocalName(qualifiedName string) string {
+	if lastDot := strings.LastIndex(qualifiedName, "."); lastDot != -1 {
+		return qualifiedName[lastDot+1:]
+	}
+	return qualifiedName
 }
 
 // findNamespace navigates through nested namespaces to find the target namespace
