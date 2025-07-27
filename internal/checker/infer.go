@@ -441,6 +441,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 	case *ast.MemberExpr:
+		fmt.Printf("inferExpr: MemberExpr: %#v\n", expr)
+		fmt.Printf("prop: %#v\n", expr.Prop)
 		// TODO: create a getPropType function to handle this so that we can
 		// call it recursively if need be.
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
@@ -523,6 +525,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			expr.SetInferredType(t)
 			expr.Source = binding.Source
 			return t, nil
+		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
+			t := &NamespaceType{Namespace: namespace}
+			t.SetProvenance(&ast.NodeProvenance{Node: expr})
+			expr.SetInferredType(t)
+			return t, nil
 		} else {
 			t := NewNeverType()
 			expr.SetInferredType(t)
@@ -602,7 +609,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	t = Prune(t)
 
 	switch t := t.(type) {
-	case *ObjectType, *LitType:
+	case *ObjectType, *LitType, *NamespaceType:
 		return t, nil
 	case *UnionType:
 		types := make([]Type, len(t.Types))
@@ -708,10 +715,17 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 			panic("TODO: handle getting property from union type with multiple defined elements")
 		}
 	case *NamespaceType:
-		for name, binding := range t.Namespace.Values {
-			if name == prop.Name {
-				propType = binding.Type
-			}
+		if value := t.Namespace.Values[prop.Name]; value != nil {
+			propType = value.Type
+		} else if namespace := t.Namespace.Namespaces[prop.Name]; namespace != nil {
+			propType = &NamespaceType{Namespace: namespace}
+		} else {
+			errors = append(errors, &UnknownPropertyError{
+				ObjectType: objType,
+				Property:   prop.Name,
+				span:       prop.Span(),
+			})
+			propType = NewNeverType()
 		}
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
