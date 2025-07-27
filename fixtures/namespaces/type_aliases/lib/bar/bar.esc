@@ -1,0 +1,2 @@
+type Bar = string
+val foo: foo.Foo = 5

@@ -29,7 +29,7 @@ func checkFile(t *testing.T, fixtureDir string, ext string) {
 }
 
 // TODO: print errors to a file
-func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
+func checkFixture(t *testing.T, fixtureDir string) {
 	tmpDir := t.TempDir()
 
 	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)
@@ -38,31 +38,49 @@ func checkFixture(t *testing.T, fixtureDir string, fixtureName string) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	// fine all .esc files in the fixture directory and copy them over to the tmpDir
-	err = filepath.WalkDir(filepath.Join(fixtureDir, "lib"), func(path string, d fs.DirEntry, err error) error {
+	// find all .esc files in the fixture directory and copy them over to the tmpDir
+	// maintaining the directory structure
+	fixtureLibDir := filepath.Join(fixtureDir, "lib")
+	err = filepath.WalkDir(fixtureLibDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
+		// Get the relative path from the fixture lib directory
+		relPath, err := filepath.Rel(fixtureLibDir, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(tmpDir, "lib", relPath)
+
+		if d.IsDir() {
+			// Create directory in destination
+			return os.MkdirAll(destPath, 0755)
+		}
+
 		// Check if it's a file and ends with .esc
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-			srcFile := path
-			destFile := filepath.Join(tmpDir, "lib", filepath.Base(path))
+		if strings.HasSuffix(d.Name(), ".esc") {
+			// Ensure the destination directory exists
+			destDir := filepath.Dir(destPath)
+			if err := os.MkdirAll(destDir, 0755); err != nil {
+				return err
+			}
 
-			input, err := os.ReadFile(srcFile)
-			require.NoError(t, err)
+			input, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
 
-			err = os.WriteFile(destFile, input, 0644)
-			require.NoError(t, err)
+			err = os.WriteFile(destPath, input, 0644)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil
 	})
-
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
-		return
-	}
+	require.NoError(t, err)
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
@@ -161,18 +179,13 @@ func TestBuildFixtureTests(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			if group.Name() != "basics" || fixture.Name() != "objects" {
+			if group.Name() == "extractors" {
 				continue
 			}
 			name := group.Name() + "/" + fixture.Name()
 			t.Run(name, func(t *testing.T) {
 				fixtureDir := filepath.Join(rootDir, "fixtures", group.Name(), fixture.Name())
-				fixtureName := fixture.Name()
-				checkFixture(
-					t,
-					fixtureDir,
-					fixtureName,
-				)
+				checkFixture(t, fixtureDir)
 			})
 		}
 	}

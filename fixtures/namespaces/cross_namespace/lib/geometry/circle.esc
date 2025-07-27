@@ -1,0 +1,1 @@
+fn circleArea(r: number) -> number { return constants.PI * r * r }

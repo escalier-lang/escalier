@@ -523,6 +523,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			expr.SetInferredType(t)
 			expr.Source = binding.Source
 			return t, nil
+		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
+			t := &NamespaceType{Namespace: namespace}
+			t.SetProvenance(&ast.NodeProvenance{Node: expr})
+			expr.SetInferredType(t)
+			return t, nil
 		} else {
 			t := NewNeverType()
 			expr.SetInferredType(t)
@@ -602,7 +607,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	t = Prune(t)
 
 	switch t := t.(type) {
-	case *ObjectType, *LitType:
+	case *ObjectType, *LitType, *NamespaceType:
 		return t, nil
 	case *UnionType:
 		types := make([]Type, len(t.Types))
@@ -626,6 +631,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 		// TODO: replace type params with type args
 		return c.expandType(ctx, typeAlias.Type)
 	default:
+		fmt.Printf("expandType: unexpected type %s\n", t.String())
 		panic("TODO: expandType - handle other types")
 	}
 }
@@ -707,10 +713,17 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 			panic("TODO: handle getting property from union type with multiple defined elements")
 		}
 	case *NamespaceType:
-		for name, binding := range t.Namespace.Values {
-			if name == prop.Name {
-				propType = binding.Type
-			}
+		if value := t.Namespace.Values[prop.Name]; value != nil {
+			propType = value.Type
+		} else if namespace := t.Namespace.Namespaces[prop.Name]; namespace != nil {
+			propType = &NamespaceType{Namespace: namespace}
+		} else {
+			errors = append(errors, &UnknownPropertyError{
+				ObjectType: objType,
+				Property:   prop.Name,
+				span:       prop.Span(),
+			})
+			propType = NewNeverType()
 		}
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
@@ -1213,6 +1226,80 @@ func (c *Checker) inferFuncTypeAnn(
 	return &funcType, errors
 }
 
+// resolveQualifiedTypeAliasFromString resolves a qualified type name from a string representation
+func (c *Checker) resolveQualifiedTypeAliasFromString(ctx Context, qualifiedName string) *TypeAlias {
+	// Simple case: no dots, just a regular identifier
+	if !strings.Contains(qualifiedName, ".") {
+		return ctx.Scope.getTypeAlias(qualifiedName)
+	}
+
+	// Split the qualified name and traverse namespaces
+	parts := strings.Split(qualifiedName, ".")
+	if len(parts) < 2 {
+		return ctx.Scope.getTypeAlias(qualifiedName)
+	}
+
+	// Start from the current scope and traverse through namespaces
+	// We use .getNamespace() here since it'll look through the current scope
+	// and any parent scopes as needed.
+	namespace := ctx.Scope.getNamespace(parts[0])
+
+	// Navigate through all but the last part (which is the type name)
+	for _, part := range parts[1 : len(parts)-1] {
+		namespace = namespace.Namespaces[part]
+	}
+
+	// Look for the type in the final namespace using the proper scope method
+	typeName := parts[len(parts)-1]
+	return namespace.Types[typeName]
+}
+
+// resolveQualifiedTypeAlias resolves a qualified type name by traversing namespace hierarchy
+func (c *Checker) resolveQualifiedTypeAlias(ctx Context, qualIdent ast.QualIdent) *TypeAlias {
+	switch qi := qualIdent.(type) {
+	case *ast.Ident:
+		// Simple identifier, use existing scope lookup
+		return ctx.Scope.getTypeAlias(qi.Name)
+	case *ast.Member:
+		// Qualified identifier like A.B.Type
+		// First resolve the left part (A.B)
+		leftNamespace := c.resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the type in the resolved namespace
+		if typeAlias, ok := leftNamespace.Types[qi.Right.Name]; ok {
+			return typeAlias
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// resolveQualifiedNamespace resolves a qualified identifier to a namespace
+func (c *Checker) resolveQualifiedNamespace(ctx Context, qualIdent ast.QualIdent) *Namespace {
+	switch qi := qualIdent.(type) {
+	case *ast.Ident:
+		// Simple identifier, check if it's a namespace
+		return ctx.Scope.getNamespace(qi.Name)
+	case *ast.Member:
+		// Qualified identifier like A.B
+		// First resolve the left part
+		leftNamespace := c.resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the right part in the resolved namespace
+		if namespace, ok := leftNamespace.Namespaces[qi.Right.Name]; ok {
+			return namespace
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
 func (c *Checker) inferTypeAnn(
 	ctx Context,
 	typeAnn ast.TypeAnn,
@@ -1223,7 +1310,7 @@ func (c *Checker) inferTypeAnn(
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		typeName := ast.QualIdentToString(typeAnn.Name)
-		typeAlias := ctx.Scope.getTypeAlias(typeName)
+		typeAlias := c.resolveQualifiedTypeAlias(ctx, typeAnn.Name)
 		if typeAlias != nil {
 			typeArgs := make([]Type, len(typeAnn.TypeArgs))
 			for i, typeArg := range typeAnn.TypeArgs {

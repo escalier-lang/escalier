@@ -176,7 +176,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 				typeAlias1 := ref1.TypeAlias
 				if typeAlias1 == nil {
-					typeAlias1 = ctx.Scope.getTypeAlias(ref1.Name)
+					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, ref1.Name)
 					if typeAlias1 == nil {
 						return []Error{&UnkonwnTypeError{
 							TypeName: ref1.Name,
@@ -186,7 +186,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				}
 				typeAlias2 := ref2.TypeAlias
 				if typeAlias2 == nil {
-					typeAlias2 = ctx.Scope.getTypeAlias(ref2.Name)
+					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, ref2.Name)
 					if typeAlias2 == nil {
 						return []Error{&UnkonwnTypeError{
 							TypeName: ref2.Name,
@@ -443,14 +443,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 	retry := false
 	if typeRef, ok := t1.(*TypeRefType); ok {
-		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
+		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t1 = alias.Type
 			retry = true
 		}
 	}
 	if typeRef, ok := t2.(*TypeRefType); ok {
-		if alias := ctx.Scope.getTypeAlias(typeRef.Name); alias != nil {
+		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
 			// TODO: apply type args
 			t2 = alias.Type
 			retry = true
