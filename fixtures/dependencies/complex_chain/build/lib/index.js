@@ -9,3 +9,4 @@ function app__utils__calculate(temp1) {
   return x * app.utils.factor;
 }
 app.utils.calculate = app__utils__calculate;
+//# sourceMappingURL=./index.js.map

@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
@@ -13,123 +14,272 @@ import (
 // the strongly connected components of the dependency graph.  The reason why
 // we pass this in is because we don't want to compute the strongly connected
 // components more than once and BuildTopLevelDecls needs this information as well.
-// TODO: Update this function to group bindings from the same declaration together
-// and order them in the same way as the original code.
 func (b *Builder) BuildDefinitions(
 	depGraph *dep_graph.DepGraph,
 	moduleNS *type_sys.Namespace,
 ) *Module {
-	stmts := []Stmt{}
+	// Group declarations by namespace
+	namespaceGroups := make(map[string][]dep_graph.DeclID)
 
 	var topoDeclIDs []dep_graph.DeclID
 	for _, component := range depGraph.Components {
 		topoDeclIDs = append(topoDeclIDs, component...)
 	}
 
+	// Group declarations by their namespace
 	for _, declID := range topoDeclIDs {
-		switch decl := depGraph.Decls[declID].(type) {
-		case *ast.VarDecl:
-			keys := ast.FindBindings(decl.Pattern).ToSlice()
-			sort.Strings(keys)
+		namespace, exists := depGraph.GetDeclNamespace(declID)
+		if !exists {
+			namespace = "" // Default to root namespace
+		}
+		namespaceGroups[namespace] = append(namespaceGroups[namespace], declID)
+	}
 
-			decls := make([]*Declarator, 0, len(keys))
-			for _, name := range keys {
-				binding := moduleNS.Values[name]
-				typeAnn := buildTypeAnn(binding.Type)
-				decls = append(decls, &Declarator{
-					Pattern: NewIdentPat(name, nil, nil),
-					TypeAnn: typeAnn,
-					Init:    nil,
+	// Build statements for each namespace
+	stmts := []Stmt{}
+
+	// Sort namespace names for consistent output
+	var namespaceNames []string
+	for namespace := range namespaceGroups {
+		namespaceNames = append(namespaceNames, namespace)
+	}
+	sort.Strings(namespaceNames)
+
+	for _, namespace := range namespaceNames {
+		declIDs := namespaceGroups[namespace]
+
+		if namespace == "" {
+			// Root namespace declarations go directly to module level
+			for _, declID := range declIDs {
+				decl, exists := depGraph.GetDecl(declID)
+				if !exists {
+					continue
+				}
+
+				stmt := b.buildDeclStmt(decl, moduleNS, true)
+				if stmt != nil {
+					stmts = append(stmts, stmt)
+				}
+			}
+		} else {
+			// Non-root namespace declarations go inside namespace blocks
+			namespaceStmts := []Stmt{}
+			for _, declID := range declIDs {
+				decl, exists := depGraph.GetDecl(declID)
+				if !exists {
+					continue
+				}
+
+				// Find the nested namespace in moduleNS based on the namespace string
+				nestedNS := findNamespace(moduleNS, namespace)
+				if nestedNS == nil {
+					// If the nested namespace doesn't exist, fall back to the module namespace
+					nestedNS = moduleNS
+				}
+				stmt := b.buildDeclStmt(decl, nestedNS, false)
+				if stmt != nil {
+					namespaceStmts = append(namespaceStmts, stmt)
+				}
+			}
+
+			if len(namespaceStmts) > 0 {
+				namespaceDecl := b.buildNamespaceDecl(namespace, namespaceStmts)
+				stmts = append(stmts, &DeclStmt{
+					Decl:   namespaceDecl,
+					span:   nil,
+					source: nil,
 				})
 			}
-
-			varDecl := &VarDecl{
-				Kind:    VariableKind(decl.Kind),
-				Decls:   decls,
-				declare: true, // Always true for .d.ts files
-				export:  decl.Export(),
-				span:    nil,
-				source:  nil,
-			}
-			stmts = append(stmts, &DeclStmt{
-				Decl:   varDecl,
-				span:   nil,
-				source: nil,
-			})
-
-		case *ast.FuncDecl:
-			binding := moduleNS.Values[decl.Name.Name]
-
-			funcType := binding.Type.(*type_sys.FuncType)
-
-			fnDecl := &FuncDecl{
-				Name:   NewIdentifier(decl.Name.Name, decl.Name),
-				Params: funcTypeToParams(funcType),
-				// TODO: Use the type annotation if there is one and if not
-				// fallback to the inferred return type from the binding.
-				TypeAnn: buildTypeAnn(funcType.Return),
-				Body:    nil,
-				declare: true, // Always true for .d.ts files
-				export:  decl.Export(),
-				span:    nil,
-				source:  nil,
-			}
-			stmts = append(stmts, &DeclStmt{
-				Decl:   fnDecl,
-				span:   nil,
-				source: nil,
-			})
-		case *ast.TypeDecl:
-			typeParams := make([]*TypeParam, len(decl.TypeParams))
-			for i, param := range decl.TypeParams {
-				var constraint TypeAnn
-				if param.Constraint != nil {
-					t := param.Constraint.InferredType()
-					if t == nil {
-						// TODO: report an error if there's no inferred type
-					}
-					constraint = buildTypeAnn(t)
-				}
-				var default_ TypeAnn
-				if param.Default != nil {
-					t := param.Default.InferredType()
-					if t == nil {
-						// TODO: report an error if there's no inferred type
-					}
-					default_ = buildTypeAnn(t)
-				}
-
-				typeParams[i] = &TypeParam{
-					Name:       param.Name,
-					Constraint: constraint,
-					Default:    default_,
-				}
-			}
-
-			typeAnnType := decl.TypeAnn.InferredType()
-			if typeAnnType == nil {
-				// TODO: report an error if there's no inferred type
-				continue
-			}
-
-			typeDecl := &TypeDecl{
-				Name:       NewIdentifier(decl.Name.Name, decl.Name),
-				TypeParams: typeParams,
-				TypeAnn:    buildTypeAnn(typeAnnType),
-				declare:    true, // Always true for .d.ts files
-				export:     decl.Export(),
-				span:       nil,
-				source:     nil,
-			}
-			stmts = append(stmts, &DeclStmt{
-				Decl:   typeDecl,
-				span:   nil,
-				source: nil,
-			})
 		}
 	}
 
 	return &Module{Stmts: stmts}
+}
+
+// buildDeclStmt creates a DeclStmt for a given declaration
+func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isRootNamespace bool) Stmt {
+	switch decl := decl.(type) {
+	case *ast.VarDecl:
+		keys := ast.FindBindings(decl.Pattern).ToSlice()
+		sort.Strings(keys)
+
+		decls := make([]*Declarator, 0, len(keys))
+		for _, name := range keys {
+			// For .d.ts generation, use the unqualified name since the namespace
+			// structure is handled by the namespace declaration
+			binding := namespace.Values[name]
+			if binding == nil {
+				continue
+			}
+
+			// Extract the local name from the qualified name for the pattern
+			localName := name
+			if lastDot := strings.LastIndex(name, "."); lastDot != -1 {
+				localName = name[lastDot+1:]
+			}
+
+			typeAnn := buildTypeAnn(binding.Type)
+			decls = append(decls, &Declarator{
+				Pattern: NewIdentPat(localName, nil, nil),
+				TypeAnn: typeAnn,
+				Init:    nil,
+			})
+		}
+
+		if len(decls) == 0 {
+			return nil
+		}
+
+		varDecl := &VarDecl{
+			Kind:    VariableKind(decl.Kind),
+			Decls:   decls,
+			declare: isRootNamespace, // Only add declare modifier for root namespace
+			export:  decl.Export(),
+			span:    nil,
+			source:  nil,
+		}
+		return &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: nil,
+		}
+
+	case *ast.FuncDecl:
+		// For function declarations, the binding is stored with the function name
+		binding := namespace.Values[decl.Name.Name]
+		if binding == nil {
+			return nil
+		}
+
+		funcType, ok := binding.Type.(*type_sys.FuncType)
+		if !ok {
+			return nil
+		}
+
+		// Extract the local name for the function declaration
+		localName := decl.Name.Name
+		if lastDot := strings.LastIndex(decl.Name.Name, "."); lastDot != -1 {
+			localName = decl.Name.Name[lastDot+1:]
+		}
+
+		fnDecl := &FuncDecl{
+			Name:   NewIdentifier(localName, decl.Name),
+			Params: funcTypeToParams(funcType),
+			// TODO: Use the type annotation if there is one and if not
+			// fallback to the inferred return type from the binding.
+			TypeAnn: buildTypeAnn(funcType.Return),
+			Body:    nil,
+			declare: isRootNamespace, // Only add declare modifier for root namespace
+			export:  decl.Export(),
+			span:    nil,
+			source:  nil,
+		}
+		return &DeclStmt{
+			Decl:   fnDecl,
+			span:   nil,
+			source: nil,
+		}
+
+	case *ast.TypeDecl:
+		typeParams := make([]*TypeParam, len(decl.TypeParams))
+		for i, param := range decl.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				t := param.Constraint.InferredType()
+				if t != nil {
+					constraint = buildTypeAnn(t)
+				}
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				t := param.Default.InferredType()
+				if t != nil {
+					default_ = buildTypeAnn(t)
+				}
+			}
+
+			typeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+
+		typeAnnType := decl.TypeAnn.InferredType()
+		if typeAnnType == nil {
+			return nil
+		}
+
+		// Extract the local name for the type declaration
+		localName := decl.Name.Name
+		if lastDot := strings.LastIndex(decl.Name.Name, "."); lastDot != -1 {
+			localName = decl.Name.Name[lastDot+1:]
+		}
+
+		typeDecl := &TypeDecl{
+			Name:       NewIdentifier(localName, decl.Name),
+			TypeParams: typeParams,
+			TypeAnn:    buildTypeAnn(typeAnnType),
+			declare:    isRootNamespace, // Only add declare modifier for root namespace
+			export:     decl.Export(),
+			span:       nil,
+			source:     nil,
+		}
+		return &DeclStmt{
+			Decl:   typeDecl,
+			span:   nil,
+			source: nil,
+		}
+
+	default:
+		return nil
+	}
+}
+
+// buildNamespaceDecl creates a namespace declaration with nested namespaces if needed
+func (b *Builder) buildNamespaceDecl(namespace string, stmts []Stmt) Decl {
+	parts := strings.Split(namespace, ".")
+
+	// Start from the innermost namespace and work outward
+	currentStmts := stmts
+
+	// Build nested namespace declarations from inside out
+	for i := len(parts) - 1; i >= 0; i-- {
+		namespaceName := parts[i]
+
+		namespaceDecl := &NamespaceDecl{
+			Name:    NewIdentifier(namespaceName, nil),
+			Body:    currentStmts,
+			export:  false,  // Namespaces in .d.ts files are typically not exported at the individual level
+			declare: i == 0, // Only the outermost namespace is declared
+			span:    nil,
+			source:  nil,
+		}
+
+		// Wrap this namespace declaration in a DeclStmt for the next level
+		currentStmts = []Stmt{&DeclStmt{
+			Decl:   namespaceDecl,
+			span:   nil,
+			source: nil,
+		}}
+	}
+
+	// Return the outermost namespace declaration
+	if len(currentStmts) > 0 {
+		if declStmt, ok := currentStmts[0].(*DeclStmt); ok {
+			return declStmt.Decl
+		}
+	}
+
+	// Fallback: create a simple namespace with the full name
+	return &NamespaceDecl{
+		Name:    NewIdentifier(namespace, nil),
+		Body:    stmts,
+		export:  false,
+		declare: true,
+		span:    nil,
+		source:  nil,
+	}
 }
 
 func buildTypeAnn(t type_sys.Type) TypeAnn {
@@ -421,4 +571,26 @@ func patToPat(pat type_sys.Pat) Pat {
 	default:
 		panic(fmt.Sprintf("unknown pattern type: %#v", pat))
 	}
+}
+
+// findNamespace navigates through nested namespaces to find the target namespace
+// based on a dot-separated namespace string (e.g., "Foo.Bar")
+func findNamespace(rootNS *type_sys.Namespace, namespaceStr string) *type_sys.Namespace {
+	if namespaceStr == "" {
+		return rootNS
+	}
+
+	parts := strings.Split(namespaceStr, ".")
+	currentNS := rootNS
+
+	for _, part := range parts {
+		if nestedNS, exists := currentNS.Namespaces[part]; exists {
+			currentNS = nestedNS
+		} else {
+			// Namespace part not found, return nil
+			return nil
+		}
+	}
+
+	return currentNS
 }

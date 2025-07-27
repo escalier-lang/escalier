@@ -423,6 +423,20 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.print(" = ")
 		p.PrintTypeAnn(d.TypeAnn)
 		p.print(";")
+	case *NamespaceDecl:
+		p.print("namespace ")
+		p.print(d.Name.Name)
+		p.print(" {")
+
+		p.indent++
+		for _, stmt := range d.Body {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+
+		p.NewLine()
+		p.print("}")
 	}
 
 	end := p.location

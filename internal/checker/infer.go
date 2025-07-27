@@ -441,8 +441,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 	case *ast.MemberExpr:
-		fmt.Printf("inferExpr: MemberExpr: %#v\n", expr)
-		fmt.Printf("prop: %#v\n", expr.Prop)
 		// TODO: create a getPropType function to handle this so that we can
 		// call it recursively if need be.
 		objType, objErrors := c.inferExpr(ctx, expr.Object)

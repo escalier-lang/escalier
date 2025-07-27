@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/math/base.esc","../../lib/math/derived.esc"],"sourcesContent":["val base = 10\n","val derived = base * 2\n"],"names":[],"mappings":";MAAI,AAAA,aAAO;;MCAP,AAAA,gBAAU,AAAA,aAAO;"}

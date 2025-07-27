@@ -402,9 +402,10 @@ type Decl interface {
 	Node
 }
 
-func (*VarDecl) isDecl()  {}
-func (*FuncDecl) isDecl() {}
-func (*TypeDecl) isDecl() {}
+func (*VarDecl) isDecl()       {}
+func (*FuncDecl) isDecl()      {}
+func (*TypeDecl) isDecl()      {}
+func (*NamespaceDecl) isDecl() {}
 
 type VariableKind int
 
@@ -684,3 +685,18 @@ func (d *TypeDecl) Declare() bool      { return d.declare }
 func (d *TypeDecl) Span() *Span        { return d.span }
 func (d *TypeDecl) SetSpan(span *Span) { d.span = span }
 func (d *TypeDecl) Source() ast.Node   { return d.source }
+
+type NamespaceDecl struct {
+	Name    *Identifier
+	Body    []Stmt
+	export  bool
+	declare bool
+	span    *Span
+	source  ast.Node
+}
+
+func (d *NamespaceDecl) Export() bool       { return d.export }
+func (d *NamespaceDecl) Declare() bool      { return d.declare }
+func (d *NamespaceDecl) Span() *Span        { return d.span }
+func (d *NamespaceDecl) SetSpan(span *Span) { d.span = span }
+func (d *NamespaceDecl) Source() ast.Node   { return d.source }

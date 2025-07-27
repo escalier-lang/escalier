@@ -7,3 +7,4 @@ function geometry__circleArea(temp1) {
   return constants.PI * r * r;
 }
 geometry.circleArea = geometry__circleArea;
+//# sourceMappingURL=./index.js.map
