@@ -375,14 +375,14 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	}
 
 	for _, declID := range topoDeclIDs {
-		decl, _ := depGraph.GetDeclaration(declID)
+		decl, _ := depGraph.GetDecl(declID)
 
 		// if decl is a type declaration skip it
 		if _, ok := decl.(*ast.TypeDecl); ok {
 			continue
 		}
 
-		nsName, _ := depGraph.GetNamespace(declID)
+		nsName, _ := depGraph.GetDeclNamespace(declID)
 		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 		bindings := depGraph.GetDeclNames(declID)

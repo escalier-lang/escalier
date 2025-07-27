@@ -27,8 +27,7 @@ func (b *Builder) BuildDefinitions(
 	}
 
 	for _, declID := range topoDeclIDs {
-		d, _ := depGraph.GetDeclaration(declID)
-		switch decl := d.(type) {
+		switch decl := depGraph.Decls[declID].(type) {
 		case *ast.VarDecl:
 			keys := ast.FindBindings(decl.Pattern).ToSlice()
 			sort.Strings(keys)

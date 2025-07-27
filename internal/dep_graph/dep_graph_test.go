@@ -2,7 +2,6 @@ package dep_graph
 
 import (
 	"context"
-	"slices"
 	"testing"
 	"time"
 
@@ -1360,22 +1359,21 @@ func TestBuildDepGraph(t *testing.T) {
 			// Build dependency graph
 			depGraph := BuildDepGraph(module)
 
-			// Create a sorted list of declaration IDs for consistent ordering
-			declIDs := depGraph.AllDeclarations()
+			// Get the declaration IDs
+			declIDs := make([]DeclID, 0, len(depGraph.Decls))
+			for i := range depGraph.Decls {
+				declID := DeclID(i) // DeclID is now the slice index directly
+				declIDs = append(declIDs, declID)
+			}
 
 			// Verify number of declarations
 			actualDeclCount := len(declIDs)
 			assert.Equal(t, test.expectedDeclCount, actualDeclCount,
 				"Expected %d declarations, got %d", test.expectedDeclCount, actualDeclCount)
 
-			// Sort by the declaration ID to ensure consistent ordering
-			// (since declaration IDs are assigned in order, this gives us document order)
-			slices.Sort(declIDs)
-
 			// Verify namespaces
-			actualNamespaces := depGraph.AllNamespaces()
-			assert.ElementsMatch(t, test.expectedNamespaces, actualNamespaces,
-				"Expected namespaces %v, got %v", test.expectedNamespaces, actualNamespaces)
+			assert.ElementsMatch(t, test.expectedNamespaces, depGraph.Namespaces,
+				"Expected namespaces %v, got %v", test.expectedNamespaces, depGraph.Namespaces)
 
 			// Verify dependencies for each declaration
 			for declIndex, expectedDeps := range test.expectedDependencies {
@@ -1386,7 +1384,7 @@ func TestBuildDepGraph(t *testing.T) {
 				}
 
 				declID := declIDs[declIndex]
-				actualDeps := depGraph.GetDependencies(declID)
+				actualDeps := depGraph.GetDeclDeps(declID)
 
 				// Convert expected dependency indices to actual DeclIDs
 				expectedDeclIDs := make([]DeclID, len(expectedDeps))

@@ -323,7 +323,7 @@ func FindDeclDependencies(
 	declID DeclID,
 	depGraph *DepGraph,
 ) btree.Set[DeclID] {
-	decl, _ := depGraph.GetDeclaration(declID)
+	decl, _ := depGraph.GetDecl(declID)
 	currentNamespace := depGraph.DeclNamespace[declID]
 
 	var dependencies btree.Set[DeclID]
@@ -377,8 +377,8 @@ type DepGraph struct {
 	Decls         []ast.Decl                // All declarations in the module, indexed by DeclID
 	DeclDeps      []btree.Set[DeclID]       // Dependencies for each declaration, indexed by DeclID
 	DeclNamespace []string                  // Namespace for each declaration, indexed by DeclID
-	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
 	Components    [][]DeclID                // Strongly connected components of declarations
+	Namespaces    []string                  // Index is the NamespaceID, value is the namespace string
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
 }
@@ -391,8 +391,8 @@ func NewDepGraph(namespaceMap []string) *DepGraph {
 		Decls:         []ast.Decl{},
 		DeclDeps:      []btree.Set[DeclID]{},
 		DeclNamespace: []string{},
-		Namespaces:    namespaceMap,
 		Components:    [][]DeclID{},
+		Namespaces:    namespaceMap,
 		ValueBindings: btree.Map[string, DeclID]{},
 		TypeBindings:  btree.Map[string, DeclID]{},
 	}
@@ -465,8 +465,8 @@ func BuildDepGraph(module *ast.Module) *DepGraph {
 	return depGraph
 }
 
-// GetDependencies returns the dependencies for a given declaration ID
-func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
+// GetDeclDeps returns the dependencies for a given declaration ID
+func (g *DepGraph) GetDeclDeps(declID DeclID) btree.Set[DeclID] {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclDeps) {
 		var result btree.Set[DeclID]
@@ -475,8 +475,8 @@ func (g *DepGraph) GetDependencies(declID DeclID) btree.Set[DeclID] {
 	return g.DeclDeps[index]
 }
 
-// GetDeclaration returns the declaration for a given declaration ID
-func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
+// GetDecl returns the declaration for a given declaration ID
+func (g *DepGraph) GetDecl(declID DeclID) (ast.Decl, bool) {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.Decls) {
 		return nil, false
@@ -484,8 +484,8 @@ func (g *DepGraph) GetDeclaration(declID DeclID) (ast.Decl, bool) {
 	return g.Decls[index], true
 }
 
-// GetNamespace returns the namespace for a given declaration ID
-func (g *DepGraph) GetNamespace(declID DeclID) (string, bool) {
+// GetDeclNamespace returns the namespace for a given declaration ID
+func (g *DepGraph) GetDeclNamespace(declID DeclID) (string, bool) {
 	index := int(declID) // DeclID is now the slice index directly
 	if index < 0 || index >= len(g.DeclNamespace) {
 		return "", false
@@ -510,26 +510,6 @@ func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
 		return g.Namespaces[id]
 	}
 	return ""
-}
-
-// AllDeclarations returns all declaration IDs in the graph
-func (g *DepGraph) AllDeclarations() []DeclID {
-	declIDs := make([]DeclID, 0, len(g.Decls))
-	for i := range g.Decls {
-		declID := DeclID(i) // DeclID is now the slice index directly
-		declIDs = append(declIDs, declID)
-	}
-	return declIDs
-}
-
-// AllNamespaces returns all unique namespace names in the graph
-func (g *DepGraph) AllNamespaces() []string {
-	namespaces := set.NewSet[string]()
-	for _, namespace := range g.DeclNamespace {
-		namespaces.Add(namespace)
-	}
-
-	return namespaces.ToSlice()
 }
 
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
