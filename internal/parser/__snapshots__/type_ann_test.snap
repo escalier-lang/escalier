@@ -1076,7 +1076,7 @@
 ---
 
 [TestParseTypeAnnNoErrors/RegexLiteralTypeAnn - 1]
-&ast.RegexTypeAnn{
+&ast.LitTypeAnn{
     Lit: &ast.RegexLit{
         Value: "/hello/gi",
         span:  ast.Span{

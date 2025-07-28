@@ -346,6 +346,18 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					return nil
 				}
 			}
+			if re1, ok := lit1.Lit.(*RegexLit); ok {
+				if re2, ok := lit2.Lit.(*RegexLit); ok {
+					if re1.Equal(re2) {
+						return nil
+					} else {
+						return []Error{&CannotUnifyTypesError{
+							T1: lit1,
+							T2: lit2,
+						}}
+					}
+				}
+			}
 			// StrLit matched against RegexLit pattern
 			if strLit, ok := lit1.Lit.(*StrLit); ok {
 				if regexLit, ok := lit2.Lit.(*RegexLit); ok {

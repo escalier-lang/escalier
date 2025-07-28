@@ -200,7 +200,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			)
 		case RegexLit:
 			p.lexer.consume()
-			typeAnn = ast.NewRegexTypeAnn(
+			typeAnn = ast.NewLitTypeAnn(
 				ast.NewRegex(token.Value, token.Span),
 				token.Span,
 			)

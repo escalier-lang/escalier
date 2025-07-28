@@ -32,7 +32,6 @@ func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportType) isTypeAnn()          {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
-func (*RegexTypeAnn) isTypeAnn()        {}
 func (*EmptyTypeAnn) isTypeAnn()        {}
 
 type LitTypeAnn struct {
@@ -528,21 +527,5 @@ func NewEmptyTypeAnn(span Span) *EmptyTypeAnn {
 }
 func (t *EmptyTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
-	v.ExitTypeAnn(t)
-}
-
-type RegexTypeAnn struct {
-	Lit          Lit
-	span         Span
-	inferredType Type
-}
-
-func NewRegexTypeAnn(lit Lit, span Span) *RegexTypeAnn {
-	return &RegexTypeAnn{Lit: lit, span: span, inferredType: nil}
-}
-func (t *RegexTypeAnn) Accept(v Visitor) {
-	if v.EnterTypeAnn(t) {
-		t.Lit.Accept(v)
-	}
 	v.ExitTypeAnn(t)
 }
