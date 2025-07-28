@@ -73,7 +73,7 @@ func (p *Printer) PrintLit(lit Lit) {
 			p.print("false")
 		}
 	case *RegexLit:
-		p.print("/" + l.Value + "/")
+		p.print(l.Value)
 	case *NullLit:
 		p.print("null")
 	case *UndefinedLit:

@@ -219,7 +219,7 @@ func (t *LitType) String() string {
 	case *BoolLit:
 		return strconv.FormatBool(lit.Value)
 	case *RegexLit:
-		return "/" + lit.Value + "/"
+		return lit.Value
 	case *BigIntLit:
 		return lit.Value.String()
 	case *NullLit:
