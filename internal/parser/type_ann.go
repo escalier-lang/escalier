@@ -198,6 +198,12 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				ast.NewString(token.Value, token.Span),
 				token.Span,
 			)
+		case RegexLit:
+			p.lexer.consume()
+			typeAnn = ast.NewRegexTypeAnn(
+				ast.NewRegex(token.Value, token.Span),
+				token.Span,
+			)
 		case Fn:
 			p.lexer.consume()
 			var typeParams []*ast.TypeParam

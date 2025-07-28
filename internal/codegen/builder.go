@@ -585,6 +585,8 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			return NewLitExpr(NewNumLit(lit.Value, lit), expr), []Stmt{}
 		case *ast.StrLit:
 			return NewLitExpr(NewStrLit(lit.Value, lit), expr), []Stmt{}
+		case *ast.RegexLit:
+			return NewLitExpr(NewRegexLit(lit.Value, lit), expr), []Stmt{}
 		case *ast.BigIntLit:
 			panic("TODO: big int literal")
 		case *ast.NullLit:

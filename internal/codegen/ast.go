@@ -17,6 +17,7 @@ type Lit interface {
 
 func (*NumLit) isLiteral()       {}
 func (*StrLit) isLiteral()       {}
+func (*RegexLit) isLiteral()     {}
 func (*BoolLit) isLiteral()      {}
 func (*NullLit) isLiteral()      {}
 func (*UndefinedLit) isLiteral() {}
@@ -46,6 +47,19 @@ func NewStrLit(value string, source ast.Node) *StrLit {
 func (e *StrLit) Span() *Span        { return e.span }
 func (e *StrLit) SetSpan(span *Span) { e.span = span }
 func (e *StrLit) Source() ast.Node   { return e.source }
+
+type RegexLit struct {
+	Value  string
+	span   *Span
+	source ast.Node
+}
+
+func NewRegexLit(value string, source ast.Node) *RegexLit {
+	return &RegexLit{Value: value, source: source, span: nil}
+}
+func (e *RegexLit) Span() *Span        { return e.span }
+func (e *RegexLit) SetSpan(span *Span) { e.span = span }
+func (e *RegexLit) Source() ast.Node   { return e.source }
 
 type BoolLit struct {
 	Value  bool

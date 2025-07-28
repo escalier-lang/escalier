@@ -32,6 +32,9 @@ func TestParsePatternNoErrors(t *testing.T) {
 		"UndefinedLiteral": {
 			input: "undefined",
 		},
+		"RegexLiteral": {
+			input: "/hello/gi",
+		},
 		"Identifier": {
 			input: "x",
 		},

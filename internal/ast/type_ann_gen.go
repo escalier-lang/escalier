@@ -97,3 +97,7 @@ func (node *MutableTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 func (node *EmptyTypeAnn) Span() Span             { return node.span }
 func (node *EmptyTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *EmptyTypeAnn) SetInferredType(t Type) { node.inferredType = t }
+
+func (node *RegexTypeAnn) Span() Span             { return node.span }
+func (node *RegexTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *RegexTypeAnn) SetInferredType(t Type) { node.inferredType = t }

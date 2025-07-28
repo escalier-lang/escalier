@@ -72,6 +72,8 @@ func (p *Printer) PrintLit(lit Lit) {
 		} else {
 			p.print("false")
 		}
+	case *RegexLit:
+		p.print("/" + l.Value + "/")
 	case *NullLit:
 		p.print("null")
 	case *UndefinedLit:

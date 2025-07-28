@@ -162,6 +162,12 @@ func NewBoolType() *PrimType {
 		provenance: nil,
 	}
 }
+func NewRegexType(pattern string) *LitType {
+	return &LitType{
+		Lit:        &RegexLit{Value: pattern},
+		provenance: nil,
+	}
+}
 func (t *PrimType) Accept(v TypeVisitor) { v.VisitType(t) }
 func (t *PrimType) Equal(other Type) bool {
 	if other, ok := other.(*PrimType); ok {
@@ -212,6 +218,8 @@ func (t *LitType) String() string {
 		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
 	case *BoolLit:
 		return strconv.FormatBool(lit.Value)
+	case *RegexLit:
+		return "/" + lit.Value + "/"
 	case *BigIntLit:
 		return lit.Value.String()
 	case *NullLit:

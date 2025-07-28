@@ -3603,3 +3603,22 @@
     inferredType: nil,
 }
 ---
+
+[TestParseExprNoErrors/RegexLiteral - 1]
+&ast.LiteralExpr{
+    Lit: &ast.RegexLit{
+        Value: "/hello/gi",
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

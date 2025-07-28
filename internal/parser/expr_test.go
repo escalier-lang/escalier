@@ -44,6 +44,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"NumberLiteralLeadingDecimal": {
 			input: ".5",
 		},
+		"RegexLiteral": {
+			input: "/hello/gi",
+		},
 		"Addition": {
 			input: "a + b",
 		},
