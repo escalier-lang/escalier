@@ -97,7 +97,7 @@ func (p *Parser) restPat() ast.Pat {
 	return ast.NewRestPat(pat, span)
 }
 
-// literalPat = string | number | 'true' | 'false' | 'null' | 'undefined'
+// literalPat = string | number | regex | 'true' | 'false' | 'null' | 'undefined'
 func (p *Parser) literalPat() ast.Pat {
 	token := p.lexer.peek()
 
@@ -126,6 +126,9 @@ func (p *Parser) literalPat() ast.Pat {
 	case Undefined:
 		p.lexer.consume()
 		return ast.NewLitPat(&ast.UndefinedLit{}, token.Span)
+	case RegexLit:
+		p.lexer.consume()
+		return ast.NewLitPat(&ast.RegexLit{Value: token.Value}, token.Span)
 	default:
 		// TODO: return an invalid pattern
 		p.reportError(token.Span, "Expected a pattern")

@@ -311,6 +311,9 @@ func (p *Parser) primaryExpr() ast.Expr {
 		case StrLit:
 			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewString(token.Value, token.Span))
+		case RegexLit:
+			p.lexer.consume()
+			expr = ast.NewLitExpr(ast.NewRegex(token.Value, token.Span))
 		case True:
 			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewBoolean(true, token.Span))

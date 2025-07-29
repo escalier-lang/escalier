@@ -5,3 +5,4 @@ export val str = "world"
 // val tmpl = `hello, ${name}`
 val bools = [true, false]
 export val other = [null, undefined]
+val phone: /^\d{3}-\d{3}-\d{4}$/ = "123-456-7890"

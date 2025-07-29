@@ -142,6 +142,7 @@ type Lit interface {
 func (*BoolLit) isLiteral()      {}
 func (*NumLit) isLiteral()       {}
 func (*StrLit) isLiteral()       {}
+func (*RegexLit) isLiteral()     {}
 func (*BigIntLit) isLiteral()    {}
 func (*NullLit) isLiteral()      {}
 func (*UndefinedLit) isLiteral() {}
@@ -155,6 +156,10 @@ type NumLit struct {
 	span  Span
 }
 type StrLit struct {
+	Value string
+	span  Span
+}
+type RegexLit struct {
 	Value string
 	span  Span
 }
@@ -197,6 +202,21 @@ func (l *StrLit) Equal(other Lit) bool {
 	return false
 }
 func (l *StrLit) Accept(v Visitor) {
+	v.EnterLit(l)
+	v.ExitLit(l)
+}
+
+func NewRegex(value string, span Span) *RegexLit {
+	return &RegexLit{Value: value, span: span}
+}
+func (l *RegexLit) Span() Span { return l.span }
+func (l *RegexLit) Equal(other Lit) bool {
+	if other, ok := other.(*RegexLit); ok {
+		return l.Value == other.Value
+	}
+	return false
+}
+func (l *RegexLit) Accept(v Visitor) {
 	v.EnterLit(l)
 	v.ExitLit(l)
 }

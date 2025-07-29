@@ -373,3 +373,18 @@
     inferredType: nil,
 }
 ---
+
+[TestParsePatternNoErrors/RegexLiteral - 1]
+&ast.LitPat{
+    Lit: &ast.RegexLit{
+        Value: "/hello/gi",
+        span:  ast.Span{},
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

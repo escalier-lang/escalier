@@ -20,6 +20,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"StringLiteralTypeAnn": {
 			input: "\"hello\"",
 		},
+		"RegexLiteralTypeAnn": {
+			input: "/hello/gi",
+		},
 		"NumberTypeAnn": {
 			input: "number",
 		},

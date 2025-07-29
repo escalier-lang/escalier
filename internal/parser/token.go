@@ -10,6 +10,7 @@ const (
 	// literals
 	NumLit
 	StrLit
+	RegexLit
 	True
 	False
 	Null

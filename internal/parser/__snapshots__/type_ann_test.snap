@@ -1074,3 +1074,22 @@
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/RegexLiteralTypeAnn - 1]
+&ast.LitTypeAnn{
+    Lit: &ast.RegexLit{
+        Value: "/hello/gi",
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
