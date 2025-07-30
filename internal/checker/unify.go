@@ -603,7 +603,11 @@ type OccursInVisitor struct {
 	t1     Type
 }
 
-func (v *OccursInVisitor) VisitType(t Type) Type {
+func (v *OccursInVisitor) EnterType(t Type) {
+	// No-op for entry
+}
+
+func (v *OccursInVisitor) ExitType(t Type) Type {
 	if Prune(t).Equal(v.t1) {
 		v.result = true
 	}

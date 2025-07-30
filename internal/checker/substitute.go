@@ -26,7 +26,11 @@ func (v *TypeParamSubstitutionVisitor) SubstituteType(t Type) Type {
 	return t.Accept(v)
 }
 
-func (v *TypeParamSubstitutionVisitor) VisitType(t Type) Type {
+func (v *TypeParamSubstitutionVisitor) EnterType(t Type) {
+	// No-op for entry
+}
+
+func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {
 	switch t := t.(type) {
 	case *TypeRefType:
 		// Check if this is a type parameter reference

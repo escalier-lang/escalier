@@ -77,7 +77,8 @@ func (t *TypeVarType) Equal(other Type) bool {
 	return false
 }
 func (t *TypeVarType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(Prune(t)); result != nil {
+	v.EnterType(Prune(t))
+	if result := v.ExitType(Prune(t)); result != nil {
 		return result
 	}
 	return t
@@ -110,7 +111,8 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 	}
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -177,7 +179,8 @@ func NewRegexType(pattern string) *LitType {
 	}
 }
 func (t *PrimType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -217,7 +220,8 @@ func NewLitType(lit Lit) *LitType {
 	}
 }
 func (t *LitType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -255,7 +259,8 @@ type UniqueSymbolType struct {
 }
 
 func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -275,7 +280,8 @@ type UnknownType struct {
 }
 
 func (t *UnknownType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -297,7 +303,8 @@ type NeverType struct {
 }
 
 func (t *NeverType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -319,7 +326,8 @@ type GlobalThisType struct {
 }
 
 func (t *GlobalThisType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -372,6 +380,8 @@ type FuncType struct {
 }
 
 func (t *FuncType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newParams := make([]*FuncParam, len(t.Params))
 	for i, param := range t.Params {
@@ -416,7 +426,7 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -704,6 +714,8 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 }
 
 func (t *ObjectType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newElems := make([]ObjTypeElem, len(t.Elems))
 	for i, elem := range t.Elems {
@@ -747,7 +759,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -807,6 +819,8 @@ func NewTupleType(elems ...Type) *TupleType {
 	}
 }
 func (t *TupleType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newElems := make([]Type, len(t.Elems))
 	for i, elem := range t.Elems {
@@ -825,7 +839,7 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -863,6 +877,8 @@ func NewRestSpreadType(typ Type) *RestSpreadType {
 	}
 }
 func (t *RestSpreadType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
@@ -872,7 +888,7 @@ func (t *RestSpreadType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -905,6 +921,8 @@ func NewUnionType(types ...Type) Type {
 	}
 }
 func (t *UnionType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newTypes := make([]Type, len(t.Types))
 	for i, typ := range t.Types {
@@ -923,7 +941,7 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -962,6 +980,8 @@ func NewIntersectionType(types ...Type) *IntersectionType {
 	}
 }
 func (t *IntersectionType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newTypes := make([]Type, len(t.Types))
 	for i, typ := range t.Types {
@@ -980,7 +1000,7 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1013,6 +1033,8 @@ type KeyOfType struct {
 }
 
 func (t *KeyOfType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
@@ -1022,7 +1044,7 @@ func (t *KeyOfType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1046,6 +1068,8 @@ type IndexType struct {
 }
 
 func (t *IndexType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	newTarget := t.Target.Accept(v)
 	newIndex := t.Index.Accept(v)
 	var result Type = t
@@ -1057,7 +1081,7 @@ func (t *IndexType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1082,6 +1106,8 @@ type CondType struct {
 }
 
 func (t *CondType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	newCheck := t.Check.Accept(v)
 	newExtends := t.Extends.Accept(v)
 	newCons := t.Cons.Accept(v)
@@ -1097,7 +1123,7 @@ func (t *CondType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1119,7 +1145,8 @@ type InferType struct {
 }
 
 func (t *InferType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -1139,7 +1166,8 @@ type WildcardType struct {
 }
 
 func (t *WildcardType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -1168,6 +1196,8 @@ func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
 	}
 }
 func (t *ExtractorType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	newExtractor := t.Extractor.Accept(v)
 	changed := newExtractor != t.Extractor
 	newArgs := make([]Type, len(t.Args))
@@ -1188,7 +1218,7 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1226,6 +1256,8 @@ type TemplateLitType struct {
 }
 
 func (t *TemplateLitType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newTypes := make([]Type, len(t.Types))
 	for i, typ := range t.Types {
@@ -1245,7 +1277,7 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
@@ -1277,7 +1309,8 @@ type IntrinsicType struct {
 }
 
 func (t *IntrinsicType) Accept(v TypeVisitor) Type {
-	if result := v.VisitType(t); result != nil {
+	v.EnterType(t)
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
 	return t
@@ -1323,6 +1356,8 @@ type NamespaceType struct {
 }
 
 func (t *NamespaceType) Accept(v TypeVisitor) Type {
+	v.EnterType(t)
+
 	changed := false
 	newValues := make(map[string]*Binding)
 	for name, binding := range t.Namespace.Values {
@@ -1366,7 +1401,7 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		}
 	}
 
-	if visitResult := v.VisitType(result); visitResult != nil {
+	if visitResult := v.ExitType(result); visitResult != nil {
 		return visitResult
 	}
 	return result
