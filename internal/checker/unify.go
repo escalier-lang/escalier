@@ -603,10 +603,11 @@ type OccursInVisitor struct {
 	t1     Type
 }
 
-func (v *OccursInVisitor) VisitType(t Type) {
+func (v *OccursInVisitor) VisitType(t Type) Type {
 	if Prune(t).Equal(v.t1) {
 		v.result = true
 	}
+	return nil
 }
 
 func occursInType(t1, t2 Type) bool {

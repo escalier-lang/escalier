@@ -19,7 +19,7 @@ type Type interface {
 	Provenance() Provenance
 	SetProvenance(Provenance)
 	Equal(Type) bool
-	Accept(TypeVisitor)
+	Accept(TypeVisitor) Type
 	String() string
 	// WithProvenance returns a new Type with the given Provenance.
 	// It's essentially a shallow copy of the Type with the new Provenance.
@@ -76,8 +76,11 @@ func (t *TypeVarType) Equal(other Type) bool {
 	}
 	return false
 }
-func (t *TypeVarType) Accept(v TypeVisitor) {
-	v.VisitType(Prune(t))
+func (t *TypeVarType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(Prune(t)); result != nil {
+		return result
+	}
+	return t
 }
 func (t *TypeVarType) String() string {
 	if t.Instance != nil {
@@ -106,7 +109,12 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 		provenance: nil,
 	}
 }
-func (t *TypeRefType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *TypeRefType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *TypeRefType) Equal(other Type) bool {
 	if other, ok := other.(*TypeRefType); ok {
 		// nolint: exhaustruct
@@ -168,7 +176,12 @@ func NewRegexType(pattern string) *LitType {
 		provenance: nil,
 	}
 }
-func (t *PrimType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *PrimType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *PrimType) Equal(other Type) bool {
 	if other, ok := other.(*PrimType); ok {
 		return t.Prim == other.Prim
@@ -203,7 +216,12 @@ func NewLitType(lit Lit) *LitType {
 		provenance: nil,
 	}
 }
-func (t *LitType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *LitType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *LitType) Equal(other Type) bool {
 	if other, ok := other.(*LitType); ok {
 		return t.Lit.Equal(other.Lit)
@@ -236,7 +254,12 @@ type UniqueSymbolType struct {
 	provenance Provenance
 }
 
-func (t *UniqueSymbolType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *UniqueSymbolType) Equal(other Type) bool {
 	if other, ok := other.(*UniqueSymbolType); ok {
 		return t.Value == other.Value
@@ -251,8 +274,14 @@ type UnknownType struct {
 	provenance Provenance
 }
 
-func NewUnknownType() *UnknownType          { return &UnknownType{provenance: nil} }
-func (t *UnknownType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *UnknownType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
+
+func NewUnknownType() *UnknownType { return &UnknownType{provenance: nil} }
 func (t *UnknownType) Equal(other Type) bool {
 	if _, ok := other.(*UnknownType); ok {
 		return true
@@ -267,8 +296,14 @@ type NeverType struct {
 	provenance Provenance
 }
 
-func NewNeverType() *NeverType            { return &NeverType{provenance: nil} }
-func (t *NeverType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *NeverType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
+
+func NewNeverType() *NeverType { return &NeverType{provenance: nil} }
 func (t *NeverType) Equal(other Type) bool {
 	if _, ok := other.(*NeverType); ok {
 		return true
@@ -283,7 +318,12 @@ type GlobalThisType struct {
 	provenance Provenance
 }
 
-func (t *GlobalThisType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *GlobalThisType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *GlobalThisType) Equal(other Type) bool {
 	if _, ok := other.(*GlobalThisType); ok {
 		return true
@@ -331,17 +371,55 @@ type FuncType struct {
 	provenance Provenance
 }
 
-func (t *FuncType) Accept(v TypeVisitor) {
-	for _, param := range t.Params {
-		param.Type.Accept(v)
+func (t *FuncType) Accept(v TypeVisitor) Type {
+	changed := false
+	newParams := make([]*FuncParam, len(t.Params))
+	for i, param := range t.Params {
+		newType := param.Type.Accept(v)
+		if newType != param.Type {
+			changed = true
+			newParams[i] = &FuncParam{
+				Pattern:  param.Pattern,
+				Type:     newType,
+				Optional: param.Optional,
+			}
+		} else {
+			newParams[i] = param
+		}
 	}
+
+	var newReturn Type
 	if t.Return != nil {
-		t.Return.Accept(v)
+		newReturn = t.Return.Accept(v)
+		if newReturn != t.Return {
+			changed = true
+		}
 	}
+
+	var newThrows Type
 	if t.Throws != nil {
-		t.Throws.Accept(v)
+		newThrows = t.Throws.Accept(v)
+		if newThrows != t.Throws {
+			changed = true
+		}
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &FuncType{
+			TypeParams: t.TypeParams,
+			Self:       t.Self,
+			Params:     newParams,
+			Return:     newReturn,
+			Throws:     newThrows,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *FuncType) Equal(other Type) bool {
 	if other, ok := other.(*FuncType); ok {
@@ -438,7 +516,7 @@ func (s *ObjTypeKey) String() string {
 
 type ObjTypeElem interface {
 	isObjTypeElem()
-	Accept(TypeVisitor)
+	Accept(TypeVisitor) ObjTypeElem
 }
 
 type CallableElemType struct{ Fn *FuncType }
@@ -508,33 +586,94 @@ func (*PropertyElemType) isObjTypeElem()    {}
 func (*MappedElemType) isObjTypeElem()      {}
 func (*RestSpreadElemType) isObjTypeElem()  {}
 
-func (c *CallableElemType) Accept(v TypeVisitor) {
-	c.Fn.Accept(v)
-}
-func (c *ConstructorElemType) Accept(v TypeVisitor) {
-	c.Fn.Accept(v)
-}
-func (m *MethodElemType) Accept(v TypeVisitor) {
-	m.Fn.Accept(v)
-}
-func (g *GetterElemType) Accept(v TypeVisitor) {
-	g.Fn.Accept(v)
-}
-func (s *SetterElemType) Accept(v TypeVisitor) {
-	s.Fn.Accept(v)
-}
-func (p *PropertyElemType) Accept(v TypeVisitor) {
-	p.Value.Accept(v)
-}
-func (m *MappedElemType) Accept(v TypeVisitor) {
-	m.TypeParam.Constraint.Accept(v)
-	if m.name != nil {
-		m.name.Accept(v)
+func (c *CallableElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newFn := c.Fn.Accept(v).(*FuncType)
+	if newFn != c.Fn {
+		return &CallableElemType{Fn: newFn}
 	}
-	m.Value.Accept(v)
+	return c
 }
-func (r *RestSpreadElemType) Accept(v TypeVisitor) {
-	r.Value.Accept(v)
+func (c *ConstructorElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newFn := c.Fn.Accept(v).(*FuncType)
+	if newFn != c.Fn {
+		return &ConstructorElemType{Fn: newFn}
+	}
+	return c
+}
+func (m *MethodElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newFn := m.Fn.Accept(v).(*FuncType)
+	if newFn != m.Fn {
+		return &MethodElemType{Name: m.Name, Fn: newFn}
+	}
+	return m
+}
+func (g *GetterElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newFn := g.Fn.Accept(v).(*FuncType)
+	if newFn != g.Fn {
+		return &GetterElemType{Name: g.Name, Fn: newFn}
+	}
+	return g
+}
+func (s *SetterElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newFn := s.Fn.Accept(v).(*FuncType)
+	if newFn != s.Fn {
+		return &SetterElemType{Name: s.Name, Fn: newFn}
+	}
+	return s
+}
+func (p *PropertyElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newValue := p.Value.Accept(v)
+	if newValue != p.Value {
+		return &PropertyElemType{
+			Name:     p.Name,
+			Optional: p.Optional,
+			Readonly: p.Readonly,
+			Value:    newValue,
+		}
+	}
+	return p
+}
+func (m *MappedElemType) Accept(v TypeVisitor) ObjTypeElem {
+	changed := false
+	newConstraint := m.TypeParam.Constraint.Accept(v)
+	if newConstraint != m.TypeParam.Constraint {
+		changed = true
+	}
+
+	var newName Type
+	if m.name != nil {
+		newName = m.name.Accept(v)
+		if newName != m.name {
+			changed = true
+		}
+	}
+
+	newValue := m.Value.Accept(v)
+	if newValue != m.Value {
+		changed = true
+	}
+
+	if changed {
+		newTypeParam := &IndexParamType{
+			Name:       m.TypeParam.Name,
+			Constraint: newConstraint,
+		}
+		return &MappedElemType{
+			TypeParam: newTypeParam,
+			name:      newName,
+			Value:     newValue,
+			Optional:  m.Optional,
+			ReadOnly:  m.ReadOnly,
+		}
+	}
+	return m
+}
+func (r *RestSpreadElemType) Accept(v TypeVisitor) ObjTypeElem {
+	newValue := r.Value.Accept(v)
+	if newValue != r.Value {
+		return &RestSpreadElemType{Value: newValue}
+	}
+	return r
 }
 
 type ObjectType struct {
@@ -564,17 +703,54 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 	}
 }
 
-func (t *ObjectType) Accept(v TypeVisitor) {
-	for _, elem := range t.Elems {
-		elem.Accept(v)
+func (t *ObjectType) Accept(v TypeVisitor) Type {
+	changed := false
+	newElems := make([]ObjTypeElem, len(t.Elems))
+	for i, elem := range t.Elems {
+		newElem := elem.Accept(v)
+		if newElem != elem {
+			changed = true
+		}
+		newElems[i] = newElem
 	}
-	for _, ext := range t.Extends {
-		ext.Accept(v)
+
+	newExtends := make([]*TypeRefType, len(t.Extends))
+	for i, ext := range t.Extends {
+		newExt := ext.Accept(v).(*TypeRefType)
+		if newExt != ext {
+			changed = true
+		}
+		newExtends[i] = newExt
 	}
-	for _, impl := range t.Implements {
-		impl.Accept(v)
+
+	newImplements := make([]*TypeRefType, len(t.Implements))
+	for i, impl := range t.Implements {
+		newImpl := impl.Accept(v).(*TypeRefType)
+		if newImpl != impl {
+			changed = true
+		}
+		newImplements[i] = newImpl
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &ObjectType{
+			Elems:      newElems,
+			Exact:      t.Exact,
+			Immutable:  t.Immutable,
+			Mutable:    t.Mutable,
+			Nomimal:    t.Nomimal,
+			Interface:  t.Interface,
+			Extends:    newExtends,
+			Implements: newImplements,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *ObjectType) Equal(other Type) bool {
 	if other, ok := other.(*ObjectType); ok {
@@ -630,11 +806,29 @@ func NewTupleType(elems ...Type) *TupleType {
 		provenance: nil,
 	}
 }
-func (t *TupleType) Accept(v TypeVisitor) {
-	for _, elem := range t.Elems {
-		elem.Accept(v)
+func (t *TupleType) Accept(v TypeVisitor) Type {
+	changed := false
+	newElems := make([]Type, len(t.Elems))
+	for i, elem := range t.Elems {
+		newElem := elem.Accept(v)
+		if newElem != elem {
+			changed = true
+		}
+		newElems[i] = newElem
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &TupleType{
+			Elems:      newElems,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *TupleType) Equal(other Type) bool {
 	if other, ok := other.(*TupleType); ok {
@@ -668,9 +862,20 @@ func NewRestSpreadType(typ Type) *RestSpreadType {
 		provenance: nil,
 	}
 }
-func (t *RestSpreadType) Accept(v TypeVisitor) {
-	v.VisitType(t)
-	t.Type.Accept(v)
+func (t *RestSpreadType) Accept(v TypeVisitor) Type {
+	newType := t.Type.Accept(v)
+	var result Type = t
+	if newType != t.Type {
+		result = &RestSpreadType{
+			Type:       newType,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *RestSpreadType) Equal(other Type) bool {
 	if other, ok := other.(*RestSpreadType); ok {
@@ -699,11 +904,29 @@ func NewUnionType(types ...Type) Type {
 		provenance: nil,
 	}
 }
-func (t *UnionType) Accept(v TypeVisitor) {
-	for _, typ := range t.Types {
-		typ.Accept(v)
+func (t *UnionType) Accept(v TypeVisitor) Type {
+	changed := false
+	newTypes := make([]Type, len(t.Types))
+	for i, typ := range t.Types {
+		newType := typ.Accept(v)
+		if newType != typ {
+			changed = true
+		}
+		newTypes[i] = newType
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &UnionType{
+			Types:      newTypes,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *UnionType) Equal(other Type) bool {
 	if other, ok := other.(*UnionType); ok {
@@ -738,11 +961,29 @@ func NewIntersectionType(types ...Type) *IntersectionType {
 		provenance: nil,
 	}
 }
-func (t *IntersectionType) Accept(v TypeVisitor) {
-	for _, typ := range t.Types {
-		typ.Accept(v)
+func (t *IntersectionType) Accept(v TypeVisitor) Type {
+	changed := false
+	newTypes := make([]Type, len(t.Types))
+	for i, typ := range t.Types {
+		newType := typ.Accept(v)
+		if newType != typ {
+			changed = true
+		}
+		newTypes[i] = newType
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &IntersectionType{
+			Types:      newTypes,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *IntersectionType) Equal(other Type) bool {
 	if other, ok := other.(*IntersectionType); ok {
@@ -771,9 +1012,20 @@ type KeyOfType struct {
 	provenance Provenance
 }
 
-func (t *KeyOfType) Accept(v TypeVisitor) {
-	t.Type.Accept(v)
-	v.VisitType(t)
+func (t *KeyOfType) Accept(v TypeVisitor) Type {
+	newType := t.Type.Accept(v)
+	var result Type = t
+	if newType != t.Type {
+		result = &KeyOfType{
+			Type:       newType,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *KeyOfType) Equal(other Type) bool {
 	if other, ok := other.(*KeyOfType); ok {
@@ -793,10 +1045,22 @@ type IndexType struct {
 	provenance Provenance
 }
 
-func (t *IndexType) Accept(v TypeVisitor) {
-	t.Target.Accept(v)
-	t.Index.Accept(v)
-	v.VisitType(t)
+func (t *IndexType) Accept(v TypeVisitor) Type {
+	newTarget := t.Target.Accept(v)
+	newIndex := t.Index.Accept(v)
+	var result Type = t
+	if newTarget != t.Target || newIndex != t.Index {
+		result = &IndexType{
+			Target:     newTarget,
+			Index:      newIndex,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *IndexType) Equal(other Type) bool {
 	if other, ok := other.(*IndexType); ok {
@@ -817,12 +1081,26 @@ type CondType struct {
 	provenance Provenance
 }
 
-func (t *CondType) Accept(v TypeVisitor) {
-	t.Check.Accept(v)
-	t.Extends.Accept(v)
-	t.Cons.Accept(v)
-	t.Alt.Accept(v)
-	v.VisitType(t)
+func (t *CondType) Accept(v TypeVisitor) Type {
+	newCheck := t.Check.Accept(v)
+	newExtends := t.Extends.Accept(v)
+	newCons := t.Cons.Accept(v)
+	newAlt := t.Alt.Accept(v)
+	var result Type = t
+	if newCheck != t.Check || newExtends != t.Extends || newCons != t.Cons || newAlt != t.Alt {
+		result = &CondType{
+			Check:      newCheck,
+			Extends:    newExtends,
+			Cons:       newCons,
+			Alt:        newAlt,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *CondType) Equal(other Type) bool {
 	if other, ok := other.(*CondType); ok {
@@ -840,7 +1118,12 @@ type InferType struct {
 	provenance Provenance
 }
 
-func (t *InferType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *InferType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *InferType) Equal(other Type) bool {
 	if other, ok := other.(*InferType); ok {
 		return t.Name == other.Name
@@ -855,7 +1138,12 @@ type WildcardType struct {
 	provenance Provenance
 }
 
-func (t *WildcardType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *WildcardType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *WildcardType) Equal(other Type) bool {
 	if _, ok := other.(*WildcardType); ok {
 		return true
@@ -879,12 +1167,31 @@ func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
 		provenance: nil,
 	}
 }
-func (t *ExtractorType) Accept(v TypeVisitor) {
-	t.Extractor.Accept(v)
-	for _, arg := range t.Args {
-		arg.Accept(v)
+func (t *ExtractorType) Accept(v TypeVisitor) Type {
+	newExtractor := t.Extractor.Accept(v)
+	changed := newExtractor != t.Extractor
+	newArgs := make([]Type, len(t.Args))
+	for i, arg := range t.Args {
+		newArg := arg.Accept(v)
+		if newArg != arg {
+			changed = true
+		}
+		newArgs[i] = newArg
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &ExtractorType{
+			Extractor:  newExtractor,
+			Args:       newArgs,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *ExtractorType) Equal(other Type) bool {
 	if other, ok := other.(*ExtractorType); ok {
@@ -918,11 +1225,30 @@ type TemplateLitType struct {
 	provenance Provenance
 }
 
-func (t *TemplateLitType) Accept(v TypeVisitor) {
-	for _, typ := range t.Types {
-		typ.Accept(v)
+func (t *TemplateLitType) Accept(v TypeVisitor) Type {
+	changed := false
+	newTypes := make([]Type, len(t.Types))
+	for i, typ := range t.Types {
+		newType := typ.Accept(v)
+		if newType != typ {
+			changed = true
+		}
+		newTypes[i] = newType
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		result = &TemplateLitType{
+			Quasis:     t.Quasis,
+			Types:      newTypes,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *TemplateLitType) Equal(other Type) bool {
 	if other, ok := other.(*TemplateLitType); ok {
@@ -950,7 +1276,12 @@ type IntrinsicType struct {
 	provenance Provenance
 }
 
-func (t *IntrinsicType) Accept(v TypeVisitor) { v.VisitType(t) }
+func (t *IntrinsicType) Accept(v TypeVisitor) Type {
+	if result := v.VisitType(t); result != nil {
+		return result
+	}
+	return t
+}
 func (t *IntrinsicType) Equal(other Type) bool {
 	if other, ok := other.(*IntrinsicType); ok {
 		return t.Name == other.Name
@@ -991,14 +1322,54 @@ type NamespaceType struct {
 	provenance Provenance
 }
 
-func (t *NamespaceType) Accept(v TypeVisitor) {
-	for _, binding := range t.Namespace.Values {
-		binding.Type.Accept(v)
+func (t *NamespaceType) Accept(v TypeVisitor) Type {
+	changed := false
+	newValues := make(map[string]*Binding)
+	for name, binding := range t.Namespace.Values {
+		newType := binding.Type.Accept(v)
+		if newType != binding.Type {
+			changed = true
+			newValues[name] = &Binding{
+				Source:  binding.Source,
+				Type:    newType,
+				Mutable: binding.Mutable,
+			}
+		} else {
+			newValues[name] = binding
+		}
 	}
-	for _, typeAlias := range t.Namespace.Types {
-		typeAlias.Type.Accept(v)
+
+	newTypes := make(map[string]*TypeAlias)
+	for name, typeAlias := range t.Namespace.Types {
+		newType := typeAlias.Type.Accept(v)
+		if newType != typeAlias.Type {
+			changed = true
+			newTypes[name] = &TypeAlias{
+				Type:       newType,
+				TypeParams: typeAlias.TypeParams,
+			}
+		} else {
+			newTypes[name] = typeAlias
+		}
 	}
-	v.VisitType(t)
+
+	var result Type = t
+	if changed {
+		newNamespace := &Namespace{
+			Values:     newValues,
+			Types:      newTypes,
+			Namespaces: t.Namespace.Namespaces, // Note: not recursing into nested namespaces for simplicity
+		}
+		result = &NamespaceType{
+			Namespace:  newNamespace,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.VisitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *NamespaceType) Equal(other Type) bool {
 	if other, ok := other.(*NamespaceType); ok {
