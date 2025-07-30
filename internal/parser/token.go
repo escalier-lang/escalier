@@ -99,6 +99,7 @@ const (
 	Mut
 	For
 	In
+	Infer
 )
 
 type Token struct {

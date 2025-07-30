@@ -139,7 +139,9 @@ func (p *Parser) literalPat() ast.Pat {
 func (p *Parser) objPatElem() ast.ObjPatElem {
 	token := p.lexer.peek()
 
-	if token.Type == Identifier {
+	// nolint: exhaustive
+	switch token.Type {
+	case Identifier:
 		p.lexer.consume()
 		key := ast.NewIdentifier(token.Value, token.Span)
 		span := token.Span
@@ -183,7 +185,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 
 			return ast.NewObjShorthandPat(key, init, span)
 		}
-	} else if token.Type == DotDotDot {
+	case DotDotDot:
 		p.lexer.consume()
 
 		pat := p.pattern(true)
@@ -192,7 +194,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 		}
 		span := ast.MergeSpans(token.Span, pat.Span())
 		return ast.NewObjRestPat(pat, span)
-	} else {
+	default:
 		p.reportError(token.Span, "Expected identifier or '...'")
 		return nil
 	}

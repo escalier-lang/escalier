@@ -628,8 +628,21 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 			errors := []Error{&UnkonwnTypeError{TypeName: t.Name, typeRef: t}}
 			return nil, errors
 		}
-		// TODO: replace type params with type args
-		return c.expandType(ctx, typeAlias.Type)
+
+		// Replace type params with type args if the type is generic
+		expandedType := typeAlias.Type
+		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+			// Create substitution map from type parameter names to type arguments
+			substitutions := make(map[string]Type)
+			for i, typeParam := range typeAlias.TypeParams {
+				if i < len(t.TypeArgs) {
+					substitutions[typeParam.Name] = t.TypeArgs[i]
+				}
+			}
+			expandedType = c.substituteTypeParams(typeAlias.Type, substitutions)
+		}
+
+		return c.expandType(ctx, expandedType)
 	default:
 		fmt.Printf("expandType: unexpected type %s\n", t.String())
 		panic("TODO: expandType - handle other types")
