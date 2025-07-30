@@ -398,6 +398,93 @@ func TestSubstituteTypeParams(t *testing.T) {
 		})
 	})
 
+	t.Run("Type parameter shadowing", func(t *testing.T) {
+		t.Run("function type parameter shadows outer type parameter", func(t *testing.T) {
+			// Create type: (t: T) => <T>(t: T) => T
+			// This represents: type Foo1<T> = (t: T) => <T>(t: T) => T;
+
+			// Inner function: <T>(t: T) => T
+			innerParam := NewFuncParam(&IdentPat{Name: "t"}, NewTypeRefType("T", nil))
+			innerFunc := &FuncType{
+				TypeParams: []*TypeParam{NewTypeParam("T")}, // This T should shadow outer T
+				Self:       nil,
+				Params:     []*FuncParam{innerParam},
+				Return:     NewTypeRefType("T", nil), // This T refers to inner T
+				Throws:     NewNeverType(),
+			}
+
+			// Outer function: (t: T) => <inner function>
+			outerParam := NewFuncParam(&IdentPat{Name: "t"}, NewTypeRefType("T", nil))
+			outerFunc := &FuncType{
+				TypeParams: []*TypeParam{},
+				Self:       nil,
+				Params:     []*FuncParam{outerParam},
+				Return:     innerFunc,
+				Throws:     NewNeverType(),
+			}
+
+			// Substitute T -> number
+			substitutions := map[string]Type{
+				"T": NewNumType(),
+			}
+
+			result := checker.substituteTypeParams(outerFunc, substitutions)
+			resultFunc := result.(*FuncType)
+
+			// Outer parameter should be substituted: (t: number)
+			assert.Equal(t, NewNumType(), resultFunc.Params[0].Type)
+
+			// Inner function should preserve its own T
+			innerResult := resultFunc.Return.(*FuncType)
+			assert.Equal(t, []*TypeParam{NewTypeParam("T")}, innerResult.TypeParams)
+
+			// Inner parameter and return should still be T (not substituted)
+			assert.Equal(t, NewTypeRefType("T", nil), innerResult.Params[0].Type)
+			assert.Equal(t, NewTypeRefType("T", nil), innerResult.Return)
+		})
+
+		t.Run("object method with shadowed type parameter", func(t *testing.T) {
+			// Create type: {foo: T; bar: <T>(t: T) => T}
+			// This represents: type Foo2<T> = {foo: T; bar: <T>(t: T) => T}
+
+			// Method: <T>(t: T) => T
+			methodParam := NewFuncParam(&IdentPat{Name: "t"}, NewTypeRefType("T", nil))
+			methodFunc := &FuncType{
+				TypeParams: []*TypeParam{NewTypeParam("T")}, // This T should shadow outer T
+				Self:       nil,
+				Params:     []*FuncParam{methodParam},
+				Return:     NewTypeRefType("T", nil), // This T refers to method's T
+				Throws:     NewNeverType(),
+			}
+
+			// Object type: {foo: T; bar: method}
+			objType := NewObjectType([]ObjTypeElem{
+				NewPropertyElemType(NewStrKey("foo"), NewTypeRefType("T", nil)), // Outer T
+				&MethodElemType{Name: NewStrKey("bar"), Fn: methodFunc},
+			})
+
+			// Substitute T -> string
+			substitutions := map[string]Type{
+				"T": NewStrType(),
+			}
+
+			result := checker.substituteTypeParams(objType, substitutions)
+			resultObj := result.(*ObjectType)
+
+			// Property should be substituted: foo: string
+			fooProp := resultObj.Elems[0].(*PropertyElemType)
+			assert.Equal(t, NewStrType(), fooProp.Value)
+
+			// Method should preserve its own T
+			barMethod := resultObj.Elems[1].(*MethodElemType)
+			assert.Equal(t, []*TypeParam{NewTypeParam("T")}, barMethod.Fn.TypeParams)
+
+			// Method parameter and return should still be T (not substituted)
+			assert.Equal(t, NewTypeRefType("T", nil), barMethod.Fn.Params[0].Type)
+			assert.Equal(t, NewTypeRefType("T", nil), barMethod.Fn.Return)
+		})
+	})
+
 	t.Run("Empty substitutions", func(t *testing.T) {
 		t.Run("returns original type when no substitutions", func(t *testing.T) {
 			typeRef := NewTypeRefType("T", nil)
