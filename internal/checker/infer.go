@@ -625,7 +625,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	case *TypeRefType:
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias == nil {
-			errors := []Error{&UnkonwnTypeError{TypeName: t.Name, typeRef: t}}
+			errors := []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
 			return nil, errors
 		}
 
@@ -1341,7 +1341,7 @@ func (c *Checker) inferTypeAnn(
 			typeRef.SetProvenance(&ast.NodeProvenance{
 				Node: typeAnn,
 			})
-			errors = append(errors, &UnkonwnTypeError{TypeName: typeName, typeRef: typeRef})
+			errors = append(errors, &UnknownTypeError{TypeName: typeName, typeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
 		t = NewNumType()

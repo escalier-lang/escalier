@@ -245,7 +245,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				if typeAlias1 == nil {
 					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, ref1.Name)
 					if typeAlias1 == nil {
-						return []Error{&UnkonwnTypeError{
+						return []Error{&UnknownTypeError{
 							TypeName: ref1.Name,
 							typeRef:  ref1,
 						}}
@@ -255,7 +255,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				if typeAlias2 == nil {
 					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, ref2.Name)
 					if typeAlias2 == nil {
-						return []Error{&UnkonwnTypeError{
+						return []Error{&UnknownTypeError{
 							TypeName: ref2.Name,
 							typeRef:  ref2,
 						}}
