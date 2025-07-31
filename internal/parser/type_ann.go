@@ -271,6 +271,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				elseType,
 				ast.NewSpan(token.Span.Start, elseType.Span().End, p.lexer.source.ID),
 			)
+		case Infer: // infer type
+			p.lexer.consume() // consume 'infer'
+			nameToken := p.lexer.peek()
+			if nameToken.Type != Identifier {
+				p.reportError(nameToken.Span, "expected identifier after 'infer'")
+				return nil
+			}
+			p.lexer.consume() // consume identifier
+			typeAnn = ast.NewInferTypeAnn(
+				nameToken.Value,
+				ast.NewSpan(token.Span.Start, nameToken.Span.End, p.lexer.source.ID),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)

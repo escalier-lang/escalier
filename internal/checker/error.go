@@ -29,7 +29,7 @@ func (e NotEnoughElementsToUnpackError) isError() {}
 func (e CannotUnifyTypesError) isError()          {}
 func (e UnknownIdentifierError) isError()         {}
 func (e UnknownOperatorError) isError()           {}
-func (e UnkonwnTypeError) isError()               {}
+func (e UnknownTypeError) isError()               {}
 func (e CalleeIsNotCallableError) isError()       {}
 func (e InvalidNumberOfArgumentsError) isError()  {}
 func (e ExpectedObjectError) isError()            {}
@@ -148,16 +148,16 @@ func (e UnknownOperatorError) Message() string {
 	return "Unknown operator: " + e.Operator
 }
 
-type UnkonwnTypeError struct {
+type UnknownTypeError struct {
 	TypeName string
 	typeRef  *TypeRefType
 }
 
-func (e UnkonwnTypeError) Span() ast.Span {
+func (e UnknownTypeError) Span() ast.Span {
 	node := GetNode(e.typeRef.Provenance())
 	return node.Span()
 }
-func (e UnkonwnTypeError) Message() string {
+func (e UnknownTypeError) Message() string {
 	return "Unknown type: " + e.TypeName
 }
 
