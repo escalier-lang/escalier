@@ -46,10 +46,7 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 		result2 := visitor.SubstituteType(type2)
 
 		assert.Equal(t, "string", result1.String())
-
-		resultTuple := result2.(*TupleType)
-		assert.Equal(t, "string", resultTuple.Elems[0].String())
-		assert.Equal(t, "number", resultTuple.Elems[1].String())
+		assert.Equal(t, "[string, number]", result2.String())
 	})
 }
 
@@ -161,8 +158,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(funcType, substitutions)
 
-			resultFunc := result.(*FuncType)
-			assert.Equal(t, []*TypeParam{typeParam}, resultFunc.TypeParams)
+			assert.Equal(t, "fn <T>() -> number", funcType.String())
+			assert.Equal(t, "fn <T>() -> number", result.String())
 		})
 	})
 

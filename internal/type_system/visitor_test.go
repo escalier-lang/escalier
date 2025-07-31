@@ -157,7 +157,7 @@ func TestVisitorNoMutation(t *testing.T) {
 			Exact:      false,
 			Immutable:  false,
 			Mutable:    false,
-			Nomimal:    false,
+			Nominal:    false,
 			Interface:  false,
 			Extends:    nil,
 			Implements: nil,

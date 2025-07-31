@@ -691,7 +691,7 @@ type ObjectType struct {
 	Exact      bool // Can't be true if any of Interface, Implements, or Extends are true
 	Immutable  bool // true for `#{...}`, false for `{...}`
 	Mutable    bool // true for `mut {...}`, false for `{...}`
-	Nomimal    bool // true for classes
+	Nominal    bool // true for classes
 	Interface  bool
 	Extends    []*TypeRefType
 	Implements []*TypeRefType
@@ -705,7 +705,7 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 		Exact:      false,
 		Immutable:  false,
 		Mutable:    false,
-		Nomimal:    false,
+		Nominal:    false,
 		Interface:  false,
 		Extends:    nil,
 		Implements: nil,
@@ -751,7 +751,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 			Exact:      t.Exact,
 			Immutable:  t.Immutable,
 			Mutable:    t.Mutable,
-			Nomimal:    t.Nomimal,
+			Nominal:    t.Nominal,
 			Interface:  t.Interface,
 			Extends:    newExtends,
 			Implements: newImplements,
