@@ -631,6 +631,9 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 
 		// Replace type params with type args if the type is generic
 		expandedType := typeAlias.Type
+		// TODO:
+		// - ensure that the number of type args matches the number of type params
+		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
 			// Create substitution map from type parameter names to type arguments
 			substitutions := make(map[string]Type)

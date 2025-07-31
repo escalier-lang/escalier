@@ -53,26 +53,6 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {
 		// Check if this type parameter is shadowed by any inner function
 		if v.isShadowed(t.Name) {
 			// Don't substitute if shadowed
-			if len(t.TypeArgs) > 0 {
-				// Still need to process type arguments
-				newTypeArgs := make([]Type, len(t.TypeArgs))
-				changed := false
-				for i, arg := range t.TypeArgs {
-					newArg := arg.Accept(v)
-					newTypeArgs[i] = newArg
-					if newArg != arg {
-						changed = true
-					}
-				}
-
-				if changed {
-					result := NewTypeRefType(t.Name, t.TypeAlias, newTypeArgs...)
-					if t.Provenance() != nil {
-						result.SetProvenance(t.Provenance())
-					}
-					return result
-				}
-			}
 			return nil // Return original type unchanged
 		}
 
@@ -114,11 +94,6 @@ func (v *TypeParamSubstitutionVisitor) isShadowed(name string) bool {
 		}
 	}
 	return false
-}
-
-// substituteTypeParamsInObjElem handles substitution for object type elements (backward compatibility)
-func (v *TypeParamSubstitutionVisitor) substituteTypeParamsInObjElem(elem ObjTypeElem) ObjTypeElem {
-	return elem.Accept(v)
 }
 
 // substituteTypeParams replaces type parameters in a type with their corresponding type arguments
