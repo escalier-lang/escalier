@@ -27,10 +27,8 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 		visitor := NewTypeParamSubstitutionVisitor(substitutions)
 		result := visitor.SubstituteType(funcType)
 
-		resultFunc := result.(*FuncType)
-		assert.Equal(t, NewNumType(), resultFunc.Params[0].Type)
-		assert.Equal(t, NewStrType(), resultFunc.Params[1].Type)
-		assert.Equal(t, NewNumType(), resultFunc.Return)
+		assert.Equal(t, "fn (x: T, y: U) -> T", funcType.String())
+		assert.Equal(t, "fn (x: number, y: string) -> number", result.String())
 	})
 
 	t.Run("Visitor reusability", func(t *testing.T) {
@@ -47,11 +45,11 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 		result1 := visitor.SubstituteType(type1)
 		result2 := visitor.SubstituteType(type2)
 
-		assert.Equal(t, NewStrType(), result1)
+		assert.Equal(t, "string", result1.String())
 
 		resultTuple := result2.(*TupleType)
-		assert.Equal(t, NewStrType(), resultTuple.Elems[0])
-		assert.Equal(t, NewNumType(), resultTuple.Elems[1])
+		assert.Equal(t, "string", resultTuple.Elems[0].String())
+		assert.Equal(t, "number", resultTuple.Elems[1].String())
 	})
 }
 
@@ -70,7 +68,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
 
-			assert.Equal(t, NewNumType(), result)
+			assert.Equal(t, "T", typeRef.String())
+			assert.Equal(t, "number", result.String())
 		})
 
 		t.Run("preserves non-parameter type references", func(t *testing.T) {
@@ -84,8 +83,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
 
-			expected := NewTypeRefType("Array", nil, NewStrType())
-			assert.Equal(t, expected, result)
+			assert.Equal(t, "Array<T>", typeRef.String())
+			assert.Equal(t, "Array<string>", result.String())
 		})
 
 		t.Run("no substitution when type not in map", func(t *testing.T) {
@@ -99,7 +98,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
 
-			assert.Equal(t, typeRef, result)
+			assert.Equal(t, "U", typeRef.String())
+			assert.Equal(t, "U", result.String())
 		})
 	})
 
@@ -122,10 +122,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(funcType, substitutions)
 
-			resultFunc := result.(*FuncType)
-			assert.Equal(t, NewNumType(), resultFunc.Params[0].Type)
-			assert.Equal(t, NewStrType(), resultFunc.Params[1].Type)
-			assert.Equal(t, NewNumType(), resultFunc.Return)
+			assert.Equal(t, "fn (x: T, y: U) -> T", funcType.String())
+			assert.Equal(t, "fn (x: number, y: string) -> number", result.String())
 		})
 
 		t.Run("substitutes return type", func(t *testing.T) {
@@ -143,8 +141,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(funcType, substitutions)
 
-			resultFunc := result.(*FuncType)
-			assert.Equal(t, NewBoolType(), resultFunc.Return)
+			assert.Equal(t, "fn () -> T", funcType.String())
+			assert.Equal(t, "fn () -> boolean", result.String())
 		})
 
 		t.Run("preserves type parameters", func(t *testing.T) {
@@ -182,14 +180,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(objType, substitutions)
 
-			resultObj := result.(*ObjectType)
-			assert.Len(t, resultObj.Elems, 2)
-
-			prop1Result := resultObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrType(), prop1Result.Value)
-
-			prop2Result := resultObj.Elems[1].(*PropertyElemType)
-			assert.Equal(t, NewNumType(), prop2Result.Value)
+			assert.Equal(t, "{x: T, y: number}", objType.String())
+			assert.Equal(t, "{x: string, y: number}", result.String())
 		})
 
 		t.Run("substitutes method types", func(t *testing.T) {
@@ -209,11 +201,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(objType, substitutions)
-
-			resultObj := result.(*ObjectType)
-			methodResult := resultObj.Elems[0].(*MethodElemType)
-			assert.Equal(t, NewNumType(), methodResult.Fn.Params[0].Type)
-			assert.Equal(t, NewBoolType(), methodResult.Fn.Return)
+			assert.Equal(t, "{foo: fn (x: T) -> U}", objType.String())
+			assert.Equal(t, "{foo: fn (x: number) -> boolean}", result.String())
 		})
 	})
 
@@ -234,11 +223,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(tupleType, substitutions)
 
-			resultTuple := result.(*TupleType)
-			assert.Len(t, resultTuple.Elems, 3)
-			assert.Equal(t, NewStrType(), resultTuple.Elems[0])
-			assert.Equal(t, NewNumType(), resultTuple.Elems[1])
-			assert.Equal(t, NewBoolType(), resultTuple.Elems[2])
+			assert.Equal(t, "[T, number, U]", tupleType.String())
+			assert.Equal(t, "[string, number, boolean]", result.String())
 		})
 	})
 
@@ -259,15 +245,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(unionType, substitutions)
 
-			// NewUnionType returns Type, so we need to handle that
-			if unionResult, ok := result.(*UnionType); ok {
-				assert.Len(t, unionResult.Types, 3)
-				assert.Equal(t, NewStrType(), unionResult.Types[0])
-				assert.Equal(t, NewNumType(), unionResult.Types[1])
-				assert.Equal(t, NewBoolType(), unionResult.Types[2])
-			} else {
-				t.Fatalf("Expected UnionType, got %T", result)
-			}
+			assert.Equal(t, "T | number | U", unionType.String())
+			assert.Equal(t, "string | number | boolean", result.String())
 		})
 	})
 
@@ -294,27 +273,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(intersectionType, substitutions)
-
-			intersectionResult := result.(*IntersectionType)
-			assert.Len(t, intersectionResult.Types, 3)
-
-			// Check first type (substituted T)
-			firstObj := intersectionResult.Types[0].(*ObjectType)
-			firstProp := firstObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrKey("y"), firstProp.Name)
-			assert.Equal(t, NewStrType(), firstProp.Value)
-
-			// Check second type (unchanged object)
-			secondObj := intersectionResult.Types[1].(*ObjectType)
-			secondProp := secondObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrKey("x"), secondProp.Name)
-			assert.Equal(t, NewNumType(), secondProp.Value)
-
-			// Check third type (substituted U)
-			thirdObj := intersectionResult.Types[2].(*ObjectType)
-			thirdProp := thirdObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrKey("z"), thirdProp.Name)
-			assert.Equal(t, NewBoolType(), thirdProp.Value)
+			assert.Equal(t, "T & {x: number} & U", intersectionType.String())
+			assert.Equal(t, "{y: string} & {x: number} & {z: boolean}", result.String())
 		})
 	})
 
@@ -330,10 +290,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(restType, substitutions)
 
-			restResult := result.(*RestSpreadType)
-			arrayType := restResult.Type.(*TypeRefType)
-			assert.Equal(t, "Array", arrayType.Name)
-			assert.Equal(t, NewNumType(), arrayType.TypeArgs[0])
+			assert.Equal(t, "...T", restType.String())
+			assert.Equal(t, "...Array<number>", result.String())
 		})
 	})
 
@@ -345,7 +303,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(numType, substitutions)
-			assert.Equal(t, numType, result)
+			assert.Equal(t, "number", numType.String())
+			assert.Equal(t, "number", result.String())
 		})
 
 		t.Run("string literal type", func(t *testing.T) {
@@ -355,7 +314,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(strLit, substitutions)
-			assert.Equal(t, strLit, result)
+			assert.Equal(t, `"hello"`, strLit.String())
+			assert.Equal(t, `"hello"`, result.String())
 		})
 	})
 
@@ -367,6 +327,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				NewPropertyElemType(NewStrKey("count"), NewNumType()),
 			})
 			funcType := &FuncType{
+				TypeParams: []*TypeParam{},
 				Params: []*FuncParam{
 					NewFuncParam(&IdentPat{Name: "obj"}, objParam),
 				},
@@ -381,20 +342,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(funcType, substitutions)
 
-			resultFunc := result.(*FuncType)
-
-			// Check parameter object type
-			paramObj := resultFunc.Params[0].Type.(*ObjectType)
-			dataProp := paramObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrType(), dataProp.Value)
-
-			countProp := paramObj.Elems[1].(*PropertyElemType)
-			assert.Equal(t, NewNumType(), countProp.Value)
-
-			// Check return type
-			returnType := resultFunc.Return.(*TypeRefType)
-			assert.Equal(t, "Array", returnType.Name)
-			assert.Equal(t, NewStrType(), returnType.TypeArgs[0])
+			assert.Equal(t, "fn (obj: {data: T, count: number}) -> Array<T>", funcType.String())
+			assert.Equal(t, "fn (obj: {data: string, count: number}) -> Array<string>", result.String())
 		})
 	})
 
@@ -429,18 +378,9 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(outerFunc, substitutions)
-			resultFunc := result.(*FuncType)
 
-			// Outer parameter should be substituted: (t: number)
-			assert.Equal(t, NewNumType(), resultFunc.Params[0].Type)
-
-			// Inner function should preserve its own T
-			innerResult := resultFunc.Return.(*FuncType)
-			assert.Equal(t, []*TypeParam{NewTypeParam("T")}, innerResult.TypeParams)
-
-			// Inner parameter and return should still be T (not substituted)
-			assert.Equal(t, NewTypeRefType("T", nil), innerResult.Params[0].Type)
-			assert.Equal(t, NewTypeRefType("T", nil), innerResult.Return)
+			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T", outerFunc.String())
+			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T", result.String())
 		})
 
 		t.Run("object method with shadowed type parameter", func(t *testing.T) {
@@ -469,19 +409,9 @@ func TestSubstituteTypeParams(t *testing.T) {
 			}
 
 			result := checker.substituteTypeParams(objType, substitutions)
-			resultObj := result.(*ObjectType)
 
-			// Property should be substituted: foo: string
-			fooProp := resultObj.Elems[0].(*PropertyElemType)
-			assert.Equal(t, NewStrType(), fooProp.Value)
-
-			// Method should preserve its own T
-			barMethod := resultObj.Elems[1].(*MethodElemType)
-			assert.Equal(t, []*TypeParam{NewTypeParam("T")}, barMethod.Fn.TypeParams)
-
-			// Method parameter and return should still be T (not substituted)
-			assert.Equal(t, NewTypeRefType("T", nil), barMethod.Fn.Params[0].Type)
-			assert.Equal(t, NewTypeRefType("T", nil), barMethod.Fn.Return)
+			assert.Equal(t, "{foo: T, bar: fn <T>(t: T) -> T}", objType.String())
+			assert.Equal(t, "{foo: string, bar: fn <T>(t: T) -> T}", result.String())
 		})
 	})
 
@@ -491,165 +421,92 @@ func TestSubstituteTypeParams(t *testing.T) {
 			substitutions := map[string]Type{}
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
-			assert.Equal(t, typeRef, result)
+
+			assert.Equal(t, "T", typeRef.String())
+			assert.Equal(t, "T", result.String())
 		})
 	})
 }
 
 func TestSubstituteTypeParamsInObjElem(t *testing.T) {
-	t.Run("PropertyElemType", func(t *testing.T) {
-		prop := &PropertyElemType{
-			Name:     NewStrKey("test"),
-			Optional: true,
-			Readonly: true,
-			Value:    NewTypeRefType("T", nil),
-		}
+	// Create shared substitutions map
+	substitutions := map[string]Type{
+		"T": NewNumType(),
+		"U": NewStrType(),
+		"V": NewBoolType(),
+	}
 
-		substitutions := map[string]Type{
-			"T": NewNumType(),
-		}
+	// Create all object elements
+	prop := &PropertyElemType{
+		Name:     NewStrKey("test"),
+		Optional: true,
+		Readonly: true,
+		Value:    NewTypeRefType("T", nil),
+	}
 
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(prop)
+	methodFunc := &FuncType{
+		Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "x"}, NewTypeRefType("T", nil))},
+		Return: NewTypeRefType("U", nil),
+		Throws: NewNeverType(),
+	}
+	method := &MethodElemType{
+		Name: NewStrKey("method"),
+		Fn:   methodFunc,
+	}
 
-		resultProp := result.(*PropertyElemType)
-		assert.Equal(t, NewStrKey("test"), resultProp.Name)
-		assert.True(t, resultProp.Optional)
-		assert.True(t, resultProp.Readonly)
-		assert.Equal(t, NewNumType(), resultProp.Value)
+	getterFunc := &FuncType{
+		Params: []*FuncParam{},
+		Return: NewTypeRefType("T", nil),
+		Throws: NewNeverType(),
+	}
+	getter := &GetterElemType{
+		Name: NewStrKey("getter"),
+		Fn:   getterFunc,
+	}
+
+	setterFunc := &FuncType{
+		Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "value"}, NewTypeRefType("V", nil))},
+		Return: NewLitType(&UndefinedLit{}),
+		Throws: NewNeverType(),
+	}
+	setter := &SetterElemType{
+		Name: NewStrKey("setter"),
+		Fn:   setterFunc,
+	}
+
+	callableFunc := &FuncType{
+		Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "x"}, NewTypeRefType("T", nil))},
+		Return: NewTypeRefType("U", nil),
+		Throws: NewNeverType(),
+	}
+	callable := &CallableElemType{Fn: callableFunc}
+
+	constructorFunc := &FuncType{
+		Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "init"}, NewTypeRefType("V", nil))},
+		Return: NewTypeRefType("U", nil),
+		Throws: NewNeverType(),
+	}
+	constructor := &ConstructorElemType{Fn: constructorFunc}
+
+	restElem := &RestSpreadElemType{
+		Value: NewTypeRefType("T", nil),
+	}
+
+	// Create a single object type containing all elements
+	objType := NewObjectType([]ObjTypeElem{
+		prop,
+		method,
+		getter,
+		setter,
+		callable,
+		constructor,
+		restElem,
 	})
 
-	t.Run("MethodElemType", func(t *testing.T) {
-		methodFunc := &FuncType{
-			Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "x"}, NewTypeRefType("T", nil))},
-			Return: NewTypeRefType("U", nil),
-			Throws: NewNeverType(),
-		}
-		method := &MethodElemType{
-			Name: NewStrKey("method"),
-			Fn:   methodFunc,
-		}
+	// Substitute type parameters in the entire object
+	checker := &Checker{}
+	result := checker.substituteTypeParams(objType, substitutions)
 
-		substitutions := map[string]Type{
-			"T": NewStrType(),
-			"U": NewBoolType(),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(method)
-
-		resultMethod := result.(*MethodElemType)
-		assert.Equal(t, NewStrKey("method"), resultMethod.Name)
-		assert.Equal(t, NewStrType(), resultMethod.Fn.Params[0].Type)
-		assert.Equal(t, NewBoolType(), resultMethod.Fn.Return)
-	})
-
-	t.Run("GetterElemType", func(t *testing.T) {
-		getterFunc := &FuncType{
-			Params: []*FuncParam{},
-			Return: NewTypeRefType("T", nil),
-			Throws: NewNeverType(),
-		}
-		getter := &GetterElemType{
-			Name: NewStrKey("getter"),
-			Fn:   getterFunc,
-		}
-
-		substitutions := map[string]Type{
-			"T": NewNumType(),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(getter)
-
-		resultGetter := result.(*GetterElemType)
-		assert.Equal(t, NewStrKey("getter"), resultGetter.Name)
-		assert.Equal(t, NewNumType(), resultGetter.Fn.Return)
-	})
-
-	t.Run("SetterElemType", func(t *testing.T) {
-		setterFunc := &FuncType{
-			Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "value"}, NewTypeRefType("T", nil))},
-			Return: NewLitType(&UndefinedLit{}),
-			Throws: NewNeverType(),
-		}
-		setter := &SetterElemType{
-			Name: NewStrKey("setter"),
-			Fn:   setterFunc,
-		}
-
-		substitutions := map[string]Type{
-			"T": NewBoolType(),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(setter)
-
-		resultSetter := result.(*SetterElemType)
-		assert.Equal(t, NewStrKey("setter"), resultSetter.Name)
-		assert.Equal(t, NewBoolType(), resultSetter.Fn.Params[0].Type)
-	})
-
-	t.Run("CallableElemType", func(t *testing.T) {
-		callableFunc := &FuncType{
-			Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "x"}, NewTypeRefType("T", nil))},
-			Return: NewTypeRefType("U", nil),
-			Throws: NewNeverType(),
-		}
-		callable := &CallableElemType{Fn: callableFunc}
-
-		substitutions := map[string]Type{
-			"T": NewStrType(),
-			"U": NewNumType(),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(callable)
-
-		resultCallable := result.(*CallableElemType)
-		assert.Equal(t, NewStrType(), resultCallable.Fn.Params[0].Type)
-		assert.Equal(t, NewNumType(), resultCallable.Fn.Return)
-	})
-
-	t.Run("ConstructorElemType", func(t *testing.T) {
-		constructorFunc := &FuncType{
-			Params: []*FuncParam{NewFuncParam(&IdentPat{Name: "init"}, NewTypeRefType("T", nil))},
-			Return: NewTypeRefType("U", nil),
-			Throws: NewNeverType(),
-		}
-		constructor := &ConstructorElemType{Fn: constructorFunc}
-
-		substitutions := map[string]Type{
-			"T": NewBoolType(),
-			"U": NewStrType(),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(constructor)
-
-		resultConstructor := result.(*ConstructorElemType)
-		assert.Equal(t, NewBoolType(), resultConstructor.Fn.Params[0].Type)
-		assert.Equal(t, NewStrType(), resultConstructor.Fn.Return)
-	})
-
-	t.Run("RestSpreadElemType", func(t *testing.T) {
-		restElem := &RestSpreadElemType{
-			Value: NewTypeRefType("T", nil),
-		}
-
-		substitutions := map[string]Type{
-			"T": NewObjectType([]ObjTypeElem{
-				NewPropertyElemType(NewStrKey("x"), NewNumType()),
-			}),
-		}
-
-		visitor := NewTypeParamSubstitutionVisitor(substitutions)
-		result := visitor.substituteTypeParamsInObjElem(restElem)
-
-		resultRest := result.(*RestSpreadElemType)
-		objType := resultRest.Value.(*ObjectType)
-		prop := objType.Elems[0].(*PropertyElemType)
-		assert.Equal(t, NewStrKey("x"), prop.Name)
-		assert.Equal(t, NewNumType(), prop.Value)
-	})
+	assert.Equal(t, "{test?: T, method: fn (x: T) -> U, get getter: fn () -> T, set setter: fn (value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
+	assert.Equal(t, "{test?: number, method: fn (x: number) -> string, get getter: fn () -> number, set setter: fn (value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
 }

@@ -780,9 +780,9 @@ func (t *ObjectType) String() string {
 			}
 			switch elem := elem.(type) {
 			case *CallableElemType:
-				result += "call: " + elem.Fn.String()
+				result += elem.Fn.String()
 			case *ConstructorElemType:
-				result += "construct: " + elem.Fn.String()
+				result += "new " + elem.Fn.String()
 			case *MethodElemType:
 				result += elem.Name.String() + ": " + elem.Fn.String()
 			case *GetterElemType:
@@ -790,7 +790,11 @@ func (t *ObjectType) String() string {
 			case *SetterElemType:
 				result += "set " + elem.Name.String() + ": " + elem.Fn.String()
 			case *PropertyElemType:
-				result += elem.Name.String() + ": " + elem.Value.String()
+				result += elem.Name.String()
+				if elem.Optional {
+					result += "?"
+				}
+				result += ": " + elem.Value.String()
 			case *MappedElemType:
 				// TODO: handle renaming
 				// TODO: handle optional and readonly
