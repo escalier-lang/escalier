@@ -68,6 +68,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"ConditionalType": {
 			input: "if A : B { C } else { D }",
 		},
+		"ConditionalTypeWithChaining": {
+			input: "if A : B { C } else if E : F { G } else { H }",
+		},
 		"InferType": {
 			input: "infer T",
 		},

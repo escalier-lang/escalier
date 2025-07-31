@@ -257,13 +257,24 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			}
 			p.expect(CloseBrace, AlwaysConsume)
 			p.expect(Else, AlwaysConsume)
-			p.expect(OpenBrace, AlwaysConsume)
-			elseType := p.typeAnn()
-			if elseType == nil {
-				p.reportError(token.Span, "expected else type for conditional type")
-				return nil
+
+			// Check if this is an 'else if' or a final 'else'
+			var elseType ast.TypeAnn
+			nextToken := p.lexer.peek()
+			if nextToken.Type == If {
+				// Parse 'else if' - recursively parse another conditional type
+				elseType = p.primaryTypeAnn() // This will parse the nested conditional
+			} else {
+				// Parse final 'else' clause
+				p.expect(OpenBrace, AlwaysConsume)
+				elseType = p.typeAnn()
+				if elseType == nil {
+					p.reportError(nextToken.Span, "expected else type for conditional type")
+					return nil
+				}
+				p.expect(CloseBrace, AlwaysConsume)
 			}
-			p.expect(CloseBrace, AlwaysConsume)
+
 			typeAnn = ast.NewCondTypeAnn(
 				checkType,
 				extendsType,
