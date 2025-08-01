@@ -158,7 +158,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	ident := ast.NewIdentifier(token.Value, token.Span)
 
 	// Parse optional type parameters
-	typeParams := []*ast.TypeParam{}
+	var typeParams []*ast.TypeParam
 	if p.lexer.peek().Type == LessThan {
 		p.lexer.consume() // consume '<'
 		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)

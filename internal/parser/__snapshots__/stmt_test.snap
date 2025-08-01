@@ -686,9 +686,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.UnionTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
@@ -1048,9 +1047,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.UnionTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
@@ -1503,9 +1501,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.ObjectTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
