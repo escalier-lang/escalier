@@ -1619,16 +1619,7 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, unionType)
 
 		assert.Empty(t, errors)
-		// Check that the result is a UnionType
-		_, ok := result.(*UnionType)
-		assert.True(t, ok, "Expected UnionType")
-
-		resultUnion := result.(*UnionType)
-		assert.Len(t, resultUnion.Types, 2)
-
-		// The result should contain the same types as the original
-		assert.Contains(t, []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}, `"hello"`)
-		assert.Contains(t, []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}, "42")
+		assert.Equal(t, `"hello" | 42`, result.String())
 	})
 
 	t.Run("TypeRefType - unknown type alias", func(t *testing.T) {
@@ -1647,7 +1638,7 @@ func TestExpandType(t *testing.T) {
 		// Check that the error is an UnknownTypeError
 		_, ok := errors[0].(*UnknownTypeError)
 		assert.True(t, ok, "Expected UnknownTypeError")
-		assert.Equal(t, result.String(), "never")
+		assert.Equal(t, "never", result.String())
 	})
 
 	t.Run("TypeRefType - simple type alias", func(t *testing.T) {
@@ -1709,7 +1700,6 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, typeRef)
 
 		assert.Empty(t, errors)
-		// The result should have the type parameter substituted with the literal
 		assert.Equal(t, `"hello"`, result.String())
 	})
 
@@ -1744,7 +1734,6 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, outerTypeRef)
 
 		assert.Empty(t, errors)
-		// The result should be fully expanded to the literal
 		assert.Equal(t, `"inner"`, result.String())
 	})
 
@@ -1774,17 +1763,7 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, unionType)
 
 		assert.Empty(t, errors)
-		// Check that the result is a UnionType
-		_, ok := result.(*UnionType)
-		assert.True(t, ok, "Expected UnionType")
-
-		resultUnion := result.(*UnionType)
-		assert.Len(t, resultUnion.Types, 2)
-
-		// One should be the number literal, the other should be the expanded string literal
-		typeStrings := []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}
-		assert.Contains(t, typeStrings, "42")
-		assert.Contains(t, typeStrings, `"mystring"`)
+		assert.Equal(t, "42 | \"mystring\"", result.String())
 	})
 
 	t.Run("Complex generic type alias", func(t *testing.T) {
@@ -1819,16 +1798,6 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, typeRef)
 
 		assert.Empty(t, errors)
-		// Check that the result is a UnionType
-		_, ok := result.(*UnionType)
-		assert.True(t, ok, "Expected UnionType")
-
-		resultUnion := result.(*UnionType)
-		assert.Len(t, resultUnion.Types, 2)
-
-		// Should be "ok" | "error"
-		typeStrings := []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}
-		assert.Contains(t, typeStrings, `"ok"`)
-		assert.Contains(t, typeStrings, `"error"`)
+		assert.Equal(t, "\"ok\" | \"error\"", result.String())
 	})
 }
