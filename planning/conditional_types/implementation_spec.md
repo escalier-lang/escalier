@@ -151,40 +151,76 @@ func NewInferType(name string) *InferType {
 ```go
 package type_system
 
-// ExtractInferredTypes extracts infer variable bindings from type matching
-func ExtractInferredTypes(source, pattern Type) map[string]Type {
-    bindings := make(map[string]Type)
-    extractInferredTypesRec(source, pattern, bindings)
-    return bindings
+// ProcessInferTypes replaces InferType nodes with fresh type variables
+// and returns the modified extends type and a mapping from infer names to type variables
+func ProcessInferTypes(extendsType Type) (Type, map[string]*TypeVar) {
+    visitor := &InferTypeProcessor{
+        inferVars: make(map[string]*TypeVar),
+    }
+    processedType := extendsType.Accept(visitor).(Type)
+    return processedType, visitor.inferVars
 }
 
-func extractInferredTypesRec(source, pattern Type, bindings map[string]Type) {
-    pattern = Prune(pattern)
-    source = Prune(source)
+// InferTypeProcessor implements TypeVisitor to replace InferType nodes with fresh TypeVar instances
+type InferTypeProcessor struct {
+    inferVars map[string]*TypeVar
+}
+
+func (v *InferTypeProcessor) EnterType(t Type) {
+    // No-op - just for traversal
+}
+
+func (v *InferTypeProcessor) ExitType(t Type) Type {
+    t = Prune(t)
     
-    switch pattern := pattern.(type) {
-    case *InferType:
-        bindings[pattern.Name] = source
-    case *FuncType:
-        if sourceFn, ok := source.(*FuncType); ok {
-            // Match parameters and return types
-            for i, param := range pattern.Params {
-                if i < len(sourceFn.Params) {
-                    extractInferredTypesRec(sourceFn.Params[i].Type, param.Type, bindings)
-                }
-            }
-            extractInferredTypesRec(sourceFn.Return, pattern.Return, bindings)
+    if inferType, ok := t.(*InferType); ok {
+        if existingVar, exists := v.inferVars[inferType.Name]; exists {
+            // Reuse existing type variable for same infer name
+            return existingVar
         }
-    case *TupleType:
-        if sourceTuple, ok := source.(*TupleType); ok {
-            for i, elem := range pattern.Elems {
-                if i < len(sourceTuple.Elems) {
-                    extractInferredTypesRec(sourceTuple.Elems[i], elem, bindings)
-                }
-            }
-        }
-    // Handle other pattern types...
+        // Create fresh type variable
+        freshVar := NewTypeVar()
+        v.inferVars[inferType.Name] = freshVar
+        return freshVar
     }
+    
+    // For all other types, return as-is (children have already been processed)
+    return t
+}
+
+// SubstituteInferVars replaces TypeRefType nodes that correspond to infer variables
+// with the actual inferred types from unification
+func SubstituteInferVars(t Type, inferMapping map[string]*TypeVar) Type {
+    visitor := &InferVarSubstitutor{
+        inferMapping: inferMapping,
+    }
+    return t.Accept(visitor).(Type)
+}
+
+// InferVarSubstitutor implements TypeVisitor to substitute infer variable references
+type InferVarSubstitutor struct {
+    inferMapping map[string]*TypeVar
+}
+
+func (v *InferVarSubstitutor) EnterType(t Type) {
+    // No-op - just for traversal
+}
+
+func (v *InferVarSubstitutor) ExitType(t Type) Type {
+    t = Prune(t)
+    
+    if typeRef, ok := t.(*TypeRefType); ok {
+        // Check if this type reference corresponds to an infer variable
+        for inferName, typeVar := range v.inferMapping {
+            if typeRef.Name == inferName {
+                // Return the inferred type (what the type variable was unified with)
+                return Prune(typeVar)
+            }
+        }
+    }
+    
+    // For all other types, return as-is (children have already been processed)
+    return t
 }
 ```
 
@@ -234,6 +270,33 @@ import (
     . "github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// Conditional Type Evaluation Strategy:
+//
+// The approach for handling infer types in conditional types:
+// 1. Process the extends clause to replace InferType nodes with fresh TypeVar instances
+// 2. Unify the check type against the processed extends type
+// 3. If unification succeeds, the TypeVar instances will be bound to the corresponding
+//    parts of the check type through the unification process
+// 4. Substitute any TypeRefType nodes in the consequent type that reference the same
+//    names as the infer variables with the bound TypeVar instances
+//
+// Example:
+//   if T : fn(...args: infer P) -> infer R { [P, R] } else { never }
+//   
+//   Processing extends clause:
+//   - Replace "infer P" with fresh TypeVar $1
+//   - Replace "infer R" with fresh TypeVar $2  
+//   - Result: fn(...args: $1) -> $2
+//   
+//   Unifying T = fn(string, number) -> boolean against fn(...args: $1) -> $2:
+//   - $1 becomes bound to [string, number] (rest parameters type)
+//   - $2 becomes bound to boolean
+//   
+//   Substituting in consequent [P, R]:
+//   - P (TypeRefType) -> $1 -> [string, number]
+//   - R (TypeRefType) -> $2 -> boolean
+//   - Result: [[string, number], boolean]
+
 // Note: Distribution in conditional types only occurs when:
 // 1. The conditional type is part of a generic type alias
 // 2. A union type is passed as a type argument to that generic type alias  
@@ -277,7 +340,7 @@ func (c *Checker) evaluateConditionalTypeWithDistribution(ctx Context, check, ex
     }
     
     // Non-distributive evaluation, but still need to handle nested conditionals
-    return c.evaluateNonDistributiveConditional(ctx, check, extends, cons, alt, distributiveTypeParams)
+    return c.evaluateNonDistributiveConditionalWithParams(ctx, check, extends, cons, alt, distributiveTypeParams)
 }
 
 // containsDistributiveTypeParam checks if a type contains any type parameters that should distribute
@@ -296,9 +359,9 @@ type DistributiveTypeParamVisitor struct {
     found                  bool
 }
 
-func (v *DistributiveTypeParamVisitor) VisitType(t Type) {
+func (v *DistributiveTypeParamVisitor) EnterType(t Type) {
     if v.found {
-        return // Early exit if already found
+        return // Early exit if already found (though we can't short-circuit traversal)
     }
     
     if typeRef, ok := t.(*TypeRefType); ok {
@@ -308,33 +371,48 @@ func (v *DistributiveTypeParamVisitor) VisitType(t Type) {
     }
 }
 
+func (v *DistributiveTypeParamVisitor) ExitType(t Type) Type {
+    return t // No transformation needed
+}
+
 // evaluateDistributiveConditional handles union types in check position
 func (c *Checker) evaluateDistributiveConditional(ctx Context, union *UnionType, extends, cons, alt Type, distributiveTypeParams map[string]bool) Type {
     results := make([]Type, len(union.Types))
     
     for i, elem := range union.Types {
-        results[i] = c.evaluateNonDistributiveConditional(ctx, elem, extends, cons, alt, distributiveTypeParams)
+        results[i] = c.evaluateNonDistributiveConditionalWithParams(ctx, elem, extends, cons, alt, distributiveTypeParams)
     }
     
     return NewUnionType(results...)
 }
 
-// evaluateNonDistributiveConditional evaluates the conditional without distribution
-func (c *Checker) evaluateNonDistributiveConditional(ctx Context, check, extends, cons, alt Type, distributiveTypeParams map[string]bool) Type {
-    // Extract infer variable bindings
-    inferBindings := ExtractInferredTypes(check, extends)
+// evaluateNonDistributiveConditional evaluates the conditional without distribution (overload for simple cases)
+func (c *Checker) evaluateNonDistributiveConditional(ctx Context, check, extends, cons, alt Type) Type {
+    return c.evaluateNonDistributiveConditionalWithParams(ctx, check, extends, cons, alt, nil)
+}
+
+// evaluateNonDistributiveConditionalWithParams is the main implementation
+func (c *Checker) evaluateNonDistributiveConditionalWithParams(ctx Context, check, extends, cons, alt Type, distributiveTypeParams map[string]bool) Type {
+    // Process infer types in the extends clause, replacing them with fresh type variables
+    processedExtends, inferVars := ProcessInferTypes(extends)
     
-    // Check if check type extends extends type using existing unify logic
-    unifyErrors := c.unify(ctx, check, extends)
+    // Unify the check type with the processed extends type
+    unifyErrors := c.unify(ctx, check, processedExtends)
     if len(unifyErrors) == 0 {
-        // Types are compatible - replace infer variables in consequent
-        substitutedCons := c.substituteInferVariables(cons, inferBindings)
+        // Types are compatible - substitute infer variables in consequent
+        substitutedCons := SubstituteInferVars(cons, inferVars)
         
         // Handle nested conditionals in the consequent that may need distribution
-        return c.handleNestedConditionals(ctx, substitutedCons, distributiveTypeParams)
+        if distributiveTypeParams != nil {
+            return c.handleNestedConditionals(ctx, substitutedCons, distributiveTypeParams)
+        }
+        return substitutedCons
     } else {
         // Handle nested conditionals in the alternative that may need distribution
-        return c.handleNestedConditionals(ctx, alt, distributiveTypeParams)
+        if distributiveTypeParams != nil {
+            return c.handleNestedConditionals(ctx, alt, distributiveTypeParams)
+        }
+        return alt
     }
 }
 
@@ -371,50 +449,6 @@ func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveType
             Self:       t.Self,
         }
     // Handle other composite types...
-    default:
-        return t
-    }
-}
-
-// substituteInferVariables replaces InferType nodes with their bindings
-func (c *Checker) substituteInferVariables(t Type, bindings map[string]Type) Type {
-    t = Prune(t)
-    
-    switch t := t.(type) {
-    case *InferType:
-        if binding, exists := bindings[t.Name]; exists {
-            return binding
-        }
-        return t
-    case *FuncType:
-        params := make([]*FuncParam, len(t.Params))
-        for i, param := range t.Params {
-            params[i] = &FuncParam{
-                Pattern:  param.Pattern,
-                Type:     c.substituteInferVariables(param.Type, bindings),
-                Optional: param.Optional,
-            }
-        }
-        return &FuncType{
-            Params:     params,
-            Return:     c.substituteInferVariables(t.Return, bindings),
-            Throws:     t.Throws,
-            TypeParams: t.TypeParams,
-            Self:       t.Self,
-        }
-    case *TupleType:
-        elems := make([]Type, len(t.Elems))
-        for i, elem := range t.Elems {
-            elems[i] = c.substituteInferVariables(elem, bindings)
-        }
-        return NewTupleType(elems...)
-    case *ObjectType:
-        elems := make([]ObjTypeElem, len(t.Elems))
-        for i, elem := range t.Elems {
-            elems[i] = c.substituteInferVariablesInObjElem(elem, bindings)
-        }
-        return NewObjectType(elems)
-    // Handle other types...
     default:
         return t
     }

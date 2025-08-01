@@ -157,17 +157,25 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	p.lexer.consume()
 	ident := ast.NewIdentifier(token.Value, token.Span)
 
-	end := token.Span.End
+	// Parse optional type parameters
+	var typeParams []*ast.TypeParam
+	if p.lexer.peek().Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, AlwaysConsume)
+	}
 
 	p.expect(Equal, AlwaysConsume)
-
-	typeParams := []*ast.TypeParam{}
 
 	typeAnn := p.typeAnn()
 
 	if typeAnn == nil {
 		return nil
 	}
+
+	// End position is the end of the type annotation
+	end := typeAnn.Span().End
+
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, span)
 	return decl

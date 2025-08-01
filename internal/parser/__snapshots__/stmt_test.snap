@@ -686,9 +686,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.UnionTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
@@ -756,13 +755,13 @@ nil
         declare: false,
         span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:12},
+            End:      ast.Location{Line:4, Column:10},
             SourceID: 0,
         },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:12},
+        End:      ast.Location{Line:4, Column:10},
         SourceID: 0,
     },
 }
@@ -1048,9 +1047,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.UnionTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.UnionTypeAnn{
             Types: {
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
@@ -1118,13 +1116,13 @@ nil
         declare: false,
         span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:12},
+            End:      ast.Location{Line:5, Column:10},
             SourceID: 0,
         },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:12},
+        End:      ast.Location{Line:5, Column:10},
         SourceID: 0,
     },
 }
@@ -1503,9 +1501,8 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: {
-        },
-        TypeAnn: &ast.ObjectTypeAnn{
+        TypeParams: nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -1565,13 +1562,13 @@ nil
         declare: false,
         span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:12},
+            End:      ast.Location{Line:1, Column:39},
             SourceID: 0,
         },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:12},
+        End:      ast.Location{Line:1, Column:39},
         SourceID: 0,
     },
 }
@@ -1931,6 +1928,304 @@ nil
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:5, Column:5},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/TypeDeclWithMultipleTypeParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "MyType",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: {
+            &ast.TypeParam{
+                Name:       "T",
+                Constraint: nil,
+                Default:    nil,
+            },
+            &ast.TypeParam{
+                Name:       "U",
+                Constraint: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:19},
+                        End:      ast.Location{Line:1, Column:25},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+            },
+        },
+        TypeAnn: &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.PropertyTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "first",
+                        Namespace: 0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:36},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    Readonly: false,
+                    Value:    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:38},
+                                End:      ast.Location{Line:1, Column:39},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:38},
+                            End:      ast.Location{Line:1, Column:39},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                &ast.PropertyTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "second",
+                        Namespace: 0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:41},
+                            End:      ast.Location{Line:1, Column:47},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    Readonly: false,
+                    Value:    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "U",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:49},
+                                End:      ast.Location{Line:1, Column:50},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:49},
+                            End:      ast.Location{Line:1, Column:50},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:29},
+                End:      ast.Location{Line:1, Column:52},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:52},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:52},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/TypeDeclWithTypeParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "MyType",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: {
+            &ast.TypeParam{
+                Name:       "T",
+                Constraint: nil,
+                Default:    nil,
+            },
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Array",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:24},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:25},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:18},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:26},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:26},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/TypeDeclWithConstrainedTypeParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "MyType",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: {
+            &ast.TypeParam{
+                Name:       "T",
+                Constraint: &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:22},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+            },
+            &ast.TypeParam{
+                Name:       "U",
+                Constraint: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:27},
+                        End:      ast.Location{Line:1, Column:33},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:36},
+                        End:      ast.Location{Line:1, Column:42},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+        },
+        TypeAnn: &ast.UnionTypeAnn{
+            Types: {
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:46},
+                            End:      ast.Location{Line:1, Column:47},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:46},
+                        End:      ast.Location{Line:1, Column:47},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "U",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:50},
+                            End:      ast.Location{Line:1, Column:51},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:50},
+                        End:      ast.Location{Line:1, Column:51},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:46},
+                End:      ast.Location{Line:1, Column:51},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:51},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:51},
         SourceID: 0,
     },
 }

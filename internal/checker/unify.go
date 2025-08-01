@@ -101,6 +101,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			if prim1.Equal(prim2) {
 				return nil
 			}
+			// Different primitive types cannot be unified
+			return []Error{&CannotUnifyTypesError{
+				T1: prim1,
+				T2: prim2,
+			}}
 		}
 	}
 	// | WildcardType, _ -> ...
@@ -543,12 +548,35 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// | UnionType, _ -> ...
 	if union, ok := t1.(*UnionType); ok {
-		panic(fmt.Sprintf("TODO: unify types %#v and %#v", union, t2))
-		// TODO
+		// All types in the union must be compatible with t2
+		for _, unionType := range union.Types {
+			unifyErrors := c.unify(ctx, unionType, t2)
+			if len(unifyErrors) > 0 {
+				// If any type in the union is not compatible, return error
+				return []Error{&CannotUnifyTypesError{
+					T1: union,
+					T2: t2,
+				}}
+			}
+		}
+		return nil
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*UnionType); ok {
-		panic(fmt.Sprintf("TODO: unify types %#v and %#v", t1, union))
+		// Try to unify t1 with any type in the union
+		for _, unionType := range union.Types {
+			// Try unifying - if any unification succeeds, we're good
+			unifyErrors := c.unify(ctx, t1, unionType)
+			if len(unifyErrors) == 0 {
+				// Successfully unified with one of the union types
+				return nil
+			}
+		}
+		// If we couldn't unify with any union member, return a unification error
+		return []Error{&CannotUnifyTypesError{
+			T1: t1,
+			T2: union,
+		}}
 	}
 
 	retry := false
