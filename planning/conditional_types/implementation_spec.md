@@ -454,44 +454,6 @@ func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveType
     }
 }
 
-// handleNestedConditionals processes any nested conditional types that may need distribution
-func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveTypeParams map[string]bool) Type {
-    t = Prune(t)
-    
-    switch t := t.(type) {
-    case *CondType:
-        // Recursively evaluate nested conditional with distribution context
-        return c.evaluateConditionalTypeWithDistribution(ctx, t.Check, t.Extends, t.Cons, t.Alt, distributiveTypeParams)
-    case *TupleType:
-        // Handle conditionals in tuple elements
-        elems := make([]Type, len(t.Elems))
-        for i, elem := range t.Elems {
-            elems[i] = c.handleNestedConditionals(ctx, elem, distributiveTypeParams)
-        }
-        return NewTupleType(elems...)
-    case *FuncType:
-        // Handle conditionals in function signatures
-        params := make([]*FuncParam, len(t.Params))
-        for i, param := range t.Params {
-            params[i] = &FuncParam{
-                Pattern:  param.Pattern,
-                Type:     c.handleNestedConditionals(ctx, param.Type, distributiveTypeParams),
-                Optional: param.Optional,
-            }
-        }
-        return &FuncType{
-            Params:     params,
-            Return:     c.handleNestedConditionals(ctx, t.Return, distributiveTypeParams),
-            Throws:     t.Throws,
-            TypeParams: t.TypeParams,
-            Self:       t.Self,
-        }
-    // Handle other composite types...
-    default:
-        return t
-    }
-}
-
 func (c *Checker) substituteInferVariablesInObjElem(elem ObjTypeElem, bindings map[string]Type) ObjTypeElem {
     switch elem := elem.(type) {
     case *PropertyElemType:

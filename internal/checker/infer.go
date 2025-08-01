@@ -624,7 +624,9 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 		typeAlias := ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias == nil {
 			errors := []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
-			return nil, errors
+			neverType := NewNeverType()
+			neverType.SetProvenance(&TypeProvenance{Type: t})
+			return neverType, errors
 		}
 
 		// Replace type params with type args if the type is generic

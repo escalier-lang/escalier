@@ -522,18 +522,14 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				assert.Equal(t, inferErrors, []*Error{})
 			}
 
-			// Collect actual type aliases for verification
-			actualTypes := make(map[string]string)
-			for name, binding := range scope.Types {
-				assert.NotNil(t, binding)
-				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
-				actualTypes[name] = expandedTyped.String()
-			}
-
 			// Verify that all expected type aliases match the actual inferred types
 			for expectedName, expectedType := range test.expectedTypes {
-				actualType, exists := actualTypes[expectedName]
+				binding, exists := scope.Types[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
+
+				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+				actualType := expandedTyped.String()
+
 				if exists {
 					assert.Equal(t, expectedType, actualType, "Type alias mismatch for %s", expectedName)
 				}
@@ -1557,6 +1553,7 @@ func newTestDepGraph() *dep_graph.DepGraph {
 		TypeBindings:  btree.Map[string, dep_graph.DeclID]{},
 		DeclNamespace: make([]string, 2000), // Large enough for test DeclIDs
 		Namespaces:    []string{},
+		Components:    [][]dep_graph.DeclID{},
 	}
 }
 
@@ -1650,7 +1647,7 @@ func TestExpandType(t *testing.T) {
 		// Check that the error is an UnknownTypeError
 		_, ok := errors[0].(*UnknownTypeError)
 		assert.True(t, ok, "Expected UnknownTypeError")
-		assert.Nil(t, result)
+		assert.Equal(t, result.String(), "never")
 	})
 
 	t.Run("TypeRefType - simple type alias", func(t *testing.T) {

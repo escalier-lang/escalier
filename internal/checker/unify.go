@@ -100,13 +100,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		if prim2, ok := t2.(*PrimType); ok {
 			if prim1.Equal(prim2) {
 				return nil
-			} else {
-				// Different primitive types cannot be unified
-				return []Error{&CannotUnifyTypesError{
-					T1: prim1,
-					T2: prim2,
-				}}
 			}
+			// Different primitive types cannot be unified
+			return []Error{&CannotUnifyTypesError{
+				T1: prim1,
+				T2: prim2,
+			}}
 		}
 	}
 	// | WildcardType, _ -> ...
@@ -560,7 +559,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				}}
 			}
 		}
-		return []Error{}
+		return nil
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*UnionType); ok {
@@ -570,7 +569,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			unifyErrors := c.unify(ctx, t1, unionType)
 			if len(unifyErrors) == 0 {
 				// Successfully unified with one of the union types
-				return []Error{}
+				return nil
 			}
 		}
 		// If we couldn't unify with any union member, return a unification error
