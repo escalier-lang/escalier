@@ -180,3 +180,150 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		assert.Empty(t, errors, "Expected no errors when unifying identical string literals")
 	})
 }
+
+func TestUnifyWithUnionTypes(t *testing.T) {
+	checker := &Checker{}
+	ctx := Context{}
+
+	t.Run("literal type unifies with union containing compatible type", func(t *testing.T) {
+		// Create a number literal type "5"
+		numLit := &NumLit{Value: 5}
+		numType := NewLitType(numLit)
+
+		// Create a union type: string | number
+		stringType := NewStrType()
+		numberType := NewNumType()
+		unionType := NewUnionType(stringType, numberType)
+
+		// Test unification - should succeed because 5 is compatible with number
+		errors := checker.unify(ctx, numType, unionType)
+		assert.Empty(t, errors, "Expected no errors when literal unifies with union containing compatible type")
+	})
+
+	t.Run("literal type fails to unify with union containing no compatible types", func(t *testing.T) {
+		// Create a boolean literal type "true"
+		boolLit := &BoolLit{Value: true}
+		boolType := NewLitType(boolLit)
+
+		// Create a union type: string | number (no boolean)
+		stringType := NewStrType()
+		numberType := NewNumType()
+		unionType := NewUnionType(stringType, numberType)
+
+		// Test unification - should fail because boolean is not compatible with string or number
+		errors := checker.unify(ctx, boolType, unionType)
+		assert.NotEmpty(t, errors, "Expected error when literal does not unify with any type in union")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("primitive type unifies with union containing same type", func(t *testing.T) {
+		// Create a string primitive type
+		stringType := NewStrType()
+
+		// Create a union type: string | number | boolean
+		numberType := NewNumType()
+		booleanType := NewBoolType()
+		unionType := NewUnionType(stringType, numberType, booleanType)
+
+		// Test unification - should succeed because string is in the union
+		errors := checker.unify(ctx, stringType, unionType)
+		assert.Empty(t, errors, "Expected no errors when primitive type unifies with union containing same type")
+	})
+
+	t.Run("primitive type fails to unify with union not containing that type", func(t *testing.T) {
+		// Create a bigint primitive type
+		bigintType := &PrimType{Prim: BigIntPrim}
+
+		// Create a union type: string | number | boolean (no bigint)
+		stringType := NewStrType()
+		numberType := NewNumType()
+		booleanType := NewBoolType()
+		unionType := NewUnionType(stringType, numberType, booleanType)
+
+		// Test unification - should fail because bigint is not in the union
+		errors := checker.unify(ctx, bigintType, unionType)
+		assert.NotEmpty(t, errors, "Expected error when primitive type is not in union")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("union type unifies with broader union type", func(t *testing.T) {
+		// Create a smaller union type: string | number
+		stringType := NewStrType()
+		numberType := NewNumType()
+		smallUnion := NewUnionType(stringType, numberType)
+
+		// Create a larger union type: string | number | boolean
+		booleanType := NewBoolType()
+		largeUnion := NewUnionType(stringType, numberType, booleanType)
+
+		// Test unification - should succeed because all types in smallUnion are in largeUnion
+		errors := checker.unify(ctx, smallUnion, largeUnion)
+		assert.Empty(t, errors, "Expected no errors when smaller union unifies with larger union")
+	})
+
+	t.Run("union type fails to unify with incompatible union type", func(t *testing.T) {
+		// Create a union type: string | number
+		stringType := NewStrType()
+		numberType := NewNumType()
+		union1 := NewUnionType(stringType, numberType)
+
+		// Create another union type: boolean | bigint
+		booleanType := NewBoolType()
+		bigintType := &PrimType{Prim: BigIntPrim}
+		union2 := NewUnionType(booleanType, bigintType)
+
+		// Test unification - should fail because no types overlap
+		errors := checker.unify(ctx, union1, union2)
+		assert.NotEmpty(t, errors, "Expected error when union types have no overlapping types")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("string literal unifies with string in union", func(t *testing.T) {
+		// Create a string literal type "hello"
+		strLit := &StrLit{Value: "hello"}
+		strType := NewLitType(strLit)
+
+		// Create a union type: string | number
+		stringType := NewStrType()
+		numberType := NewNumType()
+		unionType := NewUnionType(stringType, numberType)
+
+		// Test unification - should succeed because "hello" is compatible with string
+		errors := checker.unify(ctx, strType, unionType)
+		assert.Empty(t, errors, "Expected no errors when string literal unifies with union containing string")
+	})
+
+	t.Run("multiple literal types in union", func(t *testing.T) {
+		// Create specific literal types
+		str1 := NewLitType(&StrLit{Value: "red"})
+		str2 := NewLitType(&StrLit{Value: "green"})
+		str3 := NewLitType(&StrLit{Value: "blue"})
+		colorUnion := NewUnionType(str1, str2, str3)
+
+		// Test with matching literal
+		testStr := NewLitType(&StrLit{Value: "red"})
+		errors := checker.unify(ctx, testStr, colorUnion)
+		assert.Empty(t, errors, "Expected no errors when literal matches one of the union literals")
+
+		// Test with non-matching literal
+		wrongStr := NewLitType(&StrLit{Value: "yellow"})
+		errors = checker.unify(ctx, wrongStr, colorUnion)
+		assert.NotEmpty(t, errors, "Expected error when literal does not match any union literals")
+	})
+
+	t.Run("nested union types", func(t *testing.T) {
+		// Create inner union: string | number
+		stringType := NewStrType()
+		numberType := NewNumType()
+		innerUnion := NewUnionType(stringType, numberType)
+
+		// Create outer union that includes the inner union: (string | number) | boolean
+		booleanType := NewBoolType()
+		outerUnion := NewUnionType(innerUnion, booleanType)
+
+		// Test with number literal - should work with nested union
+		numLit := NewLitType(&NumLit{Value: 42})
+		errors := checker.unify(ctx, numLit, outerUnion)
+		assert.Empty(t, errors, "Expected no errors when literal unifies with nested union")
+	})
+}

@@ -61,6 +61,15 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"TypeDecl": {
 			input: "type MyType = { x: number, y: string }",
 		},
+		"TypeDeclWithTypeParams": {
+			input: "type MyType<T> = Array<T>",
+		},
+		"TypeDeclWithMultipleTypeParams": {
+			input: "type MyType<T, U: string> = { first: T, second: U }",
+		},
+		"TypeDeclWithConstrainedTypeParams": {
+			input: "type MyType<T: number, U: string = string> = T | U",
+		},
 		"TypeDeclWithComments": {
 			input: `type MyType = Foo
 				// Comment

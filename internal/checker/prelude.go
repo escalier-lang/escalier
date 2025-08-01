@@ -112,6 +112,20 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
+	// Error type with message property
+	errorElems := []ObjTypeElem{
+		&PropertyElemType{
+			Name:     NewStrKey("message"),
+			Value:    NewStrType(),
+			Optional: false,
+			Readonly: true,
+		},
+	}
+	scope.setTypeAlias("Error", &TypeAlias{
+		Type:       NewObjectType(errorElems),
+		TypeParams: []*TypeParam{},
+	})
+
 	length := &PropertyElemType{
 		Name:     NewStrKey("length"),
 		Value:    NewNumType(),

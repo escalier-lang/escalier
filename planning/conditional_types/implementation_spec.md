@@ -454,9 +454,6 @@ func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveType
     }
 }
 
-    }
-}
-
 // handleNestedConditionals processes any nested conditional types that may need distribution
 func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveTypeParams map[string]bool) Type {
     t = Prune(t)

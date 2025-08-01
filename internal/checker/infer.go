@@ -607,8 +607,6 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	t = Prune(t)
 
 	switch t := t.(type) {
-	case *ObjectType, *LitType, *NamespaceType:
-		return t, nil
 	case *UnionType:
 		types := make([]Type, len(t.Types))
 		errors := []Error{}
@@ -647,8 +645,7 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 
 		return c.expandType(ctx, expandedType)
 	default:
-		fmt.Printf("expandType: unexpected type %s\n", t.String())
-		panic("TODO: expandType - handle other types")
+		return t, nil
 	}
 }
 
@@ -1188,7 +1185,30 @@ func (c *Checker) inferTypeDecl(
 		}
 	}
 
-	t, typeErrors := c.inferTypeAnn(ctx, decl.TypeAnn)
+	// Create a new context with type parameters in scope
+	typeCtx := ctx
+	if len(typeParams) > 0 {
+		// Create a new scope that includes the type parameters
+		typeScope := ctx.Scope.WithNewScope()
+
+		// Add type parameters as type aliases to the scope
+		for _, typeParam := range typeParams {
+			typeParamTypeRef := NewTypeRefType(typeParam.Name, nil)
+			typeParamAlias := &TypeAlias{
+				Type:       typeParamTypeRef,
+				TypeParams: []*TypeParam{},
+			}
+			typeScope.setTypeAlias(typeParam.Name, typeParamAlias)
+		}
+
+		typeCtx = Context{
+			Scope:      typeScope,
+			IsAsync:    ctx.IsAsync,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	t, typeErrors := c.inferTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
 
 	typeAlias := TypeAlias{
@@ -1426,6 +1446,14 @@ func (c *Checker) inferTypeAnn(
 		}
 
 		t = NewObjectType(elems)
+	case *ast.UnionTypeAnn:
+		types := make([]Type, len(typeAnn.Types))
+		for i, unionType := range typeAnn.Types {
+			unionElemType, unionElemErrors := c.inferTypeAnn(ctx, unionType)
+			types[i] = unionElemType
+			errors = slices.Concat(errors, unionElemErrors)
+		}
+		t = NewUnionType(types...)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

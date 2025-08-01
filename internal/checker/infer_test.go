@@ -143,7 +143,8 @@ func TestCheckScriptNoErrors(t *testing.T) {
 
 func TestCheckModuleNoErrors(t *testing.T) {
 	tests := map[string]struct {
-		input string
+		input         string
+		expectedTypes map[string]string
 	}{
 		"VarDecls": {
 			input: `
@@ -151,16 +152,29 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = 10
 				val sum = a + b
 			`,
+			expectedTypes: map[string]string{
+				"a":   "5",
+				"b":   "10",
+				"sum": "number",
+			},
 		},
 		"TupleDecl": {
 			input: `
 				val [x, y] = [5, 10]
 			`,
+			expectedTypes: map[string]string{
+				"x": "5",
+				"y": "10",
+			},
 		},
 		"ObjectDecl": {
 			input: `
 				val {x, y} = {x: "foo", y: "bar"}
 			`,
+			expectedTypes: map[string]string{
+				"x": "\"foo\"",
+				"y": "\"bar\"",
+			},
 		},
 		"ObjectDeclWithDeps": {
 			input: `
@@ -168,6 +182,12 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val bar = "bar"
 				val {x, y} = {x: foo, y: bar}
 			`,
+			expectedTypes: map[string]string{
+				"foo": "\"foo\"",
+				"bar": "\"bar\"",
+				"x":   "\"foo\"",
+				"y":   "\"bar\"",
+			},
 		},
 		"IfElseExpr": {
 			input: `
@@ -179,6 +199,11 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					"hello"
 				}
 			`,
+			expectedTypes: map[string]string{
+				"a": "5",
+				"b": "10",
+				"x": "true | \"hello\"",
+			},
 		},
 		"IfElseIfExpr": {
 			input: `
@@ -192,6 +217,11 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				    "hello"
 				}
 			`,
+			expectedTypes: map[string]string{
+				"a": "5",
+				"b": "10",
+				"x": "true | false | \"hello\"",
+			},
 		},
 		"FuncExpr": {
 			input: `
@@ -199,9 +229,15 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					return x + y
 				}
 			`,
+			expectedTypes: map[string]string{
+				"add": "fn (x: t4, y: t6) -> number",
+			},
 		},
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
+			expectedTypes: map[string]string{
+				"log": "fn (msg: t4) -> undefined",
+			},
 		},
 		"FuncExprMultipleReturns": {
 			input: `
@@ -214,6 +250,9 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					return false
 				}
 			`,
+			expectedTypes: map[string]string{
+				"add": "fn (x: t4, y: t6) -> true | false",
+			},
 		},
 		"MutualRecuriveFunctions": {
 			input: `
@@ -224,12 +263,18 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					return foo() - 1
 				}
 			`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> number",
+				"bar": "fn () -> number",
+			},
 		},
-		"MutualRecuriveTypes": {
+		"UnionTypeVariable": {
 			input: `
-				type Foo = { bar: Bar }
-				type Bar = { foo: Foo }
+				val x: string | number = 5
 			`,
+			expectedTypes: map[string]string{
+				"x": "string | number",
+			},
 		},
 		// "FuncRecursion": {
 		// 	input: `
@@ -278,14 +323,224 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				assert.Equal(t, inferErrors, []*Error{})
 			}
 
-			// TODO: short term - print each of the binding's types and store
-			// them in a map and the snapshot the map.
-			// TODO: long term - generate a .d.ts file from the bindings
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
 			for name, binding := range scope.Values {
 				assert.NotNil(t, binding)
-				fmt.Printf("%s = %s\n", name, binding.Type.String())
-				fmt.Printf("%#v\n", binding.Type.Provenance())
+				actualTypes[name] = binding.Type.String()
 			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+
+			// Note: We don't check for unexpected variables since the scope includes
+			// prelude functions and operators that are implementation details
+		})
+	}
+}
+
+func TestCheckModuleTypeAliases(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"MutualRecursiveTypes": {
+			input: `
+				type Foo = { bar: Bar }
+				type Bar = { foo: Foo }
+			`,
+			expectedTypes: map[string]string{
+				"Foo": "{bar: Bar}",
+				"Bar": "{foo: Foo}",
+			},
+		},
+		"SimpleTypeAlias": {
+			input: `
+				type UserId = number
+				type UserName = string
+			`,
+			expectedTypes: map[string]string{
+				"UserId":   "number",
+				"UserName": "string",
+			},
+		},
+		"ComplexTypeAlias": {
+			input: `
+				type Point = { x: number, y: number }
+				type Vector = { start: Point, end: Point }
+			`,
+			expectedTypes: map[string]string{
+				"Point":  "{x: number, y: number}",
+				"Vector": "{start: Point, end: Point}",
+			},
+		},
+		"NestedObjectTypes": {
+			input: `
+				type Address = { street: string, city: string }
+				type Person = { name: string, age: number, address: Address }
+			`,
+			expectedTypes: map[string]string{
+				"Address": "{street: string, city: string}",
+				"Person":  "{name: string, age: number, address: Address}",
+			},
+		},
+		"PrimitiveTypeAliases": {
+			input: `
+				type ID = number
+				type Message = string
+				type Flag = boolean
+			`,
+			expectedTypes: map[string]string{
+				"ID":      "number",
+				"Message": "string",
+				"Flag":    "boolean",
+			},
+		},
+		"UnionTypeAlias": {
+			input: `
+				type StringOrNumber = string | number
+			`,
+			expectedTypes: map[string]string{
+				"StringOrNumber": "string | number",
+			},
+		},
+		"GenericTypeAlias": {
+			input: `
+				type Box<T> = { value: T }
+				type StringBox = Box<string>
+			`,
+			expectedTypes: map[string]string{
+				"StringBox": "{value: string}",
+			},
+		},
+		"MultipleGenericTypeParams": {
+			input: `
+				type Pair<T, U> = { first: T, second: U }
+				type StringNumberPair = Pair<string, number>
+			`,
+			expectedTypes: map[string]string{
+				"StringNumberPair": "{first: string, second: number}",
+			},
+		},
+		"NestedGenericTypes": {
+			input: `
+				type Container<T> = { items: T }
+				type NumberContainer = Container<number>
+				type ContainerOfContainers = Container<NumberContainer>
+			`,
+			expectedTypes: map[string]string{
+				"NumberContainer":       "{items: number}",
+				"ContainerOfContainers": "{items: NumberContainer}",
+			},
+		},
+		"GenericTupleTypes": {
+			input: `
+				type Triple<T> = [T, T, T]
+				type StringTriple = Triple<string>
+			`,
+			expectedTypes: map[string]string{
+				"StringTriple": "[string, string, string]",
+			},
+		},
+		"GenericUnionTypes": {
+			input: `
+				type Result<T, E> = T | E
+				type StringOrError = Result<string, Error>
+			`,
+			expectedTypes: map[string]string{
+				"StringOrError": "string | {message: string}",
+			},
+		},
+		"GenericWithPrimitiveInstantiation": {
+			input: `
+				type Wrapper<T> = { data: T, id: number }
+				type BooleanWrapper = Wrapper<boolean>
+				type NumberWrapper = Wrapper<number>
+			`,
+			expectedTypes: map[string]string{
+				"BooleanWrapper": "{data: boolean, id: number}",
+				"NumberWrapper":  "{data: number, id: number}",
+			},
+		},
+		"ComplexGenericNesting": {
+			input: `
+				type Optional<T> = T | null
+				type List<T> = { items: Array<T>, length: number }
+				type OptionalStringList = List<Optional<string>>
+			`,
+			expectedTypes: map[string]string{
+				"OptionalStringList": "{items: Array<Optional<string>>, length: number}",
+			},
+		},
+		"GenericTypeWithMultipleInstantiations": {
+			input: `
+				type KeyValue<K, V> = { key: K, value: V }
+				type StringToNumber = KeyValue<string, number>
+				type NumberToBoolean = KeyValue<number, boolean>
+			`,
+			expectedTypes: map[string]string{
+				"StringToNumber":  "{key: string, value: number}",
+				"NumberToBoolean": "{key: number, value: boolean}",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			inferCtx := Context{
+				Scope:      Prelude(),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			c := NewChecker()
+			scope, inferErrors := c.InferModule(inferCtx, module)
+			if len(inferErrors) > 0 {
+				assert.Equal(t, inferErrors, []*Error{})
+			}
+
+			// Collect actual type aliases for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Types {
+				assert.NotNil(t, binding)
+				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+				actualTypes[name] = expandedTyped.String()
+			}
+
+			// Verify that all expected type aliases match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type alias mismatch for %s", expectedName)
+				}
+			}
+
+			// Note: We don't check for unexpected type aliases since the scope may include
+			// prelude types that are implementation details
 		})
 	}
 }
@@ -1303,4 +1558,280 @@ func newTestDepGraph() *dep_graph.DepGraph {
 		DeclNamespace: make([]string, 2000), // Large enough for test DeclIDs
 		Namespaces:    []string{},
 	}
+}
+
+func TestExpandType(t *testing.T) {
+	checker := NewChecker()
+
+	t.Run("Base types - return unchanged", func(t *testing.T) {
+		// Create a test context with an empty scope
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		tests := []struct {
+			name     string
+			input    Type
+			expected Type
+		}{
+			{
+				name:     "ObjectType",
+				input:    NewObjectType([]ObjTypeElem{}),
+				expected: NewObjectType([]ObjTypeElem{}),
+			},
+			{
+				name:     "LitType - string",
+				input:    NewLitType(&StrLit{Value: "hello"}),
+				expected: NewLitType(&StrLit{Value: "hello"}),
+			},
+			{
+				name:     "LitType - number",
+				input:    NewLitType(&NumLit{Value: 42}),
+				expected: NewLitType(&NumLit{Value: 42}),
+			},
+			{
+				name:     "NamespaceType",
+				input:    &NamespaceType{Namespace: NewNamespace()},
+				expected: &NamespaceType{Namespace: NewNamespace()},
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result, errors := checker.expandType(ctx, test.input)
+				assert.Empty(t, errors)
+				assert.Equal(t, test.expected.String(), result.String())
+			})
+		}
+	})
+
+	t.Run("UnionType - recursively expand elements", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union of base types
+		strLit := NewLitType(&StrLit{Value: "hello"})
+		numLit := NewLitType(&NumLit{Value: 42})
+		unionType := NewUnionType(strLit, numLit)
+
+		result, errors := checker.expandType(ctx, unionType)
+
+		assert.Empty(t, errors)
+		// Check that the result is a UnionType
+		_, ok := result.(*UnionType)
+		assert.True(t, ok, "Expected UnionType")
+
+		resultUnion := result.(*UnionType)
+		assert.Len(t, resultUnion.Types, 2)
+
+		// The result should contain the same types as the original
+		assert.Contains(t, []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}, `"hello"`)
+		assert.Contains(t, []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}, "42")
+	})
+
+	t.Run("TypeRefType - unknown type alias", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a TypeRefType that references a non-existent type alias
+		typeRef := NewTypeRefType("UnknownType", nil)
+
+		result, errors := checker.expandType(ctx, typeRef)
+
+		assert.Len(t, errors, 1)
+		// Check that the error is an UnknownTypeError
+		_, ok := errors[0].(*UnknownTypeError)
+		assert.True(t, ok, "Expected UnknownTypeError")
+		assert.Nil(t, result)
+	})
+
+	t.Run("TypeRefType - simple type alias", func(t *testing.T) {
+		// Create a scope with a type alias
+		scope := NewScope()
+
+		// Add a simple type alias: type MyString = "literal"
+		// Using a literal type since expandType doesn't handle PrimType yet
+		literalType := NewLitType(&StrLit{Value: "literal"})
+		typeAlias := &TypeAlias{
+			Type:       literalType,
+			TypeParams: []*TypeParam{},
+		}
+		scope.setTypeAlias("MyString", typeAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a TypeRefType that references the alias
+		typeRef := NewTypeRefType("MyString", typeAlias)
+
+		result, errors := checker.expandType(ctx, typeRef)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"literal"`, result.String())
+	})
+
+	t.Run("TypeRefType - generic type alias with substitution", func(t *testing.T) {
+		// Create a scope with a generic type alias
+		scope := NewScope()
+
+		// Add a generic type alias: type Identity<T> = T
+		// For simplicity, we'll use a TypeRefType for the inner type
+		typeParam := &TypeParam{
+			Name:       "T",
+			Constraint: nil,
+			Default:    nil,
+		}
+		innerTypeRef := NewTypeRefType("T", nil)
+		typeAlias := &TypeAlias{
+			Type:       innerTypeRef,
+			TypeParams: []*TypeParam{typeParam},
+		}
+		scope.setTypeAlias("Identity", typeAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a TypeRefType with type arguments: Identity<"hello">
+		stringLitType := NewLitType(&StrLit{Value: "hello"})
+		typeRef := NewTypeRefType("Identity", typeAlias, stringLitType)
+
+		result, errors := checker.expandType(ctx, typeRef)
+
+		assert.Empty(t, errors)
+		// The result should have the type parameter substituted with the literal
+		assert.Equal(t, `"hello"`, result.String())
+	})
+
+	t.Run("TypeRefType - nested expansion", func(t *testing.T) {
+		// Create a scope with nested type aliases
+		scope := NewScope()
+
+		// Add type aliases: type Inner = "inner", type Outer = Inner
+		innerLitType := NewLitType(&StrLit{Value: "inner"})
+		innerAlias := &TypeAlias{
+			Type:       innerLitType,
+			TypeParams: []*TypeParam{},
+		}
+		scope.setTypeAlias("Inner", innerAlias)
+
+		innerTypeRef := NewTypeRefType("Inner", innerAlias)
+		outerAlias := &TypeAlias{
+			Type:       innerTypeRef,
+			TypeParams: []*TypeParam{},
+		}
+		scope.setTypeAlias("Outer", outerAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a TypeRefType that references the outer alias
+		outerTypeRef := NewTypeRefType("Outer", outerAlias)
+
+		result, errors := checker.expandType(ctx, outerTypeRef)
+
+		assert.Empty(t, errors)
+		// The result should be fully expanded to the literal
+		assert.Equal(t, `"inner"`, result.String())
+	})
+
+	t.Run("UnionType with TypeRefType - mixed expansion", func(t *testing.T) {
+		// Create a scope with a type alias
+		scope := NewScope()
+
+		// Add a type alias: type MyString = "mystring"
+		stringLitType := NewLitType(&StrLit{Value: "mystring"})
+		typeAlias := &TypeAlias{
+			Type:       stringLitType,
+			TypeParams: []*TypeParam{},
+		}
+		scope.setTypeAlias("MyString", typeAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union of a literal and a type reference
+		numLit := NewLitType(&NumLit{Value: 42})
+		typeRef := NewTypeRefType("MyString", typeAlias)
+		unionType := NewUnionType(numLit, typeRef)
+
+		result, errors := checker.expandType(ctx, unionType)
+
+		assert.Empty(t, errors)
+		// Check that the result is a UnionType
+		_, ok := result.(*UnionType)
+		assert.True(t, ok, "Expected UnionType")
+
+		resultUnion := result.(*UnionType)
+		assert.Len(t, resultUnion.Types, 2)
+
+		// One should be the number literal, the other should be the expanded string literal
+		typeStrings := []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}
+		assert.Contains(t, typeStrings, "42")
+		assert.Contains(t, typeStrings, `"mystring"`)
+	})
+
+	t.Run("Complex generic type alias", func(t *testing.T) {
+		// Create a scope with a complex generic type alias
+		scope := NewScope()
+
+		// Add a generic type alias: type Result<T, E> = T | E
+		typeParamT := &TypeParam{Name: "T", Constraint: nil, Default: nil}
+		typeParamE := &TypeParam{Name: "E", Constraint: nil, Default: nil}
+
+		typeRefT := NewTypeRefType("T", nil)
+		typeRefE := NewTypeRefType("E", nil)
+		unionType := NewUnionType(typeRefT, typeRefE)
+
+		typeAlias := &TypeAlias{
+			Type:       unionType,
+			TypeParams: []*TypeParam{typeParamT, typeParamE},
+		}
+		scope.setTypeAlias("Result", typeAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a TypeRefType with type arguments: Result<"ok", "error">
+		okLitType := NewLitType(&StrLit{Value: "ok"})
+		errorLitType := NewLitType(&StrLit{Value: "error"})
+		typeRef := NewTypeRefType("Result", typeAlias, okLitType, errorLitType)
+
+		result, errors := checker.expandType(ctx, typeRef)
+
+		assert.Empty(t, errors)
+		// Check that the result is a UnionType
+		_, ok := result.(*UnionType)
+		assert.True(t, ok, "Expected UnionType")
+
+		resultUnion := result.(*UnionType)
+		assert.Len(t, resultUnion.Types, 2)
+
+		// Should be "ok" | "error"
+		typeStrings := []string{resultUnion.Types[0].String(), resultUnion.Types[1].String()}
+		assert.Contains(t, typeStrings, `"ok"`)
+		assert.Contains(t, typeStrings, `"error"`)
+	})
 }

@@ -966,7 +966,11 @@ func (t *UnionType) String() string {
 			if i > 0 {
 				result += " | "
 			}
-			result += typ.String()
+			if typ == nil {
+				result += "<nil>" // TODO: investigate why this happens
+			} else {
+				result += typ.String()
+			}
 		}
 	}
 	return result
