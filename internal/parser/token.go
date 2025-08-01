@@ -53,6 +53,7 @@ const (
 	Number
 	String
 	Boolean
+	Any
 
 	// operators
 	Plus

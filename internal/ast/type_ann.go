@@ -13,6 +13,7 @@ func (*LitTypeAnn) isTypeAnn()          {}
 func (*NumberTypeAnn) isTypeAnn()       {}
 func (*StringTypeAnn) isTypeAnn()       {}
 func (*BooleanTypeAnn) isTypeAnn()      {}
+func (*AnyTypeAnn) isTypeAnn()          {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
@@ -85,6 +86,19 @@ func NewBooleanTypeAnn(span Span) *BooleanTypeAnn {
 	return &BooleanTypeAnn{span: span, inferredType: nil}
 }
 func (t *BooleanTypeAnn) Accept(v Visitor) {
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
+}
+
+type AnyTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewAnyTypeAnn(span Span) *AnyTypeAnn {
+	return &AnyTypeAnn{span: span, inferredType: nil}
+}
+func (t *AnyTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
 	v.ExitTypeAnn(t)
 }

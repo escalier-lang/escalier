@@ -29,6 +29,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"NumberLiteralTypeAnn": {
 			input: "5",
 		},
+		"TrueLiteralTypeAnn": {
+			input: "true",
+		},
+		"FalseLiteralTypeAnn": {
+			input: "false",
+		},
 		"FuncWithoutParams": {
 			input: "fn() -> number",
 		},

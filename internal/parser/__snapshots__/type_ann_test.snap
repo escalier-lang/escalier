@@ -1148,17 +1148,7 @@
                 },
             },
         },
-        Return: &ast.TypeRefTypeAnn{
-            Name: &ast.Ident{
-                Name: "any",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:32},
-                    End:      ast.Location{Line:1, Column:35},
-                    SourceID: 0,
-                },
-            },
-            TypeArgs: {
-            },
+        Return: &ast.AnyTypeAnn{
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:32},
                 End:      ast.Location{Line:1, Column:35},
@@ -1370,6 +1360,44 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/FalseLiteralTypeAnn - 1]
+&ast.LitTypeAnn{
+    Lit: &ast.BoolLit{
+        Value: false,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TrueLiteralTypeAnn - 1]
+&ast.LitTypeAnn{
+    Lit: &ast.BoolLit{
+        Value: true,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:5},
         SourceID: 0,
     },
     inferredType: nil,

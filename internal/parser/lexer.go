@@ -56,6 +56,7 @@ var keywords = map[string]TokenType{
 	"number":    Number,
 	"string":    String,
 	"boolean":   Boolean,
+	"any":       Any,
 	"mut":       Mut,
 	"for":       For,
 	"in":        In,

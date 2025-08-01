@@ -147,6 +147,7 @@ const (
 	StrPrim    Prim = "string"
 	BigIntPrim Prim = "bigint"
 	SymbolPrim Prim = "symbol"
+	AnyPrim    Prim = "any"
 )
 
 type PrimType struct {
@@ -169,6 +170,12 @@ func NewStrType() *PrimType {
 func NewBoolType() *PrimType {
 	return &PrimType{
 		Prim:       BoolPrim,
+		provenance: nil,
+	}
+}
+func NewAnyType() *PrimType {
+	return &PrimType{
+		Prim:       AnyPrim,
 		provenance: nil,
 	}
 }

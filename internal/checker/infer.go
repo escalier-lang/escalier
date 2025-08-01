@@ -1374,6 +1374,8 @@ func (c *Checker) inferTypeAnn(
 		t = NewStrType()
 	case *ast.BooleanTypeAnn:
 		t = NewBoolType()
+	case *ast.AnyTypeAnn:
+		t = NewAnyType()
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
@@ -1456,6 +1458,14 @@ func (c *Checker) inferTypeAnn(
 			errors = slices.Concat(errors, unionElemErrors)
 		}
 		t = NewUnionType(types...)
+	case *ast.FuncTypeAnn:
+		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn)
+		t = funcType
+		errors = slices.Concat(errors, funcErrors)
+	case *ast.CondTypeAnn:
+		// TODO: Implement conditional type inference
+		// For now, return an unknown type to prevent panics
+		t = NewUnknownType()
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

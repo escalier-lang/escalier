@@ -614,7 +614,7 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 	case *InferTypeAnn:
 		panic("PrintTypeAnn: InferTypeAnn not implemented")
 	case *AnyTypeAnn:
-		panic("PrintTypeAnn: AnyTypeAnn not implemented")
+		p.print("any")
 	case *TemplateLitTypeAnn:
 		panic("PrintTypeAnn: TemplateLitTypeAnn not implemented")
 	case *IntrinsicTypeAnn:
