@@ -675,34 +675,179 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 	}
 
 	// Check parameters (contravariant)
-	// func2 can have fewer parameters than func1
-	if len(func2.Params) > len(func1.Params) {
-		return []Error{&CannotUnifyTypesError{
-			T1: func1,
-			T2: func2,
-		}}
+	// Handle rest parameters: if func2 has a rest parameter, it can accept excess params from func1
+
+	// Find if func1 and func2 have rest parameters
+	var func1RestIndex = -1
+	var func2RestIndex = -1
+
+	for i, param := range func1.Params {
+		if param.Pattern != nil {
+			if _, isRest := param.Pattern.(*RestPat); isRest {
+				func1RestIndex = i
+				break
+			}
+		}
 	}
 
-	// For each parameter in func2, the corresponding parameter in func1
-	// must be unifiable (contravariant: func2 param type must be supertype of func1 param type)
-	for i, param2 := range func2.Params {
-		param1 := func1.Params[i]
+	for i, param := range func2.Params {
+		if param.Pattern != nil {
+			if _, isRest := param.Pattern.(*RestPat); isRest {
+				func2RestIndex = i
+				break
+			}
+		}
+	}
 
-		// Parameter types are contravariant: unify param2.Type with param1.Type
-		unifyErrors := c.unify(ctx, param2.Type, param1.Type)
-		errors = slices.Concat(errors, unifyErrors)
-
-		// Optional parameter compatibility
-		// If param1 is optional, param2 can be either optional or required
-		// If param1 is required, param2 must be required
-		if param1.Optional && !param2.Optional {
-			// This is fine - param2 is more restrictive
-		} else if !param1.Optional && param2.Optional {
-			// param1 requires the parameter but param2 makes it optional
+	if func1RestIndex != -1 && func2RestIndex != -1 {
+		// Both functions have rest parameters
+		// They must have the same number of fixed parameters and compatible rest types
+		if func1RestIndex != func2RestIndex {
 			return []Error{&CannotUnifyTypesError{
 				T1: func1,
 				T2: func2,
 			}}
+		}
+
+		// Unify fixed parameters before the rest parameter
+		for i := 0; i < func1RestIndex; i++ {
+			param1 := func1.Params[i]
+			param2 := func2.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+
+		// Unify the rest parameters directly
+		restParam1 := func1.Params[func1RestIndex]
+		restParam2 := func2.Params[func2RestIndex]
+		unifyErrors := c.unify(ctx, restParam2.Type, restParam1.Type)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// Check that both functions don't have parameters after rest (which shouldn't happen)
+		if len(func1.Params) > func1RestIndex+1 || len(func2.Params) > func2RestIndex+1 {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+	} else if func2RestIndex != -1 {
+		// Only func2 has a rest parameter at func2RestIndex
+		// func1 must have at least as many fixed parameters as func2's fixed parameters
+		if len(func1.Params) < func2RestIndex {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+		// Unify fixed parameters before the rest parameter
+		for i := 0; i < func2RestIndex; i++ {
+			param1 := func1.Params[i]
+			param2 := func2.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+
+		// Handle the rest parameter
+		restParam := func2.Params[func2RestIndex]
+		excessParamCount := len(func1.Params) - func2RestIndex
+
+		if excessParamCount > 0 {
+			// Collect excess parameters from func1
+			excessParamTypes := make([]Type, excessParamCount)
+			for i := 0; i < excessParamCount; i++ {
+				excessParamTypes[i] = func1.Params[func2RestIndex+i].Type
+			}
+
+			// Create an Array type from excess parameters
+			// We need to find a type that all excess parameters can unify to
+			// For simplicity, we'll create a union of all excess parameter types
+			var elementType Type
+			if len(excessParamTypes) == 1 {
+				elementType = excessParamTypes[0]
+			} else if len(excessParamTypes) > 1 {
+				// Create a union type of all excess parameter types
+				elementType = NewUnionType(excessParamTypes...)
+			} else {
+				// If no excess parameters, use 'never' type as the element type
+				elementType = NewNeverType()
+			}
+
+			// Create Array<elementType> and unify with rest parameter type
+			arrayType := NewTypeRefType("Array", nil, elementType)
+			unifyErrors := c.unify(ctx, restParam.Type, arrayType)
+			errors = slices.Concat(errors, unifyErrors)
+		} else {
+			// No excess parameters, rest parameter should accept empty array
+			// This is typically valid for rest parameters
+		}
+
+		// Check if there are any remaining parameters in func2 after the rest parameter
+		// (This shouldn't happen if rest parameter is last, but handle it gracefully)
+		if func2RestIndex+1 < len(func2.Params) {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+	} else {
+		// Neither function has rest parameters, use original logic
+		// func2 can have fewer parameters than func1
+		if len(func2.Params) > len(func1.Params) {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+		// For each parameter in func2, the corresponding parameter in func1
+		// must be unifiable (contravariant: func2 param type must be supertype of func1 param type)
+		for i, param2 := range func2.Params {
+			param1 := func1.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			// If param1 is optional, param2 can be either optional or required
+			// If param1 is required, param2 must be required
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
 		}
 	}
 

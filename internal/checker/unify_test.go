@@ -330,7 +330,11 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 
 func TestUnifyFuncTypes(t *testing.T) {
 	checker := NewChecker()
-	ctx := Context{}
+	ctx := Context{
+		Scope:      Prelude(),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
 
 	t.Run("identical function types should unify", func(t *testing.T) {
 		// fn (x: number) -> string
@@ -498,5 +502,138 @@ func TestUnifyFuncTypes(t *testing.T) {
 
 		errors := checker.unify(ctx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors with optional parameters")
+	})
+
+	t.Run("rest parameters", func(t *testing.T) {
+		// fn (x: number, y: string, z: boolean) -> void  vs  fn (x: number, ...rest: Array<string | boolean>) -> void
+		// func1 has more fixed params, func2 has rest param that should unify with excess params
+
+		numType := NewNumType()
+		strType := NewStrType()
+		boolType := NewBoolType()
+		voidType := NewLitType(&UndefinedLit{})
+
+		param1a := NewFuncParam(nil, numType)
+		param1b := NewFuncParam(nil, strType)
+		param1c := NewFuncParam(nil, boolType)
+
+		// Create rest parameter with RestPat pattern and Array type
+		// Array<string | boolean> to accept the union of excess parameter types
+		restElementType := NewUnionType(strType, boolType)
+		restArrayType := NewTypeRefType("Array", nil, restElementType)
+		restParam := &FuncParam{
+			Pattern: &RestPat{Pattern: &IdentPat{Name: "rest"}},
+			Type:    restArrayType,
+		}
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, param1b, param1c},
+			Return: voidType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param1a, restParam},
+			Return: voidType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors when unifying with rest parameter")
+	})
+
+	t.Run("rest parameters - incompatible types", func(t *testing.T) {
+		// fn (x: number, y: string, z: boolean) -> void  vs  fn (x: number, ...rest: Array<number>) -> void
+		// Should fail because excess params [string, boolean] don't match rest type Array<number>
+
+		numType := NewNumType()
+		strType := NewStrType()
+		boolType := NewBoolType()
+		voidType := NewLitType(&UndefinedLit{})
+
+		param1a := NewFuncParam(nil, numType)
+		param1b := NewFuncParam(nil, strType)
+		param1c := NewFuncParam(nil, boolType)
+
+		// Create rest parameter with incompatible Array type
+		restArrayType := NewTypeRefType("Array", nil, numType) // Array<number> but gets string and boolean
+		restParam := &FuncParam{
+			Pattern: &RestPat{Pattern: &IdentPat{Name: "rest"}},
+			Type:    restArrayType,
+		}
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, param1b, param1c},
+			Return: voidType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param1a, restParam},
+			Return: voidType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.NotEmpty(t, errors, "Expected errors when rest parameter types don't match")
+	})
+
+	t.Run("rest parameters - homogeneous array", func(t *testing.T) {
+		// fn (x: number, y: string, z: string) -> void  vs  fn (x: number, ...rest: Array<string>) -> void
+		// Should succeed because both excess params are strings
+
+		numType := NewNumType()
+		strType := NewStrType()
+		voidType := NewLitType(&UndefinedLit{})
+
+		param1a := NewFuncParam(nil, numType)
+		param1b := NewFuncParam(nil, strType)
+		param1c := NewFuncParam(nil, strType)
+
+		// Create rest parameter with Array<string>
+		restArrayType := NewTypeRefType("Array", nil, strType)
+		restParam := &FuncParam{
+			Pattern: &RestPat{Pattern: &IdentPat{Name: "rest"}},
+			Type:    restArrayType,
+		}
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, param1b, param1c},
+			Return: voidType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param1a, restParam},
+			Return: voidType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors when excess params match rest array element type")
+	})
+
+	t.Run("both functions have rest parameters", func(t *testing.T) {
+		// fn (x: number, ...rest1: Array<string>) -> void  vs  fn (x: number, ...rest2: Array<string>) -> void
+		// Should succeed because both rest parameters have the same type
+
+		numType := NewNumType()
+		strType := NewStrType()
+		voidType := NewLitType(&UndefinedLit{})
+
+		param1a := NewFuncParam(nil, numType)
+		restParam1 := &FuncParam{
+			Pattern: &RestPat{Pattern: &IdentPat{Name: "rest1"}},
+			Type:    NewTypeRefType("Array", nil, strType),
+		}
+
+		param2a := NewFuncParam(nil, numType)
+		restParam2 := &FuncParam{
+			Pattern: &RestPat{Pattern: &IdentPat{Name: "rest2"}},
+			Type:    NewTypeRefType("Array", nil, strType),
+		}
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, restParam1},
+			Return: voidType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2a, restParam2},
+			Return: voidType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors when both functions have compatible rest parameters")
 	})
 }
