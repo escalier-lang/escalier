@@ -603,30 +603,47 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 	}
 }
 
-func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
-	t = Prune(t)
+// TypeExpansionVisitor implements TypeVisitor for expanding type references
+type TypeExpansionVisitor struct {
+	checker  *Checker
+	ctx      Context
+	errors   []Error
+	depth    int // current expansion depth
+	maxDepth int // maximum allowed expansion depth
+}
+
+// NewTypeExpansionVisitor creates a new visitor for expanding type references
+func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisitor {
+	return &TypeExpansionVisitor{
+		checker:  checker,
+		ctx:      ctx,
+		errors:   []Error{},
+		depth:    0,
+		maxDepth: 1, // Limit expansion to depth of 1
+	}
+}
+
+func (v *TypeExpansionVisitor) EnterType(t Type) {
+	v.depth++
+}
+
+func (v *TypeExpansionVisitor) ExitType(t Type) Type {
+	defer func() { v.depth-- }()
 
 	switch t := t.(type) {
-	case *UnionType:
-		types := make([]Type, len(t.Types))
-		errors := []Error{}
-		for i, elem := range t.Types {
-			elem, elemErrors := c.expandType(ctx, elem)
-			types[i] = elem
-			errors = slices.Concat(errors, elemErrors)
-		}
-		unionType := NewUnionType(types...)
-		unionType.SetProvenance(&TypeProvenance{
-			Type: t,
-		})
-		return unionType, errors
 	case *TypeRefType:
-		typeAlias := ctx.Scope.getTypeAlias(t.Name)
+		// Check if we've reached the maximum expansion depth
+		if v.depth > v.maxDepth {
+			// Return the type reference without expanding
+			return t
+		}
+
+		typeAlias := v.ctx.Scope.getTypeAlias(t.Name)
 		if typeAlias == nil {
-			errors := []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
+			v.errors = append(v.errors, &UnknownTypeError{TypeName: t.Name, typeRef: t})
 			neverType := NewNeverType()
 			neverType.SetProvenance(&TypeProvenance{Type: t})
-			return neverType, errors
+			return neverType
 		}
 
 		// Replace type params with type args if the type is generic
@@ -642,13 +659,23 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 					substitutions[typeParam.Name] = t.TypeArgs[i]
 				}
 			}
-			expandedType = c.substituteTypeParams(typeAlias.Type, substitutions)
+			expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 		}
 
-		return c.expandType(ctx, expandedType)
-	default:
-		return t, nil
+		// Recursively expand the resolved type using the same visitor to maintain state
+		return expandedType.Accept(v)
 	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
+}
+
+func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
+	t = Prune(t)
+	visitor := NewTypeExpansionVisitor(c, ctx)
+
+	result := t.Accept(visitor)
+	return result, visitor.errors
 }
 
 func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optChain bool) (Type, []Error) {
