@@ -1146,6 +1146,15 @@ func (t *CondType) Equal(other Type) bool {
 	}
 	return false
 }
+func NewCondType(check Type, extends Type, cons Type, alt Type) *CondType {
+	return &CondType{
+		Check:      check,
+		Extends:    extends,
+		Cons:       cons,
+		Alt:        alt,
+		provenance: nil,
+	}
+}
 func (t *CondType) String() string {
 	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Cons.String() + " } else { " + t.Alt.String() + " }"
 }

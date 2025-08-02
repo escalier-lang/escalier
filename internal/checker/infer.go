@@ -631,6 +631,9 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 	defer func() { v.depth-- }()
 
 	switch t := t.(type) {
+	case *NamespaceType:
+		// Don't expand NamespaceTypes - return them as-is
+		return t
 	case *TypeRefType:
 		// Check if we've reached the maximum expansion depth
 		if v.depth > v.maxDepth {
@@ -638,7 +641,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			return t
 		}
 
-		typeAlias := v.ctx.Scope.getTypeAlias(t.Name)
+		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, t.Name)
 		if typeAlias == nil {
 			v.errors = append(v.errors, &UnknownTypeError{TypeName: t.Name, typeRef: t})
 			neverType := NewNeverType()
@@ -664,6 +667,14 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
+	case *CondType:
+		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
+
+		if len(errors) > 0 {
+			return t.Alt
+		} else {
+			return t.Cons
+		}
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -683,8 +694,28 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 
 	objType = Prune(objType)
 
-	objType, expandErrors := c.expandType(ctx, objType)
-	errors = slices.Concat(errors, expandErrors)
+	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
+	// or can't be expanded any further
+	for {
+		expandedType, expandErrors := c.expandType(ctx, objType)
+		errors = slices.Concat(errors, expandErrors)
+
+		// If expansion didn't change the type, we're done expanding
+		if expandedType == objType {
+			break
+		}
+
+		objType = expandedType
+
+		// If we've reached an ObjectType or NamespaceType, we can stop expanding
+		// since these are the types we can directly get properties from
+		if _, ok := objType.(*ObjectType); ok {
+			break
+		}
+		if _, ok := objType.(*NamespaceType); ok {
+			break
+		}
+	}
 
 	var propType Type
 
@@ -1403,6 +1434,8 @@ func (c *Checker) inferTypeAnn(
 		t = NewBoolType()
 	case *ast.AnyTypeAnn:
 		t = NewAnyType()
+	case *ast.NeverTypeAnn:
+		t = NewNeverType()
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
@@ -1490,9 +1523,19 @@ func (c *Checker) inferTypeAnn(
 		t = funcType
 		errors = slices.Concat(errors, funcErrors)
 	case *ast.CondTypeAnn:
-		// TODO: Implement conditional type inference
-		// For now, return an unknown type to prevent panics
-		t = NewUnknownType()
+		checkType, checkErrors := c.inferTypeAnn(ctx, typeAnn.Check)
+		errors = slices.Concat(errors, checkErrors)
+
+		extendsType, extendsErrors := c.inferTypeAnn(ctx, typeAnn.Extends)
+		errors = slices.Concat(errors, extendsErrors)
+
+		consType, consErrors := c.inferTypeAnn(ctx, typeAnn.Cons)
+		errors = slices.Concat(errors, consErrors)
+
+		altType, altErrors := c.inferTypeAnn(ctx, typeAnn.Alt)
+		errors = slices.Concat(errors, altErrors)
+
+		t = NewCondType(checkType, extendsType, consType, altType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

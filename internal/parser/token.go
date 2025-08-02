@@ -101,6 +101,7 @@ const (
 	For
 	In
 	Infer
+	Never
 )
 
 type Token struct {

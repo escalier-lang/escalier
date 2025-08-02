@@ -95,6 +95,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if tv2, ok := t2.(*TypeVarType); ok {
 		return c.bind(tv2, t1)
 	}
+	// | PrimType (any), _ -> ...
+	if prim1, ok := t1.(*PrimType); ok && prim1.Prim == AnyPrim {
+		return nil
+	}
+	// | _, PrimType (any) -> ...
+	if prim2, ok := t2.(*PrimType); ok && prim2.Prim == AnyPrim {
+		return nil
+	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
 		if prim2, ok := t2.(*PrimType); ok {
@@ -202,23 +210,55 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | TupleType, ArrayType -> ...
-	if tuple1, ok := t2.(*TupleType); ok {
+	if tuple1, ok := t1.(*TupleType); ok {
 		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", tuple1, array2))
-			// TODO
+			// A tuple can be unified with an array if all tuple elements
+			// can be unified with the array's element type
+			if len(array2.TypeArgs) == 1 {
+				errors := []Error{}
+				for _, elem := range tuple1.Elems {
+					unifyErrors := c.unify(ctx, elem, array2.TypeArgs[0])
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				return errors
+			}
+			return []Error{&CannotUnifyTypesError{
+				T1: tuple1,
+				T2: array2,
+			}}
 		}
 	}
 	// | ArrayType, TupleType -> ...
 	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
 		if tuple2, ok := t2.(*TupleType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, tuple2))
-			// TODO
+			// An array can be unified with a tuple if the array's element type
+			// can be unified with all tuple elements
+			if len(array1.TypeArgs) == 1 {
+				errors := []Error{}
+				for _, elem := range tuple2.Elems {
+					unifyErrors := c.unify(ctx, array1.TypeArgs[0], elem)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				return errors
+			}
+			return []Error{&CannotUnifyTypesError{
+				T1: array1,
+				T2: tuple2,
+			}}
 		}
 	}
 	// | ArrayType, ArrayType -> ...
 	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
 		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, array2))
+			// Both are Array types, unify their element types
+			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
+				return c.unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
+			}
+			// If either array doesn't have exactly one type argument, they can't be unified
+			return []Error{&CannotUnifyTypesError{
+				T1: array1,
+				T2: array2,
+			}}
 		}
 	}
 	// | RestSpreadType, ArrayType -> ...
@@ -580,27 +620,25 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 
 	retry := false
-	if typeRef, ok := t1.(*TypeRefType); ok {
-		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
-			// TODO: apply type args
-			t1 = alias.Type
-			retry = true
-		}
+	expandedT1, _ := c.expandType(ctx, t1)
+	if expandedT1 != t1 {
+		t1 = expandedT1
+		retry = true
 	}
-	if typeRef, ok := t2.(*TypeRefType); ok {
-		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
-			// TODO: apply type args
-			t2 = alias.Type
-			retry = true
-		}
+	expandedT2, _ := c.expandType(ctx, t2)
+	if expandedT2 != t2 {
+		t2 = expandedT2
+		retry = true
 	}
 
 	if retry {
 		return c.unify(ctx, t1, t2)
 	}
 
-	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %s and %s", t1.String(), t2.String()))
+	return []Error{&CannotUnifyTypesError{
+		T1: t1,
+		T2: t2,
+	}}
 }
 
 // TODO: check if t1 is already bound to an instance
