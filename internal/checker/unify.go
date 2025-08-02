@@ -270,8 +270,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | FuncType, FuncType -> ...
 	if func1, ok := t1.(*FuncType); ok {
 		if func2, ok := t2.(*FuncType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", func1.String(), func2.String()))
-			// TODO
+			return c.unifyFuncTypes(ctx, func1, func2)
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
@@ -639,6 +638,101 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		T1: t1,
 		T2: t2,
 	}}
+}
+
+// unifyFuncTypes unifies two function types
+func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
+	errors := []Error{}
+
+	// For function types to be compatible:
+	// 1. func2 can have fewer parameters than func1 (extra params in func1 can be ignored)
+	// 2. Parameter types are contravariant: func2's param types must be supertypes of func1's
+	// 3. Return types are covariant: func1's return type must be subtype of func2's
+	// 4. Type parameters must be compatible
+
+	// Check type parameters compatibility
+	if len(func1.TypeParams) != len(func2.TypeParams) {
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// Create a context for type parameter substitution
+	// For now, we assume type parameters with the same position are equivalent
+	// TODO: Handle more sophisticated type parameter constraints and bounds
+
+	// Check Self type compatibility (for methods)
+	if func1.Self != nil && func2.Self != nil {
+		unifyErrors := c.unify(ctx, func1.Self, func2.Self)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Self != nil || func2.Self != nil {
+		// One has Self, the other doesn't - they're incompatible
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// Check parameters (contravariant)
+	// func2 can have fewer parameters than func1
+	if len(func2.Params) > len(func1.Params) {
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// For each parameter in func2, the corresponding parameter in func1
+	// must be unifiable (contravariant: func2 param type must be supertype of func1 param type)
+	for i, param2 := range func2.Params {
+		param1 := func1.Params[i]
+
+		// Parameter types are contravariant: unify param2.Type with param1.Type
+		unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// Optional parameter compatibility
+		// If param1 is optional, param2 can be either optional or required
+		// If param1 is required, param2 must be required
+		if param1.Optional && !param2.Optional {
+			// This is fine - param2 is more restrictive
+		} else if !param1.Optional && param2.Optional {
+			// param1 requires the parameter but param2 makes it optional
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+	}
+
+	// Check return types (covariant)
+	if func1.Return != nil && func2.Return != nil {
+		unifyErrors := c.unify(ctx, func1.Return, func2.Return)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Return == nil && func2.Return != nil {
+		// func1 returns void/undefined, func2 expects a return type
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	} else if func1.Return != nil && func2.Return == nil {
+		// func1 returns something, func2 expects void - this might be OK
+		// in some contexts (return value is ignored)
+	}
+
+	// Check throws types (covariant)
+	if func1.Throws != nil && func2.Throws != nil {
+		unifyErrors := c.unify(ctx, func1.Throws, func2.Throws)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Throws != nil && func2.Throws == nil {
+		// func1 can throw but func2 doesn't expect throws - this might be an error
+		// For now, we'll allow it (func2 doesn't handle the exception)
+	} else if func1.Throws == nil && func2.Throws != nil {
+		// func1 doesn't throw but func2 expects it might - this is fine
+	}
+
+	return errors
 }
 
 // TODO: check if t1 is already bound to an instance

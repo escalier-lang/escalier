@@ -327,3 +327,176 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		assert.Empty(t, errors, "Expected no errors when literal unifies with nested union")
 	})
 }
+
+func TestUnifyFuncTypes(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{}
+
+	t.Run("identical function types should unify", func(t *testing.T) {
+		// fn (x: number) -> string
+		paramType := NewNumType()
+		returnType := NewStrType()
+
+		param1 := NewFuncParam(nil, paramType)
+		param2 := NewFuncParam(nil, paramType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors when unifying identical function types")
+	})
+
+	t.Run("contravariant parameter types", func(t *testing.T) {
+		// fn (x: number) -> string  vs  fn (x: any) -> string
+		// number is subtype of any, so this should work (any -> string accepts number -> string)
+
+		numType := NewNumType()
+		anyType := NewAnyType()
+		returnType := NewStrType()
+
+		param1 := NewFuncParam(nil, numType)
+		param2 := NewFuncParam(nil, anyType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors for contravariant parameter types")
+	})
+
+	t.Run("covariant return types", func(t *testing.T) {
+		// fn (x: number) -> number  vs  fn (x: number) -> any
+		// number is subtype of any, so this should work
+
+		paramType := NewNumType()
+		numReturn := NewNumType()
+		anyReturn := NewAnyType()
+
+		param1 := NewFuncParam(nil, paramType)
+		param2 := NewFuncParam(nil, paramType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: numReturn,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: anyReturn,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors for covariant return types")
+	})
+
+	t.Run("incompatible parameter types should fail", func(t *testing.T) {
+		// fn (x: string) -> number  vs  fn (x: number) -> number
+		// string and number are not related, so this should fail
+
+		strType := NewStrType()
+		numType := NewNumType()
+		returnType := NewNumType()
+
+		param1 := NewFuncParam(nil, strType)
+		param2 := NewFuncParam(nil, numType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.NotEmpty(t, errors, "Expected errors for incompatible parameter types")
+	})
+
+	t.Run("fewer parameters in target function", func(t *testing.T) {
+		// fn (x: number, y: string) -> boolean  vs  fn (x: number) -> boolean
+		// func1 takes more params than func2 expects - this should work
+
+		numType := NewNumType()
+		strType := NewStrType()
+		returnType := NewBoolType()
+
+		param1a := NewFuncParam(nil, numType)
+		param1b := NewFuncParam(nil, strType)
+		param2 := NewFuncParam(nil, numType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, param1b},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors when target function has fewer parameters")
+	})
+
+	t.Run("more parameters in target function should fail", func(t *testing.T) {
+		// fn (x: number) -> boolean  vs  fn (x: number, y: string) -> boolean
+		// func2 expects more params than func1 provides - this should fail
+
+		numType := NewNumType()
+		strType := NewStrType()
+		returnType := NewBoolType()
+
+		param1 := NewFuncParam(nil, numType)
+		param2a := NewFuncParam(nil, numType)
+		param2b := NewFuncParam(nil, strType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2a, param2b},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.NotEmpty(t, errors, "Expected errors when target function has more parameters")
+	})
+
+	t.Run("optional parameters", func(t *testing.T) {
+		// fn (x: number, y?: string) -> boolean  vs  fn (x: number) -> boolean
+		// Optional parameter in func1 should be compatible with no parameter in func2
+
+		numType := NewNumType()
+		strType := NewStrType()
+		returnType := NewBoolType()
+
+		param1a := NewFuncParam(nil, numType)
+		param1b := &FuncParam{Type: strType, Optional: true}
+		param2 := NewFuncParam(nil, numType)
+
+		func1 := &FuncType{
+			Params: []*FuncParam{param1a, param1b},
+			Return: returnType,
+		}
+		func2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: returnType,
+		}
+
+		errors := checker.unify(ctx, func1, func2)
+		assert.Empty(t, errors, "Expected no errors with optional parameters")
+	})
+}
