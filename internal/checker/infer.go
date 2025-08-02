@@ -668,12 +668,21 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
 	case *CondType:
-		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
+		inferTypesMap := v.checker.findInferTypes(t.Extends)
+		extendsType := v.checker.replaceInferTypes(t.Extends, inferTypesMap)
+
+		errors := v.checker.unify(v.ctx, t.Check, extendsType)
+
+		// Convert inferTypesMap to the format expected by substituteTypeParams
+		substitutions := make(map[string]Type)
+		for name, typeVar := range inferTypesMap {
+			substitutions[name] = typeVar
+		}
 
 		if len(errors) > 0 {
-			return t.Alt
+			return v.checker.substituteTypeParams(t.Alt, substitutions)
 		} else {
-			return t.Cons
+			return v.checker.substituteTypeParams(t.Cons, substitutions)
 		}
 	}
 
@@ -1536,6 +1545,8 @@ func (c *Checker) inferTypeAnn(
 		errors = slices.Concat(errors, altErrors)
 
 		t = NewCondType(checkType, extendsType, consType, altType)
+	case *ast.InferTypeAnn:
+		t = NewInferType(typeAnn.Name)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
@@ -1546,4 +1557,76 @@ func (c *Checker) inferTypeAnn(
 	typeAnn.SetInferredType(t)
 
 	return t, errors
+}
+
+// findInferTypes finds all InferType nodes in a type and replaces them with fresh type variables.
+// Returns a mapping from infer names to the type variables that replaced them.
+func (c *Checker) findInferTypes(t Type) map[string]Type {
+	visitor := &InferTypeFinder{
+		checker:   c,
+		inferVars: make(map[string]Type),
+	}
+	t.Accept(visitor)
+	return visitor.inferVars
+}
+
+// replaceInferTypes substitutes infer variables in a type with their inferred values from the mapping.
+func (c *Checker) replaceInferTypes(t Type, inferMapping map[string]Type) Type {
+	visitor := &InferTypeReplacer{
+		inferMapping: inferMapping,
+	}
+	return t.Accept(visitor)
+}
+
+// InferTypeFinder collects all InferType nodes and replaces them with fresh type variables
+type InferTypeFinder struct {
+	checker   *Checker
+	inferVars map[string]Type
+}
+
+func (v *InferTypeFinder) EnterType(t Type) {
+	// No-op - just for traversal
+}
+
+func (v *InferTypeFinder) ExitType(t Type) Type {
+	t = Prune(t)
+
+	if inferType, ok := t.(*InferType); ok {
+		if existingVar, exists := v.inferVars[inferType.Name]; exists {
+			// Reuse existing type variable for same infer name
+			return existingVar
+		}
+		// Create fresh type variable
+		freshVar := v.checker.FreshVar()
+		v.inferVars[inferType.Name] = freshVar
+		return freshVar
+	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
+}
+
+// InferTypeReplacer substitutes type variables that correspond to infer types
+// with their actual inferred values
+type InferTypeReplacer struct {
+	inferMapping map[string]Type
+}
+
+func (v *InferTypeReplacer) EnterType(t Type) {
+	// No-op - just for traversal
+}
+
+func (v *InferTypeReplacer) ExitType(t Type) Type {
+	t = Prune(t)
+
+	// Check if this is an InferType that should be replaced
+	if inferType, ok := t.(*InferType); ok {
+		if typeVar, exists := v.inferMapping[inferType.Name]; exists {
+			// Return the inferred type (what the type variable was unified with)
+			return typeVar
+		}
+	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
 }

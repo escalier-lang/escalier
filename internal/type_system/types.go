@@ -210,6 +210,8 @@ func (t *PrimType) String() string {
 		return "bigint"
 	case SymbolPrim:
 		return "symbol"
+	case AnyPrim:
+		return "any"
 	default:
 		panic("unknown primitive type")
 	}
@@ -1179,6 +1181,13 @@ func (t *InferType) Equal(other Type) bool {
 }
 func (t *InferType) String() string {
 	return "infer " + t.Name
+}
+
+func NewInferType(name string) *InferType {
+	return &InferType{
+		Name:       name,
+		provenance: nil,
+	}
 }
 
 type WildcardType struct {
