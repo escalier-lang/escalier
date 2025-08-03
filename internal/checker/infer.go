@@ -625,6 +625,20 @@ func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisito
 
 func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 	v.depth++
+
+	switch t := t.(type) {
+	case *CondType:
+		substitutions := v.checker.findInferTypes(t.Extends)
+		extendsType := v.checker.replaceInferTypes(t.Extends, substitutions)
+
+		return NewCondType(
+			t.Check,
+			extendsType,
+			v.checker.substituteTypeParams(t.Alt, substitutions),
+			v.checker.substituteTypeParams(t.Cons, substitutions),
+		)
+	}
+
 	return nil
 }
 
@@ -669,21 +683,13 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
 	case *CondType:
-		inferTypesMap := v.checker.findInferTypes(t.Extends)
-		extendsType := v.checker.replaceInferTypes(t.Extends, inferTypesMap)
 
-		errors := v.checker.unify(v.ctx, t.Check, extendsType)
-
-		// Convert inferTypesMap to the format expected by substituteTypeParams
-		substitutions := make(map[string]Type)
-		for name, typeVar := range inferTypesMap {
-			substitutions[name] = typeVar
-		}
+		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 
 		if len(errors) > 0 {
-			return v.checker.substituteTypeParams(t.Alt, substitutions)
+			return t.Cons
 		} else {
-			return v.checker.substituteTypeParams(t.Cons, substitutions)
+			return t.Alt
 		}
 	}
 
