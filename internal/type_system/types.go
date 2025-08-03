@@ -112,10 +112,31 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	v.EnterType(t)
-	if result := v.ExitType(t); result != nil {
-		return result
+
+	changed := false
+	newTypeArgs := make([]Type, len(t.TypeArgs))
+	for i, arg := range t.TypeArgs {
+		newArg := arg.Accept(v)
+		if newArg != arg {
+			changed = true
+		}
+		newTypeArgs[i] = newArg
 	}
-	return t
+
+	var result Type = t
+	if changed {
+		result = &TypeRefType{
+			Name:       t.Name,
+			TypeArgs:   newTypeArgs,
+			TypeAlias:  t.TypeAlias,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.ExitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *TypeRefType) Equal(other Type) bool {
 	if other, ok := other.(*TypeRefType); ok {

@@ -52,13 +52,13 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 		"NestedConditionalTypes": {
 			input: `
 				type IsArray<T> = if T : Array<any> { true } else { false }
-				// type GetElement<T> = if T : Array<infer U> { U } else { never }
+				type GetElement<T> = if T : Array<infer U> { U } else { never }
 				type TestArray = IsArray<Array<string>>
-				// type ElementType = GetElement<Array<number>>
+				type ElementType = GetElement<Array<number>>
 			`,
 			expectedTypes: map[string]string{
-				"TestArray": "true",
-				// "ElementType": "number",
+				"TestArray":   "true",
+				"ElementType": "number",
 			},
 		},
 		"ConditionalTypeWithMultipleTypeParams": {
@@ -72,31 +72,31 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 				"Result2": "number",
 			},
 		},
-		// "ConditionalTypeWithFunctionTypes": {
+		"ConditionalTypeWithFunctionTypes": {
+			input: `
+				type GetReturnType<T> = if T : fn(...args: Array<any>) -> infer R { R } else { never }
+				type StringFunc = fn() -> string
+				type NumberFunc = fn(x: number) -> number
+				type ReturnType1 = GetReturnType<StringFunc>
+				type ReturnType2 = GetReturnType<NumberFunc>
+			`,
+			expectedTypes: map[string]string{
+				"ReturnType1": "string",
+				"ReturnType2": "number",
+			},
+		},
+		// "ConditionalTypeWithTupleTypes": {
 		// 	input: `
-		// 		type GetReturnType<T> = if T : fn(...args: Array<any>) -> infer R { R } else { never }
-		// 		type StringFunc = fn() -> string
-		// 		type NumberFunc = fn(x: number) -> number
-		// 		type ReturnType1 = GetReturnType<StringFunc>
-		// 		type ReturnType2 = GetReturnType<NumberFunc>
+		// 		type Head<T> = if T : [infer H, ...Array<any>] { H } else { never }
+		// 		type Tail<T> = if T : [any, ...infer Rest] { Rest } else { never }
+		// 		type FirstElement = Head<[string, number, boolean]>
+		// 		type RestElements = Tail<[string, number, boolean]>
 		// 	`,
 		// 	expectedTypes: map[string]string{
-		// 		"ReturnType1": "string",
-		// 		"ReturnType2": "number",
+		// 		"FirstElement": "string",
+		// 		"RestElements": "[number, boolean]",
 		// 	},
 		// },
-		// // "ConditionalTypeWithTupleTypes": {
-		// // 	input: `
-		// // 		type Head<T> = if T : [infer H, ...Array<any>] { H } else { never }
-		// // 		type Tail<T> = if T : [any, ...infer Rest] { Rest } else { never }
-		// // 		type FirstElement = Head<[string, number, boolean]>
-		// // 		type RestElements = Tail<[string, number, boolean]>
-		// // 	`,
-		// // 	expectedTypes: map[string]string{
-		// // 		"FirstElement": "string",
-		// // 		"RestElements": "[number, boolean]",
-		// // 	},
-		// // },
 		// "DistributiveConditionalTypes": {
 		// 	input: `
 		// 		type ToArray<T> = if T : any { Array<T> } else { never }
@@ -106,29 +106,29 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 		// 		"UnionArray": "Array<string> | Array<number>",
 		// 	},
 		// },
-		// "ConditionalTypeWithElseIf": {
-		// 	input: `
-		// 		type TypeKind<T> = if T : string {
-		// 			"string"
-		// 		} else if T : number {
-		// 			"number"
-		// 		} else if T : boolean {
-		// 			"boolean"
-		// 		} else {
-		// 			"unknown"
-		// 		}
-		// 		type StringKind = TypeKind<string>
-		// 		type NumberKind = TypeKind<number>
-		// 		type BooleanKind = TypeKind<boolean>
-		// 		type ObjectKind = TypeKind<{}>
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"StringKind":  "\"string\"",
-		// 		"NumberKind":  "\"number\"",
-		// 		"BooleanKind": "\"boolean\"",
-		// 		"ObjectKind":  "\"unknown\"",
-		// 	},
-		// },
+		"ConditionalTypeWithElseIf": {
+			input: `
+				type TypeKind<T> = if T : string {
+					"string"
+				} else if T : number {
+					"number"
+				} else if T : boolean {
+					"boolean"
+				} else {
+					"unknown"
+				}
+				type StringKind = TypeKind<string>
+				type NumberKind = TypeKind<number>
+				type BooleanKind = TypeKind<boolean>
+				type ObjectKind = TypeKind<{}>
+			`,
+			expectedTypes: map[string]string{
+				"StringKind":  "\"string\"",
+				"NumberKind":  "\"number\"",
+				"BooleanKind": "\"boolean\"",
+				"ObjectKind":  "\"unknown\"",
+			},
+		},
 		// "ComplexConditionalWithInfer": {
 		// 	input: `
 		// 		type ExtractArrayElement<T> = if T : Array<infer U> {

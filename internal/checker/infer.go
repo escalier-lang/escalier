@@ -1532,16 +1532,47 @@ func (c *Checker) inferTypeAnn(
 		t = funcType
 		errors = slices.Concat(errors, funcErrors)
 	case *ast.CondTypeAnn:
+		// TODO: this needs to be done in the Enter method of the visitor
+		// so that we can we can replace InferType nodes with fresh type variables
+		// and computing a new context with those infer types in scope before
+		// inferring the Cons and Alt branches.
+		// This only affects nested conditional types.
 		checkType, checkErrors := c.inferTypeAnn(ctx, typeAnn.Check)
 		errors = slices.Concat(errors, checkErrors)
 
 		extendsType, extendsErrors := c.inferTypeAnn(ctx, typeAnn.Extends)
 		errors = slices.Concat(errors, extendsErrors)
 
-		consType, consErrors := c.inferTypeAnn(ctx, typeAnn.Cons)
+		// Find all InferType nodes in the extends type and create type aliases for them
+		inferTypesMap := c.findInferTypes(extendsType)
+
+		// Create a new context with infer types in scope for inferring Cons and Alt
+		condCtx := ctx
+		if len(inferTypesMap) > 0 {
+			// Create a new scope that includes the infer types as type aliases
+			condScope := ctx.Scope.WithNewScope()
+
+			// Add infer types as type aliases to the scope
+			for inferName, _ := range inferTypesMap {
+				inferTypeRef := NewTypeRefType(inferName, nil)
+				inferTypeAlias := &TypeAlias{
+					Type:       inferTypeRef,
+					TypeParams: []*TypeParam{},
+				}
+				condScope.setTypeAlias(inferName, inferTypeAlias)
+			}
+
+			condCtx = Context{
+				Scope:      condScope,
+				IsAsync:    ctx.IsAsync,
+				IsPatMatch: ctx.IsPatMatch,
+			}
+		}
+
+		consType, consErrors := c.inferTypeAnn(condCtx, typeAnn.Cons)
 		errors = slices.Concat(errors, consErrors)
 
-		altType, altErrors := c.inferTypeAnn(ctx, typeAnn.Alt)
+		altType, altErrors := c.inferTypeAnn(condCtx, typeAnn.Alt)
 		errors = slices.Concat(errors, altErrors)
 
 		t = NewCondType(checkType, extendsType, consType, altType)
