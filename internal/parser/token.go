@@ -102,6 +102,7 @@ const (
 	In
 	Infer
 	Never
+	Unknown
 )
 
 type Token struct {

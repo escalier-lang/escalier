@@ -425,18 +425,17 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 			},
 			expectErrors: false,
 		},
-		// TODO: add support for unknown type
-		// "ConditionalWithUnknown": {
-		// 	input: `
-		// 		type IsUnknown<T> = if T : unknown { true } else { false }
-		// 		type Result1 = IsUnknown<string>
-		// 		type Result2 = IsUnknown<unknown>
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"Result1": "true",
-		// 		"Result2": "true",
-		// 	},
-		// },
+		"ConditionalWithUnknown": {
+			input: `
+				type IsUnknown<T> = if T : unknown { true } else { false }
+				type Result1 = IsUnknown<string>
+				type Result2 = IsUnknown<unknown>
+			`,
+			expectedTypes: map[string]string{
+				"Result1": "true",
+				"Result2": "true",
+			},
+		},
 		// TODO: when unifying `U` with `Array<any>` to check if `U` is an array,
 		// we don't want any type variable within `U` to be bound to `any`.
 		// "RecursiveConditionalType": {

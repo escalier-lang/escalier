@@ -691,7 +691,6 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Don't expand NamespaceTypes - return them as-is
 		return nil
 	case *CondType:
-		fmt.Printf("Expanding conditional type: %s\n", t)
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) > 0 {
 			return t.Then
@@ -705,6 +704,9 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			if _, ok := typ.(*NeverType); !ok {
 				filteredTypes = append(filteredTypes, typ)
 			}
+		}
+		if len(filteredTypes) == len(t.Types) {
+			return nil // No filtering needed, return nil to let Accept handle it
 		}
 		if len(filteredTypes) == 0 {
 			// If all types were filtered out, return a NeverType
@@ -740,6 +742,8 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 	for {
 		expandedType, expandErrors := c.expandType(ctx, objType)
 		errors = slices.Concat(errors, expandErrors)
+
+		fmt.Printf("Checking if expanded type %s is different from original type %s\n", expandedType, objType)
 
 		// If expansion didn't change the type, we're done expanding
 		if expandedType == objType {
@@ -1475,6 +1479,8 @@ func (c *Checker) inferTypeAnn(
 		t = NewBoolType()
 	case *ast.AnyTypeAnn:
 		t = NewAnyType()
+	case *ast.UnknownTypeAnn:
+		t = NewUnknownType()
 	case *ast.NeverTypeAnn:
 		t = NewNeverType()
 	case *ast.LitTypeAnn:

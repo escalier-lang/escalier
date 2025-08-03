@@ -124,6 +124,22 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if _, ok := t2.(*WildcardType); ok {
 		return nil
 	}
+	// | UnknownType, UnknownType -> ...
+	if _, ok := t1.(*UnknownType); ok {
+		if _, ok := t2.(*UnknownType); ok {
+			return nil
+		}
+		// UnknownType cannot be assigned to other types
+		return []Error{&CannotUnifyTypesError{
+			T1: t1,
+			T2: t2,
+		}}
+	}
+	// | _, UnknownType -> ...
+	if _, ok := t2.(*UnknownType); ok {
+		// All types can be assigned to UnknownType
+		return nil
+	}
 	// | NeveType, _ -> ...
 	if _, ok := t1.(*NeverType); ok {
 		return nil
@@ -134,10 +150,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			T1: t1,
 			T2: t2,
 		}}
-	}
-	// | UnknownType, _ -> ...
-	if _, ok := t2.(*UnknownType); ok {
-		return nil
 	}
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*TupleType); ok {

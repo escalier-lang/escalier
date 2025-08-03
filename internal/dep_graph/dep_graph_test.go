@@ -774,9 +774,9 @@ func TestFindDeclDependencies(t *testing.T) {
 			declType: "type",
 		},
 		"VarDecl_QualifiedNonValidDependency": {
-			declCode:      `val result = unknown.module.func() + 5`,
+			declCode:      `val result = someUnknown.module.func() + 5`,
 			validBindings: []DepBinding{{Name: "known.func", Kind: DepKindValue}, {Name: "other.var", Kind: DepKindValue}},
-			expectedDeps:  []DepBinding{}, // unknown.module.func is not in validBindings
+			expectedDeps:  []DepBinding{}, // someUnknown.module.func is not in validBindings
 			declType:      "var",
 		},
 	}

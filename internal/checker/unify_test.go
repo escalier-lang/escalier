@@ -637,3 +637,110 @@ func TestUnifyFuncTypes(t *testing.T) {
 		assert.Empty(t, errors, "Expected no errors when both functions have compatible rest parameters")
 	})
 }
+
+func TestUnifyUnknownType(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{}
+
+	// Create various types for testing
+	unknownType := NewUnknownType()
+	anyType := NewAnyType()
+	neverType := NewNeverType()
+	numberType := NewNumType()
+	stringType := NewStrType()
+	booleanType := NewBoolType()
+	numLitType := NewLitType(&NumLit{Value: 42})
+	strLitType := NewLitType(&StrLit{Value: "hello"})
+	boolLitType := NewLitType(&BoolLit{Value: true})
+
+	t.Run("UnknownType can only unify with itself", func(t *testing.T) {
+		// unknown -> unknown should succeed
+		errors := checker.unify(ctx, unknownType, unknownType)
+		assert.Empty(t, errors, "unknown should unify with unknown")
+	})
+
+	t.Run("UnknownType cannot be assigned to other types", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			targetType Type
+		}{
+			// Note: unknown -> any should succeed because any is the top type
+			{"unknown -> never", neverType},
+			{"unknown -> number", numberType},
+			{"unknown -> string", stringType},
+			{"unknown -> boolean", booleanType},
+			{"unknown -> number literal", numLitType},
+			{"unknown -> string literal", strLitType},
+			{"unknown -> boolean literal", boolLitType},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				errors := checker.unify(ctx, unknownType, tc.targetType)
+				assert.NotEmpty(t, errors, "UnknownType should not be assignable to %s", tc.name)
+			})
+		}
+	})
+
+	t.Run("UnknownType can be assigned to any (top type)", func(t *testing.T) {
+		// unknown -> any should succeed because any is the top type
+		errors := checker.unify(ctx, unknownType, anyType)
+		assert.Empty(t, errors, "UnknownType should be assignable to any (top type)")
+	})
+
+	t.Run("All types can be assigned to UnknownType", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			sourceType Type
+		}{
+			{"any -> unknown", anyType},
+			{"never -> unknown", neverType},
+			{"number -> unknown", numberType},
+			{"string -> unknown", stringType},
+			{"boolean -> unknown", booleanType},
+			{"number literal -> unknown", numLitType},
+			{"string literal -> unknown", strLitType},
+			{"boolean literal -> unknown", boolLitType},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				errors := checker.unify(ctx, tc.sourceType, unknownType)
+				assert.Empty(t, errors, "%s should be assignable to UnknownType", tc.name)
+			})
+		}
+	})
+
+	t.Run("Complex types can be assigned to UnknownType", func(t *testing.T) {
+		// Test with function types
+		funcType := &FuncType{
+			Params: []*FuncParam{
+				{Type: numberType, Optional: false},
+			},
+			Return: stringType,
+		}
+		errors := checker.unify(ctx, funcType, unknownType)
+		assert.Empty(t, errors, "function type should be assignable to UnknownType")
+
+		// Test with object types - create proper object elems
+		objElems := []ObjTypeElem{
+			&PropertyElemType{Name: NewStrKey("x"), Value: numberType},
+			&PropertyElemType{Name: NewStrKey("y"), Value: stringType},
+		}
+		objType := NewObjectType(objElems)
+		errors = checker.unify(ctx, objType, unknownType)
+		assert.Empty(t, errors, "object type should be assignable to UnknownType")
+
+		// Test with tuple types
+		tupleType := &TupleType{
+			Elems: []Type{numberType, stringType},
+		}
+		errors = checker.unify(ctx, tupleType, unknownType)
+		assert.Empty(t, errors, "tuple type should be assignable to UnknownType")
+
+		// Test with union types
+		unionType := NewUnionType(numberType, stringType)
+		errors = checker.unify(ctx, unionType, unknownType)
+		assert.Empty(t, errors, "union type should be assignable to UnknownType")
+	})
+}

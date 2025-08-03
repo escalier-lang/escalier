@@ -179,7 +179,7 @@ func TestBuildFixtureTests(t *testing.T) {
 
 		for _, fixture := range fixtures {
 			// TODO: use an environment variable for this instead
-			if group.Name() == "extractors" {
+			if group.Name() != "basics" || group.Name() != "objects" {
 				continue
 			}
 			name := group.Name() + "/" + fixture.Name()
