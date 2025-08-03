@@ -743,8 +743,6 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 		expandedType, expandErrors := c.expandType(ctx, objType)
 		errors = slices.Concat(errors, expandErrors)
 
-		fmt.Printf("Checking if expanded type %s is different from original type %s\n", expandedType, objType)
-
 		// If expansion didn't change the type, we're done expanding
 		if expandedType == objType {
 			break
@@ -1614,7 +1612,6 @@ func (c *Checker) inferTypeAnn(
 		errors = slices.Concat(errors, elseErrors)
 
 		t = NewCondType(checkType, extendsType, thenType, elseType)
-		fmt.Printf("CondType: %s\n", t)
 	case *ast.InferTypeAnn:
 		t = NewInferType(typeAnn.Name)
 	default:
