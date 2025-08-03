@@ -908,8 +908,9 @@ type OccursInVisitor struct {
 	t1     Type
 }
 
-func (v *OccursInVisitor) EnterType(t Type) {
+func (v *OccursInVisitor) EnterType(t Type) Type {
 	// No-op for entry
+	return nil
 }
 
 func (v *OccursInVisitor) ExitType(t Type) Type {

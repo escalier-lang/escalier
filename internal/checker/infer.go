@@ -623,8 +623,9 @@ func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisito
 	}
 }
 
-func (v *TypeExpansionVisitor) EnterType(t Type) {
+func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 	v.depth++
+	return nil
 }
 
 func (v *TypeExpansionVisitor) ExitType(t Type) Type {
@@ -1615,8 +1616,9 @@ type InferTypeFinder struct {
 	inferVars map[string]Type
 }
 
-func (v *InferTypeFinder) EnterType(t Type) {
+func (v *InferTypeFinder) EnterType(t Type) Type {
 	// No-op - just for traversal
+	return nil
 }
 
 func (v *InferTypeFinder) ExitType(t Type) Type {
@@ -1643,8 +1645,9 @@ type InferTypeReplacer struct {
 	inferMapping map[string]Type
 }
 
-func (v *InferTypeReplacer) EnterType(t Type) {
+func (v *InferTypeReplacer) EnterType(t Type) Type {
 	// No-op - just for traversal
+	return nil
 }
 
 func (v *InferTypeReplacer) ExitType(t Type) Type {
