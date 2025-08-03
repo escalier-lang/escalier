@@ -33,6 +33,7 @@ func (*LitType) isType()          {}
 func (*UniqueSymbolType) isType() {}
 func (*UnknownType) isType()      {}
 func (*NeverType) isType()        {}
+func (*AnyType) isType()          {}
 func (*GlobalThisType) isType()   {}
 func (*FuncType) isType()         {}
 func (*ObjectType) isType()       {}
@@ -178,7 +179,6 @@ const (
 	StrPrim    Prim = "string"
 	BigIntPrim Prim = "bigint"
 	SymbolPrim Prim = "symbol"
-	AnyPrim    Prim = "any"
 )
 
 type PrimType struct {
@@ -201,12 +201,6 @@ func NewStrType() *PrimType {
 func NewBoolType() *PrimType {
 	return &PrimType{
 		Prim:       BoolPrim,
-		provenance: nil,
-	}
-}
-func NewAnyType() *PrimType {
-	return &PrimType{
-		Prim:       AnyPrim,
 		provenance: nil,
 	}
 }
@@ -243,8 +237,6 @@ func (t *PrimType) String() string {
 		return "bigint"
 	case SymbolPrim:
 		return "symbol"
-	case AnyPrim:
-		return "any"
 	default:
 		panic("unknown primitive type")
 	}
@@ -369,6 +361,31 @@ func (t *NeverType) Equal(other Type) bool {
 }
 func (t *NeverType) String() string {
 	return "never"
+}
+
+type AnyType struct {
+	provenance Provenance
+}
+
+func (t *AnyType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*AnyType)
+	}
+	if result := v.ExitType(t); result != nil {
+		return result
+	}
+	return t
+}
+
+func NewAnyType() *AnyType { return &AnyType{provenance: nil} }
+func (t *AnyType) Equal(other Type) bool {
+	if _, ok := other.(*AnyType); ok {
+		return true
+	}
+	return false
+}
+func (t *AnyType) String() string {
+	return "any"
 }
 
 type GlobalThisType struct {

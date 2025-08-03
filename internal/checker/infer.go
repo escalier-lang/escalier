@@ -625,6 +625,25 @@ func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisito
 
 func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 	v.depth++
+
+	switch t := t.(type) {
+	case *CondType:
+		// We need to expand the CondType's extends type on entering so that
+		// we can replace InferTypes in the extends type with fresh type variables
+		// and then replace the corresponding TypeVarTypes in the alt and cons types
+		// with those fresh type variables.  If we did this on exit, we wouldn't
+		// be able to replace all the types in nested CondTypes.
+		// TODO: Add a test case to ensure that infer type shadowing works and
+		// fix the bug if it doesn't.
+		substitutions := v.checker.findInferTypes(t.Extends)
+		return NewCondType(
+			t.Check,
+			v.checker.replaceInferTypes(t.Extends, substitutions),
+			v.checker.substituteTypeParams(t.Alt, substitutions),
+			v.checker.substituteTypeParams(t.Cons, substitutions),
+		)
+	}
+
 	return nil
 }
 
@@ -669,21 +688,11 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
 	case *CondType:
-		inferTypesMap := v.checker.findInferTypes(t.Extends)
-		extendsType := v.checker.replaceInferTypes(t.Extends, inferTypesMap)
-
-		errors := v.checker.unify(v.ctx, t.Check, extendsType)
-
-		// Convert inferTypesMap to the format expected by substituteTypeParams
-		substitutions := make(map[string]Type)
-		for name, typeVar := range inferTypesMap {
-			substitutions[name] = typeVar
-		}
-
+		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) > 0 {
-			return v.checker.substituteTypeParams(t.Alt, substitutions)
+			return t.Cons
 		} else {
-			return v.checker.substituteTypeParams(t.Cons, substitutions)
+			return t.Alt
 		}
 	}
 

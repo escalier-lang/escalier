@@ -95,12 +95,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if tv2, ok := t2.(*TypeVarType); ok {
 		return c.bind(tv2, t1)
 	}
-	// | PrimType (any), _ -> ...
-	if prim1, ok := t1.(*PrimType); ok && prim1.Prim == AnyPrim {
+	// | AnyType, _ -> ...
+	if _, ok := t1.(*AnyType); ok {
 		return nil
 	}
-	// | _, PrimType (any) -> ...
-	if prim2, ok := t2.(*PrimType); ok && prim2.Prim == AnyPrim {
+	// | _, AnyType -> ...
+	if _, ok := t2.(*AnyType); ok {
 		return nil
 	}
 	// | PrimType, PrimType -> ...

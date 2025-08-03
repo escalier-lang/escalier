@@ -129,21 +129,21 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 				"ObjectKind":  "\"unknown\"",
 			},
 		},
-		// "ComplexConditionalWithInfer": {
-		// 	input: `
-		// 		type ExtractArrayElement<T> = if T : Array<infer U> {
-		// 			if U : string { U } else { never }
-		// 		} else {
-		// 			never
-		// 		}
-		// 		type StringArrayElement = ExtractArrayElement<Array<string>>
-		// 		type NumberArrayElement = ExtractArrayElement<Array<number>>
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"StringArrayElement": "string",
-		// 		"NumberArrayElement": "never",
-		// 	},
-		// },
+		"ComplexConditionalWithInfer": {
+			input: `
+				type ExtractArrayElement<T> = if T : Array<infer U> {
+					if U : string { U } else { never }
+				} else {
+					never
+				}
+				type StringArrayElement = ExtractArrayElement<Array<string>>
+				type NumberArrayElement = ExtractArrayElement<Array<number>>
+			`,
+			expectedTypes: map[string]string{
+				"StringArrayElement": "string",
+				"NumberArrayElement": "never",
+			},
+		},
 	}
 
 	for name, test := range tests {
