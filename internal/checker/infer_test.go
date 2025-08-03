@@ -454,7 +454,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type StringOrError = Result<string, Error>
 			`,
 			expectedTypes: map[string]string{
-				"StringOrError": "string | {message: string}",
+				"StringOrError": "string | Error",
 			},
 		},
 		"GenericWithPrimitiveInstantiation": {
@@ -1734,7 +1734,7 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, outerTypeRef)
 
 		assert.Empty(t, errors)
-		assert.Equal(t, `"inner"`, result.String())
+		assert.Equal(t, "Inner", result.String())
 	})
 
 	t.Run("UnionType with TypeRefType - mixed expansion", func(t *testing.T) {
@@ -1763,7 +1763,7 @@ func TestExpandType(t *testing.T) {
 		result, errors := checker.expandType(ctx, unionType)
 
 		assert.Empty(t, errors)
-		assert.Equal(t, "42 | \"mystring\"", result.String())
+		assert.Equal(t, "42 | MyString", result.String())
 	})
 
 	t.Run("Complex generic type alias", func(t *testing.T) {

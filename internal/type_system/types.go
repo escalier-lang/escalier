@@ -112,10 +112,31 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	v.EnterType(t)
-	if result := v.ExitType(t); result != nil {
-		return result
+
+	changed := false
+	newTypeArgs := make([]Type, len(t.TypeArgs))
+	for i, arg := range t.TypeArgs {
+		newArg := arg.Accept(v)
+		if newArg != arg {
+			changed = true
+		}
+		newTypeArgs[i] = newArg
 	}
-	return t
+
+	var result Type = t
+	if changed {
+		result = &TypeRefType{
+			Name:       t.Name,
+			TypeArgs:   newTypeArgs,
+			TypeAlias:  t.TypeAlias,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.ExitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
 }
 func (t *TypeRefType) Equal(other Type) bool {
 	if other, ok := other.(*TypeRefType); ok {
@@ -147,6 +168,7 @@ const (
 	StrPrim    Prim = "string"
 	BigIntPrim Prim = "bigint"
 	SymbolPrim Prim = "symbol"
+	AnyPrim    Prim = "any"
 )
 
 type PrimType struct {
@@ -169,6 +191,12 @@ func NewStrType() *PrimType {
 func NewBoolType() *PrimType {
 	return &PrimType{
 		Prim:       BoolPrim,
+		provenance: nil,
+	}
+}
+func NewAnyType() *PrimType {
+	return &PrimType{
+		Prim:       AnyPrim,
 		provenance: nil,
 	}
 }
@@ -203,6 +231,8 @@ func (t *PrimType) String() string {
 		return "bigint"
 	case SymbolPrim:
 		return "symbol"
+	case AnyPrim:
+		return "any"
 	default:
 		panic("unknown primitive type")
 	}
@@ -1139,6 +1169,15 @@ func (t *CondType) Equal(other Type) bool {
 	}
 	return false
 }
+func NewCondType(check Type, extends Type, cons Type, alt Type) *CondType {
+	return &CondType{
+		Check:      check,
+		Extends:    extends,
+		Cons:       cons,
+		Alt:        alt,
+		provenance: nil,
+	}
+}
 func (t *CondType) String() string {
 	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Cons.String() + " } else { " + t.Alt.String() + " }"
 }
@@ -1163,6 +1202,13 @@ func (t *InferType) Equal(other Type) bool {
 }
 func (t *InferType) String() string {
 	return "infer " + t.Name
+}
+
+func NewInferType(name string) *InferType {
+	return &InferType{
+		Name:       name,
+		provenance: nil,
+	}
 }
 
 type WildcardType struct {

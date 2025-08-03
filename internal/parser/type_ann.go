@@ -178,6 +178,12 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Boolean:
 			p.lexer.consume()
 			typeAnn = ast.NewBooleanTypeAnn(token.Span)
+		case Any:
+			p.lexer.consume()
+			typeAnn = ast.NewAnyTypeAnn(token.Span)
+		case Never:
+			p.lexer.consume()
+			typeAnn = ast.NewNeverTypeAnn(token.Span)
 		case Null:
 			p.lexer.consume()
 			typeAnn = ast.NewLitTypeAnn(ast.NewNull(token.Span), token.Span)
@@ -196,6 +202,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			p.lexer.consume()
 			typeAnn = ast.NewLitTypeAnn(
 				ast.NewString(token.Value, token.Span),
+				token.Span,
+			)
+		case True:
+			p.lexer.consume()
+			typeAnn = ast.NewLitTypeAnn(
+				ast.NewBoolean(true, token.Span),
+				token.Span,
+			)
+		case False:
+			p.lexer.consume()
+			typeAnn = ast.NewLitTypeAnn(
+				ast.NewBoolean(false, token.Span),
 				token.Span,
 			)
 		case RegexLit:

@@ -53,6 +53,7 @@ const (
 	Number
 	String
 	Boolean
+	Any
 
 	// operators
 	Plus
@@ -100,6 +101,7 @@ const (
 	For
 	In
 	Infer
+	Never
 )
 
 type Token struct {

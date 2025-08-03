@@ -289,6 +289,8 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 			return NewBooleanTypeAnn(nil)
 		case type_sys.StrPrim:
 			return NewStringTypeAnn(nil)
+		case type_sys.AnyPrim:
+			return NewAnyTypeAnn(nil)
 		case type_sys.BigIntPrim:
 			panic("TODO: typeToTypeAnn - handle BigIntPrim")
 		case type_sys.SymbolPrim:

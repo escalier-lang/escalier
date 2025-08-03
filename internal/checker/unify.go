@@ -95,6 +95,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if tv2, ok := t2.(*TypeVarType); ok {
 		return c.bind(tv2, t1)
 	}
+	// | PrimType (any), _ -> ...
+	if prim1, ok := t1.(*PrimType); ok && prim1.Prim == AnyPrim {
+		return nil
+	}
+	// | _, PrimType (any) -> ...
+	if prim2, ok := t2.(*PrimType); ok && prim2.Prim == AnyPrim {
+		return nil
+	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
 		if prim2, ok := t2.(*PrimType); ok {
@@ -202,23 +210,55 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | TupleType, ArrayType -> ...
-	if tuple1, ok := t2.(*TupleType); ok {
+	if tuple1, ok := t1.(*TupleType); ok {
 		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", tuple1, array2))
-			// TODO
+			// A tuple can be unified with an array if all tuple elements
+			// can be unified with the array's element type
+			if len(array2.TypeArgs) == 1 {
+				errors := []Error{}
+				for _, elem := range tuple1.Elems {
+					unifyErrors := c.unify(ctx, elem, array2.TypeArgs[0])
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				return errors
+			}
+			return []Error{&CannotUnifyTypesError{
+				T1: tuple1,
+				T2: array2,
+			}}
 		}
 	}
 	// | ArrayType, TupleType -> ...
 	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
 		if tuple2, ok := t2.(*TupleType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, tuple2))
-			// TODO
+			// An array can be unified with a tuple if the array's element type
+			// can be unified with all tuple elements
+			if len(array1.TypeArgs) == 1 {
+				errors := []Error{}
+				for _, elem := range tuple2.Elems {
+					unifyErrors := c.unify(ctx, array1.TypeArgs[0], elem)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				return errors
+			}
+			return []Error{&CannotUnifyTypesError{
+				T1: array1,
+				T2: tuple2,
+			}}
 		}
 	}
 	// | ArrayType, ArrayType -> ...
 	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
 		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", array1, array2))
+			// Both are Array types, unify their element types
+			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
+				return c.unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
+			}
+			// If either array doesn't have exactly one type argument, they can't be unified
+			return []Error{&CannotUnifyTypesError{
+				T1: array1,
+				T2: array2,
+			}}
 		}
 	}
 	// | RestSpreadType, ArrayType -> ...
@@ -230,8 +270,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | FuncType, FuncType -> ...
 	if func1, ok := t1.(*FuncType); ok {
 		if func2, ok := t2.(*FuncType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", func1.String(), func2.String()))
-			// TODO
+			return c.unifyFuncTypes(ctx, func1, func2)
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
@@ -580,27 +619,265 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 
 	retry := false
-	if typeRef, ok := t1.(*TypeRefType); ok {
-		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
-			// TODO: apply type args
-			t1 = alias.Type
-			retry = true
-		}
+	expandedT1, _ := c.expandType(ctx, t1)
+	if expandedT1 != t1 {
+		t1 = expandedT1
+		retry = true
 	}
-	if typeRef, ok := t2.(*TypeRefType); ok {
-		if alias := c.resolveQualifiedTypeAliasFromString(ctx, typeRef.Name); alias != nil {
-			// TODO: apply type args
-			t2 = alias.Type
-			retry = true
-		}
+	expandedT2, _ := c.expandType(ctx, t2)
+	if expandedT2 != t2 {
+		t2 = expandedT2
+		retry = true
 	}
 
 	if retry {
 		return c.unify(ctx, t1, t2)
 	}
 
-	// TODO: try to expand each type and then try to unify them again
-	panic(fmt.Sprintf("TODO: unify types %s and %s", t1.String(), t2.String()))
+	return []Error{&CannotUnifyTypesError{
+		T1: t1,
+		T2: t2,
+	}}
+}
+
+// unifyFuncTypes unifies two function types
+func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
+	errors := []Error{}
+
+	// For function types to be compatible:
+	// 1. func2 can have fewer parameters than func1 (extra params in func1 can be ignored)
+	// 2. Parameter types are contravariant: func2's param types must be supertypes of func1's
+	// 3. Return types are covariant: func1's return type must be subtype of func2's
+	// 4. Type parameters must be compatible
+
+	// Check type parameters compatibility
+	if len(func1.TypeParams) != len(func2.TypeParams) {
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// Create a context for type parameter substitution
+	// For now, we assume type parameters with the same position are equivalent
+	// TODO: Handle more sophisticated type parameter constraints and bounds
+
+	// Check Self type compatibility (for methods)
+	if func1.Self != nil && func2.Self != nil {
+		unifyErrors := c.unify(ctx, func1.Self, func2.Self)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Self != nil || func2.Self != nil {
+		// One has Self, the other doesn't - they're incompatible
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// Check parameters (contravariant)
+	// Handle rest parameters: if func2 has a rest parameter, it can accept excess params from func1
+
+	// Find if func1 and func2 have rest parameters
+	var func1RestIndex = -1
+	var func2RestIndex = -1
+
+	for i, param := range func1.Params {
+		if param.Pattern != nil {
+			if _, isRest := param.Pattern.(*RestPat); isRest {
+				func1RestIndex = i
+				break
+			}
+		}
+	}
+
+	for i, param := range func2.Params {
+		if param.Pattern != nil {
+			if _, isRest := param.Pattern.(*RestPat); isRest {
+				func2RestIndex = i
+				break
+			}
+		}
+	}
+
+	if func1RestIndex != -1 && func2RestIndex != -1 {
+		// Both functions have rest parameters
+		// They must have the same number of fixed parameters and compatible rest types
+		if func1RestIndex != func2RestIndex {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+		// Unify fixed parameters before the rest parameter
+		for i := 0; i < func1RestIndex; i++ {
+			param1 := func1.Params[i]
+			param2 := func2.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+
+		// Unify the rest parameters directly
+		restParam1 := func1.Params[func1RestIndex]
+		restParam2 := func2.Params[func2RestIndex]
+		unifyErrors := c.unify(ctx, restParam2.Type, restParam1.Type)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// Check that both functions don't have parameters after rest (which shouldn't happen)
+		if len(func1.Params) > func1RestIndex+1 || len(func2.Params) > func2RestIndex+1 {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+	} else if func2RestIndex != -1 {
+		// Only func2 has a rest parameter at func2RestIndex
+		// func1 must have at least as many fixed parameters as func2's fixed parameters
+		if len(func1.Params) < func2RestIndex {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+		// Unify fixed parameters before the rest parameter
+		for i := 0; i < func2RestIndex; i++ {
+			param1 := func1.Params[i]
+			param2 := func2.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+
+		// Handle the rest parameter
+		restParam := func2.Params[func2RestIndex]
+		excessParamCount := len(func1.Params) - func2RestIndex
+
+		if excessParamCount > 0 {
+			// Collect excess parameters from func1
+			excessParamTypes := make([]Type, excessParamCount)
+			for i := 0; i < excessParamCount; i++ {
+				excessParamTypes[i] = func1.Params[func2RestIndex+i].Type
+			}
+
+			// Create an Array type from excess parameters
+			// We need to find a type that all excess parameters can unify to
+			// For simplicity, we'll create a union of all excess parameter types
+			var elementType Type
+			if len(excessParamTypes) == 1 {
+				elementType = excessParamTypes[0]
+			} else if len(excessParamTypes) > 1 {
+				// Create a union type of all excess parameter types
+				elementType = NewUnionType(excessParamTypes...)
+			} else {
+				// If no excess parameters, use 'never' type as the element type
+				elementType = NewNeverType()
+			}
+
+			// Create Array<elementType> and unify with rest parameter type
+			arrayType := NewTypeRefType("Array", nil, elementType)
+			unifyErrors := c.unify(ctx, restParam.Type, arrayType)
+			errors = slices.Concat(errors, unifyErrors)
+		} else {
+			// No excess parameters, rest parameter should accept empty array
+			// This is typically valid for rest parameters
+		}
+
+		// Check if there are any remaining parameters in func2 after the rest parameter
+		// (This shouldn't happen if rest parameter is last, but handle it gracefully)
+		if func2RestIndex+1 < len(func2.Params) {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+	} else {
+		// Neither function has rest parameters, use original logic
+		// func2 can have fewer parameters than func1
+		if len(func2.Params) > len(func1.Params) {
+			return []Error{&CannotUnifyTypesError{
+				T1: func1,
+				T2: func2,
+			}}
+		}
+
+		// For each parameter in func2, the corresponding parameter in func1
+		// must be unifiable (contravariant: func2 param type must be supertype of func1 param type)
+		for i, param2 := range func2.Params {
+			param1 := func1.Params[i]
+
+			// Parameter types are contravariant: unify param2.Type with param1.Type
+			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Optional parameter compatibility
+			// If param1 is optional, param2 can be either optional or required
+			// If param1 is required, param2 must be required
+			if param1.Optional && !param2.Optional {
+				// This is fine - param2 is more restrictive
+			} else if !param1.Optional && param2.Optional {
+				// param1 requires the parameter but param2 makes it optional
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+	}
+
+	// Check return types (covariant)
+	if func1.Return != nil && func2.Return != nil {
+		unifyErrors := c.unify(ctx, func1.Return, func2.Return)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Return == nil && func2.Return != nil {
+		// func1 returns void/undefined, func2 expects a return type
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	} else if func1.Return != nil && func2.Return == nil {
+		// func1 returns something, func2 expects void - this might be OK
+		// in some contexts (return value is ignored)
+	}
+
+	// Check throws types (covariant)
+	if func1.Throws != nil && func2.Throws != nil {
+		unifyErrors := c.unify(ctx, func1.Throws, func2.Throws)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if func1.Throws != nil && func2.Throws == nil {
+		// func1 can throw but func2 doesn't expect throws - this might be an error
+		// For now, we'll allow it (func2 doesn't handle the exception)
+	} else if func1.Throws == nil && func2.Throws != nil {
+		// func1 doesn't throw but func2 expects it might - this is fine
+	}
+
+	return errors
 }
 
 // TODO: check if t1 is already bound to an instance

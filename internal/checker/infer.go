@@ -603,30 +603,50 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 	}
 }
 
-func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
-	t = Prune(t)
+// TypeExpansionVisitor implements TypeVisitor for expanding type references
+type TypeExpansionVisitor struct {
+	checker  *Checker
+	ctx      Context
+	errors   []Error
+	depth    int // current expansion depth
+	maxDepth int // maximum allowed expansion depth
+}
+
+// NewTypeExpansionVisitor creates a new visitor for expanding type references
+func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisitor {
+	return &TypeExpansionVisitor{
+		checker:  checker,
+		ctx:      ctx,
+		errors:   []Error{},
+		depth:    0,
+		maxDepth: 1, // Limit expansion to depth of 1
+	}
+}
+
+func (v *TypeExpansionVisitor) EnterType(t Type) {
+	v.depth++
+}
+
+func (v *TypeExpansionVisitor) ExitType(t Type) Type {
+	defer func() { v.depth-- }()
 
 	switch t := t.(type) {
-	case *UnionType:
-		types := make([]Type, len(t.Types))
-		errors := []Error{}
-		for i, elem := range t.Types {
-			elem, elemErrors := c.expandType(ctx, elem)
-			types[i] = elem
-			errors = slices.Concat(errors, elemErrors)
-		}
-		unionType := NewUnionType(types...)
-		unionType.SetProvenance(&TypeProvenance{
-			Type: t,
-		})
-		return unionType, errors
+	case *NamespaceType:
+		// Don't expand NamespaceTypes - return them as-is
+		return t
 	case *TypeRefType:
-		typeAlias := ctx.Scope.getTypeAlias(t.Name)
+		// Check if we've reached the maximum expansion depth
+		if v.depth > v.maxDepth {
+			// Return the type reference without expanding
+			return t
+		}
+
+		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, t.Name)
 		if typeAlias == nil {
-			errors := []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
+			v.errors = append(v.errors, &UnknownTypeError{TypeName: t.Name, typeRef: t})
 			neverType := NewNeverType()
 			neverType.SetProvenance(&TypeProvenance{Type: t})
-			return neverType, errors
+			return neverType
 		}
 
 		// Replace type params with type args if the type is generic
@@ -642,13 +662,40 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 					substitutions[typeParam.Name] = t.TypeArgs[i]
 				}
 			}
-			expandedType = c.substituteTypeParams(typeAlias.Type, substitutions)
+			expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 		}
 
-		return c.expandType(ctx, expandedType)
-	default:
-		return t, nil
+		// Recursively expand the resolved type using the same visitor to maintain state
+		return expandedType.Accept(v)
+	case *CondType:
+		inferTypesMap := v.checker.findInferTypes(t.Extends)
+		extendsType := v.checker.replaceInferTypes(t.Extends, inferTypesMap)
+
+		errors := v.checker.unify(v.ctx, t.Check, extendsType)
+
+		// Convert inferTypesMap to the format expected by substituteTypeParams
+		substitutions := make(map[string]Type)
+		for name, typeVar := range inferTypesMap {
+			substitutions[name] = typeVar
+		}
+
+		if len(errors) > 0 {
+			return v.checker.substituteTypeParams(t.Alt, substitutions)
+		} else {
+			return v.checker.substituteTypeParams(t.Cons, substitutions)
+		}
 	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
+}
+
+func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
+	t = Prune(t)
+	visitor := NewTypeExpansionVisitor(c, ctx)
+
+	result := t.Accept(visitor)
+	return result, visitor.errors
 }
 
 func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optChain bool) (Type, []Error) {
@@ -656,8 +703,28 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 
 	objType = Prune(objType)
 
-	objType, expandErrors := c.expandType(ctx, objType)
-	errors = slices.Concat(errors, expandErrors)
+	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
+	// or can't be expanded any further
+	for {
+		expandedType, expandErrors := c.expandType(ctx, objType)
+		errors = slices.Concat(errors, expandErrors)
+
+		// If expansion didn't change the type, we're done expanding
+		if expandedType == objType {
+			break
+		}
+
+		objType = expandedType
+
+		// If we've reached an ObjectType or NamespaceType, we can stop expanding
+		// since these are the types we can directly get properties from
+		if _, ok := objType.(*ObjectType); ok {
+			break
+		}
+		if _, ok := objType.(*NamespaceType); ok {
+			break
+		}
+	}
 
 	var propType Type
 
@@ -1374,6 +1441,10 @@ func (c *Checker) inferTypeAnn(
 		t = NewStrType()
 	case *ast.BooleanTypeAnn:
 		t = NewBoolType()
+	case *ast.AnyTypeAnn:
+		t = NewAnyType()
+	case *ast.NeverTypeAnn:
+		t = NewNeverType()
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
@@ -1456,6 +1527,57 @@ func (c *Checker) inferTypeAnn(
 			errors = slices.Concat(errors, unionElemErrors)
 		}
 		t = NewUnionType(types...)
+	case *ast.FuncTypeAnn:
+		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn)
+		t = funcType
+		errors = slices.Concat(errors, funcErrors)
+	case *ast.CondTypeAnn:
+		// TODO: this needs to be done in the Enter method of the visitor
+		// so that we can we can replace InferType nodes with fresh type variables
+		// and computing a new context with those infer types in scope before
+		// inferring the Cons and Alt branches.
+		// This only affects nested conditional types.
+		checkType, checkErrors := c.inferTypeAnn(ctx, typeAnn.Check)
+		errors = slices.Concat(errors, checkErrors)
+
+		extendsType, extendsErrors := c.inferTypeAnn(ctx, typeAnn.Extends)
+		errors = slices.Concat(errors, extendsErrors)
+
+		// Find all InferType nodes in the extends type and create type aliases for them
+		inferTypesMap := c.findInferTypes(extendsType)
+
+		// Create a new context with infer types in scope for inferring Cons and Alt
+		condCtx := ctx
+		if len(inferTypesMap) > 0 {
+			// Create a new scope that includes the infer types as type aliases
+			condScope := ctx.Scope.WithNewScope()
+
+			// Add infer types as type aliases to the scope
+			for inferName, _ := range inferTypesMap {
+				inferTypeRef := NewTypeRefType(inferName, nil)
+				inferTypeAlias := &TypeAlias{
+					Type:       inferTypeRef,
+					TypeParams: []*TypeParam{},
+				}
+				condScope.setTypeAlias(inferName, inferTypeAlias)
+			}
+
+			condCtx = Context{
+				Scope:      condScope,
+				IsAsync:    ctx.IsAsync,
+				IsPatMatch: ctx.IsPatMatch,
+			}
+		}
+
+		consType, consErrors := c.inferTypeAnn(condCtx, typeAnn.Cons)
+		errors = slices.Concat(errors, consErrors)
+
+		altType, altErrors := c.inferTypeAnn(condCtx, typeAnn.Alt)
+		errors = slices.Concat(errors, altErrors)
+
+		t = NewCondType(checkType, extendsType, consType, altType)
+	case *ast.InferTypeAnn:
+		t = NewInferType(typeAnn.Name)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
@@ -1466,4 +1588,76 @@ func (c *Checker) inferTypeAnn(
 	typeAnn.SetInferredType(t)
 
 	return t, errors
+}
+
+// findInferTypes finds all InferType nodes in a type and replaces them with fresh type variables.
+// Returns a mapping from infer names to the type variables that replaced them.
+func (c *Checker) findInferTypes(t Type) map[string]Type {
+	visitor := &InferTypeFinder{
+		checker:   c,
+		inferVars: make(map[string]Type),
+	}
+	t.Accept(visitor)
+	return visitor.inferVars
+}
+
+// replaceInferTypes substitutes infer variables in a type with their inferred values from the mapping.
+func (c *Checker) replaceInferTypes(t Type, inferMapping map[string]Type) Type {
+	visitor := &InferTypeReplacer{
+		inferMapping: inferMapping,
+	}
+	return t.Accept(visitor)
+}
+
+// InferTypeFinder collects all InferType nodes and replaces them with fresh type variables
+type InferTypeFinder struct {
+	checker   *Checker
+	inferVars map[string]Type
+}
+
+func (v *InferTypeFinder) EnterType(t Type) {
+	// No-op - just for traversal
+}
+
+func (v *InferTypeFinder) ExitType(t Type) Type {
+	t = Prune(t)
+
+	if inferType, ok := t.(*InferType); ok {
+		if existingVar, exists := v.inferVars[inferType.Name]; exists {
+			// Reuse existing type variable for same infer name
+			return existingVar
+		}
+		// Create fresh type variable
+		freshVar := v.checker.FreshVar()
+		v.inferVars[inferType.Name] = freshVar
+		return freshVar
+	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
+}
+
+// InferTypeReplacer substitutes type variables that correspond to infer types
+// with their actual inferred values
+type InferTypeReplacer struct {
+	inferMapping map[string]Type
+}
+
+func (v *InferTypeReplacer) EnterType(t Type) {
+	// No-op - just for traversal
+}
+
+func (v *InferTypeReplacer) ExitType(t Type) Type {
+	t = Prune(t)
+
+	// Check if this is an InferType that should be replaced
+	if inferType, ok := t.(*InferType); ok {
+		if typeVar, exists := v.inferMapping[inferType.Name]; exists {
+			// Return the inferred type (what the type variable was unified with)
+			return typeVar
+		}
+	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
 }

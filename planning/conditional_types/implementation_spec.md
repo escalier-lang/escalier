@@ -226,6 +226,8 @@ func (v *InferVarSubstitutor) ExitType(t Type) Type {
 
 ### 4. Type Checker Implementation
 
+**Important:** Distribution logic should only be invoked during generic type alias instantiation. The `evaluateConditionalTypeWithDistribution` function should be called from the generic instantiation code path, not from normal conditional type evaluation.
+
 #### 4.1 Add Conditional Type Inference
 **File:** `internal/checker/infer.go`
 
@@ -270,6 +272,43 @@ import (
     . "github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// Conditional Type Distribution Rules:
+//
+// Distribution only occurs during generic type alias instantiation when:
+// 1. We have a generic type alias with conditional types in its definition
+// 2. We're instantiating that alias with union type arguments  
+// 3. The conditional's check type is a "naked" type parameter (not wrapped)
+// 4. That type parameter gets substituted with a union type
+//
+// The key insight is that distribution is a property of how generics are instantiated,
+// not of conditional types themselves. During normal type checking, conditional types
+// evaluate non-distributively. Distribution only happens when the type checker is
+// performing generic type substitution and encounters a conditional where the check
+// type was originally a naked type parameter that's being replaced with a union.
+//
+// Implementation approach:
+// 1. During generic instantiation, track which type parameters are being substituted with unions
+// 2. When evaluating conditionals during substitution, check if the check type is a union
+//    that resulted from substituting a naked type parameter
+// 3. If so, distribute; otherwise evaluate normally
+//
+// Examples:
+//   type ToArray<T> = if T : any { T[] } else { never }
+//   
+//   When evaluating ToArray<string | number>:
+//   1. T is a naked type parameter in check position 
+//   2. T gets substituted with (string | number)
+//   3. Distribution occurs: evaluate separately for string and number
+//   4. Result: string[] | number[]
+//
+//   type Wrapped<T> = if T[] : any[] { true } else { false }
+//   
+//   When evaluating Wrapped<string | number>:
+//   1. T[] is NOT a naked type parameter (T is wrapped in array)
+//   2. T gets substituted with (string | number), giving (string | number)[]
+//   3. No distribution occurs: evaluate normally
+//   4. Result: true (since (string | number)[] extends any[])
+
 // Conditional Type Evaluation Strategy:
 //
 // The approach for handling infer types in conditional types:
@@ -297,82 +336,74 @@ import (
 //   - R (TypeRefType) -> $2 -> boolean
 //   - Result: [[string, number], boolean]
 
-// Note: Distribution in conditional types only occurs when:
-// 1. The conditional type is part of a generic type alias
-// 2. A union type is passed as a type argument to that generic type alias  
-// 3. The union type appears in the "check" position of the conditional
+// Note: Distribution in conditional types ONLY occurs when:
+// 1. The conditional type is part of a generic type alias definition
+// 2. A union type is passed as a type argument when instantiating that generic type alias
+// 3. The union type parameter appears in the "check" position of the conditional
+// 4. The type parameter in the check position is a "naked" type parameter (not wrapped in another type)
 //
-// When multiple type parameters are union types, distribution occurs independently
-// for each conditional type that references a union type parameter.
+// Distribution does NOT occur for:
+// - Inline conditional types (not part of a generic type alias)
+// - Conditional types where the check type is not a type parameter
+// - Type parameters wrapped in other types (e.g., T[] where T is a union)
 //
-// Examples:
+// Examples of distribution (only when expanding generic type aliases):
 //   type ToArray<T> = if T : any { T[] } else { never }
-//   type Result = ToArray<string | number>  // Distributes to string[] | number[]
+//   type Result = ToArray<string | number>  // Distributes: string[] | number[]
 //
 //   type Complex<T, U> = if T : string { U[] } else { never }
 //   type Result = Complex<string | number, boolean | symbol>
-//   // Distributes T but not U: boolean[] | symbol[] | never
-//   // Only T distributes because only T is in the check position
+//   // Only T distributes (naked T in check position): boolean[] | symbol[] | never
 //
 //   type DoubleCheck<T, U> = if T : any { if U : any { [T, U] } else { never } } else { never }
 //   type Result = DoubleCheck<string | number, boolean | symbol>
-//   // Both T and U distribute: [string, boolean] | [string, symbol] | [number, boolean] | [number, symbol]
+//   // Both T and U distribute (both naked in their respective check positions)
+//   // Result: [string, boolean] | [string, symbol] | [number, boolean] | [number, symbol]
 //
-// Non-distributive example:
-//   type Test = if (string | number) : any { true } else { false }  // Evaluates to true (no distribution)
+// Examples of NO distribution:
+//   type Test = if (string | number) : any { true } else { false }  // true (inline conditional)
+//   
+//   type Wrapped<T> = if T[] : any[] { true } else { false }
+//   type Result = Wrapped<string | number>  // true (T is wrapped in array, not naked)
+//   
+//   type Identity<T> = T
+//   type Test2 = if Identity<string | number> : any { true } else { false }  // true (not naked type param)
 
-// evaluateConditionalType evaluates a conditional type
+// evaluateConditionalType evaluates a conditional type (non-distributive by default)
 func (c *Checker) evaluateConditionalType(ctx Context, check, extends, cons, alt Type) Type {
     return c.evaluateNonDistributiveConditional(ctx, check, extends, cons, alt)
 }
 
 // evaluateConditionalTypeWithDistribution evaluates a conditional type with potential distribution
-// This should only be called when instantiating a generic type alias with union type arguments
+// This should ONLY be called during generic type alias instantiation when:
+// 1. The conditional type is part of a generic type alias definition
+// 2. Union type arguments are being substituted for type parameters
+// 3. The check type is a naked type parameter that was substituted with a union
 func (c *Checker) evaluateConditionalTypeWithDistribution(ctx Context, check, extends, cons, alt Type, distributiveTypeParams map[string]bool) Type {
     check = Prune(check)
     extends = Prune(extends)
     
-    // Check if the check type contains any distributive type parameters
-    checkContainsDistributiveParam := c.containsDistributiveTypeParam(check, distributiveTypeParams)
-    
-    if union, ok := check.(*UnionType); ok && checkContainsDistributiveParam {
-        return c.evaluateDistributiveConditional(ctx, union, extends, cons, alt, distributiveTypeParams)
+    // Only distribute if this is a naked type parameter that became a union during substitution
+    if union, ok := check.(*UnionType); ok {
+        if c.isNakedDistributiveTypeParam(check, distributiveTypeParams) {
+            return c.evaluateDistributiveConditional(ctx, union, extends, cons, alt, distributiveTypeParams)
+        }
     }
     
     // Non-distributive evaluation, but still need to handle nested conditionals
     return c.evaluateNonDistributiveConditionalWithParams(ctx, check, extends, cons, alt, distributiveTypeParams)
 }
 
-// containsDistributiveTypeParam checks if a type contains any type parameters that should distribute
-func (c *Checker) containsDistributiveTypeParam(t Type, distributiveTypeParams map[string]bool) bool {
-    visitor := &DistributiveTypeParamVisitor{
-        distributiveTypeParams: distributiveTypeParams,
-        found: false,
-    }
-    t.Accept(visitor)
-    return visitor.found
-}
-
-// DistributiveTypeParamVisitor implements TypeVisitor to find distributive type parameters
-type DistributiveTypeParamVisitor struct {
-    distributiveTypeParams map[string]bool
-    found                  bool
-}
-
-func (v *DistributiveTypeParamVisitor) EnterType(t Type) {
-    if v.found {
-        return // Early exit if already found (though we can't short-circuit traversal)
-    }
+// isNakedDistributiveTypeParam checks if the check type is a naked type parameter that should distribute
+// A naked type parameter is one that appears directly in the check position without being wrapped
+func (c *Checker) isNakedDistributiveTypeParam(checkType Type, distributiveTypeParams map[string]bool) bool {
+    // The check type should be exactly a union that was substituted for a distributive type parameter
+    // This means the original check type was a naked type parameter (e.g., T in "if T : ...") 
+    // and during generic instantiation, T was replaced with a union type
     
-    if typeRef, ok := t.(*TypeRefType); ok {
-        if v.distributiveTypeParams[typeRef.Name] {
-            v.found = true
-        }
-    }
-}
-
-func (v *DistributiveTypeParamVisitor) ExitType(t Type) Type {
-    return t // No transformation needed
+    // For now, we can use a simple heuristic: if distributiveTypeParams is provided and non-empty,
+    // it means we're in a generic instantiation context where distribution should occur
+    return distributiveTypeParams != nil && len(distributiveTypeParams) > 0
 }
 
 // evaluateDistributiveConditional handles union types in check position
@@ -418,58 +449,42 @@ func (c *Checker) evaluateNonDistributiveConditionalWithParams(ctx Context, chec
 
 // handleNestedConditionals processes any nested conditional types that may need distribution
 func (c *Checker) handleNestedConditionals(ctx Context, t Type, distributiveTypeParams map[string]bool) Type {
-    t = Prune(t)
-    
-    switch t := t.(type) {
-    case *CondType:
-        // Recursively evaluate nested conditional with distribution context
-        return c.evaluateConditionalTypeWithDistribution(ctx, t.Check, t.Extends, t.Cons, t.Alt, distributiveTypeParams)
-    case *TupleType:
-        // Handle conditionals in tuple elements
-        elems := make([]Type, len(t.Elems))
-        for i, elem := range t.Elems {
-            elems[i] = c.handleNestedConditionals(ctx, elem, distributiveTypeParams)
-        }
-        return NewTupleType(elems...)
-    case *FuncType:
-        // Handle conditionals in function signatures
-        params := make([]*FuncParam, len(t.Params))
-        for i, param := range t.Params {
-            params[i] = &FuncParam{
-                Pattern:  param.Pattern,
-                Type:     c.handleNestedConditionals(ctx, param.Type, distributiveTypeParams),
-                Optional: param.Optional,
-            }
-        }
-        return &FuncType{
-            Params:     params,
-            Return:     c.handleNestedConditionals(ctx, t.Return, distributiveTypeParams),
-            Throws:     t.Throws,
-            TypeParams: t.TypeParams,
-            Self:       t.Self,
-        }
-    // Handle other composite types...
-    default:
-        return t
+    visitor := &NestedConditionalHandler{
+        checker:                c,
+        ctx:                   ctx,
+        distributiveTypeParams: distributiveTypeParams,
     }
+    return t.Accept(visitor).(Type)
 }
 
-func (c *Checker) substituteInferVariablesInObjElem(elem ObjTypeElem, bindings map[string]Type) ObjTypeElem {
-    switch elem := elem.(type) {
-    case *PropertyElemType:
-        return NewPropertyElemType(
-            elem.Name,
-            c.substituteInferVariables(elem.Value, bindings),
+// NestedConditionalHandler implements TypeVisitor to handle nested conditional types during distribution
+type NestedConditionalHandler struct {
+    checker                *Checker
+    ctx                   Context
+    distributiveTypeParams map[string]bool
+}
+
+func (v *NestedConditionalHandler) EnterType(t Type) {
+    // No-op - just for traversal
+}
+
+func (v *NestedConditionalHandler) ExitType(t Type) Type {
+    t = Prune(t)
+    
+    if condType, ok := t.(*CondType); ok {
+        // Recursively evaluate nested conditional with distribution context
+        return v.checker.evaluateConditionalTypeWithDistribution(
+            v.ctx, 
+            condType.Check, 
+            condType.Extends, 
+            condType.Cons, 
+            condType.Alt, 
+            v.distributiveTypeParams,
         )
-    case *MethodElemType:
-        return &MethodElemType{
-            Name: elem.Name,
-            Fn:   c.substituteInferVariables(elem.Fn, bindings).(*FuncType),
-        }
-    // Handle other object element types...
-    default:
-        return elem
     }
+    
+    // For all other types, return as-is (children have already been processed by the visitor)
+    return t
 }
 ```
 
@@ -518,9 +533,19 @@ func TestConditionalTypes(t *testing.T) {
                    type Result = ToArray<string | number>  // should be string[] | number[]`,
             expected: "string[] | number[]",
         },
+        "NonDistributiveInlineConditional": {
+            input: `type Test = if (string | number) : any { true } else { false }
+                   type Result = Test  // should be true (no distribution - not a generic type alias)`,
+            expected: "true",
+        },
+        "NonDistributiveWrappedTypeParam": {
+            input: `type Wrapped<T> = if T[] : any[] { true } else { false }
+                   type Result = Wrapped<string | number>  // should be true (no distribution - T is wrapped)`,
+            expected: "true",
+        },
         "MultipleUnionDistribution": {
             input: `type Complex<T, U> = if T : string { U[] } else { never }
-                   type Result = Complex<string | number, boolean | symbol>  // should be boolean[] | symbol[]`,
+                   type Result = Complex<string | number, boolean | symbol>  // should be boolean[] | symbol[] | never`,
             expected: "boolean[] | symbol[] | never",
         },
         "NestedDistributiveConditional": {
@@ -528,9 +553,9 @@ func TestConditionalTypes(t *testing.T) {
                    type Result = DoubleCheck<string | number, boolean | symbol>  // should distribute both T and U`,
             expected: "[string, boolean] | [string, symbol] | [number, boolean] | [number, symbol]",
         },
-        "NonDistributiveConditional": {
+        "NonDistributiveInlineConditional": {
             input: `type Test = if (string | number) : any { true } else { false }
-                   type Result = Test  // should be true (no distribution)`,
+                   type Result = Test  // should be true (no distribution - inline conditional)`,
             expected: "true",
         },
         "ConditionalWithInfer": {
