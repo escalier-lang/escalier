@@ -628,12 +628,15 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 
 	switch t := t.(type) {
 	case *CondType:
+		// We need to expand the CondType's extends type on entering so that
+		// we can replace InferTypes in the extends type with fresh type variables
+		// and then replace the corresponding TypeVarTypes in the alt and cons types
+		// with those fresh type variables.  If we did this on exit, we wouldn't
+		// be able to replace all the types in nested CondTypes.
 		substitutions := v.checker.findInferTypes(t.Extends)
-		extendsType := v.checker.replaceInferTypes(t.Extends, substitutions)
-
 		return NewCondType(
 			t.Check,
-			extendsType,
+			v.checker.replaceInferTypes(t.Extends, substitutions),
 			v.checker.substituteTypeParams(t.Alt, substitutions),
 			v.checker.substituteTypeParams(t.Cons, substitutions),
 		)
@@ -683,9 +686,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
 	case *CondType:
-
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
-
 		if len(errors) > 0 {
 			return t.Cons
 		} else {
