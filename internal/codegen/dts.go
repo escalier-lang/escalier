@@ -367,8 +367,8 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 		return NewCondTypeAnn(
 			buildTypeAnn(t.Check),
 			buildTypeAnn(t.Extends),
-			buildTypeAnn(t.Cons),
-			buildTypeAnn(t.Alt),
+			buildTypeAnn(t.Then),
+			buildTypeAnn(t.Else),
 		)
 	case *type_sys.InferType:
 		return NewInferTypeAnn(t.Name)

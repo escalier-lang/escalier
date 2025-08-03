@@ -121,7 +121,12 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
-		t = result.(*TypeRefType)
+		switch result := result.(type) {
+		case *TypeRefType:
+			t = result
+		default:
+			return result.Accept(v)
+		}
 	}
 
 	changed := false
@@ -1189,8 +1194,8 @@ func (t *IndexType) String() string {
 type CondType struct {
 	Check      Type
 	Extends    Type
-	Cons       Type
-	Alt        Type
+	Then       Type
+	Else       Type
 	provenance Provenance
 }
 
@@ -1201,15 +1206,15 @@ func (t *CondType) Accept(v TypeVisitor) Type {
 
 	newCheck := t.Check.Accept(v)
 	newExtends := t.Extends.Accept(v)
-	newCons := t.Cons.Accept(v)
-	newAlt := t.Alt.Accept(v)
+	newCons := t.Then.Accept(v)
+	newAlt := t.Else.Accept(v)
 	var result Type = t
-	if newCheck != t.Check || newExtends != t.Extends || newCons != t.Cons || newAlt != t.Alt {
+	if newCheck != t.Check || newExtends != t.Extends || newCons != t.Then || newAlt != t.Else {
 		result = &CondType{
 			Check:      newCheck,
 			Extends:    newExtends,
-			Cons:       newCons,
-			Alt:        newAlt,
+			Then:       newCons,
+			Else:       newAlt,
 			provenance: t.provenance,
 		}
 	}
@@ -1230,13 +1235,13 @@ func NewCondType(check Type, extends Type, cons Type, alt Type) *CondType {
 	return &CondType{
 		Check:      check,
 		Extends:    extends,
-		Cons:       cons,
-		Alt:        alt,
+		Then:       cons,
+		Else:       alt,
 		provenance: nil,
 	}
 }
 func (t *CondType) String() string {
-	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Cons.String() + " } else { " + t.Alt.String() + " }"
+	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Then.String() + " } else { " + t.Else.String() + " }"
 }
 
 type InferType struct {

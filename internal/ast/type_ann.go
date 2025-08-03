@@ -386,21 +386,21 @@ func (t *IndexTypeAnn) Accept(v Visitor) {
 type CondTypeAnn struct {
 	Check        TypeAnn
 	Extends      TypeAnn
-	Cons         TypeAnn
-	Alt          TypeAnn
+	Then         TypeAnn
+	Else         TypeAnn
 	span         Span
 	inferredType Type
 }
 
-func NewCondTypeAnn(check, extends, cons, alt TypeAnn, span Span) *CondTypeAnn {
-	return &CondTypeAnn{Check: check, Extends: extends, Cons: cons, Alt: alt, span: span, inferredType: nil}
+func NewCondTypeAnn(check, extends, _then, _else TypeAnn, span Span) *CondTypeAnn {
+	return &CondTypeAnn{Check: check, Extends: extends, Then: _then, Else: _else, span: span, inferredType: nil}
 }
 func (t *CondTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		t.Check.Accept(v)
 		t.Extends.Accept(v)
-		t.Cons.Accept(v)
-		t.Alt.Accept(v)
+		t.Then.Accept(v)
+		t.Else.Accept(v)
 	}
 	v.ExitTypeAnn(t)
 }

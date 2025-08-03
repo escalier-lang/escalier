@@ -627,38 +627,11 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 	v.depth++
 
 	switch t := t.(type) {
-	case *CondType:
-		// We need to expand the CondType's extends type on entering so that
-		// we can replace InferTypes in the extends type with fresh type variables
-		// and then replace the corresponding TypeVarTypes in the alt and cons types
-		// with those fresh type variables.  If we did this on exit, we wouldn't
-		// be able to replace all the types in nested CondTypes.
-		// TODO: Add a test case to ensure that infer type shadowing works and
-		// fix the bug if it doesn't.
-		substitutions := v.checker.findInferTypes(t.Extends)
-		return NewCondType(
-			t.Check,
-			v.checker.replaceInferTypes(t.Extends, substitutions),
-			v.checker.substituteTypeParams(t.Alt, substitutions),
-			v.checker.substituteTypeParams(t.Cons, substitutions),
-		)
-	}
-
-	return nil
-}
-
-func (v *TypeExpansionVisitor) ExitType(t Type) Type {
-	defer func() { v.depth-- }()
-
-	switch t := t.(type) {
-	case *NamespaceType:
-		// Don't expand NamespaceTypes - return them as-is
-		return t
 	case *TypeRefType:
 		// Check if we've reached the maximum expansion depth
 		if v.depth > v.maxDepth {
 			// Return the type reference without expanding
-			return t
+			return nil
 		}
 
 		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, t.Name)
@@ -675,25 +648,74 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// - ensure that the number of type args matches the number of type params
 		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
-			// Create substitution map from type parameter names to type arguments
-			substitutions := make(map[string]Type)
-			for i, typeParam := range typeAlias.TypeParams {
-				if i < len(t.TypeArgs) {
-					substitutions[typeParam.Name] = t.TypeArgs[i]
-				}
-			}
-			expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
-		}
+			substitutionSets := v.checker.generateSubstitutionSets(typeAlias.TypeParams, t.TypeArgs)
 
+			if len(substitutionSets) == 1 {
+				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutionSets[0])
+			} else {
+				expandedTypes := make([]Type, len(substitutionSets))
+				for i, substitutionSet := range substitutionSets {
+					expandedTypes[i] = v.checker.substituteTypeParams(typeAlias.Type, substitutionSet)
+				}
+				// Create a union type of all expanded types
+				expandedType = NewUnionType(expandedTypes...)
+			}
+		}
 		// Recursively expand the resolved type using the same visitor to maintain state
 		return expandedType.Accept(v)
 	case *CondType:
+		// We need to expand the CondType's extends type on entering so that
+		// we can replace InferTypes in the extends type with fresh type variables
+		// and then replace the corresponding TypeVarTypes in the alt and cons types
+		// with those fresh type variables.  If we did this on exit, we wouldn't
+		// be able to replace all the types in nested CondTypes.
+		// TODO: Add a test case to ensure that infer type shadowing works and
+		// fix the bug if it doesn't.
+		substitutions := v.checker.findInferTypes(t.Extends)
+		return NewCondType(
+			t.Check,
+			v.checker.replaceInferTypes(t.Extends, substitutions),
+			v.checker.substituteTypeParams(t.Else, substitutions),
+			v.checker.substituteTypeParams(t.Then, substitutions),
+		)
+	}
+
+	return nil
+}
+
+func (v *TypeExpansionVisitor) ExitType(t Type) Type {
+	defer func() { v.depth-- }()
+
+	switch t := t.(type) {
+	case *NamespaceType:
+		// Don't expand NamespaceTypes - return them as-is
+		return nil
+	case *CondType:
+		fmt.Printf("Expanding conditional type: %s\n", t)
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) > 0 {
-			return t.Cons
+			return t.Then
 		} else {
-			return t.Alt
+			return t.Else
 		}
+	case *UnionType:
+		// filter out `never` types from the union
+		var filteredTypes []Type
+		for _, typ := range t.Types {
+			if _, ok := typ.(*NeverType); !ok {
+				filteredTypes = append(filteredTypes, typ)
+			}
+		}
+		if len(filteredTypes) == 0 {
+			// If all types were filtered out, return a NeverType
+			return NewNeverType()
+		}
+		if len(filteredTypes) == 1 {
+			// If only one type remains, return it directly instead of a union
+			return filteredTypes[0]
+		}
+		// Return a new union type with the filtered types
+		return NewUnionType(filteredTypes...)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -1579,13 +1601,14 @@ func (c *Checker) inferTypeAnn(
 			}
 		}
 
-		consType, consErrors := c.inferTypeAnn(condCtx, typeAnn.Cons)
-		errors = slices.Concat(errors, consErrors)
+		thenType, thenErrors := c.inferTypeAnn(condCtx, typeAnn.Then)
+		errors = slices.Concat(errors, thenErrors)
 
-		altType, altErrors := c.inferTypeAnn(condCtx, typeAnn.Alt)
-		errors = slices.Concat(errors, altErrors)
+		elseType, elseErrors := c.inferTypeAnn(condCtx, typeAnn.Else)
+		errors = slices.Concat(errors, elseErrors)
 
-		t = NewCondType(checkType, extendsType, consType, altType)
+		t = NewCondType(checkType, extendsType, thenType, elseType)
+		fmt.Printf("CondType: %s\n", t)
 	case *ast.InferTypeAnn:
 		t = NewInferType(typeAnn.Name)
 	default:
@@ -1598,6 +1621,57 @@ func (c *Checker) inferTypeAnn(
 	typeAnn.SetInferredType(t)
 
 	return t, errors
+}
+
+// generateSubstitutionSets creates substitution maps for type parameters and type arguments,
+// handling cartesian products when union types are present in the type arguments.
+func (c *Checker) generateSubstitutionSets(typeParams []*TypeParam, typeArgs []Type) []map[string]Type {
+	// If no type params or args, return empty slice
+	if len(typeParams) == 0 || len(typeArgs) == 0 {
+		return []map[string]Type{}
+	}
+
+	// Extract all possible types for each type argument position
+	argTypeSets := make([][]Type, len(typeArgs))
+	for i, arg := range typeArgs {
+		arg = Prune(arg)
+		if unionType, ok := arg.(*UnionType); ok {
+			// For union types, use all the union members
+			argTypeSets[i] = unionType.Types
+		} else {
+			// For non-union types, create a single-element slice
+			argTypeSets[i] = []Type{arg}
+		}
+	}
+
+	// Generate cartesian product
+	var result []map[string]Type
+
+	// Helper function to generate cartesian product recursively
+	var generateCombinations func(int, map[string]Type)
+	generateCombinations = func(pos int, current map[string]Type) {
+		if pos >= len(typeParams) {
+			// Make a copy of the current map and add it to results
+			combination := make(map[string]Type)
+			for k, v := range current {
+				combination[k] = v
+			}
+			result = append(result, combination)
+			return
+		}
+
+		// Get the type parameter name for this position
+		typeParamName := typeParams[pos].Name
+
+		// Try each possible type for this position
+		for _, argType := range argTypeSets[pos] {
+			current[typeParamName] = argType
+			generateCombinations(pos+1, current)
+		}
+	}
+
+	generateCombinations(0, make(map[string]Type))
+	return result
 }
 
 // findInferTypes finds all InferType nodes in a type and replaces them with fresh type variables.
