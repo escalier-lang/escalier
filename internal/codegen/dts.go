@@ -289,8 +289,6 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 			return NewBooleanTypeAnn(nil)
 		case type_sys.StrPrim:
 			return NewStringTypeAnn(nil)
-		case type_sys.AnyPrim:
-			return NewAnyTypeAnn(nil)
 		case type_sys.BigIntPrim:
 			panic("TODO: typeToTypeAnn - handle BigIntPrim")
 		case type_sys.SymbolPrim:
@@ -298,6 +296,8 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 		default:
 			panic("typeToTypeAnn: unknown primitive type")
 		}
+	case *type_sys.AnyType:
+		return NewAnyTypeAnn(nil)
 	case *type_sys.LitType:
 		// For regex literals, convert to string type in .d.ts files
 		if _, isRegex := t.Lit.(*type_sys.RegexLit); isRegex {

@@ -633,6 +633,8 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		// and then replace the corresponding TypeVarTypes in the alt and cons types
 		// with those fresh type variables.  If we did this on exit, we wouldn't
 		// be able to replace all the types in nested CondTypes.
+		// TODO: Add a test case to ensure that infer type shadowing works and
+		// fix the bug if it doesn't.
 		substitutions := v.checker.findInferTypes(t.Extends)
 		return NewCondType(
 			t.Check,

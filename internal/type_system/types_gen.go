@@ -60,6 +60,14 @@ func (t *NeverType) WithProvenance(p Provenance) Type {
 	return &result
 }
 
+func (t *AnyType) Provenance() Provenance     { return t.provenance }
+func (t *AnyType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *AnyType) WithProvenance(p Provenance) Type {
+	result := *t // Create a copy of the struct
+	result.provenance = p
+	return &result
+}
+
 func (t *GlobalThisType) Provenance() Provenance     { return t.provenance }
 func (t *GlobalThisType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *GlobalThisType) WithProvenance(p Provenance) Type {
