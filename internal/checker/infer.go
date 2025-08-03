@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"iter"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -672,11 +673,23 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		// TODO: Add a test case to ensure that infer type shadowing works and
 		// fix the bug if it doesn't.
 		substitutions := v.checker.findInferTypes(t.Extends)
+		// fmt.Printf("Extends type %s\n", t.Extends)
+		captureGroups := v.checker.extractNamedCaptureGroups(t.Extends)
+		// fmt.Printf("Capture groups: %v\n", captureGroups)
+		// fmt.Printf("Check type %s\n", t.Check)
+		// check if t.Check is a string literal
+		for _, name := range captureGroups {
+			substitutions[name] = v.checker.FreshVar()
+		}
+		// fmt.Printf("Substitutions: %v\n", substitutions)
 		return NewCondType(
 			t.Check,
 			v.checker.replaceInferTypes(t.Extends, substitutions),
-			v.checker.substituteTypeParams(t.Else, substitutions),
 			v.checker.substituteTypeParams(t.Then, substitutions),
+			// TODO: don't use substitutions for the Then type because the Checks
+			// type didn't have any InferTypes in it, so we don't need to
+			// replace them with fresh type variables.
+			v.checker.substituteTypeParams(t.Else, substitutions),
 		)
 	}
 
@@ -692,7 +705,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		return nil
 	case *CondType:
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
-		if len(errors) > 0 {
+		if len(errors) == 0 {
 			return t.Then
 		} else {
 			return t.Else
@@ -938,6 +951,64 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}
+}
+
+// extractNamedCaptureGroups extracts the names of any named capture groups from RegexTypes that appear in the given type.
+// Named capture groups in regex have the syntax (?P<name>pattern) or (?<name>pattern).
+func (c *Checker) extractNamedCaptureGroups(t Type) []string {
+	visitor := &NamedCaptureGroupExtractor{
+		captureGroups: make(map[string]bool), // Use map to avoid duplicates
+	}
+	t.Accept(visitor)
+
+	// Convert map keys to slice
+	result := make([]string, 0, len(visitor.captureGroups))
+	for name := range visitor.captureGroups {
+		result = append(result, name)
+	}
+	return result
+}
+
+// NamedCaptureGroupExtractor extracts named capture groups from regex literals in types
+type NamedCaptureGroupExtractor struct {
+	captureGroups map[string]bool
+}
+
+func (v *NamedCaptureGroupExtractor) EnterType(t Type) Type {
+	// No-op - just for traversal
+	return nil
+}
+
+func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
+	t = Prune(t)
+
+	if litType, ok := t.(*LitType); ok {
+		if regexLit, ok := litType.Lit.(*RegexLit); ok {
+			// Parse the regex pattern to extract named capture groups
+			names := extractNamedGroupsFromPattern(regexLit.Value)
+			for _, name := range names {
+				if name != "" {
+					v.captureGroups[name] = true
+				}
+			}
+		}
+	}
+
+	// For all other types, return nil to let Accept handle the traversal
+	return nil
+}
+
+// extractNamedGroupsFromPattern extracts named capture group names from a regex pattern string.
+// Supports both (?P<name>...) and (?<name>...) syntax.
+func extractNamedGroupsFromPattern(pattern string) []string {
+	// Use Go's regexp package to find named groups
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		// If the regex is invalid, return empty slice
+		return []string{}
+	}
+
+	return re.SubexpNames()[1:] // Skip the first element which is always empty (the full match)
 }
 
 func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
@@ -1582,20 +1653,30 @@ func (c *Checker) inferTypeAnn(
 		// Find all InferType nodes in the extends type and create type aliases for them
 		inferTypesMap := c.findInferTypes(extendsType)
 
+		// TODO: find all named capture groups in the extends type
+		// and add them to the context scope as type aliases
+		namedCaptureGroups := c.extractNamedCaptureGroups(extendsType)
+
+		names := make([]string, 0, len(inferTypesMap)+len(namedCaptureGroups))
+		for name := range inferTypesMap {
+			names = append(names, name)
+		}
+		names = append(names, namedCaptureGroups...)
+
 		// Create a new context with infer types in scope for inferring Cons and Alt
 		condCtx := ctx
-		if len(inferTypesMap) > 0 {
+		if len(names) > 0 {
 			// Create a new scope that includes the infer types as type aliases
 			condScope := ctx.Scope.WithNewScope()
 
 			// Add infer types as type aliases to the scope
-			for inferName, _ := range inferTypesMap {
-				inferTypeRef := NewTypeRefType(inferName, nil)
+			for _, name := range names {
+				inferTypeRef := NewTypeRefType(name, nil)
 				inferTypeAlias := &TypeAlias{
 					Type:       inferTypeRef,
 					TypeParams: []*TypeParam{},
 				}
-				condScope.setTypeAlias(inferName, inferTypeAlias)
+				condScope.setTypeAlias(name, inferTypeAlias)
 			}
 
 			condCtx = Context{

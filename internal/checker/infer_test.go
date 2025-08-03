@@ -1801,3 +1801,82 @@ func TestExpandType(t *testing.T) {
 		assert.Equal(t, "\"ok\" | \"error\"", result.String())
 	})
 }
+
+func TestExtractNamedCaptureGroups(t *testing.T) {
+	c := NewChecker()
+
+	tests := []struct {
+		name     string
+		pattern  string
+		expected []string
+	}{
+		{
+			name:     "no named groups",
+			pattern:  "hello(world)",
+			expected: []string{},
+		},
+		{
+			name:     "single named group - Go syntax",
+			pattern:  "(?P<name>[a-z]+)",
+			expected: []string{"name"},
+		},
+		{
+			name:     "single named group - PCRE syntax",
+			pattern:  "(?<name>[a-z]+)",
+			expected: []string{"name"},
+		},
+		{
+			name:     "multiple named groups",
+			pattern:  "(?P<first>[a-z]+)_(?P<second>[0-9]+)",
+			expected: []string{"first", "second"},
+		},
+		{
+			name:     "mixed named and unnamed groups",
+			pattern:  "(?P<named>[a-z]+)([0-9]+)(?P<another>[a-z]+)",
+			expected: []string{"named", "another"},
+		},
+		{
+			name:     "invalid regex",
+			pattern:  "(?P<invalid",
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a regex literal type
+			regexType := NewRegexType(tt.pattern)
+
+			// Extract named capture groups
+			result := c.extractNamedCaptureGroups(regexType)
+
+			// Sort both slices for comparison since order isn't guaranteed
+			assert.ElementsMatch(t, tt.expected, result)
+		})
+	}
+
+	t.Run("nested types", func(t *testing.T) {
+		// Test with a union type containing regex types
+		regexType1 := NewRegexType("(?P<first>[a-z]+)")
+		regexType2 := NewRegexType("(?P<second>[0-9]+)")
+		unionType := NewUnionType(regexType1, regexType2)
+
+		result := c.extractNamedCaptureGroups(unionType)
+		expected := []string{"first", "second"}
+
+		assert.ElementsMatch(t, expected, result)
+	})
+
+	t.Run("object type with regex property", func(t *testing.T) {
+		// Test with an object type containing a regex type
+		regexType := NewRegexType("(?P<name>[a-z]+)")
+		objType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("pattern"), regexType),
+		})
+
+		result := c.extractNamedCaptureGroups(objType)
+		expected := []string{"name"}
+
+		assert.ElementsMatch(t, expected, result)
+	})
+}
