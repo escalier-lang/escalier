@@ -29,7 +29,7 @@ func (v *TypeParamSubstitutionVisitor) SubstituteType(t Type) Type {
 	return t.Accept(v)
 }
 
-func (v *TypeParamSubstitutionVisitor) EnterType(t Type) {
+func (v *TypeParamSubstitutionVisitor) EnterType(t Type) Type {
 	// When entering a FuncType with type parameters, push shadowed parameters onto stack
 	if funcType, ok := t.(*FuncType); ok && len(funcType.TypeParams) > 0 {
 		shadows := make(map[string]bool)
@@ -38,6 +38,7 @@ func (v *TypeParamSubstitutionVisitor) EnterType(t Type) {
 		}
 		v.shadowStack = append(v.shadowStack, shadows)
 	}
+	return nil
 }
 
 func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {

@@ -77,10 +77,18 @@ func (t *TypeVarType) Equal(other Type) bool {
 	return false
 }
 func (t *TypeVarType) Accept(v TypeVisitor) Type {
-	v.EnterType(Prune(t))
-	if result := v.ExitType(Prune(t)); result != nil {
+	prunedType := Prune(t)
+	if prunedType != t {
+		return prunedType.Accept(v) // Accept on the pruned type
+	}
+
+	if result := v.EnterType(prunedType); result != nil {
+		t = result.(*TypeVarType)
+	}
+	if result := v.ExitType(prunedType); result != nil {
 		return result
 	}
+
 	return t
 }
 func (t *TypeVarType) String() string {
@@ -111,7 +119,9 @@ func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRe
 	}
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*TypeRefType)
+	}
 
 	changed := false
 	newTypeArgs := make([]Type, len(t.TypeArgs))
@@ -207,7 +217,9 @@ func NewRegexType(pattern string) *LitType {
 	}
 }
 func (t *PrimType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*PrimType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -250,7 +262,9 @@ func NewLitType(lit Lit) *LitType {
 	}
 }
 func (t *LitType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*LitType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -289,7 +303,9 @@ type UniqueSymbolType struct {
 }
 
 func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*UniqueSymbolType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -310,7 +326,9 @@ type UnknownType struct {
 }
 
 func (t *UnknownType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*UnknownType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -333,7 +351,9 @@ type NeverType struct {
 }
 
 func (t *NeverType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*NeverType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -356,7 +376,9 @@ type GlobalThisType struct {
 }
 
 func (t *GlobalThisType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*GlobalThisType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -410,7 +432,9 @@ type FuncType struct {
 }
 
 func (t *FuncType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*FuncType)
+	}
 
 	changed := false
 	newParams := make([]*FuncParam, len(t.Params))
@@ -744,7 +768,9 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 }
 
 func (t *ObjectType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*ObjectType)
+	}
 
 	changed := false
 	newElems := make([]ObjTypeElem, len(t.Elems))
@@ -853,7 +879,9 @@ func NewTupleType(elems ...Type) *TupleType {
 	}
 }
 func (t *TupleType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*TupleType)
+	}
 
 	changed := false
 	newElems := make([]Type, len(t.Elems))
@@ -911,7 +939,9 @@ func NewRestSpreadType(typ Type) *RestSpreadType {
 	}
 }
 func (t *RestSpreadType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*RestSpreadType)
+	}
 
 	newType := t.Type.Accept(v)
 	var result Type = t
@@ -955,7 +985,9 @@ func NewUnionType(types ...Type) Type {
 	}
 }
 func (t *UnionType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*UnionType)
+	}
 
 	changed := false
 	newTypes := make([]Type, len(t.Types))
@@ -1014,7 +1046,9 @@ func NewIntersectionType(types ...Type) *IntersectionType {
 	}
 }
 func (t *IntersectionType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*IntersectionType)
+	}
 
 	changed := false
 	newTypes := make([]Type, len(t.Types))
@@ -1067,7 +1101,9 @@ type KeyOfType struct {
 }
 
 func (t *KeyOfType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*KeyOfType)
+	}
 
 	newType := t.Type.Accept(v)
 	var result Type = t
@@ -1102,7 +1138,9 @@ type IndexType struct {
 }
 
 func (t *IndexType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*IndexType)
+	}
 
 	newTarget := t.Target.Accept(v)
 	newIndex := t.Index.Accept(v)
@@ -1140,7 +1178,9 @@ type CondType struct {
 }
 
 func (t *CondType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*CondType)
+	}
 
 	newCheck := t.Check.Accept(v)
 	newExtends := t.Extends.Accept(v)
@@ -1188,7 +1228,9 @@ type InferType struct {
 }
 
 func (t *InferType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*InferType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -1216,7 +1258,9 @@ type WildcardType struct {
 }
 
 func (t *WildcardType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*WildcardType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -1246,7 +1290,9 @@ func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
 	}
 }
 func (t *ExtractorType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*ExtractorType)
+	}
 
 	newExtractor := t.Extractor.Accept(v)
 	changed := newExtractor != t.Extractor
@@ -1306,7 +1352,9 @@ type TemplateLitType struct {
 }
 
 func (t *TemplateLitType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*TemplateLitType)
+	}
 
 	changed := false
 	newTypes := make([]Type, len(t.Types))
@@ -1359,7 +1407,9 @@ type IntrinsicType struct {
 }
 
 func (t *IntrinsicType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*IntrinsicType)
+	}
 	if result := v.ExitType(t); result != nil {
 		return result
 	}
@@ -1406,7 +1456,9 @@ type NamespaceType struct {
 }
 
 func (t *NamespaceType) Accept(v TypeVisitor) Type {
-	v.EnterType(t)
+	if result := v.EnterType(t); result != nil {
+		t = result.(*NamespaceType)
+	}
 
 	changed := false
 	newValues := make(map[string]*Binding)

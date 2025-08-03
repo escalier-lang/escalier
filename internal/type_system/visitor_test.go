@@ -10,8 +10,9 @@ import (
 // meaning it doesn't transform any types but allows traversal
 type IdentityVisitor struct{}
 
-func (v *IdentityVisitor) EnterType(t Type) {
+func (v *IdentityVisitor) EnterType(t Type) Type {
 	// No-op for entry
+	return nil
 }
 
 func (v *IdentityVisitor) ExitType(t Type) Type {
@@ -27,8 +28,9 @@ func NewTypeReplacementVisitor(replacements map[Type]Type) *TypeReplacementVisit
 	return &TypeReplacementVisitor{replacements: replacements}
 }
 
-func (v *TypeReplacementVisitor) EnterType(t Type) {
+func (v *TypeReplacementVisitor) EnterType(t Type) Type {
 	// No-op for entry
+	return nil
 }
 
 func (v *TypeReplacementVisitor) ExitType(t Type) Type {
@@ -51,8 +53,9 @@ func NewTrackingVisitor() *TrackingVisitor {
 	}
 }
 
-func (v *TrackingVisitor) EnterType(t Type) {
+func (v *TrackingVisitor) EnterType(t Type) Type {
 	v.enteredTypes = append(v.enteredTypes, t)
+	return nil
 }
 
 func (v *TrackingVisitor) ExitType(t Type) Type {
@@ -71,6 +74,541 @@ func (v *TrackingVisitor) GetExitedTypes() []Type {
 func (v *TrackingVisitor) Reset() {
 	v.enteredTypes = make([]Type, 0)
 	v.exitedTypes = make([]Type, 0)
+}
+
+// SameKindReplacementVisitor replaces types with new instances of the same kind using EnterType
+type SameKindReplacementVisitor struct {
+	replacements map[Type]Type
+}
+
+func NewSameKindReplacementVisitor(replacements map[Type]Type) *SameKindReplacementVisitor {
+	return &SameKindReplacementVisitor{replacements: replacements}
+}
+
+func (v *SameKindReplacementVisitor) EnterType(t Type) Type {
+	if replacement, found := v.replacements[t]; found {
+		return replacement
+	}
+	return nil
+}
+
+func (v *SameKindReplacementVisitor) ExitType(t Type) Type {
+	return nil // No-op for exit
+}
+
+// TestEnterTypeReturnsSameKind tests that EnterType can return new instances of the same type kind
+func TestEnterTypeReturnsSameKind(t *testing.T) {
+	t.Run("EnterType returns new PrimType instance", func(t *testing.T) {
+		oldNumType := NewNumType()
+		newNumType := NewNumType() // Same kind, different instance
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldNumType: newNumType,
+		})
+
+		result := oldNumType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newNumType, result)
+		assert.NotSame(t, oldNumType, result)
+		// Both should be number types
+		assert.Equal(t, oldNumType.Prim, result.(*PrimType).Prim)
+	})
+
+	t.Run("EnterType returns new LitType instance with same literal", func(t *testing.T) {
+		oldLitType := &LitType{
+			Lit:        &NumLit{Value: 42},
+			provenance: nil,
+		}
+		newLitType := &LitType{
+			Lit:        &NumLit{Value: 42}, // Same literal value
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldLitType: newLitType,
+		})
+
+		result := oldLitType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newLitType, result)
+		assert.NotSame(t, oldLitType, result)
+		// Both should have the same literal value
+		assert.Equal(t, oldLitType.Lit.(*NumLit).Value, result.(*LitType).Lit.(*NumLit).Value)
+	})
+
+	t.Run("EnterType returns new FuncType instance with same structure", func(t *testing.T) {
+		paramType := NewNumType()
+		returnType := NewStrType()
+
+		oldFuncType := &FuncType{
+			TypeParams: nil,
+			Self:       nil,
+			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
+			Return:     returnType,
+			Throws:     nil,
+			provenance: nil,
+		}
+
+		newFuncType := &FuncType{
+			TypeParams: nil,
+			Self:       nil,
+			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
+			Return:     returnType,
+			Throws:     nil,
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldFuncType: newFuncType,
+		})
+
+		result := oldFuncType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newFuncType, result)
+		assert.NotSame(t, oldFuncType, result)
+		// Both should have the same structure
+		resultFunc := result.(*FuncType)
+		assert.Same(t, paramType, resultFunc.Params[0].Type)
+		assert.Same(t, returnType, resultFunc.Return)
+	})
+
+	t.Run("EnterType returns new UnionType instance with same members", func(t *testing.T) {
+		numType := NewNumType()
+		strType := NewStrType()
+
+		oldUnionType := &UnionType{
+			Types:      []Type{numType, strType},
+			provenance: nil,
+		}
+
+		newUnionType := &UnionType{
+			Types:      []Type{numType, strType}, // Same members
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldUnionType: newUnionType,
+		})
+
+		result := oldUnionType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newUnionType, result)
+		assert.NotSame(t, oldUnionType, result)
+		// Both should have the same members
+		resultUnion := result.(*UnionType)
+		assert.Same(t, numType, resultUnion.Types[0])
+		assert.Same(t, strType, resultUnion.Types[1])
+	})
+
+	t.Run("EnterType returns new TupleType instance with same elements", func(t *testing.T) {
+		numType := NewNumType()
+		strType := NewStrType()
+		boolType := NewBoolType()
+
+		oldTupleType := NewTupleType(numType, strType, boolType)
+
+		newTupleType := NewTupleType(numType, strType, boolType) // Same elements
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldTupleType: newTupleType,
+		})
+
+		result := oldTupleType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newTupleType, result)
+		assert.NotSame(t, oldTupleType, result)
+		// Both should have the same elements
+		resultTuple := result.(*TupleType)
+		assert.Same(t, numType, resultTuple.Elems[0])
+		assert.Same(t, strType, resultTuple.Elems[1])
+		assert.Same(t, boolType, resultTuple.Elems[2])
+	})
+
+	t.Run("EnterType returns new ObjectType instance with same properties", func(t *testing.T) {
+		propType := NewNumType()
+		prop := NewPropertyElemType(NewStrKey("x"), propType)
+
+		oldObjType := &ObjectType{
+			Elems:      []ObjTypeElem{prop},
+			Exact:      false,
+			Immutable:  false,
+			Mutable:    false,
+			Nominal:    false,
+			Interface:  false,
+			Extends:    nil,
+			Implements: nil,
+			provenance: nil,
+		}
+
+		newObjType := &ObjectType{
+			Elems:      []ObjTypeElem{prop}, // Same property
+			Exact:      false,
+			Immutable:  false,
+			Mutable:    false,
+			Nominal:    false,
+			Interface:  false,
+			Extends:    nil,
+			Implements: nil,
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldObjType: newObjType,
+		})
+
+		result := oldObjType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newObjType, result)
+		assert.NotSame(t, oldObjType, result)
+		// Both should have the same property
+		resultObj := result.(*ObjectType)
+		assert.Same(t, prop, resultObj.Elems[0])
+	})
+
+	t.Run("EnterType returns new IntersectionType instance with same members", func(t *testing.T) {
+		numType := NewNumType()
+		objType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), NewStrType()),
+		})
+
+		oldIntersectionType := &IntersectionType{
+			Types:      []Type{numType, objType},
+			provenance: nil,
+		}
+
+		newIntersectionType := &IntersectionType{
+			Types:      []Type{numType, objType}, // Same members
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldIntersectionType: newIntersectionType,
+		})
+
+		result := oldIntersectionType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newIntersectionType, result)
+		assert.NotSame(t, oldIntersectionType, result)
+		// Both should have the same members
+		resultIntersection := result.(*IntersectionType)
+		assert.Same(t, numType, resultIntersection.Types[0])
+		assert.Same(t, objType, resultIntersection.Types[1])
+	})
+
+	t.Run("EnterType returns new CondType instance with same structure", func(t *testing.T) {
+		checkType := NewNumType()
+		extendsType := NewStrType()
+		consType := NewBoolType()
+		altType := NewUnknownType()
+
+		oldCondType := &CondType{
+			Check:      checkType,
+			Extends:    extendsType,
+			Cons:       consType,
+			Alt:        altType,
+			provenance: nil,
+		}
+
+		newCondType := &CondType{
+			Check:      checkType,   // Same check
+			Extends:    extendsType, // Same extends
+			Cons:       consType,    // Same consequence
+			Alt:        altType,     // Same alternative
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldCondType: newCondType,
+		})
+
+		result := oldCondType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newCondType, result)
+		assert.NotSame(t, oldCondType, result)
+		// Both should have the same structure
+		resultCond := result.(*CondType)
+		assert.Same(t, checkType, resultCond.Check)
+		assert.Same(t, extendsType, resultCond.Extends)
+		assert.Same(t, consType, resultCond.Cons)
+		assert.Same(t, altType, resultCond.Alt)
+	})
+
+	t.Run("EnterType returns new IndexType instance with same structure", func(t *testing.T) {
+		targetType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), NewNumType()),
+		})
+		indexType := &LitType{
+			Lit:        &StrLit{Value: "x"},
+			provenance: nil,
+		}
+
+		oldIndexType := &IndexType{
+			Target:     targetType,
+			Index:      indexType,
+			provenance: nil,
+		}
+
+		newIndexType := &IndexType{
+			Target:     targetType, // Same target
+			Index:      indexType,  // Same index
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldIndexType: newIndexType,
+		})
+
+		result := oldIndexType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newIndexType, result)
+		assert.NotSame(t, oldIndexType, result)
+		// Both should have the same structure
+		resultIndex := result.(*IndexType)
+		assert.Same(t, targetType, resultIndex.Target)
+		assert.Same(t, indexType, resultIndex.Index)
+	})
+
+	t.Run("EnterType returns new KeyOfType instance with same target", func(t *testing.T) {
+		targetType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), NewNumType()),
+			NewPropertyElemType(NewStrKey("y"), NewStrType()),
+		})
+
+		oldKeyOfType := &KeyOfType{
+			Type:       targetType,
+			provenance: nil,
+		}
+
+		newKeyOfType := &KeyOfType{
+			Type:       targetType, // Same target
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldKeyOfType: newKeyOfType,
+		})
+
+		result := oldKeyOfType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newKeyOfType, result)
+		assert.NotSame(t, oldKeyOfType, result)
+		// Both should have the same target
+		resultKeyOf := result.(*KeyOfType)
+		assert.Same(t, targetType, resultKeyOf.Type)
+	})
+
+	t.Run("EnterType returns new TypeVarType instance without instance", func(t *testing.T) {
+		oldTypeVarType := &TypeVarType{
+			ID:         1,
+			Instance:   nil, // No instance, so Prune returns the TypeVar itself
+			provenance: nil,
+		}
+
+		newTypeVarType := &TypeVarType{
+			ID:         1,   // Same ID
+			Instance:   nil, // Same (no) instance
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldTypeVarType: newTypeVarType,
+		})
+
+		result := oldTypeVarType.Accept(visitor)
+
+		// Should return the new instance
+		assert.Same(t, newTypeVarType, result)
+		assert.NotSame(t, oldTypeVarType, result)
+		// Both should have the same structure
+		resultTypeVar := result.(*TypeVarType)
+		assert.Equal(t, 1, resultTypeVar.ID)
+		assert.Nil(t, resultTypeVar.Instance)
+	})
+
+	t.Run("EnterType with TypeVarType that has instance - visitor operates on pruned type", func(t *testing.T) {
+		instanceType := NewNumType()
+		newInstanceType := NewNumType() // Same kind, different instance
+
+		typeVarType := &TypeVarType{
+			ID:         1,
+			Instance:   instanceType,
+			provenance: nil,
+		}
+
+		// The visitor will operate on the pruned type (instanceType), not the TypeVar
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			instanceType: newInstanceType,
+		})
+
+		result := typeVarType.Accept(visitor)
+
+		// Should return the replacement of the pruned type
+		assert.Same(t, newInstanceType, result)
+		assert.NotSame(t, instanceType, result)
+		assert.NotSame(t, typeVarType, result) // Result is not the TypeVar
+	})
+}
+
+// TestEnterTypeReplacementInNestedStructures tests EnterType replacement within nested type structures
+func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
+	t.Run("EnterType replacement in union member affects parent structure", func(t *testing.T) {
+		oldNumType := NewNumType()
+		newNumType := NewNumType() // Same kind, different instance
+		strType := NewStrType()
+
+		unionType := NewUnionType(oldNumType, strType).(*UnionType)
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldNumType: newNumType,
+		})
+
+		result := unionType.Accept(visitor)
+
+		// Should create new union with replacement
+		resultUnion := result.(*UnionType)
+		assert.NotSame(t, unionType, resultUnion) // New union instance
+		assert.Same(t, newNumType, resultUnion.Types[0])
+		assert.Same(t, strType, resultUnion.Types[1])
+
+		// Original should be unchanged
+		assert.Same(t, oldNumType, unionType.Types[0])
+	})
+
+	t.Run("EnterType replacement in function parameter affects parent function", func(t *testing.T) {
+		oldParamType := NewStrType()
+		newParamType := NewStrType() // Same kind, different instance
+		returnType := NewBoolType()
+
+		param := NewFuncParam(NewIdentPat("x"), oldParamType)
+		funcType := &FuncType{
+			TypeParams: nil,
+			Self:       nil,
+			Params:     []*FuncParam{param},
+			Return:     returnType,
+			Throws:     nil,
+			provenance: nil,
+		}
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldParamType: newParamType,
+		})
+
+		result := funcType.Accept(visitor)
+
+		// Should create new function with replacement parameter type
+		resultFunc := result.(*FuncType)
+		assert.NotSame(t, funcType, resultFunc) // New function instance
+		assert.Same(t, newParamType, resultFunc.Params[0].Type)
+		assert.Same(t, returnType, resultFunc.Return)
+
+		// Original should be unchanged
+		assert.Same(t, oldParamType, funcType.Params[0].Type)
+	})
+
+	t.Run("EnterType replacement in object property affects parent object", func(t *testing.T) {
+		oldPropType := NewBoolType()
+		newPropType := NewBoolType() // Same kind, different instance
+
+		original := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), oldPropType),
+		})
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldPropType: newPropType,
+		})
+
+		result := original.Accept(visitor)
+
+		// Should create new object with replacement property type
+		resultObj := result.(*ObjectType)
+		assert.NotSame(t, original, resultObj) // New object instance
+		resultProp := resultObj.Elems[0].(*PropertyElemType)
+		assert.Same(t, newPropType, resultProp.Value)
+
+		// Original should be unchanged
+		originalProp := original.Elems[0].(*PropertyElemType)
+		assert.Same(t, oldPropType, originalProp.Value)
+	})
+
+	t.Run("EnterType replacement takes precedence over child traversal", func(t *testing.T) {
+		innerType := NewNumType()
+		param := NewFuncParam(NewIdentPat("x"), innerType)
+		oldFuncType := &FuncType{
+			TypeParams: nil,
+			Self:       nil,
+			Params:     []*FuncParam{param},
+			Return:     NewBoolType(),
+			Throws:     nil,
+			provenance: nil,
+		}
+
+		newFuncType := &FuncType{
+			TypeParams: nil,
+			Self:       nil,
+			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), innerType)},
+			Return:     NewBoolType(),
+			Throws:     nil,
+			provenance: nil,
+		}
+
+		// Replace the function type itself, not its inner types
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldFuncType: newFuncType,
+		})
+
+		result := oldFuncType.Accept(visitor)
+
+		// Should return the replacement type directly, not traverse children
+		assert.Same(t, newFuncType, result)
+	})
+
+	t.Run("Multiple EnterType replacements in deeply nested structure", func(t *testing.T) {
+		oldInnerType := NewNumType()
+		newInnerType := NewNumType() // Same kind, different instance
+
+		oldOuterType := NewStrType()
+		newOuterType := NewStrType() // Same kind, different instance
+
+		// Create: {x: oldInnerType, y: oldOuterType}[]
+		propType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), oldInnerType),
+			NewPropertyElemType(NewStrKey("y"), oldOuterType),
+		})
+		tupleType := NewTupleType(propType)
+
+		visitor := NewSameKindReplacementVisitor(map[Type]Type{
+			oldInnerType: newInnerType,
+			oldOuterType: newOuterType,
+		})
+
+		result := tupleType.Accept(visitor)
+
+		// Should create new nested structure with all replacements
+		resultTuple := result.(*TupleType)
+		assert.NotSame(t, tupleType, resultTuple) // New tuple instance
+		resultObj := resultTuple.Elems[0].(*ObjectType)
+		resultProp1 := resultObj.Elems[0].(*PropertyElemType)
+		resultProp2 := resultObj.Elems[1].(*PropertyElemType)
+		assert.Same(t, newInnerType, resultProp1.Value)
+		assert.Same(t, newOuterType, resultProp2.Value)
+
+		// Original should be unchanged
+		originalObj := tupleType.Elems[0].(*ObjectType)
+		originalProp1 := originalObj.Elems[0].(*PropertyElemType)
+		originalProp2 := originalObj.Elems[1].(*PropertyElemType)
+		assert.Same(t, oldInnerType, originalProp1.Value)
+		assert.Same(t, oldOuterType, originalProp2.Value)
+	})
 }
 
 // TestVisitorNoMutation tests that visitors don't mutate the original types
@@ -513,9 +1051,10 @@ func TestTypeVarVisitor(t *testing.T) {
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
 
-		// Since the IdentityVisitor returns nil, Accept should return the original TypeVar
-		// (even though it has an instance, the visitor doesn't transform it)
-		assert.Same(t, original, result)
+		// This is a bit of a special case because the visitor calls Prune(t)
+		// which results in the instance being returned directly instead of the
+		// original TypeVarType.
+		assert.Same(t, instanceType, result)
 
 		// Original should be unchanged
 		assert.Equal(t, 1, original.ID)
@@ -711,8 +1250,9 @@ type TransformingTrackingVisitor struct {
 	newType      Type
 }
 
-func (v *TransformingTrackingVisitor) EnterType(t Type) {
+func (v *TransformingTrackingVisitor) EnterType(t Type) Type {
 	v.enteredTypes = append(v.enteredTypes, t)
+	return nil
 }
 
 func (v *TransformingTrackingVisitor) ExitType(t Type) Type {
@@ -784,8 +1324,9 @@ type OrderTrackingVisitor struct {
 	exitFunc  func(Type) Type
 }
 
-func (v *OrderTrackingVisitor) EnterType(t Type) {
+func (v *OrderTrackingVisitor) EnterType(t Type) Type {
 	v.enterFunc(t)
+	return nil
 }
 
 func (v *OrderTrackingVisitor) ExitType(t Type) Type {
