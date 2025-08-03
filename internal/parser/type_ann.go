@@ -181,6 +181,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Any:
 			p.lexer.consume()
 			typeAnn = ast.NewAnyTypeAnn(token.Span)
+		case Unknown:
+			p.lexer.consume()
+			typeAnn = ast.NewUnknownTypeAnn(token.Span)
 		case Never:
 			p.lexer.consume()
 			typeAnn = ast.NewNeverTypeAnn(token.Span)

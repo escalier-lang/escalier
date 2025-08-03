@@ -641,7 +641,7 @@
         },
         inferredType: nil,
     },
-    Cons: &ast.TypeRefTypeAnn{
+    Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "C",
             span: ast.Span{
@@ -659,7 +659,7 @@
         },
         inferredType: nil,
     },
-    Alt: &ast.TypeRefTypeAnn{
+    Else: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "D",
             span: ast.Span{
@@ -1164,7 +1164,7 @@
         },
         inferredType: nil,
     },
-    Cons: &ast.TypeRefTypeAnn{
+    Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "P",
             span: ast.Span{
@@ -1182,7 +1182,7 @@
         },
         inferredType: nil,
     },
-    Alt: &ast.NeverTypeAnn{
+    Else: &ast.NeverTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:49},
             End:      ast.Location{Line:1, Column:54},
@@ -1249,7 +1249,7 @@
         },
         inferredType: nil,
     },
-    Cons: &ast.TypeRefTypeAnn{
+    Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "C",
             span: ast.Span{
@@ -1267,7 +1267,7 @@
         },
         inferredType: nil,
     },
-    Alt: &ast.CondTypeAnn{
+    Else: &ast.CondTypeAnn{
         Check: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "E",
@@ -1304,7 +1304,7 @@
             },
             inferredType: nil,
         },
-        Cons: &ast.TypeRefTypeAnn{
+        Then: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "G",
                 span: ast.Span{
@@ -1322,7 +1322,7 @@
             },
             inferredType: nil,
         },
-        Alt: &ast.TypeRefTypeAnn{
+        Else: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "H",
                 span: ast.Span{
@@ -1388,6 +1388,17 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:5},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/UnknownTypeAnn - 1]
+&ast.UnknownTypeAnn{
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:8},
         SourceID: 0,
     },
     inferredType: nil,

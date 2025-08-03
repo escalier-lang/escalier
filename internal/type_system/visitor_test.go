@@ -311,16 +311,16 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 		oldCondType := &CondType{
 			Check:      checkType,
 			Extends:    extendsType,
-			Cons:       consType,
-			Alt:        altType,
+			Then:       consType,
+			Else:       altType,
 			provenance: nil,
 		}
 
 		newCondType := &CondType{
 			Check:      checkType,   // Same check
 			Extends:    extendsType, // Same extends
-			Cons:       consType,    // Same consequence
-			Alt:        altType,     // Same alternative
+			Then:       consType,    // Same consequence
+			Else:       altType,     // Same alternative
 			provenance: nil,
 		}
 
@@ -337,8 +337,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 		resultCond := result.(*CondType)
 		assert.Same(t, checkType, resultCond.Check)
 		assert.Same(t, extendsType, resultCond.Extends)
-		assert.Same(t, consType, resultCond.Cons)
-		assert.Same(t, altType, resultCond.Alt)
+		assert.Same(t, consType, resultCond.Then)
+		assert.Same(t, altType, resultCond.Else)
 	})
 
 	t.Run("EnterType returns new IndexType instance with same structure", func(t *testing.T) {
@@ -954,8 +954,8 @@ func TestComplexTypeStructures(t *testing.T) {
 		original := &CondType{
 			Check:      checkType,
 			Extends:    extendsType,
-			Cons:       consType,
-			Alt:        altType,
+			Then:       consType,
+			Else:       altType,
 			provenance: nil,
 		}
 
@@ -968,8 +968,8 @@ func TestComplexTypeStructures(t *testing.T) {
 		// All fields should be unchanged
 		assert.Same(t, checkType, original.Check)
 		assert.Same(t, extendsType, original.Extends)
-		assert.Same(t, consType, original.Cons)
-		assert.Same(t, altType, original.Alt)
+		assert.Same(t, consType, original.Then)
+		assert.Same(t, altType, original.Else)
 	})
 
 	t.Run("Index type immutability", func(t *testing.T) {
@@ -1344,8 +1344,8 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 		condType := &CondType{
 			Check:      checkType,
 			Extends:    extendsType,
-			Cons:       consType,
-			Alt:        altType,
+			Then:       consType,
+			Else:       altType,
 			provenance: nil,
 		}
 
