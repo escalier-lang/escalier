@@ -1801,3 +1801,106 @@ func TestExpandType(t *testing.T) {
 		assert.Equal(t, "\"ok\" | \"error\"", result.String())
 	})
 }
+
+func TestExtractNamedCaptureGroups(t *testing.T) {
+	c := NewChecker()
+
+	tests := []struct {
+		name     string
+		pattern  string
+		expected []string
+	}{
+		{
+			name:     "no named groups",
+			pattern:  "/hello(world)/",
+			expected: []string{},
+		},
+		{
+			name:     "single named group",
+			pattern:  "/(?<name>[a-z]+)/",
+			expected: []string{"name"},
+		},
+		{
+			name:     "multiple named groups",
+			pattern:  "/(?<first>[a-z]+)_(?<second>[0-9]+)/",
+			expected: []string{"first", "second"},
+		},
+		{
+			name:     "mixed named and unnamed groups",
+			pattern:  "/(?<named>[a-z]+)([0-9]+)(?<another>[a-z]+)/",
+			expected: []string{"named", "another"},
+		},
+		// {
+		// 	name:     "invalid regex",
+		// 	pattern:  "/(?<invalid/",
+		// 	expected: []string{},
+		// },
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a regex literal type
+			regexType, _ := NewRegexType(tt.pattern)
+
+			// Extract named capture groups
+			result := c.findNamedGroups(regexType)
+
+			// Check that the keys match the expected capture group names
+			resultKeys := make([]string, 0, len(result))
+			for key := range result {
+				resultKeys = append(resultKeys, key)
+			}
+			assert.ElementsMatch(t, tt.expected, resultKeys)
+
+			// Check that all values are TypeVarType (fresh variables)
+			for name, typeVar := range result {
+				assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+			}
+		})
+	}
+
+	t.Run("nested types", func(t *testing.T) {
+		// Test with a union type containing regex types
+		regexType1, _ := NewRegexType("/(?<first>[a-z]+)/")
+		regexType2, _ := NewRegexType("/(?<second>[0-9]+)/")
+		unionType := NewUnionType(regexType1, regexType2)
+
+		result := c.findNamedGroups(unionType)
+		expected := []string{"first", "second"}
+
+		// Check that the keys match the expected capture group names
+		resultKeys := make([]string, 0, len(result))
+		for key := range result {
+			resultKeys = append(resultKeys, key)
+		}
+		assert.ElementsMatch(t, expected, resultKeys)
+
+		// Check that all values are TypeVarType (fresh variables)
+		for name, typeVar := range result {
+			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+		}
+	})
+
+	t.Run("object type with regex property", func(t *testing.T) {
+		// Test with an object type containing a regex type
+		regexType, _ := NewRegexType("/(?<name>[a-z]+)/")
+		objType := NewObjectType([]ObjTypeElem{
+			NewPropertyElemType(NewStrKey("pattern"), regexType),
+		})
+
+		result := c.findNamedGroups(objType)
+		expected := []string{"name"}
+
+		// Check that the keys match the expected capture group names
+		resultKeys := make([]string, 0, len(result))
+		for key := range result {
+			resultKeys = append(resultKeys, key)
+		}
+		assert.ElementsMatch(t, expected, resultKeys)
+
+		// Check that all values are TypeVarType (fresh variables)
+		for name, typeVar := range result {
+			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+		}
+	})
+}

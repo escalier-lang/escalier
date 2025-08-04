@@ -4,6 +4,7 @@ package type_system
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,7 @@ func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
 func (*IntrinsicType) isType()    {}
 func (*NamespaceType) isType()    {}
+func (*RegexType) isType()        {}
 
 func Prune(t Type) Type {
 	switch t := t.(type) {
@@ -209,12 +211,6 @@ func NewBoolType() *PrimType {
 		provenance: nil,
 	}
 }
-func NewRegexType(pattern string) *LitType {
-	return &LitType{
-		Lit:        &RegexLit{Value: pattern},
-		provenance: nil,
-	}
-}
 func (t *PrimType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*PrimType)
@@ -245,6 +241,57 @@ func (t *PrimType) String() string {
 	default:
 		panic("unknown primitive type")
 	}
+}
+
+type RegexType struct {
+	Regex      *regexp.Regexp
+	Groups     map[string]Type // optional, used for named capture groups
+	provenance Provenance
+}
+
+func NewRegexType(pattern string) (Type, error) {
+	// parse the pattern as a regular expression
+
+	pattern, err := convertJSRegexToGo(pattern)
+	if err != nil {
+		return NewNeverType(), fmt.Errorf("failed to convert regex: %v", err)
+	}
+
+	regex := regexp.MustCompile(pattern)
+
+	groups := make(map[string]Type)
+	if regex != nil {
+		for _, name := range regex.SubexpNames()[1:] {
+			if name != "" { // Skip unnamed groups
+				groups[name] = NewStrType()
+			}
+		}
+	}
+
+	return &RegexType{
+		Regex:      regex,
+		Groups:     groups,
+		provenance: nil,
+	}, nil
+}
+func (t *RegexType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*RegexType)
+	}
+	if result := v.ExitType(t); result != nil {
+		return result
+	}
+	return t
+}
+func (t *RegexType) Equal(other Type) bool {
+	if other, ok := other.(*RegexType); ok {
+		// Compare the regex patterns as strings since regexp.Regexp doesn't have value equality
+		return t.Regex.String() == other.Regex.String()
+	}
+	return false
+}
+func (t *RegexType) String() string {
+	return t.Regex.String()
 }
 
 type LitType struct {
@@ -281,8 +328,6 @@ func (t *LitType) String() string {
 		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
 	case *BoolLit:
 		return strconv.FormatBool(lit.Value)
-	case *RegexLit:
-		return lit.Value
 	case *BigIntLit:
 		return lit.Value.String()
 	case *NullLit:

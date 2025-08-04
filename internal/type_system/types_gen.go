@@ -28,6 +28,14 @@ func (t *PrimType) WithProvenance(p Provenance) Type {
 	return &result
 }
 
+func (t *RegexType) Provenance() Provenance     { return t.provenance }
+func (t *RegexType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *RegexType) WithProvenance(p Provenance) Type {
+	result := *t // Create a copy of the struct
+	result.provenance = p
+	return &result
+}
+
 func (t *LitType) Provenance() Provenance     { return t.provenance }
 func (t *LitType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *LitType) WithProvenance(p Provenance) Type {

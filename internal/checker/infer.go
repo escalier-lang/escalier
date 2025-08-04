@@ -671,12 +671,22 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		// be able to replace all the types in nested CondTypes.
 		// TODO: Add a test case to ensure that infer type shadowing works and
 		// fix the bug if it doesn't.
-		substitutions := v.checker.findInferTypes(t.Extends)
+
+		inferSubs := v.checker.findInferTypes(t.Extends)
+		groupSubs := v.checker.findNamedGroups(t.Extends)
+		extendsType := v.checker.replaceRegexGroupTypes(t.Extends, groupSubs)
+		extendsType = v.checker.replaceInferTypes(extendsType, inferSubs)
+
+		maps.Copy(inferSubs, groupSubs)
+
 		return NewCondType(
 			t.Check,
-			v.checker.replaceInferTypes(t.Extends, substitutions),
-			v.checker.substituteTypeParams(t.Else, substitutions),
-			v.checker.substituteTypeParams(t.Then, substitutions),
+			extendsType,
+			v.checker.substituteTypeParams(t.Then, inferSubs),
+			// TODO: don't use substitutions for the Then type because the Checks
+			// type didn't have any InferTypes in it, so we don't need to
+			// replace them with fresh type variables.
+			v.checker.substituteTypeParams(t.Else, inferSubs),
 		)
 	}
 
@@ -692,7 +702,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		return nil
 	case *CondType:
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
-		if len(errors) > 0 {
+		if len(errors) == 0 {
 			return t.Then
 		} else {
 			return t.Else
@@ -1148,7 +1158,8 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 	case *ast.BoolLit:
 		t = NewLitType(&BoolLit{Value: lit.Value})
 	case *ast.RegexLit:
-		t = NewLitType(&RegexLit{Value: lit.Value})
+		// TODO: createa a separate type for regex literals
+		t, _ = NewRegexType(lit.Value)
 	case *ast.BigIntLit:
 		t = NewLitType(&BigIntLit{Value: lit.Value})
 	case *ast.NullLit:
@@ -1490,7 +1501,7 @@ func (c *Checker) inferTypeAnn(
 		case *ast.BoolLit:
 			t = NewLitType(&BoolLit{Value: lit.Value})
 		case *ast.RegexLit:
-			t = NewLitType(&RegexLit{Value: lit.Value})
+			t, _ = NewRegexType(lit.Value)
 		case *ast.BigIntLit:
 			t = NewLitType(&BigIntLit{Value: lit.Value})
 		case *ast.NullLit:
@@ -1582,20 +1593,32 @@ func (c *Checker) inferTypeAnn(
 		// Find all InferType nodes in the extends type and create type aliases for them
 		inferTypesMap := c.findInferTypes(extendsType)
 
+		// TODO: find all named capture groups in the extends type
+		// and add them to the context scope as type aliases
+		namedCaptureGroups := c.findNamedGroups(extendsType)
+
+		names := make([]string, 0, len(inferTypesMap)+len(namedCaptureGroups))
+		for name := range inferTypesMap {
+			names = append(names, name)
+		}
+		for name := range namedCaptureGroups {
+			names = append(names, name)
+		}
+
 		// Create a new context with infer types in scope for inferring Cons and Alt
 		condCtx := ctx
-		if len(inferTypesMap) > 0 {
+		if len(names) > 0 {
 			// Create a new scope that includes the infer types as type aliases
 			condScope := ctx.Scope.WithNewScope()
 
 			// Add infer types as type aliases to the scope
-			for inferName, _ := range inferTypesMap {
-				inferTypeRef := NewTypeRefType(inferName, nil)
+			for _, name := range names {
+				inferTypeRef := NewTypeRefType(name, nil)
 				inferTypeAlias := &TypeAlias{
 					Type:       inferTypeRef,
 					TypeParams: []*TypeParam{},
 				}
-				condScope.setTypeAlias(inferName, inferTypeAlias)
+				condScope.setTypeAlias(name, inferTypeAlias)
 			}
 
 			condCtx = Context{
