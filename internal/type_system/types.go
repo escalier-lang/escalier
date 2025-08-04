@@ -249,12 +249,12 @@ type RegexType struct {
 	provenance Provenance
 }
 
-func NewRegexType(pattern string) *RegexType {
+func NewRegexType(pattern string) (Type, error) {
 	// parse the pattern as a regular expression
 
 	pattern, err := convertJSRegexToGo(pattern)
 	if err != nil {
-		panic(fmt.Sprintf("failed to convert regex: %v", err))
+		return NewNeverType(), fmt.Errorf("failed to convert regex: %v", err)
 	}
 
 	regex := regexp.MustCompile(pattern)
@@ -268,13 +268,11 @@ func NewRegexType(pattern string) *RegexType {
 		}
 	}
 
-	fmt.Printf("groups = %v\n", groups)
-
 	return &RegexType{
 		Regex:      regex,
 		Groups:     groups,
 		provenance: nil,
-	}
+	}, nil
 }
 func (t *RegexType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {

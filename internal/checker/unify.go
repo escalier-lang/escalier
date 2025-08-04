@@ -361,10 +361,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				matches := regexType.Regex.FindStringSubmatch(strLit.Value)
 				if matches != nil {
 					groupNames := regexType.Regex.SubexpNames()
+					errors := []Error{}
 
 					for i, name := range groupNames {
 						if name != "" {
-							c.unify(
+							groupErrors := c.unify(
 								ctx,
 								NewLitType(&StrLit{Value: matches[i]}),
 								// By default this will be a `string` type, but
@@ -372,10 +373,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 								// Extend field, it will be a TypeVarType.
 								regexType.Groups[name],
 							)
+							errors = slices.Concat(errors, groupErrors)
 						}
 					}
 
-					return nil
+					return errors
 				} else {
 					return []Error{&CannotUnifyTypesError{
 						T1: lit,

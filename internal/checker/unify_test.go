@@ -17,7 +17,8 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType := NewLitType(strLit)
 
 		// Create a regex type that matches "hello" (JavaScript syntax)
-		regexType := NewRegexType("/^hello$/")
+		result, _ := NewRegexType("/^hello$/")
+		regexType := result.(*RegexType)
 
 		// Test unification - should succeed because "hello" matches "^hello$"
 		errors := checker.unify(ctx, strType, regexType)
@@ -30,7 +31,8 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType := NewLitType(strLit)
 
 		// Create a regex type that matches only "hello" (JavaScript syntax)
-		regexType := NewRegexType("/^hello$/")
+		result, _ := NewRegexType("/^hello$/")
+		regexType := result.(*RegexType)
 
 		// Test unification - should fail because "world" does not match "^hello$"
 		errors := checker.unify(ctx, strType, regexType)
@@ -44,7 +46,8 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType := NewLitType(strLit)
 
 		// Create a regex type for phone number pattern (JavaScript syntax)
-		regexType := NewRegexType(`/^\d{3}-\d{3}-\d{4}$/`)
+		result, _ := NewRegexType(`/^\d{3}-\d{3}-\d{4}$/`)
+		regexType := result.(*RegexType)
 
 		// Test unification - should succeed because the string matches the phone pattern
 		errors := checker.unify(ctx, strType, regexType)
@@ -57,7 +60,8 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType := NewLitType(strLit)
 
 		// Create a regex type with case insensitive flag (JavaScript syntax)
-		regexType := NewRegexType("/^hello$/i")
+		result, _ := NewRegexType("/^hello$/i")
+		regexType := result.(*RegexType)
 
 		// Test unification - should succeed because of case insensitive flag
 		errors := checker.unify(ctx, strType, regexType)
@@ -65,18 +69,12 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 	})
 
 	t.Run("invalid regex format", func(t *testing.T) {
-		t.Skip("Skipping invalid regex format test as it requires proper error handling in unify method")
-		// Create a string literal type
-		strLit := &StrLit{Value: "test"}
-		strType := NewLitType(strLit)
-
 		// Create an invalid regex type (missing closing slash)
-		regexType := NewRegexType("/invalid")
+		result, err := NewRegexType("/invalid")
 
 		// Test unification - should fail because the regex format is invalid
-		errors := checker.unify(ctx, strType, regexType)
-		assert.NotEmpty(t, errors, "Expected error when regex format is invalid")
-		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+		assert.NotNil(t, err, "Expected error when regex format is invalid")
+		assert.IsType(t, NewNeverType(), result)
 	})
 
 	t.Run("regex with global flag", func(t *testing.T) {
@@ -85,7 +83,8 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType := NewLitType(strLit)
 
 		// Create a regex type with global flag (JavaScript syntax)
-		regexType := NewRegexType("/hello/g")
+		result, _ := NewRegexType("/hello/g")
+		regexType := result.(*RegexType)
 
 		// Test unification - should succeed (global flag is ignored in MatchString)
 		errors := checker.unify(ctx, strType, regexType)

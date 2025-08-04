@@ -99,24 +99,32 @@ func TestNewRegexType(t *testing.T) {
 			shouldHaveRegex: true,
 		},
 		{
-			name:        "invalid pattern - no closing slash",
-			pattern:     "/hello",
-			expectPanic: true,
+			name:            "invalid pattern - no closing slash",
+			pattern:         "/hello",
+			expectPanic:     false,
+			expectedGroups:  []string{},
+			shouldHaveRegex: false,
 		},
 		{
-			name:        "invalid pattern - no starting slash",
-			pattern:     "hello/",
-			expectPanic: true,
+			name:            "invalid pattern - no starting slash",
+			pattern:         "hello/",
+			expectPanic:     false,
+			expectedGroups:  []string{},
+			shouldHaveRegex: false,
 		},
 		{
-			name:        "invalid pattern - empty",
-			pattern:     "",
-			expectPanic: true,
+			name:            "invalid pattern - empty",
+			pattern:         "",
+			expectPanic:     false,
+			expectedGroups:  []string{},
+			shouldHaveRegex: false,
 		},
 		{
-			name:        "invalid pattern - single slash",
-			pattern:     "/",
-			expectPanic: true,
+			name:            "invalid pattern - single slash",
+			pattern:         "/",
+			expectPanic:     false,
+			expectedGroups:  []string{},
+			shouldHaveRegex: false,
 		},
 	}
 
@@ -129,23 +137,34 @@ func TestNewRegexType(t *testing.T) {
 				return
 			}
 
-			// Test successful creation
-			result := NewRegexType(test.pattern)
+			// Test creation
+			result, err := NewRegexType(test.pattern)
+
+			if !test.shouldHaveRegex {
+				// For invalid patterns, expect an error and NeverType
+				assert.NotNil(t, err, "Expected error for invalid pattern")
+				assert.IsType(t, NewNeverType(), result)
+				return
+			}
+
+			// For valid patterns, expect no error
+			assert.Nil(t, err, "Expected no error for valid pattern")
+			regexType := result.(*RegexType)
 
 			// Verify basic properties
 			assert.NotNil(t, result)
 			assert.Nil(t, result.Provenance()) // should be nil by default
 
 			if test.shouldHaveRegex {
-				assert.NotNil(t, result.Regex)
+				assert.NotNil(t, regexType.Regex)
 			}
 
 			// Verify named capture groups
-			assert.NotNil(t, result.Groups)
+			assert.NotNil(t, regexType.Groups)
 
 			// Check that all expected groups are present
 			for _, expectedGroup := range test.expectedGroups {
-				groupType, exists := result.Groups[expectedGroup]
+				groupType, exists := regexType.Groups[expectedGroup]
 				assert.True(t, exists, "Expected group %s not found", expectedGroup)
 				assert.NotNil(t, groupType)
 				// Groups should be initialized with UnknownType
@@ -153,7 +172,7 @@ func TestNewRegexType(t *testing.T) {
 			}
 
 			// Check that no unexpected groups are present
-			assert.Equal(t, len(test.expectedGroups), len(result.Groups),
+			assert.Equal(t, len(test.expectedGroups), len(regexType.Groups),
 				"Number of groups doesn't match expected")
 
 			// Verify that the regex compiles correctly by testing String() method
@@ -166,9 +185,9 @@ func TestNewRegexType(t *testing.T) {
 
 func TestRegexType_Methods(t *testing.T) {
 	t.Run("Equal method", func(t *testing.T) {
-		regex1 := NewRegexType("/hello/")
-		regex2 := NewRegexType("/hello/")
-		regex3 := NewRegexType("/world/")
+		regex1, _ := NewRegexType("/hello/")
+		regex2, _ := NewRegexType("/hello/")
+		regex3, _ := NewRegexType("/world/")
 
 		// Same pattern should be equal
 		assert.True(t, regex1.Equal(regex2))
@@ -181,14 +200,14 @@ func TestRegexType_Methods(t *testing.T) {
 	})
 
 	t.Run("String method", func(t *testing.T) {
-		regex := NewRegexType("/hello/")
+		regex, _ := NewRegexType("/hello/")
 		str := regex.String()
 		assert.NotEmpty(t, str)
 		assert.Contains(t, str, "hello")
 	})
 
 	t.Run("Provenance methods", func(t *testing.T) {
-		regex := NewRegexType("/hello/")
+		regex, _ := NewRegexType("/hello/")
 
 		// Initial provenance should be nil
 		assert.Nil(t, regex.Provenance())
@@ -199,32 +218,36 @@ func TestRegexType_Methods(t *testing.T) {
 
 func TestRegexType_CaptureGroups(t *testing.T) {
 	t.Run("no capture groups", func(t *testing.T) {
-		regex := NewRegexType("/hello/")
-		assert.Empty(t, regex.Groups)
+		result, _ := NewRegexType("/hello/")
+		regexType := result.(*RegexType)
+		assert.Empty(t, regexType.Groups)
 	})
 
 	t.Run("single named capture group", func(t *testing.T) {
-		regex := NewRegexType("/(?<word>hello)/")
-		assert.Len(t, regex.Groups, 1)
-		assert.Contains(t, regex.Groups, "word")
-		assert.IsType(t, NewStrType(), regex.Groups["word"])
+		result, _ := NewRegexType("/(?<word>hello)/")
+		regexType := result.(*RegexType)
+		assert.Len(t, regexType.Groups, 1)
+		assert.Contains(t, regexType.Groups, "word")
+		assert.IsType(t, NewStrType(), regexType.Groups["word"])
 	})
 
 	t.Run("multiple named capture groups", func(t *testing.T) {
-		regex := NewRegexType("/(?<first>\\w+)-(?<second>\\d+)/")
-		assert.Len(t, regex.Groups, 2)
-		assert.Contains(t, regex.Groups, "first")
-		assert.Contains(t, regex.Groups, "second")
-		assert.IsType(t, NewStrType(), regex.Groups["first"])
-		assert.IsType(t, NewStrType(), regex.Groups["second"])
+		result, _ := NewRegexType("/(?<first>\\w+)-(?<second>\\d+)/")
+		regexType := result.(*RegexType)
+		assert.Len(t, regexType.Groups, 2)
+		assert.Contains(t, regexType.Groups, "first")
+		assert.Contains(t, regexType.Groups, "second")
+		assert.IsType(t, NewStrType(), regexType.Groups["first"])
+		assert.IsType(t, NewStrType(), regexType.Groups["second"])
 	})
 
 	t.Run("mixed named and unnamed groups", func(t *testing.T) {
-		regex := NewRegexType("/(\\w+)-(?<id>\\d+)-(\\w+)/")
+		result, _ := NewRegexType("/(\\w+)-(?<id>\\d+)-(\\w+)/")
+		regexType := result.(*RegexType)
 		// Only named groups should be in the Groups map
-		assert.Len(t, regex.Groups, 1)
-		assert.Contains(t, regex.Groups, "id")
-		assert.IsType(t, NewStrType(), regex.Groups["id"])
+		assert.Len(t, regexType.Groups, 1)
+		assert.Contains(t, regexType.Groups, "id")
+		assert.IsType(t, NewStrType(), regexType.Groups["id"])
 	})
 }
 
@@ -245,25 +268,27 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				regex := NewRegexType(test.pattern)
-				assert.NotNil(t, regex.Regex)
+				result, _ := NewRegexType(test.pattern)
+				regexType := result.(*RegexType)
+				assert.NotNil(t, regexType.Regex)
 			})
 		}
 	})
 
 	t.Run("named capture group conversion", func(t *testing.T) {
-		regex := NewRegexType("/(?<name>\\w+)/")
+		result, _ := NewRegexType("/(?<name>\\w+)/")
+		regexType := result.(*RegexType)
 
 		// Verify the regex was created successfully
-		assert.NotNil(t, regex.Regex)
+		assert.NotNil(t, regexType.Regex)
 
 		// Verify the named group was captured
-		assert.Len(t, regex.Groups, 1)
-		assert.Contains(t, regex.Groups, "name")
+		assert.Len(t, regexType.Groups, 1)
+		assert.Contains(t, regexType.Groups, "name")
 
 		// The underlying Go regex should use (?P<name>...) syntax
 		// We can verify this by checking the SubexpNames
-		names := regex.Regex.SubexpNames()
+		names := regexType.Regex.SubexpNames()
 		assert.Contains(t, names, "name")
 	})
 }

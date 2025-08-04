@@ -1158,7 +1158,8 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 	case *ast.BoolLit:
 		t = NewLitType(&BoolLit{Value: lit.Value})
 	case *ast.RegexLit:
-		t = NewRegexType(lit.Value)
+		// TODO: createa a separate type for regex literals
+		t, _ = NewRegexType(lit.Value)
 	case *ast.BigIntLit:
 		t = NewLitType(&BigIntLit{Value: lit.Value})
 	case *ast.NullLit:
@@ -1500,7 +1501,7 @@ func (c *Checker) inferTypeAnn(
 		case *ast.BoolLit:
 			t = NewLitType(&BoolLit{Value: lit.Value})
 		case *ast.RegexLit:
-			t = NewRegexType(lit.Value)
+			t, _ = NewRegexType(lit.Value)
 		case *ast.BigIntLit:
 			t = NewLitType(&BigIntLit{Value: lit.Value})
 		case *ast.NullLit:

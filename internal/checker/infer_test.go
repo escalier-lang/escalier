@@ -1840,7 +1840,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a regex literal type
-			regexType := NewRegexType(tt.pattern)
+			regexType, _ := NewRegexType(tt.pattern)
 
 			// Extract named capture groups
 			result := c.findNamedGroups(regexType)
@@ -1861,8 +1861,8 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 	t.Run("nested types", func(t *testing.T) {
 		// Test with a union type containing regex types
-		regexType1 := NewRegexType("/(?<first>[a-z]+)/")
-		regexType2 := NewRegexType("/(?<second>[0-9]+)/")
+		regexType1, _ := NewRegexType("/(?<first>[a-z]+)/")
+		regexType2, _ := NewRegexType("/(?<second>[0-9]+)/")
 		unionType := NewUnionType(regexType1, regexType2)
 
 		result := c.findNamedGroups(unionType)
@@ -1883,7 +1883,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 	t.Run("object type with regex property", func(t *testing.T) {
 		// Test with an object type containing a regex type
-		regexType := NewRegexType("/(?<name>[a-z]+)/")
+		regexType, _ := NewRegexType("/(?<name>[a-z]+)/")
 		objType := NewObjectType([]ObjTypeElem{
 			NewPropertyElemType(NewStrKey("pattern"), regexType),
 		})
