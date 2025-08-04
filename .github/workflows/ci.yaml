@@ -30,6 +30,7 @@ jobs:
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
         with:
+          verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
   check_ts:
@@ -69,4 +70,5 @@ jobs:
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
         with:
+          verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
