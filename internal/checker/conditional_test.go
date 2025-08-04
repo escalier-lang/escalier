@@ -531,18 +531,18 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 		// },
 		"ConditionalTypeWithRegexNamedCapture": {
 			input: `
-				type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z0-9]+)_*$/ { Ident } else { T }
+				type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z][a-zA-Z0-9]*)_*$/ { Ident } else { T }
 				type Foo = StripUnderscores<"foo">
 				type Bar = StripUnderscores<"_bar_">
 				type Baz = StripUnderscores<"__baz__">
-				type NoMatch = StripUnderscores<"123">
+				type NoMatch = StripUnderscores<"_123_">
 				type EmptyString = StripUnderscores<"">
 			`,
 			expectedTypes: map[string]string{
 				"Foo":         "\"foo\"",
 				"Bar":         "\"bar\"",
 				"Baz":         "\"baz\"",
-				"NoMatch":     "\"123\"",
+				"NoMatch":     "\"_123_\"",
 				"EmptyString": "\"\"",
 			},
 			expectErrors: false,
