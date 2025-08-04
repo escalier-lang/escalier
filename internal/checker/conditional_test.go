@@ -506,16 +506,16 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 		// 		"Result": "number | undefined",
 		// 	},
 		// },
-		// "DistributiveWithNestedUnions": {
-		// 	input: `
-		// 		type Distribute<T> = if T : any { { type: T } } else { never }
-		// 		type ComplexUnion = string | (number | boolean)
-		// 		type Result = Distribute<ComplexUnion>
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"Result": "{ type: string } | { type: number } | { type: boolean }",
-		// 	},
-		// },
+		"DistributiveWithNestedUnions": {
+			input: `
+				type Distribute<T> = if T : any { { value: T } } else { never }
+				type ComplexUnion = string | number | boolean
+				type Result = Distribute<ComplexUnion>
+			`,
+			expectedTypes: map[string]string{
+				"Result": "{value: string} | {value: number} | {value: boolean}",
+			},
+		},
 		// "ConditionalWithConstraints": {
 		// 	input: `
 		// 		type StringableOnly<T> = if T : string | number | boolean { T } else { never }
