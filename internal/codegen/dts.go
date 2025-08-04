@@ -299,11 +299,10 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.AnyType:
 		return NewAnyTypeAnn(nil)
 	case *type_sys.LitType:
-		// For regex literals, convert to string type in .d.ts files
-		if _, isRegex := t.Lit.(*type_sys.RegexLit); isRegex {
-			return NewStringTypeAnn(nil)
-		}
 		return NewLitTypeAnn(litToLit(t.Lit))
+	case *type_sys.RegexType:
+		// For regex types, convert to string type in .d.ts files
+		return NewStringTypeAnn(nil)
 	case *type_sys.UniqueSymbolType:
 		panic("TODO: implement UniqueSymbolType")
 	case *type_sys.UnknownType:
@@ -523,8 +522,6 @@ func litToLit(t type_sys.Lit) Lit {
 		return NewNumLit(lit.Value, nil)
 	case *type_sys.StrLit:
 		return NewStrLit(lit.Value, nil)
-	case *type_sys.RegexLit:
-		return NewRegexLit(lit.Value, nil)
 	// case *type_sys.BigIntLit:
 	// 	return NewBigIntLit(lit.Value, nil)
 	case *type_sys.NullLit:

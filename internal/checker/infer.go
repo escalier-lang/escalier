@@ -982,14 +982,12 @@ func (v *NamedCaptureGroupExtractor) EnterType(t Type) Type {
 func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
 	t = Prune(t)
 
-	if litType, ok := t.(*LitType); ok {
-		if regexLit, ok := litType.Lit.(*RegexLit); ok {
-			// Parse the regex pattern to extract named capture groups
-			names := extractNamedGroupsFromPattern(regexLit.Value)
-			for _, name := range names {
-				if name != "" {
-					v.captureGroups[name] = true
-				}
+	if regexType, ok := t.(*RegexType); ok {
+		fmt.Printf("Found regex type: %#v\n", regexType)
+		// Parse the regex pattern to extract named capture groups
+		for name := range regexType.Groups {
+			if name != "" {
+				v.captureGroups[name] = true
 			}
 		}
 	}
@@ -1219,7 +1217,7 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 	case *ast.BoolLit:
 		t = NewLitType(&BoolLit{Value: lit.Value})
 	case *ast.RegexLit:
-		t = NewLitType(&RegexLit{Value: lit.Value})
+		t = NewRegexType(lit.Value)
 	case *ast.BigIntLit:
 		t = NewLitType(&BigIntLit{Value: lit.Value})
 	case *ast.NullLit:
@@ -1561,7 +1559,7 @@ func (c *Checker) inferTypeAnn(
 		case *ast.BoolLit:
 			t = NewLitType(&BoolLit{Value: lit.Value})
 		case *ast.RegexLit:
-			t = NewLitType(&RegexLit{Value: lit.Value})
+			t = NewRegexType(lit.Value)
 		case *ast.BigIntLit:
 			t = NewLitType(&BigIntLit{Value: lit.Value})
 		case *ast.NullLit:

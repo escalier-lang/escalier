@@ -2,78 +2,11 @@ package checker
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
-
-// convertJSRegexToGo converts a JavaScript regex literal to Go regex syntax
-// Input format: /pattern/flags (e.g., "/hello/gi", "/^\d+$/")
-// Output: Go-compatible regex pattern
-func convertJSRegexToGo(jsRegex string) (string, error) {
-	// Remove leading and trailing slashes
-	if len(jsRegex) < 2 || jsRegex[0] != '/' {
-		return "", fmt.Errorf("invalid regex format: %s", jsRegex)
-	}
-
-	// Find the closing slash
-	lastSlash := strings.LastIndex(jsRegex[1:], "/")
-	if lastSlash == -1 {
-		return "", fmt.Errorf("invalid regex format: %s", jsRegex)
-	}
-	lastSlash++ // Adjust for the slice offset
-
-	pattern := jsRegex[1:lastSlash]
-	flags := ""
-	if lastSlash+1 < len(jsRegex) {
-		flags = jsRegex[lastSlash+1:]
-	}
-
-	// Convert flags to Go format
-	var goFlags []string
-	var multiline, dotAll, caseInsensitive bool
-
-	for _, flag := range flags {
-		switch flag {
-		case 'i':
-			caseInsensitive = true
-		case 'm':
-			multiline = true
-		case 's':
-			dotAll = true
-		case 'g':
-			// Global flag doesn't apply to MatchString, ignore
-		case 'u':
-			// Unicode flag is default in Go, ignore
-		case 'y':
-			// Sticky flag not supported in Go, ignore for now
-		default:
-			// Unknown flag, ignore
-		}
-	}
-
-	// Apply flags using Go syntax
-	if caseInsensitive {
-		goFlags = append(goFlags, "i")
-	}
-	if multiline {
-		goFlags = append(goFlags, "m")
-	}
-	if dotAll {
-		goFlags = append(goFlags, "s")
-	}
-
-	// Build the final pattern
-	result := pattern
-	if len(goFlags) > 0 {
-		result = "(?" + strings.Join(goFlags, "") + ")" + pattern
-	}
-
-	return result, nil
-}
 
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
@@ -402,53 +335,76 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					return nil
 				}
 			}
-			if re1, ok := lit1.Lit.(*RegexLit); ok {
-				if re2, ok := lit2.Lit.(*RegexLit); ok {
-					if re1.Equal(re2) {
-						return nil
-					} else {
-						return []Error{&CannotUnifyTypesError{
-							T1: lit1,
-							T2: lit2,
-						}}
-					}
-				}
-			}
-			// StrLit matched against RegexLit pattern
-			if strLit, ok := lit1.Lit.(*StrLit); ok {
-				if regexLit, ok := lit2.Lit.(*RegexLit); ok {
-					// Convert JavaScript regex syntax to Go regex syntax
-					goPattern, err := convertJSRegexToGo(regexLit.Value)
-					if err != nil {
-						// Invalid regex format
-						return []Error{&CannotUnifyTypesError{
-							T1: lit1,
-							T2: lit2,
-						}}
-					}
-
-					matched, err := regexp.MatchString(goPattern, strLit.Value)
-					if err != nil {
-						// Invalid regex pattern or conversion failed
-						return []Error{&CannotUnifyTypesError{
-							T1: lit1,
-							T2: lit2,
-						}}
-					}
-					if matched {
-						return nil
-					} else {
-						return []Error{&CannotUnifyTypesError{
-							T1: lit1,
-							T2: lit2,
-						}}
-					}
-				}
-			}
 			return []Error{&CannotUnifyTypesError{
 				T1: lit1,
 				T2: lit2,
 			}}
+		}
+	}
+	// | RegexType, RegexType -> ...
+	if regex1, ok := t1.(*RegexType); ok {
+		if regex2, ok := t2.(*RegexType); ok {
+			if regex1.Equal(regex2) {
+				return nil
+			} else {
+				return []Error{&CannotUnifyTypesError{
+					T1: regex1,
+					T2: regex2,
+				}}
+			}
+		}
+	}
+	// | LitType (string), RegexType -> ...
+	if lit, ok := t1.(*LitType); ok {
+		if regexType, ok := t2.(*RegexType); ok {
+			if strLit, ok := lit.Lit.(*StrLit); ok {
+				// Convert JavaScript regex syntax to Go regex syntax
+				// goPattern, err := convertJSRegexToGo(regexType.Regex)
+				// if err != nil {
+				// 	// Invalid regex format
+				// 	return []Error{&CannotUnifyTypesError{
+				// 		T1: lit,
+				// 		T2: regexType,
+				// 	}}
+				// }
+
+				matched := regexType.Regex.MatchString(strLit.Value)
+
+				// if err != nil {
+				// 	// Invalid regex pattern or conversion failed
+				// 	return []Error{&CannotUnifyTypesError{
+				// 		T1: lit,
+				// 		T2: regexType,
+				// 	}}
+				// }
+				if matched {
+					// TODO: find all of the name capture groups in the regex and
+					// the matched values
+					matches := regexType.Regex.FindStringSubmatch(strLit.Value)
+					if matches != nil {
+						for i := range regexType.Regex.SubexpNames() {
+							if i < len(matches) {
+								name := regexType.Regex.SubexpNames()[i]
+								if name != "" {
+									fmt.Printf("Found capture group %q: %q\n", name, matches[i])
+									// TODO: replace capture group types with
+									// type variables when expanding conditional
+									// types.
+									t := regexType.Groups[name]
+									fmt.Printf("Capture group type: %s\n", t)
+								}
+							}
+						}
+					}
+
+					return nil
+				} else {
+					return []Error{&CannotUnifyTypesError{
+						T1: lit,
+						T2: regexType,
+					}}
+				}
+			}
 		}
 	}
 	// | LitType (string), TemplateLitType -> ...

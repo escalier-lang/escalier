@@ -15,7 +15,6 @@ type Lit interface {
 func (*BoolLit) isLiteral()      {}
 func (*NumLit) isLiteral()       {}
 func (*StrLit) isLiteral()       {}
-func (*RegexLit) isLiteral()     {}
 func (*BigIntLit) isLiteral()    {}
 func (*NullLit) isLiteral()      {}
 func (*UndefinedLit) isLiteral() {}
@@ -57,18 +56,6 @@ func (l *StrLit) Equal(other Lit) bool {
 }
 func (l *StrLit) String() string {
 	return strconv.Quote(l.Value)
-}
-
-type RegexLit struct{ Value string }
-
-func (l *RegexLit) Equal(other Lit) bool {
-	if other, ok := other.(*RegexLit); ok {
-		return l.Value == other.Value
-	}
-	return false
-}
-func (l *RegexLit) String() string {
-	return "/" + l.Value + "/"
 }
 
 type BigIntLit struct{ Value big.Int }
