@@ -628,6 +628,10 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 
 	switch t := t.(type) {
 	case *TypeRefType:
+		if t.Name == "Array" || t.Name == "Error" {
+			return nil
+		}
+
 		// Check if we've reached the maximum expansion depth
 		if v.depth > v.maxDepth {
 			// Return the type reference without expanding
@@ -648,17 +652,40 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		// - ensure that the number of type args matches the number of type params
 		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
-			substitutionSets := v.checker.generateSubstitutionSets(typeAlias.TypeParams, t.TypeArgs)
 
-			if len(substitutionSets) == 1 {
-				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutionSets[0])
-			} else {
-				expandedTypes := make([]Type, len(substitutionSets))
-				for i, substitutionSet := range substitutionSets {
-					expandedTypes[i] = v.checker.substituteTypeParams(typeAlias.Type, substitutionSet)
+			isCondType := false
+			if _, ok := Prune(expandedType).(*CondType); ok {
+				isCondType = true
+			}
+
+			// TODO:
+			// Handle case such as:
+			// - type Foo<T> = boolean | T extends string ? T : number
+			// - type Bar<T> = string & T extends string ? T : number
+			// Do not perform distributions if the conditional type is the child
+			// of any other type.
+			if isCondType {
+				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
+				if len(subSetErrors) > 0 {
+					v.errors = slices.Concat(v.errors, subSetErrors)
 				}
-				// Create a union type of all expanded types
-				expandedType = NewUnionType(expandedTypes...)
+
+				// If there are more than one substitution sets, distribute the
+				// type arguments across the conditional type.
+				if len(substitutionSets) > 1 {
+					expandedTypes := make([]Type, len(substitutionSets))
+					for i, substitutionSet := range substitutionSets {
+						expandedTypes[i] = v.checker.substituteTypeParams(typeAlias.Type, substitutionSet)
+					}
+					// Create a union type of all expanded types
+					expandedType = NewUnionType(expandedTypes...)
+				} else {
+					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+					expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
+				}
+			} else {
+				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 			}
 		}
 		// Recursively expand the resolved type using the same visitor to maintain state
@@ -701,6 +728,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Don't expand NamespaceTypes - return them as-is
 		return nil
 	case *CondType:
+		fmt.Printf("checking if %s unifies with %s\n", t.Check, t.Extends)
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) == 0 {
 			return t.Then
@@ -948,6 +976,21 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}
+}
+
+// createTypeParamSubstitutions creates a map of type parameter substitutions from type arguments and type parameters,
+// handling default values when type arguments are nil.
+func createTypeParamSubstitutions(typeArgs []Type, typeParams []*TypeParam) map[string]Type {
+	substitutions := make(map[string]Type, len(typeArgs))
+	for typeArg, param := range Zip(typeArgs, typeParams) {
+		if param.Default != nil && typeArg == nil {
+			// Use the default type if the type argument is nil
+			substitutions[param.Name] = param.Default
+		} else {
+			substitutions[param.Name] = typeArg
+		}
+	}
+	return substitutions
 }
 
 func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
@@ -1651,22 +1694,33 @@ func (c *Checker) inferTypeAnn(
 
 // generateSubstitutionSets creates substitution maps for type parameters and type arguments,
 // handling cartesian products when union types are present in the type arguments.
-func (c *Checker) generateSubstitutionSets(typeParams []*TypeParam, typeArgs []Type) []map[string]Type {
+func (c *Checker) generateSubstitutionSets(
+	ctx Context,
+	typeParams []*TypeParam,
+	typeArgs []Type,
+) ([]map[string]Type, []Error) {
 	// If no type params or args, return empty slice
 	if len(typeParams) == 0 || len(typeArgs) == 0 {
-		return []map[string]Type{}
+		return []map[string]Type{}, nil
 	}
+
+	var errors []Error
 
 	// Extract all possible types for each type argument position
 	argTypeSets := make([][]Type, len(typeArgs))
-	for i, arg := range typeArgs {
-		arg = Prune(arg)
-		if unionType, ok := arg.(*UnionType); ok {
+	for i, argType := range typeArgs {
+		// TODO: recursively expand union types in case some of the elements are
+		// also union types.
+		argType, argErrors := c.expandType(ctx, argType)
+		if len(argErrors) > 0 {
+			errors = append(errors, argErrors...)
+		}
+		if unionType, ok := argType.(*UnionType); ok {
 			// For union types, use all the union members
 			argTypeSets[i] = unionType.Types
 		} else {
 			// For non-union types, create a single-element slice
-			argTypeSets[i] = []Type{arg}
+			argTypeSets[i] = []Type{argType}
 		}
 	}
 
@@ -1697,7 +1751,8 @@ func (c *Checker) generateSubstitutionSets(typeParams []*TypeParam, typeArgs []T
 	}
 
 	generateCombinations(0, make(map[string]Type))
-	return result
+
+	return result, errors
 }
 
 // findInferTypes finds all InferType nodes in a type and replaces them with fresh type variables.
