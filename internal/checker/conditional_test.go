@@ -529,36 +529,36 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 		// 		"Result3": "never",
 		// 	},
 		// },
-		// "ConditionalTypeWithRegexNamedCapture": {
-		// 	input: `
-		// 		type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z0-9]+)_*$/ { Ident } else { T }
-		// 		type Foo = StripUnderscores<"foo">
-		// 		type Bar = StripUnderscores<"_bar_">
-		// 		type Baz = StripUnderscores<"__baz__">
-		// 		type NoMatch = StripUnderscores<"123">
-		// 		type EmptyString = StripUnderscores<"">
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"Foo":         "\"foo\"",
-		// 		"Bar":         "\"bar\"",
-		// 		"Baz":         "\"baz\"",
-		// 		"NoMatch":     "\"123\"",
-		// 		"EmptyString": "\"\"",
-		// 	},
-		// 	expectErrors: false,
-		// },
-		// "ConditionalTypeWithSimpleRegex": {
-		// 	input: `
-		// 		type MatchesPattern<T> = if T : /^[a-zA-Z]+$/ { "match" } else { "no_match" }
-		// 		type Test1 = MatchesPattern<"hello">
-		// 		type Test2 = MatchesPattern<"123">
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"Test1": "\"match\"",
-		// 		"Test2": "\"no_match\"",
-		// 	},
-		// 	expectErrors: false,
-		// },
+		"ConditionalTypeWithRegexNamedCapture": {
+			input: `
+				type StripUnderscores<T> = if T : /^_*(?<Ident>[a-zA-Z0-9]+)_*$/ { Ident } else { T }
+				type Foo = StripUnderscores<"foo">
+				type Bar = StripUnderscores<"_bar_">
+				type Baz = StripUnderscores<"__baz__">
+				type NoMatch = StripUnderscores<"123">
+				type EmptyString = StripUnderscores<"">
+			`,
+			expectedTypes: map[string]string{
+				"Foo":         "\"foo\"",
+				"Bar":         "\"bar\"",
+				"Baz":         "\"baz\"",
+				"NoMatch":     "\"123\"",
+				"EmptyString": "\"\"",
+			},
+			expectErrors: false,
+		},
+		"ConditionalTypeWithSimpleRegex": {
+			input: `
+				type MatchesPattern<T> = if T : /^[a-zA-Z]+$/ { "match" } else { "no_match" }
+				type Test1 = MatchesPattern<"hello">
+				type Test2 = MatchesPattern<"123">
+			`,
+			expectedTypes: map[string]string{
+				"Test1": "\"match\"",
+				"Test2": "\"no_match\"",
+			},
+			expectErrors: false,
+		},
 	}
 
 	for name, test := range tests {

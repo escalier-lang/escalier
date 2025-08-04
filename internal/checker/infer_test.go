@@ -1843,10 +1843,19 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 			regexType := NewRegexType(tt.pattern)
 
 			// Extract named capture groups
-			result := c.extractNamedCaptureGroups(regexType)
+			result := c.findNamedGroups(regexType)
 
-			// Sort both slices for comparison since order isn't guaranteed
-			assert.ElementsMatch(t, tt.expected, result)
+			// Check that the keys match the expected capture group names
+			resultKeys := make([]string, 0, len(result))
+			for key := range result {
+				resultKeys = append(resultKeys, key)
+			}
+			assert.ElementsMatch(t, tt.expected, resultKeys)
+
+			// Check that all values are TypeVarType (fresh variables)
+			for name, typeVar := range result {
+				assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+			}
 		})
 	}
 
@@ -1856,10 +1865,20 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 		regexType2 := NewRegexType("/(?<second>[0-9]+)/")
 		unionType := NewUnionType(regexType1, regexType2)
 
-		result := c.extractNamedCaptureGroups(unionType)
+		result := c.findNamedGroups(unionType)
 		expected := []string{"first", "second"}
 
-		assert.ElementsMatch(t, expected, result)
+		// Check that the keys match the expected capture group names
+		resultKeys := make([]string, 0, len(result))
+		for key := range result {
+			resultKeys = append(resultKeys, key)
+		}
+		assert.ElementsMatch(t, expected, resultKeys)
+
+		// Check that all values are TypeVarType (fresh variables)
+		for name, typeVar := range result {
+			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+		}
 	})
 
 	t.Run("object type with regex property", func(t *testing.T) {
@@ -1869,9 +1888,19 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 			NewPropertyElemType(NewStrKey("pattern"), regexType),
 		})
 
-		result := c.extractNamedCaptureGroups(objType)
+		result := c.findNamedGroups(objType)
 		expected := []string{"name"}
 
-		assert.ElementsMatch(t, expected, result)
+		// Check that the keys match the expected capture group names
+		resultKeys := make([]string, 0, len(result))
+		for key := range result {
+			resultKeys = append(resultKeys, key)
+		}
+		assert.ElementsMatch(t, expected, resultKeys)
+
+		// Check that all values are TypeVarType (fresh variables)
+		for name, typeVar := range result {
+			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+		}
 	})
 }

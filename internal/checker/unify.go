@@ -358,42 +358,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if lit, ok := t1.(*LitType); ok {
 		if regexType, ok := t2.(*RegexType); ok {
 			if strLit, ok := lit.Lit.(*StrLit); ok {
-				// Convert JavaScript regex syntax to Go regex syntax
-				// goPattern, err := convertJSRegexToGo(regexType.Regex)
-				// if err != nil {
-				// 	// Invalid regex format
-				// 	return []Error{&CannotUnifyTypesError{
-				// 		T1: lit,
-				// 		T2: regexType,
-				// 	}}
-				// }
+				matches := regexType.Regex.FindStringSubmatch(strLit.Value)
+				if matches != nil {
+					groupNames := regexType.Regex.SubexpNames()
 
-				matched := regexType.Regex.MatchString(strLit.Value)
-
-				// if err != nil {
-				// 	// Invalid regex pattern or conversion failed
-				// 	return []Error{&CannotUnifyTypesError{
-				// 		T1: lit,
-				// 		T2: regexType,
-				// 	}}
-				// }
-				if matched {
-					// TODO: find all of the name capture groups in the regex and
-					// the matched values
-					matches := regexType.Regex.FindStringSubmatch(strLit.Value)
-					if matches != nil {
-						for i := range regexType.Regex.SubexpNames() {
-							if i < len(matches) {
-								name := regexType.Regex.SubexpNames()[i]
-								if name != "" {
-									fmt.Printf("Found capture group %q: %q\n", name, matches[i])
-									// TODO: replace capture group types with
-									// type variables when expanding conditional
-									// types.
-									t := regexType.Groups[name]
-									fmt.Printf("Capture group type: %s\n", t)
-								}
-							}
+					for i, name := range groupNames {
+						if name != "" {
+							c.unify(
+								ctx,
+								NewLitType(&StrLit{Value: matches[i]}),
+								// By default this will be a `string` type, but
+								// if the RegexType appears in a CondType's
+								// Extend field, it will be a TypeVarType.
+								regexType.Groups[name],
+							)
 						}
 					}
 
