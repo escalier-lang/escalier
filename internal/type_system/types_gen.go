@@ -164,6 +164,14 @@ func (t *InferType) WithProvenance(p Provenance) Type {
 	return &result
 }
 
+func (t *MutableType) Provenance() Provenance     { return t.provenance }
+func (t *MutableType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *MutableType) WithProvenance(p Provenance) Type {
+	result := *t // Create a copy of the struct
+	result.provenance = p
+	return &result
+}
+
 func (t *WildcardType) Provenance() Provenance     { return t.provenance }
 func (t *WildcardType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *WildcardType) WithProvenance(p Provenance) Type {

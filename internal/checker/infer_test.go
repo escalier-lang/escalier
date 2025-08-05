@@ -1904,3 +1904,104 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 		}
 	})
 }
+
+func TestMutableTypes(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"MutableTypeAnnotation": {
+			input: `
+				val x: mut number = 5
+			`,
+			expectedTypes: map[string]string{
+				"x": "mut number",
+			},
+		},
+		"MutableStringType": {
+			input: `
+				val s: mut string = "hello"
+			`,
+			expectedTypes: map[string]string{
+				"s": "mut string",
+			},
+		},
+		"MutableObjectType": {
+			input: `
+				val obj: mut {x: number, y: string} = {x: 42, y: "test"}
+				val {x, y} = obj
+			`,
+			expectedTypes: map[string]string{
+				"obj": "mut {x: number, y: string}",
+			},
+		},
+		"MutableArrayType": {
+			input: `
+				val arr: mut Array<number> = [1, 2, 3]
+			`,
+			expectedTypes: map[string]string{
+				"arr": "mut Array<number>",
+			},
+		},
+		// "NestedMutableType": {
+		// 	input: `
+		// 		val nested: mut mut number = 10
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"nested": "mut mut number",
+		// 	},
+		// },
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			inferCtx := Context{
+				Scope:      Prelude(),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			c := NewChecker()
+			scope, inferErrors := c.InferModule(inferCtx, module)
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("InferError[%d]: %#v\n", i, err)
+				}
+				assert.Empty(t, inferErrors, "Expected no inference errors")
+			}
+
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Values {
+				assert.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+		})
+	}
+}

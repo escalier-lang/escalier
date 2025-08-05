@@ -151,7 +151,6 @@ loop:
 }
 
 func (p *Parser) primaryTypeAnn() ast.TypeAnn {
-	// TODO: parse prefixes, e.g. `mut`
 	token := p.lexer.peek()
 	isMut := false
 
@@ -336,10 +335,10 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				p.lexer.consume() // consume '<'
 				typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
 				end := p.expect(GreaterThan, AlwaysConsume)
-				return ast.NewRefTypeAnn(qualIdent, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+				typeAnn = ast.NewRefTypeAnn(qualIdent, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			} else {
+				typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 			}
-
-			typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 		default:
 			p.reportError(token.Span, "expected type annotation")
 			p.lexer.consume()

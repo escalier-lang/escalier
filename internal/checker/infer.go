@@ -728,7 +728,6 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Don't expand NamespaceTypes - return them as-is
 		return nil
 	case *CondType:
-		fmt.Printf("checking if %s unifies with %s\n", t.Check, t.Extends)
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) == 0 {
 			return t.Then
@@ -1680,6 +1679,10 @@ func (c *Checker) inferTypeAnn(
 		t = NewCondType(checkType, extendsType, thenType, elseType)
 	case *ast.InferTypeAnn:
 		t = NewInferType(typeAnn.Name)
+	case *ast.MutableTypeAnn:
+		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
+		errors = slices.Concat(errors, targetErrors)
+		t = NewMutableType(targetType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

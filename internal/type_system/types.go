@@ -46,6 +46,7 @@ func (*KeyOfType) isType()        {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
+func (*MutableType) isType()      {}
 func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
@@ -1316,6 +1317,47 @@ func (t *InferType) String() string {
 func NewInferType(name string) *InferType {
 	return &InferType{
 		Name:       name,
+		provenance: nil,
+	}
+}
+
+type MutableType struct {
+	Type       Type
+	provenance Provenance
+}
+
+func (t *MutableType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*MutableType)
+	}
+
+	newType := t.Type.Accept(v)
+	var result Type = t
+	if newType != t.Type {
+		result = &MutableType{
+			Type:       newType,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.ExitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
+}
+func (t *MutableType) Equal(other Type) bool {
+	if other, ok := other.(*MutableType); ok {
+		return t.Type.Equal(other.Type)
+	}
+	return false
+}
+func (t *MutableType) String() string {
+	return "mut " + t.Type.String()
+}
+
+func NewMutableType(typ Type) *MutableType {
+	return &MutableType{
+		Type:       typ,
 		provenance: nil,
 	}
 }
