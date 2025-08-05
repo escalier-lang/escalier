@@ -153,6 +153,9 @@ func (c *Checker) InferComponent(
 			for name, binding := range bindings {
 				declCtx.Scope.setValue(name, binding)
 			}
+
+			// This is used when inferring the definitions below
+			decl.InferredType = patType
 		case *ast.TypeDecl:
 			// TODO: add new type aliases to ctx.Scope.Types as we go to handle
 			// things like:
@@ -215,16 +218,11 @@ func (c *Checker) InferComponent(
 				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.VarDecl:
-			bindings, declErrors := c.inferVarDecl(declCtx, decl)
-			errors = slices.Concat(errors, declErrors)
-
-			// NOTE: The semantics of how function declarations are inferred vs
-			// function expressions in variable declarations is different.  I'm
-			// not sure if it's important to align these or not.
-
-			for name, binding := range bindings {
-				existingBinding := declCtx.Scope.getValue(name)
-				unifyErrors := c.unify(declCtx, existingBinding.Type, binding.Type)
+			patType := decl.InferredType
+			if decl.Init != nil {
+				initType, initErrors := c.inferExpr(declCtx, decl.Init)
+				errors = slices.Concat(errors, initErrors)
+				unifyErrors := c.unify(ctx, initType, patType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.TypeDecl:
@@ -728,7 +726,6 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Don't expand NamespaceTypes - return them as-is
 		return nil
 	case *CondType:
-		fmt.Printf("checking if %s unifies with %s\n", t.Check, t.Extends)
 		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
 		if len(errors) == 0 {
 			return t.Then
@@ -1680,6 +1677,10 @@ func (c *Checker) inferTypeAnn(
 		t = NewCondType(checkType, extendsType, thenType, elseType)
 	case *ast.InferTypeAnn:
 		t = NewInferType(typeAnn.Name)
+	case *ast.MutableTypeAnn:
+		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
+		errors = slices.Concat(errors, targetErrors)
+		t = NewMutableType(targetType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

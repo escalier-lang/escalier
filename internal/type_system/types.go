@@ -19,7 +19,6 @@ type Type interface {
 	isType()
 	Provenance() Provenance
 	SetProvenance(Provenance)
-	Equal(Type) bool
 	Accept(TypeVisitor) Type
 	String() string
 	// WithProvenance returns a new Type with the given Provenance.
@@ -46,6 +45,7 @@ func (*KeyOfType) isType()        {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
+func (*MutableType) isType()      {}
 func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
@@ -73,12 +73,6 @@ type TypeVarType struct {
 	provenance Provenance
 }
 
-func (t *TypeVarType) Equal(other Type) bool {
-	if other, ok := other.(*TypeVarType); ok {
-		return t.ID == other.ID
-	}
-	return false
-}
 func (t *TypeVarType) Accept(v TypeVisitor) Type {
 	prunedType := Prune(t)
 	if prunedType != t {
@@ -156,13 +150,6 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *TypeRefType) Equal(other Type) bool {
-	if other, ok := other.(*TypeRefType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(TypeRefType{}, "provenance"))
-	}
-	return false
-}
 func (t *TypeRefType) String() string {
 	result := t.Name
 	if len(t.TypeArgs) > 0 {
@@ -219,12 +206,6 @@ func (t *PrimType) Accept(v TypeVisitor) Type {
 		return result
 	}
 	return t
-}
-func (t *PrimType) Equal(other Type) bool {
-	if other, ok := other.(*PrimType); ok {
-		return t.Prim == other.Prim
-	}
-	return false
 }
 func (t *PrimType) String() string {
 	switch t.Prim {
@@ -283,13 +264,6 @@ func (t *RegexType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
-func (t *RegexType) Equal(other Type) bool {
-	if other, ok := other.(*RegexType); ok {
-		// Compare the regex patterns as strings since regexp.Regexp doesn't have value equality
-		return t.Regex.String() == other.Regex.String()
-	}
-	return false
-}
 func (t *RegexType) String() string {
 	return t.Regex.String()
 }
@@ -313,12 +287,6 @@ func (t *LitType) Accept(v TypeVisitor) Type {
 		return result
 	}
 	return t
-}
-func (t *LitType) Equal(other Type) bool {
-	if other, ok := other.(*LitType); ok {
-		return t.Lit.Equal(other.Lit)
-	}
-	return false
 }
 func (t *LitType) String() string {
 	switch lit := t.Lit.(type) {
@@ -353,12 +321,6 @@ func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
-func (t *UniqueSymbolType) Equal(other Type) bool {
-	if other, ok := other.(*UniqueSymbolType); ok {
-		return t.Value == other.Value
-	}
-	return false
-}
 func (t *UniqueSymbolType) String() string {
 	return "symbol" + fmt.Sprint(t.Value)
 }
@@ -378,12 +340,6 @@ func (t *UnknownType) Accept(v TypeVisitor) Type {
 }
 
 func NewUnknownType() *UnknownType { return &UnknownType{provenance: nil} }
-func (t *UnknownType) Equal(other Type) bool {
-	if _, ok := other.(*UnknownType); ok {
-		return true
-	}
-	return false
-}
 func (t *UnknownType) String() string {
 	return "unknown"
 }
@@ -403,12 +359,6 @@ func (t *NeverType) Accept(v TypeVisitor) Type {
 }
 
 func NewNeverType() *NeverType { return &NeverType{provenance: nil} }
-func (t *NeverType) Equal(other Type) bool {
-	if _, ok := other.(*NeverType); ok {
-		return true
-	}
-	return false
-}
 func (t *NeverType) String() string {
 	return "never"
 }
@@ -428,12 +378,6 @@ func (t *AnyType) Accept(v TypeVisitor) Type {
 }
 
 func NewAnyType() *AnyType { return &AnyType{provenance: nil} }
-func (t *AnyType) Equal(other Type) bool {
-	if _, ok := other.(*AnyType); ok {
-		return true
-	}
-	return false
-}
 func (t *AnyType) String() string {
 	return "any"
 }
@@ -450,12 +394,6 @@ func (t *GlobalThisType) Accept(v TypeVisitor) Type {
 		return result
 	}
 	return t
-}
-func (t *GlobalThisType) Equal(other Type) bool {
-	if _, ok := other.(*GlobalThisType); ok {
-		return true
-	}
-	return false
 }
 func (t *GlobalThisType) String() string {
 	return "this"
@@ -551,13 +489,6 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return result
-}
-func (t *FuncType) Equal(other Type) bool {
-	if other, ok := other.(*FuncType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(FuncType{}, "provenance"))
-	}
-	return false
 }
 func (t *FuncType) String() string {
 	result := "fn "
@@ -887,13 +818,6 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *ObjectType) Equal(other Type) bool {
-	if other, ok := other.(*ObjectType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(ObjectType{}, "provenance"))
-	}
-	return false
-}
 func (t *ObjectType) String() string {
 	result := "{"
 	if len(t.Elems) > 0 {
@@ -973,13 +897,6 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *TupleType) Equal(other Type) bool {
-	if other, ok := other.(*TupleType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(TupleType{}, "provenance"))
-	}
-	return false
-}
 func (t *TupleType) String() string {
 	result := "["
 	if len(t.Elems) > 0 {
@@ -1023,12 +940,6 @@ func (t *RestSpreadType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return result
-}
-func (t *RestSpreadType) Equal(other Type) bool {
-	if other, ok := other.(*RestSpreadType); ok {
-		return t.Type.Equal(other.Type)
-	}
-	return false
 }
 func (t *RestSpreadType) String() string {
 	return "..." + t.Type.String()
@@ -1078,13 +989,6 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return result
-}
-func (t *UnionType) Equal(other Type) bool {
-	if other, ok := other.(*UnionType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(UnionType{}, "provenance"))
-	}
-	return false
 }
 
 // TODO: handle precedence when printing
@@ -1140,13 +1044,6 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *IntersectionType) Equal(other Type) bool {
-	if other, ok := other.(*IntersectionType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(IntersectionType{}, "provenance"))
-	}
-	return false
-}
 
 // TODO: handle precedence when printing
 func (t *IntersectionType) String() string {
@@ -1186,12 +1083,6 @@ func (t *KeyOfType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *KeyOfType) Equal(other Type) bool {
-	if other, ok := other.(*KeyOfType); ok {
-		return t.Type.Equal(other.Type)
-	}
-	return false
-}
 
 // TODO: handle precedence when printing
 func (t *KeyOfType) String() string {
@@ -1224,13 +1115,6 @@ func (t *IndexType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return result
-}
-func (t *IndexType) Equal(other Type) bool {
-	if other, ok := other.(*IndexType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(IndexType{}, "provenance"))
-	}
-	return false
 }
 func (t *IndexType) String() string {
 	return t.Target.String() + "[" + t.Index.String() + "]"
@@ -1269,13 +1153,6 @@ func (t *CondType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *CondType) Equal(other Type) bool {
-	if other, ok := other.(*CondType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(CondType{}, "provenance"))
-	}
-	return false
-}
 func NewCondType(check Type, extends Type, cons Type, alt Type) *CondType {
 	return &CondType{
 		Check:      check,
@@ -1303,12 +1180,6 @@ func (t *InferType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
-func (t *InferType) Equal(other Type) bool {
-	if other, ok := other.(*InferType); ok {
-		return t.Name == other.Name
-	}
-	return false
-}
 func (t *InferType) String() string {
 	return "infer " + t.Name
 }
@@ -1316,6 +1187,41 @@ func (t *InferType) String() string {
 func NewInferType(name string) *InferType {
 	return &InferType{
 		Name:       name,
+		provenance: nil,
+	}
+}
+
+type MutableType struct {
+	Type       Type
+	provenance Provenance
+}
+
+func (t *MutableType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*MutableType)
+	}
+
+	newType := t.Type.Accept(v)
+	var result Type = t
+	if newType != t.Type {
+		result = &MutableType{
+			Type:       newType,
+			provenance: t.provenance,
+		}
+	}
+
+	if visitResult := v.ExitType(result); visitResult != nil {
+		return visitResult
+	}
+	return result
+}
+func (t *MutableType) String() string {
+	return "mut " + t.Type.String()
+}
+
+func NewMutableType(typ Type) *MutableType {
+	return &MutableType{
+		Type:       typ,
 		provenance: nil,
 	}
 }
@@ -1332,12 +1238,6 @@ func (t *WildcardType) Accept(v TypeVisitor) Type {
 		return result
 	}
 	return t
-}
-func (t *WildcardType) Equal(other Type) bool {
-	if _, ok := other.(*WildcardType); ok {
-		return true
-	}
-	return false
 }
 func (t *WildcardType) String() string {
 	return "_"
@@ -1385,13 +1285,6 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return result
-}
-func (t *ExtractorType) Equal(other Type) bool {
-	if other, ok := other.(*ExtractorType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(ExtractorType{}, "provenance"))
-	}
-	return false
 }
 func (t *ExtractorType) String() string {
 	result := t.Extractor.String()
@@ -1447,13 +1340,6 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *TemplateLitType) Equal(other Type) bool {
-	if other, ok := other.(*TemplateLitType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(TemplateLitType{}, "provenance"))
-	}
-	return false
-}
 func (t *TemplateLitType) String() string {
 	result := "`"
 	if len(t.Quasis) > 0 {
@@ -1481,12 +1367,6 @@ func (t *IntrinsicType) Accept(v TypeVisitor) Type {
 		return result
 	}
 	return t
-}
-func (t *IntrinsicType) Equal(other Type) bool {
-	if other, ok := other.(*IntrinsicType); ok {
-		return t.Name == other.Name
-	}
-	return false
 }
 func (t *IntrinsicType) String() string {
 	return t.Name
@@ -1575,13 +1455,6 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *NamespaceType) Equal(other Type) bool {
-	if other, ok := other.(*NamespaceType); ok {
-		// nolint: exhaustruct
-		return cmp.Equal(t, other, cmpopts.IgnoreFields(NamespaceType{}, "provenance"))
-	}
-	return false
-}
 func (t *NamespaceType) String() string {
 	var builder strings.Builder
 	builder.WriteString("namespace {")
@@ -1603,4 +1476,31 @@ func (t *NamespaceType) String() string {
 	}
 	builder.WriteString("}")
 	return builder.String()
+}
+
+func regexEqual(x, y *regexp.Regexp) bool {
+	if x == nil || y == nil {
+		return x == y
+	}
+	return x.String() == y.String()
+}
+
+func Equals(t1 Type, t2 Type) bool {
+	return cmp.Equal(t1, t2,
+		cmpopts.IgnoreUnexported(
+			// nolint:exhaustruct
+			TypeVarType{}, TypeRefType{}, PrimType{}, RegexType{}, regexp.Regexp{}, LitType{},
+			// nolint:exhaustruct
+			UniqueSymbolType{}, UnknownType{}, NeverType{}, AnyType{}, GlobalThisType{},
+			// nolint:exhaustruct
+			FuncType{}, ObjectType{}, TupleType{}, RestSpreadType{}, UnionType{},
+			// nolint:exhaustruct
+			IntersectionType{}, KeyOfType{}, IndexType{}, CondType{}, InferType{},
+			// nolint:exhaustruct
+			MutableType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
+			// nolint:exhaustruct
+			IntrinsicType{}, NamespaceType{}, MappedElemType{},
+		),
+		cmp.Comparer(regexEqual),
+	)
 }

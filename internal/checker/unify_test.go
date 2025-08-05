@@ -668,3 +668,221 @@ func TestUnifyUnknownType(t *testing.T) {
 		assert.Empty(t, errors, "union type should be assignable to UnknownType")
 	})
 }
+
+func TestUnifyMutableTypes(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{}
+
+	t.Run("identical mutable types should unify", func(t *testing.T) {
+		// mut number should unify with mut number
+		numberType := NewNumType()
+		mutType1 := NewMutableType(numberType)
+		mutType2 := NewMutableType(numberType)
+
+		errors := checker.unify(ctx, mutType1, mutType2)
+		assert.Empty(t, errors, "identical mutable types should unify")
+	})
+
+	t.Run("different mutable types should not unify", func(t *testing.T) {
+		// mut number should NOT unify with mut string (invariant)
+		numberType := NewNumType()
+		stringType := NewStrType()
+		mutNumber := NewMutableType(numberType)
+		mutString := NewMutableType(stringType)
+
+		errors := checker.unify(ctx, mutNumber, mutString)
+		assert.NotEmpty(t, errors, "different mutable types should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable type should not unify with covariant subtype", func(t *testing.T) {
+		// mut number should NOT unify with mut any (even though number is subtype of any)
+		// This is different from regular unify which would allow this covariant relationship
+		numberType := NewNumType()
+		anyType := NewAnyType()
+		mutNumber := NewMutableType(numberType)
+		mutAny := NewMutableType(anyType)
+
+		errors := checker.unify(ctx, mutNumber, mutAny)
+		assert.NotEmpty(t, errors, "mutable types require exact equality, not covariance")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable object types with same structure should unify", func(t *testing.T) {
+		// mut {x: number, y: string} should unify with mut {x: number, y: string}
+		numberType := NewNumType()
+		stringType := NewStrType()
+
+		objElems1 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+			NewPropertyElemType(NewStrKey("y"), stringType),
+		}
+		objElems2 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+			NewPropertyElemType(NewStrKey("y"), stringType),
+		}
+
+		objType1 := NewObjectType(objElems1)
+		objType2 := NewObjectType(objElems2)
+		mutObj1 := NewMutableType(objType1)
+		mutObj2 := NewMutableType(objType2)
+
+		errors := checker.unify(ctx, mutObj1, mutObj2)
+		assert.Empty(t, errors, "mutable object types with identical structure should unify")
+	})
+
+	t.Run("mutable object types with different property types should not unify", func(t *testing.T) {
+		// mut {x: number} should NOT unify with mut {x: string}
+		numberType := NewNumType()
+		stringType := NewStrType()
+
+		objElems1 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+		}
+		objElems2 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), stringType),
+		}
+
+		objType1 := NewObjectType(objElems1)
+		objType2 := NewObjectType(objElems2)
+		mutObj1 := NewMutableType(objType1)
+		mutObj2 := NewMutableType(objType2)
+
+		errors := checker.unify(ctx, mutObj1, mutObj2)
+		assert.NotEmpty(t, errors, "mutable object types with different property types should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable array types with same element type should unify", func(t *testing.T) {
+		// mut Array<number> should unify with mut Array<number>
+		numberType := NewNumType()
+		arrayType1 := NewTypeRefType("Array", nil, numberType)
+		arrayType2 := NewTypeRefType("Array", nil, numberType)
+		mutArray1 := NewMutableType(arrayType1)
+		mutArray2 := NewMutableType(arrayType2)
+
+		errors := checker.unify(ctx, mutArray1, mutArray2)
+		assert.Empty(t, errors, "mutable array types with same element type should unify")
+	})
+
+	t.Run("mutable array types with different element types should not unify", func(t *testing.T) {
+		// mut Array<number> should NOT unify with mut Array<string>
+		numberType := NewNumType()
+		stringType := NewStrType()
+		arrayType1 := NewTypeRefType("Array", nil, numberType)
+		arrayType2 := NewTypeRefType("Array", nil, stringType)
+		mutArray1 := NewMutableType(arrayType1)
+		mutArray2 := NewMutableType(arrayType2)
+
+		errors := checker.unify(ctx, mutArray1, mutArray2)
+		assert.NotEmpty(t, errors, "mutable array types with different element types should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable tuple types with same elements should unify", func(t *testing.T) {
+		// mut [number, string] should unify with mut [number, string]
+		numberType := NewNumType()
+		stringType := NewStrType()
+		tupleType1 := NewTupleType(numberType, stringType)
+		tupleType2 := NewTupleType(numberType, stringType)
+		mutTuple1 := NewMutableType(tupleType1)
+		mutTuple2 := NewMutableType(tupleType2)
+
+		errors := checker.unify(ctx, mutTuple1, mutTuple2)
+		assert.Empty(t, errors, "mutable tuple types with same elements should unify")
+	})
+
+	t.Run("mutable tuple types with different elements should not unify", func(t *testing.T) {
+		// mut [number, string] should NOT unify with mut [number, boolean]
+		numberType := NewNumType()
+		stringType := NewStrType()
+		boolType := NewBoolType()
+		tupleType1 := NewTupleType(numberType, stringType)
+		tupleType2 := NewTupleType(numberType, boolType)
+		mutTuple1 := NewMutableType(tupleType1)
+		mutTuple2 := NewMutableType(tupleType2)
+
+		errors := checker.unify(ctx, mutTuple1, mutTuple2)
+		assert.NotEmpty(t, errors, "mutable tuple types with different elements should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable literal types should unify only with exact same literal", func(t *testing.T) {
+		// mut 42 should unify with mut 42 but not with mut 43
+		numLit42_1 := NewLitType(&NumLit{Value: 42})
+		numLit42_2 := NewLitType(&NumLit{Value: 42})
+		numLit43 := NewLitType(&NumLit{Value: 43})
+		mutLit42_1 := NewMutableType(numLit42_1)
+		mutLit42_2 := NewMutableType(numLit42_2)
+		mutLit43 := NewMutableType(numLit43)
+
+		// Same literal values should unify
+		errors := checker.unify(ctx, mutLit42_1, mutLit42_2)
+		assert.Empty(t, errors, "mutable literal types with same value should unify")
+
+		// Different literal values should not unify
+		errors = checker.unify(ctx, mutLit42_1, mutLit43)
+		assert.NotEmpty(t, errors, "mutable literal types with different values should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+
+	t.Run("mutable function types should unify with exact same signature", func(t *testing.T) {
+		// mut (x: number) -> string should unify with mut (x: number) -> string
+		numberType := NewNumType()
+		stringType := NewStrType()
+		param1 := NewFuncParam(nil, numberType)
+		param2 := NewFuncParam(nil, numberType)
+
+		funcType1 := &FuncType{
+			Params: []*FuncParam{param1},
+			Return: stringType,
+		}
+		funcType2 := &FuncType{
+			Params: []*FuncParam{param2},
+			Return: stringType,
+		}
+
+		mutFunc1 := NewMutableType(funcType1)
+		mutFunc2 := NewMutableType(funcType2)
+
+		errors := checker.unify(ctx, mutFunc1, mutFunc2)
+		assert.Empty(t, errors, "mutable function types with identical signatures should unify")
+	})
+
+	t.Run("nested mutable types should unify with exact same nesting", func(t *testing.T) {
+		// mut mut number should unify with mut mut number
+		numberType := NewNumType()
+		mutNumber := NewMutableType(numberType)
+		mutMutNumber1 := NewMutableType(mutNumber)
+		mutMutNumber2 := NewMutableType(NewMutableType(numberType))
+
+		errors := checker.unify(ctx, mutMutNumber1, mutMutNumber2)
+		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")
+	})
+
+	t.Run("mutable union types require exact same union members", func(t *testing.T) {
+		// mut (number | string) should unify with mut (number | string)
+		// but NOT with mut (number | boolean)
+		numberType := NewNumType()
+		stringType := NewStrType()
+		boolType := NewBoolType()
+
+		union1 := NewUnionType(numberType, stringType)
+		union2 := NewUnionType(numberType, stringType)
+		union3 := NewUnionType(numberType, boolType)
+
+		mutUnion1 := NewMutableType(union1)
+		mutUnion2 := NewMutableType(union2)
+
+		mutUnion3 := NewMutableType(union3)
+
+		// Same union should unify
+		errors := checker.unify(ctx, mutUnion1, mutUnion2)
+		assert.Empty(t, errors, "mutable union types with same members should unify")
+
+		// Different unions should not unify
+		errors = checker.unify(ctx, mutUnion1, mutUnion3)
+		assert.NotEmpty(t, errors, "mutable union types with different members should not unify")
+		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+}

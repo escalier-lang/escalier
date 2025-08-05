@@ -28,18 +28,35 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if tv2, ok := t2.(*TypeVarType); ok {
 		return c.bind(tv2, t1)
 	}
-	// | AnyType, _ -> ...
-	if _, ok := t1.(*AnyType); ok {
-		return nil
+	// TODO: Unification of mutable types with mutable types should be invariant
+	// | MutableType, MutableType -> ...
+	if mut1, ok := t1.(*MutableType); ok {
+		if mut2, ok := t2.(*MutableType); ok {
+			// MutableType can be unified with another MutableType
+			// by unifying their underlying types
+			return c.unifyMut(ctx, mut1, mut2)
+		}
 	}
-	// | _, AnyType -> ...
-	if _, ok := t2.(*AnyType); ok {
-		return nil
+	// TODO: This should only be allowed if the value being referenced has no
+	// immutable references (i.e. the lifetime of any immutable references has
+	// ended).
+	// | _, MutableType -> ...
+	if mut, ok := t2.(*MutableType); ok {
+		return c.unify(ctx, t1, mut.Type)
+	}
+	// TODO: This should only be allowed if the value being referenced has no
+	// immutable references (i.e. the lifetime of any immutable references has
+	// ended).
+	// NOTE: This avoids issues where a mutable reference will modify the value
+	// while the immutable reference is still using it.
+	// | MutableType, _ -> ...
+	if mut, ok := t1.(*MutableType); ok {
+		return c.unify(ctx, mut.Type, t2)
 	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
 		if prim2, ok := t2.(*PrimType); ok {
-			if prim1.Equal(prim2) {
+			if Equals(prim1, prim2) {
 				return nil
 			}
 			// Different primitive types cannot be unified
@@ -48,6 +65,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				T2: prim2,
 			}}
 		}
+	}
+	// What's the difference between wildcard and any?
+	// TODO: dedupe these types
+	// | AnyType, _ -> ...
+	if _, ok := t1.(*AnyType); ok {
+		return nil
+	}
+	// | _, AnyType -> ...
+	if _, ok := t2.(*AnyType); ok {
+		return nil
 	}
 	// | WildcardType, _ -> ...
 	if _, ok := t1.(*WildcardType); ok {
@@ -344,7 +371,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | RegexType, RegexType -> ...
 	if regex1, ok := t1.(*RegexType); ok {
 		if regex2, ok := t2.(*RegexType); ok {
-			if regex1.Equal(regex2) {
+			if Equals(regex1, regex2) {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
@@ -399,7 +426,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | UniqueSymbolType, UniqueSymbolType -> ...
 	if unique1, ok := t1.(*UniqueSymbolType); ok {
 		if unique2, ok := t2.(*UniqueSymbolType); ok {
-			if unique1.Equal(unique2) {
+			if Equals(unique1, unique2) {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
@@ -834,7 +861,7 @@ func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
 		panic("Cannot bind nil types") // this should never happen
 	}
 
-	if !t1.Equal(t2) {
+	if !Equals(t1, t2) {
 		if occursInType(t1, t2) {
 			return []Error{&RecursiveUnificationError{
 				Left:  t1,
@@ -862,7 +889,7 @@ func (v *OccursInVisitor) EnterType(t Type) Type {
 }
 
 func (v *OccursInVisitor) ExitType(t Type) Type {
-	if Prune(t).Equal(v.t1) {
+	if Equals(Prune(t), v.t1) {
 		v.result = true
 	}
 	return nil

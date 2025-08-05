@@ -132,7 +132,7 @@ func TestNewRegexType(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if test.expectPanic {
 				assert.Panics(t, func() {
-					NewRegexType(test.pattern)
+					_, _ = NewRegexType(test.pattern)
 				})
 				return
 			}
@@ -190,13 +190,13 @@ func TestRegexType_Methods(t *testing.T) {
 		regex3, _ := NewRegexType("/world/")
 
 		// Same pattern should be equal
-		assert.True(t, regex1.Equal(regex2))
+		assert.True(t, Equals(regex1, regex2))
 
 		// Different patterns should not be equal
-		assert.False(t, regex1.Equal(regex3))
+		assert.False(t, Equals(regex1, regex3))
 
 		// Different types should not be equal
-		assert.False(t, regex1.Equal(NewStrType()))
+		assert.False(t, Equals(regex1, NewStrType()))
 	})
 
 	t.Run("String method", func(t *testing.T) {
@@ -290,5 +290,58 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 		// We can verify this by checking the SubexpNames
 		names := regexType.Regex.SubexpNames()
 		assert.Contains(t, names, "name")
+	})
+}
+
+func TestObjectType_Equal(t *testing.T) {
+	t.Run("empty object types should be equal", func(t *testing.T) {
+		objType1 := NewObjectType([]ObjTypeElem{})
+		objType2 := NewObjectType([]ObjTypeElem{})
+
+		assert.True(t, Equals(objType1, objType2), "Empty object types should be equal")
+	})
+
+	t.Run("object type should not be equal to non-object type", func(t *testing.T) {
+		numberType := NewNumType()
+		objType := NewObjectType([]ObjTypeElem{})
+
+		assert.False(t, Equals(objType, numberType), "Object type should not be equal to primitive type")
+		assert.False(t, Equals(objType, NewStrType()), "Object type should not be equal to different type")
+	})
+
+	t.Run("object types with single identical property should be equal", func(t *testing.T) {
+		// Create two object types with the same field: {x: number}
+		numberType := NewNumType()
+
+		elems1 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+		}
+		elems2 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+		}
+
+		objType1 := NewObjectType(elems1)
+		objType2 := NewObjectType(elems2)
+
+		assert.True(t, Equals(objType1, objType2), "Object types with identical single property should be equal")
+		assert.True(t, Equals(objType2, objType1), "Equality should be symmetric")
+	})
+
+	t.Run("object types with different single property should not be equal", func(t *testing.T) {
+		// Create two object types: {x: number} vs {x: string}
+		numberType := NewNumType()
+		stringType := NewStrType()
+
+		elems1 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), numberType),
+		}
+		elems2 := []ObjTypeElem{
+			NewPropertyElemType(NewStrKey("x"), stringType),
+		}
+
+		objType1 := NewObjectType(elems1)
+		objType2 := NewObjectType(elems2)
+
+		assert.False(t, Equals(objType1, objType2), "Object types with different property types should not be equal")
 	})
 }
