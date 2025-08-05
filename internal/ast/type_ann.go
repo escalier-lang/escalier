@@ -34,6 +34,7 @@ func (*ImportType) isTypeAnn()          {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
 func (*EmptyTypeAnn) isTypeAnn()        {}
+func (*RestSpreadTypeAnn) isTypeAnn()   {}
 
 type LitTypeAnn struct {
 	Lit          Lit
@@ -185,7 +186,23 @@ type IndexParamTypeAnn struct {
 }
 
 type RestSpreadTypeAnn struct {
-	Value TypeAnn
+	Value        TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewRestSpreadTypeAnn(value TypeAnn, span Span) *RestSpreadTypeAnn {
+	return &RestSpreadTypeAnn{Value: value, span: span, inferredType: nil}
+}
+
+func (t *RestSpreadTypeAnn) Span() Span               { return t.span }
+func (t *RestSpreadTypeAnn) InferredType() Type       { return t.inferredType }
+func (t *RestSpreadTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
+func (t *RestSpreadTypeAnn) Accept(v Visitor) {
+	if v.EnterTypeAnn(t) {
+		t.Value.Accept(v)
+	}
+	v.ExitTypeAnn(t)
 }
 
 type ObjectTypeAnn struct {

@@ -469,6 +469,18 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
 
+	// Handle rest spread syntax: ...T
+	if token.Type == DotDotDot {
+		p.lexer.consume() // consume '...'
+		value := p.typeAnn()
+		if value == nil {
+			p.reportError(token.Span, "expected type annotation after '...'")
+			return nil
+		}
+		span := ast.MergeSpans(token.Span, value.Span())
+		return ast.NewRestSpreadTypeAnn(value, span)
+	}
+
 	mod := ""
 	if token.Type == Get {
 		p.lexer.consume() // consume 'get'

@@ -92,6 +92,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectType": {
 			input: "{[K]: T[K] for K in Keys<T>}",
 		},
+		"ObjectTypeWithRestSpread": {
+			input: "{x: string, ...T}",
+		},
+		"ObjectTypeWithOnlyRestSpread": {
+			input: "{...T}",
+		},
+		"ObjectTypeWithMultipleRestSpread": {
+			input: "{x: string, ...T, y: number, ...U}",
+		},
 	}
 
 	for name, test := range tests {

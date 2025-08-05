@@ -593,6 +593,7 @@ func (p *Parser) param() *ast.Param {
 	opt := false
 	if token.Type == Question {
 		p.lexer.consume() // consume '?'
+		token = p.lexer.peek()
 		opt = true
 	}
 
