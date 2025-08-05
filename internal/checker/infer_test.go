@@ -230,13 +230,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t4, y: t6) -> number",
+				"add": "fn (x: t3, y: t5) -> number",
 			},
 		},
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn (msg: t4) -> undefined",
+				"log": "fn (msg: t3) -> undefined",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -251,7 +251,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t4, y: t6) -> true | false",
+				"add": "fn (x: t3, y: t5) -> true | false",
 			},
 		},
 		"MutualRecuriveFunctions": {

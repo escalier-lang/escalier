@@ -24,13 +24,14 @@ const (
 )
 
 type VarDecl struct {
-	Kind    VariableKind
-	Pattern Pat
-	TypeAnn TypeAnn // optional
-	Init    Expr    // optional
-	export  bool
-	declare bool
-	span    Span
+	Kind         VariableKind
+	Pattern      Pat
+	TypeAnn      TypeAnn // optional
+	Init         Expr    // optional
+	export       bool
+	declare      bool
+	span         Span
+	InferredType Type // optional, used to store the inferred pattern type
 }
 
 func NewVarDecl(
@@ -43,13 +44,14 @@ func NewVarDecl(
 	span Span,
 ) *VarDecl {
 	return &VarDecl{
-		Kind:    kind,
-		Pattern: pattern,
-		TypeAnn: typeAnn,
-		Init:    init,
-		export:  export,
-		declare: declare,
-		span:    span,
+		Kind:         kind,
+		Pattern:      pattern,
+		TypeAnn:      typeAnn,
+		Init:         init,
+		export:       export,
+		declare:      declare,
+		span:         span,
+		InferredType: nil,
 	}
 }
 func (d *VarDecl) Export() bool  { return d.export }
