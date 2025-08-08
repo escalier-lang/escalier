@@ -6,6 +6,7 @@ ignore:
   - "internal/codegen/ast.go"
   - "internal/parser/token.go"
   - "internal/provenance/**"
+  - "internal/test_util/**"
   - "internal/type_system/**"
   - "tools/**"
   - "wasm_exec.js"

@@ -144,3 +144,26 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 
 	return mod, allErrors
 }
+
+// ParseTypeAnn parses a type annotation string and returns the resulting ast.TypeAnn.
+// This is a public interface for parsing type annotations from strings.
+//
+// Parameters:
+//   - ctx: Context for the parsing operation (with timeout)
+//   - typeAnnStr: The type annotation string to parse
+//
+// Returns:
+//   - ast.TypeAnn: The parsed type annotation AST node
+//   - []*Error: Any parsing errors that occurred
+func ParseTypeAnn(ctx context.Context, input string) (ast.TypeAnn, []*Error) {
+	source := &ast.Source{
+		Path:     "input.esc",
+		Contents: input,
+		ID:       0,
+	}
+
+	parser := NewParser(ctx, source)
+	typeAnn := parser.typeAnn()
+
+	return typeAnn, parser.errors
+}
