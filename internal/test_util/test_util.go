@@ -173,15 +173,36 @@ func convertPatternToTypePat(pat ast.Pat) Pat {
 		return NewIdentPat(p.Name)
 	case *ast.WildcardPat:
 		return &WildcardPat{}
-	case *ast.LitPat:
-		// For literal patterns, we just use the identifier name as a placeholder
-		return NewIdentPat("_lit")
+	case *ast.ObjectPat:
+		elems := make([]ObjPatElem, len(p.Elems))
+		for i, elem := range p.Elems {
+			switch elem := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				elems[i] = NewObjKeyValuePat(elem.Key.Name, convertPatternToTypePat(elem.Value))
+			case *ast.ObjShorthandPat:
+				elems[i] = NewObjShorthandPat(elem.Key.Name)
+			case *ast.ObjRestPat:
+				elems[i] = NewObjRestPat(convertPatternToTypePat(elem.Pattern))
+			default:
+				panic(fmt.Sprintf("convertPatternToTypePat: unsupported object pattern element: %T", elem))
+			}
+		}
+		return NewObjectPat(elems)
+	case *ast.TuplePat:
+		elems := make([]Pat, len(p.Elems))
+		for i, elem := range p.Elems {
+			elems[i] = convertPatternToTypePat(elem)
+		}
+		return NewTuplePat(elems)
 	case *ast.RestPat:
 		innerPattern := convertPatternToTypePat(p.Pattern)
 		return NewRestPat(innerPattern)
+	case *ast.LitPat:
+		panic("Literal patterns are not supported in type annotations")
+	case *ast.ExtractorPat:
+		panic("Extractor patterns are not supported in type annotations")
 	default:
-		// For complex patterns, use a placeholder identifier
-		return NewIdentPat("_complex")
+		panic("Unknown pattern type in type annotation")
 	}
 }
 
