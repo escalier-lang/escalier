@@ -559,6 +559,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		return funcType, slices.Concat(sigErrors, bodyErrors, unifyErrors)
 	case *ast.IfElseExpr:
 		return c.inferIfElse(ctx, expr)
+	case *ast.DoExpr:
+		return c.inferDoExpr(ctx, expr)
 	default:
 		return NewNeverType(), []Error{
 			&UnimplementedError{
@@ -1026,6 +1028,31 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 	expr.SetInferredType(t)
 
 	return t, errors
+}
+
+func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (Type, []Error) {
+	errors := []Error{}
+
+	// Process all statements in the block
+	for _, stmt := range expr.Body.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+
+	// The type of the do-expression is the type of the last statement if it's an expression
+	var resultType Type = NewLitType(&UndefinedLit{}) // Default to undefined
+	if len(expr.Body.Stmts) > 0 {
+		lastStmt := expr.Body.Stmts[len(expr.Body.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			inferredType := exprStmt.Expr.InferredType()
+			if inferredType != nil {
+				resultType = inferredType
+			}
+		}
+	}
+
+	expr.SetInferredType(resultType)
+	return resultType, errors
 }
 
 func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {

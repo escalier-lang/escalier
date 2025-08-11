@@ -14,6 +14,7 @@ var precedence = map[ast.BinaryOp]int{
 	ast.Modulo:            12,
 	ast.Plus:              11,
 	ast.Minus:             11,
+	ast.Concatenation:     11,
 	ast.Assign:            10,
 	ast.LessThan:          9,
 	ast.LessThanEqual:     9,
@@ -69,6 +70,8 @@ loop:
 			nextOp = ast.Plus
 		case Minus:
 			nextOp = ast.Minus
+		case PlusPlus:
+			nextOp = ast.Concatenation
 		case Asterisk:
 			nextOp = ast.Times
 		case Slash:
@@ -348,6 +351,8 @@ func (p *Parser) primaryExpr() ast.Expr {
 			elems := parseDelimSeq(p, CloseBrace, Comma, p.objExprElem)
 			end := p.expect(CloseBrace, AlwaysConsume)
 			expr = ast.NewObject(elems, ast.Span{Start: token.Span.Start, End: end, SourceID: p.lexer.source.ID})
+		case Do:
+			return p.doExpr()
 		case BackTick:
 			temp := p.templateLitExpr(token, nil)
 			expr = temp
@@ -719,4 +724,44 @@ func (p *Parser) ifElse() ast.Expr {
 		cond, body, nil,
 		ast.Span{Start: start, End: token.Span.Start, SourceID: p.lexer.source.ID},
 	)
+}
+
+func (p *Parser) doExpr() ast.Expr {
+	start := p.lexer.peek().Span.Start
+	p.lexer.consume() // consume 'do'
+
+	block := p.block()
+
+	return ast.NewDo(block, ast.Span{Start: start, End: block.Span.End, SourceID: p.lexer.source.ID})
+}
+
+// isDoExpr looks ahead to determine if the current brace-enclosed block
+// should be parsed as a do-expression (contains statements) or an object literal
+func (p *Parser) isDoExpr() bool {
+	// Save current parser state
+	saved := p.saveState()
+	defer p.restoreState(saved)
+
+	token := p.lexer.peek()
+
+	// Check for empty braces
+	if token.Type == CloseBrace {
+		return false // Empty braces are an empty object literal
+	}
+
+	// Look for statement tokens that indicate do-expression
+	switch token.Type {
+	case Val, Var, Return, Fn, Type:
+		return true
+	case If, Match, Try, Throw:
+		return true
+	default:
+		return false
+	}
+}
+
+// blockBody parses the body of a block (statements without the surrounding braces)
+func (p *Parser) blockBody() []ast.Stmt {
+	stmts, _ := p.stmts(CloseBrace)
+	return *stmts
 }

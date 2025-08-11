@@ -50,6 +50,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"Addition": {
 			input: "a + b",
 		},
+		"Concatenation": {
+			input: "a ++ b",
+		},
 		"AddSub": {
 			input: "a - b + c",
 		},

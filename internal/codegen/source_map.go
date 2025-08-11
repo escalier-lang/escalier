@@ -119,6 +119,17 @@ func (s *SourceMapGenerator) TraverseStmt(stmt Stmt) {
 		if sk.Expr != nil {
 			s.TraverseExpr(sk.Expr)
 		}
+	case *BlockStmt:
+		for _, stmt := range sk.Stmts {
+			s.TraverseStmt(stmt)
+		}
+	case *IfStmt:
+		s.AddSegmentForNode(stmt)
+		s.TraverseExpr(sk.Test)
+		s.TraverseStmt(sk.Cons)
+		if sk.Alt != nil {
+			s.TraverseStmt(sk.Alt)
+		}
 	}
 }
 

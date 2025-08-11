@@ -1,0 +1,41 @@
+// Basic do-expression that returns a value
+export val sum = do {
+    val a = 5
+    val b = 10
+    a + b
+}
+
+// Do-expression with multiple statements
+export val message = do {
+    val greeting = "Hello"
+    val name = "World"
+    greeting ++ ", " ++ name ++ "!"
+}
+
+// Do-expression that returns undefined (no final expression)
+export val sideEffect = do {
+    val x = 42
+    console.log("Side effect executed")
+}
+
+// Nested do-expressions
+export val nested = do {
+    val outer = do {
+        val inner = 10
+        inner * 2
+    }
+    outer + 5
+}
+
+// Do-expression with conditional logic
+export val conditional = do {
+    val value = 15
+    if (value > 10) {
+        "large"
+    } else {
+        "small"
+    }
+}
+
+// Empty do-expression (should return undefined)
+export val empty = do {}

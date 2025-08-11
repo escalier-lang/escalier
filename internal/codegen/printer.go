@@ -36,6 +36,7 @@ var binaryOpMap = map[BinaryOp]string{
 	Times:             "*",
 	Divide:            "/",
 	Modulo:            "%",
+	Concatenation:     "+",
 	LessThan:          "<",
 	LessThanEqual:     "<=",
 	GreaterThan:       ">",
@@ -461,6 +462,25 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 			p.PrintExpr(s.Expr)
 		}
 		p.print(";")
+	case *BlockStmt:
+		p.print("{")
+		p.indent++
+		for _, stmt := range s.Stmts {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+		p.NewLine()
+		p.print("}")
+	case *IfStmt:
+		p.print("if (")
+		p.PrintExpr(s.Test)
+		p.print(") ")
+		p.PrintStmt(s.Cons)
+		if s.Alt != nil {
+			p.print(" else ")
+			p.PrintStmt(s.Alt)
+		}
 	}
 
 	end := p.location

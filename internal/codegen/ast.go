@@ -331,6 +331,7 @@ const (
 	Times             BinaryOp = "*"
 	Divide            BinaryOp = "/"
 	Modulo            BinaryOp = "%"
+	Concatenation     BinaryOp = "++"
 	LessThan          BinaryOp = "<"
 	LessThanEqual     BinaryOp = "<="
 	GreaterThan       BinaryOp = ">"
@@ -484,6 +485,8 @@ type Stmt interface {
 func (*ExprStmt) isStmt()   {}
 func (*DeclStmt) isStmt()   {}
 func (*ReturnStmt) isStmt() {}
+func (*BlockStmt) isStmt()  {}
+func (*IfStmt) isStmt()     {}
 
 type ExprStmt struct {
 	Expr   Expr
@@ -514,6 +517,34 @@ type ReturnStmt struct {
 func (s *ReturnStmt) Span() *Span        { return s.span }
 func (s *ReturnStmt) SetSpan(span *Span) { s.span = span }
 func (s *ReturnStmt) Source() ast.Node   { return s.source }
+
+type BlockStmt struct {
+	Stmts  []Stmt
+	span   *Span
+	source ast.Node
+}
+
+func NewBlockStmt(stmts []Stmt, source ast.Node) *BlockStmt {
+	return &BlockStmt{Stmts: stmts, source: source, span: nil}
+}
+func (s *BlockStmt) Span() *Span        { return s.span }
+func (s *BlockStmt) SetSpan(span *Span) { s.span = span }
+func (s *BlockStmt) Source() ast.Node   { return s.source }
+
+type IfStmt struct {
+	Test   Expr
+	Cons   Stmt
+	Alt    Stmt // optional, can be nil
+	span   *Span
+	source ast.Node
+}
+
+func NewIfStmt(test Expr, cons Stmt, alt Stmt, source ast.Node) *IfStmt {
+	return &IfStmt{Test: test, Cons: cons, Alt: alt, source: source, span: nil}
+}
+func (s *IfStmt) Span() *Span        { return s.span }
+func (s *IfStmt) SetSpan(span *Span) { s.span = span }
+func (s *IfStmt) Source() ast.Node   { return s.source }
 
 // TODO add support for imports and exports
 type Module struct {
