@@ -710,7 +710,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		// Build the consequent (then branch)
 		consStmts := b.buildBlockStmtsWithTempAssignment(expr.Cons.Stmts, tempVar, expr)
 
-		var altStmt Stmt = nil
+		var altStmt Stmt
 		if expr.Alt != nil {
 			var altStmts []Stmt
 
