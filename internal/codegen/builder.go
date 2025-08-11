@@ -825,8 +825,7 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 
 	if len(stmts) > 0 {
 		// Build all statements except the last one
-		for i, stmt := range stmts[:len(stmts)-1] {
-			_ = i // unused
+		for _, stmt := range stmts[:len(stmts)-1] {
 			blockStmts = slices.Concat(blockStmts, b.buildStmt(stmt))
 		}
 

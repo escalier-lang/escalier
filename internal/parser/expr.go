@@ -734,34 +734,3 @@ func (p *Parser) doExpr() ast.Expr {
 
 	return ast.NewDo(block, ast.Span{Start: start, End: block.Span.End, SourceID: p.lexer.source.ID})
 }
-
-// isDoExpr looks ahead to determine if the current brace-enclosed block
-// should be parsed as a do-expression (contains statements) or an object literal
-func (p *Parser) isDoExpr() bool {
-	// Save current parser state
-	saved := p.saveState()
-	defer p.restoreState(saved)
-
-	token := p.lexer.peek()
-
-	// Check for empty braces
-	if token.Type == CloseBrace {
-		return false // Empty braces are an empty object literal
-	}
-
-	// Look for statement tokens that indicate do-expression
-	switch token.Type {
-	case Val, Var, Return, Fn, Type:
-		return true
-	case If, Match, Try, Throw:
-		return true
-	default:
-		return false
-	}
-}
-
-// blockBody parses the body of a block (statements without the surrounding braces)
-func (p *Parser) blockBody() []ast.Stmt {
-	stmts, _ := p.stmts(CloseBrace)
-	return *stmts
-}
