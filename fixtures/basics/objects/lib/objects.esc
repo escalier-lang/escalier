@@ -5,7 +5,7 @@ val key = "c"
 val c = obj1["c"]
 
 type Point = {x: number, y: number}
-val p: Point = {x: 0, y: 0}
+val p: mut Point = {x: 0, y: 0}
 
 export declare val obj2: {d?: number, e?: {f: string}}
 val d = obj2.d
