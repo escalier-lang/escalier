@@ -1,5 +1,0 @@
-lib/do.esc:27:5: undefined cannot be assigned to number
-
-27:     outer + 5
-        ^^^^^
-
