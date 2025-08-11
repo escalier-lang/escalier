@@ -76,6 +76,7 @@ const (
 	Times             BinaryOp = "*"
 	Divide            BinaryOp = "/"
 	Modulo            BinaryOp = "%"
+	Concatenation     BinaryOp = "++"
 	LessThan          BinaryOp = "<"
 	LessThanEqual     BinaryOp = "<="
 	GreaterThan       BinaryOp = ">"

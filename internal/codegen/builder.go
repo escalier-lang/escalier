@@ -695,6 +695,55 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts)),
 			expr,
 		), []Stmt{}
+	case *ast.DoExpr:
+		return b.buildBlockWithTempVar(expr.Body.Stmts, expr)
+	case *ast.IfElseExpr:
+		// Generate a temporary variable for the if-else result
+		tempVar, tempDeclStmt := b.createTempVar(expr)
+
+		stmts := []Stmt{tempDeclStmt}
+
+		// Build the condition
+		condExpr, condStmts := b.buildExpr(expr.Cond)
+		stmts = slices.Concat(stmts, condStmts)
+
+		// Build the consequent (then branch)
+		consStmts := b.buildBlockStmtsWithTempAssignment(expr.Cons.Stmts, tempVar, expr)
+
+		var altStmt Stmt
+		if expr.Alt != nil {
+			var altStmts []Stmt
+
+			if expr.Alt.Block != nil {
+				// Alternative is a block
+				altStmts = b.buildBlockStmtsWithTempAssignment(expr.Alt.Block.Stmts, tempVar, expr)
+			} else if expr.Alt.Expr != nil {
+				// Alternative is an expression
+				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr)
+				altStmts = slices.Concat(altStmts, altExprStmts)
+
+				assignment := NewBinaryExpr(tempVar, Assign, altExpr, expr.Alt.Expr)
+				altStmts = append(altStmts, &ExprStmt{
+					Expr:   assignment,
+					span:   nil,
+					source: expr.Alt.Expr,
+				})
+			}
+
+			// Always wrap alternative in a block for proper formatting
+			if len(altStmts) > 0 {
+				altStmt = NewBlockStmt(altStmts, expr)
+			}
+		}
+
+		// Create the consequent statement - always wrap in a block for proper formatting
+		consStmt := NewBlockStmt(consStmts, expr)
+
+		// Create the if statement
+		ifStmt := NewIfStmt(condExpr, consStmt, altStmt, expr)
+		stmts = append(stmts, ifStmt)
+
+		return tempVar, stmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:
@@ -718,6 +767,120 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	default:
 		panic(fmt.Sprintf("TODO - buildObjKey - default case: %#v", k))
 	}
+}
+
+// createTempVar creates a temporary variable declaration and returns the temp variable
+// expression and the declaration statement.
+func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
+	tempId := b.NewTempId()
+	tempVar := NewIdentExpr(tempId, "", sourceExpr)
+
+	tempDecl := &VarDecl{
+		Kind: VarKind,
+		Decls: []*Declarator{
+			{
+				Pattern: NewIdentPat(tempId, nil, sourceExpr),
+				TypeAnn: nil,
+				Init:    nil,
+			},
+		},
+		declare: false,
+		export:  false,
+		span:    nil,
+		source:  sourceExpr,
+	}
+
+	declStmt := &DeclStmt{
+		Decl:   tempDecl,
+		span:   nil,
+		source: sourceExpr,
+	}
+
+	return tempVar, declStmt
+}
+
+// buildBlockWithTempVar builds a block of statements and assigns the result of the last
+// expression statement to a temporary variable. Returns the temp variable expression
+// and the statements needed to declare the temp variable and execute the block.
+func (b *Builder) buildBlockWithTempVar(stmts []ast.Stmt, sourceExpr ast.Expr) (Expr, []Stmt) {
+	// Generate a temporary variable
+	tempVar, tempDeclStmt := b.createTempVar(sourceExpr)
+
+	outStmts := []Stmt{tempDeclStmt}
+
+	// Build block statements
+	blockStmts := b.buildBlockStmtsWithTempAssignment(stmts, tempVar, sourceExpr)
+
+	// Create a block statement with the inner statements
+	block := NewBlockStmt(blockStmts, sourceExpr)
+	outStmts = append(outStmts, block)
+
+	return tempVar, outStmts
+}
+
+// buildBlockStmtsWithTempAssignment builds statements for a block, treating the last
+// statement specially by assigning its result to the given temp variable.
+func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Expr, sourceExpr ast.Expr) []Stmt {
+	blockStmts := []Stmt{}
+
+	if len(stmts) > 0 {
+		// Build all statements except the last one
+		for _, stmt := range stmts[:len(stmts)-1] {
+			blockStmts = slices.Concat(blockStmts, b.buildStmt(stmt))
+		}
+
+		// Handle the last statement specially
+		lastStmt := stmts[len(stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			// Convert the last expression statement to an assignment to temp variable
+			lastExpr, lastExprStmts := b.buildExpr(exprStmt.Expr)
+			blockStmts = slices.Concat(blockStmts, lastExprStmts)
+
+			// Create assignment: tempVar = lastExpr
+			assignment := NewBinaryExpr(
+				tempVar,
+				Assign,
+				lastExpr,
+				exprStmt.Expr,
+			)
+			blockStmts = append(blockStmts, &ExprStmt{
+				Expr:   assignment,
+				span:   nil,
+				source: lastStmt,
+			})
+		} else {
+			// Last statement is not an expression, add it as-is and assign undefined
+			blockStmts = slices.Concat(blockStmts, b.buildStmt(lastStmt))
+
+			// Assign undefined to temp variable
+			assignment := NewBinaryExpr(
+				tempVar,
+				Assign,
+				NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), nil),
+				lastStmt,
+			)
+			blockStmts = append(blockStmts, &ExprStmt{
+				Expr:   assignment,
+				span:   nil,
+				source: lastStmt,
+			})
+		}
+	} else {
+		// Empty block, assign undefined to temp variable
+		assignment := NewBinaryExpr(
+			tempVar,
+			Assign,
+			NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), nil),
+			sourceExpr,
+		)
+		blockStmts = append(blockStmts, &ExprStmt{
+			Expr:   assignment,
+			span:   nil,
+			source: sourceExpr,
+		})
+	}
+
+	return blockStmts
 }
 
 func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {

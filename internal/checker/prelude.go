@@ -139,7 +139,21 @@ func Prelude() *Scope {
 		TypeParams: []*TypeParam{typeParam},
 	})
 
-	// TODO: ++: fn (a: string, b: string) -> string
+	// String concatenation operator
+	strConcatType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewStrType()),
+			NewFuncParam(NewIdentPat("b"), NewStrType()),
+		},
+		Return: NewStrType(),
+	}
+	strConcatBinding := Binding{
+		Source:  nil,
+		Type:    strConcatType,
+		Mutable: false,
+	}
+
+	scope.Namespace.Values["++"] = &strConcatBinding
 
 	return scope
 }

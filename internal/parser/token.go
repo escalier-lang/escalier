@@ -103,6 +103,8 @@ const (
 	Infer
 	Never
 	Unknown
+	Do
+	PlusPlus
 )
 
 type Token struct {

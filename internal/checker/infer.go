@@ -333,6 +333,9 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 }
 
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
+	var resultType Type
+	var errors []Error
+
 	switch expr := expr.(type) {
 	case *ast.BinaryExpr:
 		neverType := NewNeverType()
@@ -342,7 +345,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			leftType, leftErrors := c.inferExpr(ctx, expr.Left)
 			rightType, rightErrors := c.inferExpr(ctx, expr.Right)
 
-			errors := slices.Concat(leftErrors, rightErrors)
+			errors = slices.Concat(leftErrors, rightErrors)
 
 			// Check if we're trying to mutate an immutable object
 			if memberExpr, ok := expr.Left.(*ast.MemberExpr); ok {
@@ -373,54 +376,72 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			unifyErrors := c.unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
 
-			return neverType, errors
-		}
-
-		opBinding := ctx.Scope.getValue(string(expr.Op))
-		if opBinding == nil {
-			return neverType, []Error{&UnknownOperatorError{
-				Operator: string(expr.Op),
-			}}
-		}
-
-		// TODO: extract this into a unifyCall method
-		// TODO: handle function overloading
-		if fnType, ok := opBinding.Type.(*FuncType); ok {
-			if len(fnType.Params) != 2 {
-				return neverType, []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnType,
-					Args:   []ast.Expr{expr.Left, expr.Right},
+			resultType = neverType
+		} else {
+			opBinding := ctx.Scope.getValue(string(expr.Op))
+			if opBinding == nil {
+				resultType = neverType
+				errors = []Error{&UnknownOperatorError{
+					Operator: string(expr.Op),
 				}}
+			} else {
+				// TODO: extract this into a unifyCall method
+				// TODO: handle function overloading
+				if fnType, ok := opBinding.Type.(*FuncType); ok {
+					if len(fnType.Params) != 2 {
+						resultType = neverType
+						errors = []Error{&InvalidNumberOfArgumentsError{
+							Callee: fnType,
+							Args:   []ast.Expr{expr.Left, expr.Right},
+						}}
+					} else {
+						errors = []Error{}
+
+						leftType, leftErrors := c.inferExpr(ctx, expr.Left)
+						rightType, rightErrors := c.inferExpr(ctx, expr.Right)
+						errors = slices.Concat(errors, leftErrors, rightErrors)
+
+						leftErrors = c.unify(ctx, leftType, fnType.Params[0].Type)
+						rightErrors = c.unify(ctx, rightType, fnType.Params[1].Type)
+						errors = slices.Concat(errors, leftErrors, rightErrors)
+
+						resultType = fnType.Return
+					}
+				} else {
+					resultType = neverType
+					errors = []Error{&UnknownOperatorError{Operator: string(expr.Op)}}
+				}
 			}
-
-			errors := []Error{}
-
-			leftType, leftErrors := c.inferExpr(ctx, expr.Left)
-			rightType, rightErrors := c.inferExpr(ctx, expr.Right)
-			errors = slices.Concat(errors, leftErrors, rightErrors)
-
-			leftErrors = c.unify(ctx, leftType, fnType.Params[0].Type)
-			rightErrors = c.unify(ctx, rightType, fnType.Params[1].Type)
-			errors = slices.Concat(errors, leftErrors, rightErrors)
-
-			return fnType.Return, errors
 		}
-
-		return neverType, []Error{&UnknownOperatorError{Operator: string(expr.Op)}}
 	case *ast.UnaryExpr:
 		if expr.Op == ast.UnaryMinus {
 			if lit, ok := expr.Arg.(*ast.LiteralExpr); ok {
 				if num, ok := lit.Lit.(*ast.NumLit); ok {
-					return NewLitType(&NumLit{Value: num.Value * -1}), []Error{}
+					resultType = NewLitType(&NumLit{Value: num.Value * -1})
+					errors = []Error{}
+				} else {
+					resultType = NewNeverType()
+					errors = []Error{&UnimplementedError{
+						message: "Handle unary operators",
+						span:    expr.Span(),
+					}}
 				}
+			} else {
+				resultType = NewNeverType()
+				errors = []Error{&UnimplementedError{
+					message: "Handle unary operators",
+					span:    expr.Span(),
+				}}
 			}
+		} else {
+			resultType = NewNeverType()
+			errors = []Error{&UnimplementedError{
+				message: "Handle unary operators",
+				span:    expr.Span(),
+			}}
 		}
-		return NewNeverType(), []Error{&UnimplementedError{
-			message: "Handle unary operators",
-			span:    expr.Span(),
-		}}
 	case *ast.CallExpr:
-		errors := []Error{}
+		errors = []Error{}
 		calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 		errors = slices.Concat(errors, calleeErrors)
 
@@ -438,30 +459,23 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		if fnType, ok := calleeType.(*FuncType); ok {
 			// TODO: handle rest params and spread args
 			if len(fnType.Params) != len(expr.Args) {
-				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+				resultType = NewNeverType()
+				errors = []Error{&InvalidNumberOfArgumentsError{
 					Callee: fnType,
 					Args:   expr.Args,
 				}}
+			} else {
+				for argType, param := range Zip(argTypes, fnType.Params) {
+					paramType := param.Type
+					paramErrors := c.unify(ctx, argType, paramType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+
+				resultType = fnType.Return
 			}
-
-			for argType, param := range Zip(argTypes, fnType.Params) {
-				paramType := param.Type
-				paramErrors := c.unify(ctx, argType, paramType)
-				errors = slices.Concat(errors, paramErrors)
-			}
-
-			// for i, arg := range expr.Args {
-			// 	argType, argErrors := c.inferExpr(ctx, arg)
-			// 	errors = slices.Concat(errors, argErrors)
-
-			// 	paramType := fnType.Params[i].Type
-			// 	paramErrors := c.unify(ctx, argType, paramType)
-			// 	errors = slices.Concat(errors, paramErrors)
-			// }
-
-			return fnType.Return, errors
 		} else {
-			return NewNeverType(), []Error{
+			resultType = NewNeverType()
+			errors = []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 	case *ast.MemberExpr:
@@ -470,53 +484,50 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
 		propType, propErrors := c.getAccessType(ctx, objType, key)
-		return propType, slices.Concat(objErrors, propErrors)
+		resultType = propType
+		errors = slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		indexType, indexErrors := c.inferExpr(ctx, expr.Index)
 
-		errors := slices.Concat(objErrors, indexErrors)
+		errors = slices.Concat(objErrors, indexErrors)
 
 		key := IndexKey{Type: indexType, Span: expr.Index.Span()}
-		resultType, accessErrors := c.getAccessType(ctx, objType, key)
-		return resultType, slices.Concat(errors, accessErrors)
+		accessType, accessErrors := c.getAccessType(ctx, objType, key)
+		resultType = accessType
+		errors = slices.Concat(errors, accessErrors)
 	case *ast.IdentExpr:
 		if binding := ctx.Scope.getValue(expr.Name); binding != nil {
 			// We create a new type and set its provenance to be the identifier
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := Prune(binding.Type).WithProvenance(&ast.NodeProvenance{Node: expr})
-			expr.SetInferredType(t)
 			expr.Source = binding.Source
-			return t, nil
+			resultType = t
+			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
 			t := &NamespaceType{Namespace: namespace}
 			t.SetProvenance(&ast.NodeProvenance{Node: expr})
-			expr.SetInferredType(t)
-			return t, nil
+			resultType = t
+			errors = nil
 		} else {
-			t := NewNeverType()
-			expr.SetInferredType(t)
-			return t, []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
+			resultType = NewNeverType()
+			errors = []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
 		}
 	case *ast.LiteralExpr:
-		t, errors := c.inferLit(expr.Lit)
-		expr.SetInferredType(t)
-		return t, errors
+		resultType, errors = c.inferLit(expr.Lit)
 	case *ast.TupleExpr:
 		types := make([]Type, len(expr.Elems))
-		errors := []Error{}
+		errors = []Error{}
 		for i, elem := range expr.Elems {
 			elemType, elemErrors := c.inferExpr(ctx, elem)
 			types[i] = elemType
 			errors = slices.Concat(errors, elemErrors)
 		}
-		tupleType := NewTupleType(types...)
-		expr.SetInferredType(tupleType)
-		return tupleType, errors
+		resultType = NewTupleType(types...)
 	case *ast.ObjectExpr:
 		elems := make([]ObjTypeElem, len(expr.Elems))
-		errors := []Error{}
+		errors = []Error{}
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
@@ -529,11 +540,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
 						if binding := ctx.Scope.getValue(key.Name); binding != nil {
-							expr.SetInferredType(binding.Type)
 							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), binding.Type)
 						} else {
 							t := NewNeverType()
-							expr.SetInferredType(t)
 							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 							errors = append(
 								errors,
@@ -547,26 +556,30 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			}
 		}
 
-		objType := NewObjectType(elems)
-		expr.SetInferredType(objType)
-
-		return objType, errors
+		resultType = NewObjectType(elems)
 	case *ast.FuncExpr:
 		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
 		returnType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
 		unifyErrors := c.unify(ctx, funcType.Return, returnType)
-		expr.SetInferredType(funcType)
-		return funcType, slices.Concat(sigErrors, bodyErrors, unifyErrors)
+		resultType = funcType
+		errors = slices.Concat(sigErrors, bodyErrors, unifyErrors)
 	case *ast.IfElseExpr:
-		return c.inferIfElse(ctx, expr)
+		resultType, errors = c.inferIfElse(ctx, expr)
+	case *ast.DoExpr:
+		resultType, errors = c.inferDoExpr(ctx, expr)
 	default:
-		return NewNeverType(), []Error{
+		resultType = NewNeverType()
+		errors = []Error{
 			&UnimplementedError{
 				message: "Infer expression type: " + fmt.Sprintf("%T", expr),
 				span:    expr.Span(),
 			},
 		}
 	}
+
+	// Always set the inferred type on the expression before returning
+	expr.SetInferredType(resultType)
+	return resultType, errors
 }
 
 // TypeExpansionVisitor implements TypeVisitor for expanding type references
@@ -1026,6 +1039,31 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 	expr.SetInferredType(t)
 
 	return t, errors
+}
+
+func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (Type, []Error) {
+	errors := []Error{}
+
+	// Process all statements in the block
+	for _, stmt := range expr.Body.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+
+	// The type of the do-expression is the type of the last statement if it's an expression
+	var resultType Type = NewLitType(&UndefinedLit{}) // Default to undefined
+	if len(expr.Body.Stmts) > 0 {
+		lastStmt := expr.Body.Stmts[len(expr.Body.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			inferredType := exprStmt.Expr.InferredType()
+			if inferredType != nil {
+				resultType = inferredType
+			}
+		}
+	}
+
+	expr.SetInferredType(resultType)
+	return resultType, errors
 }
 
 func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {

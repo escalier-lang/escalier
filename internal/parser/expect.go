@@ -14,6 +14,7 @@ var TokenMap = map[TokenType]string{
 	False:               "false",
 	Asterisk:            "*",
 	Plus:                "+",
+	PlusPlus:            "++",
 	Minus:               "-",
 	OpenParen:           "(",
 	CloseParen:          ")",

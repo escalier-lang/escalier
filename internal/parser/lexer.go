@@ -62,6 +62,7 @@ var keywords = map[string]TokenType{
 	"mut":       Mut,
 	"for":       For,
 	"in":        In,
+	"do":        Do,
 }
 
 // isRegexContext determines if a '/' should be treated as the start of a regex literal
@@ -76,7 +77,7 @@ func (lexer *Lexer) isRegexContext() bool {
 	// After these tokens, / starts a regex
 	case OpenParen, OpenBracket, OpenBrace, Comma, Colon, Question,
 		Equal, EqualEqual, NotEqual, LessThan, LessThanEqual,
-		GreaterThan, GreaterThanEqual, Plus, Minus, Asterisk,
+		GreaterThan, GreaterThanEqual, Plus, PlusPlus, Minus, Asterisk,
 		Ampersand, AmpersandAmpersand, Pipe, PipePipe, Bang,
 		Return, If, Else, Match, Try, Catch, Finally, Throw,
 		Arrow, FatArrow:
@@ -170,7 +171,13 @@ func (lexer *Lexer) next() *Token {
 	var token *Token
 	switch codePoint {
 	case '+':
-		token = NewToken(Plus, "+", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "++") {
+			endOffset++
+			end.Column++
+			token = NewToken(PlusPlus, "++", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		} else {
+			token = NewToken(Plus, "+", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		}
 	case '-':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "->") {
 			endOffset++
