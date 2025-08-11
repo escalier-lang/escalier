@@ -343,6 +343,32 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			rightType, rightErrors := c.inferExpr(ctx, expr.Right)
 
 			errors := slices.Concat(leftErrors, rightErrors)
+
+			// Check if we're trying to mutate an immutable object
+			if memberExpr, ok := expr.Left.(*ast.MemberExpr); ok {
+				objType, objErrors := c.inferExpr(ctx, memberExpr.Object)
+				errors = slices.Concat(errors, objErrors)
+
+				// Check if the object type allows mutation
+				if !c.isMutableType(objType) {
+					errors = append(errors, &CannotMutateImmutableError{
+						Type: objType,
+						span: expr.Left.Span(),
+					})
+				}
+			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
+				objType, objErrors := c.inferExpr(ctx, indexExpr.Object)
+				errors = slices.Concat(errors, objErrors)
+
+				// Check if the object type allows mutation
+				if !c.isMutableType(objType) {
+					errors = append(errors, &CannotMutateImmutableError{
+						Type: objType,
+						span: expr.Left.Span(),
+					})
+				}
+			}
+
 			// RHS must be a subtype of LHS because we're assigning RHS to LHS
 			unifyErrors := c.unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
@@ -442,7 +468,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		// TODO: create a getPropType function to handle this so that we can
 		// call it recursively if need be.
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
-		propType, propErrors := c.getPropType(ctx, objType, expr.Prop, expr.OptChain)
+		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
+		propType, propErrors := c.getAccessType(ctx, objType, key)
 		return propType, slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
@@ -450,68 +477,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		errors := slices.Concat(objErrors, indexErrors)
 
-		objType = Prune(objType)
-		indexType = Prune(indexType)
-
-		switch objType := objType.(type) {
-		case *TypeRefType:
-			if objType.Name == "Array" {
-				unifyErrors := c.unify(ctx, indexType, NewNumType())
-				errors = slices.Concat(errors, unifyErrors)
-				return objType.TypeArgs[0], errors
-			} else {
-				errors = append(errors, &ExpectedArrayError{Type: objType})
-				return NewNeverType(), errors
-			}
-		case *TupleType:
-			if indexLit, ok := indexType.(*LitType); ok {
-				if indexType, ok := indexLit.Lit.(*NumLit); ok {
-					index := int(indexType.Value)
-					if index < len(objType.Elems) {
-						return objType.Elems[index], errors
-					} else {
-						errors = append(errors, &OutOfBoundsError{
-							Index:  index,
-							Length: len(objType.Elems),
-							span:   expr.Index.Span(),
-						})
-						return NewNeverType(), errors
-					}
-				}
-			}
-			errors = append(errors, &InvalidObjectKeyError{
-				Key:  indexType,
-				span: expr.Index.Span(),
-			})
-			return NewNeverType(), errors
-		case *ObjectType:
-			// TODO: create a helper to convert indexType to a ObjTypeKey
-			if indexLit, ok := indexType.(*LitType); ok {
-				if indexType, ok := indexLit.Lit.(*StrLit); ok {
-					for _, elem := range objType.Elems {
-						switch elem := elem.(type) {
-						case *PropertyElemType:
-							if elem.Name == NewStrKey(indexType.Value) {
-								return elem.Value, errors
-							}
-						case *MethodElemType:
-							if elem.Name == NewStrKey(indexType.Value) {
-								return elem.Fn, errors
-							}
-						default:
-							panic(fmt.Sprintf("Unknown object type element: %#v", elem))
-						}
-					}
-				}
-			}
-			errors = append(errors, &InvalidObjectKeyError{
-				Key:  indexType,
-				span: expr.Index.Span(),
-			})
-			return NewNeverType(), errors
-		default:
-			panic(fmt.Sprintf("Unknown object type: %#v", objType))
-		}
+		key := IndexKey{Type: indexType, Span: expr.Index.Span()}
+		resultType, accessErrors := c.getAccessType(ctx, objType, key)
+		return resultType, slices.Concat(errors, accessErrors)
 	case *ast.IdentExpr:
 		if binding := ctx.Scope.getValue(expr.Name); binding != nil {
 			// We create a new type and set its provenance to be the identifier
@@ -767,7 +735,28 @@ func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
 	return result, visitor.errors
 }
 
-func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optChain bool) (Type, []Error) {
+// AccessKey represents either a property name or an index for accessing object/array elements
+type AccessKey interface {
+	isAccessKey()
+}
+
+type PropertyKey struct {
+	Name     string
+	OptChain bool
+	Span     ast.Span
+}
+
+func (pk PropertyKey) isAccessKey() {}
+
+type IndexKey struct {
+	Type Type
+	Span ast.Span
+}
+
+func (ik IndexKey) isAccessKey() {}
+
+// getAccessType is a unified function for getting types from objects via property access or indexing
+func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type, []Error) {
 	errors := []Error{}
 
 	objType = Prune(objType)
@@ -795,101 +784,187 @@ func (c *Checker) getPropType(ctx Context, objType Type, prop *ast.Ident, optCha
 		}
 	}
 
-	var propType Type
-
 	switch t := objType.(type) {
+	case *MutableType:
+		// For mutable types, get the access from the inner type
+		return c.getAccessType(ctx, t.Type, key)
+	case *TypeRefType:
+		// Handle Array access
+		if indexKey, ok := key.(IndexKey); ok && t.Name == "Array" {
+			unifyErrors := c.unify(ctx, indexKey.Type, NewNumType())
+			errors = slices.Concat(errors, unifyErrors)
+			return t.TypeArgs[0], errors
+		} else if _, ok := key.(IndexKey); ok {
+			errors = append(errors, &ExpectedArrayError{Type: t})
+			return NewNeverType(), errors
+		}
+		// TypeRefType doesn't support property access directly
+		errors = append(errors, &ExpectedObjectError{Type: objType})
+		return NewNeverType(), errors
+	case *TupleType:
+		if indexKey, ok := key.(IndexKey); ok {
+			if indexLit, ok := indexKey.Type.(*LitType); ok {
+				if numLit, ok := indexLit.Lit.(*NumLit); ok {
+					index := int(numLit.Value)
+					if index < len(t.Elems) {
+						return t.Elems[index], errors
+					} else {
+						errors = append(errors, &OutOfBoundsError{
+							Index:  index,
+							Length: len(t.Elems),
+							span:   indexKey.Span,
+						})
+						return NewNeverType(), errors
+					}
+				}
+			}
+			errors = append(errors, &InvalidObjectKeyError{
+				Key:  indexKey.Type,
+				span: indexKey.Span,
+			})
+			return NewNeverType(), errors
+		}
+		// TupleType doesn't support property access
+		errors = append(errors, &ExpectedObjectError{Type: objType})
+		return NewNeverType(), errors
 	case *ObjectType:
-		for _, elem := range t.Elems {
+		return c.getObjectAccess(t, key, errors)
+	case *UnionType:
+		return c.getUnionAccess(ctx, t, key, errors)
+	case *NamespaceType:
+		if propKey, ok := key.(PropertyKey); ok {
+			if value := t.Namespace.Values[propKey.Name]; value != nil {
+				return value.Type, errors
+			} else if namespace := t.Namespace.Namespaces[propKey.Name]; namespace != nil {
+				return &NamespaceType{Namespace: namespace}, errors
+			} else {
+				errors = append(errors, &UnknownPropertyError{
+					ObjectType: objType,
+					Property:   propKey.Name,
+					span:       propKey.Span,
+				})
+				return NewNeverType(), errors
+			}
+		}
+		// NamespaceType doesn't support index access
+		errors = append(errors, &ExpectedObjectError{Type: objType})
+		return NewNeverType(), errors
+	default:
+		errors = append(errors, &ExpectedObjectError{Type: objType})
+		return NewNeverType(), errors
+	}
+}
+
+// getObjectAccess handles property and index access on ObjectType
+func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []Error) (Type, []Error) {
+	switch k := key.(type) {
+	case PropertyKey:
+		for _, elem := range objType.Elems {
 			switch elem := elem.(type) {
 			case *PropertyElemType:
-				if elem.Name == NewStrKey(prop.Name) {
-					propType = elem.Value
-
+				if elem.Name == NewStrKey(k.Name) {
+					propType := elem.Value
 					if elem.Optional {
 						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
 					}
+					return propType, errors
 				}
 			case *MethodElemType:
-				if elem.Name == NewStrKey(prop.Name) {
-					propType = elem.Fn
+				if elem.Name == NewStrKey(k.Name) {
+					return elem.Fn, errors
 				}
 			case *GetterElemType:
-				if elem.Name == NewStrKey(prop.Name) {
-					propType = elem.Fn.Return
+				if elem.Name == NewStrKey(k.Name) {
+					return elem.Fn.Return, errors
 				}
 			case *SetterElemType:
-				if elem.Name == NewStrKey(prop.Name) {
-					propType = elem.Fn.Params[0].Type
+				if elem.Name == NewStrKey(k.Name) {
+					return elem.Fn.Params[0].Type, errors
 				}
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 			}
 		}
-	case *UnionType:
-		undefinedElems := []Type{}
-		definedElems := []Type{}
-		for _, elem := range t.Types {
-			elem = Prune(elem)
-			switch elem := elem.(type) {
-			case *LitType:
-				if _, ok := elem.Lit.(*UndefinedLit); ok {
-					undefinedElems = append(undefinedElems, elem)
-				}
-			default:
-				definedElems = append(definedElems, elem)
-			}
-		}
-
-		if len(definedElems) == 0 {
-			errors = append(errors, &ExpectedObjectError{Type: objType})
-			return propType, errors
-		}
-
-		if len(definedElems) == 1 {
-			if len(undefinedElems) == 0 {
-				return c.getPropType(ctx, definedElems[0], prop, optChain)
-			}
-
-			if len(undefinedElems) > 0 && !optChain {
-				errors = append(errors, &ExpectedObjectError{Type: objType})
-				return propType, errors
-			}
-
-			pType, pErrors := c.getPropType(ctx, definedElems[0], prop, optChain)
-			errors = slices.Concat(errors, pErrors)
-			propType = NewUnionType(pType, NewLitType(&UndefinedLit{}))
-		}
-
-		if len(definedElems) > 1 {
-			panic("TODO: handle getting property from union type with multiple defined elements")
-		}
-	case *NamespaceType:
-		if value := t.Namespace.Values[prop.Name]; value != nil {
-			propType = value.Type
-		} else if namespace := t.Namespace.Namespaces[prop.Name]; namespace != nil {
-			propType = &NamespaceType{Namespace: namespace}
-		} else {
-			errors = append(errors, &UnknownPropertyError{
-				ObjectType: objType,
-				Property:   prop.Name,
-				span:       prop.Span(),
-			})
-			propType = NewNeverType()
-		}
-	default:
-		errors = append(errors, &ExpectedObjectError{Type: objType})
-	}
-
-	if propType == nil {
 		errors = append(errors, &UnknownPropertyError{
 			ObjectType: objType,
-			Property:   prop.Name,
-			span:       prop.Span(),
+			Property:   k.Name,
+			span:       k.Span,
 		})
-		propType = NewNeverType()
+		return NewNeverType(), errors
+	case IndexKey:
+		if indexLit, ok := k.Type.(*LitType); ok {
+			if strLit, ok := indexLit.Lit.(*StrLit); ok {
+				for _, elem := range objType.Elems {
+					switch elem := elem.(type) {
+					case *PropertyElemType:
+						if elem.Name == NewStrKey(strLit.Value) {
+							return elem.Value, errors
+						}
+					case *MethodElemType:
+						if elem.Name == NewStrKey(strLit.Value) {
+							return elem.Fn, errors
+						}
+					default:
+						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
+					}
+				}
+			}
+		}
+		errors = append(errors, &InvalidObjectKeyError{
+			Key:  k.Type,
+			span: k.Span,
+		})
+		return NewNeverType(), errors
+	default:
+		errors = append(errors, &ExpectedObjectError{Type: objType})
+		return NewNeverType(), errors
+	}
+}
+
+// getUnionAccess handles property and index access on UnionType
+func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKey, errors []Error) (Type, []Error) {
+	propKey, isPropertyKey := key.(PropertyKey)
+
+	undefinedElems := []Type{}
+	definedElems := []Type{}
+	for _, elem := range unionType.Types {
+		elem = Prune(elem)
+		switch elem := elem.(type) {
+		case *LitType:
+			if _, ok := elem.Lit.(*UndefinedLit); ok {
+				undefinedElems = append(undefinedElems, elem)
+			}
+		default:
+			definedElems = append(definedElems, elem)
+		}
 	}
 
-	return propType, errors
+	if len(definedElems) == 0 {
+		errors = append(errors, &ExpectedObjectError{Type: unionType})
+		return NewNeverType(), errors
+	}
+
+	if len(definedElems) == 1 {
+		if len(undefinedElems) == 0 {
+			return c.getAccessType(ctx, definedElems[0], key)
+		}
+
+		if len(undefinedElems) > 0 && isPropertyKey && !propKey.OptChain {
+			errors = append(errors, &ExpectedObjectError{Type: unionType})
+			return NewNeverType(), errors
+		}
+
+		pType, pErrors := c.getAccessType(ctx, definedElems[0], key)
+		errors = slices.Concat(errors, pErrors)
+		propType := NewUnionType(pType, NewLitType(&UndefinedLit{}))
+		return propType, errors
+	}
+
+	if len(definedElems) > 1 {
+		panic("TODO: handle getting property from union type with multiple defined elements")
+	}
+
+	return NewNeverType(), errors
 }
 
 func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
@@ -1802,6 +1877,18 @@ func (v *InferTypeFinder) ExitType(t Type) Type {
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// isMutableType checks if a type allows mutation
+func (c *Checker) isMutableType(t Type) bool {
+	t = Prune(t)
+
+	switch t.(type) {
+	case *MutableType:
+		return true
+	default:
+		return false
+	}
 }
 
 // InferTypeReplacer substitutes type variables that correspond to infer types

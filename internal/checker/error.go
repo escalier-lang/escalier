@@ -36,6 +36,19 @@ func (e ExpectedObjectError) isError()            {}
 func (e ExpectedArrayError) isError()             {}
 func (e CyclicDependencyError) isError()          {}
 func (e UnknownPropertyError) isError()           {}
+func (e CannotMutateImmutableError) isError()     {}
+
+type CannotMutateImmutableError struct {
+	Type Type
+	span ast.Span
+}
+
+func (e CannotMutateImmutableError) Span() ast.Span {
+	return e.span
+}
+func (e CannotMutateImmutableError) Message() string {
+	return "Cannot mutate immutable type: " + e.Type.String()
+}
 
 type UnimplementedError struct {
 	message string
