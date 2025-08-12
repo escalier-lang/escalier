@@ -744,6 +744,9 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		stmts = append(stmts, ifStmt)
 
 		return tempVar, stmts
+	case *ast.MatchExpr:
+		// Convert match expression to a series of if-else statements
+		return b.buildMatchExpr(expr)
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:
@@ -908,5 +911,231 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 			TypeAnn:  nil,
 		})
 	}
+
 	return outParams, outParamStmts
+}
+
+// buildMatchExpr converts a match expression into if-else statements with pattern matching
+func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
+	// Create a temporary variable to store the match result
+	tempVar, tempDeclStmt := b.createTempVar(expr)
+	stmts := []Stmt{tempDeclStmt}
+
+	// Build the target expression
+	targetExpr, targetStmts := b.buildExpr(expr.Target)
+	stmts = slices.Concat(stmts, targetStmts)
+
+	// Create a temporary variable for the target to avoid re-evaluation
+	targetTempVar, targetTempDeclStmt := b.createTempVar(expr.Target)
+	stmts = append(stmts, targetTempDeclStmt)
+
+	// Assign target to temp variable
+	targetAssignment := NewBinaryExpr(targetTempVar, Assign, targetExpr, expr.Target)
+	stmts = append(stmts, &ExprStmt{
+		Expr:   targetAssignment,
+		span:   nil,
+		source: expr.Target,
+	})
+
+	// Convert each match case to if-else statements
+	var currentStmt Stmt
+	for i := len(expr.Cases) - 1; i >= 0; i-- {
+		matchCase := expr.Cases[i]
+
+		// Build pattern matching conditions and variable bindings
+		patternCond, patternBindings := b.buildPatternCondition(matchCase.Pattern, targetTempVar)
+
+		// Build guard condition if present
+		var fullCondition Expr = patternCond
+		if matchCase.Guard != nil {
+			guardExpr, guardStmts := b.buildExpr(matchCase.Guard)
+			stmts = slices.Concat(stmts, guardStmts)
+			fullCondition = NewBinaryExpr(patternCond, LogicalAnd, guardExpr, matchCase.Guard)
+		}
+
+		// Build the case body statements
+		var caseStmts []Stmt
+
+		// Add pattern binding statements
+		caseStmts = slices.Concat(caseStmts, patternBindings)
+
+		// Add body statements or expression
+		if matchCase.Body.Block != nil {
+			// Handle block body - assign result of last statement to temp var
+			blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
+			caseStmts = slices.Concat(caseStmts, blockStmts)
+		} else if matchCase.Body.Expr != nil {
+			// Handle expression body
+			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr)
+			caseStmts = slices.Concat(caseStmts, bodyStmts)
+
+			// Assign result to temp variable
+			assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
+			caseStmts = append(caseStmts, &ExprStmt{
+				Expr:   assignment,
+				span:   nil,
+				source: matchCase.Body.Expr,
+			})
+		}
+
+		// Create block statement for the case
+		caseBlock := NewBlockStmt(caseStmts, expr)
+
+		// Create if statement
+		if currentStmt == nil {
+			// Last case (first in reverse order) - no else clause
+			currentStmt = NewIfStmt(fullCondition, caseBlock, nil, expr)
+		} else {
+			// Previous cases become the else clause
+			currentStmt = NewIfStmt(fullCondition, caseBlock, currentStmt, expr)
+		}
+	}
+
+	if currentStmt != nil {
+		stmts = append(stmts, currentStmt)
+	}
+
+	return tempVar, stmts
+}
+
+// buildPatternCondition builds the condition expression and binding statements for a pattern
+func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr, []Stmt) {
+	switch pat := pattern.(type) {
+	case *ast.IdentPat:
+		// Identifier patterns always match, just create binding
+		binding := NewBinaryExpr(
+			NewIdentExpr(pat.Name, "", pat),
+			Assign,
+			targetExpr,
+			pat,
+		)
+		bindingStmt := &ExprStmt{
+			Expr:   binding,
+			span:   nil,
+			source: pat,
+		}
+		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{bindingStmt}
+
+	case *ast.LitPat:
+		// Literal patterns: check for equality
+		litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: pat.Lit})
+		condition := NewBinaryExpr(targetExpr, EqualEqual, litExpr, pat)
+		return condition, []Stmt{}
+
+	case *ast.WildcardPat:
+		// Wildcard patterns always match, no bindings
+		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{}
+
+	case *ast.TuplePat:
+		// Tuple patterns: check length and match each element
+		var conditions []Expr
+		var bindings []Stmt
+
+		// Check if target is an array and has the right length
+		lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
+		conditions = append(conditions, lengthCheck)
+
+		// Check each element
+		for i, elem := range pat.Elems {
+			indexExpr := NewIndexExpr(
+				targetExpr,
+				NewLitExpr(NewNumLit(float64(i), elem), elem),
+				false,
+				elem,
+			)
+			elemCondition, elemBindings := b.buildPatternCondition(elem, indexExpr)
+			conditions = append(conditions, elemCondition)
+			bindings = slices.Concat(bindings, elemBindings)
+		}
+
+		// Combine all conditions with &&
+		finalCondition := conditions[0]
+		for i := 1; i < len(conditions); i++ {
+			finalCondition = NewBinaryExpr(finalCondition, LogicalAnd, conditions[i], pat)
+		}
+
+		return finalCondition, bindings
+
+	case *ast.ObjectPat:
+		// Object patterns: check for object properties
+		var conditions []Expr
+		var bindings []Stmt
+
+		// Check that target is not null/undefined
+		nullCheck := NewBinaryExpr(
+			targetExpr,
+			NotEqual,
+			NewLitExpr(NewNullLit(pat), pat),
+			pat,
+		)
+		conditions = append(conditions, nullCheck)
+
+		// Check each property
+		for _, elem := range pat.Elems {
+			switch objElem := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				propAccessExpr := NewMemberExpr(
+					targetExpr,
+					NewIdentifier(objElem.Key.Name, objElem.Key),
+					false,
+					objElem,
+				)
+				elemCondition, elemBindings := b.buildPatternCondition(objElem.Value, propAccessExpr)
+				conditions = append(conditions, elemCondition)
+				bindings = slices.Concat(bindings, elemBindings)
+
+			case *ast.ObjShorthandPat:
+				propAccessExpr := NewMemberExpr(
+					targetExpr,
+					NewIdentifier(objElem.Key.Name, objElem.Key),
+					false,
+					objElem,
+				)
+				// Create an identifier pattern for the shorthand
+				identPat := &ast.IdentPat{Name: objElem.Key.Name}
+				elemCondition, elemBindings := b.buildPatternCondition(identPat, propAccessExpr)
+				conditions = append(conditions, elemCondition)
+				bindings = slices.Concat(bindings, elemBindings)
+
+			case *ast.ObjRestPat:
+				// TODO: Implement object rest pattern
+				// For now, just create the binding for the rest pattern
+				restBinding := NewBinaryExpr(
+					NewIdentExpr(objElem.Pattern.(*ast.IdentPat).Name, "", objElem.Pattern),
+					Assign,
+					targetExpr, // TODO: Should exclude already matched properties
+					objElem,
+				)
+				bindings = append(bindings, &ExprStmt{
+					Expr:   restBinding,
+					span:   nil,
+					source: objElem,
+				})
+			}
+		}
+
+		// Combine all conditions with &&
+		finalCondition := conditions[0]
+		for i := 1; i < len(conditions); i++ {
+			finalCondition = NewBinaryExpr(finalCondition, LogicalAnd, conditions[i], pat)
+		}
+
+		return finalCondition, bindings
+
+	default:
+		// For now, handle other patterns as always matching
+		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}
+	}
+}
+
+// buildArrayLengthCheck creates a condition to check if an array has the expected length
+func (b *Builder) buildArrayLengthCheck(arrayExpr Expr, expectedLength int, source ast.Node) Expr {
+	lengthAccess := NewMemberExpr(
+		arrayExpr,
+		NewIdentifier("length", source),
+		false,
+		source,
+	)
+	expectedLengthExpr := NewLitExpr(NewNumLit(float64(expectedLength), source), source)
+	return NewBinaryExpr(lengthAccess, EqualEqual, expectedLengthExpr, source)
 }

@@ -130,6 +130,7 @@ func (*IndexExpr) isExpr()  {}
 func (*MemberExpr) isExpr() {}
 func (*ArrayExpr) isExpr()  {}
 func (*ObjectExpr) isExpr() {}
+func (*MatchExpr) isExpr()  {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -409,6 +410,36 @@ func (e *IdentExpr) Span() *Span        { return e.span }
 func (e *IdentExpr) SetSpan(span *Span) { e.span = span }
 func (e *IdentExpr) Source() ast.Node   { return e.source }
 
+// Match expressions and related types
+type MatchExpr struct {
+	Target Expr
+	Cases  []*MatchCase
+	span   *Span
+	source ast.Node
+}
+
+func NewMatchExpr(target Expr, cases []*MatchCase, source ast.Node) *MatchExpr {
+	return &MatchExpr{Target: target, Cases: cases, source: source, span: nil}
+}
+func (e *MatchExpr) Span() *Span        { return e.span }
+func (e *MatchExpr) SetSpan(span *Span) { e.span = span }
+func (e *MatchExpr) Source() ast.Node   { return e.source }
+
+type MatchCase struct {
+	Pattern Pat
+	Guard   Expr // optional
+	Body    []Stmt
+	span    *Span
+	source  ast.Node
+}
+
+func NewMatchCase(pattern Pat, guard Expr, body []Stmt, source ast.Node) *MatchCase {
+	return &MatchCase{Pattern: pattern, Guard: guard, Body: body, source: source, span: nil}
+}
+func (c *MatchCase) Span() *Span        { return c.span }
+func (c *MatchCase) SetSpan(span *Span) { c.span = span }
+func (c *MatchCase) Source() ast.Node   { return c.source }
+
 //sumtype:decl
 type Decl interface {
 	isDecl()
@@ -557,11 +588,13 @@ type Pat interface {
 	SetSpan(span *Span)
 }
 
-func (*IdentPat) isPat()  {}
-func (*LitPat) isPat()    {}
-func (*ObjectPat) isPat() {}
-func (*TuplePat) isPat()  {}
-func (*RestPat) isPat()   {}
+func (*IdentPat) isPat()     {}
+func (*LitPat) isPat()       {}
+func (*ObjectPat) isPat()    {}
+func (*TuplePat) isPat()     {}
+func (*RestPat) isPat()      {}
+func (*WildcardPat) isPat()  {}
+func (*ExtractorPat) isPat() {}
 
 type IdentPat struct {
 	Name    string
@@ -714,6 +747,32 @@ func NewRestPat(pattern Pat, source ast.Node) *RestPat {
 func (p *RestPat) Span() *Span        { return p.span }
 func (p *RestPat) SetSpan(span *Span) { p.span = span }
 func (p *RestPat) Source() ast.Node   { return p.source }
+
+type WildcardPat struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewWildcardPat(source ast.Node) *WildcardPat {
+	return &WildcardPat{source: source, span: nil}
+}
+func (p *WildcardPat) Span() *Span        { return p.span }
+func (p *WildcardPat) SetSpan(span *Span) { p.span = span }
+func (p *WildcardPat) Source() ast.Node   { return p.source }
+
+type ExtractorPat struct {
+	Name   string
+	Args   []Pat
+	span   *Span
+	source ast.Node
+}
+
+func NewExtractorPat(name string, args []Pat, source ast.Node) *ExtractorPat {
+	return &ExtractorPat{Name: name, Args: args, source: source, span: nil}
+}
+func (p *ExtractorPat) Span() *Span        { return p.span }
+func (p *ExtractorPat) SetSpan(span *Span) { p.span = span }
+func (p *ExtractorPat) Source() ast.Node   { return p.source }
 
 type TypeDecl struct {
 	Name       *Identifier
