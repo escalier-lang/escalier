@@ -997,37 +997,48 @@ func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
 	}
 }
 
+// inferBlock infers the types of all statements in a block and returns the type
+// of the block. The type of the block is the type of the last statement if it's
+// an expression statement, otherwise it returns the provided default type.
+func (c *Checker) inferBlock(ctx Context, block *ast.Block, defaultType Type) (Type, []Error) {
+	errors := []Error{}
+
+	// Process all statements in the block
+	for _, stmt := range block.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+
+	// The type of the block is the type of the last statement if it's an expression
+	resultType := defaultType
+	if len(block.Stmts) > 0 {
+		lastStmt := block.Stmts[len(block.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			if inferredType := exprStmt.Expr.InferredType(); inferredType != nil {
+				resultType = inferredType
+			}
+		}
+	}
+
+	return resultType, errors
+}
+
 func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error) {
 	condType, condErrors := c.inferExpr(ctx, expr.Cond)
 	unifyErrors := c.unify(ctx, condType, NewBoolType())
 	errors := slices.Concat(condErrors, unifyErrors)
 
-	var consType Type = NewNeverType()
-	for _, stmt := range expr.Cons.Stmts {
-		stmtErrors := c.inferStmt(ctx, stmt)
-		errors = slices.Concat(errors, stmtErrors)
-	}
-	if len(expr.Cons.Stmts) > 0 {
-		lastStmt := expr.Cons.Stmts[len(expr.Cons.Stmts)-1]
-		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-			consType = exprStmt.Expr.InferredType()
-		}
-	}
+	// Infer the consequent block
+	consType, consErrors := c.inferBlock(ctx, &expr.Cons, NewNeverType())
+	errors = slices.Concat(errors, consErrors)
 
 	var altType Type = NewNeverType()
 	if expr.Alt != nil {
 		alt := expr.Alt
 		if alt.Block != nil {
-			for _, stmt := range alt.Block.Stmts {
-				stmtErrors := c.inferStmt(ctx, stmt)
-				errors = slices.Concat(errors, stmtErrors)
-			}
-			if len(alt.Block.Stmts) > 0 {
-				lastStmt := alt.Block.Stmts[len(alt.Block.Stmts)-1]
-				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					altType = exprStmt.Expr.InferredType()
-				}
-			}
+			var altErrors []Error
+			altType, altErrors = c.inferBlock(ctx, alt.Block, NewNeverType())
+			errors = slices.Concat(errors, altErrors)
 		} else if alt.Expr != nil {
 			t, altErrors := c.inferExpr(ctx, alt.Expr)
 			errors = slices.Concat(errors, altErrors)
@@ -1044,25 +1055,8 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 }
 
 func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (Type, []Error) {
-	errors := []Error{}
-
-	// Process all statements in the block
-	for _, stmt := range expr.Body.Stmts {
-		stmtErrors := c.inferStmt(ctx, stmt)
-		errors = slices.Concat(errors, stmtErrors)
-	}
-
-	// The type of the do-expression is the type of the last statement if it's an expression
-	var resultType Type = NewLitType(&UndefinedLit{}) // Default to undefined
-	if len(expr.Body.Stmts) > 0 {
-		lastStmt := expr.Body.Stmts[len(expr.Body.Stmts)-1]
-		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-			inferredType := exprStmt.Expr.InferredType()
-			if inferredType != nil {
-				resultType = inferredType
-			}
-		}
-	}
+	// Infer the body block - default to undefined if no expression at the end
+	resultType, errors := c.inferBlock(ctx, &expr.Body, NewLitType(&UndefinedLit{}))
 
 	expr.SetInferredType(resultType)
 	return resultType, errors
@@ -1107,22 +1101,10 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 		// Infer the type of the case body
 		var caseType Type
 		if matchCase.Body.Block != nil {
-			// Handle block body
-			for _, stmt := range matchCase.Body.Block.Stmts {
-				stmtErrors := c.inferStmt(caseCtx, stmt)
-				errors = slices.Concat(errors, stmtErrors)
-			}
-
-			// Get the type from the last statement if it's an expression
-			caseType = NewLitType(&UndefinedLit{}) // Default to undefined
-			if len(matchCase.Body.Block.Stmts) > 0 {
-				lastStmt := matchCase.Body.Block.Stmts[len(matchCase.Body.Block.Stmts)-1]
-				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					if exprStmt.Expr.InferredType() != nil {
-						caseType = exprStmt.Expr.InferredType()
-					}
-				}
-			}
+			// Handle block body using the helper function
+			var caseErrors []Error
+			caseType, caseErrors = c.inferBlock(caseCtx, matchCase.Body.Block, NewLitType(&UndefinedLit{}))
+			errors = slices.Concat(errors, caseErrors)
 		} else if matchCase.Body.Expr != nil {
 			// Handle expression body
 			var caseErrors []Error

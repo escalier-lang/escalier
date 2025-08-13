@@ -1049,10 +1049,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 
 		// Combine all conditions with &&
-		finalCondition := conditions[0]
-		for i := 1; i < len(conditions); i++ {
-			finalCondition = NewBinaryExpr(finalCondition, LogicalAnd, conditions[i], pat)
-		}
+		finalCondition := combineConditions(conditions, pat)
 
 		return finalCondition, bindings
 
@@ -1074,6 +1071,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		for _, elem := range pat.Elems {
 			switch objElem := elem.(type) {
 			case *ast.ObjKeyValuePat:
+				// Check that the property exists: "propName" in object
+				propExistsCheck := NewBinaryExpr(
+					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
+					In,
+					targetExpr,
+					objElem,
+				)
+				conditions = append(conditions, propExistsCheck)
+
 				propAccessExpr := NewMemberExpr(
 					targetExpr,
 					NewIdentifier(objElem.Key.Name, objElem.Key),
@@ -1085,6 +1091,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				bindings = slices.Concat(bindings, elemBindings)
 
 			case *ast.ObjShorthandPat:
+				// Check that the property exists: "propName" in object
+				propExistsCheck := NewBinaryExpr(
+					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
+					In,
+					targetExpr,
+					objElem,
+				)
+				conditions = append(conditions, propExistsCheck)
+
 				propAccessExpr := NewMemberExpr(
 					targetExpr,
 					NewIdentifier(objElem.Key.Name, objElem.Key),
@@ -1115,10 +1130,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 
 		// Combine all conditions with &&
-		finalCondition := conditions[0]
-		for i := 1; i < len(conditions); i++ {
-			finalCondition = NewBinaryExpr(finalCondition, LogicalAnd, conditions[i], pat)
-		}
+		finalCondition := combineConditions(conditions, pat)
 
 		return finalCondition, bindings
 
@@ -1138,4 +1150,44 @@ func (b *Builder) buildArrayLengthCheck(arrayExpr Expr, expectedLength int, sour
 	)
 	expectedLengthExpr := NewLitExpr(NewNumLit(float64(expectedLength), source), source)
 	return NewBinaryExpr(lengthAccess, EqualEqual, expectedLengthExpr, source)
+}
+
+// isTrueLiteral checks if an expression is a literal true value
+func isTrueLiteral(expr Expr) bool {
+	if litExpr, ok := expr.(*LitExpr); ok {
+		if boolLit, ok := litExpr.Lit.(*BoolLit); ok {
+			return boolLit.Value
+		}
+	}
+	return false
+}
+
+// combineConditions combines multiple conditions with && operators,
+// filtering out literal true values to avoid redundant conditions
+func combineConditions(conditions []Expr, source ast.Node) Expr {
+	// Filter out true literals
+	var validConditions []Expr
+	for _, condition := range conditions {
+		if !isTrueLiteral(condition) {
+			validConditions = append(validConditions, condition)
+		}
+	}
+
+	// If no valid conditions, return true
+	if len(validConditions) == 0 {
+		return NewLitExpr(NewBoolLit(true, source), source)
+	}
+
+	// If only one condition, return it directly
+	if len(validConditions) == 1 {
+		return validConditions[0]
+	}
+
+	// Combine multiple conditions with &&
+	result := validConditions[0]
+	for i := 1; i < len(validConditions); i++ {
+		result = NewBinaryExpr(result, LogicalAnd, validConditions[i], source)
+	}
+
+	return result
 }

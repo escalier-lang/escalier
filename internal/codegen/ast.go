@@ -342,6 +342,7 @@ const (
 	LogicalAnd        BinaryOp = "&&"
 	LogicalOr         BinaryOp = "||"
 	NullishCoalescing BinaryOp = "??"
+	In                BinaryOp = "in"
 	Assign            BinaryOp = "="
 )
 

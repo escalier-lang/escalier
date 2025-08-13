@@ -25,7 +25,7 @@ export const tupleValue = [1, 2, 3];
 let temp5;
 let temp6;
 temp6 = tupleValue;
-if (temp6.length == 3 && true && true && true) {
+if (temp6.length == 3) {
   a = temp6[0];
   b = temp6[1];
   c = temp6[2];
@@ -38,7 +38,7 @@ export const objectValue = {x: 10, y: 20};
 let temp7;
 let temp8;
 temp8 = objectValue;
-if (temp8 != null && true && true) {
+if (temp8 != null && "x" in temp8 && "y" in temp8) {
   x = temp8.x;
   y = temp8.y;
   temp7 = x + y;
@@ -49,7 +49,7 @@ export const objectMatch = temp7;
 let temp9;
 let temp10;
 temp10 = objectValue;
-if (temp10 != null && true && true) {
+if (temp10 != null && "x" in temp10 && "y" in temp10) {
   a = temp10.x;
   b = temp10.y;
   temp9 = a * b;
@@ -61,7 +61,7 @@ export const nestedValue = {point: [1, 2]};
 let temp11;
 let temp12;
 temp12 = nestedValue;
-if (temp12 != null && temp12.point.length == 2 && true && true) {
+if (temp12 != null && "point" in temp12 && temp12.point.length == 2) {
   x = temp12.point[0];
   y = temp12.point[1];
   temp11 = x + y;
@@ -73,11 +73,11 @@ const tuple2 = [3, 3];
 let temp13;
 let temp14;
 temp14 = tuple2;
-if (temp14.length == 2 && true && true && a == b) {
+if (temp14.length == 2 && a == b) {
   a = temp14[0];
   b = temp14[1];
   temp13 = "equal";
-} else if (temp14.length == 2 && true && true) {
+} else if (temp14.length == 2) {
   a = temp14[0];
   b = temp14[1];
   temp13 = "not equal";
