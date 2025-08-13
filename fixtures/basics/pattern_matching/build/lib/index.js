@@ -17,7 +17,7 @@ let temp3;
 let temp4;
 temp4 = num2;
 if (true) {
-  x = temp4;
+  const x = temp4;
   temp3 = x * 2;
 }
 export const variableMatch = temp3;
@@ -26,9 +26,7 @@ let temp5;
 let temp6;
 temp6 = tupleValue;
 if (temp6.length == 3) {
-  a = temp6[0];
-  b = temp6[1];
-  c = temp6[2];
+  const [a, b, c] = temp6;
   temp5 = a + b + c;
 } else if (true) {
   temp5 = 0;
@@ -39,8 +37,7 @@ let temp7;
 let temp8;
 temp8 = objectValue;
 if (temp8 != null && "x" in temp8 && "y" in temp8) {
-  x = temp8.x;
-  y = temp8.y;
+  const {x, y} = temp8;
   temp7 = x + y;
 } else if (true) {
   temp7 = 0;
@@ -50,8 +47,7 @@ let temp9;
 let temp10;
 temp10 = objectValue;
 if (temp10 != null && "x" in temp10 && "y" in temp10) {
-  a = temp10.x;
-  b = temp10.y;
+  const {x: a, y: b} = temp10;
   temp9 = a * b;
 } else if (true) {
   temp9 = 0;
@@ -61,9 +57,8 @@ export const nestedValue = {point: [1, 2]};
 let temp11;
 let temp12;
 temp12 = nestedValue;
-if (temp12 != null && "point" in temp12 && temp12.point.length == 2) {
-  x = temp12.point[0];
-  y = temp12.point[1];
+if (temp12 != null && "point" in temp12) {
+  const {point: [x, y]} = temp12;
   temp11 = x + y;
 } else if (true) {
   temp11 = 0;
@@ -74,12 +69,10 @@ let temp13;
 let temp14;
 temp14 = tuple2;
 if (temp14.length == 2 && a == b) {
-  a = temp14[0];
-  b = temp14[1];
+  const [a, b] = temp14;
   temp13 = "equal";
 } else if (temp14.length == 2) {
-  a = temp14[0];
-  b = temp14[1];
+  const [a, b] = temp14;
   temp13 = "not equal";
 }
 export const guardMatch = temp13;
@@ -116,7 +109,7 @@ if (temp20 == 1) {
 } else if (temp20 == 2) {
   temp19 = "two";
 } else if (true) {
-  n = temp20;
+  const n = temp20;
   temp19 = "number: " + n.toString();
 }
 export const mixedMatch = temp19;

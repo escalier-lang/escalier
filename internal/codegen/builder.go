@@ -1002,15 +1002,23 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr, []Stmt) {
 	switch pat := pattern.(type) {
 	case *ast.IdentPat:
-		// Identifier patterns always match, just create binding
-		binding := NewBinaryExpr(
-			NewIdentExpr(pat.Name, "", pat),
-			Assign,
-			targetExpr,
-			pat,
-		)
-		bindingStmt := &ExprStmt{
-			Expr:   binding,
+		// Identifier patterns always match, just create binding as const declaration
+		identPat := NewIdentPat(pat.Name, nil, pat)
+		declarator := &Declarator{
+			Pattern: identPat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind, // Use const (val) for pattern bindings
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
 			span:   nil,
 			source: pat,
 		}
@@ -1027,36 +1035,48 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{}
 
 	case *ast.TuplePat:
-		// Tuple patterns: check length and match each element
+		// Tuple patterns: check length and create destructuring declaration
 		var conditions []Expr
-		var bindings []Stmt
 
 		// Check if target is an array and has the right length
 		lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
 		conditions = append(conditions, lengthCheck)
 
-		// Check each element
-		for i, elem := range pat.Elems {
-			indexExpr := NewIndexExpr(
-				targetExpr,
-				NewLitExpr(NewNumLit(float64(i), elem), elem),
-				false,
-				elem,
-			)
-			elemCondition, elemBindings := b.buildPatternCondition(elem, indexExpr)
-			conditions = append(conditions, elemCondition)
-			bindings = slices.Concat(bindings, elemBindings)
+		// Build the destructuring pattern for variable declarations
+		tuplePatElems := []Pat{}
+		for _, elem := range pat.Elems {
+			tuplePatElems = append(tuplePatElems, b.buildDestructuringPattern(elem))
+		}
+
+		// Create destructuring declaration: const [a, b, c] = target
+		tuplePat := NewTuplePat(tuplePatElems, pat)
+		declarator := &Declarator{
+			Pattern: tuplePat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: pat,
 		}
 
 		// Combine all conditions with &&
 		finalCondition := combineConditions(conditions, pat)
 
-		return finalCondition, bindings
+		return finalCondition, []Stmt{bindingStmt}
 
 	case *ast.ObjectPat:
-		// Object patterns: check for object properties
+		// Object patterns: check for object properties and create destructuring declaration
 		var conditions []Expr
-		var bindings []Stmt
 
 		// Check that target is not null/undefined
 		nullCheck := NewBinaryExpr(
@@ -1067,7 +1087,10 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		)
 		conditions = append(conditions, nullCheck)
 
-		// Check each property
+		// Build object pattern elements for destructuring
+		objPatElems := []ObjPatElem{}
+
+		// Check each property and build pattern elements
 		for _, elem := range pat.Elems {
 			switch objElem := elem.(type) {
 			case *ast.ObjKeyValuePat:
@@ -1080,15 +1103,9 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				propAccessExpr := NewMemberExpr(
-					targetExpr,
-					NewIdentifier(objElem.Key.Name, objElem.Key),
-					false,
-					objElem,
-				)
-				elemCondition, elemBindings := b.buildPatternCondition(objElem.Value, propAccessExpr)
-				conditions = append(conditions, elemCondition)
-				bindings = slices.Concat(bindings, elemBindings)
+				// Build the key-value pattern for destructuring
+				valuePat := b.buildDestructuringPattern(objElem.Value)
+				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object
@@ -1100,43 +1117,82 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				propAccessExpr := NewMemberExpr(
-					targetExpr,
-					NewIdentifier(objElem.Key.Name, objElem.Key),
-					false,
-					objElem,
-				)
-				// Create an identifier pattern for the shorthand
-				identPat := &ast.IdentPat{Name: objElem.Key.Name}
-				elemCondition, elemBindings := b.buildPatternCondition(identPat, propAccessExpr)
-				conditions = append(conditions, elemCondition)
-				bindings = slices.Concat(bindings, elemBindings)
+				// Build shorthand pattern for destructuring
+				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
 
 			case *ast.ObjRestPat:
-				// TODO: Implement object rest pattern
-				// For now, just create the binding for the rest pattern
-				restBinding := NewBinaryExpr(
-					NewIdentExpr(objElem.Pattern.(*ast.IdentPat).Name, "", objElem.Pattern),
-					Assign,
-					targetExpr, // TODO: Should exclude already matched properties
-					objElem,
-				)
-				bindings = append(bindings, &ExprStmt{
-					Expr:   restBinding,
-					span:   nil,
-					source: objElem,
-				})
+				// TODO: Implement object rest pattern properly
+				// For now, create a binding for the rest pattern
+				restPat := b.buildDestructuringPattern(objElem.Pattern)
+				objPatElems = append(objPatElems, NewObjRestPat(restPat, objElem))
 			}
+		}
+
+		// Create destructuring declaration: const {x, y} = target
+		objectPat := NewObjectPat(objPatElems, pat)
+		declarator := &Declarator{
+			Pattern: objectPat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: pat,
 		}
 
 		// Combine all conditions with &&
 		finalCondition := combineConditions(conditions, pat)
 
-		return finalCondition, bindings
+		return finalCondition, []Stmt{bindingStmt}
 
 	default:
 		// For now, handle other patterns as always matching
 		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}
+	}
+}
+
+// buildDestructuringPattern converts an AST pattern to a codegen pattern for destructuring
+func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
+	switch pat := pattern.(type) {
+	case *ast.IdentPat:
+		return NewIdentPat(pat.Name, nil, pat)
+	case *ast.WildcardPat:
+		// Wildcards in destructuring are typically represented as identifier patterns
+		// with a special name like "_" - but for now we'll skip them
+		return NewIdentPat("_", nil, pat)
+	case *ast.TuplePat:
+		tupleElems := []Pat{}
+		for _, elem := range pat.Elems {
+			tupleElems = append(tupleElems, b.buildDestructuringPattern(elem))
+		}
+		return NewTuplePat(tupleElems, pat)
+	case *ast.ObjectPat:
+		objElems := []ObjPatElem{}
+		for _, elem := range pat.Elems {
+			switch objElem := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				valuePat := b.buildDestructuringPattern(objElem.Value)
+				objElems = append(objElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+			case *ast.ObjShorthandPat:
+				objElems = append(objElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
+			case *ast.ObjRestPat:
+				restPat := b.buildDestructuringPattern(objElem.Pattern)
+				objElems = append(objElems, NewObjRestPat(restPat, objElem))
+			}
+		}
+		return NewObjectPat(objElems, pat)
+	default:
+		// For other patterns, default to an identifier pattern
+		return NewIdentPat("_", nil, pat)
 	}
 }
 
