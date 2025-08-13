@@ -992,10 +992,32 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 	}
 
 	if currentStmt != nil {
+		// Post-process to convert "else if (true)" to "else"
+		currentStmt = simplifyTrueLiterals(currentStmt)
 		stmts = append(stmts, currentStmt)
 	}
 
 	return tempVar, stmts
+}
+
+// simplifyTrueLiterals recursively converts "else if (true)" to "else" in if-else chains
+func simplifyTrueLiterals(stmt Stmt) Stmt {
+	if ifStmt, ok := stmt.(*IfStmt); ok {
+		if ifStmt.Alt != nil {
+			// Check if the else clause is an "if (true)" that can be simplified
+			if altIfStmt, ok := ifStmt.Alt.(*IfStmt); ok && isTrueLiteral(altIfStmt.Test) {
+				// Replace "else if (true) { ... }" with "else { ... }"
+				simplifiedAlt := simplifyTrueLiterals(altIfStmt.Cons)
+				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
+			} else {
+				// Recursively simplify the else clause
+				simplifiedAlt := simplifyTrueLiterals(ifStmt.Alt)
+				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
+			}
+		}
+		return ifStmt
+	}
+	return stmt
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern

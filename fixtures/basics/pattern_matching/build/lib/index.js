@@ -8,7 +8,7 @@ if (temp2 == 1) {
   temp1 = "two";
 } else if (temp2 == 5) {
   temp1 = "five";
-} else if (true) {
+} else {
   temp1 = "other";
 }
 export const literalMatch = temp1;
@@ -28,7 +28,7 @@ temp6 = tupleValue;
 if (temp6.length == 3) {
   const [a, b, c] = temp6;
   temp5 = a + b + c;
-} else if (true) {
+} else {
   temp5 = 0;
 }
 export const tupleMatch = temp5;
@@ -39,7 +39,7 @@ temp8 = objectValue;
 if (temp8 != null && "x" in temp8 && "y" in temp8) {
   const {x, y} = temp8;
   temp7 = x + y;
-} else if (true) {
+} else {
   temp7 = 0;
 }
 export const objectMatch = temp7;
@@ -49,7 +49,7 @@ temp10 = objectValue;
 if (temp10 != null && "x" in temp10 && "y" in temp10) {
   const {x: a, y: b} = temp10;
   temp9 = a * b;
-} else if (true) {
+} else {
   temp9 = 0;
 }
 export const objectRename = temp9;
@@ -60,7 +60,7 @@ temp12 = nestedValue;
 if (temp12 != null && "point" in temp12) {
   const {point: [x, y]} = temp12;
   temp11 = x + y;
-} else if (true) {
+} else {
   temp11 = 0;
 }
 export const nestedMatch = temp11;
@@ -86,7 +86,7 @@ if (temp16 == "hi") {
   temp15 = "salutation";
 } else if (temp16 == "bye") {
   temp15 = "farewell";
-} else if (true) {
+} else {
   temp15 = "unknown";
 }
 export const multiCase = temp15;
@@ -108,7 +108,7 @@ if (temp20 == 1) {
   temp19 = "one";
 } else if (temp20 == 2) {
   temp19 = "two";
-} else if (true) {
+} else {
   const n = temp20;
   temp19 = "number: " + n.toString();
 }
