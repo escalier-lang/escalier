@@ -146,7 +146,7 @@ func (c *Checker) InferComponent(
 				taType, taErrors := c.inferTypeAnn(declCtx, decl.TypeAnn)
 				errors = slices.Concat(errors, taErrors)
 
-				unifyErrors := c.unify(declCtx, taType, patType)
+				unifyErrors := c.unify(declCtx, patType, taType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
@@ -218,12 +218,19 @@ func (c *Checker) InferComponent(
 				errors = slices.Concat(errors, unifyErrors)
 			}
 		case *ast.VarDecl:
-			patType := decl.InferredType
+			// TODO: if there's a type annotation, unify the initializer with it
 			if decl.Init != nil {
 				initType, initErrors := c.inferExpr(declCtx, decl.Init)
 				errors = slices.Concat(errors, initErrors)
-				unifyErrors := c.unify(ctx, initType, patType)
-				errors = slices.Concat(errors, unifyErrors)
+				if decl.TypeAnn != nil {
+					taType := decl.TypeAnn.InferredType()
+					unifyErrors := c.unify(ctx, initType, taType)
+					errors = slices.Concat(errors, unifyErrors)
+				} else {
+					patType := decl.InferredType
+					unifyErrors := c.unify(ctx, initType, patType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
 			}
 		case *ast.TypeDecl:
 			typeAlias, declErrors := c.inferTypeDecl(declCtx, decl)
@@ -1086,6 +1093,8 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 		}
 
 		// Unify the pattern type with the target type to ensure they're compatible
+		// The pattern type must be a subtype of the target type.
+		// This is opposite of what we do when inferring variable declarations.
 		unifyErrors := c.unify(caseCtx, patternType, targetType)
 		errors = slices.Concat(errors, unifyErrors)
 

@@ -1212,6 +1212,10 @@ func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
 			}
 		}
 		return NewObjectPat(objElems, pat)
+	case *ast.RestPat:
+		// Handle rest patterns properly for destructuring
+		innerPat := b.buildDestructuringPattern(pat.Pattern)
+		return NewRestPat(innerPat, pat)
 	default:
 		// For other patterns, default to an identifier pattern
 		return NewIdentPat("_", nil, pat)

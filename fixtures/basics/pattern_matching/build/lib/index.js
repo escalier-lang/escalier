@@ -113,4 +113,26 @@ if (temp20 == 1) {
   temp19 = "number: " + n.toString();
 }
 export const mixedMatch = temp19;
+export const longTuple = [1, 2, 3];
+let temp21;
+let temp22;
+temp22 = longTuple;
+if (temp22.length == 2) {
+  const [first, ...rest] = temp22;
+  temp21 = rest;
+} else {
+  temp21 = 0;
+}
+export const tupleRestMatch = temp21;
+export const extendedPoint = {x: 1, y: 2, z: 3, name: "point"};
+let temp23;
+let temp24;
+temp24 = extendedPoint;
+if (temp24 != null && "x" in temp24 && "y" in temp24) {
+  const {x, y, ...rest} = temp24;
+  temp23 = rest;
+} else {
+  temp23 = 0;
+}
+export const objectRestMatch = temp23;
 //# sourceMappingURL=./index.js.map
