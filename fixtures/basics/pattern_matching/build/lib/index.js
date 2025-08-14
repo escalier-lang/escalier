@@ -118,7 +118,7 @@ let temp21;
 let temp22;
 temp22 = longTuple;
 if (temp22.length == 2) {
-  const [first, _] = temp22;
+  const [first, ...rest] = temp22;
   temp21 = rest;
 } else {
   temp21 = 0;
