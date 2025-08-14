@@ -1,0 +1,76 @@
+// Basic pattern matching examples
+
+type Point = {x: number, y: number}
+
+// Simple literal matching
+val num1: number = 5
+export val literalMatch = match num1 {
+    1 => "one",
+    2 => "two", 
+    5 => "five",
+    _ => "other"
+}
+
+// Variable binding pattern
+var num2: number = 42
+export val variableMatch = match num2 {
+    x => x * 2
+}
+
+// Tuple pattern matching
+export val tupleValue: [number, number, number] = [1, 2, 3]
+export val tupleMatch = match tupleValue {
+    [a, b, c] => a + b + c,
+    _ => 0
+}
+
+// Object pattern matching
+export val objectValue: Point = {x: 10, y: 20}
+export val objectMatch = match objectValue {
+    {x, y} => x + y,
+    _ => 0
+}
+
+// Object pattern with renaming
+export val objectRename = match objectValue {
+    {x: a, y: b} => a * b,
+    _ => 0
+}
+
+// Nested pattern matching
+export val nestedValue: {point: [number, number]} = {point: [1, 2]}
+export val nestedMatch = match nestedValue {
+    {point: [x, y]} => x + y,
+    _ => 0
+}
+
+// Pattern matching with guards
+val tuple2: [number, number] = [3, 3]
+export val guardMatch = match tuple2 {
+    [a, b] if a == b => "equal",
+    [a, b] => "not equal"
+}
+
+// Multiple cases
+val str: string = "hello"
+export val multiCase = match str {
+    "hi" => "greeting",
+    "hello" => "salutation", 
+    "bye" => "farewell",
+    _ => "unknown"
+}
+
+// Boolean literal matching
+val bool: boolean = true
+export val boolMatch = match bool {
+    true => "yes",
+    false => "no"
+}
+
+// Mixed literal and variable patterns
+val num3: number = 7
+export val mixedMatch = match num3 {
+    1 => "one",
+    2 => "two",
+    n => "number: " ++ n.toString()
+}

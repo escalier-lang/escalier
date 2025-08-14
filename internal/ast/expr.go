@@ -670,6 +670,10 @@ type MatchCase struct {
 	span    Span
 }
 
+func NewMatchCase(pattern Pat, guard Expr, body BlockOrExpr, span Span) *MatchCase {
+	return &MatchCase{Pattern: pattern, Guard: guard, Body: body, span: span}
+}
+
 func (e *MatchCase) Span() Span { return e.span }
 
 type MatchExpr struct {

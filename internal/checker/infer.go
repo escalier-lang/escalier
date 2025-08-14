@@ -567,6 +567,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		resultType, errors = c.inferIfElse(ctx, expr)
 	case *ast.DoExpr:
 		resultType, errors = c.inferDoExpr(ctx, expr)
+	case *ast.MatchExpr:
+		resultType, errors = c.inferMatchExpr(ctx, expr)
 	default:
 		resultType = NewNeverType()
 		errors = []Error{
@@ -995,37 +997,48 @@ func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
 	}
 }
 
+// inferBlock infers the types of all statements in a block and returns the type
+// of the block. The type of the block is the type of the last statement if it's
+// an expression statement, otherwise it returns the provided default type.
+func (c *Checker) inferBlock(ctx Context, block *ast.Block, defaultType Type) (Type, []Error) {
+	errors := []Error{}
+
+	// Process all statements in the block
+	for _, stmt := range block.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+
+	// The type of the block is the type of the last statement if it's an expression
+	resultType := defaultType
+	if len(block.Stmts) > 0 {
+		lastStmt := block.Stmts[len(block.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			if inferredType := exprStmt.Expr.InferredType(); inferredType != nil {
+				resultType = inferredType
+			}
+		}
+	}
+
+	return resultType, errors
+}
+
 func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error) {
 	condType, condErrors := c.inferExpr(ctx, expr.Cond)
 	unifyErrors := c.unify(ctx, condType, NewBoolType())
 	errors := slices.Concat(condErrors, unifyErrors)
 
-	var consType Type = NewNeverType()
-	for _, stmt := range expr.Cons.Stmts {
-		stmtErrors := c.inferStmt(ctx, stmt)
-		errors = slices.Concat(errors, stmtErrors)
-	}
-	if len(expr.Cons.Stmts) > 0 {
-		lastStmt := expr.Cons.Stmts[len(expr.Cons.Stmts)-1]
-		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-			consType = exprStmt.Expr.InferredType()
-		}
-	}
+	// Infer the consequent block
+	consType, consErrors := c.inferBlock(ctx, &expr.Cons, NewNeverType())
+	errors = slices.Concat(errors, consErrors)
 
 	var altType Type = NewNeverType()
 	if expr.Alt != nil {
 		alt := expr.Alt
 		if alt.Block != nil {
-			for _, stmt := range alt.Block.Stmts {
-				stmtErrors := c.inferStmt(ctx, stmt)
-				errors = slices.Concat(errors, stmtErrors)
-			}
-			if len(alt.Block.Stmts) > 0 {
-				lastStmt := alt.Block.Stmts[len(alt.Block.Stmts)-1]
-				if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-					altType = exprStmt.Expr.InferredType()
-				}
-			}
+			var altErrors []Error
+			altType, altErrors = c.inferBlock(ctx, alt.Block, NewNeverType())
+			errors = slices.Concat(errors, altErrors)
 		} else if alt.Expr != nil {
 			t, altErrors := c.inferExpr(ctx, alt.Expr)
 			errors = slices.Concat(errors, altErrors)
@@ -1042,24 +1055,77 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 }
 
 func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (Type, []Error) {
+	// Infer the body block - default to undefined if no expression at the end
+	resultType, errors := c.inferBlock(ctx, &expr.Body, NewLitType(&UndefinedLit{}))
+
+	expr.SetInferredType(resultType)
+	return resultType, errors
+}
+
+func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Error) {
 	errors := []Error{}
 
-	// Process all statements in the block
-	for _, stmt := range expr.Body.Stmts {
-		stmtErrors := c.inferStmt(ctx, stmt)
-		errors = slices.Concat(errors, stmtErrors)
+	// Infer the type of the target expression
+	targetType, targetErrors := c.inferExpr(ctx, expr.Target)
+	errors = slices.Concat(errors, targetErrors)
+
+	// Collect the types of all case bodies
+	caseTypes := make([]Type, 0, len(expr.Cases))
+
+	for _, matchCase := range expr.Cases {
+		// Create a new scope for this case to handle pattern bindings
+		caseCtx := ctx.WithNewScope()
+
+		// Infer the pattern type and get bindings
+		patternType, patternBindings, patternErrors := c.inferPattern(caseCtx, matchCase.Pattern)
+		errors = slices.Concat(errors, patternErrors)
+
+		// Add pattern bindings to the case scope
+		for name, binding := range patternBindings {
+			caseCtx.Scope.setValue(name, binding)
+		}
+
+		// Unify the pattern type with the target type to ensure they're compatible
+		unifyErrors := c.unify(caseCtx, patternType, targetType)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// If there's a guard, check that it's a boolean
+		if matchCase.Guard != nil {
+			guardType, guardErrors := c.inferExpr(caseCtx, matchCase.Guard)
+			errors = slices.Concat(errors, guardErrors)
+
+			guardUnifyErrors := c.unify(caseCtx, guardType, NewBoolType())
+			errors = slices.Concat(errors, guardUnifyErrors)
+		}
+
+		// Infer the type of the case body
+		var caseType Type
+		if matchCase.Body.Block != nil {
+			// Handle block body using the helper function
+			var caseErrors []Error
+			caseType, caseErrors = c.inferBlock(caseCtx, matchCase.Body.Block, NewLitType(&UndefinedLit{}))
+			errors = slices.Concat(errors, caseErrors)
+		} else if matchCase.Body.Expr != nil {
+			// Handle expression body
+			var caseErrors []Error
+			caseType, caseErrors = c.inferExpr(caseCtx, matchCase.Body.Expr)
+			errors = slices.Concat(errors, caseErrors)
+		} else {
+			// This shouldn't happen with a well-formed AST
+			caseType = NewNeverType()
+		}
+
+		caseTypes = append(caseTypes, caseType)
 	}
 
-	// The type of the do-expression is the type of the last statement if it's an expression
-	var resultType Type = NewLitType(&UndefinedLit{}) // Default to undefined
-	if len(expr.Body.Stmts) > 0 {
-		lastStmt := expr.Body.Stmts[len(expr.Body.Stmts)-1]
-		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-			inferredType := exprStmt.Expr.InferredType()
-			if inferredType != nil {
-				resultType = inferredType
-			}
-		}
+	// The type of the match expression is the union of all case types
+	var resultType Type
+	if len(caseTypes) == 0 {
+		resultType = NewNeverType()
+	} else if len(caseTypes) == 1 {
+		resultType = caseTypes[0]
+	} else {
+		resultType = NewUnionType(caseTypes...)
 	}
 
 	expr.SetInferredType(resultType)

@@ -361,6 +361,8 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return fnExpr
 		case If:
 			return p.ifElse()
+		case Match:
+			return p.matchExpr()
 		case LessThan:
 			// TODO: figure out how to cast this more directly.
 			jsx := p.jsxElement()
@@ -733,4 +735,109 @@ func (p *Parser) doExpr() ast.Expr {
 	block := p.block()
 
 	return ast.NewDo(block, ast.Span{Start: start, End: block.Span.End, SourceID: p.lexer.source.ID})
+}
+
+// matchExpr = 'match' expr '{' matchCase (',' matchCase)* '}'
+// matchCase = pattern (('if' expr)?) '=>' (block | expr)
+func (p *Parser) matchExpr() ast.Expr {
+	start := p.lexer.peek().Span.Start
+	p.lexer.consume() // consume 'match'
+
+	target := p.expr()
+	if target == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected target expression after 'match'")
+		return ast.NewEmpty(token.Span)
+	}
+
+	p.expect(OpenBrace, AlwaysConsume)
+
+	cases := []*ast.MatchCase{}
+	token := p.lexer.peek()
+
+	for token.Type != CloseBrace && token.Type != EndOfFile {
+		// Skip comments
+		if token.Type == LineComment || token.Type == BlockComment {
+			p.lexer.consume()
+			token = p.lexer.peek()
+			continue
+		}
+
+		matchCase := p.matchCase()
+		if matchCase != nil {
+			cases = append(cases, matchCase)
+		}
+
+		token = p.lexer.peek()
+		if token.Type == Comma {
+			p.lexer.consume()
+			token = p.lexer.peek()
+		} else if token.Type != CloseBrace {
+			// Allow missing comma before closing brace
+			break
+		}
+	}
+
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+
+	return ast.NewMatch(target, cases, span)
+}
+
+// matchCase = pattern (('if' expr)?) '=>' (block | expr)
+func (p *Parser) matchCase() *ast.MatchCase {
+	start := p.lexer.currentLocation
+
+	pattern := p.pattern(false)
+	if pattern == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected pattern in match case")
+		return nil
+	}
+
+	var guard ast.Expr
+	token := p.lexer.peek()
+	if token.Type == If {
+		p.lexer.consume() // consume 'if'
+		guard = p.expr()
+		if guard == nil {
+			p.reportError(token.Span, "Expected guard expression after 'if'")
+		}
+	}
+
+	p.expect(FatArrow, AlwaysConsume)
+
+	token = p.lexer.peek()
+	var body ast.BlockOrExpr
+
+	if token.Type == OpenBrace {
+		block := p.block()
+		body = ast.BlockOrExpr{
+			Block: &block,
+			Expr:  nil,
+		}
+	} else {
+		expr := p.expr()
+		if expr == nil {
+			p.reportError(token.Span, "Expected expression or block after '=>'")
+			return nil
+		}
+		body = ast.BlockOrExpr{
+			Block: nil,
+			Expr:  expr,
+		}
+	}
+
+	var end ast.Location
+	if body.Block != nil {
+		end = body.Block.Span.End
+	} else if body.Expr != nil {
+		end = body.Expr.Span().End
+	} else {
+		end = pattern.Span().End
+	}
+
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+
+	return ast.NewMatchCase(pattern, guard, body, span)
 }

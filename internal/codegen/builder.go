@@ -744,6 +744,9 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		stmts = append(stmts, ifStmt)
 
 		return tempVar, stmts
+	case *ast.MatchExpr:
+		// Convert match expression to a series of if-else statements
+		return b.buildMatchExpr(expr)
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:
@@ -908,5 +911,361 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 			TypeAnn:  nil,
 		})
 	}
+
 	return outParams, outParamStmts
+}
+
+// buildMatchExpr converts a match expression into if-else statements with pattern matching
+func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
+	// Create a temporary variable to store the match result
+	tempVar, tempDeclStmt := b.createTempVar(expr)
+	stmts := []Stmt{tempDeclStmt}
+
+	// Build the target expression
+	targetExpr, targetStmts := b.buildExpr(expr.Target)
+	stmts = slices.Concat(stmts, targetStmts)
+
+	// Create a temporary variable for the target to avoid re-evaluation
+	targetTempVar, targetTempDeclStmt := b.createTempVar(expr.Target)
+	stmts = append(stmts, targetTempDeclStmt)
+
+	// Assign target to temp variable
+	targetAssignment := NewBinaryExpr(targetTempVar, Assign, targetExpr, expr.Target)
+	stmts = append(stmts, &ExprStmt{
+		Expr:   targetAssignment,
+		span:   nil,
+		source: expr.Target,
+	})
+
+	// Convert each match case to if-else statements
+	var currentStmt Stmt
+	for i := len(expr.Cases) - 1; i >= 0; i-- {
+		matchCase := expr.Cases[i]
+
+		// Build pattern matching conditions and variable bindings
+		patternCond, patternBindings := b.buildPatternCondition(matchCase.Pattern, targetTempVar)
+
+		// Build guard condition if present
+		var fullCondition Expr = patternCond
+		if matchCase.Guard != nil {
+			guardExpr, guardStmts := b.buildExpr(matchCase.Guard)
+			stmts = slices.Concat(stmts, guardStmts)
+			fullCondition = NewBinaryExpr(patternCond, LogicalAnd, guardExpr, matchCase.Guard)
+		}
+
+		// Build the case body statements
+		var caseStmts []Stmt
+
+		// Add pattern binding statements
+		caseStmts = slices.Concat(caseStmts, patternBindings)
+
+		// Add body statements or expression
+		if matchCase.Body.Block != nil {
+			// Handle block body - assign result of last statement to temp var
+			blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
+			caseStmts = slices.Concat(caseStmts, blockStmts)
+		} else if matchCase.Body.Expr != nil {
+			// Handle expression body
+			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr)
+			caseStmts = slices.Concat(caseStmts, bodyStmts)
+
+			// Assign result to temp variable
+			assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
+			caseStmts = append(caseStmts, &ExprStmt{
+				Expr:   assignment,
+				span:   nil,
+				source: matchCase.Body.Expr,
+			})
+		}
+
+		// Create block statement for the case
+		caseBlock := NewBlockStmt(caseStmts, expr)
+
+		// Create if statement
+		if currentStmt == nil {
+			// Last case (first in reverse order) - no else clause
+			currentStmt = NewIfStmt(fullCondition, caseBlock, nil, expr)
+		} else {
+			// Previous cases become the else clause
+			currentStmt = NewIfStmt(fullCondition, caseBlock, currentStmt, expr)
+		}
+	}
+
+	if currentStmt != nil {
+		// Post-process to convert "else if (true)" to "else"
+		currentStmt = simplifyTrueLiterals(currentStmt)
+		stmts = append(stmts, currentStmt)
+	}
+
+	return tempVar, stmts
+}
+
+// simplifyTrueLiterals recursively converts "else if (true)" to "else" in if-else chains
+func simplifyTrueLiterals(stmt Stmt) Stmt {
+	if ifStmt, ok := stmt.(*IfStmt); ok {
+		if ifStmt.Alt != nil {
+			// Check if the else clause is an "if (true)" that can be simplified
+			if altIfStmt, ok := ifStmt.Alt.(*IfStmt); ok && isTrueLiteral(altIfStmt.Test) {
+				// Replace "else if (true) { ... }" with "else { ... }"
+				simplifiedAlt := simplifyTrueLiterals(altIfStmt.Cons)
+				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
+			} else {
+				// Recursively simplify the else clause
+				simplifiedAlt := simplifyTrueLiterals(ifStmt.Alt)
+				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
+			}
+		}
+		return ifStmt
+	}
+	return stmt
+}
+
+// buildPatternCondition builds the condition expression and binding statements for a pattern
+func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr, []Stmt) {
+	switch pat := pattern.(type) {
+	case *ast.IdentPat:
+		// Identifier patterns always match, just create binding as const declaration
+		identPat := NewIdentPat(pat.Name, nil, pat)
+		declarator := &Declarator{
+			Pattern: identPat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind, // Use const (val) for pattern bindings
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: pat,
+		}
+		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{bindingStmt}
+
+	case *ast.LitPat:
+		// Literal patterns: check for equality
+		litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: pat.Lit})
+		condition := NewBinaryExpr(targetExpr, EqualEqual, litExpr, pat)
+		return condition, []Stmt{}
+
+	case *ast.WildcardPat:
+		// Wildcard patterns always match, no bindings
+		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{}
+
+	case *ast.TuplePat:
+		// Tuple patterns: check length and create destructuring declaration
+		var conditions []Expr
+
+		// Check if target is an array and has the right length
+		lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
+		conditions = append(conditions, lengthCheck)
+
+		// Build the destructuring pattern for variable declarations
+		tuplePatElems := []Pat{}
+		for _, elem := range pat.Elems {
+			tuplePatElems = append(tuplePatElems, b.buildDestructuringPattern(elem))
+		}
+
+		// Create destructuring declaration: const [a, b, c] = target
+		tuplePat := NewTuplePat(tuplePatElems, pat)
+		declarator := &Declarator{
+			Pattern: tuplePat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: pat,
+		}
+
+		// Combine all conditions with &&
+		finalCondition := combineConditions(conditions, pat)
+
+		return finalCondition, []Stmt{bindingStmt}
+
+	case *ast.ObjectPat:
+		// Object patterns: check for object properties and create destructuring declaration
+		var conditions []Expr
+
+		// Check that target is not null/undefined
+		nullCheck := NewBinaryExpr(
+			targetExpr,
+			NotEqual,
+			NewLitExpr(NewNullLit(pat), pat),
+			pat,
+		)
+		conditions = append(conditions, nullCheck)
+
+		// Build object pattern elements for destructuring
+		objPatElems := []ObjPatElem{}
+
+		// Check each property and build pattern elements
+		for _, elem := range pat.Elems {
+			switch objElem := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				// Check that the property exists: "propName" in object
+				propExistsCheck := NewBinaryExpr(
+					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
+					In,
+					targetExpr,
+					objElem,
+				)
+				conditions = append(conditions, propExistsCheck)
+
+				// Build the key-value pattern for destructuring
+				valuePat := b.buildDestructuringPattern(objElem.Value)
+				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+
+			case *ast.ObjShorthandPat:
+				// Check that the property exists: "propName" in object
+				propExistsCheck := NewBinaryExpr(
+					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
+					In,
+					targetExpr,
+					objElem,
+				)
+				conditions = append(conditions, propExistsCheck)
+
+				// Build shorthand pattern for destructuring
+				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
+
+			case *ast.ObjRestPat:
+				// TODO: Implement object rest pattern properly
+				// For now, create a binding for the rest pattern
+				restPat := b.buildDestructuringPattern(objElem.Pattern)
+				objPatElems = append(objPatElems, NewObjRestPat(restPat, objElem))
+			}
+		}
+
+		// Create destructuring declaration: const {x, y} = target
+		objectPat := NewObjectPat(objPatElems, pat)
+		declarator := &Declarator{
+			Pattern: objectPat,
+			TypeAnn: nil,
+			Init:    targetExpr,
+		}
+		varDecl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   []*Declarator{declarator},
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  pat,
+		}
+		bindingStmt := &DeclStmt{
+			Decl:   varDecl,
+			span:   nil,
+			source: pat,
+		}
+
+		// Combine all conditions with &&
+		finalCondition := combineConditions(conditions, pat)
+
+		return finalCondition, []Stmt{bindingStmt}
+
+	default:
+		// For now, handle other patterns as always matching
+		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}
+	}
+}
+
+// buildDestructuringPattern converts an AST pattern to a codegen pattern for destructuring
+func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
+	switch pat := pattern.(type) {
+	case *ast.IdentPat:
+		return NewIdentPat(pat.Name, nil, pat)
+	case *ast.WildcardPat:
+		// Wildcards in destructuring are typically represented as identifier patterns
+		// with a special name like "_" - but for now we'll skip them
+		return NewIdentPat("_", nil, pat)
+	case *ast.TuplePat:
+		tupleElems := []Pat{}
+		for _, elem := range pat.Elems {
+			tupleElems = append(tupleElems, b.buildDestructuringPattern(elem))
+		}
+		return NewTuplePat(tupleElems, pat)
+	case *ast.ObjectPat:
+		objElems := []ObjPatElem{}
+		for _, elem := range pat.Elems {
+			switch objElem := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				valuePat := b.buildDestructuringPattern(objElem.Value)
+				objElems = append(objElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+			case *ast.ObjShorthandPat:
+				objElems = append(objElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
+			case *ast.ObjRestPat:
+				restPat := b.buildDestructuringPattern(objElem.Pattern)
+				objElems = append(objElems, NewObjRestPat(restPat, objElem))
+			}
+		}
+		return NewObjectPat(objElems, pat)
+	default:
+		// For other patterns, default to an identifier pattern
+		return NewIdentPat("_", nil, pat)
+	}
+}
+
+// buildArrayLengthCheck creates a condition to check if an array has the expected length
+func (b *Builder) buildArrayLengthCheck(arrayExpr Expr, expectedLength int, source ast.Node) Expr {
+	lengthAccess := NewMemberExpr(
+		arrayExpr,
+		NewIdentifier("length", source),
+		false,
+		source,
+	)
+	expectedLengthExpr := NewLitExpr(NewNumLit(float64(expectedLength), source), source)
+	return NewBinaryExpr(lengthAccess, EqualEqual, expectedLengthExpr, source)
+}
+
+// isTrueLiteral checks if an expression is a literal true value
+func isTrueLiteral(expr Expr) bool {
+	if litExpr, ok := expr.(*LitExpr); ok {
+		if boolLit, ok := litExpr.Lit.(*BoolLit); ok {
+			return boolLit.Value
+		}
+	}
+	return false
+}
+
+// combineConditions combines multiple conditions with && operators,
+// filtering out literal true values to avoid redundant conditions
+func combineConditions(conditions []Expr, source ast.Node) Expr {
+	// Filter out true literals
+	var validConditions []Expr
+	for _, condition := range conditions {
+		if !isTrueLiteral(condition) {
+			validConditions = append(validConditions, condition)
+		}
+	}
+
+	// If no valid conditions, return true
+	if len(validConditions) == 0 {
+		return NewLitExpr(NewBoolLit(true, source), source)
+	}
+
+	// If only one condition, return it directly
+	if len(validConditions) == 1 {
+		return validConditions[0]
+	}
+
+	// Combine multiple conditions with &&
+	result := validConditions[0]
+	for i := 1; i < len(validConditions); i++ {
+		result = NewBinaryExpr(result, LogicalAnd, validConditions[i], source)
+	}
+
+	return result
 }

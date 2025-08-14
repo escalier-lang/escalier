@@ -46,6 +46,7 @@ var binaryOpMap = map[BinaryOp]string{
 	LogicalAnd:        "&&",
 	LogicalOr:         "||",
 	NullishCoalescing: "??",
+	In:                "in",
 }
 
 var unaryOpMap = map[UnaryOp]string{

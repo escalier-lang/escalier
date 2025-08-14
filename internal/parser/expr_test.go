@@ -149,6 +149,21 @@ func TestParseExprNoErrors(t *testing.T) {
 		"MethodCall": {
 			input: "foo.bar()/baz",
 		},
+		"MatchBasic": {
+			input: "match x { 1 => \"one\", 2 => \"two\" }",
+		},
+		"MatchWithGuard": {
+			input: "match x { [a, b] if a > b => \"first is greater\" }",
+		},
+		"MatchWithBlock": {
+			input: "match x { _ => {\n  console.log(x)\n  \"unknown\"\n} }",
+		},
+		"MatchWithPatterns": {
+			input: "match value { {name} => name, [first, ...rest] => first, _ => null }",
+		},
+		"MatchComplex": {
+			input: "match result { Some(value) if value > 0 => value, Some(_) => 0, None => -1 }",
+		},
 	}
 
 	for name, test := range tests {
@@ -225,6 +240,27 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"ObjectMissingComma": {
 			input: "{ foo: 5 bar: 10 }",
+		},
+		"MatchMissingTarget": {
+			input: "match { 1 => \"one\" }",
+		},
+		"MatchMissingOpeningBrace": {
+			input: "match x 1 => \"one\" }",
+		},
+		"MatchMissingArrow": {
+			input: "match x { 1 \"one\" }",
+		},
+		"MatchMissingPattern": {
+			input: "match x { => \"one\" }",
+		},
+		"MatchIncompleteGuard": {
+			input: "match x { 1 if => \"one\" }",
+		},
+		"MatchMissingBody": {
+			input: "match x { 1 => }",
+		},
+		"MatchMissingClosingBrace": {
+			input: "match x { 1 => \"one\"",
 		},
 	}
 
