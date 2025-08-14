@@ -11,8 +11,6 @@ import (
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
-	fmt.Printf("Unifying types %s and %s\n", t1, t2)
-
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
 	}
@@ -487,7 +485,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			namedElems1 := make(map[ObjTypeKey]Type)
 			namedElems2 := make(map[ObjTypeKey]Type)
 
-			// TODO: try using btree.Map[string]Type instead
 			keys1 := []ObjTypeKey{} // original order of keys in obj1
 			keys2 := []ObjTypeKey{} // original order of keys in obj2
 
