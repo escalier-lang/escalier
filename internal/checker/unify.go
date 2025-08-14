@@ -532,7 +532,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			}
 
 			if restType1 != nil && restType2 != nil {
-				panic("TODO: unify types with two rest elems")
+				return []Error{&UnimplementedError{message: "unify types with two rest elems"}}
 			} else if restType1 != nil {
 				usedKeys2 := map[ObjTypeKey]bool{}
 				for key1, value1 := range namedElems1 {
