@@ -11,6 +11,8 @@ import (
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
+	fmt.Printf("Unifying types %s and %s\n", t1, t2)
+
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
 	}
@@ -118,7 +120,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			errors := []Error{}
 
 			// TODO: Don't allow more than one rest element in tuple1
-			restElem, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
+			restElem2, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
 			if ok {
 				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
 				elems1 := tuple1.Elems[:len(elems2)]
@@ -131,7 +133,25 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				tuple := &TupleType{
 					Elems: remainingElems,
 				}
-				unifyErrors := c.unify(ctx, restElem.Type, tuple)
+				unifyErrors := c.unify(ctx, tuple, restElem2.Type)
+				errors = slices.Concat(errors, unifyErrors)
+				return errors
+			}
+
+			restElem1, ok := tuple1.Elems[len(tuple1.Elems)-1].(*RestSpreadType)
+			if ok {
+				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
+				elems2 := tuple2.Elems[:len(elems1)]
+
+				for elem1, elem2 := range Zip(elems1, elems2) {
+					unifyErrors := c.unify(ctx, elem1, elem2)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				remainingElems := tuple2.Elems[len(elems1):]
+				tuple := &TupleType{
+					Elems: remainingElems,
+				}
+				unifyErrors := c.unify(ctx, restElem1.Type, tuple)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
 			}
@@ -466,9 +486,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			namedElems1 := make(map[ObjTypeKey]Type)
 			namedElems2 := make(map[ObjTypeKey]Type)
-			keys1 := []ObjTypeKey{} // original order of keys in obj2
 
-			var restType Type
+			// TODO: try using btree.Map[string]Type instead
+			keys1 := []ObjTypeKey{} // original order of keys in obj1
+			keys2 := []ObjTypeKey{} // original order of keys in obj2
+
+			var restType1 Type
+			var restType2 Type
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
@@ -484,6 +508,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				case *PropertyElemType:
 					namedElems1[elem.Name] = elem.Value
 					keys1 = append(keys1, elem.Name)
+				case *RestSpreadElemType:
+					restType1 = elem.Value
 				default: // skip other types of elems
 				}
 			}
@@ -492,49 +518,100 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				switch elem := elem.(type) {
 				case *MethodElemType:
 					namedElems2[elem.Name] = elem.Fn
+					keys2 = append(keys2, elem.Name)
 				case *GetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Return
+					keys2 = append(keys2, elem.Name)
 				case *SetterElemType:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
+					keys2 = append(keys2, elem.Name)
 				case *PropertyElemType:
 					namedElems2[elem.Name] = elem.Value
+					keys2 = append(keys2, elem.Name)
 				case *RestSpreadElemType:
-					restType = elem.Value
+					restType2 = elem.Value
 				default: // skip other types of elems
 				}
 			}
 
-			usedKeys := map[ObjTypeKey]bool{}
-			for key2, value2 := range namedElems2 {
-				if value1, ok := namedElems1[key2]; ok {
-					unifyErrors := c.unify(ctx, value1, value2)
-					errors = slices.Concat(errors, unifyErrors)
-					usedKeys[key2] = true
-				} else {
-					errors = slices.Concat(errors, []Error{&KeyNotFoundError{
-						Object: obj1,
-						Key:    key2,
-					}})
+			if restType1 != nil && restType2 != nil {
+				panic("TODO: unify types with two rest elems")
+			} else if restType1 != nil {
+				usedKeys2 := map[ObjTypeKey]bool{}
+				for key1, value1 := range namedElems1 {
+					if value2, ok := namedElems2[key1]; ok {
+						unifyErrors := c.unify(ctx, value1, value2)
+						errors = slices.Concat(errors, unifyErrors)
+						usedKeys2[key1] = true
+					} else {
+						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+							Object: obj2,
+							Key:    key1,
+						}})
+					}
 				}
-			}
 
-			if restType != nil {
 				restElems := []ObjTypeElem{}
-				for _, key := range keys1 {
-					if _, ok := usedKeys[key]; !ok {
+				for _, key := range keys2 {
+					if _, ok := usedKeys2[key]; !ok {
 						restElems = append(restElems, &PropertyElemType{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
-							Value:    namedElems1[key],
+							Value:    namedElems2[key],
 						})
 					}
 				}
 
 				objType := NewObjectType(restElems)
 
-				unifyErrors := c.unify(ctx, restType, objType)
+				unifyErrors := c.unify(ctx, objType, restType1)
 				errors = slices.Concat(errors, unifyErrors)
+			} else if restType2 != nil {
+				usedKeys1 := map[ObjTypeKey]bool{}
+				for key2, value2 := range namedElems2 {
+					if value1, ok := namedElems1[key2]; ok {
+						unifyErrors := c.unify(ctx, value1, value2)
+						errors = slices.Concat(errors, unifyErrors)
+						usedKeys1[key2] = true
+					} else {
+						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+							Object: obj1,
+							Key:    key2,
+						}})
+					}
+				}
+
+				if restType2 != nil {
+					restElems := []ObjTypeElem{}
+					for _, key := range keys1 {
+						if _, ok := usedKeys1[key]; !ok {
+							restElems = append(restElems, &PropertyElemType{
+								Name:     key,
+								Optional: false, // TODO
+								Readonly: false, // TODO
+								Value:    namedElems1[key],
+							})
+						}
+					}
+
+					objType := NewObjectType(restElems)
+
+					unifyErrors := c.unify(ctx, restType2, objType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+			} else {
+				for key2, value2 := range namedElems2 {
+					if value1, ok := namedElems1[key2]; ok {
+						unifyErrors := c.unify(ctx, value1, value2)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+							Object: obj1,
+							Key:    key2,
+						}})
+					}
+				}
 			}
 
 			return errors

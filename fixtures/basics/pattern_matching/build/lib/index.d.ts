@@ -18,3 +18,8 @@ declare const bool: boolean;
 export declare const boolMatch: "yes" | "no";
 declare const num3: number;
 export declare const mixedMatch: "one" | "two" | string;
+export declare const longTuple: [number, number, number];
+export declare const tupleRestMatch: [number, number] | 0;
+declare type ExtendedPoint = {x: number, y: number, z: number, name: string};
+export declare const extendedPoint: ExtendedPoint;
+export declare const objectRestMatch: {z: number, name: string} | 0;

@@ -2129,6 +2129,19 @@ func TestMatchExprInference(t *testing.T) {
 				"result": "number | 0",
 			},
 		},
+		"PatternMatchingTuplesRest": {
+			input: `
+				export val longTuple: [number, number, number, number, number] = [1, 2, 3, 4, 5]
+				export val tupleRestMatch = match longTuple {
+					[first, second, ...rest] => first + second + rest.length,
+					_ => 0
+				}
+			`,
+			expectedTypes: map[string]string{
+				"longTuple":      "[number, number, number, number, number]",
+				"tupleRestMatch": "number | 0",
+			},
+		},
 	}
 
 	for name, test := range tests {
