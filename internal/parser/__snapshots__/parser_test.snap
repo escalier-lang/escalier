@@ -1124,3 +1124,248 @@
     },
 }
 ---
+
+[TestParseModuleNoErrors/FuncDeclsWithThrows - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "divide",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:8},
+                End:      ast.Location{Line:2, Column:14},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "a",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:2, Column:15},
+                            End:      ast.Location{Line:2, Column:16},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  nil,
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "b",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:2, Column:18},
+                            End:      ast.Location{Line:2, Column:19},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  nil,
+                },
+            },
+            Return: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:24},
+                    End:      ast.Location{Line:2, Column:30},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "DivisionByZeroError",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:38},
+                        End:      ast.Location{Line:2, Column:57},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:38},
+                    End:      ast.Location{Line:2, Column:57},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        Body: &ast.Block{
+            Stmts: {
+                &ast.ReturnStmt{
+                    Expr: &ast.BinaryExpr{
+                        Left: &ast.IdentExpr{
+                            Name:      "a",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:3, Column:13},
+                                End:      ast.Location{Line:3, Column:14},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Op:    "/",
+                        Right: &ast.IdentExpr{
+                            Name:      "b",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:3, Column:17},
+                                End:      ast.Location{Line:3, Column:18},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:13},
+                            End:      ast.Location{Line:3, Column:18},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:18},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:2, Column:58},
+                End:      ast.Location{Line:4, Column:6},
+                SourceID: 0,
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:4, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:4, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/FuncDeclsWithThrows - 2]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "process",
+            span: ast.Span{
+                Start:    ast.Location{Line:8, Column:8},
+                End:      ast.Location{Line:8, Column:15},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+            },
+            Return: nil,
+            Throws: nil,
+        },
+        Body: &ast.Block{
+            Stmts: {
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:8, Column:18},
+                End:      ast.Location{Line:8, Column:24},
+                SourceID: 0,
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:8, Column:5},
+            End:      ast.Location{Line:8, Column:24},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:8, Column:5},
+        End:      ast.Location{Line:8, Column:24},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/FuncDeclsWithThrows - 3]
+&ast.ExprStmt{
+    Expr: &ast.IdentExpr{
+        Name:      "Error",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:8, Column:25},
+            End:      ast.Location{Line:8, Column:30},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:8, Column:25},
+        End:      ast.Location{Line:8, Column:30},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/FuncDeclsWithThrows - 4]
+&ast.ExprStmt{
+    Expr: &ast.ObjectExpr{
+        Elems: {
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:8, Column:31},
+            End:      ast.Location{Line:9, Column:23},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:8, Column:31},
+        End:      ast.Location{Line:9, Column:23},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/FuncDeclsWithThrows - 5]
+&ast.ExprStmt{
+    Expr: &ast.LiteralExpr{
+        Lit: &ast.StrLit{
+            Value: "success",
+            span:  ast.Span{
+                Start:    ast.Location{Line:6, Column:13},
+                End:      ast.Location{Line:6, Column:22},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:6, Column:13},
+            End:      ast.Location{Line:6, Column:22},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:6, Column:13},
+        End:      ast.Location{Line:6, Column:22},
+        SourceID: 0,
+    },
+}
+---

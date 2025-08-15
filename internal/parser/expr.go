@@ -363,6 +363,8 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return p.ifElse()
 		case Match:
 			return p.matchExpr()
+		case Try:
+			return p.tryExpr()
 		case LessThan:
 			// TODO: figure out how to cast this more directly.
 			jsx := p.jsxElement()
@@ -421,6 +423,7 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 	p.expect(CloseParen, ConsumeOnMatch)
 
 	var returnType ast.TypeAnn
+	var throwsType ast.TypeAnn
 	token := p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -430,6 +433,18 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 			return nil
 		}
 		returnType = typeAnn
+
+		// Check for throws clause after return type
+		token = p.lexer.peek()
+		if token.Type == Throws {
+			p.lexer.consume()
+			throwsTypeAnn := p.typeAnn()
+			if throwsTypeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after 'throws'")
+			} else {
+				throwsType = throwsTypeAnn
+			}
+		}
 	}
 
 	body := p.block()
@@ -439,7 +454,7 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 		[]*ast.TypeParam{}, // TODO: parse type params
 		params,
 		returnType,
-		nil, // TODO: parse throws type
+		throwsType, // Pass throws type instead of nil
 		body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
@@ -840,4 +855,81 @@ func (p *Parser) matchCase() *ast.MatchCase {
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 
 	return ast.NewMatchCase(pattern, guard, body, span)
+}
+
+// tryExpr = 'try' block ('catch' matchCase (',' matchCase)*)? ('finally' block)?
+func (p *Parser) tryExpr() ast.Expr {
+	start := p.lexer.peek().Span.Start
+	p.lexer.consume() // consume 'try'
+
+	tryBlock := p.block()
+
+	var catchCases []*ast.MatchCase
+	var finallyBlock *ast.Block
+
+	token := p.lexer.peek()
+
+	// Parse catch clause
+	if token.Type == Catch {
+		p.lexer.consume() // consume 'catch'
+
+		// Expect opening brace for catch cases
+		p.expect(OpenBrace, AlwaysConsume)
+
+		// Parse catch cases (match cases for error handling)
+		token = p.lexer.peek()
+		for token.Type != CloseBrace && token.Type != EndOfFile {
+			// Skip comments
+			if token.Type == LineComment || token.Type == BlockComment {
+				p.lexer.consume()
+				token = p.lexer.peek()
+				continue
+			}
+
+			matchCase := p.matchCase()
+			if matchCase != nil {
+				catchCases = append(catchCases, matchCase)
+			}
+
+			token = p.lexer.peek()
+			if token.Type == Comma {
+				p.lexer.consume()
+				token = p.lexer.peek()
+			} else if token.Type != CloseBrace {
+				// Allow missing comma before closing brace
+				break
+			}
+		}
+
+		p.expect(CloseBrace, AlwaysConsume)
+		token = p.lexer.peek()
+	}
+
+	// Parse finally clause
+	if token.Type == Finally {
+		p.lexer.consume() // consume 'finally'
+		block := p.block()
+		finallyBlock = &block
+	}
+
+	var end ast.Location
+	if finallyBlock != nil {
+		end = finallyBlock.Span.End
+	} else if len(catchCases) > 0 {
+		// Find the end of the last catch case
+		lastCase := catchCases[len(catchCases)-1]
+		if lastCase.Body.Block != nil {
+			end = lastCase.Body.Block.Span.End
+		} else if lastCase.Body.Expr != nil {
+			end = lastCase.Body.Expr.Span().End
+		} else {
+			end = lastCase.Pattern.Span().End
+		}
+	} else {
+		end = tryBlock.Span.End
+	}
+
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+
+	return ast.NewTryCatch(tryBlock, catchCases, finallyBlock, span)
 }

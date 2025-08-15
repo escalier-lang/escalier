@@ -47,6 +47,7 @@ var keywords = map[string]TokenType{
 	"throw":     Throw,
 	"async":     Async,
 	"await":     Await,
+	"throws":    Throws,
 	"gen":       Gen,
 	"yield":     Yield,
 	"true":      True,

@@ -124,6 +124,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 	end := token.Span.End
 
 	var returnType ast.TypeAnn
+	var throwsType ast.TypeAnn
 	token = p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -134,6 +135,19 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 		}
 		end = typeAnn.Span().End
 		returnType = typeAnn
+
+		// Check for throws clause after return type
+		token = p.lexer.peek()
+		if token.Type == Throws {
+			p.lexer.consume()
+			throwsTypeAnn := p.typeAnn()
+			if throwsTypeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after 'throws'")
+			} else {
+				throwsType = throwsTypeAnn
+				end = throwsType.Span().End
+			}
+		}
 	}
 
 	var body ast.Block
@@ -143,7 +157,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 	}
 
 	return ast.NewFuncDecl(
-		ident, params, returnType, &body, export, declare,
+		ident, params, returnType, throwsType, &body, export, declare,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }

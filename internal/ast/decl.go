@@ -90,6 +90,7 @@ func NewFuncDecl(
 	name *Ident,
 	params []*Param,
 	returnType TypeAnn, // optional
+	throwsType TypeAnn, // optional
 	body *Block,
 	export,
 	declare bool,
@@ -101,7 +102,7 @@ func NewFuncDecl(
 			TypeParams: []*TypeParam{}, // TODO
 			Params:     params,
 			Return:     returnType,
-			Throws:     nil, // TODO
+			Throws:     throwsType,
 		},
 		Body:    body,
 		export:  export,
