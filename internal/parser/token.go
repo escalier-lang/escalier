@@ -105,6 +105,7 @@ const (
 	Unknown
 	Do
 	PlusPlus
+	Throws
 )
 
 type Token struct {

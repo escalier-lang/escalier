@@ -107,6 +107,12 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncExpr": {
 			input: "fn (a, b) { a + b }",
 		},
+		"FuncExprWithReturnType": {
+			input: "fn (a, b) -> number { a + b }",
+		},
+		"FuncExprWithThrows": {
+			input: "fn (a, b) -> number throws Error { a + b }",
+		},
 		"IfElse": {
 			input: "if cond { a } else { b }",
 		},
@@ -163,6 +169,30 @@ func TestParseExprNoErrors(t *testing.T) {
 		},
 		"MatchComplex": {
 			input: "match result { Some(value) if value > 0 => value, Some(_) => 0, None => -1 }",
+		},
+		"TryBasic": {
+			input: "try { riskyOperation() }",
+		},
+		"TryCatch": {
+			input: "try { riskyOperation() } catch { error => { console.log(error) } }",
+		},
+		"TryFinally": {
+			input: "try { riskyOperation() } finally { cleanup() }",
+		},
+		"TryCatchFinally": {
+			input: "try { riskyOperation() } catch { error => error.message } finally { cleanup() }",
+		},
+		"TryCatchMultipleCases": {
+			input: "try { operation() } catch { NetworkError(msg) => \"Network: \" ++ msg, TimeoutError => \"Timeout\", _ => \"Unknown error\" }",
+		},
+		"TryCatchWithGuard": {
+			input: "try { getValue() } catch { error if error.code == 404 => \"Not found\", error => error.message }",
+		},
+		"TryCatchWithBlockBody": {
+			input: "try { complexOperation() } catch { error => {\n  logError(error)\n  \"Failed\"\n} }",
+		},
+		"NestedTry": {
+			input: "try { try { innerOperation() } catch { _ => null } } catch { outer => outer }",
 		},
 	}
 
@@ -261,6 +291,36 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"MatchMissingClosingBrace": {
 			input: "match x { 1 => \"one\"",
+		},
+		"TryMissingBlock": {
+			input: "try",
+		},
+		"TryMissingOpeningBrace": {
+			input: "try console.log(\"test\")",
+		},
+		"TryCatchMissingOpeningBrace": {
+			input: "try { operation() } catch error => error }",
+		},
+		"TryCatchMissingClosingBrace": {
+			input: "try { operation() } catch { error => error",
+		},
+		"TryCatchMissingPattern": {
+			input: "try { operation() } catch { => \"error\" }",
+		},
+		"TryCatchMissingArrow": {
+			input: "try { operation() } catch { error \"failed\" }",
+		},
+		"TryCatchMissingBody": {
+			input: "try { operation() } catch { error => }",
+		},
+		"TryCatchIncompleteGuard": {
+			input: "try { operation() } catch { error if => \"failed\" }",
+		},
+		"TryFinallyMissingBlock": {
+			input: "try { operation() } finally",
+		},
+		"TryFinallyMissingOpeningBrace": {
+			input: "try { operation() } finally cleanup()",
 		},
 	}
 

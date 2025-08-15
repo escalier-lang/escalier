@@ -32,6 +32,13 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"FuncDeclsWithThrows": {
+			input: `
+				fn divide(a, b) -> number throws DivisionByZeroError {
+					return a / b
+				}
+			`,
+		},
 		"ExprStmts": {
 			input: `
 				foo()
