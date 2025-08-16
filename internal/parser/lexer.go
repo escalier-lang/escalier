@@ -43,7 +43,6 @@ var keywords = map[string]TokenType{
 	"match":     Match,
 	"try":       Try,
 	"catch":     Catch,
-	"finally":   Finally,
 	"throw":     Throw,
 	"async":     Async,
 	"await":     Await,
@@ -80,7 +79,7 @@ func (lexer *Lexer) isRegexContext() bool {
 		Equal, EqualEqual, NotEqual, LessThan, LessThanEqual,
 		GreaterThan, GreaterThanEqual, Plus, PlusPlus, Minus, Asterisk,
 		Ampersand, AmpersandAmpersand, Pipe, PipePipe, Bang,
-		Return, If, Else, Match, Try, Catch, Finally, Throw,
+		Return, If, Else, Match, Try, Catch, Throw,
 		Arrow, FatArrow:
 		return true
 	// After these tokens, / is division

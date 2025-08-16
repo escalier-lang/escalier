@@ -5,107 +5,90 @@ import "github.com/escalier-lang/escalier/internal/ast"
 type TokenType int
 
 const (
-	Identifier TokenType = iota
-
-	// literals
-	NumLit
-	StrLit
-	RegexLit
-	True
-	False
-	Null
-	Undefined
-
-	// misc
-	Quasi
-	JSXText
-	Underscore
-	LineComment
-	BlockComment
-	Colon
-	Question
-
-	// keywords
-	Fn
-	Get
-	Set
-	Static
-	Var
-	Val
-	Type
-	If
-	Else
-	Match
-	Try
-	Catch
-	Finally
-	Throw
+	Ampersand TokenType = iota
+	AmpersandAmpersand
+	Any
+	Arrow
+	Asterisk
 	Async
 	Await
-	Gen
-	Yield
-	Return
-	Import
-	Export
-	Declare
-
-	// type annotations
-	Number
-	String
-	Boolean
-	Any
-
-	// operators
-	Plus
-	Minus
-	Asterisk
-	Slash
-	SlashGreaterThan
-	Dot
-	Comma
 	BackTick
+	Bang
+	BlockComment
+	Boolean
+	Catch
+	CloseBrace
+	CloseBracket
+	CloseParen
+	Colon
+	Comma
+	Declare
+	Do
+	Dot
+	DotDotDot
+	Else
+	EndOfFile
 	Equal
 	EqualEqual
-	NotEqual
-	LessThan
-	LessThanEqual
+	Export
+	False
+	FatArrow
+	Fn
+	For
+	Gen
+	Get
 	GreaterThan
 	GreaterThanEqual
-	LessThanSlash // Used for JSX
-	DotDotDot
-	Arrow
-	FatArrow
-	Bang
-	Ampersand
-	AmpersandAmpersand
-	Pipe
-	PipePipe
-
-	// optional chaining
-	QuestionOpenParen
-	QuestionDot
-	QuestionOpenBracket
-
-	// grouping
-	OpenParen
-	CloseParen
-	OpenBrace
-	CloseBrace
-	OpenBracket
-	CloseBracket
-
-	Invalid
-	EndOfFile
-
-	Mut
-	For
+	Identifier
+	If
+	Import
 	In
 	Infer
+	Invalid
+	JSXText
+	LessThan
+	LessThanEqual
+	LessThanSlash // Used for JSX
+	LineComment
+	Match
+	Minus
+	Mut
 	Never
-	Unknown
-	Do
+	NotEqual
+	Null
+	Number
+	NumLit
+	OpenBrace
+	OpenBracket
+	OpenParen
+	Pipe
+	PipePipe
+	Plus
 	PlusPlus
+	Quasi
+	Question
+	QuestionDot
+	QuestionOpenBracket
+	QuestionOpenParen
+	RegexLit
+	Return
+	Set
+	Slash
+	SlashGreaterThan
+	Static
+	String
+	StrLit
+	Throw
 	Throws
+	True
+	Try
+	Type
+	Undefined
+	Underscore
+	Unknown
+	Val
+	Var
+	Yield
 )
 
 type Token struct {

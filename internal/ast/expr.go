@@ -726,13 +726,12 @@ func (e *AssignExpr) Accept(v Visitor) {
 type TryCatchExpr struct {
 	Try          Block
 	Catch        []*MatchCase // optional
-	Finally      *Block       // optional
 	span         Span
 	inferredType Type
 }
 
-func NewTryCatch(try Block, catch []*MatchCase, finally *Block, span Span) *TryCatchExpr {
-	return &TryCatchExpr{Try: try, Catch: catch, Finally: finally, span: span, inferredType: nil}
+func NewTryCatch(try Block, catch []*MatchCase, span Span) *TryCatchExpr {
+	return &TryCatchExpr{Try: try, Catch: catch, span: span, inferredType: nil}
 }
 func (e *TryCatchExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
@@ -748,9 +747,6 @@ func (e *TryCatchExpr) Accept(v Visitor) {
 			if matchCase.Body.Expr != nil {
 				matchCase.Body.Expr.Accept(v)
 			}
-		}
-		if e.Finally != nil {
-			e.Finally.Accept(v)
 		}
 	}
 	v.ExitExpr(e)

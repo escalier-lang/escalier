@@ -865,7 +865,6 @@ func (p *Parser) tryExpr() ast.Expr {
 	tryBlock := p.block()
 
 	var catchCases []*ast.MatchCase
-	var finallyBlock *ast.Block
 
 	token := p.lexer.peek()
 
@@ -905,17 +904,8 @@ func (p *Parser) tryExpr() ast.Expr {
 		token = p.lexer.peek()
 	}
 
-	// Parse finally clause
-	if token.Type == Finally {
-		p.lexer.consume() // consume 'finally'
-		block := p.block()
-		finallyBlock = &block
-	}
-
 	var end ast.Location
-	if finallyBlock != nil {
-		end = finallyBlock.Span.End
-	} else if len(catchCases) > 0 {
+	if len(catchCases) > 0 {
 		// Find the end of the last catch case
 		lastCase := catchCases[len(catchCases)-1]
 		if lastCase.Body.Block != nil {
@@ -931,5 +921,5 @@ func (p *Parser) tryExpr() ast.Expr {
 
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 
-	return ast.NewTryCatch(tryBlock, catchCases, finallyBlock, span)
+	return ast.NewTryCatch(tryBlock, catchCases, span)
 }

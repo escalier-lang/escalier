@@ -176,12 +176,6 @@ func TestParseExprNoErrors(t *testing.T) {
 		"TryCatch": {
 			input: "try { riskyOperation() } catch { error => { console.log(error) } }",
 		},
-		"TryFinally": {
-			input: "try { riskyOperation() } finally { cleanup() }",
-		},
-		"TryCatchFinally": {
-			input: "try { riskyOperation() } catch { error => error.message } finally { cleanup() }",
-		},
 		"TryCatchMultipleCases": {
 			input: "try { operation() } catch { NetworkError(msg) => \"Network: \" ++ msg, TimeoutError => \"Timeout\", _ => \"Unknown error\" }",
 		},
@@ -315,12 +309,6 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"TryCatchIncompleteGuard": {
 			input: "try { operation() } catch { error if => \"failed\" }",
-		},
-		"TryFinallyMissingBlock": {
-			input: "try { operation() } finally",
-		},
-		"TryFinallyMissingOpeningBrace": {
-			input: "try { operation() } finally cleanup()",
 		},
 	}
 
