@@ -1,6 +1,6 @@
 # Functions
 
-NOTE: All code examples in this .md files are written using Escalier syntax,
+NOTE: All code examples in this .md file are written using Escalier syntax,
 except where explicitly noted.
 
 Basic function declarations and expression have the following syntax:
@@ -63,7 +63,7 @@ See the section on "Exception Handler" for details on how to catch exceptions.
 The `declare` keyword can be used to declare functions without a function body.
 This assumes that the function exists in the current execution context.  It is
 used for interop with JavaScript and TypeScript.  The return type must be specified
-when using `declare`.  If no `throws` clause is specifed, we assume the function
+when using `declare`.  If no `throws` clause is specified, we assume the function
 doesn't throw exceptions.
 
 ```ts
@@ -71,7 +71,7 @@ doesn't throw exceptions.
 declare fn add(a: number, b: number) -> number
 ```
 
-Parameters do not require type annotations if their types can be infer from
+Parameters do not require type annotations if their types can be inferred from
 surrounding types, e.g.
 
 ```ts
@@ -102,7 +102,7 @@ parseInt("123") // parse the number with the default radix
 parseInt("123", 8) // parse an octal number
 ```
 
-Optional parameters can also be specfied by providing a default value.  In this
+Optional parameters can also be specified by providing a default value.  In this
 case, if a call doesn't specify the optional param, it will be given the default
 value.
 
@@ -191,7 +191,7 @@ foo(...mixedTuple)
 declare fn sum(init: number, ...rest: Array<number>) -> number
 
 val numTuple = [5, 10]
-sum(...numType)  // `init` will be `5` and `rest` will be `[10]`
+sum(...numTuple)  // `init` will be `5` and `rest` will be `[10]`
 
 declare val numArray: Array<number>
 sum(0, ...numArray) // `init` will be `0` and `rest` will be `Array<number>`
@@ -271,7 +271,7 @@ fn bar(input: string) {
 
 Escalier will automatically add code to rethrow any errors that aren't caught
 by the cases in the `catch` clause.  It isn't possible to know which exceptions
-a function may throw so we need to ensure we don't accidental swallow exceptions
+a function may throw so we need to ensure we don't accidentally swallow exceptions
 that aren't caught by a `catch` clause.
 
 ## Async/Await
