@@ -54,6 +54,7 @@ fn div(a: number, b: number) -> number throws DivByZeroError {
     } else {
         a / b
     }
+
     return result
 }
 ```
@@ -257,6 +258,8 @@ fn foo(input: string) {
         SyntaxError => "malformed JSON"
         TypeError => "not a string"
     }
+
+    return result
 }
 
 // `fn(input: string) -> unknown | "malformed JSON" throws TypeError
@@ -266,6 +269,8 @@ fn bar(input: string) {
     } catch {
         SyntaxError => "malformed JSON"
     }
+
+    return result
 }
 ```
 
