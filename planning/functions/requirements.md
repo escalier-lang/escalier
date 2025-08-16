@@ -3,7 +3,7 @@
 NOTE: All code examples in this .md file are written using Escalier syntax,
 except where explicitly noted.
 
-Basic function declarations and expression have the following syntax:
+Basic function declarations and expressions have the following syntax:
 
 ```ts
 fn add(a: number, b: number) {
@@ -32,7 +32,7 @@ If the return type inferred from the function's body isn't a subtype of the
 specified return type, a type error will be reported.
 
 Functions can throw exceptions.  What exceptions a function can throw can be
-specified with the `throws <type>` clause after the return type.  If function's 
+specified with the `throws <type>` clause after the return type.  If a function's 
 return type doesn't include a `throws` clause, it will be inferred.  If you want
 to specify that a function doesn't throw, you can do so with `throws never`.
 
@@ -107,7 +107,7 @@ case, if a call doesn't specify the optional param, it will be given the default
 value.
 
 ```ts
-// inferred as `fn(input: string, radix?: number) -> number
+// inferred as `fn(input: string, radix?: number) -> number`
 fn parseInt(input: string, radix: number = 10) -> number {
     // `radix` has type `number`
 }
@@ -122,7 +122,7 @@ val cacheValue = fn(
     key: string,
     value: number,
     store: mut Record<string, number> = {},
-) -> Record<string, number> => {
+) -> Record<string, number> {
    store[key] = value
    return store
 }
