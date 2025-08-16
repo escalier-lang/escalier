@@ -44,7 +44,6 @@ var TokenMap = map[TokenType]string{
 	Match:               "match",
 	Try:                 "try",
 	Catch:               "catch",
-	Finally:             "finally",
 	Throw:               "throw",
 	Async:               "async",
 	Await:               "await",

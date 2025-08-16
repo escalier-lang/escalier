@@ -4855,232 +4855,6 @@
 }
 ---
 
-[TestParseExprNoErrors/TryFinally - 1]
-&ast.TryCatchExpr{
-    Try: ast.Block{
-        Stmts: {
-            &ast.ExprStmt{
-                Expr: &ast.CallExpr{
-                    Callee: &ast.IdentExpr{
-                        Name:      "riskyOperation",
-                        Namespace: 0,
-                        Source:    nil,
-                        span:      ast.Span{
-                            Start:    ast.Location{Line:1, Column:7},
-                            End:      ast.Location{Line:1, Column:21},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    Args: {
-                    },
-                    OptChain: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:7},
-                        End:      ast.Location{Line:1, Column:23},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:7},
-                    End:      ast.Location{Line:1, Column:23},
-                    SourceID: 0,
-                },
-            },
-        },
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:25},
-            SourceID: 0,
-        },
-    },
-    Catch:   nil,
-    Finally: &ast.Block{
-        Stmts: {
-            &ast.ExprStmt{
-                Expr: &ast.CallExpr{
-                    Callee: &ast.IdentExpr{
-                        Name:      "cleanup",
-                        Namespace: 0,
-                        Source:    nil,
-                        span:      ast.Span{
-                            Start:    ast.Location{Line:1, Column:36},
-                            End:      ast.Location{Line:1, Column:43},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    Args: {
-                    },
-                    OptChain: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:36},
-                        End:      ast.Location{Line:1, Column:45},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:36},
-                    End:      ast.Location{Line:1, Column:45},
-                    SourceID: 0,
-                },
-            },
-        },
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:34},
-            End:      ast.Location{Line:1, Column:47},
-            SourceID: 0,
-        },
-    },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:47},
-        SourceID: 0,
-    },
-    inferredType: nil,
-}
----
-
-[TestParseExprNoErrors/TryCatchFinally - 1]
-&ast.TryCatchExpr{
-    Try: ast.Block{
-        Stmts: {
-            &ast.ExprStmt{
-                Expr: &ast.CallExpr{
-                    Callee: &ast.IdentExpr{
-                        Name:      "riskyOperation",
-                        Namespace: 0,
-                        Source:    nil,
-                        span:      ast.Span{
-                            Start:    ast.Location{Line:1, Column:7},
-                            End:      ast.Location{Line:1, Column:21},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    Args: {
-                    },
-                    OptChain: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:7},
-                        End:      ast.Location{Line:1, Column:23},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:7},
-                    End:      ast.Location{Line:1, Column:23},
-                    SourceID: 0,
-                },
-            },
-        },
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:25},
-            SourceID: 0,
-        },
-    },
-    Catch: {
-        &ast.MatchCase{
-            Pattern: &ast.IdentPat{
-                Name:    "error",
-                Default: nil,
-                span:    ast.Span{
-                    Start:    ast.Location{Line:1, Column:34},
-                    End:      ast.Location{Line:1, Column:39},
-                    SourceID: 0,
-                },
-                inferredType: nil,
-            },
-            Guard: nil,
-            Body:  ast.BlockOrExpr{
-                Block: (*ast.Block)(nil),
-                Expr:  &ast.MemberExpr{
-                    Object: &ast.IdentExpr{
-                        Name:      "error",
-                        Namespace: 0,
-                        Source:    nil,
-                        span:      ast.Span{
-                            Start:    ast.Location{Line:1, Column:43},
-                            End:      ast.Location{Line:1, Column:48},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    Prop: &ast.Ident{
-                        Name: "message",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:49},
-                            End:      ast.Location{Line:1, Column:56},
-                            SourceID: 0,
-                        },
-                    },
-                    OptChain: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:43},
-                        End:      ast.Location{Line:1, Column:56},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-            },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:33},
-                End:      ast.Location{Line:1, Column:56},
-                SourceID: 0,
-            },
-        },
-    },
-    Finally: &ast.Block{
-        Stmts: {
-            &ast.ExprStmt{
-                Expr: &ast.CallExpr{
-                    Callee: &ast.IdentExpr{
-                        Name:      "cleanup",
-                        Namespace: 0,
-                        Source:    nil,
-                        span:      ast.Span{
-                            Start:    ast.Location{Line:1, Column:69},
-                            End:      ast.Location{Line:1, Column:76},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    Args: {
-                    },
-                    OptChain: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:69},
-                        End:      ast.Location{Line:1, Column:78},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:69},
-                    End:      ast.Location{Line:1, Column:78},
-                    SourceID: 0,
-                },
-            },
-        },
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:67},
-            End:      ast.Location{Line:1, Column:80},
-            SourceID: 0,
-        },
-    },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:80},
-        SourceID: 0,
-    },
-    inferredType: nil,
-}
----
-
 [TestParseExprNoErrors/TryCatch - 1]
 &ast.TryCatchExpr{
     Try: ast.Block{
@@ -5210,8 +4984,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:65},
         SourceID: 0,
@@ -5300,8 +5073,7 @@
                             },
                         },
                     },
-                    Finally: (*ast.Block)(nil),
-                    span:    ast.Span{
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:49},
                         SourceID: 0,
@@ -5355,8 +5127,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:76},
         SourceID: 0,
@@ -5405,9 +5176,8 @@
             SourceID: 0,
         },
     },
-    Catch:   nil,
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    Catch: nil,
+    span:  ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:25},
         SourceID: 0,
@@ -5596,8 +5366,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:93},
         SourceID: 0,
@@ -5788,8 +5557,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:117},
         SourceID: 0,
@@ -5933,8 +5701,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:4, Column:2},
         SourceID: 0,
@@ -5954,9 +5721,8 @@
             SourceID: 0,
         },
     },
-    Catch:   nil,
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    Catch: nil,
+    span:  ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:12},
         SourceID: 0,
@@ -6005,9 +5771,8 @@
             SourceID: 0,
         },
     },
-    Catch:   nil,
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    Catch: nil,
+    span:  ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
@@ -6027,9 +5792,8 @@
             SourceID: 0,
         },
     },
-    Catch:   nil,
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    Catch: nil,
+    span:  ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:4},
         SourceID: 0,
@@ -6122,8 +5886,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:39},
         SourceID: 0,
@@ -6255,8 +6018,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:51},
         SourceID: 0,
@@ -6436,9 +6198,8 @@
             SourceID: 0,
         },
     },
-    Catch:   nil,
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    Catch: nil,
+    span:  ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
@@ -6534,8 +6295,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:43},
         SourceID: 0,
@@ -6707,8 +6467,7 @@
             },
         },
     },
-    Finally: (*ast.Block)(nil),
-    span:    ast.Span{
+    span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:45},
         SourceID: 0,
