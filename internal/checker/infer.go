@@ -120,6 +120,10 @@ func (c *Checker) InferComponent(
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
 
+	// inferFuncSig returns bindings for all of the parameters.  We store these
+	// so that they can be used later when inferring the function body.
+	paramBindingsForDecl := make(map[dep_graph.DeclID]map[string]*Binding)
+
 	// Infer placeholders
 	for _, declID := range component {
 		declCtx := getDeclCtx(ctx, depGraph, declID)
@@ -127,7 +131,8 @@ func (c *Checker) InferComponent(
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			funcType, _, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
+			funcType, paramBindings, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
+			paramBindingsForDecl[declID] = paramBindings
 			errors = slices.Concat(errors, sigErrors)
 
 			declCtx.Scope.setValue(decl.Name.Name, &Binding{
@@ -204,18 +209,20 @@ func (c *Checker) InferComponent(
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			// It's okay to re-infer the function signature here since all
-			// function signatures are fully typed for top-level functions
-			// declarations in modules.
-			funcType, paramBindings, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
-			errors = slices.Concat(errors, sigErrors)
+			// We reuse the binding that was previous created for the function
+			// declaration, so that we can unify the signature with the body's
+			// inferred type.
+			funcBinding := declCtx.Scope.getValue(decl.Name.Name)
+			paramBindings := paramBindingsForDecl[declID]
+			funcType := funcBinding.Type.(*FuncType)
 
-			// TODO(#93): unify Throws
 			if decl.Body != nil {
-				returnType, bodyErrors := c.inferFuncBody(declCtx, paramBindings, decl.Body)
-				errors = slices.Concat(errors, bodyErrors)
-				unifyErrors := c.unify(declCtx, funcType.Return, returnType)
-				errors = slices.Concat(errors, unifyErrors)
+				returnType, inferredThrowType, bodyErrors := c.inferFuncBody(declCtx, paramBindings, decl.Body)
+
+				unifyReturnErrors := c.unify(declCtx, funcType.Return, returnType)
+				unifyThrowsErrors := c.unify(declCtx, funcType.Throws, inferredThrowType)
+
+				errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
 			}
 		case *ast.VarDecl:
 			// TODO: if there's a type annotation, unify the initializer with it
@@ -322,12 +329,14 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
-	// TODO(#93): unify Throws
+	// Handle throws type inference
 	if decl.Body != nil {
-		returnType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
-		errors = slices.Concat(errors, bodyErrors)
-		unifyErrors := c.unify(ctx, funcType.Return, returnType)
-		errors = slices.Concat(errors, unifyErrors)
+		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
+
+		unifyReturnErrors := c.unify(ctx, funcType.Return, returnType)
+		unifyThrowsErrors := c.unify(ctx, funcType.Throws, inferredThrowType)
+
+		errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
 	}
 
 	binding := Binding{
@@ -566,16 +575,25 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		resultType = NewObjectType(elems)
 	case *ast.FuncExpr:
 		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
-		returnType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
+		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
+
 		unifyErrors := c.unify(ctx, funcType.Return, returnType)
+		unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcType.Throws)
+
 		resultType = funcType
-		errors = slices.Concat(sigErrors, bodyErrors, unifyErrors)
+		errors = slices.Concat(sigErrors, bodyErrors, unifyErrors, unifyThrowsErrors)
 	case *ast.IfElseExpr:
 		resultType, errors = c.inferIfElse(ctx, expr)
 	case *ast.DoExpr:
 		resultType, errors = c.inferDoExpr(ctx, expr)
 	case *ast.MatchExpr:
 		resultType, errors = c.inferMatchExpr(ctx, expr)
+	case *ast.ThrowExpr:
+		// Infer the type of the argument being thrown
+		_, argErrors := c.inferExpr(ctx, expr.Arg)
+		errors = argErrors
+		// Throw expressions have type never since they don't return a value
+		resultType = NewNeverType()
 	default:
 		resultType = NewNeverType()
 		errors = []Error{
@@ -733,15 +751,6 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		if len(filteredTypes) == len(t.Types) {
 			return nil // No filtering needed, return nil to let Accept handle it
 		}
-		if len(filteredTypes) == 0 {
-			// If all types were filtered out, return a NeverType
-			return NewNeverType()
-		}
-		if len(filteredTypes) == 1 {
-			// If only one type remains, return it directly instead of a union
-			return filteredTypes[0]
-		}
-		// Return a new union type with the filtered types
 		return NewUnionType(filteredTypes...)
 	}
 
@@ -1128,14 +1137,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 	}
 
 	// The type of the match expression is the union of all case types
-	var resultType Type
-	if len(caseTypes) == 0 {
-		resultType = NewNeverType()
-	} else if len(caseTypes) == 1 {
-		resultType = caseTypes[0]
-	} else {
-		resultType = NewUnionType(caseTypes...)
-	}
+	resultType := NewUnionType(caseTypes...)
 
 	expr.SetInferredType(resultType)
 	return resultType, errors
@@ -1233,10 +1235,22 @@ func (c *Checker) inferFuncSig(
 		errors = slices.Concat(errors, returnErrors)
 	}
 
+	var throwsType Type
+	if sig.Throws == nil {
+		// If no throws clause is specified, we use a fresh type variable which
+		// will be unified later if any throw expressions are found in the
+		// function body.
+		throwsType = c.FreshVar()
+	} else {
+		var throwsErrors []Error
+		throwsType, throwsErrors = c.inferTypeAnn(ctx, sig.Throws)
+		errors = slices.Concat(errors, throwsErrors)
+	}
+
 	t := &FuncType{
 		Params:     params,
 		Return:     returnType,
-		Throws:     NewNeverType(),
+		Throws:     throwsType,
 		TypeParams: []*TypeParam{},
 		Self:       nil,
 	}
@@ -1278,12 +1292,45 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
-// TODO(#93): infer Throws
+type ThrowVisitor struct {
+	ast.DefaulVisitor
+	Throws []*ast.ThrowExpr
+}
+
+func (v *ThrowVisitor) EnterExpr(expr ast.Expr) bool {
+	if throwExpr, ok := expr.(*ast.ThrowExpr); ok {
+		v.Throws = append(v.Throws, throwExpr)
+	}
+
+	// Don't visit function expressions since we don't want to include any
+	// throw expressions inside them.
+	if _, ok := expr.(*ast.FuncExpr); ok {
+		return false
+	}
+	return true
+}
+
+func (v *ThrowVisitor) EnterDecl(decl ast.Decl) bool {
+	// Don't visit function declarations since we don't want to include any
+	// throw expressions inside them.
+	if _, ok := decl.(*ast.FuncDecl); ok {
+		return false
+	}
+	return true
+}
+
+func (v *ThrowVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	// An expression like if/else could have a throw expression inside one of
+	// its branches.
+	return true
+}
+
+// Infer throws type - handles throws clause inference
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*Binding,
 	body *ast.Block,
-) (Type, []Error) {
+) (Type, Type, []Error) {
 
 	ctx = ctx.WithNewScope()
 	maps.Copy(ctx.Scope.Namespace.Values, bindings)
@@ -1299,9 +1346,15 @@ func (c *Checker) inferFuncBody(
 		Returns:       []*ast.ReturnStmt{},
 	}
 
+	throwVisitor := &ThrowVisitor{
+		DefaulVisitor: ast.DefaulVisitor{},
+		Throws:        []*ast.ThrowExpr{},
+	}
+
 	for _, stmt := range body.Stmts {
 		// TODO: don't visit statements that are unreachable
 		stmt.Accept(visitor)
+		stmt.Accept(throwVisitor)
 	}
 
 	returnTypes := []Type{}
@@ -1313,18 +1366,28 @@ func (c *Checker) inferFuncBody(
 		}
 	}
 
+	throwTypes := []Type{}
+	for _, throwExpr := range throwVisitor.Throws {
+		throwType, throwErrors := c.inferExpr(ctx, throwExpr.Arg)
+		throwTypes = append(throwTypes, throwType)
+		errors = slices.Concat(errors, throwErrors)
+	}
+
 	// TODO: We also need to do dead code analysis to account for unreachable
 	// code.
 
+	var returnType Type
 	if len(returnTypes) == 1 {
-		return returnTypes[0], errors
+		returnType = returnTypes[0]
+	} else if len(returnTypes) > 1 {
+		returnType = NewUnionType(returnTypes...)
+	} else {
+		returnType = NewLitType(&UndefinedLit{})
 	}
 
-	if len(returnTypes) > 1 {
-		return NewUnionType(returnTypes...), errors
-	}
+	throwType := NewUnionType(throwTypes...)
 
-	return NewLitType(&UndefinedLit{}), errors
+	return returnType, throwType, errors
 }
 
 func patToPat(p ast.Pat) Pat {

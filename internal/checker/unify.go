@@ -838,16 +838,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			// Create an Array type from excess parameters
 			// We need to find a type that all excess parameters can unify to
 			// For simplicity, we'll create a union of all excess parameter types
-			var elementType Type
-			if len(excessParamTypes) == 1 {
-				elementType = excessParamTypes[0]
-			} else if len(excessParamTypes) > 1 {
-				// Create a union type of all excess parameter types
-				elementType = NewUnionType(excessParamTypes...)
-			} else {
-				// If no excess parameters, use 'never' type as the element type
-				elementType = NewNeverType()
-			}
+			elementType := NewUnionType(excessParamTypes...)
 
 			// Create Array<elementType> and unify with rest parameter type
 			arrayType := NewTypeRefType("Array", nil, elementType)

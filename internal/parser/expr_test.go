@@ -113,6 +113,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncExprWithThrows": {
 			input: "fn (a, b) -> number throws Error { a + b }",
 		},
+		"FuncExprReturnIfElse": {
+			input: `fn (value: string) { return if value != "" { value } else { "value is empty" } }`,
+		},
 		"IfElse": {
 			input: "if cond { a } else { b }",
 		},
@@ -187,6 +190,15 @@ func TestParseExprNoErrors(t *testing.T) {
 		},
 		"NestedTry": {
 			input: "try { try { innerOperation() } catch { _ => null } } catch { outer => outer }",
+		},
+		"ThrowVariable": {
+			input: "throw error",
+		},
+		"ThrowExpression": {
+			input: "throw computeError()",
+		},
+		"ThrowStringLiteral": {
+			input: "throw \"divide by zero\"",
 		},
 	}
 
@@ -309,6 +321,9 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"TryCatchIncompleteGuard": {
 			input: "try { operation() } catch { error if => \"failed\" }",
+		},
+		"ThrowMissingExpression": {
+			input: "throw",
 		},
 	}
 

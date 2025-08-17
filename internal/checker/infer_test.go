@@ -81,6 +81,32 @@ func TestCheckScriptNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"FuncExprWithoutThrows": {
+			input: `
+				val add = fn (x: number, y: number) -> number {
+					return x + y
+				}
+			`,
+		},
+		"FuncExprWithSimpleThrows": {
+			input: `val div = fn (x: number, y: number) -> number throws Error {
+			    if y == 0 {
+					throw Error("Division by zero")
+				}
+				return x / y
+			}`,
+		},
+		"FuncExprWithUnionThrows": {
+			input: `val testFunc = fn (input: string) -> string throws Error | string {
+				if input == "" {
+					throw Error("Invalid input")
+				}
+				if input == "throw" {
+					throw "This is a string error"
+			}
+				return input
+			}`,
+		},
 		// "FuncRecursion": {
 		// 	input: `
 		// 		val fact = fn (n) {
@@ -230,13 +256,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> number",
+				"add": "fn (x: t3, y: t5) -> number throws never",
 			},
 		},
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn (msg: t3) -> undefined",
+				"log": "fn (msg: t3) -> undefined throws never",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -251,9 +277,10 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> true | false",
+				"add": "fn (x: t3, y: t5) -> true | false throws never",
 			},
 		},
+		// TODO: figure out how to infer throws types in mutually recursive functions
 		"MutualRecuriveFunctions": {
 			input: `
 				fn foo() -> number {
@@ -264,8 +291,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> number",
-				"bar": "fn () -> number",
+				"foo": "fn () -> number throws never",
+				"bar": "fn () -> number throws never",
 			},
 		},
 		"UnionTypeVariable": {
@@ -274,6 +301,41 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"x": "string | number",
+			},
+		},
+		"FuncExprWithoutThrows": {
+			input: `
+				val add = fn (x: number, y: number) -> number {
+					return x + y
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn (x: number, y: number) -> number throws never",
+			},
+		},
+		"FuncExprWithSimpleThrows": {
+			input: `val div = fn (x: number, y: number) -> number throws Error {
+			    if y == 0 {
+					throw Error("Division by zero")
+				}
+				return x / y
+			}`,
+			expectedTypes: map[string]string{
+				"div": "fn (x: number, y: number) -> number throws Error",
+			},
+		},
+		"FuncExprWithUnionThrows": {
+			input: `val testFunc = fn (input: string) -> string throws Error | string {
+				if input == "" {
+					throw Error("Invalid input")
+				}
+				if input == "throw" {
+					throw "This is a string error"
+				}
+				return input
+			}`,
+			expectedTypes: map[string]string{
+				"testFunc": "fn (input: string) -> string throws Error | string",
 			},
 		},
 		// "FuncRecursion": {

@@ -46,7 +46,7 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 }
 
 func TestSubstituteTypeParams(t *testing.T) {
-	checker := &Checker{}
+	checker := &Checker{ID: 0}
 
 	t.Run("TypeRefType substitution", func(t *testing.T) {
 		t.Run("substitutes type parameter", func(t *testing.T) {
@@ -312,8 +312,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := checker.substituteTypeParams(outerFunc, substitutions)
 
-			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T", outerFunc.String())
-			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T", result.String())
+			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T throws never", outerFunc.String())
+			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T throws never", result.String())
 		})
 
 		t.Run("object method with shadowed type parameter", func(t *testing.T) {
@@ -401,7 +401,7 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	})
 
 	// Substitute type parameters in the entire object
-	checker := &Checker{}
+	checker := &Checker{ID: 0}
 	result := checker.substituteTypeParams(objType, substitutions)
 
 	assert.Equal(t, "{test?: T, method: fn (x: T) -> U, get getter: fn () -> T, set setter: fn (value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())

@@ -747,6 +747,23 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 	case *ast.MatchExpr:
 		// Convert match expression to a series of if-else statements
 		return b.buildMatchExpr(expr)
+	case *ast.ThrowExpr:
+		// Build the argument expression
+		argExpr, argStmts := b.buildExpr(expr.Arg)
+
+		// Create a throw statement
+		throwStmt := NewThrowStmt(argExpr, expr)
+
+		// Since throw never returns, we need to create a temporary variable
+		// for the expression context, but it will never be reached
+		tempVar, tempDeclStmt := b.createTempVar(expr)
+
+		// Return the temp variable (unreachable) and the statements
+		allStmts := []Stmt{tempDeclStmt}
+		allStmts = slices.Concat(allStmts, argStmts)
+		allStmts = append(allStmts, throwStmt)
+
+		return tempVar, allStmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:

@@ -243,6 +243,18 @@ sndWithDefault<number, boolean>(5, true)
 
 ## Exception Handling
 
+Calling a function that `throws` inside another function, will cause that function
+to throw as well unless it catches the exception.
+
+```ts
+declare fn parseJSON(input: string) -> unknown throws SyntaxError | TypeError
+
+// `fn(input: string) -> unknown throws SyntaxError | TypeError
+fn foo(input: string) {
+    return parseJSON(input)
+}
+```
+
 Functions can catch exceptions using `try`-`catch`.  `try`-`catch` is an
 expression.  The `catch` allows you to pattern match against errors that are
 thrown within the `try` clause.

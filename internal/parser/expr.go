@@ -365,6 +365,8 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return p.matchExpr()
 		case Try:
 			return p.tryExpr()
+		case Throw:
+			return p.throwExpr()
 		case LessThan:
 			// TODO: figure out how to cast this more directly.
 			jsx := p.jsxElement()
@@ -901,7 +903,6 @@ func (p *Parser) tryExpr() ast.Expr {
 		}
 
 		p.expect(CloseBrace, AlwaysConsume)
-		token = p.lexer.peek()
 	}
 
 	var end ast.Location
@@ -922,4 +923,20 @@ func (p *Parser) tryExpr() ast.Expr {
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 
 	return ast.NewTryCatch(tryBlock, catchCases, span)
+}
+
+// throwExpr = 'throw' expr
+func (p *Parser) throwExpr() ast.Expr {
+	start := p.lexer.peek().Span.Start
+	p.lexer.consume() // consume 'throw'
+
+	arg := p.expr()
+	if arg == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected expression after 'throw'")
+		return ast.NewEmpty(token.Span)
+	}
+
+	span := ast.Span{Start: start, End: arg.Span().End, SourceID: p.lexer.source.ID}
+	return ast.NewThrow(arg, span)
 }
