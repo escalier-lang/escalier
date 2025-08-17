@@ -96,7 +96,7 @@ func (v *mockVisitor) ExitBlock(b Block) {
 }
 
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
-	visitor := &DefaulVisitor{}
+	visitor := &DefaultVisitor{}
 
 	// Test all Enter methods return true
 	if !visitor.EnterLit(nil) {
@@ -126,7 +126,7 @@ func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 }
 
 func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
-	visitor := &DefaulVisitor{}
+	visitor := &DefaultVisitor{}
 
 	// Test all Exit methods can be called without panicking
 	defer func() {
@@ -269,13 +269,13 @@ func TestIdentPat_Accept(t *testing.T) {
 
 // Test that visitor interface is correctly implemented
 func TestVisitorInterface(t *testing.T) {
-	var _ Visitor = &DefaulVisitor{}
+	var _ Visitor = &DefaultVisitor{}
 	var _ Visitor = newMockVisitor()
 }
 
 // Test visitor with nil arguments doesn't panic
 func TestVisitorWithNilArguments(t *testing.T) {
-	visitor := &DefaulVisitor{}
+	visitor := &DefaultVisitor{}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -306,7 +306,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 
 // Benchmark basic visitor traversal
 func BenchmarkDefaultVisitor_SimpleTraversal(b *testing.B) {
-	visitor := &DefaulVisitor{}
+	visitor := &DefaultVisitor{}
 	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 10}, SourceID: 0}
 	left := NewEmpty(Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 4}, SourceID: 0})
 	right := NewEmpty(Span{Start: Location{Line: 1, Column: 6}, End: Location{Line: 1, Column: 10}, SourceID: 0})

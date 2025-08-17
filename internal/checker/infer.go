@@ -1259,7 +1259,7 @@ func (c *Checker) inferFuncSig(
 }
 
 type ReturnVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Returns []*ast.ReturnStmt
 }
 
@@ -1293,7 +1293,7 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 }
 
 type ThrowVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Throws []*ast.ThrowExpr
 }
 
@@ -1342,13 +1342,13 @@ func (c *Checker) inferFuncBody(
 	}
 
 	visitor := &ReturnVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Returns:       []*ast.ReturnStmt{},
+		DefaultVisitor: ast.DefaultVisitor{},
+		Returns:        []*ast.ReturnStmt{},
 	}
 
 	throwVisitor := &ThrowVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Throws:        []*ast.ThrowExpr{},
+		DefaultVisitor: ast.DefaultVisitor{},
+		Throws:         []*ast.ThrowExpr{},
 	}
 
 	for _, stmt := range body.Stmts {

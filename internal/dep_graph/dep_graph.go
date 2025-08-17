@@ -26,7 +26,7 @@ type DeclID int
 
 // ModuleBindingVisitor collects all declarations with unique IDs and their bindings
 type ModuleBindingVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Decls         []ast.Decl                // Slice of declarations, indexed by DeclID
 	ValueBindings btree.Map[string, DeclID] // Map from value binding name to declaration ID
 	TypeBindings  btree.Map[string, DeclID] // Map from type binding name to declaration ID
@@ -94,12 +94,12 @@ func FindModuleBindings(module *ast.Module) ([]ast.Decl, btree.Map[string, DeclI
 	var valueBindings btree.Map[string, DeclID]
 	var typeBindings btree.Map[string, DeclID]
 	visitor := &ModuleBindingVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Decls:         decls,
-		ValueBindings: valueBindings,
-		TypeBindings:  typeBindings,
-		nextDeclID:    0,  // Start IDs from 0
-		currentNSName: "", // Default namespace
+		DefaultVisitor: ast.DefaultVisitor{},
+		Decls:          decls,
+		ValueBindings:  valueBindings,
+		TypeBindings:   typeBindings,
+		nextDeclID:     0,  // Start IDs from 0
+		currentNSName:  "", // Default namespace
 	}
 
 	// Visit all declarations in the module
@@ -124,7 +124,7 @@ type LocalScope struct {
 
 // DependencyVisitor finds IdentExpr dependencies in a declaration while tracking scope
 type DependencyVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	ValueBindings    btree.Map[string, DeclID]  // Map from value binding name to declaration ID
 	TypeBindings     btree.Map[string, DeclID]  // Map from type binding name to declaration ID
 	NamespaceMap     map[string]ast.NamespaceID // Map from namespace name to ID
@@ -362,7 +362,7 @@ func FindDeclDependencies(
 
 	var dependencies btree.Set[DeclID]
 	visitor := &DependencyVisitor{
-		DefaulVisitor:    ast.DefaulVisitor{},
+		DefaultVisitor:   ast.DefaultVisitor{},
 		ValueBindings:    depGraph.ValueBindings,
 		TypeBindings:     depGraph.TypeBindings,
 		NamespaceMap:     namespaceMap,

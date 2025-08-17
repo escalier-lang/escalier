@@ -5,7 +5,7 @@ import (
 )
 
 type Visitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Cursor ast.Location
 	Node   ast.Node
 }
@@ -62,9 +62,9 @@ func (v *Visitor) EnterTypeAnn(t ast.TypeAnn) bool {
 
 func findNodeInScript(script *ast.Script, loc ast.Location) ast.Node {
 	visitor := &Visitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Cursor:        loc,
-		Node:          nil,
+		DefaultVisitor: ast.DefaultVisitor{},
+		Cursor:         loc,
+		Node:           nil,
 	}
 	for _, stmt := range script.Stmts {
 		stmt.Accept(visitor)
