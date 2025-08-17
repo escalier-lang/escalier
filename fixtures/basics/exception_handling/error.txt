@@ -1,5 +1,5 @@
-lib/exception_handling.esc:21:63: string cannot be assigned to Error
+lib/exception_handling.esc:36:63: string cannot be assigned to Error
 
-21: export fn throwTypeIsWrong(value: string) -> undefined throws string {
+36: export fn throwTypeIsWrong(value: string) -> undefined throws string {
                                                                   ^^^^^^
 

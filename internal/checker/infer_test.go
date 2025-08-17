@@ -96,18 +96,17 @@ func TestCheckScriptNoErrors(t *testing.T) {
 				return x / y
 			}`,
 		},
-		// TODO: fix unification with union types
-		// "FuncExprWithUnionThrows": {
-		// 	input: `val testFunc = fn (input: string) -> string throws Error | string {
-		// 		if input == "" {
-		// 			throw Error("Invalid input")
-		// 		}
-		// 		if input == "throw" {
-		// 			throw "This is a string error"
-		// 	}
-		// 		return input
-		// 	}`,
-		// },
+		"FuncExprWithUnionThrows": {
+			input: `val testFunc = fn (input: string) -> string throws Error | string {
+				if input == "" {
+					throw Error("Invalid input")
+				}
+				if input == "throw" {
+					throw "This is a string error"
+			}
+				return input
+			}`,
+		},
 		// "FuncRecursion": {
 		// 	input: `
 		// 		val fact = fn (n) {
@@ -325,18 +324,20 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"div": "fn (x: number, y: number) -> number throws Error",
 			},
 		},
-		// TODO: fix unification with union types
-		// "FuncExprWithUnionThrows": {
-		// 	input: `val testFunc = fn (input: string) -> string throws Error | string {
-		// 		if input == "" {
-		// 			throw Error("Invalid input")
-		// 		}
-		// 		if input == "throw" {
-		// 			throw "This is a string error"
-		// 		}
-		// 		return input
-		// 	}`,
-		// },
+		"FuncExprWithUnionThrows": {
+			input: `val testFunc = fn (input: string) -> string throws Error | string {
+				if input == "" {
+					throw Error("Invalid input")
+				}
+				if input == "throw" {
+					throw "This is a string error"
+				}
+				return input
+			}`,
+			expectedTypes: map[string]string{
+				"testFunc": "fn (input: string) -> string throws Error | string",
+			},
+		},
 		// "FuncRecursion": {
 		// 	input: `
 		// 		val fact = fn (n) {

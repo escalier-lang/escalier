@@ -18,6 +18,21 @@ export val throwingFunc = fn(condition: boolean) {
     }
 }
 
+export val multipleThrows = fn (flag: boolean) -> undefined {
+    if flag {
+        throw "string error"
+    } else {
+        throw 42
+    }
+}
+
+export val nestedThrows = fn () -> undefined {
+    val innerFunc = fn () -> undefined {
+        throw "inner error"
+    }
+    throw "outer error"
+}
+
 export fn throwTypeIsWrong(value: string) -> undefined throws string {
     if value != "" { value } else { throw Error("value is empty") }
 }

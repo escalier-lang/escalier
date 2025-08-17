@@ -30,16 +30,40 @@ export const throwingFunc = function (temp6) {
   }
   temp7;
 };
-export function throwTypeIsWrong(temp9) {
-  const value = temp9;
+export const multipleThrows = function (temp9) {
+  const flag = temp9;
   let temp10;
-  if (value != "") {
-    temp10 = value;
-  } else {
+  if (flag) {
     let temp11;
-    throw Error("value is empty");
+    throw "string error";
     temp10 = temp11;
+  } else {
+    let temp12;
+    throw 42;
+    temp10 = temp12;
   }
   temp10;
+};
+export const nestedThrows = function () {
+  const innerFunc = function () {
+    let temp13;
+    throw "inner error";
+    temp13;
+  };
+  let temp14;
+  throw "outer error";
+  temp14;
+};
+export function throwTypeIsWrong(temp15) {
+  const value = temp15;
+  let temp16;
+  if (value != "") {
+    temp16 = value;
+  } else {
+    let temp17;
+    throw Error("value is empty");
+    temp16 = temp17;
+  }
+  temp16;
 }
 //# sourceMappingURL=./index.js.map
