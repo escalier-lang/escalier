@@ -65,6 +65,7 @@
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -211,6 +212,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -268,6 +270,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -478,6 +481,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -601,6 +605,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -960,6 +965,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body:    &ast.Block{},
         export:  false,
@@ -1024,6 +1030,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body:    &ast.Block{},
         export:  true,
@@ -1180,6 +1187,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1290,6 +1298,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1400,6 +1409,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1708,6 +1718,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1790,6 +1801,7 @@ nil
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {

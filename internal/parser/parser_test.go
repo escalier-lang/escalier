@@ -39,6 +39,34 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"AsyncFuncDecls": {
+			input: `
+				async fn fetchData(url: string) -> Promise<string> {
+					val response = await fetch(url)
+					return await response.text()
+				}
+			`,
+		},
+		"AsyncFuncExprs": {
+			input: `
+				val handler = async fn(event) {
+					return await processEvent(event)
+				}
+				val nested = await foo(await bar(42))
+			`,
+		},
+		"ExportAsyncFuncDecl": {
+			input: `
+				export async fn fetchUser(id: number) -> Promise<User> {
+					return await api.getUser(id)
+				}
+			`,
+		},
+		"DeclareAsyncFuncDecl": {
+			input: `
+				declare async fn fetch(url: string) -> Promise<Response>
+			`,
+		},
 		"ExprStmts": {
 			input: `
 				foo()

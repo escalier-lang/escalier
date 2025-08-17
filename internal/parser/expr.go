@@ -357,8 +357,26 @@ func (p *Parser) primaryExpr() ast.Expr {
 			temp := p.templateLitExpr(token, nil)
 			expr = temp
 		case Fn:
-			fnExpr := p.fnExpr(token.Span.Start)
+			fnExpr := p.fnExpr(token.Span.Start, false)
 			return fnExpr
+		case Async:
+			p.lexer.consume() // consume 'async'
+			nextToken := p.lexer.peek()
+			if nextToken.Type == Fn {
+				fnExpr := p.fnExpr(token.Span.Start, true)
+				return fnExpr
+			} else {
+				p.reportError(token.Span, "Expected 'fn' after 'async'")
+				return nil
+			}
+		case Await:
+			p.lexer.consume() // consume 'await'
+			arg := p.expr()
+			if arg == nil {
+				p.reportError(token.Span, "Expected expression after 'await'")
+				return nil
+			}
+			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
 		case If:
 			return p.ifElse()
 		case Match:
@@ -403,7 +421,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 
 // fnExpr = 'fn' '(' param (',' param)* ')' block
 // TODO: dedupe with `fnDecl`
-func (p *Parser) fnExpr(start ast.Location) ast.Expr {
+func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	// TODO: allow an optional identifier
 	// token := parser.lexer.peek()
 	// _ident, ok := token.(*TIdentifier)
@@ -457,6 +475,7 @@ func (p *Parser) fnExpr(start ast.Location) ast.Expr {
 		params,
 		returnType,
 		throwsType, // Pass throws type instead of nil
+		async,
 		body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
@@ -540,8 +559,9 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		fn := ast.NewFuncExpr(
 			[]*ast.TypeParam{}, // TODO: parse type params
 			params,
-			nil, // TODO: parse return type
-			nil, // TODO: parse throws type
+			nil,   // TODO: parse return type
+			nil,   // TODO: parse throws type
+			false, // methods can't be async for now
 			body,
 			span,
 		)

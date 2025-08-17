@@ -93,7 +93,8 @@ func NewFuncDecl(
 	throwsType TypeAnn, // optional
 	body *Block,
 	export,
-	declare bool,
+	declare,
+	async bool,
 	span Span,
 ) *FuncDecl {
 	return &FuncDecl{
@@ -103,6 +104,7 @@ func NewFuncDecl(
 			Params:     params,
 			Return:     returnType,
 			Throws:     throwsType,
+			Async:      async,
 		},
 		Body:    body,
 		export:  export,
