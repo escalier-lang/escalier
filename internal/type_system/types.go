@@ -521,6 +521,9 @@ func (t *FuncType) String() string {
 	if t.Return != nil {
 		result += " -> " + t.Return.String()
 	}
+	if t.Throws != nil {
+		result += " throws " + t.Throws.String()
+	}
 	return result
 }
 

@@ -1,4 +1,4 @@
-lib/main.esc:4:5: Cannot mutate immutable type: {foo: fn (msg: string, flag: boolean) -> string, get bar: fn () -> boolean, set bar: fn (value: boolean) -> undefined}
+lib/main.esc:4:5: Cannot mutate immutable type: {foo: fn (msg: string, flag: boolean) -> string throws never, get bar: fn () -> boolean throws never, set bar: fn (value: boolean) -> undefined throws never}
 
 4:      obj3.bar = "hello"
         ^^^^^^^^

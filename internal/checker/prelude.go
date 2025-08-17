@@ -8,11 +8,14 @@ func Prelude() *Scope {
 	scope := NewScope()
 
 	binArithType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumType()),
 			NewFuncParam(NewIdentPat("b"), NewNumType()),
 		},
 		Return: NewNumType(),
+		Throws: NewNeverType(),
 	}
 	binArithBinding := Binding{
 		Source:  nil,
@@ -21,11 +24,14 @@ func Prelude() *Scope {
 	}
 
 	binCompType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumType()),
 			NewFuncParam(NewIdentPat("b"), NewNumType()),
 		},
 		Return: NewBoolType(),
+		Throws: NewNeverType(),
 	}
 	binACompBinding := Binding{
 		Source:  nil,
@@ -33,12 +39,31 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
+	binEqType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
+		Params: []*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewAnyType()),
+			NewFuncParam(NewIdentPat("b"), NewAnyType()),
+		},
+		Return: NewBoolType(),
+		Throws: NewNeverType(),
+	}
+	binEqBinding := Binding{
+		Source:  nil,
+		Type:    binEqType,
+		Mutable: false,
+	}
+
 	binLogicType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolType()),
 			NewFuncParam(NewIdentPat("b"), NewBoolType()),
 		},
 		Return: NewBoolType(),
+		Throws: NewNeverType(),
 	}
 	binLogicBinding := Binding{
 		Source:  nil,
@@ -59,10 +84,13 @@ func Prelude() *Scope {
 	// }
 
 	unaryLogicType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolType()),
 		},
 		Return: NewBoolType(),
+		Throws: NewNeverType(),
 	}
 	unaryLogicBinding := Binding{
 		Source:  nil,
@@ -75,8 +103,8 @@ func Prelude() *Scope {
 	scope.Namespace.Values["*"] = &binArithBinding
 	scope.Namespace.Values["/"] = &binArithBinding
 
-	scope.Namespace.Values["=="] = &binACompBinding
-	scope.Namespace.Values["!="] = &binACompBinding
+	scope.Namespace.Values["=="] = &binEqBinding
+	scope.Namespace.Values["!="] = &binEqBinding
 	scope.Namespace.Values["<"] = &binACompBinding
 	scope.Namespace.Values[">"] = &binACompBinding
 	scope.Namespace.Values["<="] = &binACompBinding
@@ -99,10 +127,13 @@ func Prelude() *Scope {
 	objElems = append(objElems, &MethodElemType{
 		Name: NewStrKey("log"),
 		Fn: &FuncType{
+			TypeParams: nil,
+			Self:       nil,
 			Params: []*FuncParam{
 				NewFuncParam(NewIdentPat("msg"), NewStrType()),
 			},
 			Return: NewLitType(&UndefinedLit{}),
+			Throws: NewNeverType(),
 		},
 	})
 
@@ -126,6 +157,23 @@ func Prelude() *Scope {
 		TypeParams: []*TypeParam{},
 	})
 
+	// Error constructor function
+	errorConstructorType := &FuncType{
+		Params: []*FuncParam{
+			NewFuncParam(NewIdentPat("message"), NewStrType()),
+		},
+		Return:     NewTypeRefType("Error", nil),
+		Throws:     NewNeverType(),
+		TypeParams: []*TypeParam{},
+		Self:       nil,
+	}
+	errorConstructorBinding := Binding{
+		Source:  nil,
+		Type:    errorConstructorType,
+		Mutable: false,
+	}
+	scope.Namespace.Values["Error"] = &errorConstructorBinding
+
 	length := &PropertyElemType{
 		Name:     NewStrKey("length"),
 		Value:    NewNumType(),
@@ -141,11 +189,14 @@ func Prelude() *Scope {
 
 	// String concatenation operator
 	strConcatType := &FuncType{
+		TypeParams: nil,
+		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewStrType()),
 			NewFuncParam(NewIdentPat("b"), NewStrType()),
 		},
 		Return: NewStrType(),
+		Throws: NewNeverType(),
 	}
 	strConcatBinding := Binding{
 		Source:  nil,

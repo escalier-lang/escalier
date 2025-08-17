@@ -186,6 +186,10 @@ func (p *Printer) PrintExpr(expr Expr) {
 			}
 		}
 		p.print("}")
+	case *MatchExpr:
+		// MatchExpr should not appear in the final codegen AST as it should be
+		// converted to if-else statements during the build phase
+		panic("MatchExpr should not appear in codegen AST")
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
@@ -482,6 +486,10 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 			p.print(" else ")
 			p.PrintStmt(s.Alt)
 		}
+	case *ThrowStmt:
+		p.print("throw ")
+		p.PrintExpr(s.Expr)
+		p.print(";")
 	}
 
 	end := p.location

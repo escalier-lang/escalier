@@ -6756,3 +6756,350 @@
     inferredType: nil,
 }
 ---
+
+[TestParseExprNoErrors/ThrowExpression - 1]
+&ast.ThrowExpr{
+    Arg: &ast.CallExpr{
+        Callee: &ast.IdentExpr{
+            Name:      "computeError",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:19},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Args: {
+        },
+        OptChain: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:21},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:21},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/ThrowVariable - 1]
+&ast.ThrowExpr{
+    Arg: &ast.IdentExpr{
+        Name:      "error",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/ThrowWithMessage - 1]
+&ast.ThrowExpr{
+    Arg: &ast.IdentExpr{
+        Name:      "new",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:10},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/ThrowBasic - 1]
+&ast.ThrowExpr{
+    Arg: &ast.IdentExpr{
+        Name:      "new",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:10},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ThrowIncompleteExpression - 1]
+&ast.ThrowExpr{
+    Arg: &ast.IdentExpr{
+        Name:      "new",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:10},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ThrowIncompleteExpression - 2]
+[]*parser.Error{
+}
+---
+
+[TestParseExprErrorHandling/ThrowMissingExpression - 1]
+&ast.ThrowExpr{
+    Arg: &ast.EmptyExpr{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ThrowMissingExpression - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected an expression",
+    },
+}
+---
+
+[TestParseExprNoErrors/ThrowStringLiteral - 1]
+&ast.ThrowExpr{
+    Arg: &ast.LiteralExpr{
+        Lit: &ast.StrLit{
+            Value: "divide by zero",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:23},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/FuncExprReturnIfElse - 1]
+&ast.FuncExpr{
+    FuncSig: ast.FuncSig{
+        TypeParams: {
+        },
+        Params: {
+            &ast.Param{
+                Pattern: &ast.IdentPat{
+                    Name:    "value",
+                    Default: nil,
+                    span:    ast.Span{
+                        Start:    ast.Location{Line:1, Column:5},
+                        End:      ast.Location{Line:1, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Optional: false,
+                TypeAnn:  &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:12},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+        },
+        Return: nil,
+        Throws: nil,
+    },
+    Body: ast.Block{
+        Stmts: {
+            &ast.ReturnStmt{
+                Expr: &ast.IfElseExpr{
+                    Cond: &ast.BinaryExpr{
+                        Left: &ast.IdentExpr{
+                            Name:      "value",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:1, Column:32},
+                                End:      ast.Location{Line:1, Column:37},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Op:    "!=",
+                        Right: &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "",
+                                span:  ast.Span{
+                                    Start:    ast.Location{Line:1, Column:41},
+                                    End:      ast.Location{Line:1, Column:43},
+                                    SourceID: 0,
+                                },
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:41},
+                                End:      ast.Location{Line:1, Column:43},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:43},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Cons: ast.Block{
+                        Stmts: {
+                            &ast.ExprStmt{
+                                Expr: &ast.IdentExpr{
+                                    Name:      "value",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:1, Column:46},
+                                        End:      ast.Location{Line:1, Column:51},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:46},
+                                    End:      ast.Location{Line:1, Column:51},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:44},
+                            End:      ast.Location{Line:1, Column:53},
+                            SourceID: 0,
+                        },
+                    },
+                    Alt: &ast.BlockOrExpr{
+                        Block: &ast.Block{
+                            Stmts: {
+                                &ast.ExprStmt{
+                                    Expr: &ast.LiteralExpr{
+                                        Lit: &ast.StrLit{
+                                            Value: "value is empty",
+                                            span:  ast.Span{
+                                                Start:    ast.Location{Line:1, Column:61},
+                                                End:      ast.Location{Line:1, Column:77},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:1, Column:61},
+                                            End:      ast.Location{Line:1, Column:77},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:61},
+                                        End:      ast.Location{Line:1, Column:77},
+                                        SourceID: 0,
+                                    },
+                                },
+                            },
+                            Span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:59},
+                                End:      ast.Location{Line:1, Column:79},
+                                SourceID: 0,
+                            },
+                        },
+                        Expr: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:28},
+                        End:      ast.Location{Line:1, Column:79},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:79},
+                    SourceID: 0,
+                },
+            },
+        },
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:20},
+            End:      ast.Location{Line:1, Column:81},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:81},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

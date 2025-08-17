@@ -42,7 +42,8 @@ fn sub(a, b) { return a - b }`,
 	p := parser.NewParser(ctx, source)
 	m1, _ := p.ParseScript()
 	builder := &Builder{
-		tempId: 0,
+		tempId:   0,
+		depGraph: nil,
 	}
 	m2 := builder.BuildScript(m1)
 

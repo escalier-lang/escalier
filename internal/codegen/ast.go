@@ -519,6 +519,7 @@ func (*DeclStmt) isStmt()   {}
 func (*ReturnStmt) isStmt() {}
 func (*BlockStmt) isStmt()  {}
 func (*IfStmt) isStmt()     {}
+func (*ThrowStmt) isStmt()  {}
 
 type ExprStmt struct {
 	Expr   Expr
@@ -577,6 +578,19 @@ func NewIfStmt(test Expr, cons Stmt, alt Stmt, source ast.Node) *IfStmt {
 func (s *IfStmt) Span() *Span        { return s.span }
 func (s *IfStmt) SetSpan(span *Span) { s.span = span }
 func (s *IfStmt) Source() ast.Node   { return s.source }
+
+type ThrowStmt struct {
+	Expr   Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewThrowStmt(expr Expr, source ast.Node) *ThrowStmt {
+	return &ThrowStmt{Expr: expr, source: source, span: nil}
+}
+func (s *ThrowStmt) Span() *Span        { return s.span }
+func (s *ThrowStmt) SetSpan(span *Span) { s.span = span }
+func (s *ThrowStmt) Source() ast.Node   { return s.source }
 
 // TODO add support for imports and exports
 type Module struct {

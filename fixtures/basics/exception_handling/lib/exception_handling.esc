@@ -1,0 +1,23 @@
+// Basic throw expressions
+export val simpleThrow = throw "Something went wrong"
+
+// Throw with error object
+export val errorThrow = throw {message: "Custom error", code: 500}
+
+// Throw in conditional expression
+export fn getValueOrThrow(value: string) {
+    return if value != "" { value } else { throw Error("value is empty") }
+}
+
+// Throw in function expression
+export val throwingFunc = fn(condition: boolean) {
+    if condition {
+        return "success"
+    } else {
+        return throw Error("failure")
+    }
+}
+
+export fn throwTypeIsWrong(value: string) -> undefined throws string {
+    if value != "" { value } else { throw Error("value is empty") }
+}
