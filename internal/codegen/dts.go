@@ -163,6 +163,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			Body:    nil,
 			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
+			async:   decl.Async,
 			span:    nil,
 			source:  nil,
 		}

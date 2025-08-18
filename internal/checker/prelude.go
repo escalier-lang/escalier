@@ -143,6 +143,26 @@ func Prelude() *Scope {
 		Mutable: false,
 	}
 
+	// Promise type with a simple then property to distinguish it from empty object
+	promiseTypeParams := []*TypeParam{
+		NewTypeParam("T"),
+		NewTypeParamWithDefault("E", NewNeverType()),
+	}
+
+	promiseElems := []ObjTypeElem{
+		&PropertyElemType{
+			Name:     NewStrKey("then"),
+			Value:    NewStrType(), // Simplified for now
+			Optional: false,
+			Readonly: true,
+		},
+	}
+
+	scope.setTypeAlias("Promise", &TypeAlias{
+		Type:       NewObjectType(promiseElems),
+		TypeParams: promiseTypeParams,
+	})
+
 	// Error type with message property
 	errorElems := []ObjTypeElem{
 		&PropertyElemType{

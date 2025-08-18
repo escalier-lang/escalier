@@ -555,6 +555,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			TypeAnn: nil,
 			declare: decl.Declare(),
 			export:  decl.Export(),
+			async:   d.Async,
 			span:    nil,
 			source:  decl,
 		}
@@ -693,6 +694,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		return NewFuncExpr(
 			params,
 			slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts)),
+			expr.Async,
 			expr,
 		), []Stmt{}
 	case *ast.DoExpr:
@@ -764,6 +766,14 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		allStmts = append(allStmts, throwStmt)
 
 		return tempVar, allStmts
+	case *ast.AwaitExpr:
+		// Build the argument expression
+		argExpr, argStmts := b.buildExpr(expr.Arg)
+
+		// Create an await expression
+		awaitExpr := NewAwaitExpr(argExpr, expr)
+
+		return awaitExpr, argStmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:

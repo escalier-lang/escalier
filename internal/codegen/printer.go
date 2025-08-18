@@ -117,6 +117,9 @@ func (p *Printer) PrintExpr(expr Expr) {
 		}
 		p.print(")")
 	case *FuncExpr:
+		if e.async {
+			p.print("async ")
+		}
 		p.print("function (")
 		for i, param := range e.Params {
 			if i > 0 {
@@ -190,6 +193,9 @@ func (p *Printer) PrintExpr(expr Expr) {
 		// MatchExpr should not appear in the final codegen AST as it should be
 		// converted to if-else statements during the build phase
 		panic("MatchExpr should not appear in codegen AST")
+	case *AwaitExpr:
+		p.print("await ")
+		p.PrintExpr(e.Arg)
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
@@ -372,6 +378,9 @@ func (p *Printer) PrintDecl(decl Decl) {
 		}
 		p.print(";")
 	case *FuncDecl:
+		if d.async {
+			p.print("async ")
+		}
 		p.print("function ")
 		p.print(d.Name.Name)
 

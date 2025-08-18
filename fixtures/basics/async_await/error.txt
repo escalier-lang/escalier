@@ -1,0 +1,5 @@
+lib/async_await.esc:9:64: string cannot be assigned to Error
+
+9:  export async fn fetchWithAwait(url: string) -> Promise<string, string> {
+                                                                   ^^^^^^
+

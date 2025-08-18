@@ -55,6 +55,9 @@ func TestParseModuleNoErrors(t *testing.T) {
 				val nested = await foo(await bar(42))
 			`,
 		},
+		"AwaitMethodCall": {
+			input: `async fn getData(id) { return await api.getData(id) }`,
+		},
 		"ExportAsyncFuncDecl": {
 			input: `
 				export async fn fetchUser(id: number) -> Promise<User> {

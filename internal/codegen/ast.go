@@ -131,6 +131,7 @@ func (*MemberExpr) isExpr() {}
 func (*ArrayExpr) isExpr()  {}
 func (*ObjectExpr) isExpr() {}
 func (*MatchExpr) isExpr()  {}
+func (*AwaitExpr) isExpr()  {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -182,13 +183,15 @@ func (e *CallExpr) Source() ast.Node   { return e.source }
 type FuncExpr struct {
 	Params []*Param
 	Body   []Stmt
+	async  bool
 	span   *Span
 	source ast.Node
 }
 
-func NewFuncExpr(params []*Param, body []Stmt, source ast.Node) *FuncExpr {
-	return &FuncExpr{Params: params, Body: body, source: source, span: nil}
+func NewFuncExpr(params []*Param, body []Stmt, async bool, source ast.Node) *FuncExpr {
+	return &FuncExpr{Params: params, Body: body, async: async, source: source, span: nil}
 }
+func (e *FuncExpr) Async() bool        { return e.async }
 func (e *FuncExpr) Span() *Span        { return e.span }
 func (e *FuncExpr) SetSpan(span *Span) { e.span = span }
 func (e *FuncExpr) Source() ast.Node   { return e.source }
@@ -441,6 +444,19 @@ func (c *MatchCase) Span() *Span        { return c.span }
 func (c *MatchCase) SetSpan(span *Span) { c.span = span }
 func (c *MatchCase) Source() ast.Node   { return c.source }
 
+type AwaitExpr struct {
+	Arg    Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewAwaitExpr(arg Expr, source ast.Node) *AwaitExpr {
+	return &AwaitExpr{Arg: arg, source: source, span: nil}
+}
+func (e *AwaitExpr) Span() *Span        { return e.span }
+func (e *AwaitExpr) SetSpan(span *Span) { e.span = span }
+func (e *AwaitExpr) Source() ast.Node   { return e.source }
+
 //sumtype:decl
 type Decl interface {
 	isDecl()
@@ -498,12 +514,14 @@ type FuncDecl struct {
 	TypeAnn TypeAnn // optional, return type annotation, required if `declare` is true
 	export  bool
 	declare bool
+	async   bool
 	span    *Span
 	source  ast.Node
 }
 
 func (d *FuncDecl) Export() bool       { return d.export }
 func (d *FuncDecl) Declare() bool      { return d.declare }
+func (d *FuncDecl) Async() bool        { return d.async }
 func (d *FuncDecl) Span() *Span        { return d.span }
 func (d *FuncDecl) SetSpan(span *Span) { d.span = span }
 func (d *FuncDecl) Source() ast.Node   { return d.source }
