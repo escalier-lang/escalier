@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"iter"
-	"os"
 	"slices"
 	"strings"
 
@@ -222,7 +221,6 @@ func (c *Checker) InferComponent(
 				errors = slices.Concat(errors, inferErrors)
 			}
 
-			fmt.Fprintf(os.Stderr, "Inferred function %s: %s\n", decl.Name.Name, funcType.String())
 		case *ast.VarDecl:
 			// TODO: if there's a type annotation, unify the initializer with it
 			if decl.Init != nil {

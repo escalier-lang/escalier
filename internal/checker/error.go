@@ -1,8 +1,6 @@
 package checker
 
 import (
-	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -136,7 +134,6 @@ func (e CannotUnifyTypesError) Span() ast.Span {
 	t1Prov := e.T1.Provenance()
 	t1Node := GetNode(t1Prov)
 	// TODO: ensure every node has a provenance
-	fmt.Fprintf(os.Stderr, "CannotUnifyTypesError: %s cannot be assigned to %s\n", e.T1.String(), e.T2.String())
 	if t1Node == nil {
 		// This code is triggered by the NewTypeRefType("Error", nil) in
 		// prelude.go, which does not have a provenance set.
