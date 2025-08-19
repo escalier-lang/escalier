@@ -209,7 +209,7 @@ func (c *Checker) InferComponent(
 		}
 
 		switch decl := decl.(type) {
-		case *ast.FuncDecl:
+		case *ast.FuncDecl: // TODO: dedupe with inferExpr
 			// We reuse the binding that was previous created for the function
 			// declaration, so that we can unify the signature with the body's
 			// inferred type.
@@ -217,43 +217,9 @@ func (c *Checker) InferComponent(
 			paramBindings := paramBindingsForDecl[declID]
 			funcType := funcBinding.Type.(*FuncType)
 
-			// Create async context if this is an async function
-			bodyCtx := ctx
-			if decl.FuncSig.Async {
-				bodyCtx = Context{
-					Scope:      ctx.Scope,
-					IsAsync:    true,
-					IsPatMatch: ctx.IsPatMatch,
-				}
-			}
-
 			if decl.Body != nil {
-				returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, decl.Body)
-
-				// For async functions, we need to handle Promise return types differently
-				if decl.FuncSig.Async {
-					// For async functions, the funcType.Return is Promise<T, E>
-					// We need to unify the inferred return and throw types with the Promise type args
-					if promiseType, ok := funcType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
-						if len(promiseType.TypeArgs) >= 2 {
-							unifyErrors := c.unify(ctx, promiseType.TypeArgs[0], returnType)
-							unifyThrowsErrors := c.unify(ctx, promiseType.TypeArgs[1], inferredThrowType)
-							errors = slices.Concat(errors, bodyErrors, unifyErrors, unifyThrowsErrors)
-						} else {
-							errors = slices.Concat(errors, bodyErrors)
-						}
-					} else {
-						errors = slices.Concat(errors, bodyErrors)
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "Inferred return type %s\n", returnType.String())
-					fmt.Fprintf(os.Stderr, "inferredThrowType %s\n", inferredThrowType.String())
-
-					unifyReturnErrors := c.unify(declCtx, funcType.Return, returnType)
-					unifyThrowsErrors := c.unify(declCtx, funcType.Throws, inferredThrowType)
-
-					errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
-				}
+				inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+				errors = slices.Concat(errors, inferErrors)
 			}
 
 			fmt.Fprintf(os.Stderr, "Inferred function %s: %s\n", decl.Name.Name, funcType.String())
@@ -394,40 +360,8 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 			}
 		}
 	} else if decl.Body != nil {
-		// Handle throws type inference for functions with bodies
-		// Create async context if this is an async function
-		bodyCtx := ctx
-		if decl.FuncSig.Async {
-			bodyCtx = Context{
-				Scope:      ctx.Scope,
-				IsAsync:    true,
-				IsPatMatch: ctx.IsPatMatch,
-			}
-		}
-
-		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, decl.Body)
-
-		// For async functions, we need to handle Promise return types differently
-		if decl.FuncSig.Async {
-			// For async functions, the funcType.Return is Promise<T, E>
-			// We need to unify the inferred return and throw types with the Promise type args
-			if promiseType, ok := funcType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
-				if len(promiseType.TypeArgs) >= 2 {
-					unifyReturnErrors := c.unify(ctx, promiseType.TypeArgs[0], returnType)
-					unifyThrowsErrors := c.unify(ctx, promiseType.TypeArgs[1], inferredThrowType)
-					errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
-				} else {
-					errors = slices.Concat(errors, bodyErrors)
-				}
-			} else {
-				errors = slices.Concat(errors, bodyErrors)
-			}
-		} else {
-			// For non-async functions, use the original logic
-			unifyReturnErrors := c.unify(ctx, funcType.Return, returnType)
-			unifyThrowsErrors := c.unify(ctx, funcType.Throws, inferredThrowType)
-			errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
-		}
+		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+		errors = slices.Concat(errors, inferErrors)
 	}
 
 	binding := Binding{
@@ -665,41 +599,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		resultType = NewObjectType(elems)
 	case *ast.FuncExpr:
-		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
+		funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
+		errors = slices.Concat(errors, sigErrors)
 
-		// Create async context if this is an async function
-		bodyCtx := ctx
-		if expr.FuncSig.Async {
-			bodyCtx = Context{
-				Scope:      ctx.Scope,
-				IsAsync:    true,
-				IsPatMatch: ctx.IsPatMatch,
-			}
-		}
-
-		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, bindings, &expr.Body)
-
-		// For async functions, we need to handle Promise return types differently
-		if expr.FuncSig.Async {
-			// For async functions, the funcType.Return is Promise<T, E>
-			// We need to unify the inferred return and throw types with the Promise type args
-			if promiseType, ok := funcType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
-				if len(promiseType.TypeArgs) >= 2 {
-					unifyErrors := c.unify(ctx, promiseType.TypeArgs[0], returnType)
-					unifyThrowsErrors := c.unify(ctx, promiseType.TypeArgs[1], inferredThrowType)
-					errors = slices.Concat(sigErrors, bodyErrors, unifyErrors, unifyThrowsErrors)
-				} else {
-					errors = slices.Concat(sigErrors, bodyErrors)
-				}
-			} else {
-				errors = slices.Concat(sigErrors, bodyErrors)
-			}
-		} else {
-			// For non-async functions, use the original logic
-			unifyErrors := c.unify(ctx, funcType.Return, returnType)
-			unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcType.Throws)
-			errors = slices.Concat(sigErrors, bodyErrors, unifyErrors, unifyThrowsErrors)
-		}
+		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, &expr.Body, expr.FuncSig.Async)
+		errors = slices.Concat(errors, inferErrors)
 
 		resultType = funcType
 	case *ast.IfElseExpr:
@@ -1535,7 +1439,52 @@ func (v *AwaitVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
+// NOTE: This function updates `funcSigType`
+func (c *Checker) inferFuncBodyWithFuncSigType(
+	ctx Context,
+	funcSigType *FuncType,
+	paramBindings map[string]*Binding,
+	body *ast.Block,
+	isAsync bool,
+) []Error {
+	errors := []Error{}
+
+	// Create async context if this is an async function
+	bodyCtx := ctx
+	if isAsync {
+		bodyCtx = Context{
+			Scope:      ctx.Scope,
+			IsAsync:    true,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
+	errors = slices.Concat(errors, bodyErrors)
+
+	// For async functions, we need to handle Promise return types differently
+	if isAsync {
+		// For async functions, the funcType.Return is Promise<T, E>
+		// We need to unify the inferred return and throw types with the Promise type args
+		if promiseType, ok := funcSigType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
+			if len(promiseType.TypeArgs) >= 2 {
+				unifyErrors := c.unify(ctx, promiseType.TypeArgs[0], returnType)
+				unifyThrowsErrors := c.unify(ctx, promiseType.TypeArgs[1], inferredThrowType)
+				errors = slices.Concat(errors, unifyErrors, unifyThrowsErrors)
+			}
+		}
+	} else {
+		// For non-async functions, use the original logic
+		unifyReturnErrors := c.unify(ctx, funcSigType.Return, returnType)
+		unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcSigType.Throws)
+		errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
+	}
+
+	return errors
+}
+
 // Infer throws type - handles throws clause inference
+// NOTE: This function updates `funcSigType`
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*Binding,
