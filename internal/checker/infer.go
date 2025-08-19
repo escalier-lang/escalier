@@ -1466,14 +1466,14 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		// We need to unify the inferred return and throw types with the Promise type args
 		if promiseType, ok := funcSigType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
 			if len(promiseType.TypeArgs) >= 2 {
-				unifyErrors := c.unify(ctx, promiseType.TypeArgs[0], returnType)
-				unifyThrowsErrors := c.unify(ctx, promiseType.TypeArgs[1], inferredThrowType)
+				unifyErrors := c.unify(ctx, returnType, promiseType.TypeArgs[0])
+				unifyThrowsErrors := c.unify(ctx, inferredThrowType, promiseType.TypeArgs[1])
 				errors = slices.Concat(errors, unifyErrors, unifyThrowsErrors)
 			}
 		}
 	} else {
 		// For non-async functions, use the original logic
-		unifyReturnErrors := c.unify(ctx, funcSigType.Return, returnType)
+		unifyReturnErrors := c.unify(ctx, returnType, funcSigType.Return)
 		unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcSigType.Throws)
 		errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
 	}
