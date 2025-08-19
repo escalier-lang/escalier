@@ -208,7 +208,7 @@ func (c *Checker) InferComponent(
 		}
 
 		switch decl := decl.(type) {
-		case *ast.FuncDecl: // TODO: dedupe with inferExpr
+		case *ast.FuncDecl:
 			// We reuse the binding that was previous created for the function
 			// declaration, so that we can unify the signature with the body's
 			// inferred type.
