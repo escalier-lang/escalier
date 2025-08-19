@@ -217,13 +217,10 @@ func (c *Checker) InferComponent(
 			funcType := funcBinding.Type.(*FuncType)
 
 			if decl.Body != nil {
-				returnType, inferredThrowType, bodyErrors := c.inferFuncBody(declCtx, paramBindings, decl.Body)
-
-				unifyReturnErrors := c.unify(declCtx, funcType.Return, returnType)
-				unifyThrowsErrors := c.unify(declCtx, funcType.Throws, inferredThrowType)
-
-				errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
+				inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+				errors = slices.Concat(errors, inferErrors)
 			}
+
 		case *ast.VarDecl:
 			// TODO: if there's a type annotation, unify the initializer with it
 			if decl.Init != nil {
@@ -329,14 +326,40 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
-	// Handle throws type inference
-	if decl.Body != nil {
-		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(ctx, paramBindings, decl.Body)
-
-		unifyReturnErrors := c.unify(ctx, funcType.Return, returnType)
-		unifyThrowsErrors := c.unify(ctx, funcType.Throws, inferredThrowType)
-
-		errors = slices.Concat(errors, bodyErrors, unifyReturnErrors, unifyThrowsErrors)
+	// For declared functions, we don't have a body to infer from
+	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {
+		// For declared async functions, validate that the return type is a Promise
+		if decl.FuncSig.Async {
+			if promiseType, ok := funcType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
+				// Good, it's a Promise type. Ensure it has the right structure.
+				if len(promiseType.TypeArgs) == 1 {
+					// Promise<T> should become Promise<T, never>
+					promiseAlias := ctx.Scope.getTypeAlias("Promise")
+					if promiseAlias != nil {
+						// Update the function type to have Promise<T, never>
+						newPromiseType := NewTypeRefType("Promise", promiseAlias, promiseType.TypeArgs[0], NewNeverType())
+						funcType.Return = newPromiseType
+					}
+				} else if len(promiseType.TypeArgs) >= 2 {
+					// Promise<T, E> is already correct
+				} else {
+					// Promise with no args, this shouldn't happen but let's handle it
+					errors = append(errors, &UnimplementedError{
+						message: "Promise type must have at least one type argument",
+						span:    decl.Span(),
+					})
+				}
+			} else {
+				// Declared async function must return a Promise type
+				errors = append(errors, &UnimplementedError{
+					message: "Declared async functions must return a Promise type",
+					span:    decl.Span(),
+				})
+			}
+		}
+	} else if decl.Body != nil {
+		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+		errors = slices.Concat(errors, inferErrors)
 	}
 
 	binding := Binding{
@@ -574,14 +597,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		resultType = NewObjectType(elems)
 	case *ast.FuncExpr:
-		funcType, bindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
-		returnType, inferredThrowType, bodyErrors := c.inferFuncBody(ctx, bindings, &expr.Body)
+		funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
+		errors = slices.Concat(errors, sigErrors)
 
-		unifyErrors := c.unify(ctx, funcType.Return, returnType)
-		unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcType.Throws)
+		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, &expr.Body, expr.FuncSig.Async)
+		errors = slices.Concat(errors, inferErrors)
 
 		resultType = funcType
-		errors = slices.Concat(sigErrors, bodyErrors, unifyErrors, unifyThrowsErrors)
 	case *ast.IfElseExpr:
 		resultType, errors = c.inferIfElse(ctx, expr)
 	case *ast.DoExpr:
@@ -594,6 +616,39 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		errors = argErrors
 		// Throw expressions have type never since they don't return a value
 		resultType = NewNeverType()
+	case *ast.AwaitExpr:
+		// Await can only be used inside async functions
+		if !ctx.IsAsync {
+			errors = []Error{
+				&UnimplementedError{
+					message: "await can only be used inside async functions",
+					span:    expr.Span(),
+				},
+			}
+			resultType = NewNeverType()
+		} else {
+			// Infer the type of the expression being awaited
+			argType, argErrors := c.inferExpr(ctx, expr.Arg)
+			errors = argErrors
+
+			// If the argument is a Promise<T, E>, the result type is T
+			// and the throws type should be E (stored in expr.Throws for later use)
+			if promiseType, ok := argType.(*TypeRefType); ok && promiseType.Name == "Promise" {
+				if len(promiseType.TypeArgs) >= 2 {
+					resultType = promiseType.TypeArgs[0]  // T
+					expr.Throws = promiseType.TypeArgs[1] // E (store for throw inference)
+				} else {
+					resultType = NewNeverType()
+				}
+			} else {
+				// If not a Promise type, this is an error
+				errors = append(errors, &UnimplementedError{
+					message: "await expression expects a Promise type",
+					span:    expr.Span(),
+				})
+				resultType = NewNeverType()
+			}
+		}
 	default:
 		resultType = NewNeverType()
 		errors = []Error{
@@ -1247,10 +1302,36 @@ func (c *Checker) inferFuncSig(
 		errors = slices.Concat(errors, throwsErrors)
 	}
 
+	// For async functions, wrap the return type in a Promise<T, E>
+	var finalReturnType Type
+	var finalThrowsType Type
+	if sig.Async {
+		// For async functions, check if the user explicitly specified a Promise return type
+		if promiseType, ok := returnType.(*TypeRefType); ok && promiseType.Name == "Promise" {
+			// User explicitly specified Promise<T, E>, use it as-is
+			finalReturnType = returnType
+			finalThrowsType = NewNeverType() // Async functions don't throw directly
+		} else {
+			// User didn't specify Promise, wrap the return type
+			promiseAlias := ctx.Scope.getTypeAlias("Promise")
+			if promiseAlias != nil {
+				finalReturnType = NewTypeRefType("Promise", promiseAlias, returnType, throwsType)
+				finalThrowsType = NewNeverType() // Async functions don't throw directly
+			} else {
+				// Fallback if Promise type is not available
+				finalReturnType = returnType
+				finalThrowsType = throwsType
+			}
+		}
+	} else {
+		finalReturnType = returnType
+		finalThrowsType = throwsType
+	}
+
 	t := &FuncType{
 		Params:     params,
-		Return:     returnType,
-		Throws:     throwsType,
+		Return:     finalReturnType,
+		Throws:     finalThrowsType,
 		TypeParams: []*TypeParam{},
 		Self:       nil,
 	}
@@ -1259,7 +1340,7 @@ func (c *Checker) inferFuncSig(
 }
 
 type ReturnVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Returns []*ast.ReturnStmt
 }
 
@@ -1293,7 +1374,7 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 }
 
 type ThrowVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	Throws []*ast.ThrowExpr
 }
 
@@ -1325,7 +1406,83 @@ func (v *ThrowVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
+type AwaitVisitor struct {
+	ast.DefaultVisitor
+	Awaits []*ast.AwaitExpr
+}
+
+func (v *AwaitVisitor) EnterExpr(expr ast.Expr) bool {
+	if awaitExpr, ok := expr.(*ast.AwaitExpr); ok {
+		v.Awaits = append(v.Awaits, awaitExpr)
+	}
+
+	// Don't visit function expressions since we don't want to include any
+	// await expressions inside them.
+	if _, ok := expr.(*ast.FuncExpr); ok {
+		return false
+	}
+	return true
+}
+
+func (v *AwaitVisitor) EnterDecl(decl ast.Decl) bool {
+	// Don't visit function declarations since we don't want to include any
+	// await expressions inside them.
+	if _, ok := decl.(*ast.FuncDecl); ok {
+		return false
+	}
+	return true
+}
+
+func (v *AwaitVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	return true
+}
+
+// NOTE: This function updates `funcSigType`
+func (c *Checker) inferFuncBodyWithFuncSigType(
+	ctx Context,
+	funcSigType *FuncType,
+	paramBindings map[string]*Binding,
+	body *ast.Block,
+	isAsync bool,
+) []Error {
+	errors := []Error{}
+
+	// Create async context if this is an async function
+	bodyCtx := ctx
+	if isAsync {
+		bodyCtx = Context{
+			Scope:      ctx.Scope,
+			IsAsync:    true,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
+	errors = slices.Concat(errors, bodyErrors)
+
+	// For async functions, we need to handle Promise return types differently
+	if isAsync {
+		// For async functions, the funcType.Return is Promise<T, E>
+		// We need to unify the inferred return and throw types with the Promise type args
+		if promiseType, ok := funcSigType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
+			if len(promiseType.TypeArgs) >= 2 {
+				unifyErrors := c.unify(ctx, returnType, promiseType.TypeArgs[0])
+				unifyThrowsErrors := c.unify(ctx, inferredThrowType, promiseType.TypeArgs[1])
+				errors = slices.Concat(errors, unifyErrors, unifyThrowsErrors)
+			}
+		}
+	} else {
+		// For non-async functions, use the original logic
+		unifyReturnErrors := c.unify(ctx, returnType, funcSigType.Return)
+		unifyThrowsErrors := c.unify(ctx, inferredThrowType, funcSigType.Throws)
+		errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
+	}
+
+	return errors
+}
+
 // Infer throws type - handles throws clause inference
+// NOTE: This function updates `funcSigType`
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*Binding,
@@ -1342,19 +1499,25 @@ func (c *Checker) inferFuncBody(
 	}
 
 	visitor := &ReturnVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Returns:       []*ast.ReturnStmt{},
+		DefaultVisitor: ast.DefaultVisitor{},
+		Returns:        []*ast.ReturnStmt{},
 	}
 
 	throwVisitor := &ThrowVisitor{
-		DefaulVisitor: ast.DefaulVisitor{},
-		Throws:        []*ast.ThrowExpr{},
+		DefaultVisitor: ast.DefaultVisitor{},
+		Throws:         []*ast.ThrowExpr{},
+	}
+
+	awaitVisitor := &AwaitVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Awaits:         []*ast.AwaitExpr{},
 	}
 
 	for _, stmt := range body.Stmts {
 		// TODO: don't visit statements that are unreachable
 		stmt.Accept(visitor)
 		stmt.Accept(throwVisitor)
+		stmt.Accept(awaitVisitor)
 	}
 
 	returnTypes := []Type{}
@@ -1371,6 +1534,13 @@ func (c *Checker) inferFuncBody(
 		throwType, throwErrors := c.inferExpr(ctx, throwExpr.Arg)
 		throwTypes = append(throwTypes, throwType)
 		errors = slices.Concat(errors, throwErrors)
+	}
+
+	// Collect throw types from await expressions (Promise rejection types)
+	for _, awaitExpr := range awaitVisitor.Awaits {
+		if awaitExpr.Throws != nil {
+			throwTypes = append(throwTypes, awaitExpr.Throws)
+		}
 	}
 
 	// TODO: We also need to do dead code analysis to account for unreachable

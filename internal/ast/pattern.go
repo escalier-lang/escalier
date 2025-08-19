@@ -194,7 +194,7 @@ func (p *WildcardPat) Accept(v Visitor) {
 }
 
 type BindingVisitor struct {
-	DefaulVisitor
+	DefaultVisitor
 	Bindings set.Set[string]
 }
 
@@ -222,8 +222,8 @@ func (v *BindingVisitor) EnterLit(lit Lit) bool                  { return false 
 
 func FindBindings(pat Pat) set.Set[string] {
 	visitor := &BindingVisitor{
-		DefaulVisitor: DefaulVisitor{},
-		Bindings:      set.NewSet[string](),
+		DefaultVisitor: DefaultVisitor{},
+		Bindings:       set.NewSet[string](),
 	}
 	pat.Accept(visitor)
 

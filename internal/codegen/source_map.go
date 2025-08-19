@@ -265,6 +265,8 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 		s.TraverseExpr(ek.Right)
 	case *UnaryExpr:
 		s.TraverseExpr(ek.Arg)
+	case *AwaitExpr:
+		s.TraverseExpr(ek.Arg)
 	case *CallExpr:
 		s.TraverseExpr(ek.Callee)
 		for _, arg := range ek.Args {

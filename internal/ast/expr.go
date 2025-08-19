@@ -326,6 +326,7 @@ type FuncSig struct {
 	Params     []*Param
 	Return     TypeAnn // optional
 	Throws     TypeAnn // optional
+	Async      bool    // whether this is an async function
 }
 
 type FuncExpr struct {
@@ -340,6 +341,7 @@ func NewFuncExpr(
 	params []*Param,
 	ret TypeAnn, // optional
 	throws TypeAnn, // optional
+	async bool,
 	body Block,
 	span Span,
 ) *FuncExpr {
@@ -349,6 +351,7 @@ func NewFuncExpr(
 			Params:     params,
 			Return:     ret,
 			Throws:     throws,
+			Async:      async,
 		},
 		Body:         body,
 		span:         span,

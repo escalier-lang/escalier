@@ -413,6 +413,14 @@ func NewTypeParam(name string) *TypeParam {
 	}
 }
 
+func NewTypeParamWithDefault(name string, default_ Type) *TypeParam {
+	return &TypeParam{
+		Name:       name,
+		Constraint: nil,
+		Default:    default_,
+	}
+}
+
 type FuncParam struct {
 	Pattern  Pat
 	Type     Type

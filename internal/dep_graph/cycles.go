@@ -249,7 +249,7 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
 	// Check all declarations to see if they use any bindings outside function bodies
 	for _, decl := range g.Decls {
 		visitor := &AllBindingsUsageVisitor{
-			DefaulVisitor:                   ast.DefaulVisitor{},
+			DefaultVisitor:                  ast.DefaultVisitor{},
 			FunctionDepth:                   0,
 			LocalBindings:                   make([]set.Set[string], 0),
 			BindingsUsedOutsideFunctionBody: usedOutsideFunctionBodies,
@@ -264,7 +264,7 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[DepBinding] {
 
 // AllBindingsUsageVisitor checks if any bindings are used outside function bodies
 type AllBindingsUsageVisitor struct {
-	ast.DefaulVisitor
+	ast.DefaultVisitor
 	FunctionDepth                   int                     // Track nesting depth in function bodies
 	LocalBindings                   []set.Set[string]       // Stack of local scopes
 	BindingsUsedOutsideFunctionBody set.Set[DepBinding]     // Set of bindings used outside function body

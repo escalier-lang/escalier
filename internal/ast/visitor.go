@@ -20,45 +20,45 @@ type Visitor interface {
 	ExitBlock(b Block)
 }
 
-type DefaulVisitor struct{}
+type DefaultVisitor struct{}
 
-func (v *DefaulVisitor) EnterLit(l Lit) bool {
+func (v *DefaultVisitor) EnterLit(l Lit) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterPat(p Pat) bool {
+func (v *DefaultVisitor) EnterPat(p Pat) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterExpr(e Expr) bool {
+func (v *DefaultVisitor) EnterExpr(e Expr) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterObjExprElem(e ObjExprElem) bool {
+func (v *DefaultVisitor) EnterObjExprElem(e ObjExprElem) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterStmt(s Stmt) bool {
+func (v *DefaultVisitor) EnterStmt(s Stmt) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterDecl(d Decl) bool {
+func (v *DefaultVisitor) EnterDecl(d Decl) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterTypeAnn(t TypeAnn) bool {
+func (v *DefaultVisitor) EnterTypeAnn(t TypeAnn) bool {
 	return true
 }
 
-func (v *DefaulVisitor) EnterBlock(b Block) bool {
+func (v *DefaultVisitor) EnterBlock(b Block) bool {
 	return true
 }
 
-func (v *DefaulVisitor) ExitLit(l Lit)                 {}
-func (v *DefaulVisitor) ExitPat(p Pat)                 {}
-func (v *DefaulVisitor) ExitExpr(e Expr)               {}
-func (v *DefaulVisitor) ExitObjExprElem(e ObjExprElem) {}
-func (v *DefaulVisitor) ExitStmt(s Stmt)               {}
-func (v *DefaulVisitor) ExitDecl(d Decl)               {}
-func (v *DefaulVisitor) ExitTypeAnn(t TypeAnn)         {}
-func (v *DefaulVisitor) ExitBlock(b Block)             {}
+func (v *DefaultVisitor) ExitLit(l Lit)                 {}
+func (v *DefaultVisitor) ExitPat(p Pat)                 {}
+func (v *DefaultVisitor) ExitExpr(e Expr)               {}
+func (v *DefaultVisitor) ExitObjExprElem(e ObjExprElem) {}
+func (v *DefaultVisitor) ExitStmt(s Stmt)               {}
+func (v *DefaultVisitor) ExitDecl(d Decl)               {}
+func (v *DefaultVisitor) ExitTypeAnn(t TypeAnn)         {}
+func (v *DefaultVisitor) ExitBlock(b Block)             {}

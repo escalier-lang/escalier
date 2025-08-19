@@ -322,6 +322,18 @@ async fn foo() -> Promise<string> {
 }
 ```
 
+If an `async` function returns a value that's already a promise, that value
+will **not** be wrapped in another promise.
+
+```ts
+declare async fn bar() -> Promise<number, SyntaxError>
+
+// inferred as `fn() -> Promise<number, SyntaxError>`
+async fn baz() {
+    return bar()
+}
+```
+
 ## Overloading
 
 Overloaded functions are defined by declaring multiple functions with the same
