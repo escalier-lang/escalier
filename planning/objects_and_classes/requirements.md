@@ -42,7 +42,7 @@ val p = {x: 5:number, y: 10:number} // val p = {x: 5, y: 10} as {x: number, y: n
 Objects can be defined over multiple lines, e.g.
 
 ```ts
-val = {
+val {
     x::number,
     y: b:number = 0,
 } = p
@@ -55,7 +55,8 @@ val q = {
 Objects can also have methods.  The first param of all methods is `self: Self`.
 This can be shortened to just the identifier `self`.  `mut self` indicates that
 properties on `self` can be modified.  The `self` parameter can also be 
-destructured.  It does not make sense to destructure `mut self`.
+destructured.  It does not make sense to destructure `mut self`.  It's also worth
+noting that object literals with mutable methods are by definition mutable.
 
 ```ts
 val p = {
@@ -81,8 +82,8 @@ Compiling `p` as described above will produce the following JavaScript code:
 
 ```js
 const p = {
-    x,
-    y,
+    x: 5,
+    y: 10,
     length1() {
         return Math.sqrt(this.x * this.x + this.y * this.y);
     },
@@ -100,7 +101,35 @@ const p = {
 References to `self` inside method bodies are converted to `this`.  Destructuring
 the `self` param becomes a statement inside th method body destructuring `this`.
 
-NOTE: Objects literals can have getters and setters.
+Object literals can have getters and setters.
+
+```ts
+val obj = {
+    value: 0:number,
+    get foo(self) -> number {
+        return self.vlaue
+    },
+    set bar(mut self, value: number) {
+        self.value = value
+    },
+}
+```
+
+Object literals can have computed method and field names.
+
+```ts
+val key = "value";
+
+val obj = {
+    [key]: 0:number,
+    [`get${key}`](self) -> number {
+        return self[key]
+    },
+    [`set${key}`](self, value: number) {
+        self[key] = value
+    }
+}
+```
 
 ## Classes
 
@@ -108,6 +137,9 @@ Class declarations are very similar variable declarations where the initializer
 is an object.  There are a couple of key differences:
 - Classes have a primary constructor, e.g. `Point(x: number, y: number) { ... }`
   which is used to pass data to an instance when constructing it.
+- If you need additional logic beyond initializing fields in the instance, add
+  a static method which calls the primary constructor and then runs the additional
+  initialization logic
 - `Self` is a type alias that resolves to the class being defined, in this case
   that would be `Point` (this can make renaming classes and other kinds of
   refactoring easier)
@@ -116,6 +148,8 @@ is an object.  There are a couple of key differences:
 - Instance methods can access the current instance via the `self` method param;
   `static` methods don't have access to `self`
 - Static properties and methods are accessed as fields on the `Point` class
+- Variables of type `Point` don't have access to methods that use `mut self` while
+  variables of type `mut Point` will have access to all mehtods
 
 ```ts
 class Point(x: number, y: number) {
@@ -134,8 +168,8 @@ class Point(x: number, y: number) {
     get length({x, y}) -> number {
         return Math.sqrt(x*x + y*y)
     },
-    set color(mut self, c: Color) {
-        self.color = c
+    set color(mut self, color: Color) {
+        self.color = color
     },
     static origin = Point(0, 0),
     static random() {
@@ -164,7 +198,7 @@ class Point {
     }
 
     sub(other) {
-        return Self(this.x - other.x, this.y - other.y);
+        return new Point(this.x - other.x, this.y - other.y);
     }
 
     toString() {
@@ -206,5 +240,99 @@ class User(name: string, age: number) {
     role: "user",
     
     // ... method definitions
+}
+```
+
+## Access Controls
+
+Classes can use the `private` modifier to control visibility of members outside
+of the class declaration.  Public methods can access `private` members.
+
+```ts
+class MyClass {
+    private foo: "":string,
+    bar: 0:number,
+    private baz(self) {
+        // ...
+    },
+    qux(self) {
+        self.baz()
+        console.log(self.foo)
+    },
+}
+```
+
+Parameters passed to the primary constructor are morally equivalent to private
+members.  The main difference is that they're caught in the closure of all instance
+methods and thus are accessed directly without having to go through `self`.
+
+```ts
+class MyClass(foo: string, bar: number) {
+    private foo,
+    bar,
+    qux(self) {
+        console.log(foo)
+        console.log(bar)
+        console.log(self.foo) // private member
+        console.log(self.bar) // public member
+    },
+}
+
+const myInstance = MyClass("hello", 5)
+myInstance.foo // ERROR, foo is private
+myInstance.bar // OKAY
+```
+
+This will be compiled to JavaScript in the following way:
+
+```js
+class MyClass {
+    constructor(foo, bar) {
+        this.#foo = foo
+        this.bar = bar
+
+        this.#__param_foo__
+        this.#__param_bar__
+    }
+    
+    qux(self) {
+        console.log(this.#__param_foo__)
+        console.log(this.#__param_bar__)
+        console.log(this.#foo) // private member
+        console.log(this.bar) // public member
+    }
+}
+
+const myInstance = new MyClass("hello", 5)
+myInstance.foo // ERROR, foo is private
+myInstance.bar // OKAY
+```
+
+In certain situations we may want the primary constructor to be private.  As an
+example we may want to require consumers of the class to use static factory 
+methods on the class to construct instances.  This is useful if there's additional
+logic that must be run as part of instance creation.
+
+The example below shows a wrapper around 
+
+```ts
+import mysql from "mysql.promise"
+
+class DBConnection private(conn: SQLConnection) {
+    [Symbol.asyncDispose](self) -> Promise<void, Error> {
+        return conn.end()
+    },
+    static create(host: string) -> Promise<DBConnection, Error> {
+        val conn = await mysql.createConnection({host})
+        return DBConnectino(conn)
+    }
+}
+
+fn main() {
+    use conn = DBConnection.create("example.com")
+
+    // do stuff with `conn`
+
+    // `conn[Symbol.asyncDispose]()` will automatically get called
 }
 ```
