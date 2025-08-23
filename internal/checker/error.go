@@ -133,6 +133,12 @@ func (e CannotUnifyTypesError) Span() ast.Span {
 	// report the primary location of the error as the t1Node.
 	t1Prov := e.T1.Provenance()
 	t1Node := GetNode(t1Prov)
+	// TODO: ensure every node has a provenance
+	if t1Node == nil {
+		// This code is triggered by the NewTypeRefType("Error", nil) in
+		// prelude.go, which does not have a provenance set.
+		return DEFAULT_SPAN
+	}
 	return t1Node.Span()
 }
 func (e CannotUnifyTypesError) Message() string {

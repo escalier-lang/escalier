@@ -524,6 +524,7 @@
         },
         Return: nil,
         Throws: nil,
+        Async:  false,
     },
     Body: ast.Block{
         Stmts: {
@@ -781,6 +782,7 @@
         },
         Return: nil,
         Throws: nil,
+        Async:  false,
     },
     Body: ast.Block{
         Stmts: {
@@ -1013,6 +1015,7 @@
                     },
                     Return: nil,
                     Throws: nil,
+                    Async:  false,
                 },
                 Body: ast.Block{
                     Stmts: {
@@ -1093,6 +1096,7 @@
                     },
                     Return: nil,
                     Throws: nil,
+                    Async:  false,
                 },
                 Body: ast.Block{
                     Stmts: {
@@ -1185,6 +1189,7 @@
                     },
                     Return: nil,
                     Throws: nil,
+                    Async:  false,
                 },
                 Body: ast.Block{
                     Stmts: {
@@ -2811,6 +2816,7 @@
         },
         Return: nil,
         Throws: nil,
+        Async:  false,
     },
     Body: ast.Block{
         Stmts: {
@@ -6554,6 +6560,7 @@
             inferredType: nil,
         },
         Throws: nil,
+        Async:  false,
     },
     Body: ast.Block{
         Stmts: {
@@ -6700,6 +6707,7 @@
             },
             inferredType: nil,
         },
+        Async: false,
     },
     Body: ast.Block{
         Stmts: {
@@ -6972,6 +6980,7 @@
         },
         Return: nil,
         Throws: nil,
+        Async:  false,
     },
     Body: ast.Block{
         Stmts: {

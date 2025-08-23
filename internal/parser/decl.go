@@ -4,10 +4,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// Decl = 'export'? 'declare'? (varDecl | fnDecl)
+// Decl = 'export'? 'declare'? 'async'? (varDecl | fnDecl)
 func (p *Parser) Decl() ast.Decl {
 	export := false
 	declare := false
+	async := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
@@ -21,13 +22,26 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
+	if token.Type == Async {
+		async = true
+		token = p.lexer.next()
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case Val, Var:
+		if async {
+			p.reportError(token.Span, "async can only be used with functions")
+			return nil
+		}
 		return p.varDecl(start, token, export, declare)
 	case Fn:
-		return p.fnDecl(start, export, declare)
+		return p.fnDecl(start, export, declare, async)
 	case Type:
+		if async {
+			p.reportError(token.Span, "async can only be used with functions")
+			return nil
+		}
 		return p.typeDecl(start, export, declare)
 	default:
 		p.reportError(token.Span, "Unexpected token")
@@ -91,7 +105,7 @@ func (p *Parser) varDecl(
 // fnDecl = 'fn' ident '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
-func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl {
+func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool) ast.Decl {
 	token := p.lexer.peek()
 	var ident *ast.Ident
 	if token.Type == Identifier {
@@ -157,7 +171,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool) ast.Decl 
 	}
 
 	return ast.NewFuncDecl(
-		ident, params, returnType, throwsType, &body, export, declare,
+		ident, params, returnType, throwsType, &body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }

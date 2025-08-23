@@ -310,6 +310,21 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			ns:         "utils",
 			expected:   "function utils__double(temp1) {\n  const x = temp1;\n  return x * 2;\n}",
 		},
+		"AsyncFuncDecl_NoNamespace": {
+			declSource: "async fn fetchData(url) { return await fetch(url) }",
+			ns:         "",
+			expected:   "async function fetchData(temp1) {\n  const url = temp1;\n  return await fetch(url);\n}",
+		},
+		"AsyncFuncDecl_WithNamespace": {
+			declSource: "async fn getData(id) { return await api.getData(id) }",
+			ns:         "service",
+			expected:   "async function service__getData(temp1) {\n  const id = temp1;\n  return await api.getData(id);\n}",
+		},
+		"TestMemberExpression": {
+			declSource: "fn getData(id) { return foo.bar(id) }",
+			ns:         "",
+			expected:   "function getData(temp1) {\n  const id = temp1;\n  return foo.bar(id);\n}",
+		},
 	}
 
 	for name, test := range tests {

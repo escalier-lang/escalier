@@ -125,6 +125,7 @@
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -381,6 +382,7 @@
                         },
                         Return: nil,
                         Throws: nil,
+                        Async:  false,
                     },
                     Body: ast.Block{
                         Stmts: {
@@ -679,6 +681,7 @@
             },
             Return: nil,
             Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1195,6 +1198,7 @@
                 },
                 inferredType: nil,
             },
+            Async: false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1365,6 +1369,1009 @@
     span: ast.Span{
         Start:    ast.Location{Line:6, Column:13},
         End:      ast.Location{Line:6, Column:22},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncDecls - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "fetchData",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:14},
+                End:      ast.Location{Line:2, Column:23},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "url",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:2, Column:24},
+                            End:      ast.Location{Line:2, Column:27},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:29},
+                            End:      ast.Location{Line:2, Column:35},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Promise",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:40},
+                        End:      ast.Location{Line:2, Column:47},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:48},
+                            End:      ast.Location{Line:2, Column:54},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:40},
+                    End:      ast.Location{Line:2, Column:55},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  true,
+        },
+        Body: &ast.Block{
+            Stmts: {
+                &ast.DeclStmt{
+                    Decl: &ast.VarDecl{
+                        Kind:    0,
+                        Pattern: &ast.IdentPat{
+                            Name:    "response",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:3, Column:10},
+                                End:      ast.Location{Line:3, Column:18},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        TypeAnn: nil,
+                        Init:    &ast.AwaitExpr{
+                            Arg: &ast.CallExpr{
+                                Callee: &ast.IdentExpr{
+                                    Name:      "fetch",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:3, Column:27},
+                                        End:      ast.Location{Line:3, Column:32},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Args: {
+                                    &ast.IdentExpr{
+                                        Name:      "url",
+                                        Namespace: 0,
+                                        Source:    nil,
+                                        span:      ast.Span{
+                                            Start:    ast.Location{Line:3, Column:33},
+                                            End:      ast.Location{Line:3, Column:36},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                },
+                                OptChain: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:3, Column:27},
+                                    End:      ast.Location{Line:3, Column:37},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Throws: nil,
+                            span:   ast.Span{
+                                Start:    ast.Location{Line:3, Column:21},
+                                End:      ast.Location{Line:3, Column:37},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        export:  false,
+                        declare: false,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:3, Column:6},
+                            End:      ast.Location{Line:3, Column:37},
+                            SourceID: 0,
+                        },
+                        InferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:37},
+                        SourceID: 0,
+                    },
+                },
+                &ast.ReturnStmt{
+                    Expr: &ast.AwaitExpr{
+                        Arg: &ast.CallExpr{
+                            Callee: &ast.MemberExpr{
+                                Object: &ast.IdentExpr{
+                                    Name:      "response",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:4, Column:19},
+                                        End:      ast.Location{Line:4, Column:27},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Prop: &ast.Ident{
+                                    Name: "text",
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:4, Column:28},
+                                        End:      ast.Location{Line:4, Column:32},
+                                        SourceID: 0,
+                                    },
+                                },
+                                OptChain: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:4, Column:19},
+                                    End:      ast.Location{Line:4, Column:32},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Args: {
+                            },
+                            OptChain: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:4, Column:19},
+                                End:      ast.Location{Line:4, Column:34},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:4, Column:13},
+                            End:      ast.Location{Line:4, Column:34},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:34},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:2, Column:56},
+                End:      ast.Location{Line:5, Column:6},
+                SourceID: 0,
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncDecls - 2]
+&ast.ExprStmt{
+    Expr: &ast.BinaryExpr{
+        Left: &ast.IdentExpr{
+            Name:      "Promise",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:2, Column:40},
+                End:      ast.Location{Line:2, Column:47},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Op:    "<",
+        Right: &ast.ObjectExpr{
+            Elems: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:56},
+                End:      ast.Location{Line:3, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:2, Column:40},
+            End:      ast.Location{Line:3, Column:9},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:40},
+        End:      ast.Location{Line:3, Column:9},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncDecls - 3]
+&ast.ExprStmt{
+    Expr: &ast.BinaryExpr{
+        Left: &ast.IdentExpr{
+            Name:      "response",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:3, Column:10},
+                End:      ast.Location{Line:3, Column:18},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Op:    "=",
+        Right: &ast.AwaitExpr{
+            Arg: &ast.CallExpr{
+                Callee: &ast.IdentExpr{
+                    Name:      "fetch",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:27},
+                        End:      ast.Location{Line:3, Column:32},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Args: {
+                    &ast.IdentExpr{
+                        Name:      "url",
+                        Namespace: 0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:3, Column:33},
+                            End:      ast.Location{Line:3, Column:36},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                OptChain: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:27},
+                    End:      ast.Location{Line:3, Column:37},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            span:   ast.Span{
+                Start:    ast.Location{Line:3, Column:21},
+                End:      ast.Location{Line:3, Column:37},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:3, Column:10},
+            End:      ast.Location{Line:3, Column:37},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:3, Column:10},
+        End:      ast.Location{Line:3, Column:37},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncDecls - 4]
+&ast.ReturnStmt{
+    Expr: &ast.AwaitExpr{
+        Arg: &ast.CallExpr{
+            Callee: &ast.MemberExpr{
+                Object: &ast.IdentExpr{
+                    Name:      "response",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:4, Column:19},
+                        End:      ast.Location{Line:4, Column:27},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Prop: &ast.Ident{
+                    Name: "text",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:28},
+                        End:      ast.Location{Line:4, Column:32},
+                        SourceID: 0,
+                    },
+                },
+                OptChain: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:4, Column:19},
+                    End:      ast.Location{Line:4, Column:32},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Args: {
+            },
+            OptChain: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:4, Column:19},
+                End:      ast.Location{Line:4, Column:34},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Throws: nil,
+        span:   ast.Span{
+            Start:    ast.Location{Line:4, Column:13},
+            End:      ast.Location{Line:4, Column:34},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:4, Column:6},
+        End:      ast.Location{Line:4, Column:34},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/DeclareAsyncFuncDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "fetch",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:22},
+                End:      ast.Location{Line:2, Column:27},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "url",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:2, Column:28},
+                            End:      ast.Location{Line:2, Column:31},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:33},
+                            End:      ast.Location{Line:2, Column:39},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Promise",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:44},
+                        End:      ast.Location{Line:2, Column:51},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "Response",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:2, Column:52},
+                                End:      ast.Location{Line:2, Column:60},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:52},
+                            End:      ast.Location{Line:2, Column:60},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:44},
+                    End:      ast.Location{Line:2, Column:61},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  true,
+        },
+        Body:    &ast.Block{},
+        export:  false,
+        declare: true,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:2, Column:61},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:2, Column:61},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/ExportAsyncFuncDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "fetchUser",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:21},
+                End:      ast.Location{Line:2, Column:30},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "id",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:2, Column:31},
+                            End:      ast.Location{Line:2, Column:33},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:35},
+                            End:      ast.Location{Line:2, Column:41},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Promise",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:46},
+                        End:      ast.Location{Line:2, Column:53},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "User",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:2, Column:54},
+                                End:      ast.Location{Line:2, Column:58},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:54},
+                            End:      ast.Location{Line:2, Column:58},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:46},
+                    End:      ast.Location{Line:2, Column:59},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  true,
+        },
+        Body: &ast.Block{
+            Stmts: {
+                &ast.ReturnStmt{
+                    Expr: &ast.AwaitExpr{
+                        Arg: &ast.CallExpr{
+                            Callee: &ast.MemberExpr{
+                                Object: &ast.IdentExpr{
+                                    Name:      "api",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:3, Column:19},
+                                        End:      ast.Location{Line:3, Column:22},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Prop: &ast.Ident{
+                                    Name: "getUser",
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:3, Column:23},
+                                        End:      ast.Location{Line:3, Column:30},
+                                        SourceID: 0,
+                                    },
+                                },
+                                OptChain: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:3, Column:19},
+                                    End:      ast.Location{Line:3, Column:30},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Args: {
+                                &ast.IdentExpr{
+                                    Name:      "id",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:3, Column:31},
+                                        End:      ast.Location{Line:3, Column:33},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                            OptChain: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:3, Column:19},
+                                End:      ast.Location{Line:3, Column:34},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:3, Column:13},
+                            End:      ast.Location{Line:3, Column:34},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:34},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:2, Column:60},
+                End:      ast.Location{Line:4, Column:6},
+                SourceID: 0,
+            },
+        },
+        export:  true,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:4, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:4, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncExprs - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "handler",
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:2, Column:9},
+                End:      ast.Location{Line:2, Column:16},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: nil,
+        Init:    &ast.FuncExpr{
+            FuncSig: ast.FuncSig{
+                TypeParams: {
+                },
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "event",
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:2, Column:28},
+                                End:      ast.Location{Line:2, Column:33},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        TypeAnn:  nil,
+                    },
+                },
+                Return: nil,
+                Throws: nil,
+                Async:  true,
+            },
+            Body: ast.Block{
+                Stmts: {
+                    &ast.ReturnStmt{
+                        Expr: &ast.AwaitExpr{
+                            Arg: &ast.CallExpr{
+                                Callee: &ast.IdentExpr{
+                                    Name:      "processEvent",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:3, Column:19},
+                                        End:      ast.Location{Line:3, Column:31},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Args: {
+                                    &ast.IdentExpr{
+                                        Name:      "event",
+                                        Namespace: 0,
+                                        Source:    nil,
+                                        span:      ast.Span{
+                                            Start:    ast.Location{Line:3, Column:32},
+                                            End:      ast.Location{Line:3, Column:37},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                },
+                                OptChain: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:3, Column:19},
+                                    End:      ast.Location{Line:3, Column:38},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Throws: nil,
+                            span:   ast.Span{
+                                Start:    ast.Location{Line:3, Column:13},
+                                End:      ast.Location{Line:3, Column:38},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:6},
+                            End:      ast.Location{Line:3, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                Span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:35},
+                    End:      ast.Location{Line:4, Column:6},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:19},
+                End:      ast.Location{Line:4, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:4, Column:6},
+            SourceID: 0,
+        },
+        InferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:4, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AsyncFuncExprs - 2]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "nested",
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:5, Column:9},
+                End:      ast.Location{Line:5, Column:15},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: nil,
+        Init:    &ast.AwaitExpr{
+            Arg: &ast.CallExpr{
+                Callee: &ast.IdentExpr{
+                    Name:      "foo",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:5, Column:24},
+                        End:      ast.Location{Line:5, Column:27},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Args: {
+                    &ast.AwaitExpr{
+                        Arg: &ast.CallExpr{
+                            Callee: &ast.IdentExpr{
+                                Name:      "bar",
+                                Namespace: 0,
+                                Source:    nil,
+                                span:      ast.Span{
+                                    Start:    ast.Location{Line:5, Column:34},
+                                    End:      ast.Location{Line:5, Column:37},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Args: {
+                                &ast.LiteralExpr{
+                                    Lit: &ast.NumLit{
+                                        Value: 42,
+                                        span:  ast.Span{
+                                            Start:    ast.Location{Line:5, Column:38},
+                                            End:      ast.Location{Line:5, Column:40},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:5, Column:38},
+                                        End:      ast.Location{Line:5, Column:40},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                            OptChain: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:5, Column:34},
+                                End:      ast.Location{Line:5, Column:41},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:5, Column:28},
+                            End:      ast.Location{Line:5, Column:41},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                OptChain: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:5, Column:24},
+                    End:      ast.Location{Line:5, Column:42},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            span:   ast.Span{
+                Start:    ast.Location{Line:5, Column:18},
+                End:      ast.Location{Line:5, Column:42},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:5, Column:5},
+            End:      ast.Location{Line:5, Column:42},
+            SourceID: 0,
+        },
+        InferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:5, Column:5},
+        End:      ast.Location{Line:5, Column:42},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/AwaitMethodCall - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "getData",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+        },
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "id",
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:18},
+                            End:      ast.Location{Line:1, Column:20},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  nil,
+                },
+            },
+            Return: nil,
+            Throws: nil,
+            Async:  true,
+        },
+        Body: &ast.Block{
+            Stmts: {
+                &ast.ReturnStmt{
+                    Expr: &ast.AwaitExpr{
+                        Arg: &ast.CallExpr{
+                            Callee: &ast.MemberExpr{
+                                Object: &ast.IdentExpr{
+                                    Name:      "api",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:1, Column:37},
+                                        End:      ast.Location{Line:1, Column:40},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Prop: &ast.Ident{
+                                    Name: "getData",
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:41},
+                                        End:      ast.Location{Line:1, Column:48},
+                                        SourceID: 0,
+                                    },
+                                },
+                                OptChain: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:1, Column:37},
+                                    End:      ast.Location{Line:1, Column:48},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Args: {
+                                &ast.IdentExpr{
+                                    Name:      "id",
+                                    Namespace: 0,
+                                    Source:    nil,
+                                    span:      ast.Span{
+                                        Start:    ast.Location{Line:1, Column:49},
+                                        End:      ast.Location{Line:1, Column:51},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                            OptChain: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:52},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:52},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:52},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:1, Column:22},
+                End:      ast.Location{Line:1, Column:54},
+                SourceID: 0,
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:54},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:54},
         SourceID: 0,
     },
 }

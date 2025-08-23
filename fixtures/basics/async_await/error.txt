@@ -1,0 +1,5 @@
+lib/async_await.esc:7:50: Error cannot be assigned to string
+
+7:  declare fn fetch(url: string) -> Promise<string, Error>
+                                                     ^^^^^
+
