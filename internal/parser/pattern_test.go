@@ -38,17 +38,38 @@ func TestParsePatternNoErrors(t *testing.T) {
 		"Identifier": {
 			input: "x",
 		},
+		"IdentifierWithTypeAnnotation": {
+			input: "x:number",
+		},
+		"IdentifierWithTypeAnnotationAndDefault": {
+			input: "x:number = 5",
+		},
 		"Wildcard": {
 			input: "_",
 		},
 		"TuplePatternWithRest": {
 			input: "[a, b = 5, ...rest]",
 		},
+		"TuplePatternWithTypeAnnotations": {
+			input: "[x:number, y:string = 5]",
+		},
 		"ObjectPatternWithRest": {
 			input: "{a, b: c, ...rest}",
 		},
 		"ObjectPatternWithDefaults": {
 			input: "{a = 5, b: c = \"hello\"}",
+		},
+		"ObjectPatternWithInlineTypeAnnotations": {
+			input: "{x::number, y::string}",
+		},
+		"ObjectPatternWithInlineTypeAnnotationsAndDefaults": {
+			input: "{x::number = 0, y::string = \"hello\"}",
+		},
+		"ObjectPatternWithKeyValueAndInlineTypeAnnotations": {
+			input: "{x: a:number, y: b:string}",
+		},
+		"ObjectPatternWithKeyValueInlineTypeAnnotationsAndDefaults": {
+			input: "{x: a:number = 0, y: b:string = \"hello\"}",
 		},
 		"ExtractPattern": {
 			input: "Foo(a, b)",
@@ -70,7 +91,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			expr := parser.pattern(false)
+			expr := parser.pattern(false, true)
 
 			snaps.MatchSnapshot(t, expr)
 			assert.Equal(t, parser.errors, []*Error{})

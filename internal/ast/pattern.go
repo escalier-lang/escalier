@@ -20,16 +20,24 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
-	Default      Expr // optional
+	TypeAnn      TypeAnn // optional
+	Default      Expr    // optional
 	span         Span
 	inferredType Type
 }
 
-func NewIdentPat(name string, _default Expr, span Span) *IdentPat {
-	return &IdentPat{Name: name, Default: _default, span: span, inferredType: nil}
+func NewIdentPat(name string, typeAnn TypeAnn, _default Expr, span Span) *IdentPat {
+	return &IdentPat{Name: name, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil}
 }
 func (p *IdentPat) Accept(v Visitor) {
-	v.EnterPat(p)
+	if v.EnterPat(p) {
+		if p.TypeAnn != nil {
+			p.TypeAnn.Accept(v)
+		}
+		if p.Default != nil {
+			p.Default.Accept(v)
+		}
+	}
 	v.ExitPat(p)
 }
 
@@ -59,16 +67,18 @@ func (p *ObjKeyValuePat) Accept(v Visitor) {
 
 type ObjShorthandPat struct {
 	Key     *Ident
-	Default Expr // optional
+	TypeAnn TypeAnn // optional
+	Default Expr    // optional
 	span    Span
 }
 
-func NewObjShorthandPat(key *Ident, _default Expr, span Span) *ObjShorthandPat {
-	return &ObjShorthandPat{Key: key, Default: _default, span: span}
+func NewObjShorthandPat(key *Ident, typeAnn TypeAnn, _default Expr, span Span) *ObjShorthandPat {
+	return &ObjShorthandPat{Key: key, TypeAnn: typeAnn, Default: _default, span: span}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }
 func (p *ObjShorthandPat) Accept(v Visitor) {
-	// TODO
+	// TODO - individual ObjPatElem Accept methods are not used,
+	// visiting is handled by ObjectPat.Accept
 }
 
 type ObjRestPat struct {
@@ -100,6 +110,9 @@ func (p *ObjectPat) Accept(v Visitor) {
 			case *ObjKeyValuePat:
 				e.Value.Accept(v)
 			case *ObjShorthandPat:
+				if e.TypeAnn != nil {
+					e.TypeAnn.Accept(v)
+				}
 				if e.Default != nil {
 					e.Default.Accept(v)
 				}

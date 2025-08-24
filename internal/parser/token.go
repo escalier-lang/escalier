@@ -22,6 +22,7 @@ const (
 	CloseParen
 	Colon
 	Comma
+	DoubleColon
 	Declare
 	Do
 	Dot

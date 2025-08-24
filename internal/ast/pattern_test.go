@@ -24,25 +24,25 @@ func TestFindBindings(t *testing.T) {
 	}{
 		{
 			name:     "simple identifier pattern",
-			pat:      NewIdentPat("x", nil, emptySpan()),
+			pat:      NewIdentPat("x", nil, nil, emptySpan()),
 			expected: set.FromSlice([]string{"x"}),
 		},
 		{
 			name: "tuple pattern with identifiers",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("a", nil, emptySpan()),
-				NewIdentPat("b", nil, emptySpan()),
-				NewIdentPat("c", nil, emptySpan()),
+				NewIdentPat("a", nil, nil, emptySpan()),
+				NewIdentPat("b", nil, nil, emptySpan()),
+				NewIdentPat("c", nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"a", "b", "c"}),
 		},
 		{
 			name: "nested tuple pattern",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("x", nil, emptySpan()),
+				NewIdentPat("x", nil, nil, emptySpan()),
 				NewTuplePat([]Pat{
-					NewIdentPat("y", nil, emptySpan()),
-					NewIdentPat("z", nil, emptySpan()),
+					NewIdentPat("y", nil, nil, emptySpan()),
+					NewIdentPat("z", nil, nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"x", "y", "z"}),
@@ -52,13 +52,13 @@ func TestFindBindings(t *testing.T) {
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
 					&Ident{Name: "key1", span: emptySpan()},
-					NewIdentPat("value1", nil, emptySpan()),
+					NewIdentPat("value1", nil, nil, emptySpan()),
 					nil,
 					emptySpan(),
 				),
 				NewObjKeyValuePat(
 					&Ident{Name: "key2", span: emptySpan()},
-					NewIdentPat("value2", nil, emptySpan()),
+					NewIdentPat("value2", nil, nil, emptySpan()),
 					nil,
 					emptySpan(),
 				),
@@ -71,10 +71,12 @@ func TestFindBindings(t *testing.T) {
 				NewObjShorthandPat(
 					&Ident{Name: "shorthand1", span: emptySpan()},
 					nil,
+					nil,
 					emptySpan(),
 				),
 				NewObjShorthandPat(
 					&Ident{Name: "shorthand2", span: emptySpan()},
+					nil,
 					nil,
 					emptySpan(),
 				),
@@ -86,12 +88,12 @@ func TestFindBindings(t *testing.T) {
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
 					&Ident{Name: "key", span: emptySpan()},
-					NewIdentPat("value", nil, emptySpan()),
+					NewIdentPat("value", nil, nil, emptySpan()),
 					nil,
 					emptySpan(),
 				),
 				NewObjRestPat(
-					NewIdentPat("rest", nil, emptySpan()),
+					NewIdentPat("rest", nil, nil, emptySpan()),
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -100,7 +102,7 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "rest pattern",
 			pat: NewRestPat(
-				NewIdentPat("rest", nil, emptySpan()),
+				NewIdentPat("rest", nil, nil, emptySpan()),
 				emptySpan(),
 			),
 			expected: set.FromSlice([]string{"rest"}),
@@ -108,7 +110,7 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "extractor pattern",
 			pat: NewExtractorPat("Some", []Pat{
-				NewIdentPat("inner", nil, emptySpan()),
+				NewIdentPat("inner", nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"inner"}),
 		},
@@ -116,7 +118,7 @@ func TestFindBindings(t *testing.T) {
 			name: "nested extractor pattern",
 			pat: NewExtractorPat("Result", []Pat{
 				NewExtractorPat("Ok", []Pat{
-					NewIdentPat("value", nil, emptySpan()),
+					NewIdentPat("value", nil, nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"value"}),
@@ -137,24 +139,24 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "complex nested pattern",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("first", nil, emptySpan()),
+				NewIdentPat("first", nil, nil, emptySpan()),
 				NewObjectPat([]ObjPatElem{
 					NewObjKeyValuePat(
 						&Ident{Name: "nested", span: emptySpan()},
 						NewTuplePat([]Pat{
-							NewIdentPat("x", nil, emptySpan()),
-							NewIdentPat("y", nil, emptySpan()),
+							NewIdentPat("x", nil, nil, emptySpan()),
+							NewIdentPat("y", nil, nil, emptySpan()),
 						}, emptySpan()),
 						nil,
 						emptySpan(),
 					),
 					NewObjRestPat(
-						NewIdentPat("objRest", nil, emptySpan()),
+						NewIdentPat("objRest", nil, nil, emptySpan()),
 						emptySpan(),
 					),
 				}, emptySpan()),
 				NewRestPat(
-					NewIdentPat("tupleRest", nil, emptySpan()),
+					NewIdentPat("tupleRest", nil, nil, emptySpan()),
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -163,10 +165,10 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "mixed patterns with literals and wildcards",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("valid", nil, emptySpan()),
+				NewIdentPat("valid", nil, nil, emptySpan()),
 				NewLitPat(NewString("literal", emptySpan()), emptySpan()),
 				NewWildcardPat(emptySpan()),
-				NewIdentPat("another", nil, emptySpan()),
+				NewIdentPat("another", nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"valid", "another"}),
 		},
@@ -186,9 +188,9 @@ func TestFindBindings(t *testing.T) {
 func TestFindBindingsOrder(t *testing.T) {
 	// Test that bindings are returned in the order they are encountered
 	pat := NewTuplePat([]Pat{
-		NewIdentPat("third", nil, emptySpan()),  // This should be first in result
-		NewIdentPat("first", nil, emptySpan()),  // This should be second in result
-		NewIdentPat("second", nil, emptySpan()), // This should be third in result
+		NewIdentPat("third", nil, nil, emptySpan()),  // This should be first in result
+		NewIdentPat("first", nil, nil, emptySpan()),  // This should be second in result
+		NewIdentPat("second", nil, nil, emptySpan()), // This should be third in result
 	}, emptySpan())
 
 	result := FindBindings(pat)
@@ -202,9 +204,9 @@ func TestFindBindingsOrder(t *testing.T) {
 func TestFindBindingsNoDuplicates(t *testing.T) {
 	// Test behavior with duplicate identifier names
 	pat := NewTuplePat([]Pat{
-		NewIdentPat("x", nil, emptySpan()),
-		NewIdentPat("x", nil, emptySpan()), // Duplicate name
-		NewIdentPat("y", nil, emptySpan()),
+		NewIdentPat("x", nil, nil, emptySpan()),
+		NewIdentPat("x", nil, nil, emptySpan()), // Duplicate name
+		NewIdentPat("y", nil, nil, emptySpan()),
 	}, emptySpan())
 
 	result := FindBindings(pat)
