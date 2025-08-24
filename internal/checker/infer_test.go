@@ -301,7 +301,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x::number, y::number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaults": {
@@ -311,7 +311,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x?::number, y?::number}) -> number throws never",
+				"add": "fn ({x?: number, y?: number}) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaultsDeep": {
@@ -321,7 +321,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({a: {b: {c?::number}}}) -> number throws never",
+				"add": "fn ({a: {b: {c?: number}}}) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndRenamining": {
@@ -331,7 +331,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x::number, y::number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number throws never",
 			},
 		},
 		"FuncExprTuplePatternWithInlineTypeAnn": {
@@ -341,7 +341,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ([x:number, y:number]) -> number throws never",
+				"add": "fn ([x: number, y: number]) -> number throws never",
 			},
 		},
 		"FuncExprWithoutReturn": {

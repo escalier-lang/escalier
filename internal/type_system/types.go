@@ -528,9 +528,9 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 				switch e := elem.(type) {
 				case *ObjKeyValuePat:
 					isOpt := propOptionals[e.Key]
-					colon := "::"
+					colon := ": "
 					if isOpt {
-						colon = "?::"
+						colon = "?: "
 					}
 					if propType, exists := propTypes[e.Key]; exists {
 						if _, ok := e.Value.(*IdentPat); ok {
@@ -548,9 +548,9 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 					}
 				case *ObjShorthandPat:
 					isOpt := propOptionals[e.Key]
-					colon := "::"
+					colon := ": "
 					if isOpt {
-						colon = "?::"
+						colon = "?: "
 					}
 					if propType, exists := propTypes[e.Key]; exists {
 						elems = append(elems, e.Key+colon+propType.String())
@@ -596,13 +596,7 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 			return result
 		}
 	case *IdentPat:
-		// For identifier patterns, add inline type annotation
-		// Use ":" for tuple elements, "::" for object properties and default cases
-		if context == "tuple" {
-			return p.Name + ":" + paramType.String()
-		} else {
-			return p.Name + "::" + paramType.String()
-		}
+		return p.Name + ": " + paramType.String()
 	}
 
 	// For other pattern types or when types don't match, fall back to default
