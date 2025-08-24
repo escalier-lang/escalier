@@ -628,7 +628,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 // <pattern>?
 // <pattern>
 func (p *Parser) param() *ast.Param {
-	pat := p.pattern(true)
+	pat := p.pattern(true, false)
 	if pat == nil {
 		return nil
 	}
@@ -825,7 +825,7 @@ func (p *Parser) matchExpr() ast.Expr {
 func (p *Parser) matchCase() *ast.MatchCase {
 	start := p.lexer.currentLocation
 
-	pattern := p.pattern(false)
+	pattern := p.pattern(false, true)
 	if pattern == nil {
 		token := p.lexer.peek()
 		p.reportError(token.Span, "Expected pattern in match case")

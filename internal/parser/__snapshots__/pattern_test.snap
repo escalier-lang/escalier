@@ -31,6 +31,7 @@
     Elems: {
         &ast.IdentPat{
             Name:    "a",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:2},
@@ -41,6 +42,7 @@
         },
         &ast.IdentPat{
             Name:    "b",
+            TypeAnn: nil,
             Default: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 5,
@@ -67,6 +69,7 @@
         &ast.RestPat{
             Pattern: &ast.IdentPat{
                 Name:    "rest",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
@@ -95,6 +98,7 @@
 [TestParsePatternNoErrors/Identifier - 1]
 &ast.IdentPat{
     Name:    "x",
+    TypeAnn: nil,
     Default: nil,
     span:    ast.Span{
         Start:    ast.Location{Line:1, Column:1},
@@ -111,6 +115,7 @@
     Args: {
         &ast.IdentPat{
             Name:    "a",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:5},
@@ -121,6 +126,7 @@
         },
         &ast.IdentPat{
             Name:    "b",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
@@ -216,6 +222,7 @@
                     SourceID: 0,
                 },
             },
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:2},
@@ -234,6 +241,7 @@
             },
             Value: &ast.IdentPat{
                 Name:    "c",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:8},
@@ -253,6 +261,7 @@
         &ast.ObjRestPat{
             Pattern: &ast.IdentPat{
                 Name:    "rest",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
@@ -289,6 +298,7 @@
                     SourceID: 0,
                 },
             },
+            TypeAnn: nil,
             Default: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 5,
@@ -322,6 +332,7 @@
             },
             Value: &ast.IdentPat{
                 Name:    "c",
+                TypeAnn: nil,
                 Default: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "hello",
@@ -383,6 +394,475 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/IdentifierWithTypeAnnotation - 1]
+&ast.IdentPat{
+    Name:    "x",
+    TypeAnn: &ast.NumberTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:3},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default: nil,
+    span:    ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/IdentifierWithTypeAnnotationAndDefault - 1]
+&ast.IdentPat{
+    Name:    "x",
+    TypeAnn: &ast.NumberTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:3},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default: &ast.LiteralExpr{
+        Lit: &ast.NumLit{
+            Value: 5,
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:12},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/ObjectPatternWithKeyValueAndInlineTypeAnnotations - 1]
+&ast.ObjectPat{
+    Elems: {
+        &ast.ObjKeyValuePat{
+            Key: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:3},
+                    SourceID: 0,
+                },
+            },
+            Value: &ast.IdentPat{
+                Name:    "a",
+                TypeAnn: &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.ObjKeyValuePat{
+            Key: &ast.Ident{
+                Name: "y",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:15},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+            Value: &ast.IdentPat{
+                Name:    "b",
+                TypeAnn: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:20},
+                        End:      ast.Location{Line:1, Column:26},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/ObjectPatternWithKeyValueInlineTypeAnnotationsAndDefaults - 1]
+&ast.ObjectPat{
+    Elems: {
+        &ast.ObjKeyValuePat{
+            Key: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:3},
+                    SourceID: 0,
+                },
+            },
+            Value: &ast.IdentPat{
+                Name:    "a",
+                TypeAnn: &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: &ast.LiteralExpr{
+                    Lit: &ast.NumLit{
+                        Value: 0,
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:17},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:16},
+                        End:      ast.Location{Line:1, Column:17},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.ObjKeyValuePat{
+            Key: &ast.Ident{
+                Name: "y",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+            },
+            Value: &ast.IdentPat{
+                Name:    "b",
+                TypeAnn: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Default: &ast.LiteralExpr{
+                    Lit: &ast.StrLit{
+                        Value: "hello",
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:40},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
+                        End:      ast.Location{Line:1, Column:40},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:40},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:40},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:41},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/ObjectPatternWithInlineTypeAnnotations - 1]
+&ast.ObjectPat{
+    Elems: {
+        &ast.ObjShorthandPat{
+            Key: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:3},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:11},
+                SourceID: 0,
+            },
+        },
+        &ast.ObjShorthandPat{
+            Key: &ast.Ident{
+                Name: "y",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:14},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:16},
+                    End:      ast.Location{Line:1, Column:22},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:22},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/ObjectPatternWithInlineTypeAnnotationsAndDefaults - 1]
+&ast.ObjectPat{
+    Elems: {
+        &ast.ObjShorthandPat{
+            Key: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:3},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 0,
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:14},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:15},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+        },
+        &ast.ObjShorthandPat{
+            Key: &ast.Ident{
+                Name: "y",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:18},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:20},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: &ast.LiteralExpr{
+                Lit: &ast.StrLit{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:36},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:29},
+                    End:      ast.Location{Line:1, Column:36},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:36},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:37},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/TuplePatternWithTypeAnnotations - 1]
+&ast.TuplePat{
+    Elems: {
+        &ast.IdentPat{
+            Name:    "x",
+            TypeAnn: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:4},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.IdentPat{
+            Name:    "y",
+            TypeAnn: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Default: &ast.LiteralExpr{
+                Lit: &ast.NumLit{
+                    Value: 5,
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:24},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:25},
         SourceID: 0,
     },
     inferredType: nil,

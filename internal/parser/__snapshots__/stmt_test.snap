@@ -5,6 +5,7 @@
         Kind:    1,
         Pattern: &ast.IdentPat{
             Name:    "",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
@@ -184,6 +185,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:8},
@@ -198,6 +200,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:11},
@@ -279,6 +282,7 @@ nil
                         Kind:    0,
                         Pattern: &ast.IdentPat{
                             Name:    "a",
+                            TypeAnn: nil,
                             Default: nil,
                             span:    ast.Span{
                                 Start:    ast.Location{Line:2, Column:9},
@@ -316,6 +320,7 @@ nil
                         Kind:    0,
                         Pattern: &ast.IdentPat{
                             Name:    "b",
+                            TypeAnn: nil,
                             Default: nil,
                             span:    ast.Span{
                                 Start:    ast.Location{Line:3, Column:9},
@@ -453,6 +458,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:8},
@@ -467,6 +473,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:11},
@@ -577,6 +584,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:9},
@@ -591,6 +599,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:12},
@@ -781,6 +790,7 @@ nil
         Kind:    1,
         Pattern: &ast.IdentPat{
             Name:    "x",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:5},
@@ -829,6 +839,7 @@ nil
         Kind:    0,
         Pattern: &ast.IdentPat{
             Name:    "x",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:5},
@@ -877,6 +888,7 @@ nil
         Kind:    0,
         Pattern: &ast.IdentPat{
             Name:    "x",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:12},
@@ -937,6 +949,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:16},
@@ -951,6 +964,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:19},
@@ -1002,6 +1016,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:23},
@@ -1016,6 +1031,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:26},
@@ -1159,6 +1175,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:15},
@@ -1173,6 +1190,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:18},
@@ -1270,6 +1288,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:8},
@@ -1284,6 +1303,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:11},
@@ -1381,6 +1401,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:8},
@@ -1395,6 +1416,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:11},
@@ -1480,6 +1502,7 @@ nil
         Kind:    0,
         Pattern: &ast.IdentPat{
             Name:    "x",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:20},
@@ -1597,6 +1620,7 @@ nil
         Kind:    0,
         Pattern: &ast.IdentPat{
             Name:    "x",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:13},
@@ -1630,6 +1654,7 @@ nil
         Kind:    0,
         Pattern: &ast.IdentPat{
             Name:    "längd",
+            TypeAnn: nil,
             Default: nil,
             span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:5},
@@ -1690,6 +1715,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:11},
@@ -1704,6 +1730,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "b",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:14},
@@ -1810,6 +1837,7 @@ nil
                         Kind:    0,
                         Pattern: &ast.IdentPat{
                             Name:    "a",
+                            TypeAnn: nil,
                             Default: nil,
                             span:    ast.Span{
                                 Start:    ast.Location{Line:2, Column:9},
@@ -1855,6 +1883,7 @@ nil
                         Kind:    0,
                         Pattern: &ast.IdentPat{
                             Name:    "b",
+                            TypeAnn: nil,
                             Default: nil,
                             span:    ast.Span{
                                 Start:    ast.Location{Line:3, Column:9},
@@ -2249,6 +2278,62 @@ nil
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:51},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ValDeclWithTypeAnn - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "x",
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.LiteralExpr{
+            Lit: &ast.NumLit{
+                Value: 5,
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:18},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:18},
+            SourceID: 0,
+        },
+        InferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
         SourceID: 0,
     },
 }

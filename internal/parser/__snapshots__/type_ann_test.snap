@@ -89,6 +89,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "x",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:4},
@@ -110,6 +111,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "y",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
@@ -179,6 +181,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "x",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:26},
@@ -210,6 +213,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "y",
+                TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
                     Start:    ast.Location{Line:1, Column:32},
@@ -1121,6 +1125,7 @@
                 Pattern: &ast.RestPat{
                     Pattern: &ast.IdentPat{
                         Name:    "args",
+                        TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
                             Start:    ast.Location{Line:1, Column:14},

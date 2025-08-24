@@ -323,7 +323,13 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(Bang, "!", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case ':':
-		token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		if strings.HasPrefix(lexer.source.Contents[startOffset:], "::") {
+			endOffset++
+			end.Column++
+			token = NewToken(DoubleColon, "::", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		} else {
+			token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		}
 	case '"':
 		contents := lexer.source.Contents
 		n := len(contents)

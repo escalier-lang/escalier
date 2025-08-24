@@ -7,7 +7,7 @@ import (
 )
 
 // pattern = identifier | wildcard | tuple | object | rest | literal
-func (p *Parser) pattern(allowIdentDefault bool) ast.Pat {
+func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat {
 	token := p.lexer.peek()
 
 	// nolint: exhaustive
@@ -18,7 +18,7 @@ func (p *Parser) pattern(allowIdentDefault bool) ast.Pat {
 		if next.Type == OpenParen {
 			return p.extractorPat(token)
 		} else {
-			return p.identPat(token, allowIdentDefault)
+			return p.identPat(token, allowIdentDefault, allowColonTypeAnn)
 		}
 	case Underscore:
 		p.lexer.consume()
@@ -28,7 +28,7 @@ func (p *Parser) pattern(allowIdentDefault bool) ast.Pat {
 	case OpenBrace:
 		return p.objectPat()
 	case DotDotDot:
-		return p.restPat()
+		return p.restPat(allowColonTypeAnn)
 	default:
 		return p.literalPat()
 	}
@@ -38,27 +38,40 @@ func (p *Parser) pattern(allowIdentDefault bool) ast.Pat {
 func (p *Parser) extractorPat(nameToken *Token) ast.Pat {
 	p.lexer.consume() // consume '('
 	patArgs := parseDelimSeq(p, CloseParen, Comma, func() ast.Pat {
-		return p.pattern(true)
+		return p.pattern(true, true)
 	})
 	end := p.expect(CloseParen, AlwaysConsume)
 	span := ast.NewSpan(nameToken.Span.Start, end, p.lexer.source.ID)
 	return ast.NewExtractorPat(nameToken.Value, patArgs, span)
 }
 
-// identPat = identifier ('=' expr)?
-func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool) ast.Pat {
+// identPat = identifier (':' typeAnn)? ('=' expr)?
+func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat {
 	span := nameToken.Span
+
+	// Check for inline type annotation
+	var typeAnn ast.TypeAnn
 	token := p.lexer.peek()
-	var _default ast.Expr
+	if allowColonTypeAnn && token.Type == Colon {
+		p.lexer.consume() // consume ':'
+		typeAnn = p.typeAnn()
+		if typeAnn != nil {
+			span = ast.MergeSpans(span, typeAnn.Span())
+		}
+	}
+
+	// Check for default value
+	var default_ ast.Expr
+	token = p.lexer.peek()
 	if allowIdentDefault && token.Type == Equal {
 		p.lexer.consume()
 		expr := p.expr()
 		if expr != nil {
 			span = ast.MergeSpans(span, expr.Span())
-			_default = expr
+			default_ = expr
 		}
 	}
-	return ast.NewIdentPat(nameToken.Value, _default, span)
+	return ast.NewIdentPat(nameToken.Value, typeAnn, default_, span)
 }
 
 // tuplePat = '[' (pattern (',' pattern)*)? ']'
@@ -67,7 +80,7 @@ func (p *Parser) tuplePat() ast.Pat {
 	start := token.Span.Start
 	p.lexer.consume() // consume '['
 	patElems := parseDelimSeq(p, CloseBracket, Comma, func() ast.Pat {
-		return p.pattern(true)
+		return p.pattern(true, true)
 	})
 	end := p.expect(CloseBracket, AlwaysConsume)
 	return ast.NewTuplePat(patElems, ast.NewSpan(start, end, p.lexer.source.ID))
@@ -84,10 +97,10 @@ func (p *Parser) objectPat() ast.Pat {
 }
 
 // restPat = '...' pattern
-func (p *Parser) restPat() ast.Pat {
+func (p *Parser) restPat(allowColonTypeAnn bool) ast.Pat {
 	token := p.lexer.peek()
 	p.lexer.consume() // consume '...'
-	pat := p.pattern(true)
+	pat := p.pattern(true, allowColonTypeAnn)
 	span := token.Span
 	if pat == nil {
 		p.reportError(token.Span, "Expected pattern")
@@ -149,7 +162,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 		token = p.lexer.peek()
 		if token.Type == Colon {
 			p.lexer.consume()
-			value := p.pattern(true)
+			value := p.pattern(true, true)
 			if value != nil {
 				span = ast.MergeSpans(span, value.Span())
 			}
@@ -172,23 +185,37 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 			span = ast.MergeSpans(span, value.Span())
 			return ast.NewObjKeyValuePat(key, value, init, span)
 		} else {
-			var init ast.Expr
+			// Handle shorthand pattern: {x::number} or {x::number = 0} or {x = 0}
+			var typeAnn ast.TypeAnn
+
+			// Check for inline type annotation
+			token = p.lexer.peek()
+			if token.Type == DoubleColon {
+				p.lexer.consume() // consume '::'
+				typeAnn = p.typeAnn()
+				if typeAnn != nil {
+					span = ast.MergeSpans(span, typeAnn.Span())
+				}
+			}
+
+			// Check for default value
+			var default_ ast.Expr
 			token = p.lexer.peek()
 			if token.Type == Equal {
 				p.lexer.consume()
 				expr := p.expr()
 				if expr != nil {
 					span = ast.MergeSpans(span, expr.Span())
-					init = expr
+					default_ = expr
 				}
 			}
 
-			return ast.NewObjShorthandPat(key, init, span)
+			return ast.NewObjShorthandPat(key, typeAnn, default_, span)
 		}
 	case DotDotDot:
 		p.lexer.consume()
 
-		pat := p.pattern(true)
+		pat := p.pattern(true, true)
 		if pat == nil {
 			return nil
 		}

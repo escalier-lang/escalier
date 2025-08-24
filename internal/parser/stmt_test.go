@@ -21,6 +21,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ValDecl": {
 			input: "val x = 5",
 		},
+		"ValDeclWithTypeAnn": {
+			input: "val x: number = 5",
+		},
 		"ExportValDecl": {
 			input: "export val x = 5",
 		},
