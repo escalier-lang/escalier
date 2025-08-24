@@ -1277,7 +1277,7 @@ func (c *Checker) inferFuncSig(
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
 			Type:     typeAnn,
-			Optional: false, // TODO
+			Optional: param.Optional,
 		}
 	}
 
@@ -1681,7 +1681,10 @@ func (c *Checker) inferPattern(
 					t, elemErrors := inferPatRec(elem.Value)
 					errors = append(errors, elemErrors...)
 					name := NewStrKey(elem.Key.Name)
-					elems = append(elems, NewPropertyElemType(name, t))
+					optional := elem.Default != nil
+					prop := NewPropertyElemType(name, t)
+					prop.Optional = optional
+					elems = append(elems, prop)
 				case *ast.ObjShorthandPat:
 					// We can't infer the type of the shorthand pattern yet, so
 					// we use a fresh type variable.
@@ -1700,7 +1703,10 @@ func (c *Checker) inferPattern(
 						Type:    t,
 						Mutable: false, // TODO
 					}
-					elems = append(elems, NewPropertyElemType(name, t))
+					optional := elem.Default != nil
+					prop := NewPropertyElemType(name, t)
+					prop.Optional = optional
+					elems = append(elems, prop)
 				case *ast.ObjRestPat:
 					t, restErrors := inferPatRec(elem.Pattern)
 					errors = slices.Concat(errors, restErrors)
@@ -1834,7 +1840,7 @@ func (c *Checker) inferFuncTypeAnn(
 		params[i] = &FuncParam{
 			Pattern:  patToPat(param.Pattern),
 			Type:     typeAnn,
-			Optional: false,
+			Optional: param.Optional,
 		}
 	}
 	returnType, returnErrors := c.inferTypeAnn(ctx, funcTypeAnn.Return)

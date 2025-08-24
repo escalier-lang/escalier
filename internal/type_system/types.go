@@ -515,9 +515,11 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 		if objType, ok := paramType.(*ObjectType); ok {
 			// Create a map of property names to their types for quick lookup
 			propTypes := make(map[string]Type)
+			propOptionals := make(map[string]bool)
 			for _, elem := range objType.Elems {
 				if propElem, ok := elem.(*PropertyElemType); ok {
 					propTypes[propElem.Name.String()] = propElem.Value
+					propOptionals[propElem.Name.String()] = propElem.Optional
 				}
 			}
 
@@ -525,30 +527,37 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 			for _, elem := range p.Elems {
 				switch e := elem.(type) {
 				case *ObjKeyValuePat:
-					// Ignore renaming: if value is IdentPat, print as key::type
+					isOpt := propOptionals[e.Key]
+					colon := "::"
+					if isOpt {
+						colon = "?::"
+					}
 					if propType, exists := propTypes[e.Key]; exists {
 						if _, ok := e.Value.(*IdentPat); ok {
-							elems = append(elems, e.Key+"::"+propType.String())
+							elems = append(elems, e.Key+colon+propType.String())
 						} else {
 							valueStr := patternStringWithInlineTypesContext(e.Value, propType, "object")
 							elems = append(elems, e.Key+": "+valueStr)
 						}
 					} else {
 						if _, ok := e.Value.(*IdentPat); ok {
-							elems = append(elems, e.Key+"::"+paramType.String())
+							elems = append(elems, e.Key+colon+paramType.String())
 						} else {
 							elems = append(elems, e.Key+": "+e.Value.String())
 						}
 					}
 				case *ObjShorthandPat:
-					// For shorthand patterns, add inline type annotation
+					isOpt := propOptionals[e.Key]
+					colon := "::"
+					if isOpt {
+						colon = "?::"
+					}
 					if propType, exists := propTypes[e.Key]; exists {
-						elems = append(elems, e.Key+"::"+propType.String())
+						elems = append(elems, e.Key+colon+propType.String())
 					} else {
-						elems = append(elems, e.String())
+						elems = append(elems, e.Key+colon)
 					}
 				case *ObjRestPat:
-					// For rest patterns, just use the default string representation
 					elems = append(elems, e.String())
 				}
 			}
