@@ -304,6 +304,26 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"add": "fn ({x::number, y::number}) -> number throws never",
 			},
 		},
+		"FuncExprObjectPatternWithInlineTypeAnnAndDefaults": {
+			input: `
+				val add = fn ({x::number = 0, y::number = 0}) {
+					return x + y
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn ({x?::number, y?::number}) -> number throws never",
+			},
+		},
+		"FuncExprObjectPatternWithInlineTypeAnnAndDefaultsDeep": {
+			input: `
+				val add = fn ({a: {b: {c:: number = 0}}}) {
+					return c
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn ({a: {b: {c?::number}}}) -> number throws never",
+			},
+		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndRenamining": {
 			input: `
 				val add = fn ({x: a:number, y: b:number}) {
