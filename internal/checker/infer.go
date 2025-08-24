@@ -1650,14 +1650,19 @@ func (c *Checker) inferPattern(
 
 		switch p := pat.(type) {
 		case *ast.IdentPat:
-			t = c.FreshVar()
+			if p.TypeAnn != nil {
+				t, errors = c.inferTypeAnn(ctx, p.TypeAnn)
+			} else {
+				t = c.FreshVar()
+				errors = []Error{}
+			}
+
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &Binding{
 				Source:  &ast.NodeProvenance{Node: p},
 				Type:    t,
 				Mutable: false, // TODO
 			}
-			errors = []Error{}
 		case *ast.LitPat:
 			t, errors = c.inferLit(p.Lit)
 		case *ast.TuplePat:
@@ -1680,7 +1685,14 @@ func (c *Checker) inferPattern(
 				case *ast.ObjShorthandPat:
 					// We can't infer the type of the shorthand pattern yet, so
 					// we use a fresh type variable.
-					t := c.FreshVar()
+					var t Type
+					if elem.TypeAnn != nil {
+						elemType, elemErrors := c.inferTypeAnn(ctx, elem.TypeAnn)
+						t = elemType
+						errors = append(errors, elemErrors...)
+					} else {
+						t = c.FreshVar()
+					}
 					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = &Binding{
