@@ -498,6 +498,108 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+
+// patternStringWithInlineTypes prints a pattern with inline type annotations for object and tuple patterns
+func patternStringWithInlineTypes(pattern Pat, paramType Type) string {
+	return patternStringWithInlineTypesContext(pattern, paramType, "")
+}
+
+// patternStringWithInlineTypesContext prints a pattern with inline type annotations
+// context can be "tuple" or "object" to control the separator used for IdentPat
+func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context string) string {
+	// Prune the type to resolve any type variables
+	paramType = Prune(paramType)
+
+	switch p := pattern.(type) {
+	case *ObjectPat:
+		if objType, ok := paramType.(*ObjectType); ok {
+			// Create a map of property names to their types for quick lookup
+			propTypes := make(map[string]Type)
+			for _, elem := range objType.Elems {
+				if propElem, ok := elem.(*PropertyElemType); ok {
+					propTypes[propElem.Name.String()] = propElem.Value
+				}
+			}
+
+			var elems []string
+			for _, elem := range p.Elems {
+				switch e := elem.(type) {
+				case *ObjKeyValuePat:
+					// Ignore renaming: if value is IdentPat, print as key::type
+					if propType, exists := propTypes[e.Key]; exists {
+						if _, ok := e.Value.(*IdentPat); ok {
+							elems = append(elems, e.Key+"::"+propType.String())
+						} else {
+							valueStr := patternStringWithInlineTypesContext(e.Value, propType, "object")
+							elems = append(elems, e.Key+": "+valueStr)
+						}
+					} else {
+						if _, ok := e.Value.(*IdentPat); ok {
+							elems = append(elems, e.Key+"::"+paramType.String())
+						} else {
+							elems = append(elems, e.Key+": "+e.Value.String())
+						}
+					}
+				case *ObjShorthandPat:
+					// For shorthand patterns, add inline type annotation
+					if propType, exists := propTypes[e.Key]; exists {
+						elems = append(elems, e.Key+"::"+propType.String())
+					} else {
+						elems = append(elems, e.String())
+					}
+				case *ObjRestPat:
+					// For rest patterns, just use the default string representation
+					elems = append(elems, e.String())
+				}
+			}
+
+			result := "{"
+			for i, elem := range elems {
+				if i > 0 {
+					result += ", "
+				}
+				result += elem
+			}
+			result += "}"
+			return result
+		}
+	case *TuplePat:
+		if tupleType, ok := paramType.(*TupleType); ok {
+			var elems []string
+			for i, elem := range p.Elems {
+				if i < len(tupleType.Elems) {
+					// Recursively apply inline types to tuple elements
+					elemStr := patternStringWithInlineTypesContext(elem, tupleType.Elems[i], "tuple")
+					elems = append(elems, elemStr)
+				} else {
+					elems = append(elems, elem.String())
+				}
+			}
+
+			result := "["
+			for i, elem := range elems {
+				if i > 0 {
+					result += ", "
+				}
+				result += elem
+			}
+			result += "]"
+			return result
+		}
+	case *IdentPat:
+		// For identifier patterns, add inline type annotation
+		// Use ":" for tuple elements, "::" for object properties and default cases
+		if context == "tuple" {
+			return p.Name + ":" + paramType.String()
+		} else {
+			return p.Name + "::" + paramType.String()
+		}
+	}
+
+	// For other pattern types or when types don't match, fall back to default
+	return pattern.String()
+}
+
 func (t *FuncType) String() string {
 	result := "fn "
 	if len(t.TypeParams) > 0 {
@@ -522,7 +624,13 @@ func (t *FuncType) String() string {
 			if i > 0 {
 				result += ", "
 			}
-			result += param.Pattern.String() + ": " + param.Type.String()
+			switch param.Pattern.(type) {
+			case *TuplePat, *ObjectPat:
+				// Use inline type annotations for object and tuple patterns
+				result += patternStringWithInlineTypes(param.Pattern, param.Type)
+			default:
+				result += param.Pattern.String() + ": " + param.Type.String()
+			}
 		}
 	}
 	result += ")"

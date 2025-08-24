@@ -193,6 +193,15 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"y": "10",
 			},
 		},
+		"TupleDeclWithTypeAnns": {
+			input: `
+				val [x:number, y:number] = [5, 10]
+			`,
+			expectedTypes: map[string]string{
+				"x": "number",
+				"y": "number",
+			},
+		},
 		"ObjectDecl": {
 			input: `
 				val {x, y} = {x: "foo", y: "bar"}
@@ -213,6 +222,32 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"bar": "\"bar\"",
 				"x":   "\"foo\"",
 				"y":   "\"bar\"",
+			},
+		},
+		"ObjectDeclWithDepsAndInlineTypeAnns": {
+			input: `
+			    val foo = "foo"
+				val bar = "bar"
+				val {x::string, y::string} = {x: foo, y: bar}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "\"foo\"",
+				"bar": "\"bar\"",
+				"x":   "string",
+				"y":   "string",
+			},
+		},
+		"ObjectDeclWithDepsAndInlineTypeAnnsAndRenaming": {
+			input: `
+			    val foo = "foo"
+				val bar = "bar"
+				val {x: a:string, y: b:string} = {x: foo, y: bar}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "\"foo\"",
+				"bar": "\"bar\"",
+				"a":   "string",
+				"b":   "string",
 			},
 		},
 		"IfElseExpr": {
@@ -257,6 +292,36 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"add": "fn (x: t3, y: t5) -> number throws never",
+			},
+		},
+		"FuncExprObjectPatternWithInlineTypeAnn": {
+			input: `
+				val add = fn ({x::number, y::number}) {
+					return x + y
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn ({x::number, y::number}) -> number throws never",
+			},
+		},
+		"FuncExprObjectPatternWithInlineTypeAnnAndRenamining": {
+			input: `
+				val add = fn ({x: a:number, y: b:number}) {
+					return a + b
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn ({x::number, y::number}) -> number throws never",
+			},
+		},
+		"FuncExprTuplePatternWithInlineTypeAnn": {
+			input: `
+				val add = fn ([x:number, y:number]) {
+					return x + y
+				}
+			`,
+			expectedTypes: map[string]string{
+				"add": "fn ([x:number, y:number]) -> number throws never",
 			},
 		},
 		"FuncExprWithoutReturn": {
