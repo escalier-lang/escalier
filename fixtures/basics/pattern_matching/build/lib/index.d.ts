@@ -23,3 +23,5 @@ export declare const tupleRestMatch: [number, number] | 0;
 declare type ExtendedPoint = {x: number, y: number, z: number, name: string};
 export declare const extendedPoint: ExtendedPoint;
 export declare const objectRestMatch: {z: number, name: string} | 0;
+declare const ref: {value: string | number | boolean};
+export declare const refMatch: "string" | "number" | "boolean";

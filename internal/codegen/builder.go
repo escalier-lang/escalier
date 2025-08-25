@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type Builder struct {
@@ -1071,7 +1072,42 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			span:   nil,
 			source: pat,
 		}
-		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{bindingStmt}
+		var cond Expr = NewLitExpr(NewBoolLit(true, pat), pat)
+		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
+			inferred := pat.TypeAnn.InferredType()
+			// Try to match on the type name for basic types
+			switch t := inferred.(type) {
+			case *type_system.PrimType:
+				var typeOfStr string
+
+				switch t.Prim {
+				case type_system.NumPrim:
+					typeOfStr = "number"
+				case type_system.StrPrim:
+					typeOfStr = "string"
+				case type_system.BoolPrim:
+					typeOfStr = "boolean"
+				case type_system.BigIntPrim:
+					typeOfStr = "bigint"
+				case type_system.SymbolPrim:
+					typeOfStr = "symbol"
+				default:
+					panic(fmt.Sprintf("Unknown primitive type in pattern type check: %v", t.Prim))
+				}
+
+				if typeOfStr != "" {
+					cond = NewBinaryExpr(
+						NewUnaryExpr(TypeOf, targetExpr, nil),
+						EqualEqual,
+						NewLitExpr(NewStrLit(typeOfStr, nil), nil),
+						pat,
+					)
+				}
+			default:
+				panic(fmt.Sprintf("TODO: handle other inferred types in pattern type check: %T", inferred))
+			}
+		}
+		return cond, []Stmt{bindingStmt}
 
 	case *ast.LitPat:
 		// Literal patterns: check for equality
@@ -1084,21 +1120,26 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		return NewLitExpr(NewBoolLit(true, pat), pat), []Stmt{}
 
 	case *ast.TuplePat:
-		// Tuple patterns: check length and create destructuring declaration
+		// Tuple patterns: check length and recursively check element conditions only (not bindings)
 		var conditions []Expr
 
 		// Check if target is an array and has the right length
 		lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
 		conditions = append(conditions, lengthCheck)
 
-		// Build the destructuring pattern for variable declarations
-		tuplePatElems := []Pat{}
-		for _, elem := range pat.Elems {
-			tuplePatElems = append(tuplePatElems, b.buildDestructuringPattern(elem))
+		// For each element, recursively build only the condition (ignore bindings)
+		for i, elem := range pat.Elems {
+			elemTarget := NewIndexExpr(targetExpr, NewLitExpr(NewNumLit(float64(i), pat), pat), false, pat)
+			cond, _ := b.buildPatternCondition(elem, elemTarget)
+			conditions = append(conditions, cond)
 		}
 
-		// Create destructuring declaration: const [a, b, c] = target
-		tuplePat := NewTuplePat(tuplePatElems, pat)
+		// Only generate the destructuring binding at this level
+		elemPats := []Pat{}
+		for _, elem := range pat.Elems {
+			elemPats = append(elemPats, b.buildDestructuringPattern(elem))
+		}
+		tuplePat := NewTuplePat(elemPats, pat)
 		declarator := &Declarator{
 			Pattern: tuplePat,
 			TypeAnn: nil,
@@ -1124,7 +1165,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		return finalCondition, []Stmt{bindingStmt}
 
 	case *ast.ObjectPat:
-		// Object patterns: check for object properties and create destructuring declaration
+		// Object patterns: check for object properties and recursively check nested pattern conditions only (not bindings)
 		var conditions []Expr
 
 		// Check that target is not null/undefined
@@ -1136,10 +1177,8 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		)
 		conditions = append(conditions, nullCheck)
 
-		// Build object pattern elements for destructuring
 		objPatElems := []ObjPatElem{}
 
-		// Check each property and build pattern elements
 		for _, elem := range pat.Elems {
 			switch objElem := elem.(type) {
 			case *ast.ObjKeyValuePat:
@@ -1152,7 +1191,11 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				// Build the key-value pattern for destructuring
+				// Recursively check the value pattern (condition only)
+				propTarget := NewMemberExpr(targetExpr, NewIdentifier(objElem.Key.Name, objElem.Key), false, objElem)
+				cond, _ := b.buildPatternCondition(objElem.Value, propTarget)
+				conditions = append(conditions, cond)
+
 				valuePat := b.buildDestructuringPattern(objElem.Value)
 				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
 
@@ -1166,18 +1209,16 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				// Build shorthand pattern for destructuring
 				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
 
 			case *ast.ObjRestPat:
 				// TODO: Implement object rest pattern properly
-				// For now, create a binding for the rest pattern
 				restPat := b.buildDestructuringPattern(objElem.Pattern)
 				objPatElems = append(objPatElems, NewObjRestPat(restPat, objElem))
 			}
 		}
 
-		// Create destructuring declaration: const {x, y} = target
+		// Only generate the destructuring binding at this level
 		objectPat := NewObjectPat(objPatElems, pat)
 		declarator := &Declarator{
 			Pattern: objectPat,
