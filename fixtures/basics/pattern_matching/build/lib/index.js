@@ -57,7 +57,7 @@ export const nestedValue = {point: [1, 2]};
 let temp11;
 let temp12;
 temp12 = nestedValue;
-if (temp12 != null && "point" in temp12) {
+if (temp12 != null && "point" in temp12 && temp12.point.length == 2) {
   const {point: [x, y]} = temp12;
   temp11 = x + y;
 } else {
@@ -135,4 +135,18 @@ if (temp24 != null && "x" in temp24 && "y" in temp24) {
   temp23 = 0;
 }
 export const objectRestMatch = temp23;
+let temp25;
+let temp26;
+temp26 = ref;
+if (temp26 != null && "value" in temp26 && temp26.value == "string") {
+  const {value: a} = temp26;
+  temp25 = "string";
+} else if (temp26 != null && "value" in temp26 && temp26.value == "number") {
+  const {value: b} = temp26;
+  temp25 = "number";
+} else if (temp26 != null && "value" in temp26 && temp26.value == "boolean") {
+  const {value: c} = temp26;
+  temp25 = "boolean";
+}
+export const refMatch = temp25;
 //# sourceMappingURL=./index.js.map

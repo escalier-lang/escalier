@@ -89,3 +89,10 @@ export val objectRestMatch = match extendedPoint {
     {x, y, ...rest} => rest,
     _ => 0
 }
+
+declare val ref: {value: string | number | boolean}
+export val refMatch = match ref {
+    {value: a:string} => "string",
+    {value: b:number} => "number",
+    {value: c:boolean} => "boolean",
+}
