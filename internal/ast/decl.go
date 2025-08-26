@@ -6,6 +6,7 @@ type DeclGetters interface {
 }
 
 //sumtype:decl
+
 type Decl interface {
 	isDecl()
 	DeclGetters

@@ -15,6 +15,113 @@ func TestParseStmtNoErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
+		"ClassWithPrivateField": {
+			input: `class Secret {
+				private secret: string = "shh",
+				reveal(self) { return this.secret },
+			}`,
+		},
+		"ClassWithPrivateMethod": {
+			input: `class Secret {
+				private reveal(self) { return "hidden" },
+				show(self) { return this.reveal() },
+			}`,
+		},
+		"ClassWithPrivateFieldAndMethod": {
+			input: `class Secret {
+				private secret: string = "shh",
+				private reveal(self) { return this.secret },
+				show(self) { return this.reveal() },
+			}`,
+		},
+		"ClassWithMixedPrivateAndPublic": {
+			input: `class Mixed {
+				private foo: number = 1,
+				bar: number = 2,
+				private baz(self) { return this.foo },
+				qux(self) { return this.bar },
+			}`,
+		},
+		"ClassWithAsyncMethod": {
+			input: `class Asyncer {
+				async fetchData(self, url: string) -> Promise<string> {
+					// fetch logic
+				},
+			}`,
+		},
+		"ClassWithAsyncStaticMethod": {
+			input: `class Util {
+				static async doAsyncThing() -> Promise<number> {
+					// static async logic
+				},
+			}`,
+		},
+		"ClassWithMixedAsyncAndSyncMethods": {
+			input: `class Mixed {
+				foo(self) { return 1 },
+				async bar(self) -> Promise<number> { return 2 },
+				static async baz() -> Promise<void> {},
+			}`,
+		},
+		"GenericClass": {
+			input: `class Box<T>(value: T) {
+				value,
+				get(self) -> T {
+					return self.value
+				},
+				set(mut self, value: T) {
+					self.value = value
+				},
+			}`,
+		},
+		"GenericClassWithConstrainedType": {
+			input: `class Pair<T: number, U: string>(first: T, second: U) {
+				first: first,
+				second: second,
+			}`,
+		},
+		"GenericClassWithDefaultType": {
+			input: "class Response<T: any = string>(data: T) { data: data }",
+		},
+		"ClassWithGenericMethod": {
+			input: `class Mapper<T>(value: T) { 
+				map<U>(self, callback: fn (value: T) -> U) -> Mapper<U> {
+					return Mapper(callback(self.value))
+				},
+			}`,
+		},
+		"ClassWithGenericStaticMethod": {
+			input: "class Util { static identity<T>(x: T) -> T { return x } }",
+		},
+		"ClassDeclBasic": {
+			input: "class Foo {}",
+		},
+		"ClassDeclWithParams": {
+			input: "class Bar(x: number, y: string) {}",
+		},
+		"ClassDeclWithFieldsAndMethods": {
+			input: `class Baz {
+				x: number,
+				y: string = "hi",
+				foo(self, a: number) -> undefined {},
+			}`,
+		},
+		"ClassWithStaticMethod": {
+			input: "class Util { static log(msg: string) { console.log(msg) } }",
+		},
+		"ClassWithStaticGenericMethod": {
+			input: "class Util { static identity<T>(x: T) -> T { return x } }",
+		},
+		"ClassWithStaticAndInstanceMethods": {
+			input: `class Math { 
+				static add(a: number, b: number) -> number {
+					return a + b
+				},
+				sub(self, a: number, b: number) -> number {
+					return a - b
+				}
+			}`,
+		},
 		"VarDecl": {
 			input: "var x = 5",
 		},

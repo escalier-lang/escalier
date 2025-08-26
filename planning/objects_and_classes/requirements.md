@@ -52,11 +52,13 @@ val q = {
 }
 ```
 
-Objects can also have methods.  The first param of all methods is `self: Self`.
+
+Objects can also have methods. Methods can be marked as `async` to indicate they return a promise and can use `await` inside their body. The first param of all methods is `self: Self`.
 This can be shortened to just the identifier `self`.  `mut self` indicates that
 properties on `self` can be modified.  The `self` parameter can also be 
 destructured.  It does not make sense to destructure `mut self`.  It's also worth
 noting that object literals with mutable methods are by definition mutable.
+
 
 ```ts
 val p = {
@@ -72,13 +74,20 @@ val p = {
         self.x = 0
         self.y = 0
     },
+    async fetchData(self, url: string) -> Promise<string> {
+        const response = await fetch(url)
+        return await response.text()
+    },
 }
 ```
+
+You can use the `async` keyword before a method definition to make it asynchronous. Async methods always return a `Promise`.
 
 NOTE: Return types on methods on not required since we can always infer them.
 You still may want to include them for documentation purposes.
 
-Compiling `p` as described above will produce the following JavaScript code:
+
+Compiling `p` as described above will produce the following JavaScript code (including an async method):
 
 ```js
 const p = {
@@ -94,6 +103,10 @@ const p = {
     reset() {
         this.x = 0
         this.y = 0
+    },
+    async fetchData(url) {
+        const response = await fetch(url);
+        return await response.text();
     },
 };
 ```
@@ -135,6 +148,8 @@ val obj = {
 
 Class declarations are very similar variable declarations where the initializer
 is an object.  There are a couple of key differences:
+
+Methods in classes can also be marked as `async` to indicate they are asynchronous and return a `Promise`. Both instance and static methods can be async.
 - Classes have a primary constructor, e.g. `Point(x: number, y: number) { ... }`
   which is used to pass data to an instance when constructing it.
 - If you need additional logic beyond initializing fields in the instance, add
@@ -150,6 +165,7 @@ is an object.  There are a couple of key differences:
 - Static properties and methods are accessed as fields on the `Point` class
 - Variables of type `Point` don't have access to methods that use `mut self` while
   variables of type `mut Point` will have access to all mehtods
+
 
 ```ts
 class Point(x: number, y: number) {
@@ -171,7 +187,16 @@ class Point(x: number, y: number) {
     set color(mut self, color: Color) {
         self.color = color
     },
+    async fetchData(self, url: string) -> Promise<string> {
+        const response = await fetch(url)
+        return await response.text()
+    },
     static origin = Point(0, 0),
+    static async randomAsync() -> Promise<Point> {
+        const x = await getRandomNumber()
+        const y = await getRandomNumber()
+        return Point(x, y)
+    },
     static random() {
         val p = Point(Math.random(), Math.random())
         console.log(`random p = ${p}`)
@@ -182,7 +207,8 @@ class Point(x: number, y: number) {
 val p = Point.random()
 ```
 
-The previous example will be compiled to the following JS code:
+
+The previous example will be compiled to the following JS code (including async methods):
 
 ```js
 class Point {
@@ -213,9 +239,20 @@ class Point {
     set color(color) {
         this.color = color;
     }
+
+    async fetchData(url) {
+        const response = await fetch(url);
+        return await response.text();
+    }
     
     static origin = new Point(0, 0)
-    
+
+    static async randomAsync() {
+        const x = await getRandomNumber();
+        const y = await getRandomNumber();
+        return new Point(x, y);
+    }
+
     static random() {
         const p = new Point(Math.random(), Math.random())
         console.log(`random p = ${p}`)
@@ -242,6 +279,82 @@ class User(name: string, age: number) {
     // ... method definitions
 }
 ```
+
+
+## Generic Classes
+
+Classes in Escalier can be generic, allowing you to parameterize the class over one or more types. Type parameters are declared after the class name, before the primary constructor parameters. Both the primary constructor and methods on the class can be generic.
+
+### Generic Class Example
+
+```ts
+class Box<T>(value: T) {
+    value: value,
+    get(self) -> T {
+        return self.value
+    },
+    set(mut self, value: T) {
+        self.value = value
+    },
+}
+
+val intBox = Box(5)
+val strBox = Box("hello")
+```
+
+### Generic Methods
+
+Methods on a class can also be generic, even if the class itself is not. Type parameters for methods are declared after the method name and before the parameter list.
+
+```ts
+class Mapper<T>(value: T) {
+    value: value,
+
+    map<U>(self, fn: (T) -> U) -> Mapper<U> {
+        return Mapper(fn(self.value))
+    },
+}
+
+val numMapper = Mapper(42)
+val strMapper = numMapper.map(x => x.toString())
+```
+
+### Generic Static Methods
+
+Static methods can also be generic:
+
+```ts
+class Util {
+    static identity<T>(x: T) -> T {
+        return x
+    }
+}
+
+val a = Util.identity(123) // a: number
+val b = Util.identity("hi") // b: string
+```
+
+Type parameters can be constrained using the same syntax as elsewhere in Escalier:
+
+```ts
+class Pair<T: number, U: string>(first: T, second: U) {
+    first: first,
+    second: second,
+}
+```
+
+You can also provide default type arguments:
+
+```ts
+class Response<T: any = string>(data: T) {
+    data: data,
+}
+
+val r1 = Response<string>("ok")  // T = string
+val r2 = Response<number>(42)    // T = number
+```
+
+Generic classes and methods enable powerful abstractions and type-safe code reuse in Escalier.
 
 ## Access Controls
 
