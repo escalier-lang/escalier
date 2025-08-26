@@ -204,7 +204,7 @@ modifiers_done:
 			return &ast.FieldElem{
 				Name:    name,
 				Type:    typeAnn,
-				Init:    init,
+				Default: init,
 				Private: isPrivate,
 				Span_:   span,
 			}

@@ -44,15 +44,28 @@ func (d *ClassDecl) Accept(v Visitor) {
 
 type FieldElem struct {
 	Name    *Ident
+	Value   Expr    // optional
 	Type    TypeAnn // optional
-	Init    Expr    // optional
+	Default Expr    // optional
 	Private bool    // true if this field is private
 	Span_   Span
 }
 
-func (*FieldElem) IsClassElem()       {}
-func (f *FieldElem) Accept(v Visitor) { /* TODO */ }
-func (f *FieldElem) Span() Span       { return f.Span_ }
+func (*FieldElem) IsClassElem() {}
+func (f *FieldElem) Accept(v Visitor) {
+	if v.EnterClassElem(f) {
+		f.Name.Accept(v)
+		if f.Type != nil {
+			f.Type.Accept(v)
+		}
+		if f.Default != nil {
+			f.Default.Accept(v)
+		}
+		// FieldElem has no children to visit
+	}
+	v.ExitClassElem(f)
+}
+func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
 	Name       *Ident
@@ -66,8 +79,21 @@ type MethodElem struct {
 	Span_      Span
 }
 
-func (*MethodElem) IsClassElem()       {}
-func (m *MethodElem) Accept(v Visitor) { /* TODO */ }
-func (m *MethodElem) Span() Span       { return m.Span_ }
+func (*MethodElem) IsClassElem() {}
+func (m *MethodElem) Accept(v Visitor) {
+	if v.EnterClassElem(m) {
+		for _, param := range m.Params {
+			param.Pattern.Accept(v)
+		}
+		if m.ReturnType != nil {
+			m.ReturnType.Accept(v)
+		}
+		if m.Body != nil {
+			m.Body.Accept(v)
+		}
+	}
+	v.ExitClassElem(m)
+}
+func (m *MethodElem) Span() Span { return m.Span_ }
 
 // TODO: Add more class element types (static, get, set, etc.) as needed.

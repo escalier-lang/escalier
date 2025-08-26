@@ -121,10 +121,11 @@ func (d *FuncDecl) Accept(v Visitor) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
 		}
+		if d.Return != nil {
+			d.Return.Accept(v)
+		}
 		if d.Body != nil {
-			for _, stmt := range d.Body.Stmts {
-				stmt.Accept(v)
-			}
+			d.Body.Accept(v)
 		}
 	}
 	v.ExitDecl(d)
