@@ -118,6 +118,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 // parseClassElem parses a single class element (field, method, static, etc.)
 func (p *Parser) parseClassElem() ast.ClassElem {
 	token := p.lexer.peek()
+
 	// TODO: parse static, get, set, visibility, etc.
 	// For now, parse simple field or method (identifier, optional params, optional =, optional block)
 	// Support: static method, identifier, ...
@@ -125,8 +126,10 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 	isAsync := false
 	isPrivate := false
 	start := token.Span.Start
+
 	// Parse modifiers: static, async, private (order-insensitive)
 	for {
+		// nolint: exhaustive
 		switch token.Type {
 		case Static:
 			isStatic = true
@@ -147,6 +150,7 @@ modifiers_done:
 		p.lexer.consume()
 		name := ast.NewIdentifier(token.Value, token.Span)
 		next := p.lexer.peek()
+
 		// Parse optional type parameters for the method
 		var typeParams []*ast.TypeParam
 		if next.Type == LessThan {
@@ -155,11 +159,13 @@ modifiers_done:
 			p.expect(GreaterThan, AlwaysConsume)
 			next = p.lexer.peek()
 		}
+
 		if next.Type == OpenParen {
 			// Method
 			p.lexer.consume()
 			params := parseDelimSeq(p, CloseParen, Comma, p.param)
 			p.expect(CloseParen, AlwaysConsume)
+
 			// Optionally parse return type
 			var returnType ast.TypeAnn
 			next = p.lexer.peek()
@@ -167,6 +173,7 @@ modifiers_done:
 				p.lexer.consume()
 				returnType = p.typeAnn()
 			}
+
 			// Optionally parse block
 			var body *ast.Block
 			next = p.lexer.peek()
@@ -174,6 +181,7 @@ modifiers_done:
 				block := p.block()
 				body = &block
 			}
+
 			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 			return &ast.MethodElem{
 				Name:       name,
@@ -188,23 +196,50 @@ modifiers_done:
 			}
 		} else {
 			// Field
+			var value ast.Expr
 			var typeAnn ast.TypeAnn
-			var init ast.Expr
+			var default_ ast.Expr
+
 			next = p.lexer.peek()
-			if next.Type == Colon {
+
+			// nolint: exhaustive
+			switch next.Type {
+			case Colon:
+				p.lexer.consume()
+				value = p.expr()
+				next = p.lexer.peek()
+				switch next.Type {
+				case Colon:
+					p.lexer.consume()
+					typeAnn = p.typeAnn()
+					next = p.lexer.peek()
+					if next.Type == Equal {
+						p.lexer.consume()
+						default_ = p.expr()
+					}
+				case Equal:
+					p.lexer.consume()
+					default_ = p.expr()
+				}
+			case DoubleColon:
 				p.lexer.consume()
 				typeAnn = p.typeAnn()
-			}
-			next = p.lexer.peek()
-			if next.Type == Equal {
+				next = p.lexer.peek()
+				if next.Type == Equal {
+					p.lexer.consume()
+					default_ = p.expr()
+				}
+			case Equal:
 				p.lexer.consume()
-				init = p.expr()
+				default_ = p.expr()
 			}
+
 			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 			return &ast.FieldElem{
 				Name:    name,
+				Value:   value,
 				Type:    typeAnn,
-				Default: init,
+				Default: default_,
 				Private: isPrivate,
 				Span_:   span,
 			}

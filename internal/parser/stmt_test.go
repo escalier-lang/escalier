@@ -17,7 +17,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 	}{
 		"ClassWithPrivateField": {
 			input: `class Secret {
-				private secret: string = "shh",
+				private secret: "shh":string,
 				reveal(self) { return this.secret },
 			}`,
 		},
@@ -29,15 +29,15 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithPrivateFieldAndMethod": {
 			input: `class Secret {
-				private secret: string = "shh",
+				private secret: "shh":string,
 				private reveal(self) { return this.secret },
 				show(self) { return this.reveal() },
 			}`,
 		},
 		"ClassWithMixedPrivateAndPublic": {
 			input: `class Mixed {
-				private foo: number = 1,
-				bar: number = 2,
+				private foo: 1:number,
+				bar: 2:number ,
 				private baz(self) { return this.foo },
 				qux(self) { return this.bar },
 			}`,
@@ -76,8 +76,8 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"GenericClassWithConstrainedType": {
 			input: `class Pair<T: number, U: string>(first: T, second: U) {
-				first: first,
-				second: second,
+				first,
+				second,
 			}`,
 		},
 		"GenericClassWithDefaultType": {
@@ -100,9 +100,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "class Bar(x: number, y: string) {}",
 		},
 		"ClassDeclWithFieldsAndMethods": {
-			input: `class Baz {
-				x: number,
-				y: string = "hi",
+			input: `class Baz (a: number) {
+				x: a,
+				y::string = "hi",
 				foo(self, a: number) -> undefined {},
 			}`,
 		},
