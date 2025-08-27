@@ -15,6 +15,36 @@ func TestParseStmtNoErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
+		"ClassWithGetter": {
+			input: `class Foo {
+				get value() -> number { return 42 },
+			}`,
+		},
+		"ClassWithSetter": {
+			input: `class Foo {
+			    private _value::number,
+				set value(self, x: number) { self._value = x },
+			}`,
+		},
+		"ClassWithGetterAndSetter": {
+			input: `class Foo {
+			    private _value::number,
+				get value(self) -> number { return self._value },
+				set value(self, x: number) { self._value = x },
+			}`,
+		},
+		"ClassWithStaticGetter": {
+			input: `class Foo {
+				static get answer() -> number { return 42 },
+			}`,
+		},
+		"ClassWithPrivateGetterSetter": {
+			input: `class Foo {
+			    private _secret::string,
+				private get secret(self) -> string { return "shh" },
+				private set secret(self, x: string) { self._secret = x },
+			}`,
+		},
 		"ClassWithPrivateField": {
 			input: `class Secret {
 				private secret: "shh":string,

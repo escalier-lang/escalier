@@ -119,12 +119,11 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 func (p *Parser) parseClassElem() ast.ClassElem {
 	token := p.lexer.peek()
 
-	// TODO: parse static, get, set, visibility, etc.
-	// For now, parse simple field or method (identifier, optional params, optional =, optional block)
-	// Support: static method, identifier, ...
 	isStatic := false
 	isAsync := false
 	isPrivate := false
+	isGet := false
+	isSet := false
 	start := token.Span.Start
 
 	// Parse modifiers: static, async, private (order-insensitive)
@@ -139,6 +138,12 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 			p.lexer.consume()
 		case Private:
 			isPrivate = true
+			p.lexer.consume()
+		case Get:
+			isGet = true
+			p.lexer.consume()
+		case Set:
+			isSet = true
 			p.lexer.consume()
 		default:
 			goto modifiers_done
@@ -158,6 +163,74 @@ modifiers_done:
 			typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
 			p.expect(GreaterThan, AlwaysConsume)
 			next = p.lexer.peek()
+		}
+
+		// Handle getter
+		if isGet {
+			// Accept and parse params for instance getters (e.g., self)
+			var returnType ast.TypeAnn
+			var body *ast.Block
+
+			if next.Type == OpenParen {
+				p.lexer.consume()
+				_ = parseDelimSeq(p, CloseParen, Comma, p.param)
+				p.expect(CloseParen, AlwaysConsume)
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse return type (for getter)
+			if next.Type == Arrow {
+				p.lexer.consume()
+				returnType = p.typeAnn()
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse block
+			if next.Type == OpenBrace {
+				block := p.block()
+				body = &block
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.GetterElem{
+				Name:       name,
+				TypeParams: typeParams,
+				ReturnType: returnType,
+				Body:       body,
+				Static:     isStatic,
+				Private:    isPrivate,
+				Span_:      span,
+			}
+		}
+
+		// Handle setter
+		if isSet {
+			var params []*ast.Param
+			var body *ast.Block
+
+			if next.Type == OpenParen {
+				p.lexer.consume()
+				params = parseDelimSeq(p, CloseParen, Comma, p.param)
+				p.expect(CloseParen, AlwaysConsume)
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse block
+			if next.Type == OpenBrace {
+				block := p.block()
+				body = &block
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.SetterElem{
+				Name:       name,
+				TypeParams: typeParams,
+				Params:     params,
+				Body:       body,
+				Static:     isStatic,
+				Private:    isPrivate,
+				Span_:      span,
+			}
 		}
 
 		if next.Type == OpenParen {
@@ -245,7 +318,7 @@ modifiers_done:
 			}
 		}
 	}
-	// TODO: handle static, get, set, computed, etc.
+	// TODO: handle static, computed, etc.
 	return nil
 }
 

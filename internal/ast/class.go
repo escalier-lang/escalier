@@ -96,4 +96,54 @@ func (m *MethodElem) Accept(v Visitor) {
 }
 func (m *MethodElem) Span() Span { return m.Span_ }
 
-// TODO: Add more class element types (static, get, set, etc.) as needed.
+// GetterElem represents a getter in a class.
+type GetterElem struct {
+	Name       *Ident
+	TypeParams []*TypeParam // generic type parameters for the getter (rare, but for consistency)
+	ReturnType TypeAnn      // optional
+	Body       *Block       // optional
+	Static     bool         // true if this is a static getter
+	Private    bool         // true if this is a private getter
+	Span_      Span
+}
+
+func (*GetterElem) IsClassElem() {}
+func (g *GetterElem) Accept(v Visitor) {
+	if v.EnterClassElem(g) {
+		g.Name.Accept(v)
+		if g.ReturnType != nil {
+			g.ReturnType.Accept(v)
+		}
+		if g.Body != nil {
+			g.Body.Accept(v)
+		}
+	}
+	v.ExitClassElem(g)
+}
+func (g *GetterElem) Span() Span { return g.Span_ }
+
+// SetterElem represents a setter in a class.
+type SetterElem struct {
+	Name       *Ident
+	TypeParams []*TypeParam // generic type parameters for the setter (rare, but for consistency)
+	Params     []*Param     // should have exactly one param
+	Body       *Block       // optional
+	Static     bool         // true if this is a static setter
+	Private    bool         // true if this is a private setter
+	Span_      Span
+}
+
+func (*SetterElem) IsClassElem() {}
+func (s *SetterElem) Accept(v Visitor) {
+	if v.EnterClassElem(s) {
+		s.Name.Accept(v)
+		for _, param := range s.Params {
+			param.Pattern.Accept(v)
+		}
+		if s.Body != nil {
+			s.Body.Accept(v)
+		}
+	}
+	v.ExitClassElem(s)
+}
+func (s *SetterElem) Span() Span { return s.Span_ }
