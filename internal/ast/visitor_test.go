@@ -63,6 +63,11 @@ func (v *mockVisitor) EnterBlock(b Block) bool {
 	return !v.skipNodes["Block"]
 }
 
+func (v *mockVisitor) EnterClassElem(e ClassElem) bool {
+	v.enterCalls = append(v.enterCalls, "EnterClassElem")
+	return !v.skipNodes["ClassElem"]
+}
+
 func (v *mockVisitor) ExitLit(l Lit) {
 	v.exitCalls = append(v.exitCalls, "ExitLit")
 }
@@ -93,6 +98,10 @@ func (v *mockVisitor) ExitTypeAnn(t TypeAnn) {
 
 func (v *mockVisitor) ExitBlock(b Block) {
 	v.exitCalls = append(v.exitCalls, "ExitBlock")
+}
+
+func (v *mockVisitor) ExitClassElem(e ClassElem) {
+	v.exitCalls = append(v.exitCalls, "ExitClassElem")
 }
 
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {

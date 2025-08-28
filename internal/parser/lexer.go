@@ -26,7 +26,9 @@ func NewLexer(source *ast.Source) *Lexer {
 }
 
 var keywords = map[string]TokenType{
+	"private":   Private,
 	"fn":        Fn,
+	"class":     Class,
 	"get":       Get,
 	"set":       Set,
 	"static":    Static,

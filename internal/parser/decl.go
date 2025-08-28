@@ -43,10 +43,289 @@ func (p *Parser) Decl() ast.Decl {
 			return nil
 		}
 		return p.typeDecl(start, export, declare)
+	case Class:
+		if async {
+			p.reportError(token.Span, "async can only be used with functions")
+			return nil
+		}
+		return p.classDecl(start, export, declare)
 	default:
+		// Accept 'class' as a valid top-level declaration
+		if token.Type == Class {
+			return p.classDecl(start, export, declare)
+		}
 		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
+}
+
+// classDecl = 'class' ident '(' param* ')' '{' classElem* '}'
+func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
+	token := p.lexer.peek()
+	if token.Type != Identifier {
+		p.reportError(token.Span, "Expected identifier after 'class'")
+		return nil
+	}
+	p.lexer.consume()
+	name := ast.NewIdentifier(token.Value, token.Span)
+
+	// Parse optional type parameters for the class
+	var typeParams []*ast.TypeParam
+	token = p.lexer.peek()
+	if token.Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, AlwaysConsume)
+		token = p.lexer.peek()
+	}
+
+	// Parse optional constructor params
+	params := []*ast.Param{}
+	if token.Type == OpenParen {
+		p.lexer.consume()
+		params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		p.expect(CloseParen, AlwaysConsume)
+		token = p.lexer.peek()
+	}
+
+	// Parse class body
+	if token.Type != OpenBrace {
+		p.reportError(token.Span, "Expected '{' to start class body")
+		return nil
+	}
+	p.lexer.consume()
+	body := []ast.ClassElem{}
+	for {
+		token = p.lexer.peek()
+		if token.Type == CloseBrace {
+			p.lexer.consume()
+			break
+		}
+		elem := p.parseClassElem()
+		if elem != nil {
+			body = append(body, elem)
+		} else {
+			// skip unknown tokens to avoid infinite loop
+			p.lexer.consume()
+		}
+	}
+
+	end := p.lexer.currentLocation
+	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+	return ast.NewClassDecl(name, typeParams, params, body, export, declare, span)
+}
+
+// parseClassElem parses a single class element (field, method, static, etc.)
+func (p *Parser) parseClassElem() ast.ClassElem {
+	token := p.lexer.peek()
+
+	isStatic := false
+	isAsync := false
+	isPrivate := false
+	isGet := false
+	isSet := false
+	start := token.Span.Start
+
+	// Parse modifiers: static, async, private (order-insensitive)
+	for {
+		// nolint: exhaustive
+		switch token.Type {
+		case Static:
+			isStatic = true
+			p.lexer.consume()
+		case Async:
+			isAsync = true
+			p.lexer.consume()
+		case Private:
+			isPrivate = true
+			p.lexer.consume()
+		case Get:
+			isGet = true
+			p.lexer.consume()
+		case Set:
+			isSet = true
+			p.lexer.consume()
+		default:
+			goto modifiers_done
+		}
+		token = p.lexer.peek()
+	}
+modifiers_done:
+	if token.Type == Identifier {
+		p.lexer.consume()
+		name := ast.NewIdentifier(token.Value, token.Span)
+		next := p.lexer.peek()
+
+		// Parse optional type parameters for the method
+		var typeParams []*ast.TypeParam
+		if next.Type == LessThan {
+			p.lexer.consume() // consume '<'
+			typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+			p.expect(GreaterThan, AlwaysConsume)
+			next = p.lexer.peek()
+		}
+
+		// Handle getter
+		if isGet {
+			// Accept and parse params for instance getters (e.g., self)
+			var returnType ast.TypeAnn
+			var throwsType ast.TypeAnn
+			var body *ast.Block
+
+			if next.Type == OpenParen {
+				p.lexer.consume()
+				_ = parseDelimSeq(p, CloseParen, Comma, p.param)
+				p.expect(CloseParen, AlwaysConsume)
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse return type (for getter)
+			if next.Type == Arrow {
+				p.lexer.consume()
+				returnType = p.typeAnn()
+				next = p.lexer.peek()
+			}
+
+			if next.Type == Throws {
+				p.lexer.consume()
+				throwsType = p.typeAnn()
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse block
+			if next.Type == OpenBrace {
+				block := p.block()
+				body = &block
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.GetterElem{
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
+			}
+		}
+
+		// Handle setter
+		if isSet {
+			var params []*ast.Param
+			var body *ast.Block
+
+			if next.Type == OpenParen {
+				p.lexer.consume()
+				params = parseDelimSeq(p, CloseParen, Comma, p.param)
+				p.expect(CloseParen, AlwaysConsume)
+				next = p.lexer.peek()
+			}
+
+			// Optionally parse block
+			if next.Type == OpenBrace {
+				block := p.block()
+				body = &block
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.SetterElem{
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, params, nil, nil, false, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
+			}
+		}
+
+		if next.Type == OpenParen {
+			// Method
+			p.lexer.consume()
+			params := parseDelimSeq(p, CloseParen, Comma, p.param)
+			p.expect(CloseParen, AlwaysConsume)
+
+			// Optionally parse return type
+			var returnType ast.TypeAnn
+			next = p.lexer.peek()
+			if next.Type == Arrow {
+				p.lexer.consume()
+				returnType = p.typeAnn()
+			}
+
+			var throwsType ast.TypeAnn
+			next = p.lexer.peek()
+			if next.Type == Throws {
+				p.lexer.consume()
+				throwsType = p.typeAnn()
+			}
+
+			// Optionally parse block
+			var body *ast.Block
+			next = p.lexer.peek()
+			if next.Type == OpenBrace {
+				block := p.block()
+				body = &block
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.MethodElem{
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, params, returnType, throwsType, isAsync, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
+			}
+		} else {
+			// Field
+			var value ast.Expr
+			var typeAnn ast.TypeAnn
+			var default_ ast.Expr
+
+			next = p.lexer.peek()
+
+			// nolint: exhaustive
+			switch next.Type {
+			case Colon:
+				p.lexer.consume()
+				value = p.expr()
+				next = p.lexer.peek()
+				switch next.Type {
+				case Colon:
+					p.lexer.consume()
+					typeAnn = p.typeAnn()
+					next = p.lexer.peek()
+					if next.Type == Equal {
+						p.lexer.consume()
+						default_ = p.expr()
+					}
+				case Equal:
+					p.lexer.consume()
+					default_ = p.expr()
+				}
+			case DoubleColon:
+				p.lexer.consume()
+				typeAnn = p.typeAnn()
+				next = p.lexer.peek()
+				if next.Type == Equal {
+					p.lexer.consume()
+					default_ = p.expr()
+				}
+			case Equal:
+				p.lexer.consume()
+				default_ = p.expr()
+			}
+
+			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			return &ast.FieldElem{
+				Name:    name,
+				Value:   value,
+				Type:    typeAnn,
+				Default: default_,
+				Private: isPrivate,
+				Span_:   span,
+			}
+		}
+	}
+	// TODO: handle static, computed, etc.
+	return nil
 }
 
 // valDecl = 'val' pat '=' expr

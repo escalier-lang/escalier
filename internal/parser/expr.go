@@ -476,7 +476,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		returnType,
 		throwsType, // Pass throws type instead of nil
 		async,
-		body,
+		&body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }
@@ -562,7 +562,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			nil,   // TODO: parse return type
 			nil,   // TODO: parse throws type
 			false, // methods can't be async for now
-			body,
+			&body,
 			span,
 		)
 

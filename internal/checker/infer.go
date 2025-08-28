@@ -600,7 +600,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
 		errors = slices.Concat(errors, sigErrors)
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, &expr.Body, expr.FuncSig.Async)
+		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
 		resultType = funcType
