@@ -528,7 +528,7 @@
         Throws: nil,
         Async:  false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ExprStmt{
                 Expr: &ast.BinaryExpr{
@@ -788,7 +788,7 @@
         Throws: nil,
         Async:  false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ExprStmt{
                 Expr: &ast.BinaryExpr{
@@ -1022,7 +1022,7 @@
                     Throws: nil,
                     Async:  false,
                 },
-                Body: ast.Block{
+                Body: &ast.Block{
                     Stmts: {
                         &ast.ReturnStmt{
                             Expr: &ast.LiteralExpr{
@@ -1104,7 +1104,7 @@
                     Throws: nil,
                     Async:  false,
                 },
-                Body: ast.Block{
+                Body: &ast.Block{
                     Stmts: {
                         &ast.ReturnStmt{
                             Expr: &ast.MemberExpr{
@@ -1198,7 +1198,7 @@
                     Throws: nil,
                     Async:  false,
                 },
-                Body: ast.Block{
+                Body: &ast.Block{
                     Stmts: {
                         &ast.ExprStmt{
                             Expr: &ast.BinaryExpr{
@@ -2827,7 +2827,7 @@
         Throws: nil,
         Async:  false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ExprStmt{
                 Expr: &ast.BinaryExpr{
@@ -6591,7 +6591,7 @@
         Throws: nil,
         Async:  false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ExprStmt{
                 Expr: &ast.BinaryExpr{
@@ -6740,7 +6740,7 @@
         },
         Async: false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ExprStmt{
                 Expr: &ast.BinaryExpr{
@@ -7014,7 +7014,7 @@
         Throws: nil,
         Async:  false,
     },
-    Body: ast.Block{
+    Body: &ast.Block{
         Stmts: {
             &ast.ReturnStmt{
                 Expr: &ast.IfElseExpr{
@@ -7086,14 +7086,7 @@
                             Stmts: {
                                 &ast.ExprStmt{
                                     Expr: &ast.LiteralExpr{
-                                        Lit: &ast.StrLit{
-                                            Value: "value is empty",
-                                            span:  ast.Span{
-                                                Start:    ast.Location{Line:1, Column:61},
-                                                End:      ast.Location{Line:1, Column:77},
-                                                SourceID: 0,
-                                            },
-                                        },
+                                        Lit:  &!%v(DEPTH EXCEEDED),
                                         span: ast.Span{
                                             Start:    ast.Location{Line:1, Column:61},
                                             End:      ast.Location{Line:1, Column:77},

@@ -169,6 +169,7 @@ modifiers_done:
 		if isGet {
 			// Accept and parse params for instance getters (e.g., self)
 			var returnType ast.TypeAnn
+			var throwsType ast.TypeAnn
 			var body *ast.Block
 
 			if next.Type == OpenParen {
@@ -185,6 +186,12 @@ modifiers_done:
 				next = p.lexer.peek()
 			}
 
+			if next.Type == Throws {
+				p.lexer.consume()
+				throwsType = p.typeAnn()
+				next = p.lexer.peek()
+			}
+
 			// Optionally parse block
 			if next.Type == OpenBrace {
 				block := p.block()
@@ -193,13 +200,11 @@ modifiers_done:
 
 			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 			return &ast.GetterElem{
-				Name:       name,
-				TypeParams: typeParams,
-				ReturnType: returnType,
-				Body:       body,
-				Static:     isStatic,
-				Private:    isPrivate,
-				Span_:      span,
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
 			}
 		}
 
@@ -223,13 +228,11 @@ modifiers_done:
 
 			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 			return &ast.SetterElem{
-				Name:       name,
-				TypeParams: typeParams,
-				Params:     params,
-				Body:       body,
-				Static:     isStatic,
-				Private:    isPrivate,
-				Span_:      span,
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, params, nil, nil, false, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
 			}
 		}
 
@@ -247,6 +250,13 @@ modifiers_done:
 				returnType = p.typeAnn()
 			}
 
+			var throwsType ast.TypeAnn
+			next = p.lexer.peek()
+			if next.Type == Throws {
+				p.lexer.consume()
+				throwsType = p.typeAnn()
+			}
+
 			// Optionally parse block
 			var body *ast.Block
 			next = p.lexer.peek()
@@ -257,15 +267,11 @@ modifiers_done:
 
 			span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 			return &ast.MethodElem{
-				Name:       name,
-				TypeParams: typeParams,
-				Params:     params,
-				ReturnType: returnType,
-				Body:       body,
-				Static:     isStatic,
-				Async:      isAsync,
-				Private:    isPrivate,
-				Span_:      span,
+				Name:    name,
+				Fn:      ast.NewFuncExpr(typeParams, params, returnType, throwsType, isAsync, body, span),
+				Static:  isStatic,
+				Private: isPrivate,
+				Span_:   span,
 			}
 		} else {
 			// Field

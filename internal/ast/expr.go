@@ -331,7 +331,7 @@ type FuncSig struct {
 
 type FuncExpr struct {
 	FuncSig
-	Body         Block
+	Body         *Block
 	span         Span
 	inferredType Type
 }
@@ -342,7 +342,7 @@ func NewFuncExpr(
 	ret TypeAnn, // optional
 	throws TypeAnn, // optional
 	async bool,
-	body Block,
+	body *Block,
 	span Span,
 ) *FuncExpr {
 	return &FuncExpr{

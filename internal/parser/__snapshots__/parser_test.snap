@@ -390,7 +390,7 @@
                         Throws: nil,
                         Async:  false,
                     },
-                    Body: ast.Block{
+                    Body: &ast.Block{
                         Stmts: {
                             &ast.DeclStmt{
                                 Decl: &ast.VarDecl{
@@ -2082,7 +2082,7 @@
                 Throws: nil,
                 Async:  true,
             },
-            Body: ast.Block{
+            Body: &ast.Block{
                 Stmts: {
                     &ast.ReturnStmt{
                         Expr: &ast.AwaitExpr{

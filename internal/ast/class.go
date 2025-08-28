@@ -68,28 +68,18 @@ func (f *FieldElem) Accept(v Visitor) {
 func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
-	Name       *Ident
-	TypeParams []*TypeParam // generic type parameters for the method
-	Params     []*Param
-	ReturnType TypeAnn // optional
-	Body       *Block  // optional
-	Static     bool    // true if this is a static method
-	Async      bool    // true if this is an async method
-	Private    bool    // true if this is a private method
-	Span_      Span
+	Name    *Ident
+	Fn      *FuncExpr
+	Static  bool // true if this is a static method
+	Private bool // true if this is a private method
+	Span_   Span
 }
 
 func (*MethodElem) IsClassElem() {}
 func (m *MethodElem) Accept(v Visitor) {
 	if v.EnterClassElem(m) {
-		for _, param := range m.Params {
-			param.Pattern.Accept(v)
-		}
-		if m.ReturnType != nil {
-			m.ReturnType.Accept(v)
-		}
-		if m.Body != nil {
-			m.Body.Accept(v)
+		if m.Fn != nil {
+			m.Fn.Accept(v)
 		}
 	}
 	v.ExitClassElem(m)
@@ -98,24 +88,19 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
-	Name       *Ident
-	TypeParams []*TypeParam // generic type parameters for the getter (rare, but for consistency)
-	ReturnType TypeAnn      // optional
-	Body       *Block       // optional
-	Static     bool         // true if this is a static getter
-	Private    bool         // true if this is a private getter
-	Span_      Span
+	Name    *Ident
+	Fn      *FuncExpr
+	Static  bool // true if this is a static getter
+	Private bool // true if this is a private getter
+	Span_   Span
 }
 
 func (*GetterElem) IsClassElem() {}
 func (g *GetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(g) {
 		g.Name.Accept(v)
-		if g.ReturnType != nil {
-			g.ReturnType.Accept(v)
-		}
-		if g.Body != nil {
-			g.Body.Accept(v)
+		if g.Fn != nil {
+			g.Fn.Accept(v)
 		}
 	}
 	v.ExitClassElem(g)
@@ -124,24 +109,19 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
-	Name       *Ident
-	TypeParams []*TypeParam // generic type parameters for the setter (rare, but for consistency)
-	Params     []*Param     // should have exactly one param
-	Body       *Block       // optional
-	Static     bool         // true if this is a static setter
-	Private    bool         // true if this is a private setter
-	Span_      Span
+	Name    *Ident
+	Fn      *FuncExpr
+	Static  bool // true if this is a static setter
+	Private bool // true if this is a private setter
+	Span_   Span
 }
 
 func (*SetterElem) IsClassElem() {}
 func (s *SetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(s) {
 		s.Name.Accept(v)
-		for _, param := range s.Params {
-			param.Pattern.Accept(v)
-		}
-		if s.Body != nil {
-			s.Body.Accept(v)
+		if s.Fn != nil {
+			s.Fn.Accept(v)
 		}
 	}
 	v.ExitClassElem(s)
