@@ -715,18 +715,6 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 	// For now, we assume type parameters with the same position are equivalent
 	// TODO: Handle more sophisticated type parameter constraints and bounds
 
-	// Check Self type compatibility (for methods)
-	if func1.Self != nil && func2.Self != nil {
-		unifyErrors := c.unify(ctx, func1.Self, func2.Self)
-		errors = slices.Concat(errors, unifyErrors)
-	} else if func1.Self != nil || func2.Self != nil {
-		// One has Self, the other doesn't - they're incompatible
-		return []Error{&CannotUnifyTypesError{
-			T1: func1,
-			T2: func2,
-		}}
-	}
-
 	// Check parameters (contravariant)
 	// Handle rest parameters: if func2 has a rest parameter, it can accept excess params from func1
 

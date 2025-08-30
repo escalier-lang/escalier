@@ -144,7 +144,6 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 
 		oldFuncType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
 			Return:     returnType,
 			Throws:     nil,
@@ -153,7 +152,6 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 
 		newFuncType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
 			Return:     returnType,
 			Throws:     nil,
@@ -492,7 +490,6 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
 		funcType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param},
 			Return:     returnType,
 			Throws:     nil,
@@ -545,7 +542,6 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), innerType)
 		oldFuncType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param},
 			Return:     NewBoolType(),
 			Throws:     nil,
@@ -554,7 +550,6 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 
 		newFuncType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), innerType)},
 			Return:     NewBoolType(),
 			Throws:     nil,
@@ -647,7 +642,6 @@ func TestVisitorNoMutation(t *testing.T) {
 		param2 := NewFuncParam(NewIdentPat("y"), NewStrType())
 		original := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param1, param2},
 			Return:     NewBoolType(),
 			Throws:     NewNeverType(),
@@ -759,7 +753,6 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
 		original := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param},
 			Return:     NewBoolType(),
 			Throws:     NewNeverType(),
@@ -874,7 +867,6 @@ func TestNestedVisitorImmutability(t *testing.T) {
 
 		funcType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), innerNumType)},
 			Return:     innerStrType,
 			Throws:     NewNeverType(),
@@ -910,7 +902,6 @@ func TestNestedVisitorImmutability(t *testing.T) {
 		// Create: (oldType) => boolean | string
 		funcType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), oldType)},
 			Return:     NewBoolType(),
 			Throws:     NewNeverType(),
@@ -1107,7 +1098,6 @@ func TestEnterTypeIsCalled(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), paramType)
 		funcType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param},
 			Return:     returnType,
 			Throws:     nil,
@@ -1185,7 +1175,6 @@ func TestEnterTypeIsCalled(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), unionType)
 		funcType := &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params:     []*FuncParam{param},
 			Return:     returnType,
 			Throws:     nil,
@@ -1405,7 +1394,6 @@ func BenchmarkVisitorTraversal(b *testing.B) {
 		Types: []Type{
 			&FuncType{
 				TypeParams: nil,
-				Self:       nil,
 				Params: []*FuncParam{
 					NewFuncParam(NewIdentPat("x"), NewNumType()),
 					NewFuncParam(NewIdentPat("y"), NewStrType()),

@@ -437,7 +437,6 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 
 type FuncType struct {
 	TypeParams []*TypeParam
-	Self       Type // optional, used for methods only
 	Params     []*FuncParam
 	Return     Type
 	Throws     Type
@@ -485,7 +484,6 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	if changed {
 		result = &FuncType{
 			TypeParams: t.TypeParams,
-			Self:       t.Self,
 			Params:     newParams,
 			Return:     newReturn,
 			Throws:     newThrows,
@@ -706,9 +704,9 @@ type ObjTypeElem interface {
 type CallableElemType struct{ Fn *FuncType }
 type ConstructorElemType struct{ Fn *FuncType }
 type MethodElemType struct {
-	Name ObjTypeKey
-	Fn   *FuncType
-	Mut  bool
+	Name    ObjTypeKey
+	Fn      *FuncType
+	MutSelf *bool // nil = unknown, true = mut self, false = self
 }
 type GetterElemType struct {
 	Name ObjTypeKey
@@ -725,11 +723,11 @@ type PropertyElemType struct {
 	Value    Type
 }
 
-func NewMethodElemType(name ObjTypeKey, fn *FuncType, mut bool) *MethodElemType {
+func NewMethodElemType(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElemType {
 	return &MethodElemType{
-		Name: name,
-		Fn:   fn,
-		Mut:  mut,
+		Name:    name,
+		Fn:      fn,
+		MutSelf: mutSelf,
 	}
 }
 func NewPropertyElemType(name ObjTypeKey, value Type) *PropertyElemType {
@@ -961,11 +959,41 @@ func (t *ObjectType) String() string {
 			case *ConstructorElemType:
 				result += "new " + elem.Fn.String()
 			case *MethodElemType:
-				result += elem.Name.String() + ": " + elem.Fn.String()
+				// TODO: update this to include `self` parameter
+				result += elem.Name.String() + "("
+				if len(elem.Fn.Params) > 0 {
+					for i, param := range elem.Fn.Params {
+						if i > 0 {
+							result += ", "
+						}
+						switch param.Pattern.(type) {
+						case *TuplePat, *ObjectPat:
+							// Use inline type annotations for object and tuple patterns
+							result += patternStringWithInlineTypes(param.Pattern, param.Type)
+						default:
+							result += param.Pattern.String() + ": " + param.Type.String()
+						}
+					}
+				}
+				result += ")"
+				if elem.Fn.Return != nil {
+					result += " -> " + elem.Fn.Return.String()
+				}
+				if elem.Fn.Throws != nil {
+					result += " throws " + elem.Fn.Throws.String()
+				}
 			case *GetterElemType:
-				result += "get " + elem.Name.String() + ": " + elem.Fn.String()
+				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
+				if elem.Fn.Throws != nil {
+					result += " throws " + elem.Fn.Throws.String()
+				}
 			case *SetterElemType:
-				result += "set " + elem.Name.String() + ": " + elem.Fn.String()
+				result += "set " + elem.Name.String() + "("
+				result += "mut self, " + elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
+				result += ") -> undefined"
+				if elem.Fn.Throws != nil {
+					result += " throws " + elem.Fn.Throws.String()
+				}
 			case *PropertyElemType:
 				result += elem.Name.String()
 				if elem.Optional {

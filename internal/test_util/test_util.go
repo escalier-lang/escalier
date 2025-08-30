@@ -111,7 +111,6 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 
 		return &FuncType{
 			TypeParams: typeParams,
-			Self:       nil,
 			Params:     params,
 			Return:     returnType,
 			Throws:     throwsType,

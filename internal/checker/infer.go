@@ -593,7 +593,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 				paramBindingsSlice[i] = paramBindings
 				types[i] = t
-				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), t, false) // TODO: handle mutability
+				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), t, elem.MutSelf)
+			case *ast.GetterExpr:
+				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+				paramBindingsSlice[i] = paramBindings
+				types[i] = t
+				typeElems[i] = &GetterElemType{Fn: t, Name: astKeyToTypeKey(elem.Name)}
+			case *ast.SetterExpr:
+				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+				paramBindingsSlice[i] = paramBindings
+				types[i] = t
+				typeElems[i] = &SetterElemType{Fn: t, Name: astKeyToTypeKey(elem.Name)}
 			}
 		}
 
@@ -630,9 +640,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				}
 			case *ast.MethodExpr:
 				funcType := t.(*FuncType)
-
-				methodExpr := exprElem.(*ast.MethodExpr)
+				methodExpr := elem
 				paramBindings := paramBindingsSlice[i]
+
 				if methodExpr.MutSelf != nil {
 					var selfType Type = NewTypeRefType("Self", &selfTypeAlias)
 					if *methodExpr.MutSelf {
@@ -647,6 +657,34 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
 					objCtx, funcType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+				errors = slices.Concat(errors, inferErrors)
+
+			case *ast.GetterExpr:
+				funcType := t.(*FuncType)
+				paramBindings := paramBindingsSlice[i]
+				paramBindings["self"] = &Binding{
+					Source:  &ast.NodeProvenance{Node: expr},
+					Type:    NewTypeRefType("Self", &selfTypeAlias),
+					Mutable: false, // `self` cannot be reassigned
+				}
+
+				getterExpr := elem
+				inferErrors := c.inferFuncBodyWithFuncSigType(
+					objCtx, funcType, paramBindings, getterExpr.Fn.Body, getterExpr.Fn.Async)
+				errors = slices.Concat(errors, inferErrors)
+
+			case *ast.SetterExpr:
+				funcType := t.(*FuncType)
+				paramBindings := paramBindingsSlice[i]
+				paramBindings["self"] = &Binding{
+					Source:  &ast.NodeProvenance{Node: expr},
+					Type:    NewMutableType(NewTypeRefType("Self", &selfTypeAlias)),
+					Mutable: false, // `self` cannot be reassigned
+				}
+
+				setterExpr := elem
+				inferErrors := c.inferFuncBodyWithFuncSigType(
+					objCtx, funcType, paramBindings, setterExpr.Fn.Body, setterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 			}
 
@@ -1391,7 +1429,6 @@ func (c *Checker) inferFuncSig(
 		Return:     finalReturnType,
 		Throws:     finalThrowsType,
 		TypeParams: []*TypeParam{},
-		Self:       nil,
 	}
 
 	return t, bindings, errors
@@ -1903,7 +1940,6 @@ func (c *Checker) inferFuncTypeAnn(
 		Return:     returnType,
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       nil,
 	}
 
 	return &funcType, errors
@@ -2063,9 +2099,10 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, fnErrors)
 				elems[i] = &ConstructorElemType{Fn: fn}
 			case *ast.MethodTypeAnn:
+				// TODO: handle `self` and `mut self` parameters
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &MethodElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+				elems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), fn, nil)
 			case *ast.GetterTypeAnn:
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
