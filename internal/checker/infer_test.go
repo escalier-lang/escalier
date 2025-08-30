@@ -252,10 +252,10 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"ObjectWithMethods": {
 			input: `
-			    val value: number = 5
+				val value: number = 5
 				val obj = {
 					value,
-					increment(self, amount: number) -> Self {
+					increment(mut self, amount: number) -> Self {
 						self.value = self.value + amount
 						return self
 					}

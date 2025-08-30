@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"iter"
-	"os"
 	"slices"
 	"strings"
 
@@ -591,9 +590,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				types[i] = t
 				typeElems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 			case *ast.MethodExpr:
-				funcSig := elem.Fn.FuncSig
-				funcSig.Params = funcSig.Params[1:] // remove `self` param
-				t, paramBindings, _ := c.inferFuncSig(objCtx, &funcSig)
+				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 				paramBindingsSlice[i] = paramBindings
 				types[i] = t
 				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), t, false) // TODO: handle mutability
@@ -603,8 +600,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		objType := NewObjectType(typeElems)
 		bindErrors := c.bind(selfType, objType)
 		errors = slices.Concat(errors, bindErrors)
-
-		fmt.Fprintf(os.Stderr, "Created self type: %s\n", selfType.String())
 
 		i := 0 // indexes into paramBindingsSlice
 		for t, exprElem := range Zip(types, expr.Elems) {
@@ -634,18 +629,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					}
 				}
 			case *ast.MethodExpr:
-				fmt.Fprintf(os.Stderr, "Inferring method %q with type %s\n", elem.Name, t.String())
 				funcType := t.(*FuncType)
 
 				methodExpr := exprElem.(*ast.MethodExpr)
 				paramBindings := paramBindingsSlice[i]
-				paramBindings["self"] = &Binding{
-					Source: &ast.NodeProvenance{Node: expr},
-					// TODO: determine mutability based on whether the first param
-					// is `self` or `mut self`
-					Type:    NewMutableType(NewTypeRefType("Self", &selfTypeAlias)),
-					Mutable: false, // `self` can't be reassigned
+				if methodExpr.Fn.FuncSig.MutSelf != nil {
+					var selfType Type = NewTypeRefType("Self", &selfTypeAlias)
+					if *methodExpr.Fn.FuncSig.MutSelf {
+						selfType = NewMutableType(selfType)
+					}
+					paramBindings["self"] = &Binding{
+						Source:  &ast.NodeProvenance{Node: expr},
+						Type:    selfType,
+						Mutable: false, // `self` cannot be reassigned
+					}
 				}
+
 				inferErrors := c.inferFuncBodyWithFuncSigType(
 					objCtx, funcType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)

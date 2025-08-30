@@ -327,6 +327,7 @@ type FuncSig struct {
 	Return     TypeAnn // optional
 	Throws     TypeAnn // optional
 	Async      bool    // whether this is an async function
+	MutSelf    *bool   // nil = no self, true = mut self, false = self
 }
 
 type FuncExpr struct {

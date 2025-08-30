@@ -498,10 +498,12 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 	// TODO: raise an error if 'get' or 'set' is used with a property definition
 	// instead of a method.
 	mod := ""
-	if token.Type == Get {
+	// nolint: exhaustive
+	switch token.Type {
+	case Get:
 		p.lexer.consume() // consume 'get'
 		mod = "get"
-	} else if token.Type == Set {
+	case Set:
 		p.lexer.consume() // consume 'set'
 		mod = "set"
 	}
@@ -549,12 +551,33 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 	case OpenParen:
 		p.lexer.consume() // consume '('
 
-		params := parseDelimSeq(p, CloseParen, Comma, p.param)
+		var token *Token
+		var mutSelf *bool
+		token = p.lexer.peek()
+		if token.Type == Mut {
+			p.lexer.consume() // consume 'mut'
+			token = p.lexer.peek()
+			if token.Type == Identifier && token.Value == "self" {
+				p.lexer.consume() // consume 'self'
+				mut := true
+				mutSelf = &mut
+			}
+		} else if token.Type == Identifier && token.Value == "self" {
+			p.lexer.consume() // consume 'self'
+			mut := false
+			mutSelf = &mut
+		}
+		params := []*ast.Param{}
+		token = p.lexer.peek()
+		if token.Type == Comma {
+			p.lexer.consume() // consume ','
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
 		p.expect(CloseParen, ConsumeOnMatch)
 
 		var returnType ast.TypeAnn
 		var throwsType ast.TypeAnn
-		token := p.lexer.peek()
+		token = p.lexer.peek()
 		if token.Type == Arrow {
 			p.lexer.consume()
 			typeAnn := p.typeAnn()
@@ -591,6 +614,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			&body,
 			span,
 		)
+		fn.MutSelf = mutSelf
 
 		switch mod {
 		case "get":
