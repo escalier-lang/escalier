@@ -299,7 +299,6 @@ func TestSubstituteTypeParams(t *testing.T) {
 			outerFuncTyped := outerFuncTemplate.(*FuncType)
 			outerFunc := &FuncType{
 				TypeParams: []*TypeParam{},
-				Self:       nil,
 				Params:     outerFuncTyped.Params, // Reuse the parsed parameter
 				Return:     innerFunc,
 				Throws:     NewNeverType(),
@@ -404,6 +403,6 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	checker := &Checker{ID: 0}
 	result := checker.substituteTypeParams(objType, substitutions)
 
-	assert.Equal(t, "{test?: T, method: fn (x: T) -> U, get getter: fn () -> T, set setter: fn (value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
-	assert.Equal(t, "{test?: number, method: fn (x: number) -> string, get getter: fn () -> number, set setter: fn (value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
+	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
+	assert.Equal(t, "{test?: number, method(x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
 }

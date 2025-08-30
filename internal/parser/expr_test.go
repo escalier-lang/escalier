@@ -132,7 +132,10 @@ func TestParseExprNoErrors(t *testing.T) {
 			input: "{a, ...b, ...{c, d}}",
 		},
 		"ObjectWithMethods": {
-			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(x) { this.x = x } }",
+			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(mut self, x) { this.x = x } }",
+		},
+		"ObjectWithStaticMethod": {
+			input: "{ foo() { return 5 } }",
 		},
 		"LessThan": {
 			input: "a < b",

@@ -498,10 +498,12 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 	// TODO: raise an error if 'get' or 'set' is used with a property definition
 	// instead of a method.
 	mod := ""
-	if token.Type == Get {
+	// nolint: exhaustive
+	switch token.Type {
+	case Get:
 		p.lexer.consume() // consume 'get'
 		mod = "get"
-	} else if token.Type == Set {
+	case Set:
 		p.lexer.consume() // consume 'set'
 		mod = "set"
 	}
@@ -548,8 +550,55 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return nil
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params := parseDelimSeq(p, CloseParen, Comma, p.param)
+
+		var token *Token
+		var mutSelf *bool
+		token = p.lexer.peek()
+		if token.Type == Mut {
+			p.lexer.consume() // consume 'mut'
+			token = p.lexer.peek()
+			if token.Type == Identifier && token.Value == "self" {
+				p.lexer.consume() // consume 'self'
+				mut := true
+				mutSelf = &mut
+			}
+		} else if token.Type == Identifier && token.Value == "self" {
+			p.lexer.consume() // consume 'self'
+			mut := false
+			mutSelf = &mut
+		}
+		params := []*ast.Param{}
+		token = p.lexer.peek()
+		if token.Type == Comma {
+			p.lexer.consume() // consume ','
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
 		p.expect(CloseParen, ConsumeOnMatch)
+
+		var returnType ast.TypeAnn
+		var throwsType ast.TypeAnn
+		token = p.lexer.peek()
+		if token.Type == Arrow {
+			p.lexer.consume()
+			typeAnn := p.typeAnn()
+			if typeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after arrow")
+				return nil
+			}
+			returnType = typeAnn
+
+			// Check for throws clause after return type
+			token = p.lexer.peek()
+			if token.Type == Throws {
+				p.lexer.consume()
+				throwsTypeAnn := p.typeAnn()
+				if throwsTypeAnn == nil {
+					p.reportError(token.Span, "Expected type annotation after 'throws'")
+				} else {
+					throwsType = throwsTypeAnn
+				}
+			}
+		}
 
 		body := p.block()
 		end := body.Span.End
@@ -559,29 +608,35 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		fn := ast.NewFuncExpr(
 			[]*ast.TypeParam{}, // TODO: parse type params
 			params,
-			nil,   // TODO: parse return type
-			nil,   // TODO: parse throws type
+			returnType,
+			throwsType,
 			false, // methods can't be async for now
 			&body,
 			span,
 		)
 
-		if mod == "get" {
+		switch mod {
+		case "get":
+			// TODO: check that params is empty when using `get`
+			// and raise an error if it's not.
 			return ast.NewGetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
 			)
-		} else if mod == "set" {
+		case "set":
+			// TODO: check that mutSelf is `true` when using `set`
+			// and raise an error if it's `false` or `nil`.
 			return ast.NewSetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
 			)
-		} else {
+		default:
 			return ast.NewMethod(
 				objKey,
 				fn,
+				mutSelf,
 				ast.MergeSpans(token.Span, span),
 			)
 		}

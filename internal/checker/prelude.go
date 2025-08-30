@@ -9,7 +9,6 @@ func Prelude() *Scope {
 
 	binArithType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumType()),
 			NewFuncParam(NewIdentPat("b"), NewNumType()),
@@ -25,7 +24,6 @@ func Prelude() *Scope {
 
 	binCompType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumType()),
 			NewFuncParam(NewIdentPat("b"), NewNumType()),
@@ -41,7 +39,6 @@ func Prelude() *Scope {
 
 	binEqType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewAnyType()),
 			NewFuncParam(NewIdentPat("b"), NewAnyType()),
@@ -57,7 +54,6 @@ func Prelude() *Scope {
 
 	binLogicType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolType()),
 			NewFuncParam(NewIdentPat("b"), NewBoolType()),
@@ -85,7 +81,6 @@ func Prelude() *Scope {
 
 	unaryLogicType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolType()),
 		},
@@ -128,13 +123,13 @@ func Prelude() *Scope {
 		Name: NewStrKey("log"),
 		Fn: &FuncType{
 			TypeParams: nil,
-			Self:       nil,
 			Params: []*FuncParam{
 				NewFuncParam(NewIdentPat("msg"), NewStrType()),
 			},
 			Return: NewLitType(&UndefinedLit{}),
 			Throws: NewNeverType(),
 		},
+		MutSelf: nil,
 	})
 
 	scope.Namespace.Values["console"] = &Binding{
@@ -185,7 +180,6 @@ func Prelude() *Scope {
 		Return:     NewTypeRefType("Error", nil),
 		Throws:     NewNeverType(),
 		TypeParams: []*TypeParam{},
-		Self:       nil,
 	}
 	errorConstructorBinding := Binding{
 		Source:  nil,
@@ -210,7 +204,6 @@ func Prelude() *Scope {
 	// String concatenation operator
 	strConcatType := &FuncType{
 		TypeParams: nil,
-		Self:       nil,
 		Params: []*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewStrType()),
 			NewFuncParam(NewIdentPat("b"), NewStrType()),

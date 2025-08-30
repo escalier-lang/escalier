@@ -250,6 +250,38 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "string",
 			},
 		},
+		"ObjectWithMethods": {
+			input: `
+				val value: number = 5
+				val obj = {
+					value,
+					increment(mut self, amount: number) -> Self {
+						self.value = self.value + amount
+						return self
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"obj": "{value: number, increment(amount: number) -> Self throws never}",
+			},
+		},
+		"ObjectWithGetterSetter": {
+			input: `
+				val value: number = 5
+				val obj = {
+					_value: value,
+					get value (self) {
+						return self._value
+					},
+					set value (mut self, value: number) {
+						self._value = value
+					},
+				}
+			`,
+			expectedTypes: map[string]string{
+				"obj": "{_value: number, get value(self) -> number throws never, set value(mut self, value: number) -> undefined throws never}",
+			},
+		},
 		"IfElseExpr": {
 			input: `
 				val a = 5
