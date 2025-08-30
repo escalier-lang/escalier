@@ -174,6 +174,7 @@ modifiers_done:
 
 			if next.Type == OpenParen {
 				p.lexer.consume()
+				// TODO: report an error if `self` is not the only param
 				_ = parseDelimSeq(p, CloseParen, Comma, p.param)
 				p.expect(CloseParen, AlwaysConsume)
 				next = p.lexer.peek()
@@ -216,6 +217,7 @@ modifiers_done:
 			if next.Type == OpenParen {
 				p.lexer.consume()
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
+				// TODO: report an error if `mut self` is not the first param
 				p.expect(CloseParen, AlwaysConsume)
 				next = p.lexer.peek()
 			}

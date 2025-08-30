@@ -1063,7 +1063,7 @@
             },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:3},
-                End:      ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:14},
                 SourceID: 0,
             },
         },
@@ -1157,7 +1157,7 @@
             },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:31},
-                End:      ast.Location{Line:1, Column:35},
+                End:      ast.Location{Line:1, Column:42},
                 SourceID: 0,
             },
         },
@@ -1271,7 +1271,7 @@
             },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:64},
-                End:      ast.Location{Line:1, Column:68},
+                End:      ast.Location{Line:1, Column:72},
                 SourceID: 0,
             },
         },

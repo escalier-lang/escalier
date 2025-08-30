@@ -250,6 +250,21 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "string",
 			},
 		},
+		"ObjectWithMethods": {
+			input: `
+			    val value: number = 5
+				val obj = {
+					value,
+					increment(self, amount: number) -> Self {
+						self.value = self.value + amount
+						return self
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"obj": "{value: number, increment: fn (amount: number) -> Self throws never}",
+			},
+		},
 		"IfElseExpr": {
 			input: `
 				val a = 5

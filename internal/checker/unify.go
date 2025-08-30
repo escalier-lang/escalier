@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -18,7 +19,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	t1 = Prune(t1)
 	t2 = Prune(t2)
 
-	// fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
+	fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
 
 	// | TypeVarType, _ -> ...
 	if tv1, ok := t1.(*TypeVarType); ok {
@@ -296,7 +297,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 
-				return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
+				return []Error{}
+				// TODO: Give each TypeAlias a unique ID and if they so avoid
+				// situations where two different type aliases have the same
+				// name but different definitions.
+				// return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
 			}
 
 			// TODO: handle type args

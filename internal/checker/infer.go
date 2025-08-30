@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"iter"
+	"os"
 	"slices"
 	"strings"
 
@@ -565,24 +566,66 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		}
 		resultType = NewTupleType(types...)
 	case *ast.ObjectExpr:
-		elems := make([]ObjTypeElem, len(expr.Elems))
-		errors = []Error{}
+		// Create a context for the object so that we can add a `Self` type to it
+		objCtx := ctx.WithNewScope()
+
+		// TODO: loop over all elems once to create an object type with a bunch
+		// of fresh type variables, then loop over them again to unify the types
+		// of each element.  The `self` parameter in methods will need to be
+		// unified with the object type itself.
+		typeElems := make([]ObjTypeElem, len(expr.Elems))
+		types := make([]Type, len(expr.Elems))
+		paramBindingsSlice := make([]map[string]*Binding, len(expr.Elems))
+
+		selfType := c.FreshVar()
+		selfTypeAlias := TypeAlias{
+			Type:       selfType,
+			TypeParams: []*TypeParam{},
+		}
+		objCtx.Scope.setTypeAlias("Self", &selfTypeAlias)
+
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
+				t := c.FreshVar()
+				types[i] = t
+				typeElems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+			case *ast.MethodExpr:
+				funcSig := elem.Fn.FuncSig
+				funcSig.Params = funcSig.Params[1:] // remove `self` param
+				t, paramBindings, _ := c.inferFuncSig(objCtx, &funcSig)
+				paramBindingsSlice[i] = paramBindings
+				types[i] = t
+				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), t, false) // TODO: handle mutability
+			}
+		}
+
+		objType := NewObjectType(typeElems)
+		bindErrors := c.bind(selfType, objType)
+		errors = slices.Concat(errors, bindErrors)
+
+		fmt.Fprintf(os.Stderr, "Created self type: %s\n", selfType.String())
+
+		i := 0 // indexes into paramBindingsSlice
+		for t, exprElem := range Zip(types, expr.Elems) {
+			switch elem := exprElem.(type) {
+			case *ast.PropertyExpr:
 				if elem.Value != nil {
-					t, elemErrors := c.inferExpr(ctx, elem.Value)
-					errors = slices.Concat(errors, elemErrors)
-					elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+					valueType, valueErrors := c.inferExpr(objCtx, elem.Value)
+					unifyErrors := c.unify(objCtx, valueType, t)
+
+					errors = slices.Concat(errors, valueErrors, unifyErrors)
 				} else {
 					switch key := elem.Name.(type) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
-						if binding := ctx.Scope.getValue(key.Name); binding != nil {
-							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), binding.Type)
+						if binding := objCtx.Scope.getValue(key.Name); binding != nil {
+							unifyErrors := c.unify(objCtx, binding.Type, t)
+							errors = slices.Concat(errors, unifyErrors)
 						} else {
-							t := NewNeverType()
-							elems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+							unifyErrors := c.unify(objCtx, NewNeverType(), t)
+							errors = slices.Concat(errors, unifyErrors)
+
 							errors = append(
 								errors,
 								&UnknownIdentifierError{Ident: key, span: key.Span()},
@@ -590,12 +633,28 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 						}
 					}
 				}
-			default:
-				panic(fmt.Sprintf("TODO: handle object expression element: %#v", elem))
+			case *ast.MethodExpr:
+				fmt.Fprintf(os.Stderr, "Inferring method %q with type %s\n", elem.Name, t.String())
+				funcType := t.(*FuncType)
+
+				methodExpr := exprElem.(*ast.MethodExpr)
+				paramBindings := paramBindingsSlice[i]
+				paramBindings["self"] = &Binding{
+					Source: &ast.NodeProvenance{Node: expr},
+					// TODO: determine mutability based on whether the first param
+					// is `self` or `mut self`
+					Type:    NewMutableType(NewTypeRefType("Self", &selfTypeAlias)),
+					Mutable: false, // `self` can't be reassigned
+				}
+				inferErrors := c.inferFuncBodyWithFuncSigType(
+					objCtx, funcType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+				errors = slices.Concat(errors, inferErrors)
 			}
+
+			i++
 		}
 
-		resultType = NewObjectType(elems)
+		resultType = selfType
 	case *ast.FuncExpr:
 		funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
 		errors = slices.Concat(errors, sigErrors)
@@ -1448,14 +1507,8 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	errors := []Error{}
 
 	// Create async context if this is an async function
-	bodyCtx := ctx
-	if isAsync {
-		bodyCtx = Context{
-			Scope:      ctx.Scope,
-			IsAsync:    true,
-			IsPatMatch: ctx.IsPatMatch,
-		}
-	}
+	bodyCtx := ctx.WithNewScope()
+	bodyCtx.IsAsync = isAsync
 
 	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
 	errors = slices.Concat(errors, bodyErrors)

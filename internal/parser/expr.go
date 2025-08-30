@@ -548,8 +548,34 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return nil
 	case OpenParen:
 		p.lexer.consume() // consume '('
+
 		params := parseDelimSeq(p, CloseParen, Comma, p.param)
 		p.expect(CloseParen, ConsumeOnMatch)
+
+		var returnType ast.TypeAnn
+		var throwsType ast.TypeAnn
+		token := p.lexer.peek()
+		if token.Type == Arrow {
+			p.lexer.consume()
+			typeAnn := p.typeAnn()
+			if typeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after arrow")
+				return nil
+			}
+			returnType = typeAnn
+
+			// Check for throws clause after return type
+			token = p.lexer.peek()
+			if token.Type == Throws {
+				p.lexer.consume()
+				throwsTypeAnn := p.typeAnn()
+				if throwsTypeAnn == nil {
+					p.reportError(token.Span, "Expected type annotation after 'throws'")
+				} else {
+					throwsType = throwsTypeAnn
+				}
+			}
+		}
 
 		body := p.block()
 		end := body.Span.End
@@ -559,26 +585,27 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		fn := ast.NewFuncExpr(
 			[]*ast.TypeParam{}, // TODO: parse type params
 			params,
-			nil,   // TODO: parse return type
-			nil,   // TODO: parse throws type
+			returnType,
+			throwsType,
 			false, // methods can't be async for now
 			&body,
 			span,
 		)
 
-		if mod == "get" {
+		switch mod {
+		case "get":
 			return ast.NewGetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
 			)
-		} else if mod == "set" {
+		case "set":
 			return ast.NewSetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
 			)
-		} else {
+		default:
 			return ast.NewMethod(
 				objKey,
 				fn,

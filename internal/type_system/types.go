@@ -708,6 +708,7 @@ type ConstructorElemType struct{ Fn *FuncType }
 type MethodElemType struct {
 	Name ObjTypeKey
 	Fn   *FuncType
+	Mut  bool
 }
 type GetterElemType struct {
 	Name ObjTypeKey
@@ -724,6 +725,13 @@ type PropertyElemType struct {
 	Value    Type
 }
 
+func NewMethodElemType(name ObjTypeKey, fn *FuncType, mut bool) *MethodElemType {
+	return &MethodElemType{
+		Name: name,
+		Fn:   fn,
+		Mut:  mut,
+	}
+}
 func NewPropertyElemType(name ObjTypeKey, value Type) *PropertyElemType {
 	return &PropertyElemType{
 		Name:     name,
