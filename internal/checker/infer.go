@@ -633,9 +633,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 				methodExpr := exprElem.(*ast.MethodExpr)
 				paramBindings := paramBindingsSlice[i]
-				if methodExpr.Fn.FuncSig.MutSelf != nil {
+				if methodExpr.MutSelf != nil {
 					var selfType Type = NewTypeRefType("Self", &selfTypeAlias)
-					if *methodExpr.Fn.FuncSig.MutSelf {
+					if *methodExpr.MutSelf {
 						selfType = NewMutableType(selfType)
 					}
 					paramBindings["self"] = &Binding{

@@ -524,10 +524,9 @@
                 TypeAnn:  nil,
             },
         },
-        Return:  nil,
-        Throws:  nil,
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Return: nil,
+        Throws: nil,
+        Async:  false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -785,10 +784,9 @@
                 TypeAnn:  nil,
             },
         },
-        Return:  nil,
-        Throws:  nil,
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Return: nil,
+        Throws: nil,
+        Async:  false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -1005,10 +1003,9 @@
                     },
                     Params: {
                     },
-                    Return:  nil,
-                    Throws:  nil,
-                    Async:   false,
-                    MutSelf: &bool(false),
+                    Return: nil,
+                    Throws: nil,
+                    Async:  false,
                 },
                 Body: &ast.Block{
                     Stmts: {
@@ -1049,7 +1046,8 @@
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
+            MutSelf: &bool(false),
+            span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:3},
                 End:      ast.Location{Line:1, Column:14},
                 SourceID: 0,
@@ -1073,10 +1071,9 @@
                     },
                     Params: {
                     },
-                    Return:  nil,
-                    Throws:  nil,
-                    Async:   false,
-                    MutSelf: &bool(false),
+                    Return: nil,
+                    Throws: nil,
+                    Async:  false,
                 },
                 Body: &ast.Block{
                     Stmts: {
@@ -1168,10 +1165,9 @@
                             TypeAnn:  nil,
                         },
                     },
-                    Return:  nil,
-                    Throws:  nil,
-                    Async:   false,
-                    MutSelf: &bool(true),
+                    Return: nil,
+                    Throws: nil,
+                    Async:  false,
                 },
                 Body: &ast.Block{
                     Stmts: {
@@ -2798,10 +2794,9 @@
                 TypeAnn:  nil,
             },
         },
-        Return:  nil,
-        Throws:  nil,
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Return: nil,
+        Throws: nil,
+        Async:  false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -6564,9 +6559,8 @@
             },
             inferredType: nil,
         },
-        Throws:  nil,
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Throws: nil,
+        Async:  false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -6715,8 +6709,7 @@
             },
             inferredType: nil,
         },
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Async: false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -6988,10 +6981,9 @@
                 },
             },
         },
-        Return:  nil,
-        Throws:  nil,
-        Async:   false,
-        MutSelf: (*bool)(nil),
+        Return: nil,
+        Throws: nil,
+        Async:  false,
     },
     Body: &ast.Block{
         Stmts: {
@@ -7138,10 +7130,9 @@
                     },
                     Params: {
                     },
-                    Return:  nil,
-                    Throws:  nil,
-                    Async:   false,
-                    MutSelf: (*bool)(nil),
+                    Return: nil,
+                    Throws: nil,
+                    Async:  false,
                 },
                 Body: &ast.Block{
                     Stmts: {
@@ -7182,7 +7173,8 @@
                 },
                 inferredType: nil,
             },
-            span: ast.Span{
+            MutSelf: (*bool)(nil),
+            span:    ast.Span{
                 Start:    ast.Location{Line:1, Column:3},
                 End:      ast.Location{Line:1, Column:10},
                 SourceID: 0,

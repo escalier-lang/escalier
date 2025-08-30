@@ -327,7 +327,6 @@ type FuncSig struct {
 	Return     TypeAnn // optional
 	Throws     TypeAnn // optional
 	Async      bool    // whether this is an async function
-	MutSelf    *bool   // nil = no self, true = mut self, false = self
 }
 
 type FuncExpr struct {
@@ -492,13 +491,14 @@ func (e *ConstructorExpr) Accept(v Visitor) {
 }
 
 type MethodExpr struct {
-	Name ObjKey
-	Fn   *FuncExpr
-	span Span
+	Name    ObjKey
+	Fn      *FuncExpr
+	MutSelf *bool // nil = no self, true = mut self, false = self
+	span    Span
 }
 
-func NewMethod(name ObjKey, fn *FuncExpr, span Span) *MethodExpr {
-	return &MethodExpr{Name: name, Fn: fn, span: span}
+func NewMethod(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *MethodExpr {
+	return &MethodExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
 }
 func (e *MethodExpr) Span() Span { return e.span }
 func (e *MethodExpr) Accept(v Visitor) {

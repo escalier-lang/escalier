@@ -614,16 +614,19 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			&body,
 			span,
 		)
-		fn.MutSelf = mutSelf
 
 		switch mod {
 		case "get":
+			// TODO: check that params is empty when using `get`
+			// and raise an error if it's not.
 			return ast.NewGetter(
 				objKey,
 				fn,
 				ast.MergeSpans(token.Span, span),
 			)
 		case "set":
+			// TODO: check that mutSelf is `true` when using `set`
+			// and raise an error if it's `false` or `nil`.
 			return ast.NewSetter(
 				objKey,
 				fn,
@@ -633,6 +636,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			return ast.NewMethod(
 				objKey,
 				fn,
+				mutSelf,
 				ast.MergeSpans(token.Span, span),
 			)
 		}

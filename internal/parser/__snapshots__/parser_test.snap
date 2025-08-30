@@ -126,10 +126,9 @@
                     TypeAnn:  nil,
                 },
             },
-            Return:  nil,
-            Throws:  nil,
-            Async:   false,
-            MutSelf: (*bool)(nil),
+            Return: nil,
+            Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -387,10 +386,9 @@
                         },
                         Params: {
                         },
-                        Return:  nil,
-                        Throws:  nil,
-                        Async:   false,
-                        MutSelf: (*bool)(nil),
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
                     },
                     Body: &ast.Block{
                         Stmts: {
@@ -692,10 +690,9 @@
                     TypeAnn:  nil,
                 },
             },
-            Return:  nil,
-            Throws:  nil,
-            Async:   false,
-            MutSelf: (*bool)(nil),
+            Return: nil,
+            Throws: nil,
+            Async:  false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1217,8 +1214,7 @@
                 },
                 inferredType: nil,
             },
-            Async:   false,
-            MutSelf: (*bool)(nil),
+            Async: false,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1458,9 +1454,8 @@
                 },
                 inferredType: nil,
             },
-            Throws:  nil,
-            Async:   true,
-            MutSelf: (*bool)(nil),
+            Throws: nil,
+            Async:  true,
         },
         Body: &ast.Block{
             Stmts: {
@@ -1858,9 +1853,8 @@
                 },
                 inferredType: nil,
             },
-            Throws:  nil,
-            Async:   true,
-            MutSelf: (*bool)(nil),
+            Throws: nil,
+            Async:  true,
         },
         Body:    &ast.Block{},
         export:  false,
@@ -1953,9 +1947,8 @@
                 },
                 inferredType: nil,
             },
-            Throws:  nil,
-            Async:   true,
-            MutSelf: (*bool)(nil),
+            Throws: nil,
+            Async:  true,
         },
         Body: &ast.Block{
             Stmts: {
@@ -2085,10 +2078,9 @@
                         TypeAnn:  nil,
                     },
                 },
-                Return:  nil,
-                Throws:  nil,
-                Async:   true,
-                MutSelf: (*bool)(nil),
+                Return: nil,
+                Throws: nil,
+                Async:  true,
             },
             Body: &ast.Block{
                 Stmts: {
@@ -2314,10 +2306,9 @@
                     TypeAnn:  nil,
                 },
             },
-            Return:  nil,
-            Throws:  nil,
-            Async:   true,
-            MutSelf: (*bool)(nil),
+            Return: nil,
+            Throws: nil,
+            Async:  true,
         },
         Body: &ast.Block{
             Stmts: {
