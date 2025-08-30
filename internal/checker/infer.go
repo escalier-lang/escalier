@@ -568,19 +568,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
 
-		// TODO: loop over all elems once to create an object type with a bunch
-		// of fresh type variables, then loop over them again to unify the types
-		// of each element.  The `self` parameter in methods will need to be
-		// unified with the object type itself.
 		typeElems := make([]ObjTypeElem, len(expr.Elems))
 		types := make([]Type, len(expr.Elems))
 		paramBindingsSlice := make([]map[string]*Binding, len(expr.Elems))
 
 		selfType := c.FreshVar()
-		selfTypeAlias := TypeAlias{
-			Type:       selfType,
-			TypeParams: []*TypeParam{},
-		}
+		selfTypeAlias := TypeAlias{Type: selfType, TypeParams: []*TypeParam{}}
 		objCtx.Scope.setTypeAlias("Self", &selfTypeAlias)
 
 		for i, elem := range expr.Elems {
@@ -590,20 +583,20 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				types[i] = t
 				typeElems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
 			case *ast.MethodExpr:
-				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 				paramBindingsSlice[i] = paramBindings
-				types[i] = t
-				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), t, elem.MutSelf)
+				types[i] = funcType
+				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), funcType, elem.MutSelf)
 			case *ast.GetterExpr:
-				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 				paramBindingsSlice[i] = paramBindings
-				types[i] = t
-				typeElems[i] = &GetterElemType{Fn: t, Name: astKeyToTypeKey(elem.Name)}
+				types[i] = funcType
+				typeElems[i] = &GetterElemType{Fn: funcType, Name: astKeyToTypeKey(elem.Name)}
 			case *ast.SetterExpr:
-				t, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 				paramBindingsSlice[i] = paramBindings
-				types[i] = t
-				typeElems[i] = &SetterElemType{Fn: t, Name: astKeyToTypeKey(elem.Name)}
+				types[i] = funcType
+				typeElems[i] = &SetterElemType{Fn: funcType, Name: astKeyToTypeKey(elem.Name)}
 			}
 		}
 
