@@ -811,6 +811,7 @@ type TypeDecl struct {
 	Name       *Identifier
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
+	Interface  bool
 	export     bool
 	declare    bool
 	span       *Span

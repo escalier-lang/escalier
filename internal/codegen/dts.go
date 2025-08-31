@@ -56,9 +56,9 @@ func (b *Builder) BuildDefinitions(
 					continue
 				}
 
-				stmt := b.buildDeclStmt(decl, moduleNS, true)
-				if stmt != nil {
-					stmts = append(stmts, stmt)
+				declStmts := b.buildDeclStmt(decl, moduleNS, true)
+				if len(declStmts) != 0 {
+					stmts = append(stmts, declStmts...)
 				}
 			}
 		} else {
@@ -76,9 +76,9 @@ func (b *Builder) BuildDefinitions(
 					// If the nested namespace doesn't exist, fall back to the module namespace
 					nestedNS = moduleNS
 				}
-				stmt := b.buildDeclStmt(decl, nestedNS, false)
-				if stmt != nil {
-					namespaceStmts = append(namespaceStmts, stmt)
+				declStmts := b.buildDeclStmt(decl, nestedNS, false)
+				if len(declStmts) != 0 {
+					namespaceStmts = append(namespaceStmts, declStmts...)
 				}
 			}
 
@@ -97,48 +97,70 @@ func (b *Builder) BuildDefinitions(
 }
 
 // buildDeclStmt creates a DeclStmt for a given declaration
-func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isTopLevel bool) Stmt {
+func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isTopLevel bool) []Stmt {
 	switch decl := decl.(type) {
 	case *ast.VarDecl:
 		keys := ast.FindBindings(decl.Pattern).ToSlice()
 		sort.Strings(keys)
 
-		decls := make([]*Declarator, 0, len(keys))
+		stmts := make([]Stmt, 0, len(keys))
 		for _, name := range keys {
-			// For .d.ts generation, use the unqualified name since the namespace
-			// structure is handled by the namespace declaration
 			binding := namespace.Values[name]
 			if binding == nil {
 				continue
 			}
 
 			localName := extractLocalName(name)
+			bindingType := type_sys.Prune(binding.Type)
 
-			typeAnn := buildTypeAnn(binding.Type)
-			decls = append(decls, &Declarator{
-				Pattern: NewIdentPat(localName, nil, nil),
-				TypeAnn: typeAnn,
-				Init:    nil,
+			var ifaceStmt *DeclStmt = nil
+			typeAnn := buildTypeAnn(bindingType)
+			if containsSelfTypeRef(bindingType) {
+				ifaceName := fmt.Sprintf("__%s_self__", localName)
+				ifaceType := replaceSelfWithThis(bindingType)
+				ifaceTypeAnn := buildTypeAnn(ifaceType)
+				ifaceDecl := &TypeDecl{
+					Name:       NewIdentifier(ifaceName, nil),
+					TypeParams: nil,
+					TypeAnn:    ifaceTypeAnn,
+					Interface:  true,
+					declare:    false, // intentionally not exported, even at the top level
+					export:     false,
+					span:       nil,
+					source:     nil,
+				}
+				ifaceStmt = &DeclStmt{
+					Decl:   ifaceDecl,
+					span:   nil,
+					source: nil,
+				}
+				typeAnn = NewRefTypeAnn(ifaceName, nil)
+			}
+
+			varDecl := &VarDecl{
+				Kind: VariableKind(decl.Kind),
+				Decls: []*Declarator{{
+					Pattern: NewIdentPat(localName, nil, nil),
+					TypeAnn: typeAnn,
+					Init:    nil,
+				}},
+				declare: isTopLevel,
+				export:  decl.Export(),
+				span:    nil,
+				source:  nil,
+			}
+
+			if ifaceStmt != nil {
+				stmts = append(stmts, ifaceStmt)
+			}
+			stmts = append(stmts, &DeclStmt{
+				Decl:   varDecl,
+				span:   nil,
+				source: nil,
 			})
 		}
 
-		if len(decls) == 0 {
-			return nil
-		}
-
-		varDecl := &VarDecl{
-			Kind:    VariableKind(decl.Kind),
-			Decls:   decls,
-			declare: isTopLevel, // Only add declare modifier for root namespace
-			export:  decl.Export(),
-			span:    nil,
-			source:  nil,
-		}
-		return &DeclStmt{
-			Decl:   varDecl,
-			span:   nil,
-			source: nil,
-		}
+		return stmts
 
 	case *ast.FuncDecl:
 		// For function declarations, the binding is stored with the function name
@@ -167,10 +189,12 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			span:    nil,
 			source:  nil,
 		}
-		return &DeclStmt{
-			Decl:   fnDecl,
-			span:   nil,
-			source: nil,
+		return []Stmt{
+			&DeclStmt{
+				Decl:   fnDecl,
+				span:   nil,
+				source: nil,
+			},
 		}
 
 	case *ast.TypeDecl:
@@ -209,15 +233,18 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			Name:       NewIdentifier(localName, decl.Name),
 			TypeParams: typeParams,
 			TypeAnn:    buildTypeAnn(typeAnnType),
+			Interface:  false,
 			declare:    isTopLevel, // Only add declare modifier for root namespace
 			export:     decl.Export(),
 			span:       nil,
 			source:     nil,
 		}
-		return &DeclStmt{
-			Decl:   typeDecl,
-			span:   nil,
-			source: nil,
+		return []Stmt{
+			&DeclStmt{
+				Decl:   typeDecl,
+				span:   nil,
+				source: nil,
+			},
 		}
 
 	default:

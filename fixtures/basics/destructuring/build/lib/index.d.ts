@@ -1,4 +1,10 @@
 declare const obj: {a: true, b: false, c: 0, e: "foo", f: "bar", g: "baz"};
-export declare const a: true, b: false, d: 0, f: "foo", rest: {f: "bar", g: "baz"};
+export declare const a: true;
+export declare const b: false;
+export declare const d: 0;
+export declare const f: "foo";
+export declare const rest: {f: "bar", g: "baz"};
 declare const array: [5, 10, "foo", "bar"];
-export declare const other: ["foo", "bar"], x: 5, y: 10;
+export declare const other: ["foo", "bar"];
+export declare const x: 5;
+export declare const y: 10;

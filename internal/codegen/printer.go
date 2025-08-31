@@ -99,7 +99,12 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *LitExpr:
 		p.PrintLit(e.Lit)
 	case *IdentExpr:
-		p.print(fullyQualifyName(e.Name, e.Namespace))
+		// Convert 'self' to 'this' inside methods
+		if e.Name == "self" {
+			p.print("this")
+		} else {
+			p.print(fullyQualifyName(e.Name, e.Namespace))
+		}
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)
@@ -418,7 +423,11 @@ func (p *Printer) PrintDecl(decl Decl) {
 			p.print(";")
 		}
 	case *TypeDecl:
-		p.print("type ")
+		if d.Interface {
+			p.print("interface ")
+		} else {
+			p.print("type ")
+		}
 		p.print(d.Name.Name)
 		if len(d.TypeParams) > 0 {
 			p.print("<")
@@ -437,9 +446,13 @@ func (p *Printer) PrintDecl(decl Decl) {
 				}
 			}
 		}
-		p.print(" = ")
+		if !d.Interface {
+			p.print(" = ")
+		}
 		p.PrintTypeAnn(d.TypeAnn)
-		p.print(";")
+		if !d.Interface {
+			p.print(";")
+		}
 	case *NamespaceDecl:
 		p.print("namespace ")
 		p.print(d.Name.Name)
