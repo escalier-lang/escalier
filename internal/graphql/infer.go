@@ -48,6 +48,30 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 	// Helper to recursively infer the type of a selection set
 	var inferSelectionSet func(parentType *ast.Definition, selSet ast.SelectionSet) Type
 	inferSelectionSet = func(parentType *ast.Definition, selSet ast.SelectionSet) Type {
+		// Helper to process union types with inline fragments
+		inferUnionType := func(unionDef *ast.Definition, selectionSet ast.SelectionSet) Type {
+			var unionTypes []Type
+			// Collect inline fragments from the selection set
+			unionInlineFragments := make(map[string]ast.SelectionSet)
+			for _, sel := range selectionSet {
+				if frag, ok := sel.(*ast.InlineFragment); ok && frag.TypeCondition != "" {
+					unionInlineFragments[frag.TypeCondition] = frag.SelectionSet
+				}
+			}
+			for _, t := range unionDef.Types {
+				typeDef := schema.Types[t]
+				if typeDef == nil {
+					continue
+				}
+				selSetForType, ok := unionInlineFragments[t]
+				if !ok {
+					selSetForType = ast.SelectionSet{}
+				}
+				unionTypes = append(unionTypes, inferSelectionSet(typeDef, selSetForType))
+			}
+			return NewUnionType(unionTypes...)
+		}
+
 		var elems []ObjTypeElem
 		// Collect inline fragments by type condition
 		inlineFragments := make(map[string]ast.SelectionSet)
@@ -68,44 +92,54 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 			if fieldDef == nil {
 				continue // skip unknown fields
 			}
-			fieldTypeDef := schema.Types[fieldDef.Type.Name()]
-			var fieldType Type
-			if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
-				// Recursively infer subfields for object types
-				fieldType = inferSelectionSet(fieldTypeDef, field.SelectionSet)
 
-				// Check if this object field is nullable and add | null if so
+			var fieldType Type
+
+			// Check if the field type is a list
+			if fieldDef.Type.Elem != nil {
+				// This is a list type - get the element type
+				elemTypeName := fieldDef.Type.Elem.Name()
+				elemTypeDef := schema.Types[elemTypeName]
+				var elemType Type
+
+				if elemTypeDef != nil && elemTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
+					// Recursively infer subfields for object element types
+					elemType = inferSelectionSet(elemTypeDef, field.SelectionSet)
+				} else if elemTypeDef != nil && elemTypeDef.Kind == ast.Union && len(field.SelectionSet) > 0 {
+					// Handle union element types with inline fragments
+					elemType = inferUnionType(elemTypeDef, field.SelectionSet)
+				} else {
+					// Use InferGraphQLType to handle the element type conversion
+					elemType = InferGraphQLType(schema, fieldDef.Type.Elem)
+				}
+
+				// Wrap in Array type
+				fieldType = NewTypeRefType("Array", nil, elemType)
+
+				// Check if the list itself is nullable
 				if !fieldDef.Type.NonNull {
 					nullType := NewLitType(&NullLit{})
 					fieldType = NewUnionType(fieldType, nullType)
 				}
-			} else if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Union {
-				// For unions, always use the field's selection set (not the selection set of the field node)
-				// so that inline fragments are visible and can be matched
-				def := fieldTypeDef
-				var unionTypes []Type
-				// Collect inline fragments from the field's selection set
-				unionInlineFragments := make(map[string]ast.SelectionSet)
-				for _, sel := range field.SelectionSet {
-					if frag, ok := sel.(*ast.InlineFragment); ok && frag.TypeCondition != "" {
-						unionInlineFragments[frag.TypeCondition] = frag.SelectionSet
-					}
-				}
-				for _, t := range def.Types {
-					unionDef := schema.Types[t]
-					if unionDef == nil {
-						continue
-					}
-					selSetForType, ok := unionInlineFragments[t]
-					if !ok {
-						selSetForType = ast.SelectionSet{}
-					}
-					unionTypes = append(unionTypes, inferSelectionSet(unionDef, selSetForType))
-				}
-				fieldType = NewUnionType(unionTypes...)
 			} else {
-				// Use InferGraphQLType to handle the field type conversion
-				fieldType = InferGraphQLType(schema, fieldDef.Type)
+				// Not a list type - handle as before
+				fieldTypeDef := schema.Types[fieldDef.Type.Name()]
+				if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
+					// Recursively infer subfields for object types
+					fieldType = inferSelectionSet(fieldTypeDef, field.SelectionSet)
+
+					// Check if this object field is nullable and add | null if so
+					if !fieldDef.Type.NonNull {
+						nullType := NewLitType(&NullLit{})
+						fieldType = NewUnionType(fieldType, nullType)
+					}
+				} else if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Union {
+					// For unions, use the field's selection set for inline fragments
+					fieldType = inferUnionType(fieldTypeDef, field.SelectionSet)
+				} else {
+					// Use InferGraphQLType to handle the field type conversion
+					fieldType = InferGraphQLType(schema, fieldDef.Type)
+				}
 			}
 
 			// Check if the field is nullable (not non-null) for property optionality

@@ -1,6 +1,6 @@
 
 [TestInferGraphQLQuery_GetUserAndPosts - 1]
-{getUser?: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string, phone?: string | null}, posts: {id: ID, title: string, content?: string | null, comments: {id: ID, message: string, author: {id: ID, name: string}}}} | null}
+{getUser?: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string, phone?: string | null}, posts: Array<{id: ID, title: string, content?: string | null, comments: Array<{id: ID, message: string, author: {id: ID, name: string}}>}>} | null}
 ---
 
 [TestInferGraphQLQuery_GetUserAndPosts - 2]
@@ -16,9 +16,73 @@
 ---
 
 [TestInferGraphQLQuery_SearchContentWithUnion - 1]
-{search: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string}} | {id: ID, title: string, content?: string | null, author: {name: string, role: "ADMIN" | "USER" | "GUEST"}} | {id: ID, message: string, author: {name: string}, post: {title: string}}}
+{search: Array<{id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string}} | {id: ID, title: string, content?: string | null, author: {name: string, role: "ADMIN" | "USER" | "GUEST"}} | {id: ID, message: string, author: {name: string}, post: {title: string}}>}
 ---
 
 [TestInferGraphQLQuery_SearchContentWithUnion - 2]
 {searchTerm: string}
+---
+
+[TestInferGraphQLQuery_ScalarTypes - 1]
+{node?: Node | null}
+---
+
+[TestInferGraphQLQuery_ScalarTypes - 2]
+{nodeId: ID}
+---
+
+[TestInferGraphQLQuery_ListTypes - 1]
+{listPosts: Array<{id: ID, title: string, content?: string | null, comments: Array<{id: ID, message: string}>}>}
+---
+
+[TestInferGraphQLQuery_ListTypes - 2]
+{offset?: number | null, limit?: number | null, commentLimit?: number | null}
+---
+
+[TestInferGraphQLQuery_InputObjectTypes - 1]
+{createPost: {id: ID, title: string, content?: string | null, metadata?: JSON | null, author: {id: ID, name: string}}}
+---
+
+[TestInferGraphQLQuery_InputObjectTypes - 2]
+{postData: {title: string, content?: string | null, metadata?: JSON | null}}
+---
+
+[TestInferGraphQLQuery_SubscriptionTypes - 1]
+{postCreated: {id: ID, title: string, author: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST"}}}
+---
+
+[TestInferGraphQLQuery_SubscriptionTypes - 2]
+{}
+---
+
+[TestInferGraphQLQuery_InterfaceTypes - 1]
+{node?: Node | null}
+---
+
+[TestInferGraphQLQuery_InterfaceTypes - 2]
+{nodeId: ID}
+---
+
+[TestInferGraphQLQuery_NullableFields - 1]
+{getUser?: {id: ID, name: string, contactInfo: {email: string, phone?: string | null}, posts: Array<{id: ID, title: string, content?: string | null, metadata?: JSON | null}>} | null}
+---
+
+[TestInferGraphQLQuery_NullableFields - 2]
+{postId: ID}
+---
+
+[TestInferGraphQLQuery_ComplexMutation - 1]
+{updateUserRole: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string, phone?: string | null}}, createPost: {id: ID, title: string, content?: string | null, metadata?: JSON | null, author: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST"}}}
+---
+
+[TestInferGraphQLQuery_ComplexMutation - 2]
+{userId: ID, newRole: "ADMIN" | "USER" | "GUEST", postInput: {title: string, content?: string | null, metadata?: JSON | null}}
+---
+
+[TestInferGraphQLQuery_SubscriptionWithVariables - 1]
+{commentAdded: {id: ID, message: string, author: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST"}, post: {id: ID, title: string}}}
+---
+
+[TestInferGraphQLQuery_SubscriptionWithVariables - 2]
+{postId: ID}
 ---
