@@ -184,21 +184,6 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 
 // InferGraphQLType converts a GraphQL type definition to an Escalier type
 func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
-	// Handle list types
-	if gqlType.Elem != nil {
-		elemType := InferGraphQLType(schema, gqlType.Elem)
-		// For GraphQL lists, we can represent them as arrays/tuples
-		// For now, let's use a simple array representation
-		arrayType := NewTypeRefType("Array<"+elemType.String()+">", nil)
-
-		// If this list type is nullable (NonNull is false), create union with null
-		if !gqlType.NonNull {
-			nullType := NewLitType(&NullLit{})
-			return NewUnionType(arrayType, nullType)
-		}
-		return arrayType
-	}
-
 	// Handle named types
 	if gqlType.NamedType != "" {
 		var baseType Type
@@ -263,5 +248,5 @@ func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
 	}
 
 	// Fallback - should not reach here in normal cases
-	return NewTypeRefType("Unknown", nil)
+	panic("unexpected GraphQL type structure")
 }
