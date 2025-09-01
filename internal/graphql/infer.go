@@ -1,9 +1,19 @@
 package graphql
 
 import (
+	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/vektah/gqlparser/v2/ast"
+	gqlast "github.com/vektah/gqlparser/v2/ast"
 )
+
+// GraphQLProvenance tracks the source of a type from GraphQL schema/query
+type GraphQLProvenance struct {
+	Position *gqlast.Position
+}
+
+func (*GraphQLProvenance) IsProvenance() {}
+
+var _ provenance.Provenance = (*GraphQLProvenance)(nil)
 
 // GraphQLInferenceResult contains the inferred types for a GraphQL operation
 type GraphQLInferenceResult struct {
@@ -11,29 +21,162 @@ type GraphQLInferenceResult struct {
 	VariablesType Type
 }
 
+// inferUnionType processes union types with inline fragments
+func inferUnionType(schema *gqlast.Schema, unionDef *gqlast.Definition, selectionSet gqlast.SelectionSet) Type {
+	var unionTypes []Type
+	// Collect inline fragments from the selection set
+	unionInlineFragments := make(map[string]gqlast.SelectionSet)
+	for _, sel := range selectionSet {
+		if frag, ok := sel.(*gqlast.InlineFragment); ok && frag.TypeCondition != "" {
+			unionInlineFragments[frag.TypeCondition] = frag.SelectionSet
+		}
+	}
+	for _, t := range unionDef.Types {
+		typeDef := schema.Types[t]
+		if typeDef == nil {
+			continue
+		}
+		selSetForType, ok := unionInlineFragments[t]
+		if !ok {
+			selSetForType = gqlast.SelectionSet{}
+		}
+		unionTypes = append(unionTypes, inferSelectionSet(schema, typeDef, selSetForType))
+	}
+	unionType := NewUnionType(unionTypes...)
+	// Set provenance for the union type
+	provenance := &GraphQLProvenance{
+		Position: unionDef.Position,
+	}
+	return unionType.WithProvenance(provenance)
+}
+
+// inferSelectionSet recursively infers the type of a GraphQL selection set
+func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, selSet gqlast.SelectionSet) Type {
+	var elems []ObjTypeElem
+
+	// Collect inline fragments by type condition
+	inlineFragments := make(map[string]gqlast.SelectionSet)
+	var otherFields []gqlast.Selection
+
+	for _, sel := range selSet {
+		switch frag := sel.(type) {
+		case *gqlast.InlineFragment:
+			if frag.TypeCondition != "" {
+				inlineFragments[frag.TypeCondition] = frag.SelectionSet
+			}
+		case *gqlast.Field:
+			otherFields = append(otherFields, sel)
+		}
+	}
+
+	for _, sel := range otherFields {
+		field := sel.(*gqlast.Field)
+		fieldDef := schema.Types[parentType.Name].Fields.ForName(field.Name)
+		if fieldDef == nil {
+			continue // skip unknown fields
+		}
+
+		var fieldType Type
+
+		// Check if the field type is a list
+		if fieldDef.Type.Elem != nil {
+			// This is a list type - get the element type
+			elemTypeName := fieldDef.Type.Elem.Name()
+			elemTypeDef := schema.Types[elemTypeName]
+			var elemType Type
+
+			if elemTypeDef != nil && elemTypeDef.Kind == gqlast.Object && len(field.SelectionSet) > 0 {
+				// Recursively infer subfields for object element types
+				elemType = inferSelectionSet(schema, elemTypeDef, field.SelectionSet)
+			} else if elemTypeDef != nil && elemTypeDef.Kind == gqlast.Union && len(field.SelectionSet) > 0 {
+				// Handle union element types with inline fragments
+				elemType = inferUnionType(schema, elemTypeDef, field.SelectionSet)
+			} else {
+				// Use InferGraphQLType to handle the element type conversion
+				elemType = InferGraphQLType(schema, fieldDef.Type.Elem)
+			}
+
+			// Wrap in Array type
+			arrayType := NewTypeRefType("Array", nil, elemType)
+			fieldType = arrayType.WithProvenance(&GraphQLProvenance{
+				Position: field.Position,
+			})
+
+			// Check if the list itself is nullable
+			if !fieldDef.Type.NonNull {
+				nullType := NewLitType(&NullLit{})
+				fieldType = NewUnionType(fieldType, nullType).WithProvenance(&GraphQLProvenance{
+					Position: fieldDef.Position,
+				})
+			}
+		} else {
+			// Not a list type - handle as before
+			fieldTypeDef := schema.Types[fieldDef.Type.Name()]
+			if fieldTypeDef != nil && fieldTypeDef.Kind == gqlast.Object && len(field.SelectionSet) > 0 {
+				// Recursively infer subfields for object types
+				fieldType = inferSelectionSet(schema, fieldTypeDef, field.SelectionSet)
+
+				// Check if this object field is nullable and add | null if so
+				if !fieldDef.Type.NonNull {
+					nullType := NewLitType(&NullLit{})
+					fieldType = NewUnionType(fieldType, nullType).WithProvenance(&GraphQLProvenance{
+						Position: fieldDef.Position,
+					})
+				}
+			} else if fieldTypeDef != nil && fieldTypeDef.Kind == gqlast.Union {
+				// For unions, use the field's selection set for inline fragments
+				fieldType = inferUnionType(schema, fieldTypeDef, field.SelectionSet)
+			} else {
+				// Use InferGraphQLType to handle the field type conversion
+				fieldType = InferGraphQLType(schema, fieldDef.Type)
+			}
+		}
+
+		// Check if the field is nullable (not non-null) for property optionality
+		isNullable := !fieldDef.Type.NonNull
+
+		// Create property element with optional flag for nullable fields
+		propertyElem := &PropertyElemType{
+			Name:     NewStrKey(field.Name),
+			Optional: isNullable,
+			Readonly: false,
+			Value:    fieldType,
+		}
+		elems = append(elems, propertyElem)
+	}
+
+	objType := NewObjectType(elems)
+	// Set provenance for the object type from selection set
+	provenance := &GraphQLProvenance{
+		Position: parentType.Position,
+	}
+
+	return objType.WithProvenance(provenance)
+}
+
 // InferGraphQLQuery infers the types for a GraphQL query operation
-func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQLInferenceResult {
+func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQLInferenceResult {
 
 	// Only handle the first operation for now
-	if len(queryDoc.Operations) == 0 {
+	if len(doc.Operations) == 0 {
 		panic("no operations in query document")
 	}
-	op := queryDoc.Operations[0]
+	op := doc.Operations[0]
 
 	// Find the root type for the operation (query/mutation/subscription)
-	var rootType *ast.Definition
+	var rootType *gqlast.Definition
 	switch op.Operation {
-	case ast.Query:
+	case gqlast.Query:
 		if schema.Query == nil {
 			panic("schema.Query is nil")
 		}
 		rootType = schema.Query
-	case ast.Mutation:
+	case gqlast.Mutation:
 		if schema.Mutation == nil {
 			panic("schema.Mutation is nil")
 		}
 		rootType = schema.Mutation
-	case ast.Subscription:
+	case gqlast.Subscription:
 		if schema.Subscription == nil {
 			panic("schema.Subscription is nil")
 		}
@@ -45,120 +188,8 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 		panic("root type not found in schema")
 	}
 
-	// Helper to recursively infer the type of a selection set
-	var inferSelectionSet func(parentType *ast.Definition, selSet ast.SelectionSet) Type
-	inferSelectionSet = func(parentType *ast.Definition, selSet ast.SelectionSet) Type {
-		// Helper to process union types with inline fragments
-		inferUnionType := func(unionDef *ast.Definition, selectionSet ast.SelectionSet) Type {
-			var unionTypes []Type
-			// Collect inline fragments from the selection set
-			unionInlineFragments := make(map[string]ast.SelectionSet)
-			for _, sel := range selectionSet {
-				if frag, ok := sel.(*ast.InlineFragment); ok && frag.TypeCondition != "" {
-					unionInlineFragments[frag.TypeCondition] = frag.SelectionSet
-				}
-			}
-			for _, t := range unionDef.Types {
-				typeDef := schema.Types[t]
-				if typeDef == nil {
-					continue
-				}
-				selSetForType, ok := unionInlineFragments[t]
-				if !ok {
-					selSetForType = ast.SelectionSet{}
-				}
-				unionTypes = append(unionTypes, inferSelectionSet(typeDef, selSetForType))
-			}
-			return NewUnionType(unionTypes...)
-		}
-
-		var elems []ObjTypeElem
-		// Collect inline fragments by type condition
-		inlineFragments := make(map[string]ast.SelectionSet)
-		var otherFields []ast.Selection
-		for _, sel := range selSet {
-			switch frag := sel.(type) {
-			case *ast.InlineFragment:
-				if frag.TypeCondition != "" {
-					inlineFragments[frag.TypeCondition] = frag.SelectionSet
-				}
-			case *ast.Field:
-				otherFields = append(otherFields, sel)
-			}
-		}
-		for _, sel := range otherFields {
-			field := sel.(*ast.Field)
-			fieldDef := schema.Types[parentType.Name].Fields.ForName(field.Name)
-			if fieldDef == nil {
-				continue // skip unknown fields
-			}
-
-			var fieldType Type
-
-			// Check if the field type is a list
-			if fieldDef.Type.Elem != nil {
-				// This is a list type - get the element type
-				elemTypeName := fieldDef.Type.Elem.Name()
-				elemTypeDef := schema.Types[elemTypeName]
-				var elemType Type
-
-				if elemTypeDef != nil && elemTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
-					// Recursively infer subfields for object element types
-					elemType = inferSelectionSet(elemTypeDef, field.SelectionSet)
-				} else if elemTypeDef != nil && elemTypeDef.Kind == ast.Union && len(field.SelectionSet) > 0 {
-					// Handle union element types with inline fragments
-					elemType = inferUnionType(elemTypeDef, field.SelectionSet)
-				} else {
-					// Use InferGraphQLType to handle the element type conversion
-					elemType = InferGraphQLType(schema, fieldDef.Type.Elem)
-				}
-
-				// Wrap in Array type
-				fieldType = NewTypeRefType("Array", nil, elemType)
-
-				// Check if the list itself is nullable
-				if !fieldDef.Type.NonNull {
-					nullType := NewLitType(&NullLit{})
-					fieldType = NewUnionType(fieldType, nullType)
-				}
-			} else {
-				// Not a list type - handle as before
-				fieldTypeDef := schema.Types[fieldDef.Type.Name()]
-				if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
-					// Recursively infer subfields for object types
-					fieldType = inferSelectionSet(fieldTypeDef, field.SelectionSet)
-
-					// Check if this object field is nullable and add | null if so
-					if !fieldDef.Type.NonNull {
-						nullType := NewLitType(&NullLit{})
-						fieldType = NewUnionType(fieldType, nullType)
-					}
-				} else if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Union {
-					// For unions, use the field's selection set for inline fragments
-					fieldType = inferUnionType(fieldTypeDef, field.SelectionSet)
-				} else {
-					// Use InferGraphQLType to handle the field type conversion
-					fieldType = InferGraphQLType(schema, fieldDef.Type)
-				}
-			}
-
-			// Check if the field is nullable (not non-null) for property optionality
-			isNullable := !fieldDef.Type.NonNull
-
-			// Create property element with optional flag for nullable fields
-			propertyElem := &PropertyElemType{
-				Name:     NewStrKey(field.Name),
-				Optional: isNullable,
-				Readonly: false,
-				Value:    fieldType,
-			}
-			elems = append(elems, propertyElem)
-		}
-		return NewObjectType(elems)
-	}
-
 	// Infer the result type from the selection set
-	resultType := inferSelectionSet(rootType, op.SelectionSet)
+	resultType := inferSelectionSet(schema, rootType, op.SelectionSet)
 
 	// Infer the variables type from the operation's variable definitions
 	var variablesElems []ObjTypeElem
@@ -174,7 +205,9 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 		}
 		variablesElems = append(variablesElems, propertyElem)
 	}
-	variablesType := NewObjectType(variablesElems)
+	variablesType := NewObjectType(variablesElems).WithProvenance(&GraphQLProvenance{
+		Position: op.Position,
+	})
 
 	return &GraphQLInferenceResult{
 		ResultType:    resultType,
@@ -183,35 +216,50 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 }
 
 // InferGraphQLType converts a GraphQL type definition to an Escalier type
-func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
+func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 	// Handle named types
 	if gqlType.NamedType != "" {
 		var baseType Type
 		switch gqlType.NamedType {
 		case "String":
-			baseType = NewStrType()
+			baseType = NewStrType().WithProvenance(&GraphQLProvenance{
+				Position: gqlType.Position,
+			})
 		case "Int", "Float":
-			baseType = NewNumType()
+			baseType = NewNumType().WithProvenance(&GraphQLProvenance{
+				Position: gqlType.Position,
+			})
 		case "Boolean":
-			baseType = NewBoolType()
+			baseType = NewBoolType().WithProvenance(&GraphQLProvenance{
+				Position: gqlType.Position,
+			})
 		case "ID":
 			// Keep ID as a type reference to preserve the ID semantics
-			baseType = NewTypeRefType("ID", nil)
+			baseType = NewTypeRefType("ID", nil).WithProvenance(&GraphQLProvenance{
+				Position: gqlType.Position,
+			})
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {
 				switch typeDef.Kind {
-				case ast.Enum:
+				case gqlast.Enum:
 					// Expand enums as a union of string literal types
 					var enumTypes []Type
 					for _, v := range typeDef.EnumValues {
-						enumTypes = append(enumTypes, NewLitType(&StrLit{Value: v.Name}))
+						enumType := NewLitType(&StrLit{Value: v.Name}).WithProvenance(&GraphQLProvenance{
+							Position: v.Position,
+						})
+						enumTypes = append(enumTypes, enumType)
 					}
-					baseType = NewUnionType(enumTypes...)
-				case ast.Scalar:
+					baseType = NewUnionType(enumTypes...).WithProvenance(&GraphQLProvenance{
+						Position: typeDef.Position,
+					})
+				case gqlast.Scalar:
 					// For custom scalars, fall back to the base type or use a type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-				case ast.InputObject:
+					baseType = NewTypeRefType(gqlType.NamedType, nil).WithProvenance(&GraphQLProvenance{
+						Position: typeDef.Position,
+					})
+				case gqlast.InputObject:
 					// For input objects, create an object type with all fields
 					var elems []ObjTypeElem
 					for _, field := range typeDef.Fields {
@@ -225,24 +273,34 @@ func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
 						}
 						elems = append(elems, propertyElem)
 					}
-					baseType = NewObjectType(elems)
-				case ast.Object, ast.Interface, ast.Union:
+					baseType = NewObjectType(elems).WithProvenance(&GraphQLProvenance{
+						Position: typeDef.Position,
+					})
+				case gqlast.Object, gqlast.Interface, gqlast.Union:
 					// For other types (Object, Interface, Union), use type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
+					baseType = NewTypeRefType(gqlType.NamedType, nil).WithProvenance(&GraphQLProvenance{
+						Position: typeDef.Position,
+					})
 				default:
 					// Fallback for any other types
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
+					baseType = NewTypeRefType(gqlType.NamedType, nil).WithProvenance(&GraphQLProvenance{
+						Position: typeDef.Position,
+					})
 				}
 			} else {
 				// Fallback to type reference for unknown types
-				baseType = NewTypeRefType(gqlType.NamedType, nil)
+				baseType = NewTypeRefType(gqlType.NamedType, nil).WithProvenance(&GraphQLProvenance{
+					Position: gqlType.Position,
+				})
 			}
 		}
 
 		// If the type is nullable (NonNull is false), create union with null
 		if !gqlType.NonNull {
 			nullType := NewLitType(&NullLit{})
-			return NewUnionType(baseType, nullType)
+			return NewUnionType(baseType, nullType).WithProvenance(&GraphQLProvenance{
+				Position: gqlType.Position,
+			})
 		}
 		return baseType
 	}
