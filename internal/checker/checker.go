@@ -2,10 +2,12 @@ package checker
 
 import (
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Checker struct {
-	ID int
+	ID     int
+	Schema *ast.Schema
 }
 
 func NewChecker() *Checker {

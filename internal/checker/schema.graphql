@@ -1,0 +1,96 @@
+schema {
+    query: Query
+    mutation: Mutation
+    subscription: Subscription
+}
+
+# Scalars
+scalar DateTime
+scalar JSON
+
+# Enum
+enum Role {
+    ADMIN
+    USER
+    GUEST
+}
+
+# Interface
+interface Node {
+    id: ID!
+    createdAt: DateTime!
+}
+
+# Union
+union SearchResult = User | Post | Comment
+
+# Object types
+type User implements Node {
+    id: ID!
+    createdAt: DateTime!
+    name: String!
+    email: String! @deprecated(reason: "Use 'contactInfo' instead")
+    contactInfo: ContactInfo!
+    role: Role!
+    posts: [Post!]!
+}
+
+type Post implements Node {
+    id: ID!
+    createdAt: DateTime!
+    title: String!
+    content: String
+    author: User!
+    comments(limit: Int = 10): [Comment!]!
+    metadata: JSON
+}
+
+type Comment implements Node {
+    id: ID!
+    createdAt: DateTime!
+    message: String!
+    author: User!
+    post: Post!
+}
+
+# Embedded type
+type ContactInfo {
+    email: String!
+    phone: String
+}
+
+# Input types
+input PostInput {
+    title: String!
+    content: String
+    metadata: JSON
+}
+
+input CommentInput {
+    postId: ID!
+    message: String!
+}
+
+# Query
+type Query {
+    node(id: ID!): Node
+    search(text: String!): [SearchResult!]!
+    getUser(id: ID!): User
+    listPosts(offset: Int = 0, limit: Int = 20): [Post!]!
+}
+
+# Mutation
+type Mutation {
+    createPost(input: PostInput!): Post!
+    addComment(input: CommentInput!): Comment!
+    updateUserRole(userId: ID!, role: Role!): User!
+}
+
+# Subscription
+type Subscription {
+    postCreated: Post!
+    commentAdded(postId: ID!): Comment!
+}
+
+# Custom directive definition
+directive @auth(requires: Role = USER) on FIELD_DEFINITION | OBJECT

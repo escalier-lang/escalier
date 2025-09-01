@@ -3,6 +3,7 @@ package checker
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	. "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/btree"
+	"github.com/vektah/gqlparser/v2"
+	graphql_ast "github.com/vektah/gqlparser/v2/ast"
 )
 
 func TestCheckScriptNoErrors(t *testing.T) {
@@ -165,6 +168,24 @@ func TestCheckScriptNoErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func loadSchema(t *testing.T) *graphql_ast.Schema {
+	// Read schema.graphql from disk
+	schemaBytes, err := os.ReadFile("schema.graphql")
+	if err != nil {
+		t.Fatalf("failed to read schema.graphql: %v", err)
+	}
+	schemaStr := string(schemaBytes)
+
+	// Convert SchemaDocument into a usable schema.
+	schema := gqlparser.MustLoadSchema(&graphql_ast.Source{
+		Name:    "schema.graphql",
+		Input:   schemaStr,
+		BuiltIn: false,
+	})
+
+	return schema
 }
 
 func TestCheckModuleNoErrors(t *testing.T) {
@@ -469,7 +490,51 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		// TODO:
 		// - declare variables within a function body
 		// - scope shadowing
+		"FuncCall": {
+			input: `
+				val add = fn (x: number, y: number) {
+					return x + y
+				}
+				val result = add(1, 2)
+			`,
+			expectedTypes: map[string]string{
+				"add":    "fn (x: number, y: number) -> number throws never",
+				"result": "number",
+			},
+		},
+		"FuncCallWithRestArgs": {
+			input: `
+				val add = fn (x: number, y: number, ...rest: Array<number>) {
+					return x + y + rest.length
+				}
+				val result1 = add(1, 2, 3, 4)
+				val result2 = add(1, 2)
+			`,
+			expectedTypes: map[string]string{
+				"add":     "fn (x: number, y: number, ...rest: Array<number>) -> number throws never",
+				"result1": "number",
+				"result2": "number",
+			},
+		},
+		"PropertiesOnArrays": {
+			input: `
+				val arr: Array<number> = [1, 2, 3]
+				val len = arr.length
+			`,
+			expectedTypes: map[string]string{
+				"arr": "Array<number>",
+				"len": "number",
+			},
+		},
+		"TaggedTemplateLiteral": {
+			input: "val id = 5\nval query = gql`query UserQuery { getUser(id: ${id}) { id name } }`",
+			expectedTypes: map[string]string{
+				"query": "TypedDocumentNode<{getUser?: {id: ID, name: string} | null}, {}>",
+			},
+		},
 	}
+
+	schema := loadSchema(t)
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -497,6 +562,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c := NewChecker()
+			c.Schema = schema
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
