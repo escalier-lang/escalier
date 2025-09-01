@@ -10,7 +10,10 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/graphql"
 	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/validator/rules"
 )
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
@@ -371,6 +374,95 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	return errors
 }
 
+func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (Type, []Error) {
+	errors := []Error{}
+	calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
+	errors = slices.Concat(errors, calleeErrors)
+
+	argTypes := make([]Type, len(expr.Args))
+	for i, arg := range expr.Args {
+		argType, argErrors := c.inferExpr(ctx, arg)
+		errors = slices.Concat(errors, argErrors)
+		argTypes[i] = argType
+	}
+
+	// TODO: handle calleeType being a ObjType with callable signature, etc.
+	// TODO: handle generic functions
+	if fnType, ok := calleeType.(*FuncType); ok {
+		// Find if the function has a rest parameter
+		var restIndex = -1
+		for i, param := range fnType.Params {
+			if param.Pattern != nil {
+				if _, isRest := param.Pattern.(*RestPat); isRest {
+					restIndex = i
+					break
+				}
+			}
+		}
+
+		if restIndex != -1 {
+			// Function has rest parameters
+			// Must have at least as many args as required parameters (before rest)
+			if len(expr.Args) < restIndex {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnType,
+					Args:   expr.Args,
+				}}
+			}
+
+			// Unify fixed parameters (before rest)
+			for i := 0; i < restIndex; i++ {
+				argType := argTypes[i]
+				paramType := fnType.Params[i].Type
+				paramErrors := c.unify(ctx, argType, paramType)
+				errors = slices.Concat(errors, paramErrors)
+			}
+
+			// Unify rest arguments with rest parameter type
+			if len(expr.Args) > restIndex {
+				restParam := fnType.Params[restIndex]
+				// Rest parameter should be Array<T>, extract T
+				if arrayType, ok := restParam.Type.(*TypeRefType); ok && arrayType.Name == "Array" && len(arrayType.TypeArgs) > 0 {
+					elementType := arrayType.TypeArgs[0]
+					// Unify each excess argument with the element type
+					for i := restIndex; i < len(expr.Args); i++ {
+						argType := argTypes[i]
+						paramErrors := c.unify(ctx, argType, elementType)
+						errors = slices.Concat(errors, paramErrors)
+					}
+				} else {
+					// Rest parameter is not Array<T>, this is an error
+					return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+						Callee: fnType,
+						Args:   expr.Args,
+					}}
+				}
+			}
+
+			return fnType.Return, errors
+		} else {
+			// Function has no rest parameters, use strict equality check
+			if len(fnType.Params) != len(expr.Args) {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnType,
+					Args:   expr.Args,
+				}}
+			} else {
+				for argType, param := range Zip(argTypes, fnType.Params) {
+					paramType := param.Type
+					paramErrors := c.unify(ctx, argType, paramType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+
+				return fnType.Return, errors
+			}
+		}
+	} else {
+		return NewNeverType(), []Error{
+			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+	}
+}
+
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 	var resultType Type
 	var errors []Error
@@ -480,43 +572,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			}}
 		}
 	case *ast.CallExpr:
-		errors = []Error{}
-		calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
-		errors = slices.Concat(errors, calleeErrors)
-
-		argTypes := make([]Type, len(expr.Args))
-		for i, arg := range expr.Args {
-			argType, argErrors := c.inferExpr(ctx, arg)
-			errors = slices.Concat(errors, argErrors)
-			argTypes[i] = argType
-		}
-
-		// TODO: handle calleeType being something other than a function, e.g.
-		// TypeRef, ObjType with callable signature, etc.
-		// TODO: handle generic functions
-		// TODO: extract this into a unifyCall method
-		if fnType, ok := calleeType.(*FuncType); ok {
-			// TODO: handle rest params and spread args
-			if len(fnType.Params) != len(expr.Args) {
-				resultType = NewNeverType()
-				errors = []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnType,
-					Args:   expr.Args,
-				}}
-			} else {
-				for argType, param := range Zip(argTypes, fnType.Params) {
-					paramType := param.Type
-					paramErrors := c.unify(ctx, argType, paramType)
-					errors = slices.Concat(errors, paramErrors)
-				}
-
-				resultType = fnType.Return
-			}
-		} else {
-			resultType = NewNeverType()
-			errors = []Error{
-				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
-		}
+		resultType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:
 		// TODO: create a getPropType function to handle this so that we can
 		// call it recursively if need be.
@@ -738,6 +794,56 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				resultType = NewNeverType()
 			}
 		}
+	case *ast.TaggedTemplateLitExpr:
+		// Create string literals from the quasis (static parts)
+		stringElems := make([]ast.Expr, len(expr.Quasis))
+		for i, quasi := range expr.Quasis {
+			strLit := ast.NewString(quasi.Value, quasi.Span)
+			stringElems[i] = ast.NewLitExpr(strLit)
+		}
+
+		// Create array of string literals as first argument
+		stringsArray := ast.NewArray(stringElems, expr.Span())
+
+		// Combine the strings array with the interpolated expressions
+		args := make([]ast.Expr, 1+len(expr.Exprs))
+		args[0] = stringsArray
+		copy(args[1:], expr.Exprs)
+
+		// If expr.Tag is the identifier `gql` then do some custom handling
+		if tag, ok := expr.Tag.(*ast.IdentExpr); ok && tag.Name == "gql" {
+			// TODO: Interpolate Exprs
+			str := ""
+			for i, quasi := range expr.Quasis {
+				str += quasi.Value
+				if i < len(expr.Exprs) {
+					expr := expr.Exprs[i]
+					t, _ := c.inferExpr(ctx, expr)
+
+					switch t := Prune(t).(type) {
+					case *LitType:
+						str += t.Lit.String()
+					default:
+						// TODO: handle interpolating DocumentNode fragments
+						panic("Can only interpolate literal types in gql tagged templates")
+					}
+				}
+			}
+
+			queryDoc := gqlparser.MustLoadQueryWithRules(c.Schema, str, rules.NewDefaultRules())
+			result := graphql.InferGraphQLQuery(c.Schema, queryDoc)
+
+			// `TypedDocumentNode<ResultType, VariablesType>`
+			// TODO: Look up `TypedDocumentNode` from `@graphql-typed-document-node/core`
+			t := NewTypeRefType("TypedDocumentNode", nil, result.ResultType, result.VariablesType)
+			return t, nil
+		}
+
+		// Create a call expression
+		callExpr := ast.NewCall(expr.Tag, args, false, expr.Span())
+
+		// Infer the call expression
+		resultType, errors = c.inferCallExpr(ctx, callExpr)
 	default:
 		resultType = NewNeverType()
 		errors = []Error{
@@ -969,13 +1075,24 @@ func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type,
 			unifyErrors := c.unify(ctx, indexKey.Type, NewNumType())
 			errors = slices.Concat(errors, unifyErrors)
 			return t.TypeArgs[0], errors
-		} else if _, ok := key.(IndexKey); ok {
+		} else if _, ok := key.(IndexKey); ok && t.Name == "Array" {
 			errors = append(errors, &ExpectedArrayError{Type: t})
 			return NewNeverType(), errors
 		}
-		// TypeRefType doesn't support property access directly
-		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(), errors
+
+		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
+		if t.Name == "Error" {
+			// Built-in Error type doesn't support property access directly
+			errors = append(errors, &ExpectedObjectError{Type: objType})
+			return NewNeverType(), errors
+		}
+
+		expandType, expandErrors := c.expandTypeRef(ctx, t)
+		accessType, accessErrors := c.getAccessType(ctx, expandType, key)
+
+		errors = slices.Concat(errors, accessErrors, expandErrors)
+
+		return accessType, errors
 	case *TupleType:
 		if indexKey, ok := key.(IndexKey); ok {
 			if indexLit, ok := indexKey.Type.(*LitType); ok {
@@ -1028,6 +1145,25 @@ func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type,
 		errors = append(errors, &ExpectedObjectError{Type: objType})
 		return NewNeverType(), errors
 	}
+}
+
+func (c *Checker) expandTypeRef(ctx Context, t *TypeRefType) (Type, []Error) {
+	// Resolve the type alias
+	typeAlias := c.resolveQualifiedTypeAliasFromString(ctx, t.Name)
+	if typeAlias == nil {
+		return NewNeverType(), []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
+	}
+
+	// Expand the type alias
+	expandedType := typeAlias.Type
+
+	// Handle type parameter substitution if the type is generic
+	if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+		substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+		expandedType = c.substituteTypeParams(typeAlias.Type, substitutions)
+	}
+
+	return expandedType, []Error{}
 }
 
 // getObjectAccess handles property and index access on ObjectType
