@@ -1,6 +1,6 @@
 
 [TestInferGraphQLQuery_GetUserAndPosts - 1]
-{GetUserAndPosts: {getUser: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string, phone: string}, posts: {id: ID, title: string, content: string, comments: {id: ID, message: string, author: {id: ID, name: string}}}}}}
+{getUser: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string, phone: string}, posts: {id: ID, title: string, content: string, comments: {id: ID, message: string, author: {id: ID, name: string}}}}}
 ---
 
 [TestInferGraphQLQuery_GetUserAndPosts - 2]
@@ -8,7 +8,7 @@
 ---
 
 [TestInferGraphQLQuery_CreatePostAndComment - 1]
-{CreatePostAndComment: {createPost: {id: ID, title: string, author: {id: ID, name: string}}, addComment: {id: ID, message: string, author: {id: ID, name: string}, post: {id: ID, title: string}}}}
+{createPost: {id: ID, title: string, author: {id: ID, name: string}}, addComment: {id: ID, message: string, author: {id: ID, name: string}, post: {id: ID, title: string}}}
 ---
 
 [TestInferGraphQLQuery_CreatePostAndComment - 2]
@@ -16,7 +16,7 @@
 ---
 
 [TestInferGraphQLQuery_SearchContentWithUnion - 1]
-{SearchContent: {search: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string}} | {id: ID, title: string, content: string, author: {name: string, role: "ADMIN" | "USER" | "GUEST"}} | {id: ID, message: string, author: {name: string}, post: {title: string}}}}
+{search: {id: ID, name: string, role: "ADMIN" | "USER" | "GUEST", contactInfo: {email: string}} | {id: ID, title: string, content: string, author: {name: string, role: "ADMIN" | "USER" | "GUEST"}} | {id: ID, message: string, author: {name: string}, post: {title: string}}}
 ---
 
 [TestInferGraphQLQuery_SearchContentWithUnion - 2]

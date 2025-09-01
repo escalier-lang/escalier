@@ -146,26 +146,7 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 	}
 
 	// Infer the result type from the selection set
-	inferredType := inferSelectionSet(rootType, op.SelectionSet)
-
-	// Wrap the result type in an object with a field named after the operation
-	var resultElems []ObjTypeElem
-	operationName := op.Name
-	if operationName == "" {
-		// Use a default name if the operation is unnamed
-		switch op.Operation {
-		case ast.Query:
-			operationName = "query"
-		case ast.Mutation:
-			operationName = "mutation"
-		case ast.Subscription:
-			operationName = "subscription"
-		default:
-			operationName = "operation"
-		}
-	}
-	resultElems = append(resultElems, NewPropertyElemType(NewStrKey(operationName), inferredType))
-	resultType := NewObjectType(resultElems)
+	resultType := inferSelectionSet(rootType, op.SelectionSet)
 
 	// Infer the variables type from the operation's variable definitions
 	var variablesElems []ObjTypeElem

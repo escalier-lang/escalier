@@ -529,7 +529,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"TaggedTemplateLiteral": {
 			input: "val id = 5\nval query = gql`query UserQuery { getUser(id: ${id}) { id name } }`",
 			expectedTypes: map[string]string{
-				"query": "TypedDocumentNode<{UserQuery: {getUser: {id: ID, name: string}}}, {}>",
+				"query": "TypedDocumentNode<{getUser: {id: ID, name: string}}, {}>",
 			},
 		},
 	}
