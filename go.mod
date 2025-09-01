@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gkampitakis/ciinfo v0.3.1 // indirect
@@ -39,6 +40,7 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tliron/commonlog v0.2.8 // indirect
 	github.com/tliron/kutil v0.3.11 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.30 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
