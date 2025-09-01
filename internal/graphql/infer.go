@@ -117,30 +117,29 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 							enumTypes = append(enumTypes, NewLitType(&StrLit{Value: v.Name}))
 						}
 						fieldType = NewUnionType(enumTypes...)
-					} else if def.Kind == ast.Object {
-						// Expand custom object types as their fields
-						var allFields ast.SelectionSet
-						for _, f := range def.Fields {
-							allFields = append(allFields, &ast.Field{
-								Name:             f.Name,
-								SelectionSet:     nil, // no sub-selection by default
-								Alias:            "",
-								Arguments:        nil,
-								Directives:       nil,
-								Position:         nil,
-								Comment:          nil,
-								Definition:       f,
-								ObjectDefinition: def,
-							})
-						}
-						fieldType = inferSelectionSet(def, allFields)
 					} else {
 						// fallback to TypeRefType for other types (interfaces, etc.)
 						fieldType = NewTypeRefType(fieldDef.Type.Name(), nil)
 					}
 				}
 			}
-			elems = append(elems, NewPropertyElemType(NewStrKey(field.Name), fieldType))
+
+			// Check if the field is nullable (not non-null)
+			isNullable := !fieldDef.Type.NonNull
+			if isNullable {
+				// For nullable fields, create a union with null and make the property optional
+				nullType := NewLitType(&NullLit{})
+				fieldType = NewUnionType(fieldType, nullType)
+			}
+
+			// Create property element with optional flag for nullable fields
+			propertyElem := &PropertyElemType{
+				Name:     NewStrKey(field.Name),
+				Optional: isNullable,
+				Readonly: false,
+				Value:    fieldType,
+			}
+			elems = append(elems, propertyElem)
 		}
 		return NewObjectType(elems)
 	}
@@ -151,8 +150,16 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 	// Infer the variables type from the operation's variable definitions
 	var variablesElems []ObjTypeElem
 	for _, varDef := range op.VariableDefinitions {
+		isNullable := !varDef.Type.NonNull
 		varType := InferGraphQLType(schema, varDef.Type)
-		variablesElems = append(variablesElems, NewPropertyElemType(NewStrKey(varDef.Variable), varType))
+		// For variables, we don't make them optional properties since they're explicitly declared
+		propertyElem := &PropertyElemType{
+			Name:     NewStrKey(varDef.Variable),
+			Optional: isNullable,
+			Readonly: false,
+			Value:    varType,
+		}
+		variablesElems = append(variablesElems, propertyElem)
 	}
 	variablesType := NewObjectType(variablesElems)
 
@@ -164,38 +171,34 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 
 // InferGraphQLType converts a GraphQL type definition to an Escalier type
 func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
-	// Handle non-null wrapper
-	if gqlType.NonNull {
-		// For non-null types, we just return the inner type (Escalier doesn't have explicit null handling here)
-		innerType := &ast.Type{
-			NamedType: gqlType.NamedType,
-			Elem:      gqlType.Elem,
-			NonNull:   false, // Remove the non-null wrapper
-			Position:  gqlType.Position,
-		}
-		return InferGraphQLType(schema, innerType)
-	}
-
 	// Handle list types
 	if gqlType.Elem != nil {
 		elemType := InferGraphQLType(schema, gqlType.Elem)
 		// For GraphQL lists, we can represent them as arrays/tuples
 		// For now, let's use a simple array representation
-		return NewTypeRefType("Array<"+elemType.String()+">", nil)
+		arrayType := NewTypeRefType("Array<"+elemType.String()+">", nil)
+
+		// If this list type is nullable (NonNull is false), create union with null
+		if !gqlType.NonNull {
+			nullType := NewLitType(&NullLit{})
+			return NewUnionType(arrayType, nullType)
+		}
+		return arrayType
 	}
 
 	// Handle named types
 	if gqlType.NamedType != "" {
+		var baseType Type
 		switch gqlType.NamedType {
 		case "String":
-			return NewStrType()
+			baseType = NewStrType()
 		case "Int", "Float":
-			return NewNumType()
+			baseType = NewNumType()
 		case "Boolean":
-			return NewBoolType()
+			baseType = NewBoolType()
 		case "ID":
 			// ID can be string or number, but typically treated as string
-			return NewStrType()
+			baseType = NewStrType()
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {
@@ -206,29 +209,44 @@ func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
 					for _, v := range typeDef.EnumValues {
 						enumTypes = append(enumTypes, NewLitType(&StrLit{Value: v.Name}))
 					}
-					return NewUnionType(enumTypes...)
+					baseType = NewUnionType(enumTypes...)
 				case ast.Scalar:
 					// For custom scalars, fall back to the base type or use a type reference
-					return NewTypeRefType(gqlType.NamedType, nil)
+					baseType = NewTypeRefType(gqlType.NamedType, nil)
 				case ast.InputObject:
 					// For input objects, create an object type with all fields
 					var elems []ObjTypeElem
 					for _, field := range typeDef.Fields {
 						fieldType := InferGraphQLType(schema, field.Type)
-						elems = append(elems, NewPropertyElemType(NewStrKey(field.Name), fieldType))
+						isNullable := !field.Type.NonNull
+						propertyElem := &PropertyElemType{
+							Name:     NewStrKey(field.Name),
+							Optional: isNullable,
+							Readonly: false,
+							Value:    fieldType,
+						}
+						elems = append(elems, propertyElem)
 					}
-					return NewObjectType(elems)
+					baseType = NewObjectType(elems)
 				case ast.Object, ast.Interface, ast.Union:
 					// For other types (Object, Interface, Union), use type reference
-					return NewTypeRefType(gqlType.NamedType, nil)
+					baseType = NewTypeRefType(gqlType.NamedType, nil)
 				default:
 					// Fallback for any other types
-					return NewTypeRefType(gqlType.NamedType, nil)
+					baseType = NewTypeRefType(gqlType.NamedType, nil)
 				}
+			} else {
+				// Fallback to type reference for unknown types
+				baseType = NewTypeRefType(gqlType.NamedType, nil)
 			}
-			// Fallback to type reference for unknown types
-			return NewTypeRefType(gqlType.NamedType, nil)
 		}
+
+		// If the type is nullable (NonNull is false), create union with null
+		if !gqlType.NonNull {
+			nullType := NewLitType(&NullLit{})
+			return NewUnionType(baseType, nullType)
+		}
+		return baseType
 	}
 
 	// Fallback - should not reach here in normal cases
