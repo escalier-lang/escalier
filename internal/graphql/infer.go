@@ -73,6 +73,12 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 			if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Object && len(field.SelectionSet) > 0 {
 				// Recursively infer subfields for object types
 				fieldType = inferSelectionSet(fieldTypeDef, field.SelectionSet)
+
+				// Check if this object field is nullable and add | null if so
+				if !fieldDef.Type.NonNull {
+					nullType := NewLitType(&NullLit{})
+					fieldType = NewUnionType(fieldType, nullType)
+				}
 			} else if fieldTypeDef != nil && fieldTypeDef.Kind == ast.Union {
 				// For unions, always use the field's selection set (not the selection set of the field node)
 				// so that inline fragments are visible and can be matched
@@ -98,39 +104,12 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 				}
 				fieldType = NewUnionType(unionTypes...)
 			} else {
-				switch fieldDef.Type.Name() {
-				case "String":
-					fieldType = NewStrType()
-				case "Int", "Float":
-					fieldType = NewNumType()
-				case "Boolean":
-					fieldType = NewBoolType()
-				default:
-					def := schema.Types[fieldDef.Type.Name()]
-					if def == nil {
-						// fallback to TypeRefType if not found
-						fieldType = NewTypeRefType(fieldDef.Type.Name(), nil)
-					} else if def.Kind == ast.Enum {
-						// Expand enums as a union of string literal types
-						var enumTypes []Type
-						for _, v := range def.EnumValues {
-							enumTypes = append(enumTypes, NewLitType(&StrLit{Value: v.Name}))
-						}
-						fieldType = NewUnionType(enumTypes...)
-					} else {
-						// fallback to TypeRefType for other types (interfaces, etc.)
-						fieldType = NewTypeRefType(fieldDef.Type.Name(), nil)
-					}
-				}
+				// Use InferGraphQLType to handle the field type conversion
+				fieldType = InferGraphQLType(schema, fieldDef.Type)
 			}
 
-			// Check if the field is nullable (not non-null)
+			// Check if the field is nullable (not non-null) for property optionality
 			isNullable := !fieldDef.Type.NonNull
-			if isNullable {
-				// For nullable fields, create a union with null and make the property optional
-				nullType := NewLitType(&NullLit{})
-				fieldType = NewUnionType(fieldType, nullType)
-			}
 
 			// Create property element with optional flag for nullable fields
 			propertyElem := &PropertyElemType{
@@ -150,9 +129,9 @@ func InferGraphQLQuery(schema *ast.Schema, queryDoc *ast.QueryDocument) *GraphQL
 	// Infer the variables type from the operation's variable definitions
 	var variablesElems []ObjTypeElem
 	for _, varDef := range op.VariableDefinitions {
-		isNullable := !varDef.Type.NonNull
 		varType := InferGraphQLType(schema, varDef.Type)
-		// For variables, we don't make them optional properties since they're explicitly declared
+		isNullable := !varDef.Type.NonNull
+
 		propertyElem := &PropertyElemType{
 			Name:     NewStrKey(varDef.Variable),
 			Optional: isNullable,
@@ -197,8 +176,8 @@ func InferGraphQLType(schema *ast.Schema, gqlType *ast.Type) Type {
 		case "Boolean":
 			baseType = NewBoolType()
 		case "ID":
-			// ID can be string or number, but typically treated as string
-			baseType = NewStrType()
+			// Keep ID as a type reference to preserve the ID semantics
+			baseType = NewTypeRefType("ID", nil)
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {

@@ -4,7 +4,7 @@
 ---
 
 [TestInferGraphQLQuery_GetUserAndPosts - 2]
-{userId: string, postLimit?: number | null}
+{userId: ID, postLimit?: number | null}
 ---
 
 [TestInferGraphQLQuery_CreatePostAndComment - 1]
