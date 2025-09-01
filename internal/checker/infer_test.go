@@ -527,9 +527,15 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			},
 		},
 		"TaggedTemplateLiteral": {
-			input: "val id = 5\nval query = gql`query UserQuery { getUser(id: ${id}) { id name } }`",
+			input: "val id = 5\nval query = gql`query { getUser(id: ${id}) { id name } }`",
 			expectedTypes: map[string]string{
 				"query": "TypedDocumentNode<{getUser?: {id: ID, name: string} | null}, {}>",
+			},
+		},
+		"TaggedTemplateLiteralWithVariables": {
+			input: "val query = gql`query($id: ID!) { getUser(id: $id) { id name } }`",
+			expectedTypes: map[string]string{
+				"query": "TypedDocumentNode<{getUser?: {id: ID, name: string} | null}, {id: ID}>",
 			},
 		},
 	}
