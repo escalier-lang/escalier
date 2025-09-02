@@ -281,6 +281,9 @@ func TestCheckModuleNoErrors(t *testing.T) {
 						return self
 					}
 				}
+				fn main() {
+					obj.increment(1).increment(2)
+				}
 			`,
 			expectedTypes: map[string]string{
 				"obj": "{value: number, increment(amount: number) -> Self throws never}",

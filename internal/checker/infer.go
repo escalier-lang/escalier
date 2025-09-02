@@ -374,10 +374,28 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	return errors
 }
 
-func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (Type, []Error) {
-	errors := []Error{}
+func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Type, errors []Error) {
+	errors = []Error{}
 	calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 	errors = slices.Concat(errors, calleeErrors)
+
+	var selfType Type
+	if callee, ok := expr.Callee.(*ast.MemberExpr); ok {
+		obj := callee.Object
+		if obj != nil {
+			selfType = obj.InferredType()
+		}
+	}
+
+	// Use defer to handle Self return type substitution
+	// TODO: meditate on how to handle references to a method, e.g.
+	// val increment = obj.increment
+	// val obj = increment(1)
+	defer func() {
+		if retType, ok := resultType.(*TypeRefType); ok && retType.Name == "Self" {
+			resultType = selfType
+		}
+	}()
 
 	argTypes := make([]Type, len(expr.Args))
 	for i, arg := range expr.Args {
