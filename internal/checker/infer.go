@@ -379,24 +379,6 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 	calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 	errors = slices.Concat(errors, calleeErrors)
 
-	var selfType Type
-	if callee, ok := expr.Callee.(*ast.MemberExpr); ok {
-		obj := callee.Object
-		if obj != nil {
-			selfType = obj.InferredType()
-		}
-	}
-
-	// Use defer to handle Self return type substitution
-	// TODO: meditate on how to handle references to a method, e.g.
-	// val increment = obj.increment
-	// val obj = increment(1)
-	defer func() {
-		if retType, ok := resultType.(*TypeRefType); ok && retType.Name == "Self" {
-			resultType = selfType
-		}
-	}()
-
 	argTypes := make([]Type, len(expr.Args))
 	for i, arg := range expr.Args {
 		argType, argErrors := c.inferExpr(ctx, arg)
@@ -597,7 +579,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
 		propType, propErrors := c.getAccessType(ctx, objType, key)
+
 		resultType = propType
+
+		if methodType, ok := propType.(*FuncType); ok {
+			if retType, ok := methodType.Return.(*TypeRefType); ok && retType.Name == "Self" {
+				t := *methodType   // Create a copy of the struct
+				t.Return = objType // Replace `Self` with the object type
+				resultType = &t
+			}
+		}
+
 		errors = slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)

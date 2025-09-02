@@ -283,6 +283,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 				fn main() {
 					obj.increment(1).increment(2)
+					val inc = obj.increment
+					inc(3).increment(4)
 				}
 			`,
 			expectedTypes: map[string]string{
