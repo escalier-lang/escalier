@@ -374,8 +374,8 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	return errors
 }
 
-func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (Type, []Error) {
-	errors := []Error{}
+func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Type, errors []Error) {
+	errors = []Error{}
 	calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 	errors = slices.Concat(errors, calleeErrors)
 
@@ -579,7 +579,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
 		propType, propErrors := c.getAccessType(ctx, objType, key)
+
 		resultType = propType
+
+		if methodType, ok := propType.(*FuncType); ok {
+			if retType, ok := methodType.Return.(*TypeRefType); ok && retType.Name == "Self" {
+				t := *methodType   // Create a copy of the struct
+				t.Return = objType // Replace `Self` with the object type
+				resultType = &t
+			}
+		}
+
 		errors = slices.Concat(objErrors, propErrors)
 	case *ast.IndexExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
