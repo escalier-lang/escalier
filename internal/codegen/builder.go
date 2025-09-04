@@ -25,7 +25,7 @@ func (b *Builder) buildExprs(exprs []ast.Expr) ([]Expr, []Stmt) {
 	outStmts := []Stmt{}
 	outExprs := make([]Expr, len(exprs))
 	for i, e := range exprs {
-		expr, stmts := b.buildExpr(e)
+		expr, stmts := b.buildExpr(e, nil)
 		outExprs[i] = expr
 		outStmts = slices.Concat(outStmts, stmts)
 	}
@@ -87,7 +87,7 @@ func (b *Builder) buildPattern(
 			var defExpr Expr
 			if p.Default != nil {
 				var defStmts []Stmt
-				defExpr, defStmts = b.buildExpr(p.Default)
+				defExpr, defStmts = b.buildExpr(p.Default, nil)
 				stmts = slices.Concat(stmts, defStmts)
 			}
 			return &IdentPat{
@@ -123,7 +123,7 @@ func (b *Builder) buildPattern(
 					var defExpr Expr
 					if e.Default != nil {
 						var defStmts []Stmt
-						defExpr, defStmts = b.buildExpr(e.Default)
+						defExpr, defStmts = b.buildExpr(e.Default, nil)
 						stmts = slices.Concat(stmts, defStmts)
 					}
 					elems = append(elems, NewObjKeyValuePat(
@@ -136,7 +136,7 @@ func (b *Builder) buildPattern(
 					var defExpr Expr
 					if e.Default != nil {
 						var defStmts []Stmt
-						defExpr, defStmts = b.buildExpr(e.Default)
+						defExpr, defStmts = b.buildExpr(e.Default, nil)
 						stmts = slices.Concat(stmts, defStmts)
 					}
 					elems = append(elems, NewObjShorthandPat(
@@ -194,7 +194,7 @@ func (b *Builder) buildPattern(
 				case *ast.IdentPat:
 					if arg.Default != nil {
 						var defStmts []Stmt
-						defExpr, defStmts := b.buildExpr(arg.Default)
+						defExpr, defStmts := b.buildExpr(arg.Default, nil)
 						stmts = slices.Concat(stmts, defStmts)
 						init = defExpr
 					}
@@ -303,7 +303,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			// Ignore empty expressions.
 			return []Stmt{}
 		default:
-			expr, exprStmts := b.buildExpr(s.Expr)
+			expr, exprStmts := b.buildExpr(s.Expr, nil)
 			stmt := &ExprStmt{
 				Expr:   expr,
 				span:   nil,
@@ -318,7 +318,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 		var expr Expr
 		if s.Expr != nil {
 			var exprStmts []Stmt
-			expr, exprStmts = b.buildExpr(s.Expr)
+			expr, exprStmts = b.buildExpr(s.Expr, nil)
 			stmts = slices.Concat(stmts, exprStmts)
 		}
 		stmt := &ReturnStmt{
@@ -536,7 +536,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		if d.Init == nil {
 			panic("TODO - TransformDecl - VarDecl - Init is nil")
 		}
-		initExpr, initStmts := b.buildExpr(d.Init)
+		initExpr, initStmts := b.buildExpr(d.Init, nil)
 		// Ignore checks returned by buildPattern
 		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
@@ -573,7 +573,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	}
 }
 
-func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
+func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	if expr == nil {
 		return nil, []Stmt{}
 	}
@@ -599,12 +599,12 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			panic("TODO: literal type")
 		}
 	case *ast.BinaryExpr:
-		leftExpr, leftStmts := b.buildExpr(expr.Left)
-		rightExpr, rightStmts := b.buildExpr(expr.Right)
+		leftExpr, leftStmts := b.buildExpr(expr.Left, expr)
+		rightExpr, rightStmts := b.buildExpr(expr.Right, expr)
 		stmts := slices.Concat(leftStmts, rightStmts)
 		return NewBinaryExpr(leftExpr, BinaryOp(expr.Op), rightExpr, expr), stmts
 	case *ast.UnaryExpr:
-		argExpr, argStmts := b.buildExpr(expr.Arg)
+		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
 		var namespaceStr string
@@ -613,7 +613,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.CallExpr:
-		calleeExpr, calleeStmts := b.buildExpr(expr.Callee)
+		calleeExpr, calleeStmts := b.buildExpr(expr.Callee, expr)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
 		stmts := slices.Concat(calleeStmts, argsStmts)
 		return NewCallExpr(
@@ -623,14 +623,26 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 			expr,
 		), stmts
 	case *ast.IndexExpr:
-		objExpr, objStmts := b.buildExpr(expr.Object)
-		indexExpr, indexStmts := b.buildExpr(expr.Index)
+		objExpr, objStmts := b.buildExpr(expr.Object, expr)
+		indexExpr, indexStmts := b.buildExpr(expr.Index, expr)
 		stmts := slices.Concat(objStmts, indexStmts)
 		return NewIndexExpr(objExpr, indexExpr, expr.OptChain, expr), stmts
 	case *ast.MemberExpr:
-		objExpr, objStmts := b.buildExpr(expr.Object)
+		objExpr, objStmts := b.buildExpr(expr.Object, expr)
 		propExpr := buildIdent(expr.Prop)
-		return NewMemberExpr(objExpr, propExpr, expr.OptChain, expr), objStmts
+
+		member := NewMemberExpr(objExpr, propExpr, expr.OptChain, expr)
+		if _, ok := parent.(*ast.CallExpr); !ok {
+			t := expr.InferredType()
+			if _, ok := t.(*type_system.FuncType); ok {
+				bindIdent := NewIdentifier("bind", nil)
+				callee := NewMemberExpr(member, bindIdent, false, expr)
+				call := NewCallExpr(callee, []Expr{objExpr}, false, nil)
+				return call, objStmts
+			}
+		}
+
+		return member, objStmts
 	case *ast.TupleExpr:
 		elemsExprs, elemsStmts := b.buildExprs(expr.Elems)
 		return NewArrayExpr(elemsExprs, expr), elemsStmts
@@ -675,7 +687,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
 				if elem.Value != nil {
-					valueExpr, valueStmts := b.buildExpr(elem.Value)
+					valueExpr, valueStmts := b.buildExpr(elem.Value, expr)
 					stmts = slices.Concat(stmts, valueStmts)
 					elems[i] = NewPropertyExpr(key, valueExpr, elem)
 				} else {
@@ -707,7 +719,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		stmts := []Stmt{tempDeclStmt}
 
 		// Build the condition
-		condExpr, condStmts := b.buildExpr(expr.Cond)
+		condExpr, condStmts := b.buildExpr(expr.Cond, expr)
 		stmts = slices.Concat(stmts, condStmts)
 
 		// Build the consequent (then branch)
@@ -722,7 +734,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 				altStmts = b.buildBlockStmtsWithTempAssignment(expr.Alt.Block.Stmts, tempVar, expr)
 			} else if expr.Alt.Expr != nil {
 				// Alternative is an expression
-				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr)
+				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
 				altStmts = slices.Concat(altStmts, altExprStmts)
 
 				assignment := NewBinaryExpr(tempVar, Assign, altExpr, expr.Alt.Expr)
@@ -752,7 +764,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		return b.buildMatchExpr(expr)
 	case *ast.ThrowExpr:
 		// Build the argument expression
-		argExpr, argStmts := b.buildExpr(expr.Arg)
+		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 
 		// Create a throw statement
 		throwStmt := NewThrowStmt(argExpr, expr)
@@ -769,7 +781,7 @@ func (b *Builder) buildExpr(expr ast.Expr) (Expr, []Stmt) {
 		return tempVar, allStmts
 	case *ast.AwaitExpr:
 		// Build the argument expression
-		argExpr, argStmts := b.buildExpr(expr.Arg)
+		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 
 		// Create an await expression
 		awaitExpr := NewAwaitExpr(argExpr, expr)
@@ -793,7 +805,7 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 	case *ast.NumLit:
 		return NewNumLit(k.Value, key), []Stmt{}
 	case *ast.ComputedKey:
-		expr, stmts := b.buildExpr(k.Expr)
+		expr, stmts := b.buildExpr(k.Expr, nil)
 		return NewComputedKey(expr, key), stmts
 	default:
 		panic(fmt.Sprintf("TODO - buildObjKey - default case: %#v", k))
@@ -864,7 +876,7 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 		lastStmt := stmts[len(stmts)-1]
 		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
 			// Convert the last expression statement to an assignment to temp variable
-			lastExpr, lastExprStmts := b.buildExpr(exprStmt.Expr)
+			lastExpr, lastExprStmts := b.buildExpr(exprStmt.Expr, nil)
 			blockStmts = slices.Concat(blockStmts, lastExprStmts)
 
 			// Create assignment: tempVar = lastExpr
@@ -950,7 +962,7 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 	stmts := []Stmt{tempDeclStmt}
 
 	// Build the target expression
-	targetExpr, targetStmts := b.buildExpr(expr.Target)
+	targetExpr, targetStmts := b.buildExpr(expr.Target, expr)
 	stmts = slices.Concat(stmts, targetStmts)
 
 	// Create a temporary variable for the target to avoid re-evaluation
@@ -976,7 +988,7 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 		// Build guard condition if present
 		var fullCondition Expr = patternCond
 		if matchCase.Guard != nil {
-			guardExpr, guardStmts := b.buildExpr(matchCase.Guard)
+			guardExpr, guardStmts := b.buildExpr(matchCase.Guard, expr)
 			stmts = slices.Concat(stmts, guardStmts)
 			fullCondition = NewBinaryExpr(patternCond, LogicalAnd, guardExpr, matchCase.Guard)
 		}
@@ -994,7 +1006,7 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 			caseStmts = slices.Concat(caseStmts, blockStmts)
 		} else if matchCase.Body.Expr != nil {
 			// Handle expression body
-			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr)
+			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
 			caseStmts = slices.Concat(caseStmts, bodyStmts)
 
 			// Assign result to temp variable
@@ -1111,7 +1123,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 	case *ast.LitPat:
 		// Literal patterns: check for equality
-		litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: pat.Lit})
+		litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: pat.Lit}, nil)
 		condition := NewBinaryExpr(targetExpr, EqualEqual, litExpr, pat)
 		return condition, []Stmt{}
 
