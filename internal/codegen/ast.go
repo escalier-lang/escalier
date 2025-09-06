@@ -120,18 +120,19 @@ type Expr interface {
 	Node
 }
 
-func (*BinaryExpr) isExpr() {}
-func (*LitExpr) isExpr()    {}
-func (*IdentExpr) isExpr()  {}
-func (*UnaryExpr) isExpr()  {}
-func (*CallExpr) isExpr()   {}
-func (*FuncExpr) isExpr()   {}
-func (*IndexExpr) isExpr()  {}
-func (*MemberExpr) isExpr() {}
-func (*ArrayExpr) isExpr()  {}
-func (*ObjectExpr) isExpr() {}
-func (*MatchExpr) isExpr()  {}
-func (*AwaitExpr) isExpr()  {}
+func (*BinaryExpr) isExpr()   {}
+func (*LitExpr) isExpr()      {}
+func (*IdentExpr) isExpr()    {}
+func (*UnaryExpr) isExpr()    {}
+func (*CallExpr) isExpr()     {}
+func (*FuncExpr) isExpr()     {}
+func (*IndexExpr) isExpr()    {}
+func (*MemberExpr) isExpr()   {}
+func (*ArrayExpr) isExpr()    {}
+func (*ObjectExpr) isExpr()   {}
+func (*MatchExpr) isExpr()    {}
+func (*AwaitExpr) isExpr()    {}
+func (*TypeCastExpr) isExpr() {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -456,6 +457,19 @@ func NewAwaitExpr(arg Expr, source ast.Node) *AwaitExpr {
 func (e *AwaitExpr) Span() *Span        { return e.span }
 func (e *AwaitExpr) SetSpan(span *Span) { e.span = span }
 func (e *AwaitExpr) Source() ast.Node   { return e.source }
+
+type TypeCastExpr struct {
+	Expr   Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewTypeCastExpr(expr Expr, source ast.Node) *TypeCastExpr {
+	return &TypeCastExpr{Expr: expr, source: source, span: nil}
+}
+func (e *TypeCastExpr) Span() *Span        { return e.span }
+func (e *TypeCastExpr) SetSpan(span *Span) { e.span = span }
+func (e *TypeCastExpr) Source() ast.Node   { return e.source }
 
 //sumtype:decl
 type Decl interface {

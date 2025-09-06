@@ -201,6 +201,11 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *AwaitExpr:
 		p.print("await ")
 		p.PrintExpr(e.Arg)
+	case *TypeCastExpr:
+		// TypeCastExpr should not appear in the final codegen AST as it should be
+		// converted to the inner expression during the build phase, but if it does
+		// appear, just print the inner expression
+		p.PrintExpr(e.Expr)
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
