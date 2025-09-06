@@ -125,6 +125,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"BasicObject": {
 			input: "{ 0: \"hello\", foo: 5, \"bar\"?: true, baz, [qux]: false }",
 		},
+		"BasicObjectWithTypeAssertions": {
+			input: "{ 0: \"hello\":string, foo: 5:number, \"bar\"?: true:boolean, baz, [qux]: false:boolean }",
+		},
 		"EmptyObject": {
 			input: "{}",
 		},
@@ -136,6 +139,15 @@ func TestParseExprNoErrors(t *testing.T) {
 		},
 		"ObjectWithStaticMethod": {
 			input: "{ foo() { return 5 } }",
+		},
+		"TypeCast": {
+			input: "value: string",
+		},
+		"TypeCastChain": {
+			input: "value: string: unknown",
+		},
+		"TypeCastPrecedence": {
+			input: "a + b: number",
 		},
 		"LessThan": {
 			input: "a < b",
@@ -219,8 +231,14 @@ func TestParseExprNoErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			expr := parser.expr()
 
-			snaps.MatchSnapshot(t, expr)
+			if len(parser.errors) > 0 {
+				t.Logf("Unexpected errors:")
+				for _, err := range parser.errors {
+					t.Logf("  %s", err.String())
+				}
+			}
 			assert.Equal(t, []*Error{}, parser.errors)
+			snaps.MatchSnapshot(t, expr)
 		})
 	}
 }

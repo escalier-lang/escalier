@@ -44,6 +44,7 @@ func (*TemplateLitExpr) isExpr()       {}
 func (*TaggedTemplateLitExpr) isExpr() {}
 func (*JSXElementExpr) isExpr()        {}
 func (*JSXFragmentExpr) isExpr()       {}
+func (*TypeCastExpr) isExpr()          {}
 
 type IgnoreExpr struct {
 	span         Span
@@ -874,6 +875,24 @@ func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChil
 }
 func (e *JSXFragmentExpr) Accept(v Visitor) {
 	v.EnterExpr(e) // TODO: expand visitor to handle JSX
+	v.ExitExpr(e)
+}
+
+type TypeCastExpr struct {
+	Expr         Expr
+	TypeAnn      TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewTypeCast(expr Expr, typeAnn TypeAnn, span Span) *TypeCastExpr {
+	return &TypeCastExpr{Expr: expr, TypeAnn: typeAnn, span: span, inferredType: nil}
+}
+func (e *TypeCastExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		e.Expr.Accept(v)
+		e.TypeAnn.Accept(v)
+	}
 	v.ExitExpr(e)
 }
 

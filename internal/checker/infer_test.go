@@ -110,6 +110,24 @@ func TestCheckScriptNoErrors(t *testing.T) {
 				return input
 			}`,
 		},
+		"TypeCast": {
+			input: `
+				val x = 5
+				val y = x : number
+			`,
+		},
+		"TypeCastString": {
+			input: `
+				val x = "hello"
+				val y = x : string
+			`,
+		},
+		"TypeCastAny": {
+			input: `
+				val x = 5
+				val y = x : any
+			`,
+		},
 		// "FuncRecursion": {
 		// 	input: `
 		// 		val fact = fn (n) {
@@ -529,6 +547,70 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"arr": "Array<number>",
 				"len": "number",
+			},
+		},
+		"TypeCastBasic": {
+			input: `
+				val x = 5
+				val y = x : number
+			`,
+			expectedTypes: map[string]string{
+				"x": "5",
+				"y": "number",
+			},
+		},
+		"TypeCastString": {
+			input: `
+				val str = "hello"
+				val s = str : string
+			`,
+			expectedTypes: map[string]string{
+				"str": "\"hello\"",
+				"s":   "string",
+			},
+		},
+		"TypeCastToAny": {
+			input: `
+				val num = 42
+				val any_val = num : any
+			`,
+			expectedTypes: map[string]string{
+				"num":     "42",
+				"any_val": "any",
+			},
+		},
+		"TypeCastChain": {
+			input: `
+				val original = 5
+				val step1 = original : number
+				val step2 = step1 : any
+			`,
+			expectedTypes: map[string]string{
+				"original": "5",
+				"step1":    "number",
+				"step2":    "any",
+			},
+		},
+		"TypeCastInExpression": {
+			input: `
+				val x = 5
+				val y = 10
+				val result = (x : number) + (y : number)
+			`,
+			expectedTypes: map[string]string{
+				"x":      "5",
+				"y":      "10",
+				"result": "number",
+			},
+		},
+		"TypeCastWithUnionType": {
+			input: `
+				val str = "hello"
+				val union_val = str : string | number
+			`,
+			expectedTypes: map[string]string{
+				"str":       "\"hello\"",
+				"union_val": "string | number",
 			},
 		},
 		"TaggedTemplateLiteral": {
