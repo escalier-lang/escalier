@@ -3029,48 +3029,72 @@
 ---
 
 [TestParseExprErrorHandling/ObjectMissingComma - 1]
-&ast.ObjectExpr{
-    Elems: {
-        &ast.PropertyExpr{
-            Name: &ast.IdentExpr{
-                Name:      "foo",
-                Namespace: 0,
-                Source:    nil,
-                span:      ast.Span{
-                    Start:    ast.Location{Line:1, Column:3},
-                    End:      ast.Location{Line:1, Column:6},
-                    SourceID: 0,
+&ast.TypeCastExpr{
+    Expr: &ast.ObjectExpr{
+        Elems: {
+            &ast.PropertyExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "foo",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:3},
+                        End:      ast.Location{Line:1, Column:6},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
                 },
-                inferredType: nil,
-            },
-            Optional: false,
-            Readonly: false,
-            Value:    &ast.LiteralExpr{
-                Lit: &ast.NumLit{
-                    Value: 5,
-                    span:  ast.Span{
+                Optional: false,
+                Readonly: false,
+                Value:    &ast.LiteralExpr{
+                    Lit: &ast.NumLit{
+                        Value: 5,
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:8},
                         End:      ast.Location{Line:1, Column:9},
                         SourceID: 0,
                     },
+                    inferredType: nil,
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
+                    Start:    ast.Location{Line:1, Column:3},
                     End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
                 },
-                inferredType: nil,
             },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:3},
-                End:      ast.Location{Line:1, Column:9},
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    TypeAnn: &ast.LitTypeAnn{
+        Lit: &ast.NumLit{
+            Value: 10,
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:17},
                 SourceID: 0,
             },
         },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:15},
+            End:      ast.Location{Line:1, Column:17},
+            SourceID: 0,
+        },
+        inferredType: nil,
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:13},
+        End:      ast.Location{Line:1, Column:17},
         SourceID: 0,
     },
     inferredType: nil,
@@ -7184,6 +7208,370 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/BasicObjectWithTypeAssertions - 1]
+&ast.ObjectExpr{
+    Elems: {
+        &ast.PropertyExpr{
+            Name: &ast.NumLit{
+                Value: 0,
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:4},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.TypeCastExpr{
+                Expr: &ast.LiteralExpr{
+                    Lit: &ast.StrLit{
+                        Value: "hello",
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:6},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:6},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                TypeAnn: &ast.StringTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:14},
+                        End:      ast.Location{Line:1, Column:20},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:20},
+                SourceID: 0,
+            },
+        },
+        &ast.PropertyExpr{
+            Name: &ast.IdentExpr{
+                Name:      "foo",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:25},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.TypeCastExpr{
+                Expr: &ast.LiteralExpr{
+                    Lit: &ast.NumLit{
+                        Value: 5,
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
+                            End:      ast.Location{Line:1, Column:28},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:27},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                TypeAnn: &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:35},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:27},
+                    End:      ast.Location{Line:1, Column:35},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:22},
+                End:      ast.Location{Line:1, Column:35},
+                SourceID: 0,
+            },
+        },
+        &ast.PropertyExpr{
+            Name: &ast.StrLit{
+                Value: "bar",
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:37},
+                    End:      ast.Location{Line:1, Column:42},
+                    SourceID: 0,
+                },
+            },
+            Optional: true,
+            Readonly: false,
+            Value:    &ast.TypeCastExpr{
+                Expr: &ast.LiteralExpr{
+                    Lit: &ast.BoolLit{
+                        Value: true,
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:45},
+                            End:      ast.Location{Line:1, Column:49},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:45},
+                        End:      ast.Location{Line:1, Column:49},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                TypeAnn: &ast.BooleanTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:50},
+                        End:      ast.Location{Line:1, Column:57},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:45},
+                    End:      ast.Location{Line:1, Column:57},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:37},
+                End:      ast.Location{Line:1, Column:57},
+                SourceID: 0,
+            },
+        },
+        &ast.PropertyExpr{
+            Name: &ast.IdentExpr{
+                Name:      "baz",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:59},
+                    End:      ast.Location{Line:1, Column:62},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:59},
+                End:      ast.Location{Line:1, Column:62},
+                SourceID: 0,
+            },
+        },
+        &ast.PropertyExpr{
+            Name: &ast.ComputedKey{
+                Expr: &ast.IdentExpr{
+                    Name:      "qux",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:65},
+                        End:      ast.Location{Line:1, Column:68},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.TypeCastExpr{
+                Expr: &ast.LiteralExpr{
+                    Lit: &ast.BoolLit{
+                        Value: false,
+                        span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:71},
+                            End:      ast.Location{Line:1, Column:76},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:71},
+                        End:      ast.Location{Line:1, Column:76},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                TypeAnn: &ast.BooleanTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:77},
+                        End:      ast.Location{Line:1, Column:84},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:71},
+                    End:      ast.Location{Line:1, Column:84},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:65},
+                End:      ast.Location{Line:1, Column:84},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:86},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/TypeCastChain - 1]
+&ast.TypeCastExpr{
+    Expr: &ast.TypeCastExpr{
+        Expr: &ast.IdentExpr{
+            Name:      "value",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.StringTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    TypeAnn: &ast.UnknownTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:16},
+            End:      ast.Location{Line:1, Column:23},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:23},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/TypeCast - 1]
+&ast.TypeCastExpr{
+    Expr: &ast.IdentExpr{
+        Name:      "value",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    TypeAnn: &ast.StringTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/TypeCastPrecedence - 1]
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name:      "a",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:2},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Op:    "+",
+    Right: &ast.TypeCastExpr{
+        Expr: &ast.IdentExpr{
+            Name:      "b",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:14},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
         SourceID: 0,
     },
     inferredType: nil,

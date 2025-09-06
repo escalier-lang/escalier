@@ -97,3 +97,7 @@ func (node *JSXElementExpr) SetInferredType(t Type) { node.inferredType = t }
 func (node *JSXFragmentExpr) Span() Span             { return node.span }
 func (node *JSXFragmentExpr) InferredType() Type     { return node.inferredType }
 func (node *JSXFragmentExpr) SetInferredType(t Type) { node.inferredType = t }
+
+func (node *TypeCastExpr) Span() Span             { return node.span }
+func (node *TypeCastExpr) InferredType() Type     { return node.inferredType }
+func (node *TypeCastExpr) SetInferredType(t Type) { node.inferredType = t }

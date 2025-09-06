@@ -46,3 +46,13 @@ func TestMemberAccess(t *testing.T) {
 	output := Compile(source)
 	snaps.MatchSnapshot(t, output)
 }
+
+func TestTypeCast(t *testing.T) {
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: "val x = 5 : number\nval y = \"hello\" : string\n",
+	}
+	output := Compile(source)
+	snaps.MatchSnapshot(t, output)
+}

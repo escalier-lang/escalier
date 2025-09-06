@@ -30,6 +30,10 @@ func (node *NeverTypeAnn) Span() Span             { return node.span }
 func (node *NeverTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *NeverTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *RestSpreadTypeAnn) Span() Span             { return node.span }
+func (node *RestSpreadTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *RestSpreadTypeAnn) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *ObjectTypeAnn) Span() Span             { return node.span }
 func (node *ObjectTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *ObjectTypeAnn) SetInferredType(t Type) { node.inferredType = t }

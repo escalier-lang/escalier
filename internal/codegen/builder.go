@@ -787,6 +787,13 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		awaitExpr := NewAwaitExpr(argExpr, expr)
 
 		return awaitExpr, argStmts
+	case *ast.TypeCastExpr:
+		// For type casts, we just build the inner expression since
+		// JavaScript doesn't have runtime type casting
+		innerExpr, innerStmts := b.buildExpr(expr.Expr, expr)
+
+		// Return the inner expression directly - the type cast is compile-time only
+		return innerExpr, innerStmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:

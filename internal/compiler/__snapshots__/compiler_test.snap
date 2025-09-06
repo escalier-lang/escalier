@@ -42,3 +42,14 @@ compiler.CompilerOutput{
     DTS:        "",
 }
 ---
+
+[TestTypeCast - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    JS:         "const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
+    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}",
+    DTS:        "",
+}
+---

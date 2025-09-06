@@ -4855,30 +4855,39 @@ nil
                         SourceID: 0,
                     },
                 },
-                Value: &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 1,
-                        span:  ast.Span{
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 1,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:2, Column:18},
+                                End:      ast.Location{Line:2, Column:19},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
                             Start:    ast.Location{Line:2, Column:18},
                             End:      ast.Location{Line:2, Column:19},
                             SourceID: 0,
                         },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:20},
+                            End:      ast.Location{Line:2, Column:26},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:18},
-                        End:      ast.Location{Line:2, Column:19},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Type: &ast.NumberTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:20},
                         End:      ast.Location{Line:2, Column:26},
                         SourceID: 0,
                     },
                     inferredType: nil,
                 },
+                Type:    nil,
                 Default: nil,
                 Private: true,
                 Span_:   ast.Span{
@@ -4896,30 +4905,39 @@ nil
                         SourceID: 0,
                     },
                 },
-                Value: &ast.LiteralExpr{
-                    Lit: &ast.NumLit{
-                        Value: 2,
-                        span:  ast.Span{
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 2,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:3, Column:10},
+                                End:      ast.Location{Line:3, Column:11},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
                             Start:    ast.Location{Line:3, Column:10},
                             End:      ast.Location{Line:3, Column:11},
                             SourceID: 0,
                         },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:12},
+                            End:      ast.Location{Line:3, Column:18},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:10},
-                        End:      ast.Location{Line:3, Column:11},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Type: &ast.NumberTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:3, Column:12},
                         End:      ast.Location{Line:3, Column:18},
                         SourceID: 0,
                     },
                     inferredType: nil,
                 },
+                Type:    nil,
                 Default: nil,
                 Private: false,
                 Span_:   ast.Span{
@@ -5153,30 +5171,39 @@ nil
                         SourceID: 0,
                     },
                 },
-                Value: &ast.LiteralExpr{
-                    Lit: &ast.StrLit{
-                        Value: "shh",
-                        span:  ast.Span{
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.StrLit{
+                            Value: "shh",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:2, Column:21},
+                                End:      ast.Location{Line:2, Column:26},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
                             Start:    ast.Location{Line:2, Column:21},
                             End:      ast.Location{Line:2, Column:26},
                             SourceID: 0,
                         },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:27},
+                            End:      ast.Location{Line:2, Column:33},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:21},
-                        End:      ast.Location{Line:2, Column:26},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Type: &ast.StringTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:27},
                         End:      ast.Location{Line:2, Column:33},
                         SourceID: 0,
                     },
                     inferredType: nil,
                 },
+                Type:    nil,
                 Default: nil,
                 Private: true,
                 Span_:   ast.Span{
@@ -5318,30 +5345,39 @@ nil
                         SourceID: 0,
                     },
                 },
-                Value: &ast.LiteralExpr{
-                    Lit: &ast.StrLit{
-                        Value: "shh",
-                        span:  ast.Span{
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.StrLit{
+                            Value: "shh",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:2, Column:21},
+                                End:      ast.Location{Line:2, Column:26},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
                             Start:    ast.Location{Line:2, Column:21},
                             End:      ast.Location{Line:2, Column:26},
                             SourceID: 0,
                         },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:27},
+                            End:      ast.Location{Line:2, Column:33},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:21},
-                        End:      ast.Location{Line:2, Column:26},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Type: &ast.StringTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:27},
                         End:      ast.Location{Line:2, Column:33},
                         SourceID: 0,
                     },
                     inferredType: nil,
                 },
+                Type:    nil,
                 Default: nil,
                 Private: true,
                 Span_:   ast.Span{

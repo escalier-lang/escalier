@@ -248,6 +248,15 @@ loop:
 		case BackTick:
 			temp := p.templateLitExpr(token, expr)
 			expr = temp
+		case Colon:
+			p.lexer.consume() // consume ':'
+			typeAnn := p.typeAnn()
+			if typeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after ':'")
+				break loop
+			}
+			span := ast.Span{Start: expr.Span().Start, End: typeAnn.Span().End, SourceID: p.lexer.source.ID}
+			expr = ast.NewTypeCast(expr, typeAnn, span)
 		default:
 			break loop
 		}

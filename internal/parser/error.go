@@ -14,6 +14,10 @@ func NewError(span ast.Span, message string) *Error {
 	}
 }
 
+func (e *Error) String() string {
+	return e.Span.String() + ": " + e.Message
+}
+
 func (p *Parser) reportError(span ast.Span, message string) {
 	// _, _, line, _ := p.ctx.Value("caller").(ast.Location).LineInfo()
 	// if p.ctx.Value("debug") == true {

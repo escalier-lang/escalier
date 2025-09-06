@@ -854,6 +854,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		// Infer the call expression
 		resultType, errors = c.inferCallExpr(ctx, callExpr)
+	case *ast.TypeCastExpr:
+		// Infer the type of the expression being cast
+		exprType, exprErrors := c.inferExpr(ctx, expr.Expr)
+		errors = slices.Concat(errors, exprErrors)
+
+		// Infer the type annotation to get the target type
+		targetType, typeAnnErrors := c.inferTypeAnn(ctx, expr.TypeAnn)
+		errors = slices.Concat(errors, typeAnnErrors)
+
+		// Check that the expression type is a subtype of the target type
+		// For type casting, we require that exprType can be unified with targetType
+		unifyErrors := c.unify(ctx, exprType, targetType)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// The result type is the target type
+		resultType = targetType
 	default:
 		resultType = NewNeverType()
 		errors = []Error{

@@ -195,9 +195,6 @@ func NewRestSpreadTypeAnn(value TypeAnn, span Span) *RestSpreadTypeAnn {
 	return &RestSpreadTypeAnn{Value: value, span: span, inferredType: nil}
 }
 
-func (t *RestSpreadTypeAnn) Span() Span               { return t.span }
-func (t *RestSpreadTypeAnn) InferredType() Type       { return t.inferredType }
-func (t *RestSpreadTypeAnn) SetInferredType(typ Type) { t.inferredType = typ }
 func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		t.Value.Accept(v)
