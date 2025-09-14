@@ -192,6 +192,62 @@ func (c *Checker) InferComponent(
 			}
 
 			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+		case *ast.ClassDecl:
+			instanceType := c.FreshVar()
+			objTypeElems := []ObjTypeElem{}
+
+			for _, elem := range decl.Body {
+				switch elem := elem.(type) {
+				case *ast.FieldElem:
+					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					objTypeElems = append(
+						objTypeElems,
+						NewPropertyElemType(key, c.FreshVar()),
+					)
+				}
+			}
+
+			objType := &ObjectType{
+				Elems:      objTypeElems,
+				Exact:      false,
+				Immutable:  false,
+				Mutable:    true,
+				Nominal:    true,
+				Interface:  false,
+				Extends:    []*TypeRefType{},
+				Implements: []*TypeRefType{},
+			}
+			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
+			unifyErrors := c.unify(ctx, instanceType, objType)
+			errors = slices.Concat(errors, unifyErrors)
+
+			typeAlias := &TypeAlias{
+				Type:       instanceType,
+				TypeParams: []*TypeParam{}, // TODO
+			}
+
+			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+
+			params, paramBindings, paramErrors := c.inferFuncParams(ctx, decl.Params)
+			errors = slices.Concat(errors, paramErrors)
+			paramBindingsForDecl[declID] = paramBindings
+
+			funcType := &FuncType{
+				TypeParams: []*TypeParam{}, // TODO
+				Params:     params,
+				Return:     NewTypeRefType(decl.Name.Name, typeAlias),
+				Throws:     NewNeverType(),
+			}
+
+			funcType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
+			ctor := &Binding{
+				Source:  &ast.NodeProvenance{Node: decl},
+				Type:    funcType,
+				Mutable: false,
+			}
+			declCtx.Scope.setValue(decl.Name.Name, ctor)
 		}
 	}
 
@@ -250,6 +306,44 @@ func (c *Checker) InferComponent(
 			existingTypeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
 			unifyErrors := c.unify(declCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
+		case *ast.ClassDecl:
+			typeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
+
+			objType := Prune(typeAlias.Type).(*ObjectType)
+
+			// We reuse the binding that was previous created for the function
+			// declaration, so that we can unify the signature with the body's
+			// inferred type.
+			paramBindings := paramBindingsForDecl[declID]
+
+			bodyCtx := declCtx.WithNewScope()
+
+			for name, binding := range paramBindings {
+				bodyCtx.Scope.setValue(name, binding)
+			}
+
+			for typeElem, bodyElem := range Zip(objType.Elems, decl.Body) {
+				if prop, ok := typeElem.(*PropertyElemType); ok {
+					if field, ok := bodyElem.(*ast.FieldElem); ok {
+						if field.Type != nil {
+							// TODO
+						} else {
+							if field.Value != nil {
+								initType, initErrors := c.inferExpr(bodyCtx, field.Value)
+								errors = slices.Concat(errors, initErrors)
+
+								unifyErrors := c.unify(ctx, prop.Value, initType)
+								errors = slices.Concat(errors, unifyErrors)
+							} else {
+								binding := bodyCtx.Scope.getValue(field.Name.Name)
+
+								unifyErrors := c.unify(ctx, prop.Value, binding.Type)
+								errors = slices.Concat(errors, unifyErrors)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -272,6 +366,8 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		typeAlias, errors := c.inferTypeDecl(ctx, decl)
 		ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		return errors
+	case *ast.ClassDecl:
+		panic("TODO: infer class declaration")
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}
@@ -1496,17 +1592,15 @@ func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
 	}
 }
 
-func (c *Checker) inferFuncSig(
+func (c *Checker) inferFuncParams(
 	ctx Context,
-	sig *ast.FuncSig, // TODO: make FuncSig an interface
-) (*FuncType, map[string]*Binding, []Error) {
-	// TODO: handle generic functions
-	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+	funcParams []*ast.Param,
+) ([]*FuncParam, map[string]*Binding, []Error) {
 	errors := []Error{}
 	bindings := map[string]*Binding{}
-	params := make([]*FuncParam, len(sig.Params))
+	params := make([]*FuncParam, len(funcParams))
 
-	for i, param := range sig.Params {
+	for i, param := range funcParams {
 		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
 
 		errors = slices.Concat(errors, patErrors)
@@ -1531,6 +1625,21 @@ func (c *Checker) inferFuncSig(
 			Optional: param.Optional,
 		}
 	}
+
+	return params, bindings, errors
+}
+
+func (c *Checker) inferFuncSig(
+	ctx Context,
+	sig *ast.FuncSig, // TODO: make FuncSig an interface
+) (*FuncType, map[string]*Binding, []Error) {
+	errors := []Error{}
+
+	// TODO: handle generic functions
+	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+
+	params, bindings, paramErrors := c.inferFuncParams(ctx, sig.Params)
+	errors = slices.Concat(errors, paramErrors)
 
 	var returnType Type
 	if sig.Return == nil {
