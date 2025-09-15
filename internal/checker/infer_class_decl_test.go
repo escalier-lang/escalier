@@ -35,7 +35,34 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"z": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "class Point { x: number, y: number }",
+				"Point": "{x: number, y: number, z: number}",
+			},
+		},
+		"SimpleDeclWithMethods": {
+			input: `
+				declare fn sqrt(x: number) -> number
+				class Point(x: number, y: number) {
+					x,
+					y,
+					length(self) {
+						return sqrt(self.x * self.x + self.y * self.y)
+					}
+					add(self, other: Point) {
+						return Point(self.x + other.x, self.y + other.y)
+					}
+				}
+
+				val p = Point(5, 10)
+				val len = p.length()
+				val q = p.add(Point(1, 2))
+			`,
+			expectedTypes: map[string]string{
+				"p":   "Point",
+				"q":   "Point",
+				"len": "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Point": "{x: number, y: number, length() -> number throws never, add(other: Point) -> Point throws never}",
 			},
 		},
 	}
@@ -87,6 +114,14 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
 				if exists {
 					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+
+			for expectedName, expectedType := range test.expectedTypeAliases {
+				actualTypeAlias, exists := scope.Types[expectedName]
+				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualTypeAlias.Type.String(), "Type mismatch for type alias %s", expectedName)
 				}
 			}
 

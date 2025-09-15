@@ -2461,21 +2461,6 @@ nil
                         Params:     {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:9},
-                                        End:      ast.Location{Line:4, Column:13},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
                                     Name:    "a",
                                     TypeAnn: nil,
                                     Default: nil,
@@ -2531,6 +2516,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -2786,6 +2772,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -3050,21 +3037,6 @@ nil
                         Params: {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:12},
-                                        End:      ast.Location{Line:2, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
                                     Name:    "callback",
                                     TypeAnn: nil,
                                     Default: nil,
@@ -3225,6 +3197,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -3644,6 +3617,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -3770,6 +3744,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -3933,6 +3908,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -3954,21 +3930,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:5, Column:9},
-                                        End:      ast.Location{Line:5, Column:13},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "a",
@@ -4079,6 +4040,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -4132,21 +4094,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:21},
-                                        End:      ast.Location{Line:2, Column:25},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "url",
@@ -4215,6 +4162,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -4314,6 +4262,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -4367,21 +4316,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:9},
-                                        End:      ast.Location{Line:2, Column:13},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -4426,6 +4360,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -4447,21 +4382,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:15},
-                                        End:      ast.Location{Line:3, Column:19},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
@@ -4531,6 +4451,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -4608,6 +4529,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -4661,21 +4583,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:20},
-                                        End:      ast.Location{Line:2, Column:24},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -4720,6 +4627,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: true,
                 Span_:   ast.Span{
@@ -4741,21 +4649,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:14},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -4806,6 +4699,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -4959,21 +4853,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:17},
-                                        End:      ast.Location{Line:4, Column:21},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -5030,6 +4909,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: true,
                 Span_:   ast.Span{
@@ -5051,21 +4931,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:5, Column:9},
-                                        End:      ast.Location{Line:5, Column:13},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -5122,6 +4987,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -5225,21 +5091,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:12},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -5296,6 +5147,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -5399,21 +5251,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:20},
-                                        End:      ast.Location{Line:3, Column:24},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -5470,6 +5307,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: true,
                 Span_:   ast.Span{
@@ -5491,21 +5329,6 @@ nil
                     FuncSig: ast.FuncSig{
                         TypeParams: nil,
                         Params:     {
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name:    "self",
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:10},
-                                        End:      ast.Location{Line:4, Column:14},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
-                                },
-                                Optional: false,
-                                TypeAnn:  nil,
-                            },
                         },
                         Return: nil,
                         Throws: nil,
@@ -5556,6 +5379,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{

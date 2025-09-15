@@ -70,8 +70,9 @@ func (f *FieldElem) Span() Span { return f.Span_ }
 type MethodElem struct {
 	Name    *Ident
 	Fn      *FuncExpr
-	Static  bool // true if this is a static method
-	Private bool // true if this is a private method
+	MutSelf *bool // true if 'self' is mutable
+	Static  bool  // true if this is a static method
+	Private bool  // true if this is a private method
 	Span_   Span
 }
 

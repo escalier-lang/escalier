@@ -490,6 +490,27 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	)
 }
 
+func (p *Parser) mutSelf() *bool {
+	var token *Token
+	var mutSelf *bool
+	token = p.lexer.peek()
+	if token.Type == Mut {
+		p.lexer.consume() // consume 'mut'
+		token = p.lexer.peek()
+		if token.Type == Identifier && token.Value == "self" {
+			p.lexer.consume() // consume 'self'
+			mut := true
+			mutSelf = &mut
+		}
+	} else if token.Type == Identifier && token.Value == "self" {
+		p.lexer.consume() // consume 'self'
+		mut := false
+		mutSelf = &mut
+	}
+
+	return mutSelf
+}
+
 func (p *Parser) objExprElem() ast.ObjExprElem {
 	token := p.lexer.peek()
 
@@ -560,22 +581,8 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 	case OpenParen:
 		p.lexer.consume() // consume '('
 
-		var token *Token
-		var mutSelf *bool
-		token = p.lexer.peek()
-		if token.Type == Mut {
-			p.lexer.consume() // consume 'mut'
-			token = p.lexer.peek()
-			if token.Type == Identifier && token.Value == "self" {
-				p.lexer.consume() // consume 'self'
-				mut := true
-				mutSelf = &mut
-			}
-		} else if token.Type == Identifier && token.Value == "self" {
-			p.lexer.consume() // consume 'self'
-			mut := false
-			mutSelf = &mut
-		}
+		mutSelf := p.mutSelf()
+
 		params := []*ast.Param{}
 		token = p.lexer.peek()
 		if token.Type == Comma {

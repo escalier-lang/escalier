@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"iter"
+	"os"
 	"slices"
 	"strings"
 
@@ -194,6 +195,14 @@ func (c *Checker) InferComponent(
 			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		case *ast.ClassDecl:
 			instanceType := c.FreshVar()
+
+			typeAlias := &TypeAlias{
+				Type:       instanceType,
+				TypeParams: []*TypeParam{}, // TODO
+			}
+
+			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+
 			objTypeElems := []ObjTypeElem{}
 
 			for _, elem := range decl.Body {
@@ -204,6 +213,19 @@ func (c *Checker) InferComponent(
 						objTypeElems,
 						NewPropertyElemType(key, c.FreshVar()),
 					)
+				case *ast.MethodElem:
+					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					errors = slices.Concat(errors, sigErrors)
+					objTypeElems = append(
+						objTypeElems,
+						NewMethodElemType(key, funcType, elem.MutSelf),
+					)
+				default:
+					errors = append(errors, &UnimplementedError{
+						message: fmt.Sprintf("Unsupported class element type: %T", elem),
+						span:    elem.Span(),
+					})
 				}
 			}
 
@@ -221,13 +243,6 @@ func (c *Checker) InferComponent(
 
 			unifyErrors := c.unify(ctx, instanceType, objType)
 			errors = slices.Concat(errors, unifyErrors)
-
-			typeAlias := &TypeAlias{
-				Type:       instanceType,
-				TypeParams: []*TypeParam{}, // TODO
-			}
-
-			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 
 			params, paramBindings, paramErrors := c.inferFuncParams(ctx, decl.Params)
 			errors = slices.Concat(errors, paramErrors)
@@ -343,7 +358,32 @@ func (c *Checker) InferComponent(
 						}
 					}
 				}
+
+				if method, ok := typeElem.(*MethodElemType); ok {
+					if _, ok := bodyElem.(*ast.MethodElem); ok {
+						paramBindings := make(map[string]*Binding)
+
+						paramBindings["self"] = &Binding{
+							Source:  &ast.NodeProvenance{Node: bodyElem},
+							Type:    objType,
+							Mutable: method.MutSelf != nil && *method.MutSelf, // TODO: wrap the object type in mutable
+						}
+
+						for _, param := range method.Fn.Params {
+							paramBindings[param.Pattern.String()] = &Binding{
+								Source:  &TypeProvenance{Type: param.Type},
+								Type:    param.Type,
+								Mutable: false, // TODO: wrap the object type in mutable
+							}
+						}
+
+						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, method.Fn, paramBindings, bodyElem.(*ast.MethodElem).Fn.Body, false)
+						errors = slices.Concat(errors, bodyErrors)
+					}
+				}
 			}
+
+			fmt.Fprintf(os.Stderr, "Class %s has instance type: %s\n", decl.Name.Name, objType.String())
 		}
 	}
 
