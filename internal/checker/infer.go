@@ -363,9 +363,17 @@ func (c *Checker) InferComponent(
 					if _, ok := bodyElem.(*ast.MethodElem); ok {
 						paramBindings := make(map[string]*Binding)
 
+						// We use the name of the class as the type here to avoid
+						// a RecursiveUnificationError.
+						// TODO: handle generic classes
+						var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+						if method.MutSelf != nil && *method.MutSelf {
+							t = NewMutableType(t)
+						}
+
 						paramBindings["self"] = &Binding{
 							Source:  &ast.NodeProvenance{Node: bodyElem},
-							Type:    objType,
+							Type:    t,
 							Mutable: method.MutSelf != nil && *method.MutSelf, // TODO: wrap the object type in mutable
 						}
 

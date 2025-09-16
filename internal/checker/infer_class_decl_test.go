@@ -29,10 +29,11 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val {x, y, z} = p
 			`,
 			expectedTypes: map[string]string{
-				"p": "Point",
-				"x": "number",
-				"y": "number",
-				"z": "number",
+				"Point": "fn (x: number, y: number) -> Point throws never",
+				"p":     "Point",
+				"x":     "number",
+				"y":     "number",
+				"z":     "number",
 			},
 			expectedTypeAliases: map[string]string{
 				"Point": "{x: number, y: number, z: number}",
@@ -57,12 +58,43 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.add(Point(1, 2))
 			`,
 			expectedTypes: map[string]string{
-				"p":   "Point",
-				"q":   "Point",
-				"len": "number",
+				"Point": "fn (x: number, y: number) -> Point throws never",
+				"p":     "Point",
+				"q":     "Point",
+				"len":   "number",
 			},
 			expectedTypeAliases: map[string]string{
 				"Point": "{x: number, y: number, length() -> number throws never, add(other: Point) -> Point throws never}",
+			},
+		},
+		"ClassWithFluentMutatingMethods": {
+			input: `
+				declare fn sqrt(x: number) -> number
+				class Point(x: number, y: number) {
+					x,
+					y,
+					scale(mut self, factor: number) {
+						self.x = self.x * factor
+						self.y = self.y * factor
+						return self
+					},
+					translate(mut self, dx: number, dy: number) {
+						self.x = self.x + dx
+						self.y = self.y + dy
+						return self
+					},
+				}
+
+				val p = Point(5, 10)
+				val q = p.scale(2).translate(1, -1)
+			`,
+			expectedTypes: map[string]string{
+				"Point": "fn (x: number, y: number) -> Point throws never",
+				"p":     "Point",
+				"q":     "mut Point",
+			},
+			expectedTypeAliases: map[string]string{
+				"Point": "{x: number, y: number, scale(factor: number) -> mut Point throws never, translate(dx: number, dy: number) -> mut Point throws never}",
 			},
 		},
 	}
@@ -98,6 +130,9 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			c.Schema = schema
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
+				}
 				assert.Equal(t, inferErrors, []*Error{})
 			}
 
