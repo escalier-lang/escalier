@@ -563,6 +563,36 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.print(", ")
 			}
 			switch elem := elem.(type) {
+			case *CallableTypeAnn:
+				p.print("(")
+				for i, param := range elem.Fn.Params {
+					if i > 0 {
+						p.print(", ")
+					}
+					p.printPattern(param.Pattern)
+					if param.TypeAnn != nil {
+						p.print(": ")
+						p.PrintTypeAnn(param.TypeAnn)
+					}
+				}
+				p.print(")")
+				p.print(": ")
+				p.PrintTypeAnn(elem.Fn.Return)
+			case *ConstructorTypeAnn:
+				p.print("new (")
+				for i, param := range elem.Fn.Params {
+					if i > 0 {
+						p.print(", ")
+					}
+					p.printPattern(param.Pattern)
+					if param.TypeAnn != nil {
+						p.print(": ")
+						p.PrintTypeAnn(param.TypeAnn)
+					}
+				}
+				p.print(")")
+				p.print(": ")
+				p.PrintTypeAnn(elem.Fn.Return)
 			case *MethodTypeAnn:
 				p.printObjKey(elem.Name)
 				p.print("(")

@@ -29,7 +29,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val {x, y, z} = p
 			`,
 			expectedTypes: map[string]string{
-				"Point": "fn (x: number, y: number) -> Point throws never",
+				"Point": "{new fn (x: number, y: number) -> Point throws never}",
 				"p":     "Point",
 				"x":     "number",
 				"y":     "number",
@@ -58,7 +58,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.add(Point(1, 2))
 			`,
 			expectedTypes: map[string]string{
-				"Point": "fn (x: number, y: number) -> Point throws never",
+				"Point": "{new fn (x: number, y: number) -> Point throws never}",
 				"p":     "Point",
 				"q":     "Point",
 				"len":   "number",
@@ -89,7 +89,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.scale(2).translate(1, -1)
 			`,
 			expectedTypes: map[string]string{
-				"Point": "fn (x: number, y: number) -> Point throws never",
+				"Point": "{new fn (x: number, y: number) -> Point throws never}",
 				"p":     "Point",
 				"q":     "mut Point",
 			},

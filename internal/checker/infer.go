@@ -257,9 +257,25 @@ func (c *Checker) InferComponent(
 
 			funcType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
+			// Create an object type with a constructor element instead of just a function
+			constructorElem := &ConstructorElemType{Fn: funcType}
+			classObjTypeElems := []ObjTypeElem{constructorElem}
+
+			classObjType := &ObjectType{
+				Elems:      classObjTypeElems,
+				Exact:      false,
+				Immutable:  false,
+				Mutable:    false,
+				Nominal:    true,
+				Interface:  false,
+				Extends:    []*TypeRefType{},
+				Implements: []*TypeRefType{},
+			}
+			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
 			ctor := &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
-				Type:    funcType,
+				Type:    classObjType,
 				Mutable: false,
 			}
 			declCtx.Scope.setValue(decl.Name.Name, ctor)
@@ -530,8 +546,8 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		argTypes[i] = argType
 	}
 
-	// TODO: handle calleeType being a ObjType with callable signature, etc.
 	// TODO: handle generic functions
+	// Check if calleeType is a FuncType
 	if fnType, ok := calleeType.(*FuncType); ok {
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -599,6 +615,94 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 				}
 
 				return fnType.Return, errors
+			}
+		}
+	} else if objType, ok := calleeType.(*ObjectType); ok {
+		// Check if ObjectType has a constructor or callable element
+		var fnTypeToUse *FuncType = nil
+		
+		for _, elem := range objType.Elems {
+			if constructorElem, ok := elem.(*ConstructorElemType); ok {
+				fnTypeToUse = constructorElem.Fn
+				break
+			} else if callableElem, ok := elem.(*CallableElemType); ok {
+				fnTypeToUse = callableElem.Fn
+				break
+			}
+		}
+		
+		if fnTypeToUse == nil {
+			return NewNeverType(), []Error{
+				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+		}
+		
+		// Use the same logic as for direct function calls
+		// Find if the function has a rest parameter
+		var restIndex = -1
+		for i, param := range fnTypeToUse.Params {
+			if param.Pattern != nil {
+				if _, isRest := param.Pattern.(*RestPat); isRest {
+					restIndex = i
+					break
+				}
+			}
+		}
+
+		if restIndex != -1 {
+			// Function has rest parameters
+			// Must have at least as many args as required parameters (before rest)
+			if len(expr.Args) < restIndex {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnTypeToUse,
+					Args:   expr.Args,
+				}}
+			}
+
+			// Unify fixed parameters (before rest)
+			for i := 0; i < restIndex; i++ {
+				argType := argTypes[i]
+				paramType := fnTypeToUse.Params[i].Type
+				paramErrors := c.unify(ctx, argType, paramType)
+				errors = slices.Concat(errors, paramErrors)
+			}
+
+			// Unify rest arguments with rest parameter type
+			if len(expr.Args) > restIndex {
+				restParam := fnTypeToUse.Params[restIndex]
+				// Rest parameter should be Array<T>, extract T
+				if arrayType, ok := restParam.Type.(*TypeRefType); ok && arrayType.Name == "Array" && len(arrayType.TypeArgs) > 0 {
+					elementType := arrayType.TypeArgs[0]
+					// Unify each excess argument with the element type
+					for i := restIndex; i < len(expr.Args); i++ {
+						argType := argTypes[i]
+						paramErrors := c.unify(ctx, argType, elementType)
+						errors = slices.Concat(errors, paramErrors)
+					}
+				} else {
+					// Rest parameter is not Array<T>, this is an error
+					return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+						Callee: fnTypeToUse,
+						Args:   expr.Args,
+					}}
+				}
+			}
+
+			return fnTypeToUse.Return, errors
+		} else {
+			// Function has no rest parameters, use strict equality check
+			if len(fnTypeToUse.Params) != len(expr.Args) {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnTypeToUse,
+					Args:   expr.Args,
+				}}
+			} else {
+				for argType, param := range Zip(argTypes, fnTypeToUse.Params) {
+					paramType := param.Type
+					paramErrors := c.unify(ctx, argType, paramType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+
+				return fnTypeToUse.Return, errors
 			}
 		}
 	} else {
