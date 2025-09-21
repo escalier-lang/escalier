@@ -483,6 +483,7 @@ func (*VarDecl) isDecl()       {}
 func (*FuncDecl) isDecl()      {}
 func (*TypeDecl) isDecl()      {}
 func (*NamespaceDecl) isDecl() {}
+func (*ClassDecl) isDecl()     {}
 
 type VariableKind int
 
@@ -852,3 +853,119 @@ func (d *NamespaceDecl) Declare() bool      { return d.declare }
 func (d *NamespaceDecl) Span() *Span        { return d.span }
 func (d *NamespaceDecl) SetSpan(span *Span) { d.span = span }
 func (d *NamespaceDecl) Source() ast.Node   { return d.source }
+
+type ClassDecl struct {
+	Name    *Identifier
+	Body    []ClassElem // fields, methods, etc.
+	export  bool
+	declare bool
+	span    *Span
+	source  ast.Node
+}
+
+func NewClassDecl(name *Identifier, body []ClassElem, export, declare bool, source ast.Node) *ClassDecl {
+	return &ClassDecl{
+		Name:    name,
+		Body:    body,
+		export:  export,
+		declare: declare,
+		source:  source,
+		span:    nil,
+	}
+}
+
+func (d *ClassDecl) Export() bool       { return d.export }
+func (d *ClassDecl) Declare() bool      { return d.declare }
+func (d *ClassDecl) Span() *Span        { return d.span }
+func (d *ClassDecl) SetSpan(span *Span) { d.span = span }
+func (d *ClassDecl) Source() ast.Node   { return d.source }
+
+//sumtype:decl
+type ClassElem interface {
+	isClassElem()
+	Node
+}
+
+func (*MethodElem) isClassElem() {}
+func (*GetterElem) isClassElem() {}
+func (*SetterElem) isClassElem() {}
+
+type MethodElem struct {
+	Name    *Identifier
+	Params  []*Param
+	Body    []Stmt // optional for declare
+	MutSelf *bool  // true if 'self' is mutable, optional
+	Static  bool   // true if this is a static method
+	Private bool   // true if this is a private method
+	Async   bool   // true if this is an async method
+	span    *Span
+	source  ast.Node
+}
+
+func NewMethodElem(name *Identifier, params []*Param, body []Stmt, mutSelf *bool, static, private, async bool, source ast.Node) *MethodElem {
+	return &MethodElem{
+		Name:    name,
+		Params:  params,
+		Body:    body,
+		MutSelf: mutSelf,
+		Static:  static,
+		Private: private,
+		Async:   async,
+		source:  source,
+		span:    nil,
+	}
+}
+
+func (e *MethodElem) Span() *Span        { return e.span }
+func (e *MethodElem) SetSpan(span *Span) { e.span = span }
+func (e *MethodElem) Source() ast.Node   { return e.source }
+
+type GetterElem struct {
+	Name    *Identifier
+	Body    []Stmt // optional for declare
+	Static  bool   // true if this is a static getter
+	Private bool   // true if this is a private getter
+	span    *Span
+	source  ast.Node
+}
+
+func NewGetterElem(name *Identifier, body []Stmt, static, private bool, source ast.Node) *GetterElem {
+	return &GetterElem{
+		Name:    name,
+		Body:    body,
+		Static:  static,
+		Private: private,
+		source:  source,
+		span:    nil,
+	}
+}
+
+func (e *GetterElem) Span() *Span        { return e.span }
+func (e *GetterElem) SetSpan(span *Span) { e.span = span }
+func (e *GetterElem) Source() ast.Node   { return e.source }
+
+type SetterElem struct {
+	Name    *Identifier
+	Params  []*Param // should contain exactly one parameter
+	Body    []Stmt   // optional for declare
+	Static  bool     // true if this is a static setter
+	Private bool     // true if this is a private setter
+	span    *Span
+	source  ast.Node
+}
+
+func NewSetterElem(name *Identifier, params []*Param, body []Stmt, static, private bool, source ast.Node) *SetterElem {
+	return &SetterElem{
+		Name:    name,
+		Params:  params,
+		Body:    body,
+		Static:  static,
+		Private: private,
+		source:  source,
+		span:    nil,
+	}
+}
+
+func (e *SetterElem) Span() *Span        { return e.span }
+func (e *SetterElem) SetSpan(span *Span) { e.span = span }
+func (e *SetterElem) Source() ast.Node   { return e.source }

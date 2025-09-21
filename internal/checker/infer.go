@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"iter"
+	"os"
 	"slices"
 	"strings"
 
@@ -192,6 +193,92 @@ func (c *Checker) InferComponent(
 			}
 
 			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+		case *ast.ClassDecl:
+			instanceType := c.FreshVar()
+
+			typeAlias := &TypeAlias{
+				Type:       instanceType,
+				TypeParams: []*TypeParam{}, // TODO
+			}
+
+			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+
+			objTypeElems := []ObjTypeElem{}
+
+			for _, elem := range decl.Body {
+				switch elem := elem.(type) {
+				case *ast.FieldElem:
+					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					objTypeElems = append(
+						objTypeElems,
+						NewPropertyElemType(key, c.FreshVar()),
+					)
+				case *ast.MethodElem:
+					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					errors = slices.Concat(errors, sigErrors)
+					objTypeElems = append(
+						objTypeElems,
+						NewMethodElemType(key, funcType, elem.MutSelf),
+					)
+				default:
+					errors = append(errors, &UnimplementedError{
+						message: fmt.Sprintf("Unsupported class element type: %T", elem),
+						span:    elem.Span(),
+					})
+				}
+			}
+
+			objType := &ObjectType{
+				Elems:      objTypeElems,
+				Exact:      false,
+				Immutable:  false,
+				Mutable:    true,
+				Nominal:    true,
+				Interface:  false,
+				Extends:    []*TypeRefType{},
+				Implements: []*TypeRefType{},
+			}
+			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
+			unifyErrors := c.unify(ctx, instanceType, objType)
+			errors = slices.Concat(errors, unifyErrors)
+
+			params, paramBindings, paramErrors := c.inferFuncParams(ctx, decl.Params)
+			errors = slices.Concat(errors, paramErrors)
+			paramBindingsForDecl[declID] = paramBindings
+
+			funcType := &FuncType{
+				TypeParams: []*TypeParam{}, // TODO
+				Params:     params,
+				Return:     NewTypeRefType(decl.Name.Name, typeAlias),
+				Throws:     NewNeverType(),
+			}
+
+			funcType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
+			// Create an object type with a constructor element instead of just a function
+			constructorElem := &ConstructorElemType{Fn: funcType}
+			classObjTypeElems := []ObjTypeElem{constructorElem}
+
+			classObjType := &ObjectType{
+				Elems:      classObjTypeElems,
+				Exact:      false,
+				Immutable:  false,
+				Mutable:    false,
+				Nominal:    true,
+				Interface:  false,
+				Extends:    []*TypeRefType{},
+				Implements: []*TypeRefType{},
+			}
+			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
+
+			ctor := &Binding{
+				Source:  &ast.NodeProvenance{Node: decl},
+				Type:    classObjType,
+				Mutable: false,
+			}
+			declCtx.Scope.setValue(decl.Name.Name, ctor)
 		}
 	}
 
@@ -250,6 +337,77 @@ func (c *Checker) InferComponent(
 			existingTypeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
 			unifyErrors := c.unify(declCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
+		case *ast.ClassDecl:
+			typeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
+
+			objType := Prune(typeAlias.Type).(*ObjectType)
+
+			// We reuse the binding that was previous created for the function
+			// declaration, so that we can unify the signature with the body's
+			// inferred type.
+			paramBindings := paramBindingsForDecl[declID]
+
+			bodyCtx := declCtx.WithNewScope()
+
+			for name, binding := range paramBindings {
+				bodyCtx.Scope.setValue(name, binding)
+			}
+
+			for typeElem, bodyElem := range Zip(objType.Elems, decl.Body) {
+				if prop, ok := typeElem.(*PropertyElemType); ok {
+					if field, ok := bodyElem.(*ast.FieldElem); ok {
+						if field.Type != nil {
+							// TODO
+						} else {
+							if field.Value != nil {
+								initType, initErrors := c.inferExpr(bodyCtx, field.Value)
+								errors = slices.Concat(errors, initErrors)
+
+								unifyErrors := c.unify(ctx, prop.Value, initType)
+								errors = slices.Concat(errors, unifyErrors)
+							} else {
+								binding := bodyCtx.Scope.getValue(field.Name.Name)
+
+								unifyErrors := c.unify(ctx, prop.Value, binding.Type)
+								errors = slices.Concat(errors, unifyErrors)
+							}
+						}
+					}
+				}
+
+				if method, ok := typeElem.(*MethodElemType); ok {
+					if _, ok := bodyElem.(*ast.MethodElem); ok {
+						paramBindings := make(map[string]*Binding)
+
+						// We use the name of the class as the type here to avoid
+						// a RecursiveUnificationError.
+						// TODO: handle generic classes
+						var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+						if method.MutSelf != nil && *method.MutSelf {
+							t = NewMutableType(t)
+						}
+
+						paramBindings["self"] = &Binding{
+							Source:  &ast.NodeProvenance{Node: bodyElem},
+							Type:    t,
+							Mutable: method.MutSelf != nil && *method.MutSelf, // TODO: wrap the object type in mutable
+						}
+
+						for _, param := range method.Fn.Params {
+							paramBindings[param.Pattern.String()] = &Binding{
+								Source:  &TypeProvenance{Type: param.Type},
+								Type:    param.Type,
+								Mutable: false, // TODO: wrap the object type in mutable
+							}
+						}
+
+						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, method.Fn, paramBindings, bodyElem.(*ast.MethodElem).Fn.Body, false)
+						errors = slices.Concat(errors, bodyErrors)
+					}
+				}
+			}
+
+			fmt.Fprintf(os.Stderr, "Class %s has instance type: %s\n", decl.Name.Name, objType.String())
 		}
 	}
 
@@ -272,6 +430,8 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		typeAlias, errors := c.inferTypeDecl(ctx, decl)
 		ctx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		return errors
+	case *ast.ClassDecl:
+		panic("TODO: infer class declaration")
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}
@@ -386,8 +546,8 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		argTypes[i] = argType
 	}
 
-	// TODO: handle calleeType being a ObjType with callable signature, etc.
 	// TODO: handle generic functions
+	// Check if calleeType is a FuncType
 	if fnType, ok := calleeType.(*FuncType); ok {
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -455,6 +615,94 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 				}
 
 				return fnType.Return, errors
+			}
+		}
+	} else if objType, ok := calleeType.(*ObjectType); ok {
+		// Check if ObjectType has a constructor or callable element
+		var fnTypeToUse *FuncType = nil
+		
+		for _, elem := range objType.Elems {
+			if constructorElem, ok := elem.(*ConstructorElemType); ok {
+				fnTypeToUse = constructorElem.Fn
+				break
+			} else if callableElem, ok := elem.(*CallableElemType); ok {
+				fnTypeToUse = callableElem.Fn
+				break
+			}
+		}
+		
+		if fnTypeToUse == nil {
+			return NewNeverType(), []Error{
+				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+		}
+		
+		// Use the same logic as for direct function calls
+		// Find if the function has a rest parameter
+		var restIndex = -1
+		for i, param := range fnTypeToUse.Params {
+			if param.Pattern != nil {
+				if _, isRest := param.Pattern.(*RestPat); isRest {
+					restIndex = i
+					break
+				}
+			}
+		}
+
+		if restIndex != -1 {
+			// Function has rest parameters
+			// Must have at least as many args as required parameters (before rest)
+			if len(expr.Args) < restIndex {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnTypeToUse,
+					Args:   expr.Args,
+				}}
+			}
+
+			// Unify fixed parameters (before rest)
+			for i := 0; i < restIndex; i++ {
+				argType := argTypes[i]
+				paramType := fnTypeToUse.Params[i].Type
+				paramErrors := c.unify(ctx, argType, paramType)
+				errors = slices.Concat(errors, paramErrors)
+			}
+
+			// Unify rest arguments with rest parameter type
+			if len(expr.Args) > restIndex {
+				restParam := fnTypeToUse.Params[restIndex]
+				// Rest parameter should be Array<T>, extract T
+				if arrayType, ok := restParam.Type.(*TypeRefType); ok && arrayType.Name == "Array" && len(arrayType.TypeArgs) > 0 {
+					elementType := arrayType.TypeArgs[0]
+					// Unify each excess argument with the element type
+					for i := restIndex; i < len(expr.Args); i++ {
+						argType := argTypes[i]
+						paramErrors := c.unify(ctx, argType, elementType)
+						errors = slices.Concat(errors, paramErrors)
+					}
+				} else {
+					// Rest parameter is not Array<T>, this is an error
+					return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+						Callee: fnTypeToUse,
+						Args:   expr.Args,
+					}}
+				}
+			}
+
+			return fnTypeToUse.Return, errors
+		} else {
+			// Function has no rest parameters, use strict equality check
+			if len(fnTypeToUse.Params) != len(expr.Args) {
+				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					Callee: fnTypeToUse,
+					Args:   expr.Args,
+				}}
+			} else {
+				for argType, param := range Zip(argTypes, fnTypeToUse.Params) {
+					paramType := param.Type
+					paramErrors := c.unify(ctx, argType, paramType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+
+				return fnTypeToUse.Return, errors
 			}
 		}
 	} else {
@@ -1496,17 +1744,15 @@ func Zip[T, U any](t []T, u []U) iter.Seq2[T, U] {
 	}
 }
 
-func (c *Checker) inferFuncSig(
+func (c *Checker) inferFuncParams(
 	ctx Context,
-	sig *ast.FuncSig, // TODO: make FuncSig an interface
-) (*FuncType, map[string]*Binding, []Error) {
-	// TODO: handle generic functions
-	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+	funcParams []*ast.Param,
+) ([]*FuncParam, map[string]*Binding, []Error) {
 	errors := []Error{}
 	bindings := map[string]*Binding{}
-	params := make([]*FuncParam, len(sig.Params))
+	params := make([]*FuncParam, len(funcParams))
 
-	for i, param := range sig.Params {
+	for i, param := range funcParams {
 		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
 
 		errors = slices.Concat(errors, patErrors)
@@ -1531,6 +1777,21 @@ func (c *Checker) inferFuncSig(
 			Optional: param.Optional,
 		}
 	}
+
+	return params, bindings, errors
+}
+
+func (c *Checker) inferFuncSig(
+	ctx Context,
+	sig *ast.FuncSig, // TODO: make FuncSig an interface
+) (*FuncType, map[string]*Binding, []Error) {
+	errors := []Error{}
+
+	// TODO: handle generic functions
+	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+
+	params, bindings, paramErrors := c.inferFuncParams(ctx, sig.Params)
+	errors = slices.Concat(errors, paramErrors)
 
 	var returnType Type
 	if sig.Return == nil {

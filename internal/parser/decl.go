@@ -240,8 +240,20 @@ modifiers_done:
 
 		if next.Type == OpenParen {
 			// Method
-			p.lexer.consume()
-			params := parseDelimSeq(p, CloseParen, Comma, p.param)
+			p.lexer.consume() // consume '('
+
+			mutSelf := p.mutSelf()
+
+			params := []*ast.Param{}
+			if isStatic {
+				params = parseDelimSeq(p, CloseParen, Comma, p.param)
+			} else {
+				token = p.lexer.peek()
+				if token.Type == Comma {
+					p.lexer.consume() // consume ','
+					params = parseDelimSeq(p, CloseParen, Comma, p.param)
+				}
+			}
 			p.expect(CloseParen, AlwaysConsume)
 
 			// Optionally parse return type
@@ -271,6 +283,7 @@ modifiers_done:
 			return &ast.MethodElem{
 				Name:    name,
 				Fn:      ast.NewFuncExpr(typeParams, params, returnType, throwsType, isAsync, body, span),
+				MutSelf: mutSelf,
 				Static:  isStatic,
 				Private: isPrivate,
 				Span_:   span,

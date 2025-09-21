@@ -1,0 +1,18 @@
+declare fn sqrt(x: number) -> number
+class Point(x: number, y: number) {
+    x,
+    y,
+    scale(mut self, factor: number) {
+        self.x = self.x * factor
+        self.y = self.y * factor
+        return self
+    },
+    translate(mut self, dx: number, dy: number) {
+        self.x = self.x + dx
+        self.y = self.y + dy
+        return self
+    },
+}
+
+val p = Point(5, 10)
+val q = p.scale(2).translate(1, -1)

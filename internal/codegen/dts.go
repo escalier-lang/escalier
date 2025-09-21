@@ -247,6 +247,76 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			},
 		}
 
+	case *ast.ClassDecl:
+		// For class declarations, generate separate type and constructor declarations
+		typeAlias := namespace.Types[decl.Name.Name]
+		if typeAlias == nil {
+			return nil
+		}
+
+		t := type_sys.Prune(typeAlias.Type)
+
+		// Classes are represented as nominal ObjectTypes
+		objType, ok := t.(*type_sys.ObjectType)
+		if !ok || !objType.Nominal {
+			return nil
+		}
+
+		localName := extractLocalName(decl.Name.Name)
+		var stmts []Stmt
+
+		// Generate instance type declaration using the inferred object type
+		instanceTypeAnn := buildTypeAnn(objType)
+
+		instanceTypeDecl := &TypeDecl{
+			Name:       NewIdentifier(localName, decl.Name),
+			TypeParams: nil, // TODO: handle generic classes
+			TypeAnn:    instanceTypeAnn,
+			Interface:  false,
+			declare:    isTopLevel,
+			export:     decl.Export(),
+			span:       nil,
+			source:     decl,
+		}
+
+		stmts = append(stmts, &DeclStmt{
+			Decl:   instanceTypeDecl,
+			span:   nil,
+			source: nil,
+		})
+
+		staticTypeBinding := namespace.Values[decl.Name.Name]
+		if staticTypeBinding == nil {
+			return nil
+		}
+
+		staticType, ok := type_sys.Prune(staticTypeBinding.Type).(*type_sys.ObjectType)
+		if !ok {
+			return nil
+		}
+
+		staticTypeAnn := buildTypeAnn(staticType)
+
+		staticVarDecl := &VarDecl{
+			Kind: ValKind,
+			Decls: []*Declarator{{
+				Pattern: NewIdentPat(localName, nil, decl.Name),
+				TypeAnn: staticTypeAnn,
+				Init:    nil,
+			}},
+			declare: isTopLevel,
+			export:  decl.Export(),
+			span:    nil,
+			source:  decl,
+		}
+
+		stmts = append(stmts, &DeclStmt{
+			Decl:   staticVarDecl,
+			span:   nil,
+			source: nil,
+		})
+
+		return stmts
 	default:
 		return nil
 	}

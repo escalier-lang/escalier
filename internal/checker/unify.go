@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -920,6 +921,7 @@ func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
 
 	if !Equals(t1, t2) {
 		if occursInType(t1, t2) {
+			fmt.Fprintf(os.Stderr, "Recursive unification: cannot bind %s to %s\n", t1.String(), t2.String())
 			return []Error{&RecursiveUnificationError{
 				Left:  t1,
 				Right: t2,
