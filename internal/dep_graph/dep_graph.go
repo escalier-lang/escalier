@@ -75,6 +75,17 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 			}
 			v.TypeBindings.Set(name, declID)
 		}
+	case *ast.ClassDecl:
+		// Class declarations introduce both a type binding and a value binding (constructor)
+		if d.Name != nil && d.Name.Name != "" {
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			// Classes introduce both a type binding (for the class type) and a value binding (for the constructor)
+			v.TypeBindings.Set(name, declID)
+			v.ValueBindings.Set(name, declID)
+		}
 	}
 	return false // Don't traverse into the declaration's body
 }

@@ -472,6 +472,21 @@ func (p *Printer) PrintDecl(decl Decl) {
 
 		p.NewLine()
 		p.print("}")
+	case *ClassDecl:
+		p.print("class ")
+		p.print(d.Name.Name)
+		p.print(" {")
+		p.indent++
+
+		// Print class body elements (including constructor if present)
+		for _, elem := range d.Body {
+			p.NewLine()
+			p.printClassElem(elem)
+		}
+
+		p.indent--
+		p.NewLine()
+		p.print("}")
 	}
 
 	end := p.location
@@ -686,4 +701,76 @@ func (p *Printer) PrintModule(mod *Module) string {
 		p.NewLine()
 	}
 	return p.Output
+}
+
+func (p *Printer) printClassElem(elem ClassElem) {
+	switch e := elem.(type) {
+	case *MethodElem:
+		if e.Static {
+			p.print("static ")
+		}
+		if e.Async {
+			p.print("async ")
+		}
+		p.print(e.Name.Name)
+		p.print("(")
+		for i, param := range e.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printParam(param)
+		}
+		p.print(") {")
+
+		p.indent++
+		for _, stmt := range e.Body {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+
+		p.NewLine()
+		p.print("}")
+	case *GetterElem:
+		if e.Static {
+			p.print("static ")
+		}
+		p.print("get ")
+		p.print(e.Name.Name)
+		p.print("() {")
+
+		p.indent++
+		for _, stmt := range e.Body {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+
+		p.NewLine()
+		p.print("}")
+	case *SetterElem:
+		if e.Static {
+			p.print("static ")
+		}
+		p.print("set ")
+		p.print(e.Name.Name)
+		p.print("(")
+		for i, param := range e.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printParam(param)
+		}
+		p.print(") {")
+
+		p.indent++
+		for _, stmt := range e.Body {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+
+		p.NewLine()
+		p.print("}")
+	}
 }

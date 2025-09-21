@@ -568,6 +568,86 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		return []Stmt{stmt}
 	case *ast.TypeDecl:
 		return []Stmt{}
+	case *ast.ClassDecl:
+		// Build class body elements
+		classElems, classStmts := b.buildClassElems(d.Body)
+
+		// Create constructor method if the class has constructor parameters
+		if len(d.Params) > 0 {
+			// Use buildParams to handle parameter patterns and generate temp variables
+			params, paramStmts := b.buildParams(d.Params)
+			var constructorBodyStmts []Stmt
+
+			// Add parameter statements (variable declarations from buildParams)
+			constructorBodyStmts = slices.Concat(constructorBodyStmts, paramStmts)
+
+			// For each field in the class body, create this.fieldName = fieldName assignment
+			for _, elem := range d.Body {
+				if fieldElem, ok := elem.(*ast.FieldElem); ok {
+					if fieldElem.Name != nil {
+						fieldName := fieldElem.Name.Name
+						// Create assignment: this.fieldName = fieldName;
+						assignment := &ExprStmt{
+							Expr: NewBinaryExpr(
+								NewMemberExpr(
+									NewIdentExpr("this", "", nil),
+									NewIdentifier(fieldName, fieldElem.Name),
+									false,
+									nil,
+								),
+								Assign,
+								NewIdentExpr(fieldName, "", fieldElem.Name),
+								fieldElem.Name,
+							),
+							span:   nil,
+							source: fieldElem,
+						}
+						constructorBodyStmts = append(constructorBodyStmts, assignment)
+					}
+				}
+			}
+
+			// Create constructor method
+			constructorMethod := &MethodElem{
+				Name:    NewIdentifier("constructor", d),
+				Params:  params,
+				Body:    constructorBodyStmts,
+				MutSelf: nil,
+				Static:  false,
+				Private: false,
+				Async:   false,
+				span:    nil,
+				source:  d,
+			}
+
+			// Add constructor as the first element in the class body
+			classElems = append([]ClassElem{constructorMethod}, classElems...)
+		}
+
+		// Create the class declaration
+		classDecl := &ClassDecl{
+			Name: &Identifier{
+				Name:   fullyQualifyName(d.Name.Name, nsName),
+				span:   nil,
+				source: d.Name,
+			},
+			Body:    classElems,
+			export:  d.Export(),
+			declare: d.Declare(),
+			span:    nil,
+			source:  d,
+		}
+
+		stmt := &DeclStmt{
+			Decl:   classDecl,
+			span:   nil,
+			source: d,
+		}
+
+		// Return class statements and the class declaration
+		allStmts := slices.Concat(classStmts)
+		allStmts = append(allStmts, stmt)
+		return allStmts
 	default:
 		panic("TODO - TransformDecl - default case")
 	}
@@ -960,6 +1040,83 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 	}
 
 	return outParams, outParamStmts
+}
+
+func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt) {
+	var outElems []ClassElem
+	var allStmts []Stmt
+
+	for _, elem := range inElems {
+		switch e := elem.(type) {
+		case *ast.FieldElem:
+			// Skip field elements since they're handled by the constructor
+			continue
+		case *ast.MethodElem:
+			if e.Fn == nil {
+				continue
+			}
+			params, paramStmts := b.buildParams(e.Fn.Params)
+			var bodyStmts []Stmt
+			if e.Fn.Body != nil {
+				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+			}
+
+			methodElem := &MethodElem{
+				Name:    buildIdent(e.Name),
+				Params:  params,
+				Body:    slices.Concat(paramStmts, bodyStmts),
+				MutSelf: e.MutSelf,
+				Static:  e.Static,
+				Private: e.Private,
+				Async:   e.Fn.Async,
+				span:    nil,
+				source:  e,
+			}
+			outElems = append(outElems, methodElem)
+
+		case *ast.GetterElem:
+			if e.Fn == nil {
+				continue
+			}
+			var bodyStmts []Stmt
+			if e.Fn.Body != nil {
+				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+			}
+
+			getterElem := &GetterElem{
+				Name:    buildIdent(e.Name),
+				Body:    bodyStmts,
+				Static:  e.Static,
+				Private: e.Private,
+				span:    nil,
+				source:  e,
+			}
+			outElems = append(outElems, getterElem)
+
+		case *ast.SetterElem:
+			if e.Fn == nil {
+				continue
+			}
+			params, paramStmts := b.buildParams(e.Fn.Params)
+			var bodyStmts []Stmt
+			if e.Fn.Body != nil {
+				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+			}
+
+			setterElem := &SetterElem{
+				Name:    buildIdent(e.Name),
+				Params:  params,
+				Body:    slices.Concat(paramStmts, bodyStmts),
+				Static:  e.Static,
+				Private: e.Private,
+				span:    nil,
+				source:  e,
+			}
+			outElems = append(outElems, setterElem)
+		}
+	}
+
+	return outElems, allStmts
 }
 
 // buildMatchExpr converts a match expression into if-else statements with pattern matching
