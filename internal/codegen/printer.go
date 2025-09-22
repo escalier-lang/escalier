@@ -742,7 +742,7 @@ func (p *Printer) printClassElem(elem ClassElem) {
 		if e.Async {
 			p.print("async ")
 		}
-		p.print(e.Name.Name)
+		p.printObjKey(e.Name)
 		p.print("(")
 		for i, param := range e.Params {
 			if i > 0 {
@@ -766,7 +766,7 @@ func (p *Printer) printClassElem(elem ClassElem) {
 			p.print("static ")
 		}
 		p.print("get ")
-		p.print(e.Name.Name)
+		p.printObjKey(e.Name)
 		p.print("() {")
 
 		p.indent++
@@ -783,7 +783,7 @@ func (p *Printer) printClassElem(elem ClassElem) {
 			p.print("static ")
 		}
 		p.print("set ")
-		p.print(e.Name.Name)
+		p.printObjKey(e.Name)
 		p.print("(")
 		for i, param := range e.Params {
 			if i > 0 {

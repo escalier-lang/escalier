@@ -891,7 +891,7 @@ func (*GetterElem) isClassElem() {}
 func (*SetterElem) isClassElem() {}
 
 type MethodElem struct {
-	Name    *Identifier
+	Name    ObjKey
 	Params  []*Param
 	Body    []Stmt // optional for declare
 	MutSelf *bool  // true if 'self' is mutable, optional
@@ -902,7 +902,7 @@ type MethodElem struct {
 	source  ast.Node
 }
 
-func NewMethodElem(name *Identifier, params []*Param, body []Stmt, mutSelf *bool, static, private, async bool, source ast.Node) *MethodElem {
+func NewMethodElem(name ObjKey, params []*Param, body []Stmt, mutSelf *bool, static, private, async bool, source ast.Node) *MethodElem {
 	return &MethodElem{
 		Name:    name,
 		Params:  params,
@@ -921,7 +921,7 @@ func (e *MethodElem) SetSpan(span *Span) { e.span = span }
 func (e *MethodElem) Source() ast.Node   { return e.source }
 
 type GetterElem struct {
-	Name    *Identifier
+	Name    ObjKey
 	Body    []Stmt // optional for declare
 	Static  bool   // true if this is a static getter
 	Private bool   // true if this is a private getter
@@ -929,7 +929,7 @@ type GetterElem struct {
 	source  ast.Node
 }
 
-func NewGetterElem(name *Identifier, body []Stmt, static, private bool, source ast.Node) *GetterElem {
+func NewGetterElem(name ObjKey, body []Stmt, static, private bool, source ast.Node) *GetterElem {
 	return &GetterElem{
 		Name:    name,
 		Body:    body,
@@ -945,7 +945,7 @@ func (e *GetterElem) SetSpan(span *Span) { e.span = span }
 func (e *GetterElem) Source() ast.Node   { return e.source }
 
 type SetterElem struct {
-	Name    *Identifier
+	Name    ObjKey
 	Params  []*Param // should contain exactly one parameter
 	Body    []Stmt   // optional for declare
 	Static  bool     // true if this is a static setter
@@ -954,7 +954,7 @@ type SetterElem struct {
 	source  ast.Node
 }
 
-func NewSetterElem(name *Identifier, params []*Param, body []Stmt, static, private bool, source ast.Node) *SetterElem {
+func NewSetterElem(name ObjKey, params []*Param, body []Stmt, static, private bool, source ast.Node) *SetterElem {
 	return &SetterElem{
 		Name:    name,
 		Params:  params,

@@ -43,7 +43,7 @@ func (d *ClassDecl) Accept(v Visitor) {
 }
 
 type FieldElem struct {
-	Name    *Ident
+	Name    ObjKey
 	Value   Expr    // optional
 	Type    TypeAnn // optional
 	Default Expr    // optional
@@ -68,7 +68,7 @@ func (f *FieldElem) Accept(v Visitor) {
 func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
-	Name    *Ident
+	Name    ObjKey
 	Fn      *FuncExpr
 	MutSelf *bool // true if 'self' is mutable
 	Static  bool  // true if this is a static method
@@ -89,7 +89,7 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
-	Name    *Ident
+	Name    ObjKey
 	Fn      *FuncExpr
 	Static  bool // true if this is a static getter
 	Private bool // true if this is a private getter
@@ -110,7 +110,7 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
-	Name    *Ident
+	Name    ObjKey
 	Fn      *FuncExpr
 	Static  bool // true if this is a static setter
 	Private bool // true if this is a private setter

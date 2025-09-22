@@ -96,10 +96,10 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"GenericClass": {
 			input: `class Box<T>(value: T) {
 				value,
-				get(self) -> T {
+				get foo(self) -> T {
 					return self.value
 				},
-				set(mut self, value: T) {
+				set foo(mut self, value: T) {
 					self.value = value
 				},
 			}`,

@@ -585,20 +585,63 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			for _, elem := range d.Body {
 				if fieldElem, ok := elem.(*ast.FieldElem); ok {
 					if fieldElem.Name != nil {
-						fieldName := fieldElem.Name.Name
+						var lhs Expr
+						switch name := fieldElem.Name.(type) {
+						case *ast.IdentExpr:
+							lhs = NewMemberExpr(
+								NewIdentExpr("this", "", nil),
+								NewIdentifier(name.Name, fieldElem.Name),
+								false,
+								nil,
+							)
+						case *ast.StrLit:
+							lhs = NewIndexExpr(
+								NewIdentExpr("this", "", nil),
+								NewLitExpr(NewStrLit(name.Value, name), nil),
+								false,
+								nil,
+							)
+						case *ast.NumLit:
+							lhs = NewIndexExpr(
+								NewIdentExpr("this", "", nil),
+								NewLitExpr(NewNumLit(name.Value, name), nil),
+								false,
+								nil,
+							)
+						case *ast.ComputedKey:
+							// TODO: include generated stmts in output
+							key, _ := b.buildExpr(name.Expr, nil)
+							lhs = NewIndexExpr(
+								NewIdentExpr("this", "", nil),
+								key,
+								false,
+								nil,
+							)
+						}
+
+						var rhs Expr
+						if fieldElem.Value != nil {
+							// TODO: include generated stmts in output
+							value, _ := b.buildExpr(fieldElem.Value, nil)
+							rhs = value
+						} else {
+							// If the field has no value, assume it's a parameter with the same name
+							switch name := fieldElem.Name.(type) {
+							case *ast.IdentExpr:
+								rhs = NewIdentExpr(name.Name, "", fieldElem.Name)
+							case *ast.StrLit:
+								rhs = NewIdentExpr(name.Value, "", fieldElem.Name)
+							case *ast.NumLit:
+								rhs = NewIdentExpr(fmt.Sprintf("%g", name.Value), "", fieldElem.Name)
+							case *ast.ComputedKey:
+								// Computed keys cannot be constructor parameters
+								panic("Computed keys cannot be constructor parameters")
+							}
+						}
+
 						// Create assignment: this.fieldName = fieldName;
 						assignment := &ExprStmt{
-							Expr: NewBinaryExpr(
-								NewMemberExpr(
-									NewIdentExpr("this", "", nil),
-									NewIdentifier(fieldName, fieldElem.Name),
-									false,
-									nil,
-								),
-								Assign,
-								NewIdentExpr(fieldName, "", fieldElem.Name),
-								fieldElem.Name,
-							),
+							Expr:   NewBinaryExpr(lhs, Assign, rhs, fieldElem.Name),
 							span:   nil,
 							source: fieldElem,
 						}
@@ -609,7 +652,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 
 			// Create constructor method
 			constructorMethod := &MethodElem{
-				Name:    NewIdentifier("constructor", d),
+				Name:    NewIdentExpr("constructor", "", d),
 				Params:  params,
 				Body:    constructorBodyStmts,
 				MutSelf: nil,
@@ -1061,8 +1104,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 			}
 
+			name, nameStmts := b.buildObjKey(e.Name)
+			allStmts = slices.Concat(allStmts, nameStmts)
+
 			methodElem := &MethodElem{
-				Name:    buildIdent(e.Name),
+				Name:    name,
 				Params:  params,
 				Body:    slices.Concat(paramStmts, bodyStmts),
 				MutSelf: e.MutSelf,
@@ -1083,8 +1129,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 			}
 
+			name, nameStmts := b.buildObjKey(e.Name)
+			allStmts = slices.Concat(allStmts, nameStmts)
+
 			getterElem := &GetterElem{
-				Name:    buildIdent(e.Name),
+				Name:    name,
 				Body:    bodyStmts,
 				Static:  e.Static,
 				Private: e.Private,
@@ -1103,8 +1152,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 			}
 
+			name, nameStmts := b.buildObjKey(e.Name)
+			allStmts = slices.Concat(allStmts, nameStmts)
+
 			setterElem := &SetterElem{
-				Name:    buildIdent(e.Name),
+				Name:    name,
 				Params:  params,
 				Body:    slices.Concat(paramStmts, bodyStmts),
 				Static:  e.Static,

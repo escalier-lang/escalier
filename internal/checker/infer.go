@@ -5,6 +5,7 @@ import (
 	"iter"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"maps"
@@ -208,13 +209,13 @@ func (c *Checker) InferComponent(
 			for _, elem := range decl.Body {
 				switch elem := elem.(type) {
 				case *ast.FieldElem:
-					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					key := astKeyToTypeKey(elem.Name)
 					objTypeElems = append(
 						objTypeElems,
 						NewPropertyElemType(key, c.FreshVar()),
 					)
 				case *ast.MethodElem:
-					key := ObjTypeKey{Kind: StrObjTypeKeyKind, Str: elem.Name.Name, Num: 0, Sym: 0}
+					key := astKeyToTypeKey(elem.Name)
 					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					objTypeElems = append(
@@ -366,7 +367,17 @@ func (c *Checker) InferComponent(
 								unifyErrors := c.unify(ctx, prop.Value, initType)
 								errors = slices.Concat(errors, unifyErrors)
 							} else {
-								binding := bodyCtx.Scope.getValue(field.Name.Name)
+								var binding *Binding
+								switch name := field.Name.(type) {
+								case *ast.IdentExpr:
+									binding = bodyCtx.Scope.getValue(name.Name)
+								case *ast.StrLit:
+									binding = bodyCtx.Scope.getValue(name.Value)
+								case *ast.NumLit:
+									binding = bodyCtx.Scope.getValue(strconv.FormatFloat(name.Value, 'f', -1, 64))
+								case *ast.ComputedKey:
+									panic("computed keys are not supported in shorthand field declarations")
+								}
 
 								unifyErrors := c.unify(ctx, prop.Value, binding.Type)
 								errors = slices.Concat(errors, unifyErrors)
@@ -620,7 +631,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 	} else if objType, ok := calleeType.(*ObjectType); ok {
 		// Check if ObjectType has a constructor or callable element
 		var fnTypeToUse *FuncType = nil
-		
+
 		for _, elem := range objType.Elems {
 			if constructorElem, ok := elem.(*ConstructorElemType); ok {
 				fnTypeToUse = constructorElem.Fn
@@ -630,12 +641,12 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 				break
 			}
 		}
-		
+
 		if fnTypeToUse == nil {
 			return NewNeverType(), []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
-		
+
 		// Use the same logic as for direct function calls
 		// Find if the function has a rest parameter
 		var restIndex = -1
