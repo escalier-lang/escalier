@@ -1,0 +1,11 @@
+val foo = "foo"
+val bar = "bar"
+val obj = {
+    [foo]: 42:number,
+    [bar](self) {
+        return self[foo]
+    }
+}
+
+val a = obj[foo]
+val b = obj[bar]()

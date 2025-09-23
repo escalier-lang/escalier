@@ -47,10 +47,10 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					y,
 					length(self) {
 						return sqrt(self.x * self.x + self.y * self.y)
-					}
+					},
 					add(self, other: Point) {
 						return Point(self.x + other.x, self.y + other.y)
-					}
+					},
 				}
 
 				val p = Point(5, 10)
@@ -95,6 +95,30 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			},
 			expectedTypeAliases: map[string]string{
 				"Point": "{x: number, y: number, scale(factor: number) -> mut Point throws never, translate(dx: number, dy: number) -> mut Point throws never}",
+			},
+		},
+		"SimpleDeclWithComputedMembers": {
+			input: `
+				val bar = "bar"
+				val baz = "baz"
+				class Foo() {
+					[bar]: 42:number,
+					[baz](self) {
+						return self[bar]
+					}
+				}
+
+				val foo = Foo()
+				val fooBar = foo[bar]
+				val fooBaz = foo[baz]()
+			`,
+			expectedTypes: map[string]string{
+				"Foo":    "{new fn () -> Foo throws never}",
+				"fooBar": "number",
+				"fooBaz": "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Foo": "{bar: number, baz() -> number throws never}",
 			},
 		},
 	}

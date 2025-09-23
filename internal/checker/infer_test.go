@@ -326,6 +326,26 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"obj": "{_value: number, get value(self) -> number throws never, set value(mut self, value: number) -> undefined throws never}",
 			},
 		},
+		"ObjectWithComputedKeys": {
+			input: `
+				val foo = "foo"
+				val bar = "bar"
+				val obj = {
+					[foo]: 42:number,
+					[bar](self) {
+						return self[foo]
+					}
+				}
+
+				val a = obj[foo]
+				val b = obj[bar]()
+			`,
+			expectedTypes: map[string]string{
+				"obj": "{foo: number, bar() -> number throws never}",
+				"a":   "number",
+				"b":   "number",
+			},
+		},
 		"IfElseExpr": {
 			input: `
 				val a = 5
