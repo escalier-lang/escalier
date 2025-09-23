@@ -569,8 +569,11 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.TypeDecl:
 		return []Stmt{}
 	case *ast.ClassDecl:
+		allStmts := []Stmt{}
+
 		// Build class body elements
 		classElems, classStmts := b.buildClassElems(d.Body)
+		allStmts = slices.Concat(allStmts, classStmts)
 
 		// Create constructor method if the class has constructor parameters
 		if len(d.Params) > 0 {
@@ -609,8 +612,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 								nil,
 							)
 						case *ast.ComputedKey:
-							// TODO: include generated stmts in output
-							key, _ := b.buildExpr(name.Expr, nil)
+							key, keyStmts := b.buildExpr(name.Expr, nil)
+							allStmts = slices.Concat(allStmts, keyStmts)
+
 							lhs = NewIndexExpr(
 								NewIdentExpr("this", "", nil),
 								key,
@@ -621,8 +625,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 
 						var rhs Expr
 						if fieldElem.Value != nil {
-							// TODO: include generated stmts in output
-							value, _ := b.buildExpr(fieldElem.Value, nil)
+							value, valueStmts := b.buildExpr(fieldElem.Value, nil)
+							allStmts = slices.Concat(allStmts, valueStmts)
+
 							rhs = value
 						} else {
 							// If the field has no value, assume it's a parameter with the same name
@@ -687,9 +692,8 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			source: d,
 		}
 
-		// Return class statements and the class declaration
-		allStmts := slices.Concat(classStmts)
 		allStmts = append(allStmts, stmt)
+
 		return allStmts
 	default:
 		panic("TODO - TransformDecl - default case")

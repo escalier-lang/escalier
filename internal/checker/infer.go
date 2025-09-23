@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"iter"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -209,18 +208,26 @@ func (c *Checker) InferComponent(
 			for _, elem := range decl.Body {
 				switch elem := elem.(type) {
 				case *ast.FieldElem:
-					key := astKeyToTypeKey(elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					if key == nil {
+						continue
+					}
 					objTypeElems = append(
 						objTypeElems,
-						NewPropertyElemType(key, c.FreshVar()),
+						NewPropertyElemType(*key, c.FreshVar()),
 					)
 				case *ast.MethodElem:
-					key := astKeyToTypeKey(elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					errors = slices.Concat(errors, keyErrors)
 					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
+					if key == nil {
+						continue
+					}
 					objTypeElems = append(
 						objTypeElems,
-						NewMethodElemType(key, funcType, elem.MutSelf),
+						NewMethodElemType(*key, funcType, elem.MutSelf),
 					)
 				default:
 					errors = append(errors, &UnimplementedError{
@@ -417,8 +424,6 @@ func (c *Checker) InferComponent(
 					}
 				}
 			}
-
-			fmt.Fprintf(os.Stderr, "Class %s has instance type: %s\n", decl.Name.Name, objType.String())
 		}
 	}
 
@@ -904,24 +909,40 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
-				t := c.FreshVar()
-				types[i] = t
-				typeElems[i] = NewPropertyElemType(astKeyToTypeKey(elem.Name), t)
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key != nil {
+					t := c.FreshVar()
+					types[i] = t
+					typeElems[i] = NewPropertyElemType(*key, t)
+				}
 			case *ast.MethodExpr:
-				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
-				paramBindingsSlice[i] = paramBindings
-				types[i] = funcType
-				typeElems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), funcType, elem.MutSelf)
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key != nil {
+					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					paramBindingsSlice[i] = paramBindings
+					types[i] = funcType
+					typeElems[i] = NewMethodElemType(*key, funcType, elem.MutSelf)
+				}
 			case *ast.GetterExpr:
-				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
-				paramBindingsSlice[i] = paramBindings
-				types[i] = funcType
-				typeElems[i] = &GetterElemType{Fn: funcType, Name: astKeyToTypeKey(elem.Name)}
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key != nil {
+					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					paramBindingsSlice[i] = paramBindings
+					types[i] = funcType
+					typeElems[i] = &GetterElemType{Fn: funcType, Name: *key}
+				}
 			case *ast.SetterExpr:
-				funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
-				paramBindingsSlice[i] = paramBindings
-				types[i] = funcType
-				typeElems[i] = &SetterElemType{Fn: funcType, Name: astKeyToTypeKey(elem.Name)}
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key != nil {
+					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					paramBindingsSlice[i] = paramBindings
+					types[i] = funcType
+					typeElems[i] = &SetterElemType{Fn: funcType, Name: *key}
+				}
 			}
 		}
 
@@ -1563,16 +1584,35 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 	return NewNeverType(), errors
 }
 
-func astKeyToTypeKey(key ast.ObjKey) ObjTypeKey {
+func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []Error) {
 	switch key := key.(type) {
 	case *ast.IdentExpr:
-		return NewStrKey(key.Name)
+		newKey := NewStrKey(key.Name)
+		return &newKey, nil
 	case *ast.StrLit:
-		return NewStrKey(key.Value)
+		newKey := NewStrKey(key.Value)
+		return &newKey, nil
 	case *ast.NumLit:
-		return NewNumKey(key.Value)
+		newKey := NewNumKey(key.Value)
+		return &newKey, nil
 	case *ast.ComputedKey:
-		panic("TODO: handle computed key")
+		keyType, _ := c.inferExpr(ctx, key.Expr) // infer the expression for side-effects
+
+		switch t := Prune(keyType).(type) {
+		case *LitType:
+			switch lit := t.Lit.(type) {
+			case *StrLit:
+				newKey := NewStrKey(lit.Value)
+				return &newKey, nil
+			case *NumLit:
+				newKey := NewNumKey(lit.Value)
+				return &newKey, nil
+			default:
+				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
+			}
+		default:
+			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
+		}
 	default:
 		panic(fmt.Sprintf("Unknown object key type: %T", key))
 	}
@@ -2527,17 +2567,32 @@ func (c *Checker) inferTypeAnn(
 				elems[i] = &ConstructorElemType{Fn: fn}
 			case *ast.MethodTypeAnn:
 				// TODO: handle `self` and `mut self` parameters
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key == nil {
+					continue
+				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = NewMethodElemType(astKeyToTypeKey(elem.Name), fn, nil)
+				elems[i] = NewMethodElemType(*key, fn, nil)
 			case *ast.GetterTypeAnn:
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key == nil {
+					continue
+				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &GetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+				elems[i] = &GetterElemType{Name: *key, Fn: fn}
 			case *ast.SetterTypeAnn:
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key == nil {
+					continue
+				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &SetterElemType{Name: astKeyToTypeKey(elem.Name), Fn: fn}
+				elems[i] = &SetterElemType{Name: *key, Fn: fn}
 			case *ast.PropertyTypeAnn:
 				var t Type
 				if elem.Value != nil {
@@ -2547,8 +2602,13 @@ func (c *Checker) inferTypeAnn(
 				} else {
 					t = NewLitType(&UndefinedLit{})
 				}
+				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+				errors = slices.Concat(errors, keyErrors)
+				if key == nil {
+					continue
+				}
 				elems[i] = &PropertyElemType{
-					Name:     astKeyToTypeKey(elem.Name),
+					Name:     *key,
 					Optional: elem.Optional,
 					Readonly: elem.Readonly,
 					Value:    t,
