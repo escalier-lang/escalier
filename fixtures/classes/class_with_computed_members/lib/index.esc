@@ -1,0 +1,12 @@
+val bar = "bar"
+val baz = "baz"
+class Foo() {
+    [bar]: 42:number,
+    [baz](self) {
+        return self[bar]
+    }
+}
+
+val foo = Foo()
+val fooBar = foo[bar]
+val fooBaz = foo[baz]()
