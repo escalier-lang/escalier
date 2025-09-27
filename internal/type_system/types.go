@@ -730,6 +730,18 @@ func NewMethodElemType(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem
 		MutSelf: mutSelf,
 	}
 }
+func NewGetterElemType(name ObjTypeKey, fn *FuncType) *GetterElemType {
+	return &GetterElemType{
+		Name: name,
+		Fn:   fn,
+	}
+}
+func NewSetterElemType(name ObjTypeKey, fn *FuncType) *SetterElemType {
+	return &SetterElemType{
+		Name: name,
+		Fn:   fn,
+	}
+}
 func NewPropertyElemType(name ObjTypeKey, value Type) *PropertyElemType {
 	return &PropertyElemType{
 		Name:     name,

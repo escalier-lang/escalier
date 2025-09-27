@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["class Math() {\n    static add(a: number, b: number) {\n        return a + b\n    },\n}\n\nval m = Math()\nval result = Math.add(5, 3)\n"],"names":[],"mappings":"AAAA;;;;;;;;;MAMI,AAAA,IAAI,AAAA;MACJ,AAAA,SAAS,AAAA,AAAA,KAAK,IAAI,GAAG"}

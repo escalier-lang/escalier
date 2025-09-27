@@ -121,6 +121,73 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"Foo": "{bar: number, baz() -> number throws never}",
 			},
 		},
+		"ClassWithStaticMethod": {
+			input: `
+				class Math() {
+					static add(a: number, b: number) {
+						return a + b
+					},
+				}
+
+				val m = Math()
+				val result = Math.add(5, 3)
+			`,
+			expectedTypes: map[string]string{
+				"Math":   "{new fn () -> Math throws never, add(a: number, b: number) -> number throws never}",
+				"m":      "Math",
+				"result": "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Math": "{}",
+			},
+		},
+		"ClassWithStaticAndInstanceMethods": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+					static origin() {
+						return Point(0, 0)
+					},
+					length(self) {
+						return self.x + self.y
+					},
+				}
+
+				val p = Point(3, 4)
+				val origin = Point.origin()
+				val len = p.length()
+			`,
+			expectedTypes: map[string]string{
+				"Point":  "{new fn (x: number, y: number) -> Point throws never, origin() -> Point throws never}",
+				"p":      "Point",
+				"origin": "Point",
+				"len":    "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Point": "{x: number, y: number, length() -> number throws never}",
+			},
+		},
+		// "ClassWithStaticGetter": {
+		// 	input: `
+		// 		class Config() {
+		// 			static get version() -> string {
+		// 				return "1.0.0"
+		// 			},
+		// 		}
+
+		// 		val config = Config()
+		// 		val version = Config.version
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"Config":  "{new fn () -> Config throws never, get version() -> string throws never}",
+		// 		"config":  "Config",
+		// 		"version": "string",
+		// 	},
+		// 	expectedTypeAliases: map[string]string{
+		// 		"Config": "{}",
+		// 	},
+		// },
 	}
 
 	schema := loadSchema(t)

@@ -204,6 +204,7 @@ func (c *Checker) InferComponent(
 			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 
 			objTypeElems := []ObjTypeElem{}
+			staticElems := []ObjTypeElem{}
 
 			for _, elem := range decl.Body {
 				switch elem := elem.(type) {
@@ -225,10 +226,64 @@ func (c *Checker) InferComponent(
 					if key == nil {
 						continue
 					}
-					objTypeElems = append(
-						objTypeElems,
-						NewMethodElemType(*key, funcType, elem.MutSelf),
-					)
+
+					if elem.Static {
+						// Static methods go to the class object type
+						staticElems = append(
+							staticElems,
+							NewMethodElemType(*key, funcType, nil), // static methods don't have self
+						)
+					} else {
+						// Instance methods go to the instance type
+						objTypeElems = append(
+							objTypeElems,
+							NewMethodElemType(*key, funcType, elem.MutSelf),
+						)
+					}
+				case *ast.GetterElem:
+					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					errors = slices.Concat(errors, sigErrors)
+					if key == nil {
+						continue
+					}
+
+					if elem.Static {
+						// Static getters go to the class object type
+						staticElems = append(
+							staticElems,
+							NewGetterElemType(*key, funcType),
+						)
+					} else {
+						// Instance getters go to the instance type
+						objTypeElems = append(
+							objTypeElems,
+							NewGetterElemType(*key, funcType),
+						)
+					}
+				case *ast.SetterElem:
+					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					errors = slices.Concat(errors, sigErrors)
+					if key == nil {
+						continue
+					}
+
+					if elem.Static {
+						// Static setters go to the class object type
+						staticElems = append(
+							staticElems,
+							NewSetterElemType(*key, funcType),
+						)
+					} else {
+						// Instance setters go to the instance type
+						objTypeElems = append(
+							objTypeElems,
+							NewSetterElemType(*key, funcType),
+						)
+					}
 				default:
 					errors = append(errors, &UnimplementedError{
 						message: fmt.Sprintf("Unsupported class element type: %T", elem),
@@ -265,9 +320,10 @@ func (c *Checker) InferComponent(
 
 			funcType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
-			// Create an object type with a constructor element instead of just a function
+			// Create an object type with a constructor element and static methods/properties
 			constructorElem := &ConstructorElemType{Fn: funcType}
 			classObjTypeElems := []ObjTypeElem{constructorElem}
+			classObjTypeElems = append(classObjTypeElems, staticElems...)
 
 			classObjType := &ObjectType{
 				Elems:      classObjTypeElems,
@@ -347,8 +403,11 @@ func (c *Checker) InferComponent(
 			errors = slices.Concat(errors, unifyErrors)
 		case *ast.ClassDecl:
 			typeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
+			instanceType := Prune(typeAlias.Type).(*ObjectType)
 
-			objType := Prune(typeAlias.Type).(*ObjectType)
+			// Get the class binding to access static methods
+			classBinding := declCtx.Scope.getValue(decl.Name.Name)
+			classType := classBinding.Type.(*ObjectType)
 
 			// We reuse the binding that was previous created for the function
 			// declaration, so that we can unify the signature with the body's
@@ -361,21 +420,38 @@ func (c *Checker) InferComponent(
 				bodyCtx.Scope.setValue(name, binding)
 			}
 
-			for typeElem, bodyElem := range Zip(objType.Elems, decl.Body) {
-				if prop, ok := typeElem.(*PropertyElemType); ok {
-					if field, ok := bodyElem.(*ast.FieldElem); ok {
-						if field.Type != nil {
-							// TODO
+			// Process each element in the class body
+			for _, bodyElem := range decl.Body {
+				switch bodyElem := bodyElem.(type) {
+				case *ast.FieldElem:
+					// Find the corresponding property in the instance type
+					var prop *PropertyElemType
+					astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					if astKey != nil {
+						for _, elem := range instanceType.Elems {
+							if propElem, ok := elem.(*PropertyElemType); ok {
+								if propElem.Name == *astKey {
+									prop = propElem
+									break
+								}
+							}
+						}
+					}
+
+					if prop != nil {
+						if bodyElem.Type != nil {
+							// TODO: handle type annotations
 						} else {
-							if field.Value != nil {
-								initType, initErrors := c.inferExpr(bodyCtx, field.Value)
+							if bodyElem.Value != nil {
+								initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
 								errors = slices.Concat(errors, initErrors)
 
 								unifyErrors := c.unify(ctx, prop.Value, initType)
 								errors = slices.Concat(errors, unifyErrors)
 							} else {
 								var binding *Binding
-								switch name := field.Name.(type) {
+								switch name := bodyElem.Name.(type) {
 								case *ast.IdentExpr:
 									binding = bodyCtx.Scope.getValue(name.Name)
 								case *ast.StrLit:
@@ -391,37 +467,79 @@ func (c *Checker) InferComponent(
 							}
 						}
 					}
-				}
 
-				if method, ok := typeElem.(*MethodElemType); ok {
-					if _, ok := bodyElem.(*ast.MethodElem); ok {
+				case *ast.MethodElem:
+					var methodType *MethodElemType
+					var isStatic bool = bodyElem.Static
+
+					// Find the corresponding method in either instance or class type
+					var targetType *ObjectType
+					if isStatic {
+						targetType = classType
+					} else {
+						targetType = instanceType
+					}
+
+					astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					if astKey != nil {
+						for _, elem := range targetType.Elems {
+							if methodElem, ok := elem.(*MethodElemType); ok {
+								if methodElem.Name == *astKey {
+									methodType = methodElem
+									break
+								}
+							}
+						}
+					}
+
+					if methodType != nil {
 						paramBindings := make(map[string]*Binding)
 
-						// We use the name of the class as the type here to avoid
-						// a RecursiveUnificationError.
-						// TODO: handle generic classes
-						var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
-						if method.MutSelf != nil && *method.MutSelf {
-							t = NewMutableType(t)
-						}
+						// For instance methods, add 'self' parameter
+						if !isStatic {
+							// We use the name of the class as the type here to avoid
+							// a RecursiveUnificationError.
+							// TODO: handle generic classes
+							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+							if methodType.MutSelf != nil && *methodType.MutSelf {
+								t = NewMutableType(t)
+							}
 
-						paramBindings["self"] = &Binding{
-							Source:  &ast.NodeProvenance{Node: bodyElem},
-							Type:    t,
-							Mutable: method.MutSelf != nil && *method.MutSelf, // TODO: wrap the object type in mutable
-						}
-
-						for _, param := range method.Fn.Params {
-							paramBindings[param.Pattern.String()] = &Binding{
-								Source:  &TypeProvenance{Type: param.Type},
-								Type:    param.Type,
-								Mutable: false, // TODO: wrap the object type in mutable
+							paramBindings["self"] = &Binding{
+								Source:  &ast.NodeProvenance{Node: bodyElem},
+								Type:    t,
+								Mutable: methodType.MutSelf != nil && *methodType.MutSelf,
 							}
 						}
 
-						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, method.Fn, paramBindings, bodyElem.(*ast.MethodElem).Fn.Body, false)
+						// For static methods, no 'self' parameter is added
+
+						for _, param := range methodType.Fn.Params {
+							paramBindings[param.Pattern.String()] = &Binding{
+								Source:  &TypeProvenance{Type: param.Type},
+								Type:    param.Type,
+								Mutable: false,
+							}
+						}
+
+						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
 						errors = slices.Concat(errors, bodyErrors)
 					}
+
+				case *ast.GetterElem:
+					// TODO: Handle getter elements
+					errors = append(errors, &UnimplementedError{
+						message: "Getter elements are not yet supported in class inference",
+						span:    bodyElem.Span(),
+					})
+
+				case *ast.SetterElem:
+					// TODO: Handle setter elements
+					errors = append(errors, &UnimplementedError{
+						message: "Setter elements are not yet supported in class inference",
+						span:    bodyElem.Span(),
+					})
 				}
 			}
 		}
@@ -1498,6 +1616,9 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn.Params[0].Type, errors
 				}
+			case *ConstructorElemType:
+			case *CallableElemType:
+				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 			}
