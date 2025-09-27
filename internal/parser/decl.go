@@ -334,12 +334,14 @@ modifiers_done:
 			default_ = p.expr()
 		}
 
+		// TODO: report an error if `isAsync` is true
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
 			Name:    name,
 			Value:   value,
 			Type:    typeAnn,
 			Default: default_,
+			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
 		}

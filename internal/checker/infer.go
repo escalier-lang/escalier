@@ -214,10 +214,20 @@ func (c *Checker) InferComponent(
 					if key == nil {
 						continue
 					}
-					objTypeElems = append(
-						objTypeElems,
-						NewPropertyElemType(*key, c.FreshVar()),
-					)
+
+					if elem.Static {
+						// Static fields go to the class object type
+						staticElems = append(
+							staticElems,
+							NewPropertyElemType(*key, c.FreshVar()),
+						)
+					} else {
+						// Instance fields go to the instance type
+						objTypeElems = append(
+							objTypeElems,
+							NewPropertyElemType(*key, c.FreshVar()),
+						)
+					}
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
@@ -424,12 +434,21 @@ func (c *Checker) InferComponent(
 			for _, bodyElem := range decl.Body {
 				switch bodyElem := bodyElem.(type) {
 				case *ast.FieldElem:
-					// Find the corresponding property in the instance type
 					var prop *PropertyElemType
+					var isStatic bool = bodyElem.Static
+
+					// Find the corresponding property in either instance or class type
+					var targetType *ObjectType
+					if isStatic {
+						targetType = classType
+					} else {
+						targetType = instanceType
+					}
+
 					astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
 					errors = slices.Concat(errors, keyErrors)
 					if astKey != nil {
-						for _, elem := range instanceType.Elems {
+						for _, elem := range targetType.Elems {
 							if propElem, ok := elem.(*PropertyElemType); ok {
 								if propElem.Name == *astKey {
 									prop = propElem

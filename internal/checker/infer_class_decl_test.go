@@ -262,6 +262,30 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"Config": "{}",
 			},
 		},
+		"ClassWithStaticAndInstanceFields": {
+			input: `
+				class Counter(initialValue: number) {
+					value: initialValue,
+					static totalInstances: 0:number,
+					static defaultValue: 100,
+				}
+
+				val counter1 = Counter(5)
+				val value1 = counter1.value
+				val totalInstances = Counter.totalInstances
+				val defaultVal = Counter.defaultValue
+			`,
+			expectedTypes: map[string]string{
+				"Counter":        "{new fn (initialValue: number) -> Counter throws never, totalInstances: number, defaultValue: 100}",
+				"counter1":       "Counter",
+				"value1":         "number",
+				"totalInstances": "number",
+				"defaultVal":     "100",
+			},
+			expectedTypeAliases: map[string]string{
+				"Counter": "{value: number}",
+			},
+		},
 		// TODO: figure out how we want to handle static setters
 		// "ClassWithStaticSetter": {
 		// 	input: `

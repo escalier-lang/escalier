@@ -47,6 +47,7 @@ type FieldElem struct {
 	Value   Expr    // optional
 	Type    TypeAnn // optional
 	Default Expr    // optional
+	Static  bool    // true if this is a static field
 	Private bool    // true if this field is private
 	Span_   Span
 }

@@ -886,9 +886,34 @@ type ClassElem interface {
 	Node
 }
 
+func (*FieldElem) isClassElem()  {}
 func (*MethodElem) isClassElem() {}
 func (*GetterElem) isClassElem() {}
 func (*SetterElem) isClassElem() {}
+
+type FieldElem struct {
+	Name    ObjKey
+	Value   Expr // optional, the initializer expression
+	Static  bool // true if this is a static field
+	Private bool // true if this is a private field
+	span    *Span
+	source  ast.Node
+}
+
+func NewFieldElem(name ObjKey, value Expr, static, private bool, source ast.Node) *FieldElem {
+	return &FieldElem{
+		Name:    name,
+		Value:   value,
+		Static:  static,
+		Private: private,
+		source:  source,
+		span:    nil,
+	}
+}
+
+func (e *FieldElem) Span() *Span        { return e.span }
+func (e *FieldElem) SetSpan(span *Span) { e.span = span }
+func (e *FieldElem) Source() ast.Node   { return e.source }
 
 type MethodElem struct {
 	Name    ObjKey

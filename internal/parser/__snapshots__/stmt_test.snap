@@ -2401,6 +2401,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -2445,6 +2446,7 @@ nil
                     },
                     inferredType: nil,
                 },
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
@@ -2878,6 +2880,7 @@ nil
                 Value:   nil,
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -3469,6 +3472,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:1, Column:44},
@@ -3612,6 +3616,7 @@ nil
                 Value:   nil,
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -3634,6 +3639,7 @@ nil
                 Value:   nil,
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
@@ -4982,6 +4988,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -5035,6 +5042,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: false,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
@@ -5282,6 +5290,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -5448,6 +5457,7 @@ nil
                 },
                 Type:    nil,
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
@@ -5879,6 +5889,7 @@ nil
                     inferredType: nil,
                 },
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
@@ -6045,6 +6056,7 @@ nil
                     inferredType: nil,
                 },
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
@@ -6298,6 +6310,7 @@ nil
                     inferredType: nil,
                 },
                 Default: nil,
+                Static:  false,
                 Private: true,
                 Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
