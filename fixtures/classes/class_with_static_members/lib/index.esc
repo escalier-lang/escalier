@@ -1,8 +1,9 @@
-class Math() {
+class MyMath() {
+    static pi: 3.141592,
     static add(a: number, b: number) {
         return a + b
     },
 }
 
-val m = Math()
-val result = Math.add(5, 3)
+val m = MyMath()
+val result = MyMath.add(5, 3)

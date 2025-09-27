@@ -802,5 +802,16 @@ func (p *Printer) printClassElem(elem ClassElem) {
 
 		p.NewLine()
 		p.print("}")
+	case *FieldElem:
+		// Instance fields are handled by the constructor.
+		if e.Static {
+			p.print("static ")
+			p.printObjKey(e.Name)
+			if e.Value != nil {
+				p.print(" = ")
+				p.PrintExpr(e.Value)
+			}
+			p.print(";")
+		}
 	}
 }

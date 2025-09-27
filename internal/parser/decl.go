@@ -340,6 +340,7 @@ modifiers_done:
 			Value:   value,
 			Type:    typeAnn,
 			Default: default_,
+			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
 		}

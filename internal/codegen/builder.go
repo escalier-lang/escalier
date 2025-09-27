@@ -582,9 +582,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		// Add parameter statements (variable declarations from buildParams)
 		constructorBodyStmts = slices.Concat(constructorBodyStmts, paramStmts)
 
-		// For each field in the class body, create this.fieldName = fieldName assignment
+		// For each instance field in the class body, create this.fieldName = fieldName assignment
 		for _, elem := range d.Body {
-			if fieldElem, ok := elem.(*ast.FieldElem); ok {
+			if fieldElem, ok := elem.(*ast.FieldElem); ok && !fieldElem.Static {
 				if fieldElem.Name != nil {
 					var lhs Expr
 					switch name := fieldElem.Name.(type) {
@@ -1093,8 +1093,29 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 	for _, elem := range inElems {
 		switch e := elem.(type) {
 		case *ast.FieldElem:
-			// Skip field elements since they're handled by the constructor
-			continue
+			// Only handle static fields here; instance fields are handled by the constructor
+			if e.Static {
+				name, nameStmts := b.buildObjKey(e.Name)
+				allStmts = slices.Concat(allStmts, nameStmts)
+
+				var value Expr
+				var valueStmts []Stmt
+				if e.Value != nil {
+					value, valueStmts = b.buildExpr(e.Value, nil)
+					allStmts = slices.Concat(allStmts, valueStmts)
+				}
+
+				fieldElem := &FieldElem{
+					Name:    name,
+					Value:   value,
+					Static:  e.Static,
+					Private: e.Private,
+					span:    nil,
+					source:  e,
+				}
+				outElems = append(outElems, fieldElem)
+			}
+			// Instance fields are skipped and handled by the constructor
 		case *ast.MethodElem:
 			if e.Fn == nil {
 				continue
