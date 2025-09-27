@@ -210,11 +210,15 @@ modifiers_done:
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
-			p.mutSelf() // TODO: check the value of mutSelf
+			if !isStatic {
+				p.mutSelf() // TODO: check the value of mutSelf
 
-			token = p.lexer.peek()
-			if token.Type == Comma {
-				p.lexer.consume() // consume ','
+				token = p.lexer.peek()
+				if token.Type == Comma {
+					p.lexer.consume() // consume ','
+					params = parseDelimSeq(p, CloseParen, Comma, p.param)
+				}
+			} else {
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			}
 

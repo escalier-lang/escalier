@@ -528,18 +528,124 @@ func (c *Checker) InferComponent(
 					}
 
 				case *ast.GetterElem:
-					// TODO: Handle getter elements
-					errors = append(errors, &UnimplementedError{
-						message: "Getter elements are not yet supported in class inference",
-						span:    bodyElem.Span(),
-					})
+					var getterType *GetterElemType
+					var isStatic bool = bodyElem.Static
+
+					// Find the corresponding getter in either instance or class type
+					var targetType *ObjectType
+					if isStatic {
+						targetType = classType
+					} else {
+						targetType = instanceType
+					}
+
+					astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					if astKey != nil {
+						for _, elem := range targetType.Elems {
+							if getterElem, ok := elem.(*GetterElemType); ok {
+								if getterElem.Name == *astKey {
+									getterType = getterElem
+									break
+								}
+							}
+						}
+					}
+
+					if getterType != nil {
+						paramBindings := make(map[string]*Binding)
+
+						// For instance getters, add 'self' parameter
+						if !isStatic {
+							// We use the name of the class as the type here to avoid
+							// a RecursiveUnificationError.
+							// TODO: handle generic classes
+							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+
+							paramBindings["self"] = &Binding{
+								Source:  &ast.NodeProvenance{Node: bodyElem},
+								Type:    t,
+								Mutable: false, // getters don't mutate self
+							}
+						}
+
+						// For static getters, no 'self' parameter is added
+
+						// Add any explicit parameters from the getter function signature
+						for _, param := range getterType.Fn.Params {
+							paramBindings[param.Pattern.String()] = &Binding{
+								Source:  &TypeProvenance{Type: param.Type},
+								Type:    param.Type,
+								Mutable: false,
+							}
+						}
+
+						if bodyElem.Fn.Body != nil {
+							bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Body, false)
+							errors = slices.Concat(errors, bodyErrors)
+						}
+					}
 
 				case *ast.SetterElem:
-					// TODO: Handle setter elements
-					errors = append(errors, &UnimplementedError{
-						message: "Setter elements are not yet supported in class inference",
-						span:    bodyElem.Span(),
-					})
+					var setterType *SetterElemType
+					var isStatic bool = bodyElem.Static
+
+					// Find the corresponding setter in either instance or class type
+					var targetType *ObjectType
+					if isStatic {
+						targetType = classType
+					} else {
+						targetType = instanceType
+					}
+
+					astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+					errors = slices.Concat(errors, keyErrors)
+					if astKey != nil {
+						for _, elem := range targetType.Elems {
+							if setterElem, ok := elem.(*SetterElemType); ok {
+								if setterElem.Name == *astKey {
+									setterType = setterElem
+									break
+								}
+							}
+						}
+					}
+
+					if setterType != nil {
+						paramBindings := make(map[string]*Binding)
+
+						// For instance setters, add 'self' parameter
+						if !isStatic {
+							// We use the name of the class as the type here to avoid
+							// a RecursiveUnificationError.
+							// TODO: handle generic classes
+							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+							// Setters typically need mutable self to modify the instance
+							t = NewMutableType(t)
+
+							paramBindings["self"] = &Binding{
+								Source:  &ast.NodeProvenance{Node: bodyElem},
+								Type:    t,
+								Mutable: true, // setters may mutate self
+							}
+						}
+
+						// For static setters, no 'self' parameter is added
+
+						// Add any explicit parameters from the setter function signature
+						for _, param := range setterType.Fn.Params {
+							paramBindings[param.Pattern.String()] = &Binding{
+								Source:  &TypeProvenance{Type: param.Type},
+								Type:    param.Type,
+								Mutable: false,
+							}
+						}
+
+						if bodyElem.Fn.Body != nil {
+							bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Body, false)
+							errors = slices.Concat(errors, bodyErrors)
+						}
+					}
 				}
 			}
 		}
