@@ -403,6 +403,6 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	checker := &Checker{ID: 0}
 	result := checker.substituteTypeParams(objType, substitutions)
 
-	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
-	assert.Equal(t, "{test?: number, method(x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
+	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter() -> T, set setter(value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
+	assert.Equal(t, "{test?: number, method(x: number) -> string, get getter() -> number, set setter(value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
 }

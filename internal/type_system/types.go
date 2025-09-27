@@ -995,13 +995,13 @@ func (t *ObjectType) String() string {
 					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *GetterElemType:
-				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
+				result += "get " + elem.Name.String() + "() -> " + elem.Fn.Return.String()
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *SetterElemType:
 				result += "set " + elem.Name.String() + "("
-				result += "mut self, " + elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
+				result += elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()

@@ -186,7 +186,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"area":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Circle": "{radius: number, get area(self) -> number throws never}",
+				"Circle": "{radius: number, get area() -> number throws never}",
 			},
 		},
 		"ClassWithInstanceSetter": {
@@ -208,7 +208,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"temp":        "mut Temperature",
 			},
 			expectedTypeAliases: map[string]string{
-				"Temperature": "{celsius: number, set fahrenheit(mut self, value: number) -> undefined throws never}",
+				"Temperature": "{celsius: number, set fahrenheit(value: number) -> undefined throws never}",
 			},
 		},
 		"ClassWithGetterAndSetter": {
@@ -239,7 +239,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"name":   "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Person": "{firstName: string, lastName: string, get fullName(self) -> string throws never, set fullName(mut self, value: string) -> undefined throws never}",
+				"Person": "{firstName: string, lastName: string, get fullName() -> string throws never, set fullName(value: string) -> undefined throws never}",
 			},
 		},
 		"ClassWithStaticGetter": {
@@ -254,7 +254,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> Config throws never, get version(self) -> string throws never}",
+				"Config":  "{new fn () -> Config throws never, get version() -> string throws never}",
 				"config":  "Config",
 				"version": "string",
 			},
