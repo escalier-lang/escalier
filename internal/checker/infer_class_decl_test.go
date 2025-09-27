@@ -121,6 +121,170 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"Foo": "{bar: number, baz() -> number throws never}",
 			},
 		},
+		"ClassWithStaticMethod": {
+			input: `
+				class Math() {
+					static add(a: number, b: number) {
+						return a + b
+					},
+				}
+
+				val m = Math()
+				val result = Math.add(5, 3)
+			`,
+			expectedTypes: map[string]string{
+				"Math":   "{new fn () -> Math throws never, add(a: number, b: number) -> number throws never}",
+				"m":      "Math",
+				"result": "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Math": "{}",
+			},
+		},
+		"ClassWithStaticAndInstanceMethods": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+					static origin() {
+						return Point(0, 0)
+					},
+					length(self) {
+						return self.x + self.y
+					},
+				}
+
+				val p = Point(3, 4)
+				val origin = Point.origin()
+				val len = p.length()
+			`,
+			expectedTypes: map[string]string{
+				"Point":  "{new fn (x: number, y: number) -> Point throws never, origin() -> Point throws never}",
+				"p":      "Point",
+				"origin": "Point",
+				"len":    "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Point": "{x: number, y: number, length() -> number throws never}",
+			},
+		},
+		"ClassWithInstanceGetter": {
+			input: `
+				class Circle(radius: number) {
+					radius,
+					get area(self) -> number {
+						return 3.14 * self.radius * self.radius
+					},
+				}
+
+				val c = Circle(5)
+				val area = c.area
+			`,
+			expectedTypes: map[string]string{
+				"Circle": "{new fn (radius: number) -> Circle throws never}",
+				"c":      "Circle",
+				"area":   "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Circle": "{radius: number, get area() -> number throws never}",
+			},
+		},
+		"ClassWithInstanceSetter": {
+			input: `
+				class Temperature(celsius: number) {
+					celsius,
+					set fahrenheit(self, value: number) {
+						self.celsius = (value - 32) * 5 / 9
+					},
+				}
+
+				val temp: mut Temperature = Temperature(25)
+				fn main() {
+					temp.fahrenheit = 86
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Temperature": "{new fn (celsius: number) -> Temperature throws never}",
+				"temp":        "mut Temperature",
+			},
+			expectedTypeAliases: map[string]string{
+				"Temperature": "{celsius: number, set fahrenheit(value: number) -> undefined throws never}",
+			},
+		},
+		"ClassWithGetterAndSetter": {
+			input: `
+				declare fn split(s: string, delimiter: string) -> Array<string>
+				class Person(firstName: string, lastName: string) {
+					firstName,
+					lastName,
+					get fullName(self) -> string {
+						return self.firstName ++ " " ++ self.lastName
+					},
+					set fullName(self, value: string) {
+						val parts = split(value, " ")
+						self.firstName = parts[0]
+						self.lastName = parts[1]
+					},
+				}
+
+				val person: mut Person = Person("John", "Doe")
+				val name = person.fullName
+				fn main() {
+					person.fullName = "Jane Smith"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Person": "{new fn (firstName: string, lastName: string) -> Person throws never}",
+				"person": "mut Person",
+				"name":   "string",
+			},
+			expectedTypeAliases: map[string]string{
+				"Person": "{firstName: string, lastName: string, get fullName() -> string throws never, set fullName(value: string) -> undefined throws never}",
+			},
+		},
+		"ClassWithStaticGetter": {
+			input: `
+				class Config() {
+					static get version() -> string {
+						return "1.0.0"
+					},
+				}
+
+				val config = Config()
+				val version = Config.version
+			`,
+			expectedTypes: map[string]string{
+				"Config":  "{new fn () -> Config throws never, get version() -> string throws never}",
+				"config":  "Config",
+				"version": "string",
+			},
+			expectedTypeAliases: map[string]string{
+				"Config": "{}",
+			},
+		},
+		// TODO: figure out how we want to handle static setters
+		// "ClassWithStaticSetter": {
+		// 	input: `
+		// 		class GlobalState() {
+		// 			static set debugMode(value: boolean) {
+		// 				// Implementation would set global debug state
+		// 				return
+		// 			},
+		// 		}
+
+		// 		val state = GlobalState()
+		// 		fn main() {
+		// 			GlobalState.debugMode = true
+		// 		}
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"GlobalState": "{new fn () -> GlobalState throws never, set debugMode(mut self, value: boolean) -> undefined throws never}",
+		// 		"state":       "mut GlobalState",
+		// 	},
+		// 	expectedTypeAliases: map[string]string{
+		// 		"GlobalState": "{}",
+		// 	},
+		// },
 	}
 
 	schema := loadSchema(t)

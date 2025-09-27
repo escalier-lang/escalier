@@ -1,0 +1,8 @@
+class Math() {
+    static add(a: number, b: number) {
+        return a + b
+    },
+}
+
+val m = Math()
+val result = Math.add(5, 3)

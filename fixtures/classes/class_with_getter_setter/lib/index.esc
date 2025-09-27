@@ -1,0 +1,19 @@
+declare fn split(s: string, delimiter: string) -> Array<string>
+class Person(firstName: string, lastName: string) {
+    firstName,
+    lastName,
+    get fullName(self) -> string {
+        return self.firstName ++ " " ++ self.lastName
+    },
+    set fullName(self, value: string) {
+        val parts = split(value, " ")
+        self.firstName = parts[0]
+        self.lastName = parts[1]
+    },
+}
+
+val person: mut Person = Person("John", "Doe")
+val name = person.fullName
+fn main() {
+    person.fullName = "Jane Smith"
+}
