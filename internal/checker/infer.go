@@ -2766,6 +2766,11 @@ func (c *Checker) inferTypeAnn(
 		t = NewStrType()
 	case *ast.BooleanTypeAnn:
 		t = NewBoolType()
+	case *ast.SymbolTypeAnn:
+		t = NewSymType()
+	case *ast.UniqueSymbolTypeAnn:
+		c.SymbolID++
+		t = NewUniqueSymbolType(c.SymbolID)
 	case *ast.AnyTypeAnn:
 		t = NewAnyType()
 	case *ast.UnknownTypeAnn:

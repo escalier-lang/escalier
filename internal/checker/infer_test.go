@@ -2276,6 +2276,24 @@ func TestMutableTypes(t *testing.T) {
 				"x": "mut number",
 			},
 		},
+		"SymbolTypeAnnotation": {
+			input: `
+				declare val x: symbol
+			`,
+			expectedTypes: map[string]string{
+				"x": "symbol",
+			},
+		},
+		"UniqueSymbolTypeAnnotation": {
+			input: `
+				declare val x: unique symbol
+				declare val y: unique symbol
+			`,
+			expectedTypes: map[string]string{
+				"x": "symbol1", // Unique symbol should have an ID
+				"y": "symbol2", // Unique symbol should have an ID
+			},
+		},
 		"MutableStringType": {
 			input: `
 				val s: mut string = "hello"

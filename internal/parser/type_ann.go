@@ -177,6 +177,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Boolean:
 			p.lexer.consume()
 			typeAnn = ast.NewBooleanTypeAnn(token.Span)
+		case Symbol:
+			p.lexer.consume()
+			typeAnn = ast.NewSymbolTypeAnn(token.Span)
+		case Unique:
+			p.lexer.consume()
+			if p.lexer.peek().Type == Symbol {
+				symbolToken := p.lexer.next()
+				typeAnn = ast.NewUniqueSymbolTypeAnn(ast.MergeSpans(token.Span, symbolToken.Span))
+			} else {
+				p.reportError(token.Span, "expected 'symbol' after 'unique'")
+				return nil
+			}
 		case Any:
 			p.lexer.consume()
 			typeAnn = ast.NewAnyTypeAnn(token.Span)

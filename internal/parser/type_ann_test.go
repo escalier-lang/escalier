@@ -101,6 +101,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"ObjectTypeWithMultipleRestSpread": {
 			input: "{x: string, ...T, y: number, ...U}",
 		},
+		"Symbol": {
+			input: "symbol",
+		},
+		"UniqueSymbol": {
+			input: "unique symbol",
+		},
 	}
 
 	for name, test := range tests {

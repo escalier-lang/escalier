@@ -92,6 +92,8 @@ const (
 	Class // <-- add this for 'class' keyword
 	Yield
 	Private // <-- add this for 'private' keyword
+	Symbol
+	Unique
 )
 
 type Token struct {
