@@ -548,6 +548,10 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print("string")
 	case *BooleanTypeAnn:
 		p.print("boolean")
+	case *SymbolTypeAnn:
+		p.print("symbol")
+	case *UniqueSymbolTypeAnn:
+		p.print("unique symbol")
 	case *NullTypeAnn:
 		p.print("null")
 	case *UndefinedTypeAnn:

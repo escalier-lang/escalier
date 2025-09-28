@@ -1,0 +1,2 @@
+declare val foo: symbol
+declare val bar: unique symbol

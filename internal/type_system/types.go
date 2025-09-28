@@ -198,6 +198,12 @@ func NewBoolType() *PrimType {
 		provenance: nil,
 	}
 }
+func NewSymType() *PrimType {
+	return &PrimType{
+		Prim:       SymbolPrim,
+		provenance: nil,
+	}
+}
 func (t *PrimType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*PrimType)
@@ -310,6 +316,13 @@ func (t *LitType) String() string {
 type UniqueSymbolType struct {
 	Value      int
 	provenance Provenance
+}
+
+func NewUniqueSymbolType(value int) *UniqueSymbolType {
+	return &UniqueSymbolType{
+		Value:      value,
+		provenance: nil,
+	}
 }
 
 func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {

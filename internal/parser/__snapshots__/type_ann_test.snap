@@ -1621,3 +1621,25 @@
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/Symbol - 1]
+&ast.SymbolTypeAnn{
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:7},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/UniqueSymbol - 1]
+&ast.UniqueSymbolTypeAnn{
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

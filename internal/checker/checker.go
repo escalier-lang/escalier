@@ -6,20 +6,23 @@ import (
 )
 
 type Checker struct {
-	ID     int
-	Schema *ast.Schema
+	TypeVarID int
+	SymbolID  int
+	Schema    *ast.Schema
 }
 
 func NewChecker() *Checker {
 	return &Checker{
-		ID: 0,
+		TypeVarID: 0,
+		SymbolID:  0,
+		Schema:    nil,
 	}
 }
 
 func (c *Checker) FreshVar() *type_system.TypeVarType {
-	c.ID++
+	c.TypeVarID++
 	return &type_system.TypeVarType{
-		ID:       c.ID,
+		ID:       c.TypeVarID,
 		Instance: nil,
 	}
 }

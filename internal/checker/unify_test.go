@@ -9,7 +9,7 @@ import (
 )
 
 func TestUnifyStrLitWithRegexLit(t *testing.T) {
-	checker := &Checker{ID: 0}
+	checker := NewChecker()
 	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 }
 
 func TestUnifyWithUnionTypes(t *testing.T) {
-	checker := &Checker{ID: 0}
+	checker := NewChecker()
 	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
 
 	t.Run("literal type unifies with union containing compatible type", func(t *testing.T) {

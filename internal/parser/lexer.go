@@ -65,6 +65,8 @@ var keywords = map[string]TokenType{
 	"for":       For,
 	"in":        In,
 	"do":        Do,
+	"symbol":    Symbol,
+	"unique":    Unique,
 }
 
 // isRegexContext determines if a '/' should be treated as the start of a regex literal

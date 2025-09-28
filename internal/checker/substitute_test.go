@@ -46,7 +46,7 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 }
 
 func TestSubstituteTypeParams(t *testing.T) {
-	checker := &Checker{ID: 0}
+	checker := NewChecker()
 
 	t.Run("TypeRefType substitution", func(t *testing.T) {
 		t.Run("substitutes type parameter", func(t *testing.T) {
@@ -400,7 +400,7 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	})
 
 	// Substitute type parameters in the entire object
-	checker := &Checker{ID: 0}
+	checker := NewChecker()
 	result := checker.substituteTypeParams(objType, substitutions)
 
 	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter() -> T, set setter(value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
