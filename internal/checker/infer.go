@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"iter"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -135,6 +136,13 @@ func (c *Checker) InferComponent(
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
+			for _, typeParam := range decl.TypeParams {
+				// TODO: handle constraints and defaults
+				declCtx.Scope.setTypeAlias(typeParam.Name, &TypeAlias{
+					Type:       c.FreshVar(),
+					TypeParams: []*TypeParam{},
+				})
+			}
 			funcType, paramBindings, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
 			paramBindingsForDecl[declID] = paramBindings
 			errors = slices.Concat(errors, sigErrors)
@@ -379,6 +387,8 @@ func (c *Checker) InferComponent(
 			funcBinding := declCtx.Scope.getValue(decl.Name.Name)
 			paramBindings := paramBindingsForDecl[declID]
 			funcType := funcBinding.Type.(*FuncType)
+
+			fmt.Fprintf(os.Stderr, "funcType = %s\n", funcType.String())
 
 			if decl.Body != nil {
 				inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
@@ -805,9 +815,27 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		argTypes[i] = argType
 	}
 
-	// TODO: handle generic functions
 	// Check if calleeType is a FuncType
 	if fnType, ok := calleeType.(*FuncType); ok {
+		// Handle generic functions by replacing type refs with fresh type variables
+		if len(fnType.TypeParams) > 0 {
+			// Create a copy of the function type without type params
+			fnTypeWithoutParams := &FuncType{
+				TypeParams: []*TypeParam{},
+				Params:     fnType.Params,
+				Return:     fnType.Return,
+				Throws:     fnType.Throws,
+			}
+
+			// Create fresh type variables for each type parameter
+			substitutions := make(map[string]Type)
+			for _, typeParam := range fnType.TypeParams {
+				substitutions[typeParam.Name] = c.FreshVar()
+			}
+
+			// Substitute type refs in the copied function type with fresh type variables
+			fnType = c.substituteTypeParams(fnTypeWithoutParams, substitutions).(*FuncType)
+		}
 		// Find if the function has a rest parameter
 		var restIndex = -1
 		for i, param := range fnType.Params {
@@ -893,6 +921,26 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		if fnTypeToUse == nil {
 			return NewNeverType(), []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+		}
+
+		// Handle generic functions by replacing type refs with fresh type variables
+		if len(fnTypeToUse.TypeParams) > 0 {
+			// Create a copy of the function type without type params
+			fnTypeWithoutParams := &FuncType{
+				TypeParams: []*TypeParam{},
+				Params:     fnTypeToUse.Params,
+				Return:     fnTypeToUse.Return,
+				Throws:     fnTypeToUse.Throws,
+			}
+
+			// Create fresh type variables for each type parameter
+			substitutions := make(map[string]Type)
+			for _, typeParam := range fnTypeToUse.TypeParams {
+				substitutions[typeParam.Name] = c.FreshVar()
+			}
+
+			// Substitute type refs in the copied function type with fresh type variables
+			fnTypeToUse = c.substituteTypeParams(fnTypeWithoutParams, substitutions).(*FuncType)
 		}
 
 		// Use the same logic as for direct function calls
@@ -2084,10 +2132,52 @@ func (c *Checker) inferFuncSig(
 ) (*FuncType, map[string]*Binding, []Error) {
 	errors := []Error{}
 
-	// TODO: handle generic functions
-	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+	// Handle generic functions by creating type parameters
+	typeParams := []*TypeParam{}
+	for _, tp := range sig.TypeParams {
+		var defaultType Type
+		var constraintType Type
+		if tp.Default != nil {
+			var defaultErrors []Error
+			defaultType, defaultErrors = c.inferTypeAnn(ctx, tp.Default)
+			errors = slices.Concat(errors, defaultErrors)
+		}
+		if tp.Constraint != nil {
+			var constraintErrors []Error
+			constraintType, constraintErrors = c.inferTypeAnn(ctx, tp.Constraint)
+			errors = slices.Concat(errors, constraintErrors)
+		}
+		typeParams = append(typeParams, &TypeParam{
+			Name:       tp.Name,
+			Constraint: constraintType,
+			Default:    defaultType,
+		})
+	}
 
-	params, bindings, paramErrors := c.inferFuncParams(ctx, sig.Params)
+	// Create a new context with type parameters in scope
+	funcCtx := ctx
+	if len(typeParams) > 0 {
+		// Create a new scope that includes the type parameters
+		funcScope := ctx.Scope.WithNewScope()
+
+		// Add type parameters as type aliases to the scope
+		for _, typeParam := range typeParams {
+			typeParamTypeRef := NewTypeRefType(typeParam.Name, nil)
+			typeParamAlias := &TypeAlias{
+				Type:       typeParamTypeRef,
+				TypeParams: []*TypeParam{},
+			}
+			funcScope.setTypeAlias(typeParam.Name, typeParamAlias)
+		}
+
+		funcCtx = Context{
+			Scope:      funcScope,
+			IsAsync:    ctx.IsAsync,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)
 	errors = slices.Concat(errors, paramErrors)
 
 	var returnType Type
@@ -2095,7 +2185,7 @@ func (c *Checker) inferFuncSig(
 		returnType = c.FreshVar()
 	} else {
 		var returnErrors []Error
-		returnType, returnErrors = c.inferTypeAnn(ctx, sig.Return)
+		returnType, returnErrors = c.inferTypeAnn(funcCtx, sig.Return)
 		errors = slices.Concat(errors, returnErrors)
 	}
 
@@ -2107,7 +2197,7 @@ func (c *Checker) inferFuncSig(
 		throwsType = c.FreshVar()
 	} else {
 		var throwsErrors []Error
-		throwsType, throwsErrors = c.inferTypeAnn(ctx, sig.Throws)
+		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
 		errors = slices.Concat(errors, throwsErrors)
 	}
 
@@ -2141,7 +2231,7 @@ func (c *Checker) inferFuncSig(
 		Params:     params,
 		Return:     finalReturnType,
 		Throws:     finalThrowsType,
-		TypeParams: []*TypeParam{},
+		TypeParams: typeParams,
 	}
 
 	return t, bindings, errors

@@ -521,17 +521,17 @@ type Param struct {
 	TypeAnn  TypeAnn // optional
 }
 
-// TODO: add support for type params
 type FuncDecl struct {
-	Name    *Identifier
-	Params  []*Param
-	Body    []Stmt  // optional
-	TypeAnn TypeAnn // optional, return type annotation, required if `declare` is true
-	export  bool
-	declare bool
-	async   bool
-	span    *Span
-	source  ast.Node
+	Name       *Identifier
+	TypeParams []*TypeParam // optional
+	Params     []*Param
+	Body       []Stmt  // optional
+	TypeAnn    TypeAnn // optional, return type annotation, required if `declare` is true
+	export     bool
+	declare    bool
+	async      bool
+	span       *Span
+	source     ast.Node
 }
 
 func (d *FuncDecl) Export() bool       { return d.export }

@@ -176,9 +176,35 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 
 		localName := extractLocalName(decl.Name.Name)
 
+		// Build type parameters from the declaration
+		typeParams := make([]*TypeParam, len(decl.TypeParams))
+		for i, param := range decl.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				t := param.Constraint.InferredType()
+				if t != nil {
+					constraint = buildTypeAnn(t)
+				}
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				t := param.Default.InferredType()
+				if t != nil {
+					default_ = buildTypeAnn(t)
+				}
+			}
+
+			typeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+
 		fnDecl := &FuncDecl{
-			Name:   NewIdentifier(localName, decl.Name),
-			Params: funcTypeToParams(funcType),
+			Name:       NewIdentifier(localName, decl.Name),
+			TypeParams: typeParams,
+			Params:     funcTypeToParams(funcType),
 			// TODO: Use the type annotation if there is one and if not
 			// fallback to the inferred return type from the binding.
 			TypeAnn: buildTypeAnn(funcType.Return),
@@ -410,7 +436,22 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.GlobalThisType:
 		panic("TODO: implement GlobalThisType")
 	case *type_sys.FuncType:
-		var typeParams []*TypeParam
+		typeParams := make([]*TypeParam, len(t.TypeParams))
+		for i, tp := range t.TypeParams {
+			var constraint TypeAnn
+			var defaultType TypeAnn
+			if tp.Constraint != nil {
+				constraint = buildTypeAnn(tp.Constraint)
+			}
+			if tp.Default != nil {
+				defaultType = buildTypeAnn(tp.Default)
+			}
+			typeParams[i] = &TypeParam{
+				Name:       tp.Name,
+				Constraint: constraint,
+				Default:    defaultType,
+			}
+		}
 		params := make([]*Param, len(t.Params))
 		for i, param := range t.Params {
 			typeAnn := buildTypeAnn(param.Type)
@@ -564,8 +605,30 @@ func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 	params := funcTypeToParams(funcType)
 
+	// Build type parameters
+	var typeParams []*TypeParam
+	if len(funcType.TypeParams) > 0 {
+		typeParams = make([]*TypeParam, len(funcType.TypeParams))
+		for i, param := range funcType.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				constraint = buildTypeAnn(param.Constraint)
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				default_ = buildTypeAnn(param.Default)
+			}
+
+			typeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+	}
+
 	return FuncTypeAnn{
-		TypeParams: nil,
+		TypeParams: typeParams,
 		Params:     params,
 		Return:     buildTypeAnn(funcType.Return),
 		Throws:     nil,

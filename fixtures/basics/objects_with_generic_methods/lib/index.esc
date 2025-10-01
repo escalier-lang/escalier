@@ -1,0 +1,12 @@
+val container = {
+    value: 5:number,
+    getValue<T>(self, defaultValue: T) -> number | T {
+        if self.value != 0 {
+            return self.value
+        } else {
+            return defaultValue
+        }
+    }
+}
+val a = container.getValue("default":string)
+val b = container.getValue(10)

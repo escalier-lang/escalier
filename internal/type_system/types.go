@@ -985,7 +985,24 @@ func (t *ObjectType) String() string {
 				result += "new " + elem.Fn.String()
 			case *MethodElemType:
 				// TODO: update this to include `self` parameter
-				result += elem.Name.String() + "("
+				result += elem.Name.String()
+				if len(elem.Fn.TypeParams) > 0 {
+					result += "<"
+					for i, param := range elem.Fn.TypeParams {
+						if i > 0 {
+							result += ", "
+						}
+						result += param.Name
+						if param.Constraint != nil {
+							result += ": " + param.Constraint.String()
+						}
+						if param.Default != nil {
+							result += " = " + param.Default.String()
+						}
+					}
+					result += ">"
+				}
+				result += "("
 				if len(elem.Fn.Params) > 0 {
 					for i, param := range elem.Fn.Params {
 						if i > 0 {

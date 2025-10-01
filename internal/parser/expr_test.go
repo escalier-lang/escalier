@@ -116,6 +116,12 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncExprReturnIfElse": {
 			input: `fn (value: string) { return if value != "" { value } else { "value is empty" } }`,
 		},
+		"FuncExprWithTypeParams": {
+			input: "fn <T>(value: T) -> T { value }",
+		},
+		"FuncExprWithMultipleTypeParams": {
+			input: "fn <A, B>(a: A, b: B) -> [A, B] { [a, b] }",
+		},
 		"IfElse": {
 			input: "if cond { a } else { b }",
 		},
@@ -139,6 +145,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		},
 		"ObjectWithStaticMethod": {
 			input: "{ foo() { return 5 } }",
+		},
+		"ObjectWithGenericMethod": {
+			input: "{ foo<T>(x: T) { return x }, bar<T>(self, x: T) { return x } }",
 		},
 		"TypeCast": {
 			input: "value: string",

@@ -1,0 +1,11 @@
+fn identity<T>(value: T) -> T {
+    return value
+}
+val fst = fn<A, B>(a: A, b: B) -> A {
+    return a
+}
+val a: number = 5
+val b: string = "hello"
+val x = identity(a)
+val y = identity(b)
+val z = fst(a, a)

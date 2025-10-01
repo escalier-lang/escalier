@@ -394,6 +394,26 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.print("function ")
 		p.print(d.Name.Name)
 
+		// Print type parameters if present
+		if len(d.TypeParams) > 0 {
+			p.print("<")
+			for i, param := range d.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(param.Name)
+				if param.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(param.Constraint)
+				}
+				if param.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(param.Default)
+				}
+			}
+			p.print(">")
+		}
+
 		p.print("(")
 		for i, param := range d.Params {
 			if i > 0 {
@@ -599,6 +619,25 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *MethodTypeAnn:
 				p.printObjKey(elem.Name)
+				// Print type parameters if present
+				if len(elem.Fn.TypeParams) > 0 {
+					p.print("<")
+					for i, tp := range elem.Fn.TypeParams {
+						if i > 0 {
+							p.print(", ")
+						}
+						p.print(tp.Name)
+						if tp.Constraint != nil {
+							p.print(" extends ")
+							p.PrintTypeAnn(tp.Constraint)
+						}
+						if tp.Default != nil {
+							p.print(" = ")
+							p.PrintTypeAnn(tp.Default)
+						}
+					}
+					p.print(">")
+				}
 				p.print("(")
 				for i, param := range elem.Fn.Params {
 					if i > 0 {
@@ -694,6 +733,25 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 			p.print(">")
 		}
 	case *FuncTypeAnn:
+		// Print type parameters if present
+		if len(ta.TypeParams) > 0 {
+			p.print("<")
+			for i, tp := range ta.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(tp.Name)
+				if tp.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(tp.Constraint)
+				}
+				if tp.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(tp.Default)
+				}
+			}
+			p.print(">")
+		}
 		p.print("(")
 		for i, param := range ta.Params {
 			if i > 0 {

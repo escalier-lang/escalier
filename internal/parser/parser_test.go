@@ -121,6 +121,13 @@ func TestParseModuleNoErrors(t *testing.T) {
 				p.y = 10
 			`,
 		},
+		"GenericFuncDecl": {
+			input: `
+				fn identity<T>(value: T) -> T {
+					return value
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {

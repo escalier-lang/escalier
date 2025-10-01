@@ -447,13 +447,22 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	// }
 	p.lexer.consume() // consume the fn keyword
 
+	// Parse type parameters if present
+	typeParams := []*ast.TypeParam{}
+	token := p.lexer.peek()
+	if token.Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, ConsumeOnMatch)
+	}
+
 	p.expect(OpenParen, ConsumeOnMatch)
 	params := parseDelimSeq(p, CloseParen, Comma, p.param)
 	p.expect(CloseParen, ConsumeOnMatch)
 
 	var returnType ast.TypeAnn
 	var throwsType ast.TypeAnn
-	token := p.lexer.peek()
+	token = p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
 		typeAnn := p.typeAnn()
@@ -480,7 +489,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	end := body.Span.End
 
 	return ast.NewFuncExpr(
-		[]*ast.TypeParam{}, // TODO: parse type params
+		typeParams, // Use parsed type params instead of empty slice
 		params,
 		returnType,
 		throwsType, // Pass throws type instead of nil
@@ -578,17 +587,34 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			return property
 		}
 		return nil
-	case OpenParen:
+	case LessThan:
+		// Parse type parameters for generic methods
+		p.lexer.consume() // consume '<'
+		typeParams := parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, ConsumeOnMatch)
+
+		// After type parameters, we should have '('
+		token = p.lexer.peek()
+		if token.Type != OpenParen {
+			p.reportError(token.Span, "Expected '(' after type parameters")
+			return nil
+		}
+
 		p.lexer.consume() // consume '('
 
 		mutSelf := p.mutSelf()
 
 		params := []*ast.Param{}
 		token = p.lexer.peek()
-		if token.Type == Comma {
+		if mutSelf != nil && token.Type == Comma {
+			// If we have a self parameter, consume the comma and parse additional params
 			p.lexer.consume() // consume ','
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		} else if mutSelf == nil {
+			// If we don't have a self parameter, parse all params directly
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 		}
+		// If we have self but no comma, then there are no additional params (empty slice)
 		p.expect(CloseParen, ConsumeOnMatch)
 
 		var returnType ast.TypeAnn
@@ -622,7 +648,93 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
 
 		fn := ast.NewFuncExpr(
-			[]*ast.TypeParam{}, // TODO: parse type params
+			typeParams, // Use parsed type params
+			params,
+			returnType,
+			throwsType,
+			false, // methods can't be async for now
+			&body,
+			span,
+		)
+
+		switch mod {
+		case "get":
+			// TODO: check that params is empty when using `get`
+			// and raise an error if it's not.
+			return ast.NewGetter(
+				objKey,
+				fn,
+				ast.MergeSpans(token.Span, span),
+			)
+		case "set":
+			// TODO: check that mutSelf is `true` when using `set`
+			// and raise an error if it's `false` or `nil`.
+			return ast.NewSetter(
+				objKey,
+				fn,
+				ast.MergeSpans(token.Span, span),
+			)
+		default:
+			return ast.NewMethod(
+				objKey,
+				fn,
+				mutSelf,
+				ast.MergeSpans(token.Span, span),
+			)
+		}
+	case OpenParen:
+		// Parse method without type parameters
+		typeParams := []*ast.TypeParam{} // Empty for non-generic methods
+
+		p.lexer.consume() // consume '('
+
+		mutSelf := p.mutSelf()
+
+		params := []*ast.Param{}
+		token = p.lexer.peek()
+		if mutSelf != nil && token.Type == Comma {
+			// If we have a self parameter, consume the comma and parse additional params
+			p.lexer.consume() // consume ','
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		} else if mutSelf == nil {
+			// If we don't have a self parameter, parse all params directly
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
+		// If we have self but no comma, then there are no additional params (empty slice)
+		p.expect(CloseParen, ConsumeOnMatch)
+
+		var returnType ast.TypeAnn
+		var throwsType ast.TypeAnn
+		token = p.lexer.peek()
+		if token.Type == Arrow {
+			p.lexer.consume()
+			typeAnn := p.typeAnn()
+			if typeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after arrow")
+				return nil
+			}
+			returnType = typeAnn
+
+			// Check for throws clause after return type
+			token = p.lexer.peek()
+			if token.Type == Throws {
+				p.lexer.consume()
+				throwsTypeAnn := p.typeAnn()
+				if throwsTypeAnn == nil {
+					p.reportError(token.Span, "Expected type annotation after 'throws'")
+				} else {
+					throwsType = throwsTypeAnn
+				}
+			}
+		}
+
+		body := p.block()
+		end := body.Span.End
+
+		span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
+
+		fn := ast.NewFuncExpr(
+			typeParams, // Use parsed type params
 			params,
 			returnType,
 			throwsType,

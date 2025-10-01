@@ -645,6 +645,74 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"query": "TypedDocumentNode<{getUser?: {id: ID, name: string} | null}, {id: ID}>",
 			},
 		},
+		"GenericFunction": {
+			input: `
+			    fn identity<T>(value: T) -> T {
+					return value
+				}
+				val fst = fn<A, B>(a: A, b: B) -> A {
+					return a
+				}
+				val a: number = 5
+				val b: string = "hello"
+				val x = identity(a)
+				val y = identity(b)
+				val z = fst(a, b)
+			`,
+			expectedTypes: map[string]string{
+				"identity": "fn <T>(value: T) -> T throws never",
+				"fst":      "fn <A, B>(a: A, b: B) -> A throws never",
+				"a":        "number",
+				"b":        "string",
+				"x":        "number",
+				"y":        "string",
+				"z":        "number",
+			},
+		},
+		"ObjectWithGenericMethods": {
+			input: `
+				val container = {
+					value: 5:number,
+					getValue<T>(self, default: T) -> number | T {
+						if self.value != 0 {
+							return self.value
+						} else {
+							return default
+						}
+					}
+				}
+				val a = container.getValue("default":string)
+				val b = container.getValue(10)
+			`,
+			expectedTypes: map[string]string{
+				"container": "{value: number, getValue<T>(default: T) -> number | T throws never}",
+				"a":         "number | string",
+				"b":         "number | 10",
+			},
+		},
+		"ClassWithGenericMethod": {
+			input: `
+				class Box(value: number) {
+					value,
+					getValue<T>(self, default: T) -> number | T {
+						if self.value != 0 {
+							return self.value
+						} else {
+							return default
+						}
+					}
+				}
+				val box = Box(5)
+				val a = box.getValue("default":string)
+				val b = box.getValue(10)
+			`,
+			expectedTypes: map[string]string{
+				"Box": "{new fn (value: number) -> Box throws never}",
+				"box": "Box",
+				"a":   "number | string",
+				"b":   "number | 10",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
