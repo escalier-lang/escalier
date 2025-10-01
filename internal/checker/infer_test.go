@@ -669,6 +669,27 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"z":        "number",
 			},
 		},
+		"ObjectWithGenericMethods": {
+			input: `
+				val container = {
+					value: 5:number,
+					getValue<T>(self, default: T) -> number | T {
+						if self.value != 0 {
+							return self.value
+						} else {
+							return default
+						}
+					}
+				}
+				val a = container.getValue("default":string)
+				val b = container.getValue(10)
+			`,
+			expectedTypes: map[string]string{
+				"container": "{value: number, getValue<T>(default: T) -> number | T throws never}",
+				"a":         "number | string",
+				"b":         "number | 10",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

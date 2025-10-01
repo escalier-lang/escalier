@@ -605,8 +605,30 @@ func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 	params := funcTypeToParams(funcType)
 
+	// Build type parameters
+	var typeParams []*TypeParam
+	if len(funcType.TypeParams) > 0 {
+		typeParams = make([]*TypeParam, len(funcType.TypeParams))
+		for i, param := range funcType.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				constraint = buildTypeAnn(param.Constraint)
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				default_ = buildTypeAnn(param.Default)
+			}
+
+			typeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+	}
+
 	return FuncTypeAnn{
-		TypeParams: nil,
+		TypeParams: typeParams,
 		Params:     params,
 		Return:     buildTypeAnn(funcType.Return),
 		Throws:     nil,

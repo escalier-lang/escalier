@@ -146,6 +146,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"ObjectWithStaticMethod": {
 			input: "{ foo() { return 5 } }",
 		},
+		"ObjectWithGenericMethod": {
+			input: "{ foo<T>(x: T) { return x }, bar<T>(self, x: T) { return x } }",
+		},
 		"TypeCast": {
 			input: "value: string",
 		},
