@@ -714,6 +714,25 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 			p.print(">")
 		}
 	case *FuncTypeAnn:
+		// Print type parameters if present
+		if len(ta.TypeParams) > 0 {
+			p.print("<")
+			for i, tp := range ta.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(tp.Name)
+				if tp.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(tp.Constraint)
+				}
+				if tp.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(tp.Default)
+				}
+			}
+			p.print(">")
+		}
 		p.print("(")
 		for i, param := range ta.Params {
 			if i > 0 {

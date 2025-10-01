@@ -436,7 +436,22 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.GlobalThisType:
 		panic("TODO: implement GlobalThisType")
 	case *type_sys.FuncType:
-		var typeParams []*TypeParam
+		typeParams := make([]*TypeParam, len(t.TypeParams))
+		for i, tp := range t.TypeParams {
+			var constraint TypeAnn
+			var defaultType TypeAnn
+			if tp.Constraint != nil {
+				constraint = buildTypeAnn(tp.Constraint)
+			}
+			if tp.Default != nil {
+				defaultType = buildTypeAnn(tp.Default)
+			}
+			typeParams[i] = &TypeParam{
+				Name:       tp.Name,
+				Constraint: constraint,
+				Default:    defaultType,
+			}
+		}
 		params := make([]*Param, len(t.Params))
 		for i, param := range t.Params {
 			typeAnn := buildTypeAnn(param.Type)

@@ -2132,8 +2132,7 @@ func (c *Checker) inferFuncSig(
 ) (*FuncType, map[string]*Binding, []Error) {
 	errors := []Error{}
 
-	// TODO: handle generic functions
-	// typeParams := c.inferTypeParams(ctx, sig.TypeParams)
+	// Handle generic functions by creating type parameters
 	typeParams := []*TypeParam{}
 	for _, tp := range sig.TypeParams {
 		var defaultType Type
@@ -2155,7 +2154,30 @@ func (c *Checker) inferFuncSig(
 		})
 	}
 
-	params, bindings, paramErrors := c.inferFuncParams(ctx, sig.Params)
+	// Create a new context with type parameters in scope
+	funcCtx := ctx
+	if len(typeParams) > 0 {
+		// Create a new scope that includes the type parameters
+		funcScope := ctx.Scope.WithNewScope()
+
+		// Add type parameters as type aliases to the scope
+		for _, typeParam := range typeParams {
+			typeParamTypeRef := NewTypeRefType(typeParam.Name, nil)
+			typeParamAlias := &TypeAlias{
+				Type:       typeParamTypeRef,
+				TypeParams: []*TypeParam{},
+			}
+			funcScope.setTypeAlias(typeParam.Name, typeParamAlias)
+		}
+
+		funcCtx = Context{
+			Scope:      funcScope,
+			IsAsync:    ctx.IsAsync,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)
 	errors = slices.Concat(errors, paramErrors)
 
 	var returnType Type
@@ -2163,7 +2185,7 @@ func (c *Checker) inferFuncSig(
 		returnType = c.FreshVar()
 	} else {
 		var returnErrors []Error
-		returnType, returnErrors = c.inferTypeAnn(ctx, sig.Return)
+		returnType, returnErrors = c.inferTypeAnn(funcCtx, sig.Return)
 		errors = slices.Concat(errors, returnErrors)
 	}
 
@@ -2175,7 +2197,7 @@ func (c *Checker) inferFuncSig(
 		throwsType = c.FreshVar()
 	} else {
 		var throwsErrors []Error
-		throwsType, throwsErrors = c.inferTypeAnn(ctx, sig.Throws)
+		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
 		errors = slices.Concat(errors, throwsErrors)
 	}
 

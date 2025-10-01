@@ -650,7 +650,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			    fn identity<T>(value: T) -> T {
 					return value
 				}
-				fn fst<A, B>(a: A, b: B) -> A {
+				val fst = fn<A, B>(a: A, b: B) -> A {
 					return a
 				}
 				val a: number = 5
