@@ -690,6 +690,29 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":         "number | 10",
 			},
 		},
+		"ClassWithGenericMethod": {
+			input: `
+				class Box(value: number) {
+					value,
+					getValue<T>(self, default: T) -> number | T {
+						if self.value != 0 {
+							return self.value
+						} else {
+							return default
+						}
+					}
+				}
+				val box = Box(5)
+				val a = box.getValue("default":string)
+				val b = box.getValue(10)
+			`,
+			expectedTypes: map[string]string{
+				"Box": "{new fn (value: number) -> Box throws never}",
+				"box": "Box",
+				"a":   "number | string",
+				"b":   "number | 10",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
