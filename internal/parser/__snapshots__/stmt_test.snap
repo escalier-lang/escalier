@@ -60,9 +60,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
             },
             Return: nil,
             Throws: nil,
@@ -179,9 +178,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -267,9 +265,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
             },
             Return: nil,
             Throws: nil,
@@ -452,9 +449,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -578,9 +574,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -943,9 +938,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1010,9 +1004,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1169,9 +1162,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1282,9 +1274,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1395,9 +1386,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1709,9 +1699,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1822,9 +1811,8 @@ nil
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
             },
             Return: nil,
             Throws: nil,
