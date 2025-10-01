@@ -4,6 +4,19 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// maybeTypeParams parses optional type parameters if present.
+// Returns the parsed type parameters and updates the current token position.
+func (p *Parser) maybeTypeParams() []*ast.TypeParam {
+	var typeParams []*ast.TypeParam
+	token := p.lexer.peek()
+	if token.Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, AlwaysConsume)
+	}
+	return typeParams
+}
+
 // Decl = 'export'? 'declare'? 'async'? (varDecl | fnDecl)
 func (p *Parser) Decl() ast.Decl {
 	export := false
@@ -70,14 +83,8 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	name := ast.NewIdentifier(token.Value, token.Span)
 
 	// Parse optional type parameters for the class
-	var typeParams []*ast.TypeParam
+	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
-	if token.Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, AlwaysConsume)
-		token = p.lexer.peek()
-	}
 
 	// Parse optional constructor params
 	params := []*ast.Param{}
@@ -144,16 +151,9 @@ modifiers_done:
 		return nil
 	}
 
-	next := p.lexer.peek()
-
 	// Parse optional type parameters for the method
-	var typeParams []*ast.TypeParam
-	if next.Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, AlwaysConsume)
-		next = p.lexer.peek()
-	}
+	typeParams := p.maybeTypeParams()
+	next := p.lexer.peek()
 
 	// Handle getter
 	if isGet {
@@ -420,14 +420,8 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	}
 
 	// Parse optional type parameters for the function
-	typeParams := []*ast.TypeParam{}
+	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
-	if token.Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, AlwaysConsume)
-		token = p.lexer.peek()
-	}
 
 	if token.Type != OpenParen {
 		p.reportError(token.Span, "Expected an opening paren")
@@ -495,12 +489,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	ident := ast.NewIdentifier(token.Value, token.Span)
 
 	// Parse optional type parameters
-	var typeParams []*ast.TypeParam
-	if p.lexer.peek().Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, AlwaysConsume)
-	}
+	typeParams := p.maybeTypeParams()
 
 	p.expect(Equal, AlwaysConsume)
 

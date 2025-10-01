@@ -92,9 +92,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -656,9 +655,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1154,9 +1152,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "a",
@@ -1402,9 +1399,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "url",
@@ -1791,9 +1787,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "url",
@@ -1885,9 +1880,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "id",
@@ -2287,9 +2281,8 @@
             },
         },
         FuncSig: ast.FuncSig{
-            TypeParams: {
-            },
-            Params: {
+            TypeParams: nil,
+            Params:     {
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "id",

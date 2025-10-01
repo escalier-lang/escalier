@@ -520,6 +520,90 @@ func (p *Parser) mutSelf() *bool {
 	return mutSelf
 }
 
+// Helper function to parse method after type parameters are already parsed
+func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam, mod string) ast.ObjExprElem {
+	mutSelf := p.mutSelf()
+
+	params := []*ast.Param{}
+	token := p.lexer.peek()
+	if mutSelf != nil && token.Type == Comma {
+		// If we have a self parameter, consume the comma and parse additional params
+		p.lexer.consume() // consume ','
+		params = parseDelimSeq(p, CloseParen, Comma, p.param)
+	} else if mutSelf == nil {
+		// If we don't have a self parameter, parse all params directly
+		params = parseDelimSeq(p, CloseParen, Comma, p.param)
+	}
+	// If we have self but no comma, then there are no additional params (empty slice)
+	p.expect(CloseParen, ConsumeOnMatch)
+
+	var returnType ast.TypeAnn
+	var throwsType ast.TypeAnn
+	token = p.lexer.peek()
+	if token.Type == Arrow {
+		p.lexer.consume()
+		typeAnn := p.typeAnn()
+		if typeAnn == nil {
+			p.reportError(token.Span, "Expected type annotation after arrow")
+			return nil
+		}
+		returnType = typeAnn
+
+		// Check for throws clause after return type
+		token = p.lexer.peek()
+		if token.Type == Throws {
+			p.lexer.consume()
+			throwsTypeAnn := p.typeAnn()
+			if throwsTypeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after 'throws'")
+			} else {
+				throwsType = throwsTypeAnn
+			}
+		}
+	}
+
+	body := p.block()
+	end := body.Span.End
+
+	span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
+
+	fn := ast.NewFuncExpr(
+		typeParams,
+		params,
+		returnType,
+		throwsType,
+		false, // methods can't be async for now
+		&body,
+		span,
+	)
+
+	switch mod {
+	case "get":
+		// TODO: check that params is empty when using `get`
+		// and raise an error if it's not.
+		return ast.NewGetter(
+			objKey,
+			fn,
+			ast.MergeSpans(token.Span, span),
+		)
+	case "set":
+		// TODO: check that mutSelf is `true` when using `set`
+		// and raise an error if it's `false` or `nil`.
+		return ast.NewSetter(
+			objKey,
+			fn,
+			ast.MergeSpans(token.Span, span),
+		)
+	default:
+		return ast.NewMethod(
+			objKey,
+			fn,
+			mutSelf,
+			ast.MergeSpans(token.Span, span),
+		)
+	}
+}
+
 func (p *Parser) objExprElem() ast.ObjExprElem {
 	token := p.lexer.peek()
 
@@ -602,172 +686,14 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 
 		p.lexer.consume() // consume '('
 
-		mutSelf := p.mutSelf()
-
-		params := []*ast.Param{}
-		token = p.lexer.peek()
-		if mutSelf != nil && token.Type == Comma {
-			// If we have a self parameter, consume the comma and parse additional params
-			p.lexer.consume() // consume ','
-			params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		} else if mutSelf == nil {
-			// If we don't have a self parameter, parse all params directly
-			params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		}
-		// If we have self but no comma, then there are no additional params (empty slice)
-		p.expect(CloseParen, ConsumeOnMatch)
-
-		var returnType ast.TypeAnn
-		var throwsType ast.TypeAnn
-		token = p.lexer.peek()
-		if token.Type == Arrow {
-			p.lexer.consume()
-			typeAnn := p.typeAnn()
-			if typeAnn == nil {
-				p.reportError(token.Span, "Expected type annotation after arrow")
-				return nil
-			}
-			returnType = typeAnn
-
-			// Check for throws clause after return type
-			token = p.lexer.peek()
-			if token.Type == Throws {
-				p.lexer.consume()
-				throwsTypeAnn := p.typeAnn()
-				if throwsTypeAnn == nil {
-					p.reportError(token.Span, "Expected type annotation after 'throws'")
-				} else {
-					throwsType = throwsTypeAnn
-				}
-			}
-		}
-
-		body := p.block()
-		end := body.Span.End
-
-		span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
-
-		fn := ast.NewFuncExpr(
-			typeParams, // Use parsed type params
-			params,
-			returnType,
-			throwsType,
-			false, // methods can't be async for now
-			&body,
-			span,
-		)
-
-		switch mod {
-		case "get":
-			// TODO: check that params is empty when using `get`
-			// and raise an error if it's not.
-			return ast.NewGetter(
-				objKey,
-				fn,
-				ast.MergeSpans(token.Span, span),
-			)
-		case "set":
-			// TODO: check that mutSelf is `true` when using `set`
-			// and raise an error if it's `false` or `nil`.
-			return ast.NewSetter(
-				objKey,
-				fn,
-				ast.MergeSpans(token.Span, span),
-			)
-		default:
-			return ast.NewMethod(
-				objKey,
-				fn,
-				mutSelf,
-				ast.MergeSpans(token.Span, span),
-			)
-		}
+		return p.parseMethodBody(objKey, typeParams, mod)
 	case OpenParen:
 		// Parse method without type parameters
 		typeParams := []*ast.TypeParam{} // Empty for non-generic methods
 
 		p.lexer.consume() // consume '('
 
-		mutSelf := p.mutSelf()
-
-		params := []*ast.Param{}
-		token = p.lexer.peek()
-		if mutSelf != nil && token.Type == Comma {
-			// If we have a self parameter, consume the comma and parse additional params
-			p.lexer.consume() // consume ','
-			params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		} else if mutSelf == nil {
-			// If we don't have a self parameter, parse all params directly
-			params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		}
-		// If we have self but no comma, then there are no additional params (empty slice)
-		p.expect(CloseParen, ConsumeOnMatch)
-
-		var returnType ast.TypeAnn
-		var throwsType ast.TypeAnn
-		token = p.lexer.peek()
-		if token.Type == Arrow {
-			p.lexer.consume()
-			typeAnn := p.typeAnn()
-			if typeAnn == nil {
-				p.reportError(token.Span, "Expected type annotation after arrow")
-				return nil
-			}
-			returnType = typeAnn
-
-			// Check for throws clause after return type
-			token = p.lexer.peek()
-			if token.Type == Throws {
-				p.lexer.consume()
-				throwsTypeAnn := p.typeAnn()
-				if throwsTypeAnn == nil {
-					p.reportError(token.Span, "Expected type annotation after 'throws'")
-				} else {
-					throwsType = throwsTypeAnn
-				}
-			}
-		}
-
-		body := p.block()
-		end := body.Span.End
-
-		span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
-
-		fn := ast.NewFuncExpr(
-			typeParams, // Use parsed type params
-			params,
-			returnType,
-			throwsType,
-			false, // methods can't be async for now
-			&body,
-			span,
-		)
-
-		switch mod {
-		case "get":
-			// TODO: check that params is empty when using `get`
-			// and raise an error if it's not.
-			return ast.NewGetter(
-				objKey,
-				fn,
-				ast.MergeSpans(token.Span, span),
-			)
-		case "set":
-			// TODO: check that mutSelf is `true` when using `set`
-			// and raise an error if it's `false` or `nil`.
-			return ast.NewSetter(
-				objKey,
-				fn,
-				ast.MergeSpans(token.Span, span),
-			)
-		default:
-			return ast.NewMethod(
-				objKey,
-				fn,
-				mutSelf,
-				ast.MergeSpans(token.Span, span),
-			)
-		}
+		return p.parseMethodBody(objKey, typeParams, mod)
 	default:
 		switch objKey.(type) {
 		case *ast.IdentExpr:
