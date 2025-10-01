@@ -394,6 +394,26 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.print("function ")
 		p.print(d.Name.Name)
 
+		// Print type parameters if present
+		if len(d.TypeParams) > 0 {
+			p.print("<")
+			for i, param := range d.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(param.Name)
+				if param.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(param.Constraint)
+				}
+				if param.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(param.Default)
+				}
+			}
+			p.print(">")
+		}
+
 		p.print("(")
 		for i, param := range d.Params {
 			if i > 0 {

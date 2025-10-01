@@ -645,6 +645,30 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"query": "TypedDocumentNode<{getUser?: {id: ID, name: string} | null}, {id: ID}>",
 			},
 		},
+		"GenericFunction": {
+			input: `
+			    fn identity<T>(value: T) -> T {
+					return value
+				}
+				fn fst<A, B>(a: A, b: B) -> A {
+					return a
+				}
+				val a: number = 5
+				val b: string = "hello"
+				val x = identity(a)
+				val y = identity(b)
+				val z = fst(a, b)
+			`,
+			expectedTypes: map[string]string{
+				"identity": "fn <T>(value: T) -> T throws never",
+				"fst":      "fn <A, B>(a: A, b: B) -> A throws never",
+				"a":        "number",
+				"b":        "string",
+				"x":        "number",
+				"y":        "string",
+				"z":        "number",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

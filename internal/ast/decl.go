@@ -89,6 +89,7 @@ type FuncDecl struct {
 
 func NewFuncDecl(
 	name *Ident,
+	typeParams []*TypeParam,
 	params []*Param,
 	returnType TypeAnn, // optional
 	throwsType TypeAnn, // optional
@@ -101,7 +102,7 @@ func NewFuncDecl(
 	return &FuncDecl{
 		Name: name,
 		FuncSig: FuncSig{
-			TypeParams: []*TypeParam{}, // TODO
+			TypeParams: typeParams,
 			Params:     params,
 			Return:     returnType,
 			Throws:     throwsType,

@@ -176,9 +176,35 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 
 		localName := extractLocalName(decl.Name.Name)
 
+		// Build type parameters from the declaration
+		typeParams := make([]*TypeParam, len(decl.TypeParams))
+		for i, param := range decl.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				t := param.Constraint.InferredType()
+				if t != nil {
+					constraint = buildTypeAnn(t)
+				}
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				t := param.Default.InferredType()
+				if t != nil {
+					default_ = buildTypeAnn(t)
+				}
+			}
+
+			typeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+
 		fnDecl := &FuncDecl{
-			Name:   NewIdentifier(localName, decl.Name),
-			Params: funcTypeToParams(funcType),
+			Name:       NewIdentifier(localName, decl.Name),
+			TypeParams: typeParams,
+			Params:     funcTypeToParams(funcType),
 			// TODO: Use the type annotation if there is one and if not
 			// fallback to the inferred return type from the binding.
 			TypeAnn: buildTypeAnn(funcType.Return),

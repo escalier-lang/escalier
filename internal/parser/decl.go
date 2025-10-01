@@ -402,7 +402,7 @@ func (p *Parser) varDecl(
 	return ast.NewVarDecl(kind, pat, typeAnn, init, export, declare, span)
 }
 
-// fnDecl = 'fn' ident '(' param* ')' block
+// fnDecl = 'fn' ident '<' typeParam* '>' '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
 func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool) ast.Decl {
@@ -419,7 +419,16 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		)
 	}
 
+	// Parse optional type parameters for the function
+	typeParams := []*ast.TypeParam{}
 	token = p.lexer.peek()
+	if token.Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
+		p.expect(GreaterThan, AlwaysConsume)
+		token = p.lexer.peek()
+	}
+
 	if token.Type != OpenParen {
 		p.reportError(token.Span, "Expected an opening paren")
 	} else {
@@ -471,7 +480,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	}
 
 	return ast.NewFuncDecl(
-		ident, params, returnType, throwsType, &body, export, declare, async,
+		ident, typeParams, params, returnType, throwsType, &body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 }
