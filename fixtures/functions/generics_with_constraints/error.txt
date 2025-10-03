@@ -1,0 +1,15 @@
+lib/index.esc:5:16: string cannot be assigned to number
+
+5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
+                   ^^^^^^
+
+lib/index.esc:5:27: string cannot be assigned to number
+
+5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
+                              ^^^^^^
+
+lib/index.esc:14:14: "hello" cannot be assigned to number
+
+14:     addNums2("hello", 5)
+                 ^^^^^^^
+

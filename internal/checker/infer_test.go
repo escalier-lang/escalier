@@ -669,6 +669,18 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"z":        "number",
 			},
 		},
+		"GenericFunctionWithConstraint": {
+			input: `
+				val fst = fn<A: number, B: number>(a: A, b: B) -> A {
+					return a
+				}
+				val a = fst(5, 10)
+			`,
+			expectedTypes: map[string]string{
+				"fst": "fn <A: number, B: number>(a: A, b: B) -> A throws never",
+				"a":   "5",
+			},
+		},
 		"ObjectWithGenericMethods": {
 			input: `
 				val container = {
@@ -1110,7 +1122,7 @@ func TestGetDeclCtx(t *testing.T) {
 			depGraph.DeclNamespace[declID] = test.declNamespace
 
 			// Call getDeclCtx
-			resultCtx := getDeclCtx(rootCtx, depGraph, declID)
+			resultCtx := getNsCtx(rootCtx, depGraph, declID)
 
 			// Verify the result context has the expected namespace
 			assert.Equal(t, test.expectedNS, resultCtx.Scope.Namespace)
@@ -1155,7 +1167,7 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 	declID := dep_graph.DeclID(999)
 
 	// Call getDeclCtx - should return original context since namespace is empty
-	resultCtx := getDeclCtx(rootCtx, depGraph, declID)
+	resultCtx := getNsCtx(rootCtx, depGraph, declID)
 
 	// Should return the same context since no namespace mapping exists
 	assert.Equal(t, rootCtx.Scope.Namespace, resultCtx.Scope.Namespace)
@@ -1202,7 +1214,7 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	depGraph.DeclNamespace[declID] = "foo.bar.baz.qux"
 
 	// Call getDeclCtx
-	resultCtx := getDeclCtx(rootCtx, depGraph, declID)
+	resultCtx := getNsCtx(rootCtx, depGraph, declID)
 
 	// Verify the final context points to the deepest namespace
 	assert.Equal(t, quxNS, resultCtx.Scope.Namespace)

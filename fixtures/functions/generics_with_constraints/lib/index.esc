@@ -1,0 +1,15 @@
+fn addNums1(a: number, b: number) -> number {
+    return a + b
+}
+
+fn addStrs1<A: string, B: string>(a: A, b: B) {
+    return addNums1(a, b) // error
+}
+
+fn addNums2<A: number, B: number>(a: A, b: B) -> number {
+    return addNums1(a, b) // okay
+}
+
+fn main() {
+    addNums2("hello", 5)
+}
