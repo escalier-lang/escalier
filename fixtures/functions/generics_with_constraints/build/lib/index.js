@@ -13,7 +13,18 @@ function addNums2(temp5, temp6) {
   const b = temp6;
   return addNums1(a, b);
 }
+const addStrs3 = function (temp7, temp8) {
+  const a = temp7;
+  const b = temp8;
+  return addNums1(a, b);
+};
+const addNums4 = function (temp9, temp10) {
+  const a = temp9;
+  const b = temp10;
+  return addNums1(a, b);
+};
 function main() {
   addNums2("hello", 5);
+  addNums4("hello", 5);
 }
 //# sourceMappingURL=./index.js.map
