@@ -1201,6 +1201,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		selfTypeAlias := TypeAlias{Type: selfType, TypeParams: []*TypeParam{}}
 		objCtx.Scope.setTypeAlias("Self", &selfTypeAlias)
 
+		methodCtxs := make([]Context, len(expr.Elems))
+
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
@@ -1215,10 +1217,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					methodCtxs[i] = methodCtx
 					paramBindingsSlice[i] = paramBindings
-					types[i] = funcType
-					typeElems[i] = NewMethodElemType(*key, funcType, elem.MutSelf)
+					types[i] = methodType
+					typeElems[i] = NewMethodElemType(*key, methodType, elem.MutSelf)
 				}
 			case *ast.GetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -1273,7 +1276,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					}
 				}
 			case *ast.MethodExpr:
-				funcType := t.(*FuncType)
+				methodType := t.(*FuncType)
+				methodCtx := methodCtxs[i]
 				methodExpr := elem
 				paramBindings := paramBindingsSlice[i]
 
@@ -1290,7 +1294,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+					methodCtx, methodType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
