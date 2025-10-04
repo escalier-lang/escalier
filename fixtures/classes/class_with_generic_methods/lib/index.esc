@@ -1,0 +1,30 @@
+class Foo() {
+    value: 5:number,
+    getValue<T>(self, defaultValue: T) -> number | T {
+        if self.value != 0 {
+            return self.value
+        } else {
+            return defaultValue
+        }
+    },
+    static addNums1(a: number, b: number) -> number {
+        return a + b
+    },
+    addStrs1<A: string, B: string>(self, a: A, b: B) {
+        return Foo.addNums1(a, b) // error
+    },
+    addNums2<A: number, B: number>(self, a: A, b: B) -> number {
+        return Foo.addNums1(a, b) // okay
+    },
+    static addStrs3<A: string, B: string>(a: A, b: B) {
+        return Foo.addNums1(a, b) // error
+    },
+    static addNums4<A: number, B: number>(a: A, b: B) -> number {
+        return Foo.addNums1(a, b) // okay
+    },
+}
+val foo = Foo()
+val a = foo.getValue("default":string)
+val b = foo.getValue(10)
+val c = foo.addNums2("hello", 5)
+val d = Foo.addNums4("hello", 5)

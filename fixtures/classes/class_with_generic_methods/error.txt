@@ -1,0 +1,30 @@
+lib/index.esc:13:17: string cannot be assigned to number
+
+13:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+                    ^^^^^^
+
+lib/index.esc:13:28: string cannot be assigned to number
+
+13:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+                               ^^^^^^
+
+lib/index.esc:19:24: string cannot be assigned to number
+
+19:     static addStrs3<A: string, B: string>(a: A, b: B) {
+                           ^^^^^^
+
+lib/index.esc:19:35: string cannot be assigned to number
+
+19:     static addStrs3<A: string, B: string>(a: A, b: B) {
+                                      ^^^^^^
+
+lib/index.esc:29:22: "hello" cannot be assigned to number
+
+29: val c = foo.addNums2("hello", 5)
+                         ^^^^^^^
+
+lib/index.esc:30:22: "hello" cannot be assigned to number
+
+30: val d = Foo.addNums4("hello", 5)
+                         ^^^^^^^
+

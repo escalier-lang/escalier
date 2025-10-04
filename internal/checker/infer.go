@@ -130,9 +130,10 @@ func (c *Checker) InferComponent(
 	paramBindingsForDecl := make(map[dep_graph.DeclID]map[string]*Binding)
 
 	declCtxMap := make(map[dep_graph.DeclID]Context)
+	declMethodCtxs := make([][]Context, len(component))
 
 	// Infer placeholders
-	for _, declID := range component {
+	for i, declID := range component {
 		// TODO: rename this to nsCtx instead of nsCtx
 		nsCtx := getNsCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.GetDecl(declID)
@@ -212,8 +213,9 @@ func (c *Checker) InferComponent(
 
 			objTypeElems := []ObjTypeElem{}
 			staticElems := []ObjTypeElem{}
+			methodCtxs := make([]Context, len(decl.Body))
 
-			for _, elem := range decl.Body {
+			for i, elem := range decl.Body {
 				switch elem := elem.(type) {
 				case *ast.FieldElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -238,23 +240,24 @@ func (c *Checker) InferComponent(
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
 					}
 
+					methodCtxs[i] = methodCtx
 					if elem.Static {
 						// Static methods go to the class object type
 						staticElems = append(
 							staticElems,
-							NewMethodElemType(*key, funcType, nil), // static methods don't have self
+							NewMethodElemType(*key, methodType, nil), // static methods don't have self
 						)
 					} else {
 						// Instance methods go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewMethodElemType(*key, funcType, elem.MutSelf),
+							NewMethodElemType(*key, methodType, elem.MutSelf),
 						)
 					}
 				case *ast.GetterElem:
@@ -360,11 +363,12 @@ func (c *Checker) InferComponent(
 				Mutable: false,
 			}
 			nsCtx.Scope.setValue(decl.Name.Name, ctor)
+			declMethodCtxs[i] = methodCtxs
 		}
 	}
 
 	// Infer definitions
-	for _, declID := range component {
+	for i, declID := range component {
 		nsCtx := getNsCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.GetDecl(declID)
 
@@ -421,6 +425,7 @@ func (c *Checker) InferComponent(
 			unifyErrors := c.unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
 		case *ast.ClassDecl:
+			methodCtxs := declMethodCtxs[i]
 			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
 			instanceType := Prune(typeAlias.Type).(*ObjectType)
 
@@ -440,7 +445,7 @@ func (c *Checker) InferComponent(
 			}
 
 			// Process each element in the class body
-			for _, bodyElem := range decl.Body {
+			for i, bodyElem := range decl.Body {
 				switch bodyElem := bodyElem.(type) {
 				case *ast.FieldElem:
 					var prop *PropertyElemType
@@ -551,7 +556,8 @@ func (c *Checker) InferComponent(
 							}
 						}
 
-						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
+						methodCtx := methodCtxs[i]
+						bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
 						errors = slices.Concat(errors, bodyErrors)
 					}
 
