@@ -6,7 +6,17 @@ val container = {
         } else {
             return defaultValue
         }
-    }
+    },
+    addNums1(self, a: number, b: number) -> number {
+        return a + b
+    },
+    addStrs1<A: string, B: string>(self, a: A, b: B) {
+        return self.addNums1(a, b) // error
+    },
+    addNums2<A: number, B: number>(self, a: A, b: B) -> number {
+        return self.addNums1(a, b) // okay
+    },
 }
 val a = container.getValue("default":string)
 val b = container.getValue(10)
+val c = container.addNums2("hello", 5)

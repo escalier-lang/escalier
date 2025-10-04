@@ -95,24 +95,24 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*Nam
 	return ctx.Scope.Namespace, errors
 }
 
-// getDeclCtx returns a new Context with the namespace set to the namespace of
+// getNsCtx returns a new Context with the namespace set to the namespace of
 // the declaration with the given declID. If the namespace doesn't exist yet, it
 // creates one.
-func getDeclCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) Context {
+func getNsCtx(ctx Context, depGraph *dep_graph.DepGraph, declID dep_graph.DeclID) Context {
 	nsName, _ := depGraph.GetDeclNamespace(declID)
 	if nsName == "" {
 		return ctx
 	}
 	ns := ctx.Scope.Namespace
-	declCtx := ctx
+	nsCtx := ctx
 	for part := range strings.SplitSeq(nsName, ".") {
 		if _, ok := ns.Namespaces[part]; !ok {
 			ns.Namespaces[part] = NewNamespace()
 		}
 		ns = ns.Namespaces[part]
-		declCtx = declCtx.WithNewScopeAndNamespace(ns)
+		nsCtx = nsCtx.WithNewScopeAndNamespace(ns)
 	}
-	return declCtx
+	return nsCtx
 }
 
 func (c *Checker) InferComponent(
@@ -129,25 +129,25 @@ func (c *Checker) InferComponent(
 	// so that they can be used later when inferring the function body.
 	paramBindingsForDecl := make(map[dep_graph.DeclID]map[string]*Binding)
 
+	declCtxMap := make(map[dep_graph.DeclID]Context)
+	declMethodCtxs := make([][]Context, len(component))
+
 	// Infer placeholders
-	for _, declID := range component {
-		declCtx := getDeclCtx(ctx, depGraph, declID)
+	for i, declID := range component {
+		// TODO: rename this to nsCtx instead of nsCtx
+		nsCtx := getNsCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.GetDecl(declID)
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			for _, typeParam := range decl.TypeParams {
-				// TODO: handle constraints and defaults
-				declCtx.Scope.setTypeAlias(typeParam.Name, &TypeAlias{
-					Type:       c.FreshVar(),
-					TypeParams: []*TypeParam{},
-				})
-			}
-			funcType, paramBindings, sigErrors := c.inferFuncSig(declCtx, &decl.FuncSig)
+			funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig)
 			paramBindingsForDecl[declID] = paramBindings
 			errors = slices.Concat(errors, sigErrors)
 
-			declCtx.Scope.setValue(decl.Name.Name, &Binding{
+			// Save the context for inferring the function body later
+			declCtxMap[declID] = funcCtx
+
+			nsCtx.Scope.setValue(decl.Name.Name, &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
 				Type:    funcType,
 				Mutable: false,
@@ -160,15 +160,15 @@ func (c *Checker) InferComponent(
 			// are nil
 
 			if decl.TypeAnn != nil {
-				taType, taErrors := c.inferTypeAnn(declCtx, decl.TypeAnn)
+				taType, taErrors := c.inferTypeAnn(nsCtx, decl.TypeAnn)
 				errors = slices.Concat(errors, taErrors)
 
-				unifyErrors := c.unify(declCtx, patType, taType)
+				unifyErrors := c.unify(nsCtx, patType, taType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
 			for name, binding := range bindings {
-				declCtx.Scope.setValue(name, binding)
+				nsCtx.Scope.setValue(name, binding)
 			}
 
 			// This is used when inferring the definitions below
@@ -200,7 +200,7 @@ func (c *Checker) InferComponent(
 				TypeParams: typeParams,
 			}
 
-			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+			nsCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		case *ast.ClassDecl:
 			instanceType := c.FreshVar()
 
@@ -209,12 +209,13 @@ func (c *Checker) InferComponent(
 				TypeParams: []*TypeParam{}, // TODO
 			}
 
-			declCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+			nsCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 
 			objTypeElems := []ObjTypeElem{}
 			staticElems := []ObjTypeElem{}
+			methodCtxs := make([]Context, len(decl.Body))
 
-			for _, elem := range decl.Body {
+			for i, elem := range decl.Body {
 				switch elem := elem.(type) {
 				case *ast.FieldElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -239,29 +240,30 @@ func (c *Checker) InferComponent(
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
 					}
 
+					methodCtxs[i] = methodCtx
 					if elem.Static {
 						// Static methods go to the class object type
 						staticElems = append(
 							staticElems,
-							NewMethodElemType(*key, funcType, nil), // static methods don't have self
+							NewMethodElemType(*key, methodType, nil), // static methods don't have self
 						)
 					} else {
 						// Instance methods go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewMethodElemType(*key, funcType, elem.MutSelf),
+							NewMethodElemType(*key, methodType, elem.MutSelf),
 						)
 					}
 				case *ast.GetterElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -283,7 +285,7 @@ func (c *Checker) InferComponent(
 				case *ast.SetterElem:
 					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -360,13 +362,14 @@ func (c *Checker) InferComponent(
 				Type:    classObjType,
 				Mutable: false,
 			}
-			declCtx.Scope.setValue(decl.Name.Name, ctor)
+			nsCtx.Scope.setValue(decl.Name.Name, ctor)
+			declMethodCtxs[i] = methodCtxs
 		}
 	}
 
 	// Infer definitions
-	for _, declID := range component {
-		declCtx := getDeclCtx(ctx, depGraph, declID)
+	for i, declID := range component {
+		nsCtx := getNsCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.GetDecl(declID)
 
 		if decl == nil {
@@ -384,21 +387,21 @@ func (c *Checker) InferComponent(
 			// We reuse the binding that was previous created for the function
 			// declaration, so that we can unify the signature with the body's
 			// inferred type.
-			funcBinding := declCtx.Scope.getValue(decl.Name.Name)
+			funcBinding := nsCtx.Scope.getValue(decl.Name.Name)
 			paramBindings := paramBindingsForDecl[declID]
 			funcType := funcBinding.Type.(*FuncType)
 
-			fmt.Fprintf(os.Stderr, "funcType = %s\n", funcType.String())
+			declCtx := declCtxMap[declID]
 
 			if decl.Body != nil {
-				inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+				inferErrors := c.inferFuncBodyWithFuncSigType(declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
 				errors = slices.Concat(errors, inferErrors)
 			}
 
 		case *ast.VarDecl:
 			// TODO: if there's a type annotation, unify the initializer with it
 			if decl.Init != nil {
-				initType, initErrors := c.inferExpr(declCtx, decl.Init)
+				initType, initErrors := c.inferExpr(nsCtx, decl.Init)
 				errors = slices.Concat(errors, initErrors)
 				if decl.TypeAnn != nil {
 					taType := decl.TypeAnn.InferredType()
@@ -411,22 +414,23 @@ func (c *Checker) InferComponent(
 				}
 			}
 		case *ast.TypeDecl:
-			typeAlias, declErrors := c.inferTypeDecl(declCtx, decl)
+			typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
 			errors = slices.Concat(errors, declErrors)
 
 			// TODO:
 			// - unify the Default and Constraint types for each type param
 
 			// Unified the type alias' inferred type with its placeholder type
-			existingTypeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
-			unifyErrors := c.unify(declCtx, existingTypeAlias.Type, typeAlias.Type)
+			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			unifyErrors := c.unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
 		case *ast.ClassDecl:
-			typeAlias := declCtx.Scope.getTypeAlias(decl.Name.Name)
+			methodCtxs := declMethodCtxs[i]
+			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
 			instanceType := Prune(typeAlias.Type).(*ObjectType)
 
 			// Get the class binding to access static methods
-			classBinding := declCtx.Scope.getValue(decl.Name.Name)
+			classBinding := nsCtx.Scope.getValue(decl.Name.Name)
 			classType := classBinding.Type.(*ObjectType)
 
 			// We reuse the binding that was previous created for the function
@@ -434,14 +438,14 @@ func (c *Checker) InferComponent(
 			// inferred type.
 			paramBindings := paramBindingsForDecl[declID]
 
-			bodyCtx := declCtx.WithNewScope()
+			bodyCtx := nsCtx.WithNewScope()
 
 			for name, binding := range paramBindings {
 				bodyCtx.Scope.setValue(name, binding)
 			}
 
 			// Process each element in the class body
-			for _, bodyElem := range decl.Body {
+			for i, bodyElem := range decl.Body {
 				switch bodyElem := bodyElem.(type) {
 				case *ast.FieldElem:
 					var prop *PropertyElemType
@@ -552,7 +556,8 @@ func (c *Checker) InferComponent(
 							}
 						}
 
-						bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
+						methodCtx := methodCtxs[i]
+						bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
 						errors = slices.Concat(errors, bodyErrors)
 					}
 
@@ -755,7 +760,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]*Bind
 func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	errors := []Error{}
 
-	funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
 	errors = slices.Concat(errors, sigErrors)
 
 	// For declared functions, we don't have a body to infer from
@@ -830,7 +835,12 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			// Create fresh type variables for each type parameter
 			substitutions := make(map[string]Type)
 			for _, typeParam := range fnType.TypeParams {
-				substitutions[typeParam.Name] = c.FreshVar()
+				// TODO: handle defaults
+				t := c.FreshVar()
+				if typeParam.Constraint != nil {
+					t.Constraint = typeParam.Constraint
+				}
+				substitutions[typeParam.Name] = t
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
@@ -1197,6 +1207,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		selfTypeAlias := TypeAlias{Type: selfType, TypeParams: []*TypeParam{}}
 		objCtx.Scope.setTypeAlias("Self", &selfTypeAlias)
 
+		methodCtxs := make([]Context, len(expr.Elems))
+
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
 			case *ast.PropertyExpr:
@@ -1211,16 +1223,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					methodCtxs[i] = methodCtx
 					paramBindingsSlice[i] = paramBindings
-					types[i] = funcType
-					typeElems[i] = NewMethodElemType(*key, funcType, elem.MutSelf)
+					types[i] = methodType
+					typeElems[i] = NewMethodElemType(*key, methodType, elem.MutSelf)
 				}
 			case *ast.GetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
 					typeElems[i] = &GetterElemType{Fn: funcType, Name: *key}
@@ -1229,7 +1242,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
 					typeElems[i] = &SetterElemType{Fn: funcType, Name: *key}
@@ -1238,7 +1251,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		}
 
 		objType := NewObjectType(typeElems)
-		bindErrors := c.bind(selfType, objType)
+		bindErrors := c.bind(objCtx, selfType, objType)
 		errors = slices.Concat(errors, bindErrors)
 
 		i := 0 // indexes into paramBindingsSlice
@@ -1269,7 +1282,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					}
 				}
 			case *ast.MethodExpr:
-				funcType := t.(*FuncType)
+				methodType := t.(*FuncType)
+				methodCtx := methodCtxs[i]
 				methodExpr := elem
 				paramBindings := paramBindingsSlice[i]
 
@@ -1286,7 +1300,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+					methodCtx, methodType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
@@ -1323,10 +1337,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		resultType = selfType
 	case *ast.FuncExpr:
-		funcType, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
+		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
 		errors = slices.Concat(errors, sigErrors)
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(ctx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
+		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
 		resultType = funcType
@@ -2126,11 +2140,20 @@ func (c *Checker) inferFuncParams(
 	return params, bindings, errors
 }
 
+// NOTE: A new context should be created before calling this function in order
+// to contain any type parameters in scope.
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
-) (*FuncType, map[string]*Binding, []Error) {
+) (*FuncType, Context, map[string]*Binding, []Error) {
 	errors := []Error{}
+
+	// Create a new context with type parameters in scope
+	funcCtx := ctx.WithNewScope()
+
+	// TODO: move type param code from InferComponent and ast.FuncExpr handling
+	// code here.
+	// In order for InferComponent to work, we'll need a way to
 
 	// Handle generic functions by creating type parameters
 	typeParams := []*TypeParam{}
@@ -2140,41 +2163,31 @@ func (c *Checker) inferFuncSig(
 		if tp.Default != nil {
 			var defaultErrors []Error
 			defaultType, defaultErrors = c.inferTypeAnn(ctx, tp.Default)
+			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
 			errors = slices.Concat(errors, defaultErrors)
 		}
 		if tp.Constraint != nil {
 			var constraintErrors []Error
 			constraintType, constraintErrors = c.inferTypeAnn(ctx, tp.Constraint)
+			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.Constraint})
 			errors = slices.Concat(errors, constraintErrors)
 		}
-		typeParams = append(typeParams, &TypeParam{
+		typeParam := &TypeParam{
 			Name:       tp.Name,
 			Constraint: constraintType,
 			Default:    defaultType,
+		}
+		typeParams = append(typeParams, typeParam)
+
+		var t Type = NewUnknownType()
+		if typeParam.Constraint != nil {
+			t = typeParam.Constraint
+		}
+		funcCtx.Scope.setTypeAlias(typeParam.Name, &TypeAlias{
+			Type:       t,
+			TypeParams: []*TypeParam{},
 		})
-	}
-
-	// Create a new context with type parameters in scope
-	funcCtx := ctx
-	if len(typeParams) > 0 {
-		// Create a new scope that includes the type parameters
-		funcScope := ctx.Scope.WithNewScope()
-
-		// Add type parameters as type aliases to the scope
-		for _, typeParam := range typeParams {
-			typeParamTypeRef := NewTypeRefType(typeParam.Name, nil)
-			typeParamAlias := &TypeAlias{
-				Type:       typeParamTypeRef,
-				TypeParams: []*TypeParam{},
-			}
-			funcScope.setTypeAlias(typeParam.Name, typeParamAlias)
-		}
-
-		funcCtx = Context{
-			Scope:      funcScope,
-			IsAsync:    ctx.IsAsync,
-			IsPatMatch: ctx.IsPatMatch,
-		}
+		fmt.Fprintf(os.Stderr, "Added type param %s to scope with type %s\n", typeParam.Name, t.String())
 	}
 
 	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)
@@ -2234,7 +2247,7 @@ func (c *Checker) inferFuncSig(
 		TypeParams: typeParams,
 	}
 
-	return t, bindings, errors
+	return t, funcCtx, bindings, errors
 }
 
 type ReturnVisitor struct {
@@ -2415,9 +2428,8 @@ func (c *Checker) inferFuncBody(
 	returnTypes := []Type{}
 	for _, returnStmt := range visitor.Returns {
 		if returnStmt.Expr != nil {
-			returnType, returnErrors := c.inferExpr(ctx, returnStmt.Expr)
+			returnType := returnStmt.Expr.InferredType()
 			returnTypes = append(returnTypes, returnType)
-			errors = slices.Concat(errors, returnErrors)
 		}
 	}
 

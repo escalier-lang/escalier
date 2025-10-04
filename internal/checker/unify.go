@@ -22,12 +22,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
 
 	// | TypeVarType, _ -> ...
-	if tv1, ok := t1.(*TypeVarType); ok {
-		return c.bind(tv1, t2)
+	if _, ok := t1.(*TypeVarType); ok {
+		return c.bind(ctx, t1, t2)
 	}
 	// | _, TypeVarType -> ...
-	if tv2, ok := t2.(*TypeVarType); ok {
-		return c.bind(tv2, t1)
+	if _, ok := t2.(*TypeVarType); ok {
+		return c.bind(ctx, t1, t2)
 	}
 	// TODO: Unification of mutable types with mutable types should be invariant
 	// | MutableType, MutableType -> ...
@@ -914,10 +914,14 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 }
 
 // TODO: check if t1 is already bound to an instance
-func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
+// NOTE: be sure to call Prune on t1 and t2 before calling bind
+// to ensure we are working with the most up-to-date types.
+func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot bind nil types") // this should never happen
 	}
+
+	errors := []Error{}
 
 	if !Equals(t1, t2) {
 		if occursInType(t1, t2) {
@@ -927,14 +931,47 @@ func (c *Checker) bind(t1 *TypeVarType, t2 Type) []Error {
 				Right: t2,
 			}}
 		} else {
-			t1.Instance = t2
-			t1.SetProvenance(&TypeProvenance{
-				Type: t2,
-			})
+			// There are three different cases:
+			// - t1 and t2 are both type variables
+			// - t1 is a type variable, t2 is a concrete type
+			// - t1 is a concrete type, t2 is a type variable
+
+			if typeVar1, ok := t1.(*TypeVarType); ok {
+				if typeVar2, ok := t2.(*TypeVarType); ok {
+					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
+						errors = c.unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
+					}
+					typeVar1.Instance = t2
+					typeVar1.SetProvenance(&TypeProvenance{
+						Type: t2,
+					})
+					return errors
+				}
+
+				if typeVar1.Constraint != nil {
+					errors = c.unify(ctx, typeVar1.Constraint, t2)
+				}
+				typeVar1.Instance = t2
+				typeVar1.SetProvenance(&TypeProvenance{
+					Type: t2,
+				})
+				return errors
+			}
+
+			if typeVar2, ok := t2.(*TypeVarType); ok {
+				if typeVar2.Constraint != nil {
+					errors = c.unify(ctx, t1, typeVar2.Constraint)
+				}
+				typeVar2.Instance = t1
+				typeVar2.SetProvenance(&TypeProvenance{
+					Type: t1,
+				})
+				return errors
+			}
 		}
 	}
 
-	return nil
+	return errors
 }
 
 type OccursInVisitor struct {

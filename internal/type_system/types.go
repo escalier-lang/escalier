@@ -70,6 +70,7 @@ func Prune(t Type) Type {
 type TypeVarType struct {
 	ID         int
 	Instance   Type
+	Constraint Type
 	provenance Provenance
 }
 
@@ -92,7 +93,11 @@ func (t *TypeVarType) String() string {
 	if t.Instance != nil {
 		return Prune(t).String()
 	}
-	return "t" + fmt.Sprint(t.ID)
+	result := "t" + fmt.Sprint(t.ID)
+	if t.Constraint != nil {
+		result += fmt.Sprintf(":%s", t.Constraint.String())
+	}
+	return result
 }
 
 type TypeAlias struct {

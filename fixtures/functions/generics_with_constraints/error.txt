@@ -1,0 +1,30 @@
+lib/index.esc:5:16: string cannot be assigned to number
+
+5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
+                   ^^^^^^
+
+lib/index.esc:5:27: string cannot be assigned to number
+
+5:  fn addStrs1<A: string, B: string>(a: A, b: B) {
+                              ^^^^^^
+
+lib/index.esc:13:22: string cannot be assigned to number
+
+13: val addStrs3 = fn<A: string, B: string>(a: A, b: B) {
+                         ^^^^^^
+
+lib/index.esc:13:33: string cannot be assigned to number
+
+13: val addStrs3 = fn<A: string, B: string>(a: A, b: B) {
+                                    ^^^^^^
+
+lib/index.esc:22:14: "hello" cannot be assigned to number
+
+22:     addNums2("hello", 5)
+                 ^^^^^^^
+
+lib/index.esc:23:14: "hello" cannot be assigned to number
+
+23:     addNums4("hello", 5)
+                 ^^^^^^^
+

@@ -1,0 +1,15 @@
+lib/index.esc:13:17: string cannot be assigned to number
+
+13:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+                    ^^^^^^
+
+lib/index.esc:13:28: string cannot be assigned to number
+
+13:     addStrs1<A: string, B: string>(self, a: A, b: B) {
+                               ^^^^^^
+
+lib/index.esc:22:28: "hello" cannot be assigned to number
+
+22: val c = container.addNums2("hello", 5)
+                               ^^^^^^^
+
