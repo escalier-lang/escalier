@@ -204,12 +204,42 @@ func (c *Checker) InferComponent(
 		case *ast.ClassDecl:
 			instanceType := c.FreshVar()
 
+			typeParams := make([]*TypeParam, len(decl.TypeParams))
+			for i, typeParam := range decl.TypeParams {
+				var constraintType Type
+				var defaultType Type
+				if typeParam.Constraint != nil {
+					constraintType = c.FreshVar()
+				}
+				if typeParam.Default != nil {
+					defaultType = c.FreshVar()
+				}
+				typeParams[i] = &TypeParam{
+					Name:       typeParam.Name,
+					Constraint: constraintType,
+					Default:    defaultType,
+				}
+			}
+
 			typeAlias := &TypeAlias{
 				Type:       instanceType,
-				TypeParams: []*TypeParam{}, // TODO
+				TypeParams: typeParams,
 			}
 
 			nsCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
+			declCtx := nsCtx.WithNewScope()
+			declCtxMap[declID] = declCtx
+
+			for _, typeParam := range typeParams {
+				var t Type = NewUnknownType()
+				if typeParam.Constraint != nil {
+					t = typeParam.Constraint
+				}
+				declCtx.Scope.setTypeAlias(typeParam.Name, &TypeAlias{
+					Type:       t,
+					TypeParams: []*TypeParam{},
+				})
+			}
 
 			objTypeElems := []ObjTypeElem{}
 			staticElems := []ObjTypeElem{}
@@ -218,7 +248,7 @@ func (c *Checker) InferComponent(
 			for i, elem := range decl.Body {
 				switch elem := elem.(type) {
 				case *ast.FieldElem:
-					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
 					if key == nil {
 						continue
@@ -238,9 +268,9 @@ func (c *Checker) InferComponent(
 						)
 					}
 				case *ast.MethodElem:
-					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					methodType, methodCtx, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -261,9 +291,9 @@ func (c *Checker) InferComponent(
 						)
 					}
 				case *ast.GetterElem:
-					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -283,9 +313,9 @@ func (c *Checker) InferComponent(
 						)
 					}
 				case *ast.SetterElem:
-					key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, _, sigErrors := c.inferFuncSig(nsCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -324,17 +354,23 @@ func (c *Checker) InferComponent(
 			}
 			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
+			// TODO: call c.bind() directly
 			unifyErrors := c.unify(ctx, instanceType, objType)
 			errors = slices.Concat(errors, unifyErrors)
 
-			params, paramBindings, paramErrors := c.inferFuncParams(ctx, decl.Params)
+			params, paramBindings, paramErrors := c.inferFuncParams(declCtx, decl.Params)
 			errors = slices.Concat(errors, paramErrors)
 			paramBindingsForDecl[declID] = paramBindings
 
+			typeArgs := make([]Type, len(typeParams))
+			for i := range typeParams {
+				typeArgs[i] = NewTypeRefType(typeParams[i].Name, nil)
+			}
+
 			funcType := &FuncType{
-				TypeParams: []*TypeParam{}, // TODO
+				TypeParams: typeParams,
 				Params:     params,
-				Return:     NewTypeRefType(decl.Name.Name, typeAlias),
+				Return:     NewTypeRefType(decl.Name.Name, typeAlias, typeArgs...),
 				Throws:     NewNeverType(),
 			}
 
@@ -438,7 +474,8 @@ func (c *Checker) InferComponent(
 			// inferred type.
 			paramBindings := paramBindingsForDecl[declID]
 
-			bodyCtx := nsCtx.WithNewScope()
+			declCtx := declCtxMap[declID]
+			bodyCtx := declCtx.WithNewScope()
 
 			for name, binding := range paramBindings {
 				bodyCtx.Scope.setValue(name, binding)
@@ -2142,6 +2179,11 @@ func (c *Checker) inferFuncParams(
 
 // NOTE: A new context should be created before calling this function in order
 // to contain any type parameters in scope.
+// Returns:
+// - the inferred function type
+// - the new context with type parameters in scope
+// - a map of parameter bindings
+// - any errors encountered during inference
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
@@ -2150,10 +2192,6 @@ func (c *Checker) inferFuncSig(
 
 	// Create a new context with type parameters in scope
 	funcCtx := ctx.WithNewScope()
-
-	// TODO: move type param code from InferComponent and ast.FuncExpr handling
-	// code here.
-	// In order for InferComponent to work, we'll need a way to
 
 	// Handle generic functions by creating type parameters
 	typeParams := []*TypeParam{}

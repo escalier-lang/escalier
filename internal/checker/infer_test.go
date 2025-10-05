@@ -725,6 +725,60 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "number | 10",
 			},
 		},
+		"SimpleGenericClass": {
+			input: `
+				class Box<T>(value: T) {
+					value
+				}
+				val box = Box(5:number)
+				val {value} = box
+			`,
+			expectedTypes: map[string]string{
+				"Box":   "{new fn <T>(value: T) -> Box<T> throws never}",
+				"box":   "Box<number>",
+				"value": "number",
+			},
+		},
+		"GenericClassWithGenericMethods": {
+			input: `
+				class Box<T>(value: T) {
+					value,
+					getValue<T>(self, default: T) -> number | T {
+						if self.value != 0 {
+							return self.value
+						} else {
+							return default
+						}
+					}
+				}
+				val box = Box(5:number)
+				val a = box.getValue("default":string)
+				val b = box.getValue(10)
+			`,
+			expectedTypes: map[string]string{
+				"Box": "{new fn <T>(value: T) -> Box<T> throws never}",
+				"box": "Box<number>",
+				"a":   "number | string",
+				"b":   "number | 10",
+			},
+		},
+		// "GenericObjectTypeWithGenericMethod": {
+		// 	input: `
+		// 		type MyArray<T> = {
+		// 			push(item: T) -> void,
+		// 			map<U>(self, mapFn: fn(elem: T, index: number) -> U) -> Array<U>,
+		// 			length: number,
+		// 		}
+		// 		type MyArrayConstructor = {
+		// 			new <T>() -> MyArray<T>
+		// 		}
+		// 		declare const MyArray: MyArrayConstructor
+		// 		val myArray = MyArray<number>()
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"myArray": "MyArray<number>",
+		// 	},
+		// },
 	}
 
 	schema := loadSchema(t)
