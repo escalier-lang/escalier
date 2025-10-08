@@ -38,7 +38,7 @@ class Foo {
     return Foo.addNums1(a, b);
   }
 }
-const foo = Foo();
+const foo = new Foo();
 const a = foo.getValue("default");
 const b = foo.getValue(10);
 const c = foo.addNums2("hello", 5);

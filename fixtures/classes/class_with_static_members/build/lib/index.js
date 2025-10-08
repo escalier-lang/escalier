@@ -8,6 +8,6 @@ class MyMath {
     return a + b;
   }
 }
-const m = MyMath();
+const m = new MyMath();
 const result = MyMath.add(5, 3);
 //# sourceMappingURL=./index.js.map

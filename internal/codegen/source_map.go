@@ -274,6 +274,11 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 		for _, arg := range ek.Args {
 			s.TraverseExpr(arg)
 		}
+	case *NewExpr:
+		s.TraverseExpr(ek.Callee)
+		for _, arg := range ek.Args {
+			s.TraverseExpr(arg)
+		}
 	case *FuncExpr:
 		for _, param := range ek.Params {
 			s.AddSegmentForNode(param.Pattern)

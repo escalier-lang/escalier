@@ -121,6 +121,17 @@ func (p *Printer) PrintExpr(expr Expr) {
 			p.PrintExpr(arg)
 		}
 		p.print(")")
+	case *NewExpr:
+		p.print("new ")
+		p.PrintExpr(e.Callee)
+		p.print("(")
+		for i, arg := range e.Args {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.PrintExpr(arg)
+		}
+		p.print(")")
 	case *FuncExpr:
 		if e.async {
 			p.print("async ")

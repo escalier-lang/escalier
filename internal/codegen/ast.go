@@ -125,6 +125,7 @@ func (*LitExpr) isExpr()      {}
 func (*IdentExpr) isExpr()    {}
 func (*UnaryExpr) isExpr()    {}
 func (*CallExpr) isExpr()     {}
+func (*NewExpr) isExpr()      {}
 func (*FuncExpr) isExpr()     {}
 func (*IndexExpr) isExpr()    {}
 func (*MemberExpr) isExpr()   {}
@@ -180,6 +181,20 @@ func NewCallExpr(callee Expr, args []Expr, optChain bool, source ast.Node) *Call
 func (e *CallExpr) Span() *Span        { return e.span }
 func (e *CallExpr) SetSpan(span *Span) { e.span = span }
 func (e *CallExpr) Source() ast.Node   { return e.source }
+
+type NewExpr struct {
+	Callee Expr
+	Args   []Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewNewExpr(callee Expr, args []Expr, source ast.Node) *NewExpr {
+	return &NewExpr{Callee: callee, Args: args, source: source, span: nil}
+}
+func (e *NewExpr) Span() *Span        { return e.span }
+func (e *NewExpr) SetSpan(span *Span) { e.span = span }
+func (e *NewExpr) Source() ast.Node   { return e.source }
 
 type FuncExpr struct {
 	Params []*Param
