@@ -19,6 +19,6 @@ class Point {
     return this;
   }
 }
-const p = Point(5, 10);
+const p = new Point(5, 10);
 const q = p.scale(2).translate(1, -1);
 //# sourceMappingURL=./index.js.map

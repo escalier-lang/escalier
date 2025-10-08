@@ -740,6 +740,22 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		calleeExpr, calleeStmts := b.buildExpr(expr.Callee, expr)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
 		stmts := slices.Concat(calleeStmts, argsStmts)
+
+		// Check if the callee is a constructor by examining its inferred type
+		calleeType := expr.Callee.InferredType()
+		if objType, ok := calleeType.(*type_system.ObjectType); ok {
+			// Check if the object type has a constructor elem
+			for _, elem := range objType.Elems {
+				if _, isConstructor := elem.(*type_system.ConstructorElemType); isConstructor {
+					return NewNewExpr(
+						calleeExpr,
+						argsExprs,
+						expr,
+					), stmts
+				}
+			}
+		}
+
 		return NewCallExpr(
 			calleeExpr,
 			argsExprs,

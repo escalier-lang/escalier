@@ -14,7 +14,7 @@ class Box {
     temp2;
   }
 }
-const box = Box(5);
+const box = new Box(5);
 const a = box.getValue("default");
 const b = box.getValue(10);
 //# sourceMappingURL=./index.js.map

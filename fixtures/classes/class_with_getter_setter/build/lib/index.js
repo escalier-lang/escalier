@@ -15,7 +15,7 @@ class Person {
     this.lastName = parts[1];
   }
 }
-const person = Person("John", "Doe");
+const person = new Person("John", "Doe");
 const name = person.fullName;
 function main() {
   person.fullName = "Jane Smith";

@@ -8,7 +8,7 @@ class Foo {
     return this[bar];
   }
 }
-const foo = Foo();
+const foo = new Foo();
 const fooBar = foo[bar];
 const fooBaz = foo[baz]();
 //# sourceMappingURL=./index.js.map
