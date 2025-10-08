@@ -21,12 +21,10 @@ export const throwingFunc = function (temp6) {
   let temp7;
   if (condition) {
     return "success";
-    temp7 = undefined;
   } else {
     let temp8;
     throw Error("failure");
     return temp8;
-    temp7 = undefined;
   }
   temp7;
 };
