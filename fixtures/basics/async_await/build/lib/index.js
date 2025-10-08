@@ -31,11 +31,9 @@ export async function conditionalFetch(temp8, temp9) {
   let temp10;
   if (useCache) {
     return "cached data";
-    temp10 = undefined;
   } else {
     const data = await fetch(url);
     return data;
-    temp10 = undefined;
   }
   temp10;
 }

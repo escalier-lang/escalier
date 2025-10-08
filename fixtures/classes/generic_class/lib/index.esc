@@ -1,0 +1,13 @@
+class Box<T>(value: T) {
+    value,
+    getValue<T>(self, defaultValue: T) -> number | T {
+        if self.value != 0 {
+            return self.value
+        } else {
+            return defaultValue
+        }
+    }
+}
+val box = Box(5:number)
+val a = box.getValue("default":string)
+val b = box.getValue(10)

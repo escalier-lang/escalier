@@ -7,10 +7,8 @@ class Foo {
     let temp2;
     if (this.value != 0) {
       return this.value;
-      temp2 = undefined;
     } else {
       return defaultValue;
-      temp2 = undefined;
     }
     temp2;
   }

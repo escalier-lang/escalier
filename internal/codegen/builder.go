@@ -1023,21 +1023,27 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 				source: lastStmt,
 			})
 		} else {
-			// Last statement is not an expression, add it as-is and assign undefined
+			// Last statement is not an expression, add it as-is
 			blockStmts = slices.Concat(blockStmts, b.buildStmt(lastStmt))
 
-			// Assign undefined to temp variable
-			assignment := NewBinaryExpr(
-				tempVar,
-				Assign,
-				NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), nil),
-				lastStmt,
-			)
-			blockStmts = append(blockStmts, &ExprStmt{
-				Expr:   assignment,
-				span:   nil,
-				source: lastStmt,
-			})
+			// Only assign undefined if the last statement is not a terminal statement
+			// (return statements end execution, so no assignment is needed)
+			_, isReturn := lastStmt.(*ast.ReturnStmt)
+
+			if !isReturn {
+				// Assign undefined to temp variable
+				assignment := NewBinaryExpr(
+					tempVar,
+					Assign,
+					NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), nil),
+					lastStmt,
+				)
+				blockStmts = append(blockStmts, &ExprStmt{
+					Expr:   assignment,
+					span:   nil,
+					source: lastStmt,
+				})
+			}
 		}
 	} else {
 		// Empty block, assign undefined to temp variable
