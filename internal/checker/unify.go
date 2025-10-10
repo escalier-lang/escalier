@@ -474,22 +474,67 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							}}
 						}
 
+						fmt.Fprintf(os.Stderr, "unify ExtractorType, found customMatcher method with param type %s and return type %s\n", methodElem.Fn.Params[0].Type.String(), methodElem.Fn.Return.String())
+
 						paramType := methodElem.Fn.Params[0].Type
 						errors := c.unify(ctx, t1, paramType)
 
 						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
-							if len(tuple.Elems) == len(ext.Args) {
-								for retElem, argType := range Zip(tuple.Elems, ext.Args) {
-									argErrors := c.unify(ctx, retElem, argType)
+							// Find if the args have a rest element
+							var restIndex = -1
+							for i, elem := range ext.Args {
+								fmt.Fprintf(os.Stderr, "arg elem %d: %#v\n", i, elem)
+								if _, isRest := elem.(*RestSpreadType); isRest {
+									restIndex = i
+									break
+								}
+							}
+
+							fmt.Fprintf(os.Stderr, "restIndex = %d\n", restIndex)
+
+							if restIndex != -1 {
+								// Tuple has rest element
+								// Must have at least as many args as elements before rest
+								if len(ext.Args) < restIndex {
+									return []Error{&ExtractorReturnTypeMismatchError{
+										ExtractorType: ext,
+										ReturnType:    tuple,
+										NumArgs:       len(ext.Args),
+										NumReturns:    len(tuple.Elems),
+									}}
+								}
+
+								// Unify fixed elements (before rest)
+								for i := 0; i < restIndex; i++ {
+									argErrors := c.unify(ctx, tuple.Elems[i], ext.Args[i])
 									errors = slices.Concat(errors, argErrors)
 								}
+
+								// Unify rest arguments with rest element type
+								if len(ext.Args) > restIndex {
+									restElem := ext.Args[restIndex].(*RestSpreadType)
+									reaminingArgsTupleType := &TupleType{
+										Elems: tuple.Elems[restIndex:],
+									}
+
+									restErrors := c.unify(ctx, restElem.Type, reaminingArgsTupleType)
+									errors = slices.Concat(errors, restErrors)
+								}
 							} else {
-								return []Error{&ExtractorReturnTypeMismatchError{
-									ExtractorType: ext,
-									ReturnType:    tuple,
-									NumArgs:       len(ext.Args),
-									NumReturns:    len(tuple.Elems),
-								}}
+								// Tuple has no rest element, use strict equality check
+								if len(tuple.Elems) == len(ext.Args) {
+									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
+										argErrors := c.unify(ctx, retElem, argType)
+										errors = slices.Concat(errors, argErrors)
+									}
+								} else {
+									return []Error{&ExtractorReturnTypeMismatchError{
+										ExtractorType: ext,
+										ReturnType:    tuple,
+										NumArgs:       len(ext.Args),
+										NumReturns:    len(tuple.Elems),
+									}}
+								}
 							}
 						} else {
 							return []Error{&ExtractorMustReturnTupleError{

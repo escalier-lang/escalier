@@ -796,6 +796,24 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b": "string",
 			},
 		},
+		"ExtractorsWithRest": {
+			input: `
+				class Foo(a: number, b: string, c: boolean) {
+					a,
+					b,
+					c,
+					static [Symbol.customMatcher](subject: Foo) -> [number, string, boolean] {
+						return [subject.a, subject.b, subject.c]
+					}
+				}	
+				val foo = Foo(5, "hello", true)
+				val Foo(a, ...rest) = foo
+			`,
+			expectedTypes: map[string]string{
+				"a":    "number",
+				"rest": "[string, boolean]",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
