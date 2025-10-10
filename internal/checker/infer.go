@@ -269,6 +269,7 @@ func (c *Checker) InferComponent(
 					}
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
+					fmt.Fprintf(os.Stderr, "infer MethodElem, key = %#v\n", key)
 					errors = slices.Concat(errors, keyErrors)
 					methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
@@ -1955,6 +1956,9 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 			default:
 				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
 			}
+		case *UniqueSymbolType:
+			newKey := NewSymKey(t.Value)
+			return &newKey, nil
 		default:
 			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
 		}

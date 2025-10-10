@@ -459,14 +459,60 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			}
 		}
 	}
-	// | ObjectType, ExtractType -> ...
-	if obj, ok := t1.(*ObjectType); ok {
-		if ext, ok := t2.(*ExtractorType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, ext))
-			// TODO
+	// | ObjectType, ExtractorType -> ...
+	// if obj, ok := t1.(*ObjectType); ok {
+	if ext, ok := t2.(*ExtractorType); ok {
+		if extObj, ok := ext.Extractor.(*ObjectType); ok {
+			for _, elem := range extObj.Elems {
+				if methodElem, ok := elem.(*MethodElemType); ok {
+					// TODO: look up the symbol ID for `Symbol.customMatcher`
+					if methodElem.Name.Kind == SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+						if len(methodElem.Fn.Params) != 1 {
+							return []Error{&IncorrectParamCountForCustomMatcherError{
+								Method:    methodElem.Fn,
+								NumParams: len(methodElem.Fn.Params),
+							}}
+						}
+
+						paramType := methodElem.Fn.Params[0].Type
+						errors := c.unify(ctx, t1, paramType)
+
+						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+							if len(tuple.Elems) == len(ext.Args) {
+								for retElem, argType := range Zip(tuple.Elems, ext.Args) {
+									argErrors := c.unify(ctx, retElem, argType)
+									errors = slices.Concat(errors, argErrors)
+								}
+							} else {
+								return []Error{&ExtractorReturnTypeMismatchError{
+									ExtractorType: ext,
+									ReturnType:    tuple,
+									NumArgs:       len(ext.Args),
+									NumReturns:    len(tuple.Elems),
+								}}
+							}
+						} else {
+							return []Error{&ExtractorMustReturnTupleError{
+								ExtractorType: ext,
+								ReturnType:    methodElem.Fn.Return,
+							}}
+						}
+
+						return errors
+					}
+				}
+			}
+			return []Error{&MissingCustomMatcherError{
+				ObjectType: extObj,
+			}}
 		}
+		return []Error{&InvalidExtractorTypeError{
+			ExtractorType: ext,
+			ActualType:    ext.Extractor,
+		}}
 	}
-	// | ExtractType, ObjectType -> ...
+	// }
+	// | ExtractorType, ObjectType -> ...
 	if ext, ok := t1.(*ExtractorType); ok {
 		if obj, ok := t2.(*ObjectType); ok {
 			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ext, obj))

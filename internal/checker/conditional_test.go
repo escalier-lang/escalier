@@ -176,12 +176,12 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			for i, err := range inferErrors {
 				fmt.Printf("Infer Error[%d]: %s\n", i, err)
@@ -368,12 +368,12 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -587,12 +587,12 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 
 			// Some tests may have inference errors if conditional types aren't fully implemented

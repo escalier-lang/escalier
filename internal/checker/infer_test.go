@@ -165,12 +165,12 @@ func TestCheckScriptNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferScript(inferCtx, script)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -779,6 +779,23 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		// 		"myArray": "MyArray<number>",
 		// 	},
 		// },
+		"Extractors": {
+			input: `
+				class Foo(a: number, b: string) {
+					a,
+					b,
+					static [Symbol.customMatcher](subject: Foo) -> [number, string] {
+						return [subject.a, subject.b]
+					}
+				}	
+				val foo = Foo(5, "hello")
+				val Foo(a, b) = foo
+			`,
+			expectedTypes: map[string]string{
+				"a": "number",
+				"b": "string",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -803,12 +820,12 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			c.Schema = schema
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
@@ -1003,12 +1020,12 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -1087,12 +1104,12 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -2424,8 +2441,8 @@ func TestMutableTypes(t *testing.T) {
 				declare val y: unique symbol
 			`,
 			expectedTypes: map[string]string{
-				"x": "symbol1", // Unique symbol should have an ID
-				"y": "symbol2", // Unique symbol should have an ID
+				"x": "symbol3", // Unique symbol should have an ID
+				"y": "symbol4", // Unique symbol should have an ID
 			},
 		},
 		"MutableStringType": {
@@ -2483,12 +2500,12 @@ func TestMutableTypes(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -2674,12 +2691,12 @@ func TestMatchExprInference(t *testing.T) {
 			}
 			assert.Len(t, errors, 0, "Expected no parse errors")
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			scope, inferErrors := c.InferModule(inferCtx, module)
 
 			if len(inferErrors) > 0 {

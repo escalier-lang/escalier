@@ -333,12 +333,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			c.Schema = schema
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {

@@ -4,7 +4,7 @@ import (
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
-func Prelude() *Scope {
+func Prelude(c *Checker) *Scope {
 	scope := NewScope()
 
 	binArithType := &FuncType{
@@ -218,6 +218,33 @@ func Prelude() *Scope {
 	}
 
 	scope.Namespace.Values["++"] = &strConcatBinding
+
+	// Symbol object with iterator and customMatcher unique symbols
+	c.SymbolID++
+	iteratorSymbol := NewUniqueSymbolType(c.SymbolID)
+	c.SymbolID++
+	customMatcherSymbol := NewUniqueSymbolType(c.SymbolID)
+
+	symbolElems := []ObjTypeElem{
+		&PropertyElemType{
+			Name:     NewStrKey("iterator"),
+			Value:    iteratorSymbol,
+			Optional: false,
+			Readonly: true,
+		},
+		&PropertyElemType{
+			Name:     NewStrKey("customMatcher"),
+			Value:    customMatcherSymbol,
+			Optional: false,
+			Readonly: true,
+		},
+	}
+
+	scope.Namespace.Values["Symbol"] = &Binding{
+		Source:  nil,
+		Type:    NewObjectType(symbolElems),
+		Mutable: false,
+	}
 
 	return scope
 }
