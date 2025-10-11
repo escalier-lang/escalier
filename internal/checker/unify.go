@@ -459,8 +459,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			}
 		}
 	}
-	// | ObjectType, ExtractorType -> ...
-	// if obj, ok := t1.(*ObjectType); ok {
+	// | _, ExtractorType -> ...
 	if ext, ok := t2.(*ExtractorType); ok {
 		if extObj, ok := ext.Extractor.(*ObjectType); ok {
 			for _, elem := range extObj.Elems {
@@ -474,8 +473,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							}}
 						}
 
-						fmt.Fprintf(os.Stderr, "unify ExtractorType, found customMatcher method with param type %s and return type %s\n", methodElem.Fn.Params[0].Type.String(), methodElem.Fn.Return.String())
-
 						paramType := methodElem.Fn.Params[0].Type
 						errors := c.unify(ctx, t1, paramType)
 
@@ -483,14 +480,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							// Find if the args have a rest element
 							var restIndex = -1
 							for i, elem := range ext.Args {
-								fmt.Fprintf(os.Stderr, "arg elem %d: %#v\n", i, elem)
 								if _, isRest := elem.(*RestSpreadType); isRest {
 									restIndex = i
 									break
 								}
 							}
-
-							fmt.Fprintf(os.Stderr, "restIndex = %d\n", restIndex)
 
 							if restIndex != -1 {
 								// Tuple has rest element
@@ -599,7 +593,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
 					keys1 = append(keys1, elem.Name)
 				case *PropertyElemType:
-					namedElems1[elem.Name] = elem.Value
+					propType := elem.Value
+					if elem.Optional {
+						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+					}
+					namedElems1[elem.Name] = propType
 					keys1 = append(keys1, elem.Name)
 				case *RestSpreadElemType:
 					restType1 = elem.Value
@@ -619,7 +617,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
 					keys2 = append(keys2, elem.Name)
 				case *PropertyElemType:
-					namedElems2[elem.Name] = elem.Value
+					propType := elem.Value
+					if elem.Optional {
+						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+					}
+					namedElems2[elem.Name] = propType
 					keys2 = append(keys2, elem.Name)
 				case *RestSpreadElemType:
 					restType2 = elem.Value

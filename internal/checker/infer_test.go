@@ -289,6 +289,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "string",
 			},
 		},
+		"ObjectDestructuringWithDefault": {
+			input: `
+			    declare val obj: {a?: string, b: number | null, c: boolean}
+				val {a, b, c} = obj
+			`,
+			expectedTypes: map[string]string{
+				"a": "string | undefined",
+				"b": "number | null",
+				"c": "boolean",
+			},
+		},
 		"ObjectWithMethods": {
 			input: `
 				val value: number = 5

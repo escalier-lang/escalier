@@ -72,6 +72,7 @@ func (b *Builder) buildPattern(
 	p ast.Pat,
 	target Expr,
 	export bool,
+	kind ast.VariableKind,
 	nsName string,
 ) ([]Expr, []Stmt) {
 
@@ -239,7 +240,7 @@ func (b *Builder) buildPattern(
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
-				argChecks, argStmts := b.buildPattern(arg, temp, export, nsName)
+				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
 			}
@@ -276,6 +277,7 @@ func (b *Builder) buildPattern(
 		}
 
 		decl := &VarDecl{
+			Kind:    VariableKind(kind),
 			Decls:   decls,
 			declare: false, // TODO
 			export:  export,
@@ -535,7 +537,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), nsName)
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
@@ -1086,11 +1088,11 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 
 		switch pat := p.Pattern.(type) {
 		case *ast.RestPat:
-			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, "")
+			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, "")
+			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 		}
 
@@ -1329,6 +1331,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			Init:    targetExpr,
 		}
 		varDecl := &VarDecl{
+			Kind:    ValKind,
 			Decls:   []*Declarator{declarator},
 			declare: false,
 			export:  false,
@@ -1414,6 +1417,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			Init:    targetExpr,
 		}
 		varDecl := &VarDecl{
+			Kind:    ValKind,
 			Decls:   []*Declarator{declarator},
 			declare: false,
 			export:  false,
@@ -1493,6 +1497,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			Init:    targetExpr,
 		}
 		varDecl := &VarDecl{
+			Kind:    ValKind,
 			Decls:   []*Declarator{declarator},
 			declare: false,
 			export:  false,
