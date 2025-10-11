@@ -1,2 +1,0 @@
-val subject = C(D("hello"), E([5, 10]))
-val C(D(msg), E([x, y])) = subject

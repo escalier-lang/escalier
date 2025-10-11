@@ -126,12 +126,12 @@ func TestMutation(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
+			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			c := NewChecker()
 			_, inferErrors := c.InferScript(inferCtx, script)
 
 			if test.expectErrors {

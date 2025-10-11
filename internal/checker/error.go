@@ -21,23 +21,28 @@ type Error interface {
 	Message() string
 }
 
-func (e UnimplementedError) isError()             {}
-func (e InvalidObjectKeyError) isError()          {}
-func (e KeyNotFoundError) isError()               {}
-func (e OutOfBoundsError) isError()               {}
-func (e RecursiveUnificationError) isError()      {}
-func (e NotEnoughElementsToUnpackError) isError() {}
-func (e CannotUnifyTypesError) isError()          {}
-func (e UnknownIdentifierError) isError()         {}
-func (e UnknownOperatorError) isError()           {}
-func (e UnknownTypeError) isError()               {}
-func (e CalleeIsNotCallableError) isError()       {}
-func (e InvalidNumberOfArgumentsError) isError()  {}
-func (e ExpectedObjectError) isError()            {}
-func (e ExpectedArrayError) isError()             {}
-func (e CyclicDependencyError) isError()          {}
-func (e UnknownPropertyError) isError()           {}
-func (e CannotMutateImmutableError) isError()     {}
+func (e UnimplementedError) isError()                       {}
+func (e InvalidObjectKeyError) isError()                    {}
+func (e KeyNotFoundError) isError()                         {}
+func (e OutOfBoundsError) isError()                         {}
+func (e RecursiveUnificationError) isError()                {}
+func (e NotEnoughElementsToUnpackError) isError()           {}
+func (e CannotUnifyTypesError) isError()                    {}
+func (e UnknownIdentifierError) isError()                   {}
+func (e UnknownOperatorError) isError()                     {}
+func (e UnknownTypeError) isError()                         {}
+func (e CalleeIsNotCallableError) isError()                 {}
+func (e InvalidNumberOfArgumentsError) isError()            {}
+func (e ExpectedObjectError) isError()                      {}
+func (e ExpectedArrayError) isError()                       {}
+func (e CyclicDependencyError) isError()                    {}
+func (e UnknownPropertyError) isError()                     {}
+func (e CannotMutateImmutableError) isError()               {}
+func (e IncorrectParamCountForCustomMatcherError) isError() {}
+func (e ExtractorReturnTypeMismatchError) isError()         {}
+func (e ExtractorMustReturnTupleError) isError()            {}
+func (e MissingCustomMatcherError) isError()                {}
+func (e InvalidExtractorTypeError) isError()                {}
 
 type CannotMutateImmutableError struct {
 	Type Type
@@ -248,6 +253,67 @@ func (e UnknownPropertyError) Span() ast.Span {
 }
 func (e UnknownPropertyError) Message() string {
 	return "Unknown property '" + e.Property + "' in object type " + e.ObjectType.String()
+}
+
+type IncorrectParamCountForCustomMatcherError struct {
+	Method    *FuncType
+	NumParams int
+}
+
+func (e IncorrectParamCountForCustomMatcherError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e IncorrectParamCountForCustomMatcherError) Message() string {
+	return "Custom matcher method must have exactly one parameter, but got " + strconv.Itoa(e.NumParams)
+}
+
+type ExtractorReturnTypeMismatchError struct {
+	ExtractorType *ExtractorType
+	ReturnType    Type
+	NumArgs       int
+	NumReturns    int
+}
+
+func (e ExtractorReturnTypeMismatchError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e ExtractorReturnTypeMismatchError) Message() string {
+	return "Extractor return type mismatch: expected " + strconv.Itoa(e.NumArgs) + " return values, but got " + strconv.Itoa(e.NumReturns)
+}
+
+type ExtractorMustReturnTupleError struct {
+	ExtractorType *ExtractorType
+	ReturnType    Type
+}
+
+func (e ExtractorMustReturnTupleError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e ExtractorMustReturnTupleError) Message() string {
+	return "Extractor must return a tuple type, but got: " + e.ReturnType.String()
+}
+
+type MissingCustomMatcherError struct {
+	ObjectType *ObjectType
+}
+
+func (e MissingCustomMatcherError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e MissingCustomMatcherError) Message() string {
+	return "Object type does not have a custom matcher method (Symbol.customMatcher)"
+}
+
+type InvalidExtractorTypeError struct {
+	ExtractorType *ExtractorType
+	ActualType    Type
+}
+
+func (e InvalidExtractorTypeError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e InvalidExtractorTypeError) Message() string {
+	return "Extractor's extractor must be an object type, but got: " + e.ActualType.String()
 }
 
 // TODO: make this a sum type so that different error type can reference other

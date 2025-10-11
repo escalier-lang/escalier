@@ -10,7 +10,7 @@ import (
 
 func TestUnifyStrLitWithRegexLit(t *testing.T) {
 	checker := NewChecker()
-	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
@@ -76,7 +76,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 func TestUnifyWithUnionTypes(t *testing.T) {
 	checker := NewChecker()
-	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("literal type unifies with union containing compatible type", func(t *testing.T) {
 		numType := test_util.ParseTypeAnn("5")
@@ -188,7 +188,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 func TestUnifyFuncTypes(t *testing.T) {
 	checker := NewChecker()
 	ctx := Context{
-		Scope:      Prelude(),
+		Scope:      Prelude(checker),
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
@@ -304,7 +304,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 
 func TestUnifyUnknownType(t *testing.T) {
 	checker := NewChecker()
-	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	unknownType := test_util.ParseTypeAnn("unknown")
 	anyType := test_util.ParseTypeAnn("any")
@@ -393,7 +393,7 @@ func TestUnifyUnknownType(t *testing.T) {
 
 func TestUnifyMutableTypes(t *testing.T) {
 	checker := NewChecker()
-	ctx := Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("identical mutable types should unify", func(t *testing.T) {
 		mutType1 := test_util.ParseTypeAnn("mut number")

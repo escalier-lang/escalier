@@ -224,7 +224,6 @@ func (b *Builder) buildPattern(
 			}
 
 			decl := &VarDecl{
-				Kind:    VariableKind(ast.ValKind),
 				Decls:   decls,
 				declare: false,
 				export:  export,
@@ -1332,7 +1331,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			Init:    targetExpr,
 		}
 		varDecl := &VarDecl{
-			Kind:    ValKind, // Use const (val) for pattern bindings
+			Kind:    ValKind,
 			Decls:   []*Declarator{declarator},
 			declare: false,
 			export:  false,

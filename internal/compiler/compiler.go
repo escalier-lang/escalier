@@ -27,7 +27,7 @@ func Compile(source *ast.Source) CompilerOutput {
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
-		Scope:      checker.Prelude(),
+		Scope:      checker.Prelude(c),
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
@@ -89,7 +89,7 @@ func CompileLib(sources []*ast.Source) CompilerOutput {
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
-		Scope:      checker.Prelude(),
+		Scope:      checker.Prelude(c),
 		IsAsync:    false,
 		IsPatMatch: false,
 	}

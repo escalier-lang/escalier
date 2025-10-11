@@ -142,7 +142,7 @@ func TestAsyncFunctionInference(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(),
+				Scope:      Prelude(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}

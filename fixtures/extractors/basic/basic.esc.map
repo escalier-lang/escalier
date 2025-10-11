@@ -1,1 +1,0 @@
-{"version":3,"file":"./basic.js","sources":["./basic.esc"],"sourcesContent":["val subject = C(\"hello\")\nval C(msg) = subject\n"],"names":[],"mappings":"MAAI,AAAA,UAAU,AAAA,EAAE;OACZ,AAAA,oCAAA,GAAS;MAAP,AAAA"}

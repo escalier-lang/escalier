@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -114,11 +115,11 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			bindingType := type_sys.Prune(binding.Type)
 
 			var ifaceStmt *DeclStmt = nil
-			typeAnn := buildTypeAnn(bindingType)
+			typeAnn := b.buildTypeAnn(bindingType)
 			if containsSelfTypeRef(bindingType) {
 				ifaceName := fmt.Sprintf("__%s_self__", localName)
 				ifaceType := replaceSelfWithThis(bindingType)
-				ifaceTypeAnn := buildTypeAnn(ifaceType)
+				ifaceTypeAnn := b.buildTypeAnn(ifaceType)
 				ifaceDecl := &TypeDecl{
 					Name:       NewIdentifier(ifaceName, nil),
 					TypeParams: nil,
@@ -183,14 +184,14 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			if param.Constraint != nil {
 				t := param.Constraint.InferredType()
 				if t != nil {
-					constraint = buildTypeAnn(t)
+					constraint = b.buildTypeAnn(t)
 				}
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
 				t := param.Default.InferredType()
 				if t != nil {
-					default_ = buildTypeAnn(t)
+					default_ = b.buildTypeAnn(t)
 				}
 			}
 
@@ -204,10 +205,10 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		fnDecl := &FuncDecl{
 			Name:       NewIdentifier(localName, decl.Name),
 			TypeParams: typeParams,
-			Params:     funcTypeToParams(funcType),
+			Params:     b.funcTypeToParams(funcType),
 			// TODO: Use the type annotation if there is one and if not
 			// fallback to the inferred return type from the binding.
-			TypeAnn: buildTypeAnn(funcType.Return),
+			TypeAnn: b.buildTypeAnn(funcType.Return),
 			Body:    nil,
 			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
@@ -230,14 +231,14 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			if param.Constraint != nil {
 				t := param.Constraint.InferredType()
 				if t != nil {
-					constraint = buildTypeAnn(t)
+					constraint = b.buildTypeAnn(t)
 				}
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
 				t := param.Default.InferredType()
 				if t != nil {
-					default_ = buildTypeAnn(t)
+					default_ = b.buildTypeAnn(t)
 				}
 			}
 
@@ -258,7 +259,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		typeDecl := &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
 			TypeParams: typeParams,
-			TypeAnn:    buildTypeAnn(typeAnnType),
+			TypeAnn:    b.buildTypeAnn(typeAnnType),
 			Interface:  false,
 			declare:    isTopLevel, // Only add declare modifier for root namespace
 			export:     decl.Export(),
@@ -292,7 +293,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		var stmts []Stmt
 
 		// Generate instance type declaration using the inferred object type
-		instanceTypeAnn := buildTypeAnn(objType)
+		instanceTypeAnn := b.buildTypeAnn(objType)
 
 		instanceTypeDecl := &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
@@ -321,7 +322,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			return nil
 		}
 
-		staticTypeAnn := buildTypeAnn(staticType)
+		staticTypeAnn := b.buildTypeAnn(staticType)
 
 		staticVarDecl := &VarDecl{
 			Kind: ValKind,
@@ -394,7 +395,7 @@ func (b *Builder) buildNamespaceDecl(namespace string, stmts []Stmt) Decl {
 	}
 }
 
-func buildTypeAnn(t type_sys.Type) TypeAnn {
+func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 	switch t := type_sys.Prune(t).(type) {
 	case *type_sys.TypeVarType:
 		msg := fmt.Sprintf("TODO: generalize types before building .d.ts files, t = %s", t.String())
@@ -402,7 +403,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.TypeRefType:
 		typeArgs := make([]TypeAnn, len(t.TypeArgs))
 		for i, arg := range t.TypeArgs {
-			typeArgs[i] = buildTypeAnn(arg)
+			typeArgs[i] = b.buildTypeAnn(arg)
 		}
 		return NewRefTypeAnn(t.Name, typeArgs)
 	case *type_sys.PrimType:
@@ -441,10 +442,10 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 			var constraint TypeAnn
 			var defaultType TypeAnn
 			if tp.Constraint != nil {
-				constraint = buildTypeAnn(tp.Constraint)
+				constraint = b.buildTypeAnn(tp.Constraint)
 			}
 			if tp.Default != nil {
-				defaultType = buildTypeAnn(tp.Default)
+				defaultType = b.buildTypeAnn(tp.Default)
 			}
 			typeParams[i] = &TypeParam{
 				Name:       tp.Name,
@@ -454,7 +455,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 		}
 		params := make([]*Param, len(t.Params))
 		for i, param := range t.Params {
-			typeAnn := buildTypeAnn(param.Type)
+			typeAnn := b.buildTypeAnn(param.Type)
 			params[i] = &Param{
 				Pattern:  patToPat(param.Pattern),
 				Optional: param.Optional,
@@ -464,20 +465,20 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 		return NewFuncTypeAnn(
 			typeParams,
 			params,
-			buildTypeAnn(t.Return),
+			b.buildTypeAnn(t.Return),
 			nil,
 			nil,
 		)
 	case *type_sys.ObjectType:
 		elems := make([]ObjTypeAnnElem, len(t.Elems))
 		for i, elem := range t.Elems {
-			elems[i] = buildObjTypeAnnElem(elem)
+			elems[i] = b.buildObjTypeAnnElem(elem, t.SymbolKeyMap)
 		}
 		return NewObjectTypeAnn(elems)
 	case *type_sys.TupleType:
 		elems := make([]TypeAnn, len(t.Elems))
 		for i, elem := range t.Elems {
-			elems[i] = buildTypeAnn(elem)
+			elems[i] = b.buildTypeAnn(elem)
 		}
 		return NewTupleTypeAnn(elems)
 	case *type_sys.RestSpreadType:
@@ -485,28 +486,28 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.UnionType:
 		types := make([]TypeAnn, len(t.Types))
 		for i, type_ := range t.Types {
-			types[i] = buildTypeAnn(type_)
+			types[i] = b.buildTypeAnn(type_)
 		}
 		return NewUnionTypeAnn(types)
 	case *type_sys.IntersectionType:
 		types := make([]TypeAnn, len(t.Types))
 		for i, type_ := range t.Types {
-			types[i] = buildTypeAnn(type_)
+			types[i] = b.buildTypeAnn(type_)
 		}
 		return NewIntersectionTypeAnn(types)
 	case *type_sys.KeyOfType:
-		return NewKeyOfTypeAnn(buildTypeAnn(t.Type))
+		return NewKeyOfTypeAnn(b.buildTypeAnn(t.Type))
 	case *type_sys.IndexType:
 		return NewIndexTypeAnn(
-			buildTypeAnn(t.Target),
-			buildTypeAnn(t.Index),
+			b.buildTypeAnn(t.Target),
+			b.buildTypeAnn(t.Index),
 		)
 	case *type_sys.CondType:
 		return NewCondTypeAnn(
-			buildTypeAnn(t.Check),
-			buildTypeAnn(t.Extends),
-			buildTypeAnn(t.Then),
-			buildTypeAnn(t.Else),
+			b.buildTypeAnn(t.Check),
+			b.buildTypeAnn(t.Extends),
+			b.buildTypeAnn(t.Then),
+			b.buildTypeAnn(t.Else),
 		)
 	case *type_sys.InferType:
 		return NewInferTypeAnn(t.Name)
@@ -517,7 +518,7 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.TemplateLitType:
 		types := make([]TypeAnn, len(t.Types))
 		for i, type_ := range t.Types {
-			types[i] = buildTypeAnn(type_)
+			types[i] = b.buildTypeAnn(type_)
 		}
 		quasis := make([]*Quasi, len(t.Quasis))
 		for i, quasi := range t.Quasis {
@@ -530,69 +531,69 @@ func buildTypeAnn(t type_sys.Type) TypeAnn {
 	case *type_sys.IntrinsicType:
 		return NewIntrinsicTypeAnn(t.Name, nil)
 	case *type_sys.MutableType:
-		return buildTypeAnn(t.Type) // Mutable types are treated the same in .d.ts files
+		return b.buildTypeAnn(t.Type) // Mutable types are treated the same in .d.ts files
 	default:
 		panic(fmt.Sprintf("unknown type: %s", t))
 	}
 }
 
-func buildObjTypeAnnElem(elem type_sys.ObjTypeElem) ObjTypeAnnElem {
+func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap map[int]any) ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *type_sys.CallableElemType:
 		return &CallableTypeAnn{
-			Fn: buildFuncTypeAnn(elem.Fn),
+			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.ConstructorElemType:
 		return &ConstructorTypeAnn{
-			Fn: buildFuncTypeAnn(elem.Fn),
+			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.MethodElemType:
 		return &MethodTypeAnn{
-			Name: buildObjKey(elem.Name),
-			Fn:   buildFuncTypeAnn(elem.Fn),
+			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
+			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.GetterElemType:
 		return &GetterTypeAnn{
-			Name: buildObjKey(elem.Name),
-			Fn:   buildFuncTypeAnn(elem.Fn),
+			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
+			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.SetterElemType:
 		return &SetterTypeAnn{
-			Name: buildObjKey(elem.Name),
-			Fn:   buildFuncTypeAnn(elem.Fn),
+			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
+			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.PropertyElemType:
 		return &PropertyTypeAnn{
-			Name:     buildObjKey(elem.Name),
+			Name:     b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Optional: elem.Optional,
 			Readonly: elem.Readonly,
-			Value:    buildTypeAnn(elem.Value),
+			Value:    b.buildTypeAnn(elem.Value),
 		}
 	case *type_sys.MappedElemType:
 		typeParam := &IndexParamTypeAnn{
 			Name:       elem.TypeParam.Name,
-			Constraint: buildTypeAnn(elem.TypeParam.Constraint),
+			Constraint: b.buildTypeAnn(elem.TypeParam.Constraint),
 		}
 		return &MappedTypeAnn{
 			TypeParam: typeParam,
 			Name:      nil,
-			Value:     buildTypeAnn(elem.Value),
+			Value:     b.buildTypeAnn(elem.Value),
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.ReadOnly),
 		}
 	case *type_sys.RestSpreadElemType:
 		return &RestSpreadTypeAnn{
-			Value: buildTypeAnn(elem.Value),
+			Value: b.buildTypeAnn(elem.Value),
 		}
 	default:
 		panic("unknown object type element")
 	}
 }
 
-func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
+func (b *Builder) funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 	params := make([]*Param, len(fnType.Params))
 	for i, param := range fnType.Params {
-		typeAnn := buildTypeAnn(param.Type)
+		typeAnn := b.buildTypeAnn(param.Type)
 		params[i] = &Param{
 			Pattern:  patToPat(param.Pattern),
 			Optional: param.Optional,
@@ -602,8 +603,8 @@ func funcTypeToParams(fnType *type_sys.FuncType) []*Param {
 	return params
 }
 
-func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
-	params := funcTypeToParams(funcType)
+func (b *Builder) buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
+	params := b.funcTypeToParams(funcType)
 
 	// Build type parameters
 	var typeParams []*TypeParam
@@ -612,11 +613,11 @@ func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
 			if param.Constraint != nil {
-				constraint = buildTypeAnn(param.Constraint)
+				constraint = b.buildTypeAnn(param.Constraint)
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
-				default_ = buildTypeAnn(param.Default)
+				default_ = b.buildTypeAnn(param.Default)
 			}
 
 			typeParams[i] = &TypeParam{
@@ -630,14 +631,14 @@ func buildFuncTypeAnn(funcType *type_sys.FuncType) FuncTypeAnn {
 	return FuncTypeAnn{
 		TypeParams: typeParams,
 		Params:     params,
-		Return:     buildTypeAnn(funcType.Return),
+		Return:     b.buildTypeAnn(funcType.Return),
 		Throws:     nil,
 		span:       nil,
 		source:     nil,
 	}
 }
 
-func buildObjKey(key type_sys.ObjTypeKey) ObjKey {
+func (b *Builder) buildTypeAnnObjKey(key type_sys.ObjTypeKey, symbolExprMap map[int]any) ObjKey {
 	switch key.Kind {
 	case type_sys.StrObjTypeKeyKind:
 		// TODO: Check if key.Str is a valid identifier and if it is then return
@@ -654,7 +655,15 @@ func buildObjKey(key type_sys.ObjTypeKey) ObjKey {
 			source: nil,
 		}
 	case type_sys.SymObjTypeKeyKind:
-		panic("TODO: objTypeKeyToObjKey - SymObjTypeKey")
+		e := symbolExprMap[key.Sym]
+		fmt.Fprintf(os.Stderr, "symbolExprMap = %#v\n", symbolExprMap)
+		fmt.Fprintf(os.Stderr, "key.Sym = %d\n", key.Sym)
+		expr, _ := b.buildExpr(e.(ast.Expr), nil)
+		return &ComputedKey{
+			Expr:   expr,
+			span:   nil,
+			source: nil,
+		}
 	default:
 		panic("unknown object key type")
 	}

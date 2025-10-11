@@ -82,7 +82,7 @@ func TestThrowExpressionInference(t *testing.T) {
 
 			checker := NewChecker()
 			scope, errors := checker.InferScript(
-				Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false},
+				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false},
 				script,
 			)
 
@@ -158,7 +158,7 @@ func TestThrowExpressionUnification(t *testing.T) {
 
 			checker := NewChecker()
 			_, errors := checker.InferScript(
-				Context{Scope: Prelude(), IsAsync: false, IsPatMatch: false}, script)
+				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}, script)
 
 			if test.shouldHaveError {
 				assert.NotEmpty(t, errors, "Expected errors but got none")

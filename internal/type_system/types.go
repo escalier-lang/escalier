@@ -734,6 +734,8 @@ type SetterElemType struct {
 	Name ObjTypeKey
 	Fn   *FuncType
 }
+
+// TODO: update PropertyElemType to handle computed keys
 type PropertyElemType struct {
 	Name     ObjTypeKey
 	Optional bool
@@ -905,7 +907,12 @@ type ObjectType struct {
 	Interface  bool
 	Extends    []*TypeRefType
 	Implements []*TypeRefType
-	provenance Provenance // TODO: use optional.Option for this
+	// NOTE: the value type is ast.Expr, but we can't use that here because it
+	// would cause a cycle between type_system and ast packages.
+	// Maps symbols used as keys to the ast.Expr that was used as the computed
+	// key.
+	SymbolKeyMap map[int]any
+	provenance   Provenance
 }
 
 // TODO: add different constructors for different types of object types

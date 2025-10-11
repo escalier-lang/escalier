@@ -244,6 +244,8 @@ func (c *Checker) InferComponent(
 			objTypeElems := []ObjTypeElem{}
 			staticElems := []ObjTypeElem{}
 			methodCtxs := make([]Context, len(decl.Body))
+			instanceSymbolKeyMap := make(map[int]any)
+			staticSymbolKeyMap := make(map[int]any)
 
 			for i, elem := range decl.Body {
 				switch elem := elem.(type) {
@@ -252,6 +254,17 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					if elem.Static {
@@ -274,6 +287,17 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					methodCtxs[i] = methodCtx
@@ -299,6 +323,17 @@ func (c *Checker) InferComponent(
 						continue
 					}
 
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
+					}
+
 					if elem.Static {
 						// Static getters go to the class object type
 						staticElems = append(
@@ -319,6 +354,17 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					if elem.Static {
@@ -343,14 +389,15 @@ func (c *Checker) InferComponent(
 			}
 
 			objType := &ObjectType{
-				Elems:      objTypeElems,
-				Exact:      false,
-				Immutable:  false,
-				Mutable:    true,
-				Nominal:    true,
-				Interface:  false,
-				Extends:    []*TypeRefType{},
-				Implements: []*TypeRefType{},
+				Elems:        objTypeElems,
+				Exact:        false,
+				Immutable:    false,
+				Mutable:      true,
+				Nominal:      true,
+				Interface:    false,
+				Extends:      []*TypeRefType{},
+				Implements:   []*TypeRefType{},
+				SymbolKeyMap: instanceSymbolKeyMap,
 			}
 			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
@@ -382,14 +429,15 @@ func (c *Checker) InferComponent(
 			classObjTypeElems = append(classObjTypeElems, staticElems...)
 
 			classObjType := &ObjectType{
-				Elems:      classObjTypeElems,
-				Exact:      false,
-				Immutable:  false,
-				Mutable:    false,
-				Nominal:    true,
-				Interface:  false,
-				Extends:    []*TypeRefType{},
-				Implements: []*TypeRefType{},
+				Elems:        classObjTypeElems,
+				Exact:        false,
+				Immutable:    false,
+				Mutable:      false,
+				Nominal:      true,
+				Interface:    false,
+				Extends:      []*TypeRefType{},
+				Implements:   []*TypeRefType{},
+				SymbolKeyMap: staticSymbolKeyMap,
 			}
 			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
@@ -1176,11 +1224,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 	case *ast.CallExpr:
 		resultType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:
-		// TODO: create a getPropType function to handle this so that we can
-		// call it recursively if need be.
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
-		propType, propErrors := c.getAccessType(ctx, objType, key)
+		propType, propErrors := c.getMemberType(ctx, objType, key)
 
 		resultType = propType
 
@@ -1200,7 +1246,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		errors = slices.Concat(objErrors, indexErrors)
 
 		key := IndexKey{Type: indexType, Span: expr.Index.Span()}
-		accessType, accessErrors := c.getAccessType(ctx, objType, key)
+		accessType, accessErrors := c.getMemberType(ctx, objType, key)
 		resultType = accessType
 		errors = slices.Concat(errors, accessErrors)
 	case *ast.IdentExpr:
@@ -1684,8 +1730,8 @@ type IndexKey struct {
 
 func (ik IndexKey) isAccessKey() {}
 
-// getAccessType is a unified function for getting types from objects via property access or indexing
-func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type, []Error) {
+// getMemberType is a unified function for getting types from objects via property access or indexing
+func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type, []Error) {
 	errors := []Error{}
 
 	objType = Prune(objType)
@@ -1716,7 +1762,7 @@ func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type,
 	switch t := objType.(type) {
 	case *MutableType:
 		// For mutable types, get the access from the inner type
-		return c.getAccessType(ctx, t.Type, key)
+		return c.getMemberType(ctx, t.Type, key)
 	case *TypeRefType:
 		// Handle Array access
 		if indexKey, ok := key.(IndexKey); ok && t.Name == "Array" {
@@ -1736,7 +1782,7 @@ func (c *Checker) getAccessType(ctx Context, objType Type, key AccessKey) (Type,
 		}
 
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
-		accessType, accessErrors := c.getAccessType(ctx, expandType, key)
+		accessType, accessErrors := c.getMemberType(ctx, expandType, key)
 
 		errors = slices.Concat(errors, accessErrors, expandErrors)
 
@@ -1860,7 +1906,11 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 					switch elem := elem.(type) {
 					case *PropertyElemType:
 						if elem.Name == NewStrKey(strLit.Value) {
-							return elem.Value, errors
+							propType := elem.Value
+							if elem.Optional {
+								propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+							}
+							return propType, errors
 						}
 					case *MethodElemType:
 						if elem.Name == NewStrKey(strLit.Value) {
@@ -1908,7 +1958,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 
 	if len(definedElems) == 1 {
 		if len(undefinedElems) == 0 {
-			return c.getAccessType(ctx, definedElems[0], key)
+			return c.getMemberType(ctx, definedElems[0], key)
 		}
 
 		if len(undefinedElems) > 0 && isPropertyKey && !propKey.OptChain {
@@ -1916,7 +1966,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 			return NewNeverType(), errors
 		}
 
-		pType, pErrors := c.getAccessType(ctx, definedElems[0], key)
+		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
 		errors = slices.Concat(errors, pErrors)
 		propType := NewUnionType(pType, NewLitType(&UndefinedLit{}))
 		return propType, errors
@@ -1941,6 +1991,7 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 		newKey := NewNumKey(key.Value)
 		return &newKey, nil
 	case *ast.ComputedKey:
+		// TODO: return the error
 		keyType, _ := c.inferExpr(ctx, key.Expr) // infer the expression for side-effects
 
 		switch t := Prune(keyType).(type) {
@@ -1955,6 +2006,11 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 			default:
 				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
 			}
+		case *UniqueSymbolType:
+			fmt.Fprintf(os.Stderr, "key.Expr = %#v\n", key.Expr)
+			// fmt.Fprintf(os.Stderr, "keyType = %s\n", key.Expr.String())
+			newKey := NewSymKey(t.Value)
+			return &newKey, nil
 		default:
 			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
 		}
@@ -2660,6 +2716,7 @@ func (c *Checker) inferPattern(
 			if binding := ctx.Scope.getValue(p.Name); binding != nil {
 				args := make([]Type, len(p.Args))
 				for i, arg := range p.Args {
+					fmt.Fprintf(os.Stderr, "extractor arg %d: %#v\n", i, arg)
 					argType, argErrors := inferPatRec(arg)
 					args[i] = argType
 					errors = append(errors, argErrors...)

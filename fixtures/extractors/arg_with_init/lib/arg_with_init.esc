@@ -1,0 +1,9 @@
+class C(msg: string | undefined, value: number) {
+    msg,
+    value,
+    static [Symbol.customMatcher](subject: C) -> [string | undefined, number] {
+        return [subject.msg, subject.value]
+    }
+}
+val subject = C(undefined, 5)
+val C(x = "hello", y) = subject
