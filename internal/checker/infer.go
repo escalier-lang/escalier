@@ -244,6 +244,8 @@ func (c *Checker) InferComponent(
 			objTypeElems := []ObjTypeElem{}
 			staticElems := []ObjTypeElem{}
 			methodCtxs := make([]Context, len(decl.Body))
+			instanceSymbolKeyMap := make(map[int]any)
+			staticSymbolKeyMap := make(map[int]any)
 
 			for i, elem := range decl.Body {
 				switch elem := elem.(type) {
@@ -252,6 +254,17 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					if elem.Static {
@@ -269,12 +282,22 @@ func (c *Checker) InferComponent(
 					}
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
-					fmt.Fprintf(os.Stderr, "infer MethodElem, key = %#v\n", key)
 					errors = slices.Concat(errors, keyErrors)
 					methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					methodCtxs[i] = methodCtx
@@ -300,6 +323,17 @@ func (c *Checker) InferComponent(
 						continue
 					}
 
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
+					}
+
 					if elem.Static {
 						// Static getters go to the class object type
 						staticElems = append(
@@ -320,6 +354,17 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
+					}
+
+					if key.Kind == SymObjTypeKeyKind {
+						if _, ok := elem.Name.(*ast.ComputedKey); ok {
+							expr := elem.Name.(*ast.ComputedKey).Expr
+							if elem.Static {
+								staticSymbolKeyMap[key.Sym] = expr
+							} else {
+								instanceSymbolKeyMap[key.Sym] = expr
+							}
+						}
 					}
 
 					if elem.Static {
@@ -344,14 +389,15 @@ func (c *Checker) InferComponent(
 			}
 
 			objType := &ObjectType{
-				Elems:      objTypeElems,
-				Exact:      false,
-				Immutable:  false,
-				Mutable:    true,
-				Nominal:    true,
-				Interface:  false,
-				Extends:    []*TypeRefType{},
-				Implements: []*TypeRefType{},
+				Elems:        objTypeElems,
+				Exact:        false,
+				Immutable:    false,
+				Mutable:      true,
+				Nominal:      true,
+				Interface:    false,
+				Extends:      []*TypeRefType{},
+				Implements:   []*TypeRefType{},
+				SymbolKeyMap: instanceSymbolKeyMap,
 			}
 			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
@@ -383,14 +429,15 @@ func (c *Checker) InferComponent(
 			classObjTypeElems = append(classObjTypeElems, staticElems...)
 
 			classObjType := &ObjectType{
-				Elems:      classObjTypeElems,
-				Exact:      false,
-				Immutable:  false,
-				Mutable:    false,
-				Nominal:    true,
-				Interface:  false,
-				Extends:    []*TypeRefType{},
-				Implements: []*TypeRefType{},
+				Elems:        classObjTypeElems,
+				Exact:        false,
+				Immutable:    false,
+				Mutable:      false,
+				Nominal:      true,
+				Interface:    false,
+				Extends:      []*TypeRefType{},
+				Implements:   []*TypeRefType{},
+				SymbolKeyMap: staticSymbolKeyMap,
 			}
 			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
 
@@ -1942,6 +1989,7 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 		newKey := NewNumKey(key.Value)
 		return &newKey, nil
 	case *ast.ComputedKey:
+		// TODO: return the error
 		keyType, _ := c.inferExpr(ctx, key.Expr) // infer the expression for side-effects
 
 		switch t := Prune(keyType).(type) {
@@ -1957,6 +2005,8 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
 			}
 		case *UniqueSymbolType:
+			fmt.Fprintf(os.Stderr, "key.Expr = %#v\n", key.Expr)
+			// fmt.Fprintf(os.Stderr, "keyType = %s\n", key.Expr.String())
 			newKey := NewSymKey(t.Value)
 			return &newKey, nil
 		default:

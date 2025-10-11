@@ -1,0 +1,10 @@
+class C(msg: string, value: number, flag: boolean) {
+    msg,
+    value,
+    flag,
+    static [Symbol.customMatcher](subject: C) -> [string, number, boolean] {
+        return [subject.msg, subject.value, subject.flag]
+    }
+}
+val subject = C("hello", 5, true)
+val C(x, ...y) = subject

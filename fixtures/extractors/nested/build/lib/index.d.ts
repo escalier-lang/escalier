@@ -1,0 +1,10 @@
+declare type D = {msg: string};
+declare const D: {new (msg: string): D, [Symbol.customMatcher](subject: D): [string]};
+declare type E = {x: number, y: number};
+declare const E: {new (x: number, y: number): E, [Symbol.customMatcher](subject: E): [number, number]};
+declare type C = {d: D, e: E};
+declare const C: {new (d: D, e: E): C, [Symbol.customMatcher](subject: C): [D, E]};
+declare const subject: C;
+declare const msg: string;
+declare const x: number;
+declare const y: number;

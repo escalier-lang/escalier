@@ -1,1 +1,0 @@
-{"version":3,"file":"./rest_arg.js","sources":["./rest_arg.esc"],"sourcesContent":["val subject = C(\"hello\", 5, true)\nval C(x, ...y) = subject\n"],"names":[],"mappings":"MAAI,AAAA,UAAU,AAAA,EAAE,SAAQ,GAAG;OACvB,AAAA,OAAA,AAAA,oCAAA,GAAa;MAAX,AAAA;MAAG,GAAG,AAAA"}

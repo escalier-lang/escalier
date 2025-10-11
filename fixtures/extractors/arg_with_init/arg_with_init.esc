@@ -1,2 +1,0 @@
-val subject = C(undefined, 5)
-val C(x = "hello", y) = subject

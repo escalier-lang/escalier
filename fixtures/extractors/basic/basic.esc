@@ -1,2 +1,0 @@
-val subject = C("hello")
-val C(msg) = subject
