@@ -43,11 +43,9 @@ func inferUnionType(schema *gqlast.Schema, unionDef *gqlast.Definition, selectio
 		unionTypes = append(unionTypes, inferSelectionSet(schema, typeDef, selSetForType))
 	}
 	unionType := NewUnionType(unionTypes...)
-	// Set provenance for the union type
-	provenance := &GraphQLProvenance{
+	unionType.SetProvenance(&GraphQLProvenance{
 		Position: unionDef.Position,
-	}
-	unionType.SetProvenance(provenance)
+	})
 	return unionType
 }
 
@@ -150,11 +148,9 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 	}
 
 	objType := NewObjectType(elems)
-	// Set provenance for the object type from selection set
-	provenance := &GraphQLProvenance{
+	objType.SetProvenance(&GraphQLProvenance{
 		Position: parentType.Position,
-	}
-	objType.SetProvenance(provenance)
+	})
 	return objType
 }
 
