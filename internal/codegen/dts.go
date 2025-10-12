@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -656,8 +655,6 @@ func (b *Builder) buildTypeAnnObjKey(key type_sys.ObjTypeKey, symbolExprMap map[
 		}
 	case type_sys.SymObjTypeKeyKind:
 		e := symbolExprMap[key.Sym]
-		fmt.Fprintf(os.Stderr, "symbolExprMap = %#v\n", symbolExprMap)
-		fmt.Fprintf(os.Stderr, "key.Sym = %d\n", key.Sym)
 		expr, _ := b.buildExpr(e.(ast.Expr), nil)
 		return &ComputedKey{
 			Expr:   expr,

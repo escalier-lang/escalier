@@ -71,6 +71,7 @@ type TypeVarType struct {
 	ID         int
 	Instance   Type
 	Constraint Type
+	Default    Type
 	provenance Provenance
 }
 

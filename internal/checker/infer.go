@@ -1933,35 +1933,46 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 	}
 }
 
-// getUnionAccess handles property and index access on UnionType
-func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKey, errors []Error) (Type, []Error) {
-	propKey, isPropertyKey := key.(PropertyKey)
-
-	undefinedElems := []Type{}
+func (c *Checker) getDefinedElems(unionType *UnionType) []Type {
 	definedElems := []Type{}
 	for _, elem := range unionType.Types {
 		elem = Prune(elem)
 		switch elem := elem.(type) {
 		case *LitType:
-			if _, ok := elem.Lit.(*UndefinedLit); ok {
-				undefinedElems = append(undefinedElems, elem)
+			switch elem.Lit.(type) {
+			case *NullLit:
+				continue
+			case *UndefinedLit:
+				continue
+			default:
+				definedElems = append(definedElems, elem)
 			}
 		default:
 			definedElems = append(definedElems, elem)
 		}
 	}
 
-	if len(definedElems) == 0 {
+	return definedElems
+}
+
+// getUnionAccess handles property and index access on UnionType
+func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKey, errors []Error) (Type, []Error) {
+	propKey, isPropertyKey := key.(PropertyKey)
+
+	definedElems := c.getDefinedElems(unionType)
+
+	undefinedCount := len(unionType.Types) - len(definedElems)
+	if undefinedCount == 0 {
 		errors = append(errors, &ExpectedObjectError{Type: unionType})
 		return NewNeverType(), errors
 	}
 
 	if len(definedElems) == 1 {
-		if len(undefinedElems) == 0 {
+		if undefinedCount == 0 {
 			return c.getMemberType(ctx, definedElems[0], key)
 		}
 
-		if len(undefinedElems) > 0 && isPropertyKey && !propKey.OptChain {
+		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
 			errors = append(errors, &ExpectedObjectError{Type: unionType})
 			return NewNeverType(), errors
 		}
@@ -2007,8 +2018,6 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []E
 				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
 			}
 		case *UniqueSymbolType:
-			fmt.Fprintf(os.Stderr, "key.Expr = %#v\n", key.Expr)
-			// fmt.Fprintf(os.Stderr, "keyType = %s\n", key.Expr.String())
 			newKey := NewSymKey(t.Value)
 			return &newKey, nil
 		default:
@@ -2649,10 +2658,17 @@ func (c *Checker) inferPattern(
 		switch p := pat.(type) {
 		case *ast.IdentPat:
 			if p.TypeAnn != nil {
+				// TODO: check if there's a default value, infer it, and unify
+				// it with the type annotation.
 				t, errors = c.inferTypeAnn(ctx, p.TypeAnn)
 			} else {
-				t = c.FreshVar()
-				errors = []Error{}
+				tvar := c.FreshVar()
+				if p.Default != nil {
+					defaultType, defaultErrors := c.inferExpr(ctx, p.Default)
+					errors = append(errors, defaultErrors...)
+					tvar.Default = defaultType
+				}
+				t = tvar
 			}
 
 			// TODO: report an error if the name is already bound
@@ -2688,11 +2704,19 @@ func (c *Checker) inferPattern(
 					// we use a fresh type variable.
 					var t Type
 					if elem.TypeAnn != nil {
+						// TODO: check if there's a default value, infer it, and unify
+						// it with the type annotation.
 						elemType, elemErrors := c.inferTypeAnn(ctx, elem.TypeAnn)
 						t = elemType
 						errors = append(errors, elemErrors...)
 					} else {
-						t = c.FreshVar()
+						tvar := c.FreshVar()
+						if elem.Default != nil {
+							defaultType, defaultErrors := c.inferExpr(ctx, elem.Default)
+							errors = append(errors, defaultErrors...)
+							tvar.Default = defaultType
+						}
+						t = tvar
 					}
 					name := NewStrKey(elem.Key.Name)
 					// TODO: report an error if the name is already bound
@@ -2701,9 +2725,7 @@ func (c *Checker) inferPattern(
 						Type:    t,
 						Mutable: false, // TODO
 					}
-					optional := elem.Default != nil
 					prop := NewPropertyElemType(name, t)
-					prop.Optional = optional
 					elems = append(elems, prop)
 				case *ast.ObjRestPat:
 					t, restErrors := inferPatRec(elem.Pattern)
@@ -2716,7 +2738,6 @@ func (c *Checker) inferPattern(
 			if binding := ctx.Scope.getValue(p.Name); binding != nil {
 				args := make([]Type, len(p.Args))
 				for i, arg := range p.Args {
-					fmt.Fprintf(os.Stderr, "extractor arg %d: %#v\n", i, arg)
 					argType, argErrors := inferPatRec(arg)
 					args[i] = argType
 					errors = append(errors, argErrors...)

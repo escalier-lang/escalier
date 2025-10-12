@@ -1041,6 +1041,22 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 					return errors
 				}
 
+				// If t2 is a type variable with a default type, and t1 is a union type,
+				// we remove any `null` or `undefined` types from t1 and add the default type
+				// to the union if it's not already present.  This handles identifiers in
+				// patterns that have default types such as in:
+				//   let { a = 42 } : { a?: number } = obj;
+				if typeVar1.Default != nil {
+					if union, ok := t2.(*UnionType); ok {
+						definedTypes := c.getDefinedElems(union)
+
+						if len(union.Types) > len(definedTypes) {
+							definedTypes = append(definedTypes, typeVar1.Default)
+							t2 = NewUnionType(definedTypes...)
+						}
+					}
+				}
+
 				if typeVar1.Constraint != nil {
 					errors = c.unify(ctx, typeVar1.Constraint, t2)
 				}
@@ -1052,6 +1068,22 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 			}
 
 			if typeVar2, ok := t2.(*TypeVarType); ok {
+				// If t2 is a type variable with a default type, and t1 is a union type,
+				// we remove any `null` or `undefined` types from t1 and add the default type
+				// to the union if it's not already present.  This handles identifiers in
+				// patterns that have default types such as in:
+				//   let { a = 42 } : { a?: number } = obj;
+				if typeVar2.Default != nil {
+					if union, ok := t1.(*UnionType); ok {
+						definedTypes := c.getDefinedElems(union)
+
+						if len(union.Types) > len(definedTypes) {
+							definedTypes = append(definedTypes, typeVar2.Default)
+							t1 = NewUnionType(definedTypes...)
+						}
+					}
+				}
+
 				if typeVar2.Constraint != nil {
 					errors = c.unify(ctx, t1, typeVar2.Constraint)
 				}

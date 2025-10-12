@@ -289,7 +289,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "string",
 			},
 		},
-		"ObjectDestructuringWithDefault": {
+		"ObjectDestructuringWithOptionalProperties": {
 			input: `
 			    declare val obj: {a?: string, b: number | null, c: boolean}
 				val {a, b, c} = obj
@@ -297,6 +297,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"a": "string | undefined",
 				"b": "number | null",
+				"c": "boolean",
+			},
+		},
+		"ObjectDestructuringWithOptionalPropertiesAndDefaults": {
+			input: `
+				declare val obj: {a?: string, b: number | null, c: boolean}
+				val {a = true, b: x = "hello", c = 5} = obj
+			`,
+			expectedTypes: map[string]string{
+				"a": "string | true",
+				"x": "number | \"hello\"",
 				"c": "boolean",
 			},
 		},
@@ -412,23 +423,25 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaults": {
+			// TODO: add support for `{x?::number = 0, y?::number = 0}`
 			input: `
 				val add = fn ({x::number = 0, y::number = 0}) {
 					return x + y
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x?: number, y?: number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaultsDeep": {
+			// TODO: add support for `{a: {b: {c?::number = 0}}}`
 			input: `
 				val add = fn ({a: {b: {c:: number = 0}}}) {
 					return c
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({a: {b: {c?: number}}}) -> number throws never",
+				"add": "fn ({a: {b: {c: number}}}) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndRenamining": {
@@ -807,7 +820,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b": "string",
 			},
 		},
-		"ExtractorsWithRest": {
+		"ExtractorWithRest": {
 			input: `
 				class Foo(a: number, b: string, c: boolean) {
 					a,
@@ -823,6 +836,23 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"a":    "number",
 				"rest": "[string, boolean]",
+			},
+		},
+		"ExtractorWithDefault": {
+			input: `
+				class Foo(a: number, b?: string) {
+					a,
+					b,
+					static [Symbol.customMatcher](subject: Foo) -> [number, string | undefined] {
+						return [subject.a, subject.b]
+					}
+				}	
+				val foo = Foo(5, "hello")
+				val Foo(a, b = "world") = foo
+			`,
+			expectedTypes: map[string]string{
+				"a": "number",
+				"b": "string | \"world\"",
 			},
 		},
 	}
@@ -858,6 +888,9 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			c.Schema = schema
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
+				}
 				assert.Equal(t, inferErrors, []*Error{})
 			}
 
