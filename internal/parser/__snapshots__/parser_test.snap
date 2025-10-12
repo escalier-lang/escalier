@@ -2639,3 +2639,750 @@
     },
 }
 ---
+
+[TestParseModuleNoErrors/EnumDeclWithExtension - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "FutureColor",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:21},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumSpread{
+                Arg: &ast.Ident{
+                    Name: "Color",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:9},
+                        End:      ast.Location{Line:3, Column:14},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:14},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Oklab",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:11},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:12},
+                            End:      ast.Location{Line:4, Column:18},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:20},
+                            End:      ast.Location{Line:4, Column:26},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:28},
+                            End:      ast.Location{Line:4, Column:34},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:35},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Maybe",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: {
+            &ast.TypeParam{
+                Name:       "T",
+                Constraint: nil,
+                Default:    nil,
+            },
+        },
+        Elems: {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Some",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:11},
+                                End:      ast.Location{Line:3, Column:12},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:11},
+                            End:      ast.Location{Line:3, Column:12},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:13},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "None",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:10},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:10},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithExtension - 2]
+&ast.ExprStmt{
+    Expr: &ast.ObjectExpr{
+        Elems: {
+            &ast.RestSpreadExpr{
+                Value: &ast.IdentExpr{
+                    Name:      "Color",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:9},
+                        End:      ast.Location{Line:3, Column:14},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:14},
+                    SourceID: 0,
+                },
+            },
+            &ast.MethodExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "Oklab",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:11},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        TypeParams: {
+                        },
+                        Params: {
+                            (*ast.Param)(nil),
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:12},
+                            End:      ast.Location{Line:4, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:18},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: (*bool)(nil),
+                span:    ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:18},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:2, Column:22},
+            End:      ast.Location{Line:4, Column:26},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:22},
+        End:      ast.Location{Line:4, Column:26},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/ExportEnumDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Result",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:17},
+                End:      ast.Location{Line:2, Column:23},
+                SourceID: 0,
+            },
+        },
+        TypeParams: {
+            &ast.TypeParam{
+                Name:       "T",
+                Constraint: nil,
+                Default:    nil,
+            },
+            &ast.TypeParam{
+                Name:       "E",
+                Constraint: nil,
+                Default:    nil,
+            },
+        },
+        Elems: {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Ok",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:8},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:9},
+                                End:      ast.Location{Line:3, Column:10},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:9},
+                            End:      ast.Location{Line:3, Column:10},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:11},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Err",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:9},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "E",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:10},
+                                End:      ast.Location{Line:4, Column:11},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:10},
+                            End:      ast.Location{Line:4, Column:11},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:12},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  true,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithMultipleParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Color",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "RGB",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:9},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:10},
+                            End:      ast.Location{Line:3, Column:16},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:18},
+                            End:      ast.Location{Line:3, Column:24},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:26},
+                            End:      ast.Location{Line:3, Column:32},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:33},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "HSL",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:9},
+                        SourceID: 0,
+                    },
+                },
+                Params: {
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:10},
+                            End:      ast.Location{Line:4, Column:16},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:18},
+                            End:      ast.Location{Line:4, Column:24},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:26},
+                            End:      ast.Location{Line:4, Column:32},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:33},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithoutGeneric - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Color",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Red",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:9},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:9},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Green",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:11},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:11},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Blue",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:5, Column:6},
+                        End:      ast.Location{Line:5, Column:10},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:5, Column:6},
+                    End:      ast.Location{Line:5, Column:10},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithMultipleParams - 2]
+&ast.ExprStmt{
+    Expr: &ast.ObjectExpr{
+        Elems: {
+            &ast.MethodExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "RGB",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:9},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        TypeParams: {
+                        },
+                        Params: {
+                            (*ast.Param)(nil),
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:10},
+                            End:      ast.Location{Line:3, Column:16},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:16},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: (*bool)(nil),
+                span:    ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:16},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:2, Column:16},
+            End:      ast.Location{Line:3, Column:24},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:16},
+        End:      ast.Location{Line:3, Column:24},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithMultipleParams - 3]
+&ast.ExprStmt{
+    Expr: &ast.CallExpr{
+        Callee: &ast.IdentExpr{
+            Name:      "HSL",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:4, Column:6},
+                End:      ast.Location{Line:4, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Args: {
+            &ast.EmptyExpr{
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:32},
+                    End:      ast.Location{Line:4, Column:33},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        OptChain: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:4, Column:6},
+            End:      ast.Location{Line:4, Column:33},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:4, Column:6},
+        End:      ast.Location{Line:4, Column:33},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithoutGeneric - 2]
+&ast.ExprStmt{
+    Expr: &ast.ObjectExpr{
+        Elems: {
+            &ast.PropertyExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "Red",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:9},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Optional: false,
+                Readonly: false,
+                Value:    nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:9},
+                    SourceID: 0,
+                },
+            },
+            &ast.PropertyExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "Green",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:11},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Optional: false,
+                Readonly: false,
+                Value:    nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:11},
+                    SourceID: 0,
+                },
+            },
+            &ast.PropertyExpr{
+                Name: &ast.IdentExpr{
+                    Name:      "Blue",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:5, Column:6},
+                        End:      ast.Location{Line:5, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Optional: false,
+                Readonly: false,
+                Value:    nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:5, Column:6},
+                    End:      ast.Location{Line:5, Column:10},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:2, Column:16},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:16},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---

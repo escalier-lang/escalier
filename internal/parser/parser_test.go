@@ -128,6 +128,47 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"EnumDecl": {
+			input: `
+				enum Maybe<T> {
+					Some(T),
+					None,
+				}
+			`,
+		},
+		"EnumDeclWithoutGeneric": {
+			input: `
+				enum Color {
+					Red,
+					Green,
+					Blue,
+				}
+			`,
+		},
+		"EnumDeclWithMultipleParams": {
+			input: `
+				enum Color {
+					RGB(number, number, number),
+					HSL(number, number, number),
+				}
+			`,
+		},
+		"EnumDeclWithExtension": {
+			input: `
+				enum FutureColor {
+					...Color,
+					Oklab(number, number, number),
+				}
+			`,
+		},
+		"ExportEnumDecl": {
+			input: `
+				export enum Result<T, E> {
+					Ok(T),
+					Err(E),
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {
