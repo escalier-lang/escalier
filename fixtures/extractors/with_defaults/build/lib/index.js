@@ -9,6 +9,6 @@ class C {
   }
 }
 const subject = new C("hello");
-const [temp3] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-const msg = temp3;
+const [temp3 = "world"] = InvokeCustomMatcherOrThrow(C, subject, undefined);
+const msg = "world" = temp3;
 //# sourceMappingURL=./index.js.map
