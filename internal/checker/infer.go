@@ -1254,9 +1254,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			// We create a new type and set its provenance to be the identifier
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
-			t := Prune(binding.Type).WithProvenance(&ast.NodeProvenance{Node: expr})
+			t := Prune(binding.Type)
+			resultType = t.Copy()
+			resultType.SetProvenance(&ast.NodeProvenance{Node: expr})
 			expr.Source = binding.Source
-			resultType = t
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
 			t := &NamespaceType{Namespace: namespace}

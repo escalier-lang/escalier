@@ -21,9 +21,7 @@ type Type interface {
 	SetProvenance(Provenance)
 	Accept(TypeVisitor) Type
 	String() string
-	// WithProvenance returns a new Type with the given Provenance.
-	// It's essentially a shallow copy of the Type with the new Provenance.
-	WithProvenance(Provenance) Type
+	Copy() Type // Return a shallow copy of the Type.
 }
 
 func (*TypeVarType) isType()      {}
