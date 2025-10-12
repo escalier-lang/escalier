@@ -252,7 +252,7 @@ func TestParseEnumErrorHandling(t *testing.T) {
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)
 			}
-			
+
 			// Verify that errors were reported
 			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
 			snaps.MatchSnapshot(t, errors)
