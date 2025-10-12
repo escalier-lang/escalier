@@ -302,7 +302,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"ObjectDestructuringWithOptionalPropertiesAndDefaults": {
 			input: `
-			    declare val obj: {a?: string, b: number | null, c: boolean}
+				declare val obj: {a?: string, b: number | null, c: boolean}
 				val {a = true, b: x = "hello", c = 5} = obj
 			`,
 			expectedTypes: map[string]string{
