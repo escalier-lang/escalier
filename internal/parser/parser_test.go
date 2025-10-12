@@ -128,6 +128,47 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"EnumDecl": {
+			input: `
+				enum Maybe<T> {
+					Some(T),
+					None,
+				}
+			`,
+		},
+		"EnumDeclWithoutGeneric": {
+			input: `
+				enum Color {
+					Red,
+					Green,
+					Blue,
+				}
+			`,
+		},
+		"EnumDeclWithMultipleParams": {
+			input: `
+				enum Color {
+					RGB(number, number, number),
+					HSL(number, number, number),
+				}
+			`,
+		},
+		"EnumDeclWithExtension": {
+			input: `
+				enum FutureColor {
+					...Color,
+					Oklab(number, number, number),
+				}
+			`,
+		},
+		"ExportEnumDecl": {
+			input: `
+				export enum Result<T, E> {
+					Ok(T),
+					Err(E),
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {
@@ -153,6 +194,68 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			}
 			assert.Len(t, errors, 0)
+		})
+	}
+}
+
+func TestParseEnumErrorHandling(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"EnumMissingName": {
+			input: `enum { Some, None }`,
+		},
+		"EnumMissingOpeningBrace": {
+			input: `enum Result Some, Err }`,
+		},
+		"EnumMissingClosingBrace": {
+			input: `enum Result { Some, Err`,
+		},
+		"EnumVariantMissingClosingParen": {
+			input: `enum Result { Some(string, Err }`,
+		},
+		"EnumVariantMissingOpeningParen": {
+			input: `enum Result { Some string), Err }`,
+		},
+		"EnumSpreadMissingIdent": {
+			input: `enum Extended { ..., Other }`,
+		},
+		"EnumMissingCommaBeforeVariant": {
+			input: `enum Color { Red Green Blue }`,
+		},
+		"EnumInvalidVariantName": {
+			input: `enum Bad { 123, Good }`,
+		},
+		"EnumSpreadWithParens": {
+			input: `enum Extended { ...Color(), Own }`,
+		},
+		"EnumVariantMissingCommaAfter": {
+			input: `enum Result { Some(T) None }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			// Snapshot the parsed result (may be partial or nil)
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+
+			// Verify that errors were reported
+			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
+			snaps.MatchSnapshot(t, errors)
 		})
 	}
 }

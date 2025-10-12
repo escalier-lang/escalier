@@ -29,6 +29,7 @@ const (
 	DotDotDot
 	Else
 	EndOfFile
+	Enum
 	Equal
 	EqualEqual
 	Export

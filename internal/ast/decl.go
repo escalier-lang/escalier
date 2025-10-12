@@ -16,6 +16,7 @@ type Decl interface {
 func (*VarDecl) isDecl()  {}
 func (*FuncDecl) isDecl() {}
 func (*TypeDecl) isDecl() {}
+func (*EnumDecl) isDecl() {}
 
 type VariableKind int
 
@@ -158,6 +159,88 @@ func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
 	if v.EnterDecl(d) {
 		d.TypeAnn.Accept(v)
+	}
+	v.ExitDecl(d)
+}
+
+// EnumVariant represents a single variant of an enum
+// e.g., Some(T) or None
+// EnumElem is an interface for enum elements (variants or spreads)
+type EnumElem interface {
+	IsEnumElem()
+	Span() Span
+}
+
+type EnumVariant struct {
+	Name   *Ident
+	Params []TypeAnn // optional tuple parameters
+	span   Span
+}
+
+func NewEnumVariant(name *Ident, params []TypeAnn, span Span) *EnumVariant {
+	return &EnumVariant{
+		Name:   name,
+		Params: params,
+		span:   span,
+	}
+}
+func (v *EnumVariant) Span() Span  { return v.span }
+func (v *EnumVariant) IsEnumElem() {}
+
+// EnumSpread represents a spread notation in an enum
+// e.g., ...OtherEnum
+type EnumSpread struct {
+	Arg  *Ident
+	span Span
+}
+
+func NewEnumSpread(arg *Ident, span Span) *EnumSpread {
+	return &EnumSpread{
+		Arg:  arg,
+		span: span,
+	}
+}
+func (s *EnumSpread) Span() Span  { return s.span }
+func (s *EnumSpread) IsEnumElem() {}
+
+// EnumDecl represents an enum declaration
+// e.g., enum Maybe<T> { Some(T), None }
+type EnumDecl struct {
+	Name       *Ident
+	TypeParams []*TypeParam
+	Elems      []EnumElem // variants and spreads
+	export     bool
+	declare    bool
+	span       Span
+}
+
+func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export, declare bool, span Span) *EnumDecl {
+	return &EnumDecl{
+		Name:       name,
+		TypeParams: typeParams,
+		Elems:      elems,
+		export:     export,
+		declare:    declare,
+		span:       span,
+	}
+}
+func (d *EnumDecl) Export() bool  { return d.export }
+func (d *EnumDecl) Declare() bool { return d.declare }
+func (d *EnumDecl) Span() Span    { return d.span }
+func (d *EnumDecl) Accept(v Visitor) {
+	// TODO: visit type params
+	if v.EnterDecl(d) {
+		for _, elem := range d.Elems {
+			switch e := elem.(type) {
+			case *EnumVariant:
+				e.Name.Accept(v)
+				for _, param := range e.Params {
+					param.Accept(v)
+				}
+			case *EnumSpread:
+				e.Arg.Accept(v)
+			}
+		}
 	}
 	v.ExitDecl(d)
 }

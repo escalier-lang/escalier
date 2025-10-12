@@ -56,6 +56,12 @@ func (p *Parser) Decl() ast.Decl {
 			return nil
 		}
 		return p.typeDecl(start, export, declare)
+	case Enum:
+		if async {
+			p.reportError(token.Span, "async can only be used with functions")
+			return nil
+		}
+		return p.enumDecl(start, export, declare)
 	case Class:
 		if async {
 			p.reportError(token.Span, "async can only be used with functions")
@@ -504,5 +510,83 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, span)
+	return decl
+}
+
+// enumElem parses a single enum element (variant or extension)
+func (p *Parser) enumElem() ast.EnumElem {
+	token := p.lexer.peek()
+
+	// Check for spread notation (extension)
+	if token.Type == DotDotDot {
+		spreadStart := token.Span.Start
+		p.lexer.consume()
+		token = p.lexer.peek()
+		if token.Type != Identifier {
+			p.reportError(token.Span, "Expected identifier after '...'")
+			return nil
+		}
+		p.lexer.consume()
+		arg := ast.NewIdentifier(token.Value, token.Span)
+		spreadEnd := p.lexer.currentLocation
+		spreadSpan := ast.NewSpan(spreadStart, spreadEnd, p.lexer.source.ID)
+		return ast.NewEnumSpread(arg, spreadSpan)
+	}
+
+	// Parse variant
+	if token.Type == Identifier {
+		variantStart := token.Span.Start
+		p.lexer.consume()
+		variantName := ast.NewIdentifier(token.Value, token.Span)
+
+		// Check for tuple parameters
+		var params []ast.TypeAnn
+		token = p.lexer.peek()
+		if token.Type == OpenParen {
+			p.lexer.consume()
+			params = parseDelimSeq(p, CloseParen, Comma, p.typeAnn)
+			p.expect(CloseParen, AlwaysConsume)
+		}
+
+		variantEnd := p.lexer.currentLocation
+		variantSpan := ast.NewSpan(variantStart, variantEnd, p.lexer.source.ID)
+		return ast.NewEnumVariant(variantName, params, variantSpan)
+	}
+
+	p.reportError(token.Span, "Expected variant name or '...' for extension")
+	return nil
+}
+
+// enumDecl = 'enum' ident typeParams? '{' enumVariant* '}'
+// enumVariant = '...' ident | ident '(' typeAnn* ')'?
+func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Decl {
+	token := p.lexer.peek()
+	if token.Type != Identifier {
+		p.reportError(token.Span, "Expected identifier after 'enum'")
+		return nil
+	}
+	p.lexer.consume()
+	name := ast.NewIdentifier(token.Value, token.Span)
+
+	// Parse optional type parameters
+	typeParams := p.maybeTypeParams()
+
+	// Expect opening brace
+	token = p.lexer.peek()
+	if token.Type != OpenBrace {
+		p.reportError(token.Span, "Expected '{' to start enum body")
+		return nil
+	}
+	p.lexer.consume()
+
+	// Parse enum elements (variants and spreads)
+	elems := parseDelimSeq(p, CloseBrace, Comma, p.enumElem)
+
+	// Expect closing brace
+	p.expect(CloseBrace, AlwaysConsume)
+
+	end := p.lexer.currentLocation
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	decl := ast.NewEnumDecl(name, typeParams, elems, export, declare, span)
 	return decl
 }
