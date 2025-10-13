@@ -538,37 +538,37 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 
 func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap map[int]any) ObjTypeAnnElem {
 	switch elem := elem.(type) {
-	case *type_sys.CallableElemType:
+	case *type_sys.CallableElem:
 		return &CallableTypeAnn{
 			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
-	case *type_sys.ConstructorElemType:
+	case *type_sys.ConstructorElem:
 		return &ConstructorTypeAnn{
 			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
-	case *type_sys.MethodElemType:
+	case *type_sys.MethodElem:
 		return &MethodTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
-	case *type_sys.GetterElemType:
+	case *type_sys.GetterElem:
 		return &GetterTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
-	case *type_sys.SetterElemType:
+	case *type_sys.SetterElem:
 		return &SetterTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Fn:   b.buildFuncTypeAnn(elem.Fn),
 		}
-	case *type_sys.PropertyElemType:
+	case *type_sys.PropertyElem:
 		return &PropertyTypeAnn{
 			Name:     b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Optional: elem.Optional,
 			Readonly: elem.Readonly,
 			Value:    b.buildTypeAnn(elem.Value),
 		}
-	case *type_sys.MappedElemType:
+	case *type_sys.MappedElem:
 		typeParam := &IndexParamTypeAnn{
 			Name:       elem.TypeParam.Name,
 			Constraint: b.buildTypeAnn(elem.TypeParam.Constraint),
@@ -580,7 +580,7 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.ReadOnly),
 		}
-	case *type_sys.RestSpreadElemType:
+	case *type_sys.RestSpreadElem:
 		return &RestSpreadTypeAnn{
 			Value: b.buildTypeAnn(elem.Value),
 		}

@@ -15,8 +15,8 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 
 		// Create substitution map: T -> number, U -> string
 		substitutions := map[string]Type{
-			"T": NewNumType(),
-			"U": NewStrType(),
+			"T": NewNumPrimType(nil),
+			"U": NewStrPrimType(nil),
 		}
 
 		visitor := NewTypeParamSubstitutionVisitor(substitutions)
@@ -28,7 +28,7 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 
 	t.Run("Visitor reusability", func(t *testing.T) {
 		substitutions := map[string]Type{
-			"T": NewStrType(),
+			"T": NewStrPrimType(nil),
 		}
 
 		visitor := NewTypeParamSubstitutionVisitor(substitutions)
@@ -55,7 +55,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> number
 			substitutions := map[string]Type{
-				"T": NewNumType(),
+				"T": NewNumPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
@@ -70,7 +70,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> string
 			substitutions := map[string]Type{
-				"T": NewStrType(),
+				"T": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
@@ -85,7 +85,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> number (doesn't contain U)
 			substitutions := map[string]Type{
-				"T": NewNumType(),
+				"T": NewNumPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(typeRef, substitutions)
@@ -102,8 +102,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> number, U -> string
 			substitutions := map[string]Type{
-				"T": NewNumType(),
-				"U": NewStrType(),
+				"T": NewNumPrimType(nil),
+				"U": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(funcType, substitutions)
@@ -118,7 +118,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> boolean
 			substitutions := map[string]Type{
-				"T": NewBoolType(),
+				"T": NewBoolPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(funcType, substitutions)
@@ -132,7 +132,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 			funcType := test_util.ParseTypeAnn("fn <T>() -> number")
 
 			substitutions := map[string]Type{
-				"U": NewStrType(),
+				"U": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(funcType, substitutions)
@@ -149,7 +149,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> string
 			substitutions := map[string]Type{
-				"T": NewStrType(),
+				"T": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(objType, substitutions)
@@ -164,8 +164,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> number, U -> boolean
 			substitutions := map[string]Type{
-				"T": NewNumType(),
-				"U": NewBoolType(),
+				"T": NewNumPrimType(nil),
+				"U": NewBoolPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(objType, substitutions)
@@ -181,8 +181,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> string, U -> boolean
 			substitutions := map[string]Type{
-				"T": NewStrType(),
-				"U": NewBoolType(),
+				"T": NewStrPrimType(nil),
+				"U": NewBoolPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(tupleType, substitutions)
@@ -199,8 +199,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> string, U -> boolean
 			substitutions := map[string]Type{
-				"T": NewStrType(),
-				"U": NewBoolType(),
+				"T": NewStrPrimType(nil),
+				"U": NewBoolPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(unionType, substitutions)
@@ -247,9 +247,9 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 	t.Run("Primitive types unchanged", func(t *testing.T) {
 		t.Run("number type", func(t *testing.T) {
-			numType := NewNumType()
+			numType := NewNumPrimType(nil)
 			substitutions := map[string]Type{
-				"T": NewStrType(),
+				"T": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(numType, substitutions)
@@ -260,7 +260,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 		t.Run("string literal type", func(t *testing.T) {
 			strLit := test_util.ParseTypeAnn(`"hello"`)
 			substitutions := map[string]Type{
-				"T": NewNumType(),
+				"T": NewNumPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(strLit, substitutions)
@@ -276,7 +276,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Create substitution map: T -> string
 			substitutions := map[string]Type{
-				"T": NewStrType(),
+				"T": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(funcType, substitutions)
@@ -297,16 +297,17 @@ func TestSubstituteTypeParams(t *testing.T) {
 			// Outer function: (t: T) => <inner function>
 			outerFuncTemplate := test_util.ParseTypeAnn("fn (t: T) -> T") // We'll replace the return type
 			outerFuncTyped := outerFuncTemplate.(*FuncType)
-			outerFunc := &FuncType{
-				TypeParams: []*TypeParam{},
-				Params:     outerFuncTyped.Params, // Reuse the parsed parameter
-				Return:     innerFunc,
-				Throws:     NewNeverType(),
-			}
+			outerFunc := NewFuncType(
+				nil,
+				outerFuncTyped.Params, // Reuse the parsed parameter
+				innerFunc,
+				NewNeverType(nil),
+				nil,
+			)
 
 			// Substitute T -> number
 			substitutions := map[string]Type{
-				"T": NewNumType(),
+				"T": NewNumPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(outerFunc, substitutions)
@@ -320,7 +321,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			// Substitute T -> string
 			substitutions := map[string]Type{
-				"T": NewStrType(),
+				"T": NewStrPrimType(nil),
 			}
 
 			result := checker.substituteTypeParams(objType, substitutions)
@@ -346,14 +347,14 @@ func TestSubstituteTypeParams(t *testing.T) {
 func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	// Create shared substitutions map
 	substitutions := map[string]Type{
-		"T": NewNumType(),
-		"U": NewStrType(),
-		"V": NewBoolType(),
+		"T": NewNumPrimType(nil),
+		"U": NewStrPrimType(nil),
+		"V": NewBoolPrimType(nil),
 	}
 
 	// Create all object elements
 	tType := test_util.ParseTypeAnn("T")
-	prop := &PropertyElemType{
+	prop := &PropertyElem{
 		Name:     NewStrKey("test"),
 		Optional: true,
 		Readonly: true,
@@ -361,43 +362,46 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	}
 
 	methodFunc := test_util.ParseTypeAnn("fn (x: T) -> U")
-	method := &MethodElemType{
+	method := &MethodElem{
 		Name: NewStrKey("method"),
 		Fn:   methodFunc.(*FuncType),
 	}
 
 	getterFunc := test_util.ParseTypeAnn("fn () -> T")
-	getter := &GetterElemType{
+	getter := &GetterElem{
 		Name: NewStrKey("getter"),
 		Fn:   getterFunc.(*FuncType),
 	}
 
 	setterFunc := test_util.ParseTypeAnn("fn (value: V) -> undefined")
-	setter := &SetterElemType{
+	setter := &SetterElem{
 		Name: NewStrKey("setter"),
 		Fn:   setterFunc.(*FuncType),
 	}
 
 	callableFunc := test_util.ParseTypeAnn("fn (x: T) -> U")
-	callable := &CallableElemType{Fn: callableFunc.(*FuncType)}
+	callable := &CallableElem{Fn: callableFunc.(*FuncType)}
 
 	constructorFunc := test_util.ParseTypeAnn("fn (init: V) -> U")
-	constructor := &ConstructorElemType{Fn: constructorFunc.(*FuncType)}
+	constructor := &ConstructorElem{Fn: constructorFunc.(*FuncType)}
 
-	restElem := &RestSpreadElemType{
+	restElem := &RestSpreadElem{
 		Value: tType, // Reuse the T type we parsed earlier
 	}
 
 	// Create a single object type containing all elements
-	objType := NewObjectType([]ObjTypeElem{
-		prop,
-		method,
-		getter,
-		setter,
-		callable,
-		constructor,
-		restElem,
-	})
+	objType := NewObjectType(
+		nil,
+		[]ObjTypeElem{
+			prop,
+			method,
+			getter,
+			setter,
+			callable,
+			constructor,
+			restElem,
+		},
+	)
 
 	// Substitute type parameters in the entire object
 	checker := NewChecker()

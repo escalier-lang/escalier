@@ -4,6 +4,7 @@ package type_system
 
 import (
 	"fmt"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -184,28 +185,34 @@ type PrimType struct {
 	provenance Provenance
 }
 
-func NewNumType() *PrimType {
+func NewNumPrimType(provenance Provenance) *PrimType {
 	return &PrimType{
 		Prim:       NumPrim,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
-func NewStrType() *PrimType {
+func NewStrPrimType(provenance Provenance) *PrimType {
 	return &PrimType{
 		Prim:       StrPrim,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
-func NewBoolType() *PrimType {
+func NewBoolPrimType(provenance Provenance) *PrimType {
 	return &PrimType{
 		Prim:       BoolPrim,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
-func NewSymType() *PrimType {
+func NewSymPrimType(provenance Provenance) *PrimType {
 	return &PrimType{
 		Prim:       SymbolPrim,
-		provenance: nil,
+		provenance: provenance,
+	}
+}
+func NewBigIntPrimType(provenance Provenance) *PrimType {
+	return &PrimType{
+		Prim:       BigIntPrim,
+		provenance: provenance,
 	}
 }
 func (t *PrimType) Accept(v TypeVisitor) Type {
@@ -240,12 +247,12 @@ type RegexType struct {
 	provenance Provenance
 }
 
-func NewRegexType(pattern string) (Type, error) {
+func NewRegexType(pattern string, provenance Provenance) (Type, error) {
 	// parse the pattern as a regular expression
 
 	pattern, err := convertJSRegexToGo(pattern)
 	if err != nil {
-		return NewNeverType(), fmt.Errorf("failed to convert regex: %v", err)
+		return NewNeverType(nil), fmt.Errorf("failed to convert regex: %v", err)
 	}
 
 	regex := regexp.MustCompile(pattern)
@@ -254,7 +261,7 @@ func NewRegexType(pattern string) (Type, error) {
 	if regex != nil {
 		for _, name := range regex.SubexpNames()[1:] {
 			if name != "" { // Skip unnamed groups
-				groups[name] = NewStrType()
+				groups[name] = NewStrPrimType(nil)
 			}
 		}
 	}
@@ -262,7 +269,7 @@ func NewRegexType(pattern string) (Type, error) {
 	return &RegexType{
 		Regex:      regex,
 		Groups:     groups,
-		provenance: nil,
+		provenance: provenance,
 	}, nil
 }
 func (t *RegexType) Accept(v TypeVisitor) Type {
@@ -283,12 +290,43 @@ type LitType struct {
 	provenance Provenance
 }
 
-func NewLitType(lit Lit) *LitType {
+func NewStrLitType(value string, provenance Provenance) *LitType {
 	return &LitType{
-		Lit:        lit,
-		provenance: nil,
+		Lit:        &StrLit{Value: value},
+		provenance: provenance,
 	}
 }
+func NewNumLitType(value float64, provenance Provenance) *LitType {
+	return &LitType{
+		Lit:        &NumLit{Value: value},
+		provenance: provenance,
+	}
+}
+func NewBoolLitType(value bool, provenance Provenance) *LitType {
+	return &LitType{
+		Lit:        &BoolLit{Value: value},
+		provenance: provenance,
+	}
+}
+func NewNullType(provenance Provenance) *LitType {
+	return &LitType{
+		Lit:        &NullLit{},
+		provenance: provenance,
+	}
+}
+func NewUndefinedType(provenance Provenance) *LitType {
+	return &LitType{
+		Lit:        &UndefinedLit{},
+		provenance: provenance,
+	}
+}
+func NewBigIntLitType(value big.Int, provenance Provenance) *LitType {
+	return &LitType{
+		Lit:        &BigIntLit{Value: value},
+		provenance: provenance,
+	}
+}
+
 func (t *LitType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*LitType)
@@ -322,10 +360,10 @@ type UniqueSymbolType struct {
 	provenance Provenance
 }
 
-func NewUniqueSymbolType(value int) *UniqueSymbolType {
+func NewUniqueSymbolType(provenance Provenance, value int) *UniqueSymbolType {
 	return &UniqueSymbolType{
 		Value:      value,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 
@@ -356,7 +394,7 @@ func (t *UnknownType) Accept(v TypeVisitor) Type {
 	return t
 }
 
-func NewUnknownType() *UnknownType { return &UnknownType{provenance: nil} }
+func NewUnknownType(provenance Provenance) *UnknownType { return &UnknownType{provenance: provenance} }
 func (t *UnknownType) String() string {
 	return "unknown"
 }
@@ -375,7 +413,7 @@ func (t *NeverType) Accept(v TypeVisitor) Type {
 	return t
 }
 
-func NewNeverType() *NeverType { return &NeverType{provenance: nil} }
+func NewNeverType(provenance Provenance) *NeverType { return &NeverType{provenance: provenance} }
 func (t *NeverType) String() string {
 	return "never"
 }
@@ -394,7 +432,7 @@ func (t *AnyType) Accept(v TypeVisitor) Type {
 	return t
 }
 
-func NewAnyType() *AnyType { return &AnyType{provenance: nil} }
+func NewAnyType(provenance Provenance) *AnyType { return &AnyType{provenance: provenance} }
 func (t *AnyType) String() string {
 	return "any"
 }
@@ -460,6 +498,15 @@ type FuncType struct {
 	provenance Provenance
 }
 
+func NewFuncType(typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type, provenance Provenance) *FuncType {
+	return &FuncType{
+		TypeParams: typeParams,
+		Params:     params,
+		Return:     returnType,
+		Throws:     throws,
+		provenance: provenance,
+	}
+}
 func (t *FuncType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*FuncType)
@@ -499,13 +546,13 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &FuncType{
-			TypeParams: t.TypeParams,
-			Params:     newParams,
-			Return:     newReturn,
-			Throws:     newThrows,
-			provenance: t.provenance,
-		}
+		result = NewFuncType(
+			t.TypeParams,
+			newParams,
+			newReturn,
+			newThrows,
+			t.provenance,
+		)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -532,7 +579,7 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 			propTypes := make(map[string]Type)
 			propOptionals := make(map[string]bool)
 			for _, elem := range objType.Elems {
-				if propElem, ok := elem.(*PropertyElemType); ok {
+				if propElem, ok := elem.(*PropertyElem); ok {
 					propTypes[propElem.Name.String()] = propElem.Value
 					propOptionals[propElem.Name.String()] = propElem.Optional
 				}
@@ -718,51 +765,49 @@ type ObjTypeElem interface {
 	Accept(TypeVisitor) ObjTypeElem
 }
 
-type CallableElemType struct{ Fn *FuncType }
-type ConstructorElemType struct{ Fn *FuncType }
-type MethodElemType struct {
+type CallableElem struct{ Fn *FuncType }
+type ConstructorElem struct{ Fn *FuncType }
+type MethodElem struct {
 	Name    ObjTypeKey
 	Fn      *FuncType
 	MutSelf *bool // nil = unknown, true = mut self, false = self
 }
-type GetterElemType struct {
+type GetterElem struct {
 	Name ObjTypeKey
 	Fn   *FuncType
 }
-type SetterElemType struct {
+type SetterElem struct {
 	Name ObjTypeKey
 	Fn   *FuncType
 }
-
-// TODO: update PropertyElemType to handle computed keys
-type PropertyElemType struct {
+type PropertyElem struct {
 	Name     ObjTypeKey
 	Optional bool
 	Readonly bool
 	Value    Type
 }
 
-func NewMethodElemType(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElemType {
-	return &MethodElemType{
+func NewMethodElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem {
+	return &MethodElem{
 		Name:    name,
 		Fn:      fn,
 		MutSelf: mutSelf,
 	}
 }
-func NewGetterElemType(name ObjTypeKey, fn *FuncType) *GetterElemType {
-	return &GetterElemType{
+func NewGetterElem(name ObjTypeKey, fn *FuncType) *GetterElem {
+	return &GetterElem{
 		Name: name,
 		Fn:   fn,
 	}
 }
-func NewSetterElemType(name ObjTypeKey, fn *FuncType) *SetterElemType {
-	return &SetterElemType{
+func NewSetterElem(name ObjTypeKey, fn *FuncType) *SetterElem {
+	return &SetterElem{
 		Name: name,
 		Fn:   fn,
 	}
 }
-func NewPropertyElemType(name ObjTypeKey, value Type) *PropertyElemType {
-	return &PropertyElemType{
+func NewPropertyElem(name ObjTypeKey, value Type) *PropertyElem {
+	return &PropertyElem{
 		Name:     name,
 		Optional: false,
 		Readonly: false,
@@ -777,7 +822,7 @@ const (
 	MMRemove MappedModifier = "remove"
 )
 
-type MappedElemType struct {
+type MappedElem struct {
 	TypeParam *IndexParamType
 	// TODO: rename this so that we can differentiate between this and the
 	// Name() method thats common to all ObjTypeElems.
@@ -790,62 +835,62 @@ type IndexParamType struct {
 	Name       string
 	Constraint Type
 }
-type RestSpreadElemType struct{ Value Type }
+type RestSpreadElem struct{ Value Type }
 
-func NewRestSpreadElemType(value Type) *RestSpreadElemType {
-	return &RestSpreadElemType{
+func NewRestSpreadElem(value Type) *RestSpreadElem {
+	return &RestSpreadElem{
 		Value: value,
 	}
 }
 
-func (*CallableElemType) isObjTypeElem()    {}
-func (*ConstructorElemType) isObjTypeElem() {}
-func (*MethodElemType) isObjTypeElem()      {}
-func (*GetterElemType) isObjTypeElem()      {}
-func (*SetterElemType) isObjTypeElem()      {}
-func (*PropertyElemType) isObjTypeElem()    {}
-func (*MappedElemType) isObjTypeElem()      {}
-func (*RestSpreadElemType) isObjTypeElem()  {}
+func (*CallableElem) isObjTypeElem()    {}
+func (*ConstructorElem) isObjTypeElem() {}
+func (*MethodElem) isObjTypeElem()      {}
+func (*GetterElem) isObjTypeElem()      {}
+func (*SetterElem) isObjTypeElem()      {}
+func (*PropertyElem) isObjTypeElem()    {}
+func (*MappedElem) isObjTypeElem()      {}
+func (*RestSpreadElem) isObjTypeElem()  {}
 
-func (c *CallableElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (c *CallableElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := c.Fn.Accept(v).(*FuncType)
 	if newFn != c.Fn {
-		return &CallableElemType{Fn: newFn}
+		return &CallableElem{Fn: newFn}
 	}
 	return c
 }
-func (c *ConstructorElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (c *ConstructorElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := c.Fn.Accept(v).(*FuncType)
 	if newFn != c.Fn {
-		return &ConstructorElemType{Fn: newFn}
+		return &ConstructorElem{Fn: newFn}
 	}
 	return c
 }
-func (m *MethodElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := m.Fn.Accept(v).(*FuncType)
 	if newFn != m.Fn {
-		return &MethodElemType{Name: m.Name, Fn: newFn}
+		return &MethodElem{Name: m.Name, Fn: newFn}
 	}
 	return m
 }
-func (g *GetterElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (g *GetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := g.Fn.Accept(v).(*FuncType)
 	if newFn != g.Fn {
-		return &GetterElemType{Name: g.Name, Fn: newFn}
+		return &GetterElem{Name: g.Name, Fn: newFn}
 	}
 	return g
 }
-func (s *SetterElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (s *SetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := s.Fn.Accept(v).(*FuncType)
 	if newFn != s.Fn {
-		return &SetterElemType{Name: s.Name, Fn: newFn}
+		return &SetterElem{Name: s.Name, Fn: newFn}
 	}
 	return s
 }
-func (p *PropertyElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (p *PropertyElem) Accept(v TypeVisitor) ObjTypeElem {
 	newValue := p.Value.Accept(v)
 	if newValue != p.Value {
-		return &PropertyElemType{
+		return &PropertyElem{
 			Name:     p.Name,
 			Optional: p.Optional,
 			Readonly: p.Readonly,
@@ -854,7 +899,7 @@ func (p *PropertyElemType) Accept(v TypeVisitor) ObjTypeElem {
 	}
 	return p
 }
-func (m *MappedElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 	changed := false
 	newConstraint := m.TypeParam.Constraint.Accept(v)
 	if newConstraint != m.TypeParam.Constraint {
@@ -879,7 +924,7 @@ func (m *MappedElemType) Accept(v TypeVisitor) ObjTypeElem {
 			Name:       m.TypeParam.Name,
 			Constraint: newConstraint,
 		}
-		return &MappedElemType{
+		return &MappedElem{
 			TypeParam: newTypeParam,
 			name:      newName,
 			Value:     newValue,
@@ -889,10 +934,10 @@ func (m *MappedElemType) Accept(v TypeVisitor) ObjTypeElem {
 	}
 	return m
 }
-func (r *RestSpreadElemType) Accept(v TypeVisitor) ObjTypeElem {
+func (r *RestSpreadElem) Accept(v TypeVisitor) ObjTypeElem {
 	newValue := r.Value.Accept(v)
 	if newValue != r.Value {
-		return &RestSpreadElemType{Value: newValue}
+		return &RestSpreadElem{Value: newValue}
 	}
 	return r
 }
@@ -915,7 +960,7 @@ type ObjectType struct {
 }
 
 // TODO: add different constructors for different types of object types
-func NewObjectType(elems []ObjTypeElem) *ObjectType {
+func NewObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
 	return &ObjectType{
 		Elems:      elems,
 		Exact:      false,
@@ -925,7 +970,7 @@ func NewObjectType(elems []ObjTypeElem) *ObjectType {
 		Interface:  false,
 		Extends:    nil,
 		Implements: nil,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 
@@ -990,11 +1035,11 @@ func (t *ObjectType) String() string {
 				result += ", "
 			}
 			switch elem := elem.(type) {
-			case *CallableElemType:
+			case *CallableElem:
 				result += elem.Fn.String()
-			case *ConstructorElemType:
+			case *ConstructorElem:
 				result += "new " + elem.Fn.String()
-			case *MethodElemType:
+			case *MethodElem:
 				// TODO: update this to include `self` parameter
 				result += elem.Name.String()
 				if len(elem.Fn.TypeParams) > 0 {
@@ -1035,30 +1080,30 @@ func (t *ObjectType) String() string {
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
-			case *GetterElemType:
+			case *GetterElem:
 				result += "get " + elem.Name.String() + "() -> " + elem.Fn.Return.String()
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
-			case *SetterElemType:
+			case *SetterElem:
 				result += "set " + elem.Name.String() + "("
 				result += elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
-			case *PropertyElemType:
+			case *PropertyElem:
 				result += elem.Name.String()
 				if elem.Optional {
 					result += "?"
 				}
 				result += ": " + elem.Value.String()
-			case *MappedElemType:
+			case *MappedElem:
 				// TODO: handle renaming
 				// TODO: handle optional and readonly
 				result += "[" + elem.TypeParam.Name + " in " + elem.TypeParam.Constraint.String() + "]"
 				result += ": " + elem.Value.String()
-			case *RestSpreadElemType:
+			case *RestSpreadElem:
 				result += "..." + elem.Value.String()
 			default:
 				panic(fmt.Sprintf("unknown object type element: %#v\n", elem))
@@ -1074,10 +1119,10 @@ type TupleType struct {
 	provenance Provenance
 }
 
-func NewTupleType(elems ...Type) *TupleType {
+func NewTupleType(provenance Provenance, elems ...Type) *TupleType {
 	return &TupleType{
 		Elems:      elems,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *TupleType) Accept(v TypeVisitor) Type {
@@ -1161,16 +1206,16 @@ type UnionType struct {
 	provenance Provenance
 }
 
-func NewUnionType(types ...Type) Type {
+func NewUnionType(provenance Provenance, types ...Type) Type {
 	if len(types) == 0 {
-		return NewNeverType()
+		return NewNeverType(nil)
 	}
 	if len(types) == 1 {
 		return types[0]
 	}
 	return &UnionType{
 		Types:      types,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *UnionType) Accept(v TypeVisitor) Type {
@@ -1221,10 +1266,16 @@ type IntersectionType struct {
 	provenance Provenance
 }
 
-func NewIntersectionType(types ...Type) *IntersectionType {
+func NewIntersectionType(provenance Provenance, types ...Type) Type {
+	if len(types) == 0 {
+		return NewNeverType(nil)
+	}
+	if len(types) == 1 {
+		return types[0]
+	}
 	return &IntersectionType{
 		Types:      types,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *IntersectionType) Accept(v TypeVisitor) Type {
@@ -1364,7 +1415,7 @@ func (t *CondType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func NewCondType(check Type, extends Type, cons Type, alt Type) *CondType {
+func NewCondType(provenance Provenance, check Type, extends Type, cons Type, alt Type) *CondType {
 	return &CondType{
 		Check:      check,
 		Extends:    extends,
@@ -1613,6 +1664,12 @@ type NamespaceType struct {
 	provenance Provenance
 }
 
+func NewNamespaceType(ns *Namespace, provenance Provenance) *NamespaceType {
+	return &NamespaceType{
+		Namespace:  ns,
+		provenance: provenance,
+	}
+}
 func (t *NamespaceType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*NamespaceType)
@@ -1710,7 +1767,7 @@ func Equals(t1 Type, t2 Type) bool {
 			// nolint:exhaustruct
 			MutableType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
 			// nolint:exhaustruct
-			IntrinsicType{}, NamespaceType{}, MappedElemType{},
+			IntrinsicType{}, NamespaceType{}, MappedElem{},
 		),
 		cmp.Comparer(regexEqual),
 	)

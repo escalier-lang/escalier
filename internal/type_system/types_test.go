@@ -132,18 +132,18 @@ func TestNewRegexType(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if test.expectPanic {
 				assert.Panics(t, func() {
-					_, _ = NewRegexType(test.pattern)
+					_, _ = NewRegexType(test.pattern, nil)
 				})
 				return
 			}
 
 			// Test creation
-			result, err := NewRegexType(test.pattern)
+			result, err := NewRegexType(test.pattern, nil)
 
 			if !test.shouldHaveRegex {
 				// For invalid patterns, expect an error and NeverType
 				assert.NotNil(t, err, "Expected error for invalid pattern")
-				assert.IsType(t, NewNeverType(), result)
+				assert.IsType(t, NewNeverType(nil), result)
 				return
 			}
 
@@ -168,7 +168,7 @@ func TestNewRegexType(t *testing.T) {
 				assert.True(t, exists, "Expected group %s not found", expectedGroup)
 				assert.NotNil(t, groupType)
 				// Groups should be initialized with UnknownType
-				assert.IsType(t, NewStrType(), groupType)
+				assert.IsType(t, NewStrPrimType(nil), groupType)
 			}
 
 			// Check that no unexpected groups are present
@@ -185,9 +185,9 @@ func TestNewRegexType(t *testing.T) {
 
 func TestRegexType_Methods(t *testing.T) {
 	t.Run("Equal method", func(t *testing.T) {
-		regex1, _ := NewRegexType("/hello/")
-		regex2, _ := NewRegexType("/hello/")
-		regex3, _ := NewRegexType("/world/")
+		regex1, _ := NewRegexType("/hello/", nil)
+		regex2, _ := NewRegexType("/hello/", nil)
+		regex3, _ := NewRegexType("/world/", nil)
 
 		// Same pattern should be equal
 		assert.True(t, Equals(regex1, regex2))
@@ -196,18 +196,18 @@ func TestRegexType_Methods(t *testing.T) {
 		assert.False(t, Equals(regex1, regex3))
 
 		// Different types should not be equal
-		assert.False(t, Equals(regex1, NewStrType()))
+		assert.False(t, Equals(regex1, NewStrPrimType(nil)))
 	})
 
 	t.Run("String method", func(t *testing.T) {
-		regex, _ := NewRegexType("/hello/")
+		regex, _ := NewRegexType("/hello/", nil)
 		str := regex.String()
 		assert.NotEmpty(t, str)
 		assert.Contains(t, str, "hello")
 	})
 
 	t.Run("Provenance methods", func(t *testing.T) {
-		regex, _ := NewRegexType("/hello/")
+		regex, _ := NewRegexType("/hello/", nil)
 
 		// Initial provenance should be nil
 		assert.Nil(t, regex.Provenance())
@@ -218,36 +218,36 @@ func TestRegexType_Methods(t *testing.T) {
 
 func TestRegexType_CaptureGroups(t *testing.T) {
 	t.Run("no capture groups", func(t *testing.T) {
-		result, _ := NewRegexType("/hello/")
+		result, _ := NewRegexType("/hello/", nil)
 		regexType := result.(*RegexType)
 		assert.Empty(t, regexType.Groups)
 	})
 
 	t.Run("single named capture group", func(t *testing.T) {
-		result, _ := NewRegexType("/(?<word>hello)/")
+		result, _ := NewRegexType("/(?<word>hello)/", nil)
 		regexType := result.(*RegexType)
 		assert.Len(t, regexType.Groups, 1)
 		assert.Contains(t, regexType.Groups, "word")
-		assert.IsType(t, NewStrType(), regexType.Groups["word"])
+		assert.IsType(t, NewStrPrimType(nil), regexType.Groups["word"])
 	})
 
 	t.Run("multiple named capture groups", func(t *testing.T) {
-		result, _ := NewRegexType("/(?<first>\\w+)-(?<second>\\d+)/")
+		result, _ := NewRegexType("/(?<first>\\w+)-(?<second>\\d+)/", nil)
 		regexType := result.(*RegexType)
 		assert.Len(t, regexType.Groups, 2)
 		assert.Contains(t, regexType.Groups, "first")
 		assert.Contains(t, regexType.Groups, "second")
-		assert.IsType(t, NewStrType(), regexType.Groups["first"])
-		assert.IsType(t, NewStrType(), regexType.Groups["second"])
+		assert.IsType(t, NewStrPrimType(nil), regexType.Groups["first"])
+		assert.IsType(t, NewStrPrimType(nil), regexType.Groups["second"])
 	})
 
 	t.Run("mixed named and unnamed groups", func(t *testing.T) {
-		result, _ := NewRegexType("/(\\w+)-(?<id>\\d+)-(\\w+)/")
+		result, _ := NewRegexType("/(\\w+)-(?<id>\\d+)-(\\w+)/", nil)
 		regexType := result.(*RegexType)
 		// Only named groups should be in the Groups map
 		assert.Len(t, regexType.Groups, 1)
 		assert.Contains(t, regexType.Groups, "id")
-		assert.IsType(t, NewStrType(), regexType.Groups["id"])
+		assert.IsType(t, NewStrPrimType(nil), regexType.Groups["id"])
 	})
 }
 
@@ -268,7 +268,7 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				result, _ := NewRegexType(test.pattern)
+				result, _ := NewRegexType(test.pattern, nil)
 				regexType := result.(*RegexType)
 				assert.NotNil(t, regexType.Regex)
 			})
@@ -276,7 +276,7 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 	})
 
 	t.Run("named capture group conversion", func(t *testing.T) {
-		result, _ := NewRegexType("/(?<name>\\w+)/")
+		result, _ := NewRegexType("/(?<name>\\w+)/", nil)
 		regexType := result.(*RegexType)
 
 		// Verify the regex was created successfully
@@ -295,33 +295,33 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 
 func TestObjectType_Equal(t *testing.T) {
 	t.Run("empty object types should be equal", func(t *testing.T) {
-		objType1 := NewObjectType([]ObjTypeElem{})
-		objType2 := NewObjectType([]ObjTypeElem{})
+		objType1 := NewObjectType(nil, []ObjTypeElem{})
+		objType2 := NewObjectType(nil, []ObjTypeElem{})
 
 		assert.True(t, Equals(objType1, objType2), "Empty object types should be equal")
 	})
 
 	t.Run("object type should not be equal to non-object type", func(t *testing.T) {
-		numberType := NewNumType()
-		objType := NewObjectType([]ObjTypeElem{})
+		numberType := NewNumPrimType(nil)
+		objType := NewObjectType(nil, []ObjTypeElem{})
 
 		assert.False(t, Equals(objType, numberType), "Object type should not be equal to primitive type")
-		assert.False(t, Equals(objType, NewStrType()), "Object type should not be equal to different type")
+		assert.False(t, Equals(objType, NewStrPrimType(nil)), "Object type should not be equal to different type")
 	})
 
 	t.Run("object types with single identical property should be equal", func(t *testing.T) {
 		// Create two object types with the same field: {x: number}
-		numberType := NewNumType()
+		numberType := NewNumPrimType(nil)
 
 		elems1 := []ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), numberType),
+			NewPropertyElem(NewStrKey("x"), numberType),
 		}
 		elems2 := []ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), numberType),
+			NewPropertyElem(NewStrKey("x"), numberType),
 		}
 
-		objType1 := NewObjectType(elems1)
-		objType2 := NewObjectType(elems2)
+		objType1 := NewObjectType(nil, elems1)
+		objType2 := NewObjectType(nil, elems2)
 
 		assert.True(t, Equals(objType1, objType2), "Object types with identical single property should be equal")
 		assert.True(t, Equals(objType2, objType1), "Equality should be symmetric")
@@ -329,18 +329,18 @@ func TestObjectType_Equal(t *testing.T) {
 
 	t.Run("object types with different single property should not be equal", func(t *testing.T) {
 		// Create two object types: {x: number} vs {x: string}
-		numberType := NewNumType()
-		stringType := NewStrType()
+		numberType := NewNumPrimType(nil)
+		stringType := NewStrPrimType(nil)
 
 		elems1 := []ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), numberType),
+			NewPropertyElem(NewStrKey("x"), numberType),
 		}
 		elems2 := []ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), stringType),
+			NewPropertyElem(NewStrKey("x"), stringType),
 		}
 
-		objType1 := NewObjectType(elems1)
-		objType2 := NewObjectType(elems2)
+		objType1 := NewObjectType(nil, elems1)
+		objType2 := NewObjectType(nil, elems2)
 
 		assert.False(t, Equals(objType1, objType2), "Object types with different property types should not be equal")
 	})

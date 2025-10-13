@@ -745,7 +745,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		if objType, ok := calleeType.(*type_system.ObjectType); ok {
 			// Check if the object type has a constructor elem
 			for _, elem := range objType.Elems {
-				if _, isConstructor := elem.(*type_system.ConstructorElemType); isConstructor {
+				if _, isConstructor := elem.(*type_system.ConstructorElem); isConstructor {
 					return NewNewExpr(
 						calleeExpr,
 						argsExprs,

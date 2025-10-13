@@ -1323,11 +1323,11 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	bazNS.Namespaces["qux"] = quxNS
 
 	// Add some test values to distinguish each namespace
-	rootNS.Values["rootValue"] = &Binding{Source: nil, Type: NewStrType(), Mutable: false}
-	fooNS.Values["fooValue"] = &Binding{Source: nil, Type: NewStrType(), Mutable: false}
-	barNS.Values["barValue"] = &Binding{Source: nil, Type: NewStrType(), Mutable: false}
-	bazNS.Values["bazValue"] = &Binding{Source: nil, Type: NewStrType(), Mutable: false}
-	quxNS.Values["quxValue"] = &Binding{Source: nil, Type: NewStrType(), Mutable: false}
+	rootNS.Values["rootValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
+	fooNS.Values["fooValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
+	barNS.Values["barValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
+	bazNS.Values["bazValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
+	quxNS.Values["quxValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
 
 	// Create a root scope and context
 	rootScope := &Scope{
@@ -2146,23 +2146,23 @@ func TestExpandType(t *testing.T) {
 		}{
 			{
 				name:     "ObjectType",
-				input:    NewObjectType([]ObjTypeElem{}),
-				expected: NewObjectType([]ObjTypeElem{}),
+				input:    NewObjectType(nil, []ObjTypeElem{}),
+				expected: NewObjectType(nil, []ObjTypeElem{}),
 			},
 			{
 				name:     "LitType - string",
-				input:    NewLitType(&StrLit{Value: "hello"}),
-				expected: NewLitType(&StrLit{Value: "hello"}),
+				input:    NewStrLitType("hello", nil),
+				expected: NewStrLitType("hello", nil),
 			},
 			{
 				name:     "LitType - number",
-				input:    NewLitType(&NumLit{Value: 42}),
-				expected: NewLitType(&NumLit{Value: 42}),
+				input:    NewNumLitType(42, nil),
+				expected: NewNumLitType(42, nil),
 			},
 			{
 				name:     "NamespaceType",
-				input:    &NamespaceType{Namespace: NewNamespace()},
-				expected: &NamespaceType{Namespace: NewNamespace()},
+				input:    NewNamespaceType(NewNamespace(), nil),
+				expected: NewNamespaceType(NewNamespace(), nil),
 			},
 		}
 
@@ -2183,9 +2183,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union of base types
-		strLit := NewLitType(&StrLit{Value: "hello"})
-		numLit := NewLitType(&NumLit{Value: 42})
-		unionType := NewUnionType(strLit, numLit)
+		strLit := NewStrLitType("hello", nil)
+		numLit := NewNumLitType(42, nil)
+		unionType := NewUnionType(nil, strLit, numLit)
 
 		result, errors := checker.expandType(ctx, unionType)
 
@@ -2218,7 +2218,7 @@ func TestExpandType(t *testing.T) {
 
 		// Add a simple type alias: type MyString = "literal"
 		// Using a literal type since expandType doesn't handle PrimType yet
-		literalType := NewLitType(&StrLit{Value: "literal"})
+		literalType := NewStrLitType("literal", nil)
 		typeAlias := &TypeAlias{
 			Type:       literalType,
 			TypeParams: []*TypeParam{},
@@ -2265,7 +2265,7 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType with type arguments: Identity<"hello">
-		stringLitType := NewLitType(&StrLit{Value: "hello"})
+		stringLitType := NewStrLitType("hello", nil)
 		typeRef := NewTypeRefType("Identity", typeAlias, stringLitType)
 
 		result, errors := checker.expandType(ctx, typeRef)
@@ -2279,7 +2279,7 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add type aliases: type Inner = "inner", type Outer = Inner
-		innerLitType := NewLitType(&StrLit{Value: "inner"})
+		innerLitType := NewStrLitType("inner", nil)
 		innerAlias := &TypeAlias{
 			Type:       innerLitType,
 			TypeParams: []*TypeParam{},
@@ -2313,7 +2313,7 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add a type alias: type MyString = "mystring"
-		stringLitType := NewLitType(&StrLit{Value: "mystring"})
+		stringLitType := NewStrLitType("mystring", nil)
 		typeAlias := &TypeAlias{
 			Type:       stringLitType,
 			TypeParams: []*TypeParam{},
@@ -2327,9 +2327,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union of a literal and a type reference
-		numLit := NewLitType(&NumLit{Value: 42})
+		numLit := NewNumLitType(42, nil)
 		typeRef := NewTypeRefType("MyString", typeAlias)
-		unionType := NewUnionType(numLit, typeRef)
+		unionType := NewUnionType(nil, numLit, typeRef)
 
 		result, errors := checker.expandType(ctx, unionType)
 
@@ -2347,7 +2347,7 @@ func TestExpandType(t *testing.T) {
 
 		typeRefT := NewTypeRefType("T", nil)
 		typeRefE := NewTypeRefType("E", nil)
-		unionType := NewUnionType(typeRefT, typeRefE)
+		unionType := NewUnionType(nil, typeRefT, typeRefE)
 
 		typeAlias := &TypeAlias{
 			Type:       unionType,
@@ -2362,8 +2362,8 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType with type arguments: Result<"ok", "error">
-		okLitType := NewLitType(&StrLit{Value: "ok"})
-		errorLitType := NewLitType(&StrLit{Value: "error"})
+		okLitType := NewStrLitType("ok", nil)
+		errorLitType := NewStrLitType("error", nil)
 		typeRef := NewTypeRefType("Result", typeAlias, okLitType, errorLitType)
 
 		result, errors := checker.expandType(ctx, typeRef)
@@ -2411,7 +2411,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a regex literal type
-			regexType, _ := NewRegexType(tt.pattern)
+			regexType, _ := NewRegexType(tt.pattern, nil)
 
 			// Extract named capture groups
 			result := c.findNamedGroups(regexType)
@@ -2432,9 +2432,9 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 	t.Run("nested types", func(t *testing.T) {
 		// Test with a union type containing regex types
-		regexType1, _ := NewRegexType("/(?<first>[a-z]+)/")
-		regexType2, _ := NewRegexType("/(?<second>[0-9]+)/")
-		unionType := NewUnionType(regexType1, regexType2)
+		regexType1, _ := NewRegexType("/(?<first>[a-z]+)/", nil)
+		regexType2, _ := NewRegexType("/(?<second>[0-9]+)/", nil)
+		unionType := NewUnionType(nil, regexType1, regexType2)
 
 		result := c.findNamedGroups(unionType)
 		expected := []string{"first", "second"}
@@ -2454,9 +2454,9 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 	t.Run("object type with regex property", func(t *testing.T) {
 		// Test with an object type containing a regex type
-		regexType, _ := NewRegexType("/(?<name>[a-z]+)/")
-		objType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("pattern"), regexType),
+		regexType, _ := NewRegexType("/(?<name>[a-z]+)/", nil)
+		objType := NewObjectType(nil, []ObjTypeElem{
+			NewPropertyElem(NewStrKey("pattern"), regexType),
 		})
 
 		result := c.findNamedGroups(objType)
