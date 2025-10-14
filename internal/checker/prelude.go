@@ -184,7 +184,7 @@ func Prelude(c *Checker) *Scope {
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("message"), NewStrPrimType(nil)),
 		},
-		NewTypeRefType("Error", nil),
+		NewTypeRefType(nil, "Error", nil),
 		NewNeverType(nil),
 		nil,
 	)

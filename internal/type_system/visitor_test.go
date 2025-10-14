@@ -286,21 +286,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 		consType := NewBoolPrimType(nil)
 		altType := NewUnknownType(nil)
 
-		oldCondType := &CondType{
-			Check:      checkType,
-			Extends:    extendsType,
-			Then:       consType,
-			Else:       altType,
-			provenance: nil,
-		}
-
-		newCondType := &CondType{
-			Check:      checkType,   // Same check
-			Extends:    extendsType, // Same extends
-			Then:       consType,    // Same consequence
-			Else:       altType,     // Same alternative
-			provenance: nil,
-		}
+		oldCondType := NewCondType(nil, checkType, extendsType, consType, altType)
+		newCondType := NewCondType(nil, checkType, extendsType, consType, altType) // Same structure
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldCondType: newCondType,
@@ -327,18 +314,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 			},
 		)
 		indexType := NewStrLitType("x", nil)
-
-		oldIndexType := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
-
-		newIndexType := &IndexType{
-			Target:     targetType, // Same target
-			Index:      indexType,  // Same index
-			provenance: nil,
-		}
+		oldIndexType := NewIndexType(nil, targetType, indexType)
+		newIndexType := NewIndexType(nil, targetType, indexType) // Same structure
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldIndexType: newIndexType,
@@ -389,17 +366,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new TypeVarType instance without instance", func(t *testing.T) {
-		oldTypeVarType := &TypeVarType{
-			ID:         1,
-			Instance:   nil, // No instance, so Prune returns the TypeVar itself
-			provenance: nil,
-		}
-
-		newTypeVarType := &TypeVarType{
-			ID:         1,   // Same ID
-			Instance:   nil, // Same (no) instance
-			provenance: nil,
-		}
+		oldTypeVarType := NewTypeVarType(nil, 1)
+		newTypeVarType := NewTypeVarType(nil, 1) // Same ID, no instance
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldTypeVarType: newTypeVarType,
@@ -420,11 +388,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 		instanceType := NewNumPrimType(nil)
 		newInstanceType := NewNumPrimType(nil) // Same kind, different instance
 
-		typeVarType := &TypeVarType{
-			ID:         1,
-			Instance:   instanceType,
-			provenance: nil,
-		}
+		typeVarType := NewTypeVarType(nil, 1)
+		typeVarType.Instance = instanceType
 
 		// The visitor will operate on the pruned type (instanceType), not the TypeVar
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
@@ -951,12 +916,7 @@ func TestComplexTypeStructures(t *testing.T) {
 			},
 		)
 		indexType := NewStrLitType("x", nil)
-
-		original := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
+		original := NewIndexType(nil, targetType, indexType)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -997,11 +957,7 @@ func TestComplexTypeStructures(t *testing.T) {
 // TestTypeVarVisitor tests visitor behavior with type variables
 func TestTypeVarVisitor(t *testing.T) {
 	t.Run("TypeVar without instance", func(t *testing.T) {
-		original := &TypeVarType{
-			ID:         1,
-			Instance:   nil,
-			provenance: nil,
-		}
+		original := NewTypeVarType(nil, 1)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1016,11 +972,8 @@ func TestTypeVarVisitor(t *testing.T) {
 
 	t.Run("TypeVar with instance", func(t *testing.T) {
 		instanceType := NewNumPrimType(nil)
-		original := &TypeVarType{
-			ID:         1,
-			Instance:   instanceType,
-			provenance: nil,
-		}
+		original := NewTypeVarType(nil, 1)
+		original.Instance = instanceType
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1312,14 +1265,7 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 		extendsType := NewStrPrimType(nil)
 		consType := NewBoolPrimType(nil)
 		altType := NewUnknownType(nil)
-
-		condType := &CondType{
-			Check:      checkType,
-			Extends:    extendsType,
-			Then:       consType,
-			Else:       altType,
-			provenance: nil,
-		}
+		condType := NewCondType(nil, checkType, extendsType, consType, altType)
 
 		visitor := NewTrackingVisitor()
 		condType.Accept(visitor)
@@ -1342,12 +1288,7 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 			},
 		)
 		indexType := NewStrLitType("x", nil)
-
-		idxType := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
+		idxType := NewIndexType(nil, targetType, indexType)
 
 		visitor := NewTrackingVisitor()
 		idxType.Accept(visitor)

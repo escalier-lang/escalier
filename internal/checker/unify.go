@@ -916,7 +916,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			elementType := NewUnionType(nil, excessParamTypes...)
 
 			// Create Array<elementType> and unify with rest parameter type
-			arrayType := NewTypeRefType("Array", nil, elementType)
+			arrayType := NewTypeRefType(nil, "Array", nil, elementType)
 			unifyErrors := c.unify(ctx, restParam.Type, arrayType)
 			errors = slices.Concat(errors, unifyErrors)
 		} else {

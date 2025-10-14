@@ -97,7 +97,7 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 			}
 
 			// Wrap in Array type
-			arrayType := NewTypeRefType("Array", nil, elemType)
+			arrayType := NewTypeRefType(nil, "Array", nil, elemType)
 			arrayType.SetProvenance(&GraphQLProvenance{
 				Position: field.Position,
 			})
@@ -224,10 +224,7 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 			baseType = NewBoolPrimType(gqlTypeProvenance)
 		case "ID":
 			// Keep ID as a type reference to preserve the ID semantics
-			baseType = NewTypeRefType("ID", nil)
-			baseType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
+			baseType = NewTypeRefType(gqlTypeProvenance, "ID", nil)
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {
@@ -245,8 +242,7 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 					baseType = NewUnionType(typeDefProvenance, enumTypes...)
 				case gqlast.Scalar:
 					// For custom scalars, fall back to the base type or use a type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(typeDefProvenance)
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				case gqlast.InputObject:
 					// For input objects, create an object type with all fields
 					var elems []ObjTypeElem
@@ -264,23 +260,14 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 					baseType = NewObjectType(typeDefProvenance, elems)
 				case gqlast.Object, gqlast.Interface, gqlast.Union:
 					// For other types (Object, Interface, Union), use type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				default:
 					// Fallback for any other types
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				}
 			} else {
 				// Fallback to type reference for unknown types
-				baseType = NewTypeRefType(gqlType.NamedType, nil)
-				baseType.SetProvenance(&GraphQLProvenance{
-					Position: gqlType.Position,
-				})
+				baseType = NewTypeRefType(gqlTypeProvenance, gqlType.NamedType, nil)
 			}
 		}
 

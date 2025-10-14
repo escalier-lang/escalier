@@ -2201,7 +2201,7 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references a non-existent type alias
-		typeRef := NewTypeRefType("UnknownType", nil)
+		typeRef := NewTypeRefType(nil, "UnknownType", nil)
 
 		result, errors := checker.expandType(ctx, typeRef)
 
@@ -2232,7 +2232,7 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references the alias
-		typeRef := NewTypeRefType("MyString", typeAlias)
+		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
 
 		result, errors := checker.expandType(ctx, typeRef)
 
@@ -2251,7 +2251,7 @@ func TestExpandType(t *testing.T) {
 			Constraint: nil,
 			Default:    nil,
 		}
-		innerTypeRef := NewTypeRefType("T", nil)
+		innerTypeRef := NewTypeRefType(nil, "T", nil)
 		typeAlias := &TypeAlias{
 			Type:       innerTypeRef,
 			TypeParams: []*TypeParam{typeParam},
@@ -2266,7 +2266,7 @@ func TestExpandType(t *testing.T) {
 
 		// Create a TypeRefType with type arguments: Identity<"hello">
 		stringLitType := NewStrLitType("hello", nil)
-		typeRef := NewTypeRefType("Identity", typeAlias, stringLitType)
+		typeRef := NewTypeRefType(nil, "Identity", typeAlias, stringLitType)
 
 		result, errors := checker.expandType(ctx, typeRef)
 
@@ -2286,7 +2286,7 @@ func TestExpandType(t *testing.T) {
 		}
 		scope.setTypeAlias("Inner", innerAlias)
 
-		innerTypeRef := NewTypeRefType("Inner", innerAlias)
+		innerTypeRef := NewTypeRefType(nil, "Inner", innerAlias)
 		outerAlias := &TypeAlias{
 			Type:       innerTypeRef,
 			TypeParams: []*TypeParam{},
@@ -2300,7 +2300,7 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references the outer alias
-		outerTypeRef := NewTypeRefType("Outer", outerAlias)
+		outerTypeRef := NewTypeRefType(nil, "Outer", outerAlias)
 
 		result, errors := checker.expandType(ctx, outerTypeRef)
 
@@ -2328,7 +2328,7 @@ func TestExpandType(t *testing.T) {
 
 		// Create a union of a literal and a type reference
 		numLit := NewNumLitType(42, nil)
-		typeRef := NewTypeRefType("MyString", typeAlias)
+		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
 		unionType := NewUnionType(nil, numLit, typeRef)
 
 		result, errors := checker.expandType(ctx, unionType)
@@ -2345,8 +2345,8 @@ func TestExpandType(t *testing.T) {
 		typeParamT := &TypeParam{Name: "T", Constraint: nil, Default: nil}
 		typeParamE := &TypeParam{Name: "E", Constraint: nil, Default: nil}
 
-		typeRefT := NewTypeRefType("T", nil)
-		typeRefE := NewTypeRefType("E", nil)
+		typeRefT := NewTypeRefType(nil, "T", nil)
+		typeRefE := NewTypeRefType(nil, "E", nil)
 		unionType := NewUnionType(nil, typeRefT, typeRefE)
 
 		typeAlias := &TypeAlias{
@@ -2364,7 +2364,7 @@ func TestExpandType(t *testing.T) {
 		// Create a TypeRefType with type arguments: Result<"ok", "error">
 		okLitType := NewStrLitType("ok", nil)
 		errorLitType := NewStrLitType("error", nil)
-		typeRef := NewTypeRefType("Result", typeAlias, okLitType, errorLitType)
+		typeRef := NewTypeRefType(nil, "Result", typeAlias, okLitType, errorLitType)
 
 		result, errors := checker.expandType(ctx, typeRef)
 
@@ -2411,7 +2411,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a regex literal type
-			regexType, _ := NewRegexType(tt.pattern, nil)
+			regexType, _ := NewRegexTypeWithPatternString(tt.pattern, nil)
 
 			// Extract named capture groups
 			result := c.findNamedGroups(regexType)
@@ -2425,15 +2425,15 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 			// Check that all values are TypeVarType (fresh variables)
 			for name, typeVar := range result {
-				assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+				assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 			}
 		})
 	}
 
 	t.Run("nested types", func(t *testing.T) {
 		// Test with a union type containing regex types
-		regexType1, _ := NewRegexType("/(?<first>[a-z]+)/", nil)
-		regexType2, _ := NewRegexType("/(?<second>[0-9]+)/", nil)
+		regexType1, _ := NewRegexTypeWithPatternString("/(?<first>[a-z]+)/", nil)
+		regexType2, _ := NewRegexTypeWithPatternString("/(?<second>[0-9]+)/", nil)
 		unionType := NewUnionType(nil, regexType1, regexType2)
 
 		result := c.findNamedGroups(unionType)
@@ -2448,13 +2448,13 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 		// Check that all values are TypeVarType (fresh variables)
 		for name, typeVar := range result {
-			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+			assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 		}
 	})
 
 	t.Run("object type with regex property", func(t *testing.T) {
 		// Test with an object type containing a regex type
-		regexType, _ := NewRegexType("/(?<name>[a-z]+)/", nil)
+		regexType, _ := NewRegexTypeWithPatternString("/(?<name>[a-z]+)/", nil)
 		objType := NewObjectType(nil, []ObjTypeElem{
 			NewPropertyElem(NewStrKey("pattern"), regexType),
 		})
@@ -2471,7 +2471,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 		// Check that all values are TypeVarType (fresh variables)
 		for name, typeVar := range result {
-			assert.IsType(t, &TypeVarType{}, typeVar, "Expected fresh type variable for capture group %s", name)
+			assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 		}
 	})
 }

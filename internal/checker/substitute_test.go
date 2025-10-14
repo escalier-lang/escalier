@@ -230,7 +230,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 	t.Run("RestSpreadType substitution", func(t *testing.T) {
 		t.Run("substitutes spread type", func(t *testing.T) {
 			// Create rest/spread type: ...T
-			restType := NewRestSpreadType(NewTypeRefType("T", nil))
+			restType := NewRestSpreadType(NewTypeRefType(nil, "T", nil))
 
 			// Create substitution map: T -> number[]
 			arrayType := test_util.ParseTypeAnn("Array<number>")

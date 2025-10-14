@@ -37,8 +37,10 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *MutableType) []Error {
 	}
 
 	if retry {
-		mut1 = NewMutableType(t1)
-		mut2 = NewMutableType(t2)
+		// We unwrap the mutable types above so we need to rewrap them here
+		// before calling `unifyMut` again.
+		mut1 = NewMutableType(nil, t1)
+		mut2 = NewMutableType(nil, t2)
 		return c.unifyMut(ctx, mut1, mut2)
 	}
 

@@ -37,7 +37,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		for i, arg := range ta.TypeArgs {
 			typeArgs[i] = typeAnnToType(arg)
 		}
-		return NewTypeRefType(name, nil, typeArgs...)
+		return NewTypeRefType(provenance, name, nil, typeArgs...)
 	case *ast.TupleTypeAnn:
 		elems := make([]Type, len(ta.Elems))
 		for i, elem := range ta.Elems {
@@ -126,10 +126,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 	case *ast.IndexTypeAnn:
 		targetType := typeAnnToType(ta.Target)
 		indexType := typeAnnToType(ta.Index)
-		return &IndexType{
-			Target: targetType,
-			Index:  indexType,
-		}
+		return NewIndexType(provenance, targetType, indexType)
 	case *ast.CondTypeAnn:
 		return NewCondType(
 			provenance,
@@ -139,10 +136,10 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 			typeAnnToType(ta.Else),
 		)
 	case *ast.InferTypeAnn:
-		return NewInferType(ta.Name)
+		return NewInferType(provenance, ta.Name)
 	case *ast.MutableTypeAnn:
 		targetType := typeAnnToType(ta.Target)
-		return NewMutableType(targetType)
+		return NewMutableType(provenance, targetType)
 	case *ast.WildcardTypeAnn:
 		return &WildcardType{}
 	default:

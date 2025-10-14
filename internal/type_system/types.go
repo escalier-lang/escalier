@@ -74,6 +74,16 @@ type TypeVarType struct {
 	provenance Provenance
 }
 
+func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
+	return &TypeVarType{
+		ID:         id,
+		Instance:   nil,
+		Constraint: nil,
+		Default:    nil,
+		provenance: provenance,
+	}
+}
+
 func (t *TypeVarType) Accept(v TypeVisitor) Type {
 	prunedType := Prune(t)
 	if prunedType != t {
@@ -112,7 +122,7 @@ type TypeRefType struct {
 	provenance Provenance
 }
 
-func NewTypeRefType(name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
+func NewTypeRefType(provenance Provenance, name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
 	return &TypeRefType{
 		Name:       name,
 		TypeArgs:   typeArgs,
@@ -247,7 +257,14 @@ type RegexType struct {
 	provenance Provenance
 }
 
-func NewRegexType(pattern string, provenance Provenance) (Type, error) {
+func NewRegexType(provenance Provenance, regex *regexp.Regexp, groups map[string]Type) *RegexType {
+	return &RegexType{
+		Regex:      regex,
+		Groups:     groups,
+		provenance: provenance,
+	}
+}
+func NewRegexTypeWithPatternString(pattern string, provenance Provenance) (Type, error) {
 	// parse the pattern as a regular expression
 
 	pattern, err := convertJSRegexToGo(pattern)
@@ -266,11 +283,7 @@ func NewRegexType(pattern string, provenance Provenance) (Type, error) {
 		}
 	}
 
-	return &RegexType{
-		Regex:      regex,
-		Groups:     groups,
-		provenance: provenance,
-	}, nil
+	return NewRegexType(provenance, regex, groups), nil
 }
 func (t *RegexType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
@@ -1357,6 +1370,13 @@ type IndexType struct {
 	provenance Provenance
 }
 
+func NewIndexType(provenance Provenance, target Type, index Type) *IndexType {
+	return &IndexType{
+		Target:     target,
+		Index:      index,
+		provenance: provenance,
+	}
+}
 func (t *IndexType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*IndexType)
@@ -1401,13 +1421,13 @@ func (t *CondType) Accept(v TypeVisitor) Type {
 	newAlt := t.Else.Accept(v)
 	var result Type = t
 	if newCheck != t.Check || newExtends != t.Extends || newCons != t.Then || newAlt != t.Else {
-		result = &CondType{
-			Check:      newCheck,
-			Extends:    newExtends,
-			Then:       newCons,
-			Else:       newAlt,
-			provenance: t.provenance,
-		}
+		result = NewCondType(
+			t.provenance,
+			newCheck,
+			newExtends,
+			newCons,
+			newAlt,
+		)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1421,7 +1441,7 @@ func NewCondType(provenance Provenance, check Type, extends Type, cons Type, alt
 		Extends:    extends,
 		Then:       cons,
 		Else:       alt,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *CondType) String() string {
@@ -1446,10 +1466,10 @@ func (t *InferType) String() string {
 	return "infer " + t.Name
 }
 
-func NewInferType(name string) *InferType {
+func NewInferType(provenance Provenance, name string) *InferType {
 	return &InferType{
 		Name:       name,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 
@@ -1466,10 +1486,7 @@ func (t *MutableType) Accept(v TypeVisitor) Type {
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = &MutableType{
-			Type:       newType,
-			provenance: t.provenance,
-		}
+		result = NewMutableType(t.provenance, newType)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1481,10 +1498,10 @@ func (t *MutableType) String() string {
 	return "mut " + t.Type.String()
 }
 
-func NewMutableType(typ Type) *MutableType {
+func NewMutableType(provenance Provenance, t Type) *MutableType {
 	return &MutableType{
-		Type:       typ,
-		provenance: nil,
+		Type:       t,
+		provenance: provenance,
 	}
 }
 

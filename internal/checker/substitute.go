@@ -75,11 +75,7 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {
 			}
 
 			if changed {
-				result := NewTypeRefType(t.Name, t.TypeAlias, newTypeArgs...)
-				if t.Provenance() != nil {
-					result.SetProvenance(t.Provenance())
-				}
-				return result
+				return NewTypeRefType(t.Provenance(), t.Name, t.TypeAlias, newTypeArgs...)
 			}
 		}
 	}

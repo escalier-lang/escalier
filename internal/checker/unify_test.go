@@ -14,7 +14,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexType("/^hello$/", nil)
+		result, _ := NewRegexTypeWithPatternString("/^hello$/", nil)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -23,7 +23,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string does not match regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"world"`)
-		result, _ := NewRegexType("/^hello$/", nil)
+		result, _ := NewRegexTypeWithPatternString("/^hello$/", nil)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -33,7 +33,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches complex regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"123-456-7890"`)
-		result, _ := NewRegexType(`/^\d{3}-\d{3}-\d{4}$/`, nil)
+		result, _ := NewRegexTypeWithPatternString(`/^\d{3}-\d{3}-\d{4}$/`, nil)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -42,7 +42,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("case insensitive matching", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"HELLO"`)
-		result, _ := NewRegexType("/^hello$/i", nil)
+		result, _ := NewRegexTypeWithPatternString("/^hello$/i", nil)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -50,7 +50,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 	})
 
 	t.Run("invalid regex format", func(t *testing.T) {
-		result, err := NewRegexType("/invalid", nil)
+		result, err := NewRegexTypeWithPatternString("/invalid", nil)
 
 		assert.NotNil(t, err, "Expected error when regex format is invalid")
 		assert.IsType(t, NewNeverType(nil), result)
@@ -58,7 +58,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("regex with global flag", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexType("/hello/g", nil)
+		result, _ := NewRegexTypeWithPatternString("/hello/g", nil)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -504,9 +504,9 @@ func TestUnifyMutableTypes(t *testing.T) {
 
 	t.Run("nested mutable types should unify with exact same nesting", func(t *testing.T) {
 		numberType := NewNumPrimType(nil)
-		mutNumber := NewMutableType(numberType)
-		mutMutNumber1 := NewMutableType(mutNumber)
-		mutMutNumber2 := NewMutableType(NewMutableType(numberType))
+		mutNumber := NewMutableType(nil, numberType)
+		mutMutNumber1 := NewMutableType(nil, mutNumber)
+		mutMutNumber2 := NewMutableType(nil, NewMutableType(nil, numberType))
 
 		errors := checker.unify(ctx, mutMutNumber1, mutMutNumber2)
 		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")
