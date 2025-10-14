@@ -14,7 +14,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexTypeWithPatternString("/^hello$/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -23,7 +23,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string does not match regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"world"`)
-		result, _ := NewRegexTypeWithPatternString("/^hello$/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -33,7 +33,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches complex regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"123-456-7890"`)
-		result, _ := NewRegexTypeWithPatternString(`/^\d{3}-\d{3}-\d{4}$/`, nil)
+		result, _ := NewRegexTypeWithPatternString(nil, `/^\d{3}-\d{3}-\d{4}$/`)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -42,7 +42,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("case insensitive matching", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"HELLO"`)
-		result, _ := NewRegexTypeWithPatternString("/^hello$/i", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/i")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -50,7 +50,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 	})
 
 	t.Run("invalid regex format", func(t *testing.T) {
-		result, err := NewRegexTypeWithPatternString("/invalid", nil)
+		result, err := NewRegexTypeWithPatternString(nil, "/invalid")
 
 		assert.NotNil(t, err, "Expected error when regex format is invalid")
 		assert.IsType(t, NewNeverType(nil), result)
@@ -58,7 +58,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("regex with global flag", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexTypeWithPatternString("/hello/g", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/hello/g")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)

@@ -152,12 +152,7 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &TypeRefType{
-			Name:       t.Name,
-			TypeArgs:   newTypeArgs,
-			TypeAlias:  t.TypeAlias,
-			provenance: t.provenance,
-		}
+		result = NewTypeRefType(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -264,7 +259,7 @@ func NewRegexType(provenance Provenance, regex *regexp.Regexp, groups map[string
 		provenance: provenance,
 	}
 }
-func NewRegexTypeWithPatternString(pattern string, provenance Provenance) (Type, error) {
+func NewRegexTypeWithPatternString(provenance Provenance, pattern string) (Type, error) {
 	// parse the pattern as a regular expression
 
 	pattern, err := convertJSRegexToGo(pattern)
@@ -303,19 +298,19 @@ type LitType struct {
 	provenance Provenance
 }
 
-func NewStrLitType(value string, provenance Provenance) *LitType {
+func NewStrLitType(provenance Provenance, value string) *LitType {
 	return &LitType{
 		Lit:        &StrLit{Value: value},
 		provenance: provenance,
 	}
 }
-func NewNumLitType(value float64, provenance Provenance) *LitType {
+func NewNumLitType(provenance Provenance, value float64) *LitType {
 	return &LitType{
 		Lit:        &NumLit{Value: value},
 		provenance: provenance,
 	}
 }
-func NewBoolLitType(value bool, provenance Provenance) *LitType {
+func NewBoolLitType(provenance Provenance, value bool) *LitType {
 	return &LitType{
 		Lit:        &BoolLit{Value: value},
 		provenance: provenance,
@@ -333,7 +328,7 @@ func NewUndefinedType(provenance Provenance) *LitType {
 		provenance: provenance,
 	}
 }
-func NewBigIntLitType(value big.Int, provenance Provenance) *LitType {
+func NewBigIntLitType(provenance Provenance, value big.Int) *LitType {
 	return &LitType{
 		Lit:        &BigIntLit{Value: value},
 		provenance: provenance,
@@ -511,7 +506,7 @@ type FuncType struct {
 	provenance Provenance
 }
 
-func NewFuncType(typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type, provenance Provenance) *FuncType {
+func NewFuncType(provenance Provenance, typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type) *FuncType {
 	return &FuncType{
 		TypeParams: typeParams,
 		Params:     params,
@@ -560,11 +555,11 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	var result Type = t
 	if changed {
 		result = NewFuncType(
+			t.provenance,
 			t.TypeParams,
 			newParams,
 			newReturn,
 			newThrows,
-			t.provenance,
 		)
 	}
 
@@ -836,7 +831,7 @@ const (
 )
 
 type MappedElem struct {
-	TypeParam *IndexParamType
+	TypeParam *IndexParam
 	// TODO: rename this so that we can differentiate between this and the
 	// Name() method thats common to all ObjTypeElems.
 	name     Type // optional
@@ -844,7 +839,7 @@ type MappedElem struct {
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
 }
-type IndexParamType struct {
+type IndexParam struct {
 	Name       string
 	Constraint Type
 }
@@ -933,7 +928,7 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 	}
 
 	if changed {
-		newTypeParam := &IndexParamType{
+		newTypeParam := &IndexParam{
 			Name:       m.TypeParam.Name,
 			Constraint: newConstraint,
 		}
@@ -975,15 +970,16 @@ type ObjectType struct {
 // TODO: add different constructors for different types of object types
 func NewObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
 	return &ObjectType{
-		Elems:      elems,
-		Exact:      false,
-		Immutable:  false,
-		Mutable:    false,
-		Nominal:    false,
-		Interface:  false,
-		Extends:    nil,
-		Implements: nil,
-		provenance: provenance,
+		Elems:        elems,
+		Exact:        false,
+		Immutable:    false,
+		Mutable:      false,
+		Nominal:      false,
+		Interface:    false,
+		Extends:      nil,
+		Implements:   nil,
+		SymbolKeyMap: nil,
+		provenance:   provenance,
 	}
 }
 
@@ -1020,19 +1016,17 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		newImplements[i] = newImpl
 	}
 
-	var result Type = t
+	var result *ObjectType = t
 	if changed {
-		result = &ObjectType{
-			Elems:      newElems,
-			Exact:      t.Exact,
-			Immutable:  t.Immutable,
-			Mutable:    t.Mutable,
-			Nominal:    t.Nominal,
-			Interface:  t.Interface,
-			Extends:    newExtends,
-			Implements: newImplements,
-			provenance: t.provenance,
-		}
+		result = NewObjectType(t.provenance, newElems)
+		result.Exact = t.Exact
+		result.Immutable = t.Immutable
+		result.Mutable = t.Mutable
+		result.Nominal = t.Nominal
+		result.Interface = t.Interface
+		result.Extends = newExtends
+		result.Implements = newImplements
+		result.SymbolKeyMap = t.SymbolKeyMap
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1155,10 +1149,7 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &TupleType{
-			Elems:      newElems,
-			provenance: t.provenance,
-		}
+		result = NewTupleType(t.provenance, newElems...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1185,10 +1176,10 @@ type RestSpreadType struct {
 	provenance Provenance
 }
 
-func NewRestSpreadType(typ Type) *RestSpreadType {
+func NewRestSpreadType(provenance Provenance, typ Type) *RestSpreadType {
 	return &RestSpreadType{
 		Type:       typ,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *RestSpreadType) Accept(v TypeVisitor) Type {
@@ -1199,10 +1190,7 @@ func (t *RestSpreadType) Accept(v TypeVisitor) Type {
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = &RestSpreadType{
-			Type:       newType,
-			provenance: t.provenance,
-		}
+		result = NewRestSpreadType(t.provenance, newType)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1248,10 +1236,7 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &UnionType{
-			Types:      newTypes,
-			provenance: t.provenance,
-		}
+		result = NewUnionType(t.provenance, newTypes...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1308,10 +1293,7 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &IntersectionType{
-			Types:      newTypes,
-			provenance: t.provenance,
-		}
+		result = NewIntersectionType(t.provenance, newTypes...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1339,6 +1321,12 @@ type KeyOfType struct {
 	provenance Provenance
 }
 
+func NewKeyOfType(provenance Provenance, typ Type) *KeyOfType {
+	return &KeyOfType{
+		Type:       typ,
+		provenance: provenance,
+	}
+}
 func (t *KeyOfType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*KeyOfType)
@@ -1347,10 +1335,7 @@ func (t *KeyOfType) Accept(v TypeVisitor) Type {
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = &KeyOfType{
-			Type:       newType,
-			provenance: t.provenance,
-		}
+		result = NewKeyOfType(t.provenance, newType)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1386,11 +1371,7 @@ func (t *IndexType) Accept(v TypeVisitor) Type {
 	newIndex := t.Index.Accept(v)
 	var result Type = t
 	if newTarget != t.Target || newIndex != t.Index {
-		result = &IndexType{
-			Target:     newTarget,
-			Index:      newIndex,
-			provenance: t.provenance,
-		}
+		result = NewIndexType(t.provenance, newTarget, newIndex)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1509,6 +1490,11 @@ type WildcardType struct {
 	provenance Provenance
 }
 
+func NewWildcardType(provenance Provenance) *WildcardType {
+	return &WildcardType{
+		provenance: provenance,
+	}
+}
 func (t *WildcardType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*WildcardType)
@@ -1528,11 +1514,11 @@ type ExtractorType struct {
 	provenance Provenance
 }
 
-func NewExtractorType(extractor Type, args ...Type) *ExtractorType {
+func NewExtractorType(provenance Provenance, extractor Type, args ...Type) *ExtractorType {
 	return &ExtractorType{
 		Extractor:  extractor,
 		Args:       args,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *ExtractorType) Accept(v TypeVisitor) Type {
@@ -1553,11 +1539,7 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &ExtractorType{
-			Extractor:  newExtractor,
-			Args:       newArgs,
-			provenance: t.provenance,
-		}
+		result = NewExtractorType(t.provenance, newExtractor, newArgs...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1590,6 +1572,13 @@ type TemplateLitType struct {
 	provenance Provenance
 }
 
+func NewTemplateLitType(provenance Provenance, quasis []*Quasi, types []Type) *TemplateLitType {
+	return &TemplateLitType{
+		Quasis:     quasis,
+		Types:      types,
+		provenance: provenance,
+	}
+}
 func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*TemplateLitType)
@@ -1607,11 +1596,7 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = &TemplateLitType{
-			Quasis:     t.Quasis,
-			Types:      newTypes,
-			provenance: t.provenance,
-		}
+		result = NewTemplateLitType(t.provenance, t.Quasis, newTypes)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1681,7 +1666,7 @@ type NamespaceType struct {
 	provenance Provenance
 }
 
-func NewNamespaceType(ns *Namespace, provenance Provenance) *NamespaceType {
+func NewNamespaceType(provenance Provenance, ns *Namespace) *NamespaceType {
 	return &NamespaceType{
 		Namespace:  ns,
 		provenance: provenance,
@@ -1729,10 +1714,7 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 			Types:      newTypes,
 			Namespaces: t.Namespace.Namespaces, // Note: not recursing into nested namespaces for simplicity
 		}
-		result = &NamespaceType{
-			Namespace:  newNamespace,
-			provenance: t.provenance,
-		}
+		result = NewNamespaceType(t.provenance, newNamespace)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {

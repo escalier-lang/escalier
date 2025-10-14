@@ -112,17 +112,15 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		}
 
 		return NewFuncType(
+			provenance,
 			typeParams,
 			params,
 			returnType,
 			throwsType,
-			provenance,
 		)
 	case *ast.KeyOfTypeAnn:
 		targetType := typeAnnToType(ta.Type)
-		return &KeyOfType{
-			Type: targetType,
-		}
+		return NewKeyOfType(provenance, targetType)
 	case *ast.IndexTypeAnn:
 		targetType := typeAnnToType(ta.Target)
 		indexType := typeAnnToType(ta.Index)
@@ -141,7 +139,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		targetType := typeAnnToType(ta.Target)
 		return NewMutableType(provenance, targetType)
 	case *ast.WildcardTypeAnn:
-		return &WildcardType{}
+		return NewWildcardType(provenance)
 	default:
 		panic(fmt.Sprintf("ConvertTypeAnnToType: unsupported type annotation: %T", typeAnn))
 	}
@@ -153,13 +151,13 @@ func convertLitToLitType(lit ast.Lit) Type {
 
 	switch l := lit.(type) {
 	case *ast.StrLit:
-		return NewStrLitType(l.Value, nil)
+		return NewStrLitType(nil, l.Value)
 	case *ast.NumLit:
-		return NewNumLitType(l.Value, nil)
+		return NewNumLitType(nil, l.Value)
 	case *ast.BoolLit:
-		return NewBoolLitType(l.Value, nil)
+		return NewBoolLitType(nil, l.Value)
 	case *ast.BigIntLit:
-		return NewBigIntLitType(l.Value, nil)
+		return NewBigIntLitType(nil, l.Value)
 	case *ast.NullLit:
 		return NewNullType(nil)
 	case *ast.UndefinedLit:
@@ -269,7 +267,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 			constraintType = NewAnyType(nil)
 		}
 
-		typeParam := &IndexParamType{
+		typeParam := &IndexParam{
 			Name:       e.TypeParam.Name,
 			Constraint: constraintType,
 		}

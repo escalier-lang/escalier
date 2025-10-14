@@ -116,8 +116,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new LitType instance with same literal", func(t *testing.T) {
-		oldLitType := NewNumLitType(42, nil)
-		newLitType := NewNumLitType(42, nil) // Same literal value, different instance
+		oldLitType := NewNumLitType(nil, 42)
+		newLitType := NewNumLitType(nil, 42) // Same literal value, different instance
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldLitType: newLitType,
@@ -138,17 +138,17 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 
 		oldFuncType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
 			returnType,
-			nil,
 			nil,
 		)
 
 		newFuncType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
 			returnType,
-			nil,
 			nil,
 		)
 
@@ -218,29 +218,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 		propType := NewNumPrimType(nil)
 		prop := NewPropertyElem(NewStrKey("x"), propType)
 
-		oldObjType := &ObjectType{
-			Elems:      []ObjTypeElem{prop},
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
-
-		newObjType := &ObjectType{
-			Elems:      []ObjTypeElem{prop}, // Same property
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
+		oldObjType := NewObjectType(nil, []ObjTypeElem{prop})
+		newObjType := NewObjectType(nil, []ObjTypeElem{prop}) // Same property
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldObjType: newObjType,
@@ -258,9 +237,12 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 
 	t.Run("EnterType returns new IntersectionType instance with same members", func(t *testing.T) {
 		numType := NewNumPrimType(nil)
-		objType := NewObjectType(nil, []ObjTypeElem{
-			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
-		})
+		objType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+			},
+		)
 
 		oldIntersectionType := NewIntersectionType(nil, numType, objType).(*IntersectionType)
 		newIntersectionType := NewIntersectionType(nil, numType, objType).(*IntersectionType)
@@ -313,7 +295,7 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
 			},
 		)
-		indexType := NewStrLitType("x", nil)
+		indexType := NewStrLitType(nil, "x")
 		oldIndexType := NewIndexType(nil, targetType, indexType)
 		newIndexType := NewIndexType(nil, targetType, indexType) // Same structure
 
@@ -341,15 +323,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 			},
 		)
 
-		oldKeyOfType := &KeyOfType{
-			Type:       targetType,
-			provenance: nil,
-		}
-
-		newKeyOfType := &KeyOfType{
-			Type:       targetType, // Same target
-			provenance: nil,
-		}
+		oldKeyOfType := NewKeyOfType(nil, targetType)
+		newKeyOfType := NewKeyOfType(nil, targetType) // Same target
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldKeyOfType: newKeyOfType,
@@ -438,9 +413,9 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
 		funcType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param},
 			returnType,
-			nil,
 			nil,
 		)
 
@@ -493,17 +468,17 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), innerType)
 		oldFuncType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param},
 			NewBoolPrimType(nil),
-			nil,
 			nil,
 		)
 
 		newFuncType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{NewFuncParam(NewIdentPat("x"), innerType)},
 			NewBoolPrimType(nil),
-			nil,
 			nil,
 		)
 
@@ -576,7 +551,7 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("LitType immutability", func(t *testing.T) {
-		original := NewNumLitType(42, nil)
+		original := NewNumLitType(nil, 42)
 		originalLit := original.Lit
 
 		visitor := &IdentityVisitor{}
@@ -593,10 +568,10 @@ func TestVisitorNoMutation(t *testing.T) {
 		param2 := NewFuncParam(NewIdentPat("y"), NewStrPrimType(nil))
 		original := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param1, param2},
 			NewBoolPrimType(nil),
 			NewNeverType(nil),
-			nil,
 		)
 		originalParams := original.Params
 		originalReturn := original.Return
@@ -632,17 +607,7 @@ func TestVisitorNoMutation(t *testing.T) {
 
 	t.Run("ObjectType immutability", func(t *testing.T) {
 		prop := NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil))
-		original := &ObjectType{
-			Elems:      []ObjTypeElem{prop},
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
+		original := NewObjectType(nil, []ObjTypeElem{prop})
 		originalElems := original.Elems
 
 		visitor := &IdentityVisitor{}
@@ -704,10 +669,10 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
 		original := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param},
 			NewBoolPrimType(nil),
 			NewNeverType(nil),
-			nil,
 		)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
@@ -818,10 +783,10 @@ func TestNestedVisitorImmutability(t *testing.T) {
 
 		funcType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{NewFuncParam(NewIdentPat("x"), innerNumType)},
 			innerStrType,
 			NewNeverType(nil),
-			nil,
 		)
 
 		unionType := NewUnionType(nil, funcType, NewBoolPrimType(nil)).(*UnionType)
@@ -850,10 +815,10 @@ func TestNestedVisitorImmutability(t *testing.T) {
 		// Create: (oldType) => boolean | string
 		funcType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{NewFuncParam(NewIdentPat("x"), oldType)},
 			NewBoolPrimType(nil),
 			NewNeverType(nil),
-			nil,
 		)
 
 		unionType := NewUnionType(nil, funcType, NewStrPrimType(nil)).(*UnionType)
@@ -915,7 +880,7 @@ func TestComplexTypeStructures(t *testing.T) {
 				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
 			},
 		)
-		indexType := NewStrLitType("x", nil)
+		indexType := NewStrLitType(nil, "x")
 		original := NewIndexType(nil, targetType, indexType)
 
 		visitor := &IdentityVisitor{}
@@ -938,10 +903,7 @@ func TestComplexTypeStructures(t *testing.T) {
 			},
 		)
 
-		original := &KeyOfType{
-			Type:       targetType,
-			provenance: nil,
-		}
+		original := NewKeyOfType(nil, targetType)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1034,9 +996,9 @@ func TestEnterTypeIsCalled(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), paramType)
 		funcType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param},
 			returnType,
-			nil,
 			nil,
 		)
 		visitor := NewTrackingVisitor()
@@ -1111,9 +1073,9 @@ func TestEnterTypeIsCalled(t *testing.T) {
 		param := NewFuncParam(NewIdentPat("x"), unionType)
 		funcType := NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{param},
 			returnType,
-			nil,
 			nil,
 		)
 		visitor := NewTrackingVisitor()
@@ -1287,7 +1249,7 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
 			},
 		)
-		indexType := NewStrLitType("x", nil)
+		indexType := NewStrLitType(nil, "x")
 		idxType := NewIndexType(nil, targetType, indexType)
 
 		visitor := NewTrackingVisitor()
@@ -1319,6 +1281,7 @@ func BenchmarkVisitorTraversal(b *testing.B) {
 
 		NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{
 				NewFuncParam(NewIdentPat("x"), NewNumPrimType(nil)),
 				NewFuncParam(NewIdentPat("y"), NewStrPrimType(nil)),
@@ -1339,7 +1302,6 @@ func BenchmarkVisitorTraversal(b *testing.B) {
 				),
 			),
 			NewNeverType(nil),
-			nil,
 		),
 		NewTupleType(nil, NewNumPrimType(nil), NewStrPrimType(nil), NewBoolPrimType(nil)),
 	)

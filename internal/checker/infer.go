@@ -388,18 +388,10 @@ func (c *Checker) InferComponent(
 				}
 			}
 
-			objType := &ObjectType{
-				Elems:        objTypeElems,
-				Exact:        false,
-				Immutable:    false,
-				Mutable:      false,
-				Nominal:      true,
-				Interface:    false,
-				Extends:      []*TypeRefType{},
-				Implements:   []*TypeRefType{},
-				SymbolKeyMap: instanceSymbolKeyMap,
-			}
-			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
+			provenance := &ast.NodeProvenance{Node: decl}
+			objType := NewObjectType(provenance, objTypeElems)
+			objType.Nominal = true
+			objType.SymbolKeyMap = instanceSymbolKeyMap
 
 			// TODO: call c.bind() directly
 			unifyErrors := c.unify(ctx, instanceType, objType)
@@ -415,11 +407,11 @@ func (c *Checker) InferComponent(
 			}
 
 			funcType := NewFuncType(
+				provenance,
 				typeParams,
 				params,
 				NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
 				NewNeverType(nil),
-				&ast.NodeProvenance{Node: decl},
 			)
 
 			// Create an object type with a constructor element and static methods/properties
@@ -427,18 +419,8 @@ func (c *Checker) InferComponent(
 			classObjTypeElems := []ObjTypeElem{constructorElem}
 			classObjTypeElems = append(classObjTypeElems, staticElems...)
 
-			classObjType := &ObjectType{
-				Elems:        classObjTypeElems,
-				Exact:        false,
-				Immutable:    false,
-				Mutable:      false,
-				Nominal:      true,
-				Interface:    false,
-				Extends:      []*TypeRefType{},
-				Implements:   []*TypeRefType{},
-				SymbolKeyMap: staticSymbolKeyMap,
-			}
-			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
+			classObjType := NewObjectType(provenance, classObjTypeElems)
+			classObjType.SymbolKeyMap = staticSymbolKeyMap
 
 			ctor := &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
@@ -910,11 +892,11 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		if len(fnType.TypeParams) > 0 {
 			// Create a copy of the function type without type params
 			fnTypeWithoutParams := NewFuncType(
+				&TypeProvenance{Type: fnType},
 				nil,
 				fnType.Params,
 				fnType.Return,
 				fnType.Throws,
-				&TypeProvenance{Type: fnType},
 			)
 
 			// Create fresh type variables for each type parameter
@@ -1022,11 +1004,11 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		if len(fnTypeToUse.TypeParams) > 0 {
 			// Create a copy of the function type without type params
 			fnTypeWithoutParams := NewFuncType(
+				&TypeProvenance{Type: fnTypeToUse},
 				nil,
 				fnTypeToUse.Params,
 				fnTypeToUse.Return,
 				fnTypeToUse.Throws,
-				&TypeProvenance{Type: fnTypeToUse},
 			)
 
 			// Create fresh type variables for each type parameter
@@ -1201,7 +1183,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		if expr.Op == ast.UnaryMinus {
 			if lit, ok := expr.Arg.(*ast.LiteralExpr); ok {
 				if num, ok := lit.Lit.(*ast.NumLit); ok {
-					resultType = NewNumLitType(-num.Value, provenance)
+					resultType = NewNumLitType(provenance, -num.Value)
 					errors = []Error{}
 				} else {
 					resultType = NewNeverType(nil)
@@ -1263,7 +1245,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			expr.Source = binding.Source
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
-			t := NewNamespaceType(namespace, &ast.NodeProvenance{Node: expr})
+			t := NewNamespaceType(provenance, namespace)
 			resultType = t
 			errors = nil
 		} else {
@@ -1826,7 +1808,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 			if value := t.Namespace.Values[propKey.Name]; value != nil {
 				return value.Type, errors
 			} else if namespace := t.Namespace.Namespaces[propKey.Name]; namespace != nil {
-				return NewNamespaceType(namespace, nil), errors
+				return NewNamespaceType(nil, namespace), errors
 			} else {
 				errors = append(errors, &UnknownPropertyError{
 					ObjectType: objType,
@@ -2351,11 +2333,11 @@ func (c *Checker) inferFuncSig(
 	}
 
 	t := NewFuncType(
+		&ast.NodeProvenance{Node: node},
 		typeParams,
 		params,
 		finalReturnType,
 		finalThrowsType,
-		&ast.NodeProvenance{Node: node},
 	)
 
 	return t, funcCtx, bindings, errors
@@ -2630,16 +2612,16 @@ func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
 	errors := []Error{}
 	switch lit := lit.(type) {
 	case *ast.StrLit:
-		t = NewStrLitType(lit.Value, provenance)
+		t = NewStrLitType(provenance, lit.Value)
 	case *ast.NumLit:
-		t = NewNumLitType(lit.Value, provenance)
+		t = NewNumLitType(provenance, lit.Value)
 	case *ast.BoolLit:
-		t = NewBoolLitType(lit.Value, provenance)
+		t = NewBoolLitType(provenance, lit.Value)
 	case *ast.RegexLit:
 		// TODO: createa a separate type for regex literals
-		t, _ = NewRegexTypeWithPatternString(lit.Value, provenance)
+		t, _ = NewRegexTypeWithPatternString(provenance, lit.Value)
 	case *ast.BigIntLit:
-		t = NewBigIntLitType(lit.Value, provenance)
+		t = NewBigIntLitType(provenance, lit.Value)
 	case *ast.NullLit:
 		t = NewNullType(provenance)
 	case *ast.UndefinedLit:
@@ -2671,7 +2653,7 @@ func (c *Checker) inferPattern(
 				// it with the type annotation.
 				t, errors = c.inferTypeAnn(ctx, p.TypeAnn)
 			} else {
-				tvar := c.FreshVar(&ast.NodeProvenance{Node: pat})
+				tvar := c.FreshVar(provenance)
 				if p.Default != nil {
 					defaultType, defaultErrors := c.inferExpr(ctx, p.Default)
 					errors = append(errors, defaultErrors...)
@@ -2682,7 +2664,7 @@ func (c *Checker) inferPattern(
 
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &Binding{
-				Source:  &ast.NodeProvenance{Node: p},
+				Source:  provenance,
 				Type:    t,
 				Mutable: false, // TODO
 			}
@@ -2751,14 +2733,14 @@ func (c *Checker) inferPattern(
 					args[i] = argType
 					errors = append(errors, argErrors...)
 				}
-				t = NewExtractorType(binding.Type, args...)
+				t = NewExtractorType(provenance, binding.Type, args...)
 			} else {
 				t = NewNeverType(nil)
 			}
 		case *ast.RestPat:
 			argType, argErrors := inferPatRec(p.Pattern)
 			errors = append(errors, argErrors...)
-			t = NewRestSpreadType(argType)
+			t = NewRestSpreadType(provenance, argType)
 		case *ast.WildcardPat:
 			t = c.FreshVar(&ast.NodeProvenance{Node: pat})
 			errors = []Error{}
@@ -3003,15 +2985,15 @@ func (c *Checker) inferTypeAnn(
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
-			t = NewStrLitType(lit.Value, provenance)
+			t = NewStrLitType(provenance, lit.Value)
 		case *ast.NumLit:
-			t = NewNumLitType(lit.Value, provenance)
+			t = NewNumLitType(provenance, lit.Value)
 		case *ast.BoolLit:
-			t = NewBoolLitType(lit.Value, provenance)
+			t = NewBoolLitType(provenance, lit.Value)
 		case *ast.RegexLit:
-			t, _ = NewRegexTypeWithPatternString(lit.Value, provenance)
+			t, _ = NewRegexTypeWithPatternString(provenance, lit.Value)
 		case *ast.BigIntLit:
-			t = NewBigIntLitType(lit.Value, provenance)
+			t = NewBigIntLitType(provenance, lit.Value)
 		case *ast.NullLit:
 			t = NewNullType(provenance)
 		case *ast.UndefinedLit:

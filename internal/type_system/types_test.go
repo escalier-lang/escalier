@@ -132,13 +132,13 @@ func TestNewRegexType(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if test.expectPanic {
 				assert.Panics(t, func() {
-					_, _ = NewRegexTypeWithPatternString(test.pattern, nil)
+					_, _ = NewRegexTypeWithPatternString(nil, test.pattern)
 				})
 				return
 			}
 
 			// Test creation
-			result, err := NewRegexTypeWithPatternString(test.pattern, nil)
+			result, err := NewRegexTypeWithPatternString(nil, test.pattern)
 
 			if !test.shouldHaveRegex {
 				// For invalid patterns, expect an error and NeverType
@@ -185,9 +185,9 @@ func TestNewRegexType(t *testing.T) {
 
 func TestRegexType_Methods(t *testing.T) {
 	t.Run("Equal method", func(t *testing.T) {
-		regex1, _ := NewRegexTypeWithPatternString("/hello/", nil)
-		regex2, _ := NewRegexTypeWithPatternString("/hello/", nil)
-		regex3, _ := NewRegexTypeWithPatternString("/world/", nil)
+		regex1, _ := NewRegexTypeWithPatternString(nil, "/hello/")
+		regex2, _ := NewRegexTypeWithPatternString(nil, "/hello/")
+		regex3, _ := NewRegexTypeWithPatternString(nil, "/world/")
 
 		// Same pattern should be equal
 		assert.True(t, Equals(regex1, regex2))
@@ -200,14 +200,14 @@ func TestRegexType_Methods(t *testing.T) {
 	})
 
 	t.Run("String method", func(t *testing.T) {
-		regex, _ := NewRegexTypeWithPatternString("/hello/", nil)
+		regex, _ := NewRegexTypeWithPatternString(nil, "/hello/")
 		str := regex.String()
 		assert.NotEmpty(t, str)
 		assert.Contains(t, str, "hello")
 	})
 
 	t.Run("Provenance methods", func(t *testing.T) {
-		regex, _ := NewRegexTypeWithPatternString("/hello/", nil)
+		regex, _ := NewRegexTypeWithPatternString(nil, "/hello/")
 
 		// Initial provenance should be nil
 		assert.Nil(t, regex.Provenance())
@@ -218,13 +218,13 @@ func TestRegexType_Methods(t *testing.T) {
 
 func TestRegexType_CaptureGroups(t *testing.T) {
 	t.Run("no capture groups", func(t *testing.T) {
-		result, _ := NewRegexTypeWithPatternString("/hello/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/hello/")
 		regexType := result.(*RegexType)
 		assert.Empty(t, regexType.Groups)
 	})
 
 	t.Run("single named capture group", func(t *testing.T) {
-		result, _ := NewRegexTypeWithPatternString("/(?<word>hello)/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/(?<word>hello)/")
 		regexType := result.(*RegexType)
 		assert.Len(t, regexType.Groups, 1)
 		assert.Contains(t, regexType.Groups, "word")
@@ -232,7 +232,7 @@ func TestRegexType_CaptureGroups(t *testing.T) {
 	})
 
 	t.Run("multiple named capture groups", func(t *testing.T) {
-		result, _ := NewRegexTypeWithPatternString("/(?<first>\\w+)-(?<second>\\d+)/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/(?<first>\\w+)-(?<second>\\d+)/")
 		regexType := result.(*RegexType)
 		assert.Len(t, regexType.Groups, 2)
 		assert.Contains(t, regexType.Groups, "first")
@@ -242,7 +242,7 @@ func TestRegexType_CaptureGroups(t *testing.T) {
 	})
 
 	t.Run("mixed named and unnamed groups", func(t *testing.T) {
-		result, _ := NewRegexTypeWithPatternString("/(\\w+)-(?<id>\\d+)-(\\w+)/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/(\\w+)-(?<id>\\d+)-(\\w+)/")
 		regexType := result.(*RegexType)
 		// Only named groups should be in the Groups map
 		assert.Len(t, regexType.Groups, 1)
@@ -268,7 +268,7 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				result, _ := NewRegexTypeWithPatternString(test.pattern, nil)
+				result, _ := NewRegexTypeWithPatternString(nil, test.pattern)
 				regexType := result.(*RegexType)
 				assert.NotNil(t, regexType.Regex)
 			})
@@ -276,7 +276,7 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 	})
 
 	t.Run("named capture group conversion", func(t *testing.T) {
-		result, _ := NewRegexTypeWithPatternString("/(?<name>\\w+)/", nil)
+		result, _ := NewRegexTypeWithPatternString(nil, "/(?<name>\\w+)/")
 		regexType := result.(*RegexType)
 
 		// Verify the regex was created successfully

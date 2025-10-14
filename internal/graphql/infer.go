@@ -236,7 +236,7 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 					var enumTypes []Type
 					for _, v := range typeDef.EnumValues {
 						provenance := &GraphQLProvenance{Position: v.Position}
-						enumType := NewStrLitType(v.Name, provenance)
+						enumType := NewStrLitType(provenance, v.Name)
 						enumTypes = append(enumTypes, enumType)
 					}
 					baseType = NewUnionType(typeDefProvenance, enumTypes...)

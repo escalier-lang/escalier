@@ -408,7 +408,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						if name != "" {
 							groupErrors := c.unify(
 								ctx,
-								NewStrLitType(matches[i], nil),
+								NewStrLitType(nil, matches[i]),
 								// By default this will be a `string` type, but
 								// if the RegexType appears in a CondType's
 								// Extend field, it will be a TypeVarType.

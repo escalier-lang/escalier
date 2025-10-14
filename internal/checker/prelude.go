@@ -9,13 +9,13 @@ func Prelude(c *Checker) *Scope {
 
 	binArithType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
 			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
 		},
 		NewNumPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	binArithBinding := Binding{
 		Source:  nil,
@@ -25,13 +25,13 @@ func Prelude(c *Checker) *Scope {
 
 	binCompType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
 			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
 		},
 		NewBoolPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	binACompBinding := Binding{
 		Source:  nil,
@@ -41,13 +41,13 @@ func Prelude(c *Checker) *Scope {
 
 	binEqType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewAnyType(nil)),
 			NewFuncParam(NewIdentPat("b"), NewAnyType(nil)),
 		},
 		NewBoolPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	binEqBinding := Binding{
 		Source:  nil,
@@ -57,13 +57,13 @@ func Prelude(c *Checker) *Scope {
 
 	binLogicType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
 			NewFuncParam(NewIdentPat("b"), NewBoolPrimType(nil)),
 		},
 		NewBoolPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	binLogicBinding := Binding{
 		Source:  nil,
@@ -85,12 +85,12 @@ func Prelude(c *Checker) *Scope {
 
 	unaryLogicType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
 		},
 		NewBoolPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	unaryLogicBinding := Binding{
 		Source:  nil,
@@ -128,12 +128,12 @@ func Prelude(c *Checker) *Scope {
 		Name: NewStrKey("log"),
 		Fn: NewFuncType(
 			nil,
+			nil,
 			[]*FuncParam{
 				NewFuncParam(NewIdentPat("msg"), NewStrPrimType(nil)),
 			},
 			NewUndefinedType(nil),
 			NewNeverType(nil),
-			nil,
 		),
 		MutSelf: nil,
 	})
@@ -181,12 +181,12 @@ func Prelude(c *Checker) *Scope {
 	// Error constructor function
 	errorConstructorType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("message"), NewStrPrimType(nil)),
 		},
 		NewTypeRefType(nil, "Error", nil),
 		NewNeverType(nil),
-		nil,
 	)
 	errorConstructorBinding := Binding{
 		Source:  nil,
@@ -211,13 +211,13 @@ func Prelude(c *Checker) *Scope {
 	// String concatenation operator
 	strConcatType := NewFuncType(
 		nil,
+		nil,
 		[]*FuncParam{
 			NewFuncParam(NewIdentPat("a"), NewStrPrimType(nil)),
 			NewFuncParam(NewIdentPat("b"), NewStrPrimType(nil)),
 		},
 		NewStrPrimType(nil),
 		NewNeverType(nil),
-		nil,
 	)
 	strConcatBinding := Binding{
 		Source:  nil,
