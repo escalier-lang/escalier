@@ -14,7 +14,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexType("/^hello$/")
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -23,7 +23,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string does not match regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"world"`)
-		result, _ := NewRegexType("/^hello$/")
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -33,7 +33,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("string matches complex regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"123-456-7890"`)
-		result, _ := NewRegexType(`/^\d{3}-\d{3}-\d{4}$/`)
+		result, _ := NewRegexTypeWithPatternString(nil, `/^\d{3}-\d{3}-\d{4}$/`)
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -42,7 +42,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 
 	t.Run("case insensitive matching", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"HELLO"`)
-		result, _ := NewRegexType("/^hello$/i")
+		result, _ := NewRegexTypeWithPatternString(nil, "/^hello$/i")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -50,15 +50,15 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 	})
 
 	t.Run("invalid regex format", func(t *testing.T) {
-		result, err := NewRegexType("/invalid")
+		result, err := NewRegexTypeWithPatternString(nil, "/invalid")
 
 		assert.NotNil(t, err, "Expected error when regex format is invalid")
-		assert.IsType(t, NewNeverType(), result)
+		assert.IsType(t, NewNeverType(nil), result)
 	})
 
 	t.Run("regex with global flag", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
-		result, _ := NewRegexType("/hello/g")
+		result, _ := NewRegexTypeWithPatternString(nil, "/hello/g")
 		regexType := result.(*RegexType)
 
 		errors := checker.unify(ctx, strType, regexType)
@@ -105,7 +105,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 
 	t.Run("primitive type fails to unify with union not containing that type", func(t *testing.T) {
 		// Create a bigint primitive type
-		bigintType := &PrimType{Prim: BigIntPrim}
+		bigintType := NewBigIntPrimType(nil)
 
 		// Create a union type: string | number | boolean (no bigint)
 		unionType := test_util.ParseTypeAnn("string | number | boolean")
@@ -133,9 +133,9 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		union1 := test_util.ParseTypeAnn("string | number")
 
 		// Create another union type: boolean | bigint
-		bigintType := &PrimType{Prim: BigIntPrim}
-		booleanType := NewBoolType()
-		union2 := NewUnionType(booleanType, bigintType)
+		bigintType := NewBigIntPrimType(nil)
+		booleanType := NewBoolPrimType(nil)
+		union2 := NewUnionType(nil, booleanType, bigintType)
 
 		// Test unification - should fail because no types overlap
 		errors := checker.unify(ctx, union1, union2)
@@ -175,8 +175,8 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		innerUnion := test_util.ParseTypeAnn("string | number")
 
 		// Create outer union that includes the inner union: (string | number) | boolean
-		booleanType := NewBoolType()
-		outerUnion := NewUnionType(innerUnion, booleanType)
+		booleanType := NewBoolPrimType(nil)
+		outerUnion := NewUnionType(nil, innerUnion, booleanType)
 
 		// Test with number literal - should work with nested union
 		numLit := test_util.ParseTypeAnn("42")
@@ -385,7 +385,7 @@ func TestUnifyUnknownType(t *testing.T) {
 		errors = checker.unify(ctx, tupleType, unknownType)
 		assert.Empty(t, errors, "tuple type should be assignable to UnknownType")
 
-		unionType := NewUnionType(numberType, stringType)
+		unionType := NewUnionType(nil, numberType, stringType)
 		errors = checker.unify(ctx, unionType, unknownType)
 		assert.Empty(t, errors, "union type should be assignable to UnknownType")
 	})
@@ -503,10 +503,10 @@ func TestUnifyMutableTypes(t *testing.T) {
 	})
 
 	t.Run("nested mutable types should unify with exact same nesting", func(t *testing.T) {
-		numberType := NewNumType()
-		mutNumber := NewMutableType(numberType)
-		mutMutNumber1 := NewMutableType(mutNumber)
-		mutMutNumber2 := NewMutableType(NewMutableType(numberType))
+		numberType := NewNumPrimType(nil)
+		mutNumber := NewMutableType(nil, numberType)
+		mutMutNumber1 := NewMutableType(nil, mutNumber)
+		mutMutNumber2 := NewMutableType(nil, NewMutableType(nil, numberType))
 
 		errors := checker.unify(ctx, mutMutNumber1, mutMutNumber2)
 		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")

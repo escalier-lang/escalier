@@ -32,7 +32,7 @@ func (*InferTypeAnn) isTypeAnn()        {}
 func (*WildcardTypeAnn) isTypeAnn()     {}
 func (*TemplateLitTypeAnn) isTypeAnn()  {}
 func (*IntrinsicTypeAnn) isTypeAnn()    {}
-func (*ImportType) isTypeAnn()          {}
+func (*ImportTypeAnn) isTypeAnn()       {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
 func (*EmptyTypeAnn) isTypeAnn()        {}
@@ -537,7 +537,7 @@ func (t *IntrinsicTypeAnn) Accept(v Visitor) {
 	v.ExitTypeAnn(t)
 }
 
-type ImportType struct {
+type ImportTypeAnn struct {
 	Source       string
 	Qualifier    QualIdent // the import is like a namespace and the qualifier can be used to access imported symbols
 	TypeArgs     []TypeAnn
@@ -545,10 +545,10 @@ type ImportType struct {
 	inferredType Type
 }
 
-func NewImportType(source string, qualifier QualIdent, typeArgs []TypeAnn, span Span) *ImportType {
-	return &ImportType{Source: source, Qualifier: qualifier, TypeArgs: typeArgs, span: span, inferredType: nil}
+func NewImportType(source string, qualifier QualIdent, typeArgs []TypeAnn, span Span) *ImportTypeAnn {
+	return &ImportTypeAnn{Source: source, Qualifier: qualifier, TypeArgs: typeArgs, span: span, inferredType: nil}
 }
-func (t *ImportType) Accept(v Visitor) {
+func (t *ImportTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		for _, typeArg := range t.TypeArgs {
 			typeArg.Accept(v)

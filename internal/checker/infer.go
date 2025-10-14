@@ -140,7 +140,7 @@ func (c *Checker) InferComponent(
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig)
+			funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig, decl)
 			paramBindingsForDecl[declID] = paramBindings
 			errors = slices.Concat(errors, sigErrors)
 
@@ -183,10 +183,10 @@ func (c *Checker) InferComponent(
 				var constraintType Type
 				var defaultType Type
 				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar()
+					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
 				}
 				if typeParam.Default != nil {
-					defaultType = c.FreshVar()
+					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
 				}
 				typeParams[i] = &TypeParam{
 					Name:       typeParam.Name,
@@ -196,23 +196,23 @@ func (c *Checker) InferComponent(
 			}
 
 			typeAlias := &TypeAlias{
-				Type:       c.FreshVar(),
+				Type:       c.FreshVar(&ast.NodeProvenance{Node: decl}),
 				TypeParams: typeParams,
 			}
 
 			nsCtx.Scope.setTypeAlias(decl.Name.Name, typeAlias)
 		case *ast.ClassDecl:
-			instanceType := c.FreshVar()
+			instanceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
 			typeParams := make([]*TypeParam, len(decl.TypeParams))
 			for i, typeParam := range decl.TypeParams {
 				var constraintType Type
 				var defaultType Type
 				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar()
+					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
 				}
 				if typeParam.Default != nil {
-					defaultType = c.FreshVar()
+					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
 				}
 				typeParams[i] = &TypeParam{
 					Name:       typeParam.Name,
@@ -231,7 +231,7 @@ func (c *Checker) InferComponent(
 			declCtxMap[declID] = declCtx
 
 			for _, typeParam := range typeParams {
-				var t Type = NewUnknownType()
+				var t Type = NewUnknownType(nil)
 				if typeParam.Constraint != nil {
 					t = typeParam.Constraint
 				}
@@ -271,19 +271,19 @@ func (c *Checker) InferComponent(
 						// Static fields go to the class object type
 						staticElems = append(
 							staticElems,
-							NewPropertyElemType(*key, c.FreshVar()),
+							NewPropertyElem(*key, c.FreshVar(nil)),
 						)
 					} else {
 						// Instance fields go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewPropertyElemType(*key, c.FreshVar()),
+							NewPropertyElem(*key, c.FreshVar(nil)),
 						)
 					}
 				case *ast.MethodElem:
 					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -305,19 +305,19 @@ func (c *Checker) InferComponent(
 						// Static methods go to the class object type
 						staticElems = append(
 							staticElems,
-							NewMethodElemType(*key, methodType, nil), // static methods don't have self
+							NewMethodElem(*key, methodType, nil), // static methods don't have self
 						)
 					} else {
 						// Instance methods go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewMethodElemType(*key, methodType, elem.MutSelf),
+							NewMethodElem(*key, methodType, elem.MutSelf),
 						)
 					}
 				case *ast.GetterElem:
 					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -338,19 +338,19 @@ func (c *Checker) InferComponent(
 						// Static getters go to the class object type
 						staticElems = append(
 							staticElems,
-							NewGetterElemType(*key, funcType),
+							NewGetterElem(*key, funcType),
 						)
 					} else {
 						// Instance getters go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewGetterElemType(*key, funcType),
+							NewGetterElem(*key, funcType),
 						)
 					}
 				case *ast.SetterElem:
 					key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 					errors = slices.Concat(errors, keyErrors)
-					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig)
+					funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
 					errors = slices.Concat(errors, sigErrors)
 					if key == nil {
 						continue
@@ -371,13 +371,13 @@ func (c *Checker) InferComponent(
 						// Static setters go to the class object type
 						staticElems = append(
 							staticElems,
-							NewSetterElemType(*key, funcType),
+							NewSetterElem(*key, funcType),
 						)
 					} else {
 						// Instance setters go to the instance type
 						objTypeElems = append(
 							objTypeElems,
-							NewSetterElemType(*key, funcType),
+							NewSetterElem(*key, funcType),
 						)
 					}
 				default:
@@ -388,18 +388,10 @@ func (c *Checker) InferComponent(
 				}
 			}
 
-			objType := &ObjectType{
-				Elems:        objTypeElems,
-				Exact:        false,
-				Immutable:    false,
-				Mutable:      true,
-				Nominal:      true,
-				Interface:    false,
-				Extends:      []*TypeRefType{},
-				Implements:   []*TypeRefType{},
-				SymbolKeyMap: instanceSymbolKeyMap,
-			}
-			objType.SetProvenance(&ast.NodeProvenance{Node: decl})
+			provenance := &ast.NodeProvenance{Node: decl}
+			objType := NewObjectType(provenance, objTypeElems)
+			objType.Nominal = true
+			objType.SymbolKeyMap = instanceSymbolKeyMap
 
 			// TODO: call c.bind() directly
 			unifyErrors := c.unify(ctx, instanceType, objType)
@@ -411,35 +403,24 @@ func (c *Checker) InferComponent(
 
 			typeArgs := make([]Type, len(typeParams))
 			for i := range typeParams {
-				typeArgs[i] = NewTypeRefType(typeParams[i].Name, nil)
+				typeArgs[i] = NewTypeRefType(nil, typeParams[i].Name, nil)
 			}
 
-			funcType := &FuncType{
-				TypeParams: typeParams,
-				Params:     params,
-				Return:     NewTypeRefType(decl.Name.Name, typeAlias, typeArgs...),
-				Throws:     NewNeverType(),
-			}
-
-			funcType.SetProvenance(&ast.NodeProvenance{Node: decl})
+			funcType := NewFuncType(
+				provenance,
+				typeParams,
+				params,
+				NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
+				NewNeverType(nil),
+			)
 
 			// Create an object type with a constructor element and static methods/properties
-			constructorElem := &ConstructorElemType{Fn: funcType}
+			constructorElem := &ConstructorElem{Fn: funcType}
 			classObjTypeElems := []ObjTypeElem{constructorElem}
 			classObjTypeElems = append(classObjTypeElems, staticElems...)
 
-			classObjType := &ObjectType{
-				Elems:        classObjTypeElems,
-				Exact:        false,
-				Immutable:    false,
-				Mutable:      false,
-				Nominal:      true,
-				Interface:    false,
-				Extends:      []*TypeRefType{},
-				Implements:   []*TypeRefType{},
-				SymbolKeyMap: staticSymbolKeyMap,
-			}
-			classObjType.SetProvenance(&ast.NodeProvenance{Node: decl})
+			classObjType := NewObjectType(provenance, classObjTypeElems)
+			classObjType.SymbolKeyMap = staticSymbolKeyMap
 
 			ctor := &Binding{
 				Source:  &ast.NodeProvenance{Node: decl},
@@ -533,7 +514,7 @@ func (c *Checker) InferComponent(
 			for i, bodyElem := range decl.Body {
 				switch bodyElem := bodyElem.(type) {
 				case *ast.FieldElem:
-					var prop *PropertyElemType
+					var prop *PropertyElem
 					var isStatic bool = bodyElem.Static
 
 					// Find the corresponding property in either instance or class type
@@ -548,7 +529,7 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if astKey != nil {
 						for _, elem := range targetType.Elems {
-							if propElem, ok := elem.(*PropertyElemType); ok {
+							if propElem, ok := elem.(*PropertyElem); ok {
 								if propElem.Name == *astKey {
 									prop = propElem
 									break
@@ -587,7 +568,7 @@ func (c *Checker) InferComponent(
 					}
 
 				case *ast.MethodElem:
-					var methodType *MethodElemType
+					var methodType *MethodElem
 					var isStatic bool = bodyElem.Static
 
 					// Find the corresponding method in either instance or class type
@@ -602,7 +583,7 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if astKey != nil {
 						for _, elem := range targetType.Elems {
-							if methodElem, ok := elem.(*MethodElemType); ok {
+							if methodElem, ok := elem.(*MethodElem); ok {
 								if methodElem.Name == *astKey {
 									methodType = methodElem
 									break
@@ -619,9 +600,9 @@ func (c *Checker) InferComponent(
 							// We use the name of the class as the type here to avoid
 							// a RecursiveUnificationError.
 							// TODO: handle generic classes
-							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+							var t Type = NewTypeRefType(nil, decl.Name.Name, typeAlias)
 							if methodType.MutSelf != nil && *methodType.MutSelf {
-								t = NewMutableType(t)
+								t = NewMutableType(nil, t)
 							}
 
 							paramBindings["self"] = &Binding{
@@ -647,7 +628,7 @@ func (c *Checker) InferComponent(
 					}
 
 				case *ast.GetterElem:
-					var getterType *GetterElemType
+					var getterType *GetterElem
 					var isStatic bool = bodyElem.Static
 
 					// Find the corresponding getter in either instance or class type
@@ -662,7 +643,7 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if astKey != nil {
 						for _, elem := range targetType.Elems {
-							if getterElem, ok := elem.(*GetterElemType); ok {
+							if getterElem, ok := elem.(*GetterElem); ok {
 								if getterElem.Name == *astKey {
 									getterType = getterElem
 									break
@@ -679,7 +660,7 @@ func (c *Checker) InferComponent(
 							// We use the name of the class as the type here to avoid
 							// a RecursiveUnificationError.
 							// TODO: handle generic classes
-							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+							var t Type = NewTypeRefType(nil, decl.Name.Name, typeAlias)
 
 							paramBindings["self"] = &Binding{
 								Source:  &ast.NodeProvenance{Node: bodyElem},
@@ -706,7 +687,7 @@ func (c *Checker) InferComponent(
 					}
 
 				case *ast.SetterElem:
-					var setterType *SetterElemType
+					var setterType *SetterElem
 					var isStatic bool = bodyElem.Static
 
 					// Find the corresponding setter in either instance or class type
@@ -721,7 +702,7 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, keyErrors)
 					if astKey != nil {
 						for _, elem := range targetType.Elems {
-							if setterElem, ok := elem.(*SetterElemType); ok {
+							if setterElem, ok := elem.(*SetterElem); ok {
 								if setterElem.Name == *astKey {
 									setterType = setterElem
 									break
@@ -738,9 +719,9 @@ func (c *Checker) InferComponent(
 							// We use the name of the class as the type here to avoid
 							// a RecursiveUnificationError.
 							// TODO: handle generic classes
-							var t Type = NewTypeRefType(decl.Name.Name, typeAlias)
+							var t Type = NewTypeRefType(nil, decl.Name.Name, typeAlias)
 							// Setters typically need mutable self to modify the instance
-							t = NewMutableType(t)
+							t = NewMutableType(nil, t)
 
 							paramBindings["self"] = &Binding{
 								Source:  &ast.NodeProvenance{Node: bodyElem},
@@ -845,7 +826,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (map[string]*Bind
 func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	errors := []Error{}
 
-	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig)
+	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig, decl)
 	errors = slices.Concat(errors, sigErrors)
 
 	// For declared functions, we don't have a body to infer from
@@ -859,7 +840,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 					promiseAlias := ctx.Scope.getTypeAlias("Promise")
 					if promiseAlias != nil {
 						// Update the function type to have Promise<T, never>
-						newPromiseType := NewTypeRefType("Promise", promiseAlias, promiseType.TypeArgs[0], NewNeverType())
+						newPromiseType := NewTypeRefType(nil, "Promise", promiseAlias, promiseType.TypeArgs[0], NewNeverType(nil))
 						funcType.Return = newPromiseType
 					}
 				} else if len(promiseType.TypeArgs) >= 2 {
@@ -910,18 +891,19 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		// Handle generic functions by replacing type refs with fresh type variables
 		if len(fnType.TypeParams) > 0 {
 			// Create a copy of the function type without type params
-			fnTypeWithoutParams := &FuncType{
-				TypeParams: []*TypeParam{},
-				Params:     fnType.Params,
-				Return:     fnType.Return,
-				Throws:     fnType.Throws,
-			}
+			fnTypeWithoutParams := NewFuncType(
+				&TypeProvenance{Type: fnType},
+				nil,
+				fnType.Params,
+				fnType.Return,
+				fnType.Throws,
+			)
 
 			// Create fresh type variables for each type parameter
 			substitutions := make(map[string]Type)
 			for _, typeParam := range fnType.TypeParams {
 				// TODO: handle defaults
-				t := c.FreshVar()
+				t := c.FreshVar(nil)
 				if typeParam.Constraint != nil {
 					t.Constraint = typeParam.Constraint
 				}
@@ -946,7 +928,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			// Function has rest parameters
 			// Must have at least as many args as required parameters (before rest)
 			if len(expr.Args) < restIndex {
-				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 					Callee: fnType,
 					Args:   expr.Args,
 				}}
@@ -974,7 +956,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					}
 				} else {
 					// Rest parameter is not Array<T>, this is an error
-					return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 						Callee: fnType,
 						Args:   expr.Args,
 					}}
@@ -985,7 +967,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		} else {
 			// Function has no rest parameters, use strict equality check
 			if len(fnType.Params) != len(expr.Args) {
-				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 					Callee: fnType,
 					Args:   expr.Args,
 				}}
@@ -1004,34 +986,35 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		var fnTypeToUse *FuncType = nil
 
 		for _, elem := range objType.Elems {
-			if constructorElem, ok := elem.(*ConstructorElemType); ok {
+			if constructorElem, ok := elem.(*ConstructorElem); ok {
 				fnTypeToUse = constructorElem.Fn
 				break
-			} else if callableElem, ok := elem.(*CallableElemType); ok {
+			} else if callableElem, ok := elem.(*CallableElem); ok {
 				fnTypeToUse = callableElem.Fn
 				break
 			}
 		}
 
 		if fnTypeToUse == nil {
-			return NewNeverType(), []Error{
+			return NewNeverType(nil), []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 
 		// Handle generic functions by replacing type refs with fresh type variables
 		if len(fnTypeToUse.TypeParams) > 0 {
 			// Create a copy of the function type without type params
-			fnTypeWithoutParams := &FuncType{
-				TypeParams: []*TypeParam{},
-				Params:     fnTypeToUse.Params,
-				Return:     fnTypeToUse.Return,
-				Throws:     fnTypeToUse.Throws,
-			}
+			fnTypeWithoutParams := NewFuncType(
+				&TypeProvenance{Type: fnTypeToUse},
+				nil,
+				fnTypeToUse.Params,
+				fnTypeToUse.Return,
+				fnTypeToUse.Throws,
+			)
 
 			// Create fresh type variables for each type parameter
 			substitutions := make(map[string]Type)
 			for _, typeParam := range fnTypeToUse.TypeParams {
-				substitutions[typeParam.Name] = c.FreshVar()
+				substitutions[typeParam.Name] = c.FreshVar(nil)
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
@@ -1054,7 +1037,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			// Function has rest parameters
 			// Must have at least as many args as required parameters (before rest)
 			if len(expr.Args) < restIndex {
-				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 					Callee: fnTypeToUse,
 					Args:   expr.Args,
 				}}
@@ -1082,7 +1065,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					}
 				} else {
 					// Rest parameter is not Array<T>, this is an error
-					return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+					return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 						Callee: fnTypeToUse,
 						Args:   expr.Args,
 					}}
@@ -1093,7 +1076,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		} else {
 			// Function has no rest parameters, use strict equality check
 			if len(fnTypeToUse.Params) != len(expr.Args) {
-				return NewNeverType(), []Error{&InvalidNumberOfArgumentsError{
+				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
 					Callee: fnTypeToUse,
 					Args:   expr.Args,
 				}}
@@ -1108,7 +1091,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			}
 		}
 	} else {
-		return NewNeverType(), []Error{
+		return NewNeverType(nil), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 	}
 }
@@ -1117,9 +1100,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 	var resultType Type
 	var errors []Error
 
+	provenance := &ast.NodeProvenance{Node: expr}
+
 	switch expr := expr.(type) {
 	case *ast.BinaryExpr:
-		neverType := NewNeverType()
+		neverType := NewNeverType(nil)
 
 		if expr.Op == ast.Assign {
 			// TODO: check if expr.Left is a valid lvalue
@@ -1198,24 +1183,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		if expr.Op == ast.UnaryMinus {
 			if lit, ok := expr.Arg.(*ast.LiteralExpr); ok {
 				if num, ok := lit.Lit.(*ast.NumLit); ok {
-					resultType = NewLitType(&NumLit{Value: num.Value * -1})
+					resultType = NewNumLitType(provenance, -num.Value)
 					errors = []Error{}
 				} else {
-					resultType = NewNeverType()
+					resultType = NewNeverType(nil)
 					errors = []Error{&UnimplementedError{
 						message: "Handle unary operators",
 						span:    expr.Span(),
 					}}
 				}
 			} else {
-				resultType = NewNeverType()
+				resultType = NewNeverType(nil)
 				errors = []Error{&UnimplementedError{
 					message: "Handle unary operators",
 					span:    expr.Span(),
 				}}
 			}
 		} else {
-			resultType = NewNeverType()
+			resultType = NewNeverType(nil)
 			errors = []Error{&UnimplementedError{
 				message: "Handle unary operators",
 				span:    expr.Span(),
@@ -1260,12 +1245,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			expr.Source = binding.Source
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
-			t := &NamespaceType{Namespace: namespace}
-			t.SetProvenance(&ast.NodeProvenance{Node: expr})
+			t := NewNamespaceType(provenance, namespace)
 			resultType = t
 			errors = nil
 		} else {
-			resultType = NewNeverType()
+			resultType = NewNeverType(nil)
 			errors = []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
 		}
 	case *ast.LiteralExpr:
@@ -1278,7 +1262,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			types[i] = elemType
 			errors = slices.Concat(errors, elemErrors)
 		}
-		resultType = NewTupleType(types...)
+		resultType = NewTupleType(provenance, types...)
 	case *ast.ObjectExpr:
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
@@ -1287,7 +1271,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		types := make([]Type, len(expr.Elems))
 		paramBindingsSlice := make([]map[string]*Binding, len(expr.Elems))
 
-		selfType := c.FreshVar()
+		selfType := c.FreshVar(nil)
 		selfTypeAlias := TypeAlias{Type: selfType, TypeParams: []*TypeParam{}}
 		objCtx.Scope.setTypeAlias("Self", &selfTypeAlias)
 
@@ -1299,42 +1283,42 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					t := c.FreshVar()
+					t := c.FreshVar(&ast.NodeProvenance{Node: elem})
 					types[i] = t
-					typeElems[i] = NewPropertyElemType(*key, t)
+					typeElems[i] = NewPropertyElem(*key, t)
 				}
 			case *ast.MethodExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					methodCtxs[i] = methodCtx
 					paramBindingsSlice[i] = paramBindings
 					types[i] = methodType
-					typeElems[i] = NewMethodElemType(*key, methodType, elem.MutSelf)
+					typeElems[i] = NewMethodElem(*key, methodType, elem.MutSelf)
 				}
 			case *ast.GetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &GetterElemType{Fn: funcType, Name: *key}
+					typeElems[i] = &GetterElem{Fn: funcType, Name: *key}
 				}
 			case *ast.SetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
-					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig)
+					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &SetterElemType{Fn: funcType, Name: *key}
+					typeElems[i] = &SetterElem{Fn: funcType, Name: *key}
 				}
 			}
 		}
 
-		objType := NewObjectType(typeElems)
+		objType := NewObjectType(provenance, typeElems)
 		bindErrors := c.bind(objCtx, selfType, objType)
 		errors = slices.Concat(errors, bindErrors)
 
@@ -1355,7 +1339,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 							unifyErrors := c.unify(objCtx, binding.Type, t)
 							errors = slices.Concat(errors, unifyErrors)
 						} else {
-							unifyErrors := c.unify(objCtx, NewNeverType(), t)
+							unifyErrors := c.unify(objCtx, NewNeverType(nil), t)
 							errors = slices.Concat(errors, unifyErrors)
 
 							errors = append(
@@ -1372,9 +1356,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				paramBindings := paramBindingsSlice[i]
 
 				if methodExpr.MutSelf != nil {
-					var selfType Type = NewTypeRefType("Self", &selfTypeAlias)
+					var selfType Type = NewTypeRefType(nil, "Self", &selfTypeAlias)
 					if *methodExpr.MutSelf {
-						selfType = NewMutableType(selfType)
+						selfType = NewMutableType(nil, selfType)
 					}
 					paramBindings["self"] = &Binding{
 						Source:  &ast.NodeProvenance{Node: expr},
@@ -1392,7 +1376,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &Binding{
 					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    NewTypeRefType("Self", &selfTypeAlias),
+					Type:    NewTypeRefType(nil, "Self", &selfTypeAlias),
 					Mutable: false, // `self` cannot be reassigned
 				}
 
@@ -1406,7 +1390,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &Binding{
 					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    NewMutableType(NewTypeRefType("Self", &selfTypeAlias)),
+					Type:    NewMutableType(nil, NewTypeRefType(nil, "Self", &selfTypeAlias)),
 					Mutable: false, // `self` cannot be reassigned
 				}
 
@@ -1421,7 +1405,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		resultType = selfType
 	case *ast.FuncExpr:
-		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig)
+		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
 
 		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
@@ -1439,7 +1423,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		_, argErrors := c.inferExpr(ctx, expr.Arg)
 		errors = argErrors
 		// Throw expressions have type never since they don't return a value
-		resultType = NewNeverType()
+		resultType = NewNeverType(nil)
 	case *ast.AwaitExpr:
 		// Await can only be used inside async functions
 		if !ctx.IsAsync {
@@ -1449,7 +1433,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					span:    expr.Span(),
 				},
 			}
-			resultType = NewNeverType()
+			resultType = NewNeverType(nil)
 		} else {
 			// Infer the type of the expression being awaited
 			argType, argErrors := c.inferExpr(ctx, expr.Arg)
@@ -1462,7 +1446,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					resultType = promiseType.TypeArgs[0]  // T
 					expr.Throws = promiseType.TypeArgs[1] // E (store for throw inference)
 				} else {
-					resultType = NewNeverType()
+					resultType = NewNeverType(nil)
 				}
 			} else {
 				// If not a Promise type, this is an error
@@ -1470,7 +1454,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					message: "await expression expects a Promise type",
 					span:    expr.Span(),
 				})
-				resultType = NewNeverType()
+				resultType = NewNeverType(nil)
 			}
 		}
 	case *ast.TaggedTemplateLitExpr:
@@ -1514,7 +1498,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 			// `TypedDocumentNode<ResultType, VariablesType>`
 			// TODO: Look up `TypedDocumentNode` from `@graphql-typed-document-node/core`
-			t := NewTypeRefType("TypedDocumentNode", nil, result.ResultType, result.VariablesType)
+			t := NewTypeRefType(provenance, "TypedDocumentNode", nil, result.ResultType, result.VariablesType)
 			return t, nil
 		}
 
@@ -1540,7 +1524,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		// The result type is the target type
 		resultType = targetType
 	default:
-		resultType = NewNeverType()
+		resultType = NewNeverType(nil)
 		errors = []Error{
 			&UnimplementedError{
 				message: "Infer expression type: " + fmt.Sprintf("%T", expr),
@@ -1592,7 +1576,7 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, t.Name)
 		if typeAlias == nil {
 			v.errors = append(v.errors, &UnknownTypeError{TypeName: t.Name, typeRef: t})
-			neverType := NewNeverType()
+			neverType := NewNeverType(nil)
 			neverType.SetProvenance(&TypeProvenance{Type: t})
 			return neverType
 		}
@@ -1629,7 +1613,7 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 						expandedTypes[i] = v.checker.substituteTypeParams(typeAlias.Type, substitutionSet)
 					}
 					// Create a union type of all expanded types
-					expandedType = NewUnionType(expandedTypes...)
+					expandedType = NewUnionType(nil, expandedTypes...)
 				} else {
 					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 					expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
@@ -1658,6 +1642,7 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 		maps.Copy(inferSubs, groupSubs)
 
 		return NewCondType(
+			t.Provenance(),
 			t.Check,
 			extendsType,
 			v.checker.substituteTypeParams(t.Then, inferSubs),
@@ -1696,7 +1681,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		if len(filteredTypes) == len(t.Types) {
 			return nil // No filtering needed, return nil to let Accept handle it
 		}
-		return NewUnionType(filteredTypes...)
+		return NewUnionType(nil, filteredTypes...)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -1767,19 +1752,19 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 	case *TypeRefType:
 		// Handle Array access
 		if indexKey, ok := key.(IndexKey); ok && t.Name == "Array" {
-			unifyErrors := c.unify(ctx, indexKey.Type, NewNumType())
+			unifyErrors := c.unify(ctx, indexKey.Type, NewNumPrimType(nil))
 			errors = slices.Concat(errors, unifyErrors)
 			return t.TypeArgs[0], errors
 		} else if _, ok := key.(IndexKey); ok && t.Name == "Array" {
 			errors = append(errors, &ExpectedArrayError{Type: t})
-			return NewNeverType(), errors
+			return NewNeverType(nil), errors
 		}
 
 		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
 		if t.Name == "Error" {
 			// Built-in Error type doesn't support property access directly
 			errors = append(errors, &ExpectedObjectError{Type: objType})
-			return NewNeverType(), errors
+			return NewNeverType(nil), errors
 		}
 
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
@@ -1801,7 +1786,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 							Length: len(t.Elems),
 							span:   indexKey.Span,
 						})
-						return NewNeverType(), errors
+						return NewNeverType(nil), errors
 					}
 				}
 			}
@@ -1809,11 +1794,11 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 				Key:  indexKey.Type,
 				span: indexKey.Span,
 			})
-			return NewNeverType(), errors
+			return NewNeverType(nil), errors
 		}
 		// TupleType doesn't support property access
 		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	case *ObjectType:
 		return c.getObjectAccess(t, key, errors)
 	case *UnionType:
@@ -1823,22 +1808,22 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 			if value := t.Namespace.Values[propKey.Name]; value != nil {
 				return value.Type, errors
 			} else if namespace := t.Namespace.Namespaces[propKey.Name]; namespace != nil {
-				return &NamespaceType{Namespace: namespace}, errors
+				return NewNamespaceType(nil, namespace), errors
 			} else {
 				errors = append(errors, &UnknownPropertyError{
 					ObjectType: objType,
 					Property:   propKey.Name,
 					span:       propKey.Span,
 				})
-				return NewNeverType(), errors
+				return NewNeverType(nil), errors
 			}
 		}
 		// NamespaceType doesn't support index access
 		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	}
 }
 
@@ -1846,7 +1831,7 @@ func (c *Checker) expandTypeRef(ctx Context, t *TypeRefType) (Type, []Error) {
 	// Resolve the type alias
 	typeAlias := c.resolveQualifiedTypeAliasFromString(ctx, t.Name)
 	if typeAlias == nil {
-		return NewNeverType(), []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
+		return NewNeverType(nil), []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
 	}
 
 	// Expand the type alias
@@ -1867,28 +1852,28 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 	case PropertyKey:
 		for _, elem := range objType.Elems {
 			switch elem := elem.(type) {
-			case *PropertyElemType:
+			case *PropertyElem:
 				if elem.Name == NewStrKey(k.Name) {
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
 					}
 					return propType, errors
 				}
-			case *MethodElemType:
+			case *MethodElem:
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn, errors
 				}
-			case *GetterElemType:
+			case *GetterElem:
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn.Return, errors
 				}
-			case *SetterElemType:
+			case *SetterElem:
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn.Params[0].Type, errors
 				}
-			case *ConstructorElemType:
-			case *CallableElemType:
+			case *ConstructorElem:
+			case *CallableElem:
 				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -1899,21 +1884,21 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 			Property:   k.Name,
 			span:       k.Span,
 		})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	case IndexKey:
 		if indexLit, ok := k.Type.(*LitType); ok {
 			if strLit, ok := indexLit.Lit.(*StrLit); ok {
 				for _, elem := range objType.Elems {
 					switch elem := elem.(type) {
-					case *PropertyElemType:
+					case *PropertyElem:
 						if elem.Name == NewStrKey(strLit.Value) {
 							propType := elem.Value
 							if elem.Optional {
-								propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+								propType = NewUnionType(nil, propType, NewUndefinedType(nil))
 							}
 							return propType, errors
 						}
-					case *MethodElemType:
+					case *MethodElem:
 						if elem.Name == NewStrKey(strLit.Value) {
 							return elem.Fn, errors
 						}
@@ -1927,10 +1912,10 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 			Key:  k.Type,
 			span: k.Span,
 		})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	}
 }
 
@@ -1965,7 +1950,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 	undefinedCount := len(unionType.Types) - len(definedElems)
 	if undefinedCount == 0 {
 		errors = append(errors, &ExpectedObjectError{Type: unionType})
-		return NewNeverType(), errors
+		return NewNeverType(nil), errors
 	}
 
 	if len(definedElems) == 1 {
@@ -1975,12 +1960,12 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
 			errors = append(errors, &ExpectedObjectError{Type: unionType})
-			return NewNeverType(), errors
+			return NewNeverType(nil), errors
 		}
 
 		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
 		errors = slices.Concat(errors, pErrors)
-		propType := NewUnionType(pType, NewLitType(&UndefinedLit{}))
+		propType := NewUnionType(nil, pType, NewUndefinedType(nil))
 		return propType, errors
 	}
 
@@ -1988,7 +1973,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 		panic("TODO: handle getting property from union type with multiple defined elements")
 	}
 
-	return NewNeverType(), errors
+	return NewNeverType(nil), errors
 }
 
 func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*ObjTypeKey, []Error) {
@@ -2057,19 +2042,19 @@ func (c *Checker) inferBlock(ctx Context, block *ast.Block, defaultType Type) (T
 
 func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error) {
 	condType, condErrors := c.inferExpr(ctx, expr.Cond)
-	unifyErrors := c.unify(ctx, condType, NewBoolType())
+	unifyErrors := c.unify(ctx, condType, NewBoolPrimType(nil))
 	errors := slices.Concat(condErrors, unifyErrors)
 
 	// Infer the consequent block
-	consType, consErrors := c.inferBlock(ctx, &expr.Cons, NewNeverType())
+	consType, consErrors := c.inferBlock(ctx, &expr.Cons, NewNeverType(nil))
 	errors = slices.Concat(errors, consErrors)
 
-	var altType Type = NewNeverType()
+	var altType Type = NewNeverType(nil)
 	if expr.Alt != nil {
 		alt := expr.Alt
 		if alt.Block != nil {
 			var altErrors []Error
-			altType, altErrors = c.inferBlock(ctx, alt.Block, NewNeverType())
+			altType, altErrors = c.inferBlock(ctx, alt.Block, NewNeverType(nil))
 			errors = slices.Concat(errors, altErrors)
 		} else if alt.Expr != nil {
 			t, altErrors := c.inferExpr(ctx, alt.Expr)
@@ -2080,7 +2065,7 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 		}
 	}
 
-	t := NewUnionType(consType, altType)
+	t := NewUnionType(nil, consType, altType)
 	expr.SetInferredType(t)
 
 	return t, errors
@@ -2088,7 +2073,7 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (Type, []Error)
 
 func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (Type, []Error) {
 	// Infer the body block - default to undefined if no expression at the end
-	resultType, errors := c.inferBlock(ctx, &expr.Body, NewLitType(&UndefinedLit{}))
+	resultType, errors := c.inferBlock(ctx, &expr.Body, NewUndefinedType(nil))
 
 	expr.SetInferredType(resultType)
 	return resultType, errors
@@ -2128,7 +2113,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 			guardType, guardErrors := c.inferExpr(caseCtx, matchCase.Guard)
 			errors = slices.Concat(errors, guardErrors)
 
-			guardUnifyErrors := c.unify(caseCtx, guardType, NewBoolType())
+			guardUnifyErrors := c.unify(caseCtx, guardType, NewBoolPrimType(nil))
 			errors = slices.Concat(errors, guardUnifyErrors)
 		}
 
@@ -2137,7 +2122,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 		if matchCase.Body.Block != nil {
 			// Handle block body using the helper function
 			var caseErrors []Error
-			caseType, caseErrors = c.inferBlock(caseCtx, matchCase.Body.Block, NewLitType(&UndefinedLit{}))
+			caseType, caseErrors = c.inferBlock(caseCtx, matchCase.Body.Block, NewUndefinedType(nil))
 			errors = slices.Concat(errors, caseErrors)
 		} else if matchCase.Body.Expr != nil {
 			// Handle expression body
@@ -2146,14 +2131,14 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (Type, []Erro
 			errors = slices.Concat(errors, caseErrors)
 		} else {
 			// This shouldn't happen with a well-formed AST
-			caseType = NewNeverType()
+			caseType = NewNeverType(nil)
 		}
 
 		caseTypes = append(caseTypes, caseType)
 	}
 
 	// The type of the match expression is the union of all case types
-	resultType := NewUnionType(caseTypes...)
+	resultType := NewUnionType(nil, caseTypes...)
 
 	expr.SetInferredType(resultType)
 	return resultType, errors
@@ -2221,7 +2206,7 @@ func (c *Checker) inferFuncParams(
 
 		var typeAnn Type
 		if param.TypeAnn == nil {
-			typeAnn = c.FreshVar()
+			typeAnn = c.FreshVar(nil)
 		} else {
 			var typeAnnErrors []Error
 			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
@@ -2250,9 +2235,12 @@ func (c *Checker) inferFuncParams(
 // - the new context with type parameters in scope
 // - a map of parameter bindings
 // - any errors encountered during inference
+// TODO: Accept an ast.Node parameter so that we can set provenance on the
+// inferred type.
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
+	node ast.Node,
 ) (*FuncType, Context, map[string]*Binding, []Error) {
 	errors := []Error{}
 
@@ -2283,7 +2271,7 @@ func (c *Checker) inferFuncSig(
 		}
 		typeParams = append(typeParams, typeParam)
 
-		var t Type = NewUnknownType()
+		var t Type = NewUnknownType(nil)
 		if typeParam.Constraint != nil {
 			t = typeParam.Constraint
 		}
@@ -2299,7 +2287,7 @@ func (c *Checker) inferFuncSig(
 
 	var returnType Type
 	if sig.Return == nil {
-		returnType = c.FreshVar()
+		returnType = c.FreshVar(nil)
 	} else {
 		var returnErrors []Error
 		returnType, returnErrors = c.inferTypeAnn(funcCtx, sig.Return)
@@ -2311,7 +2299,7 @@ func (c *Checker) inferFuncSig(
 		// If no throws clause is specified, we use a fresh type variable which
 		// will be unified later if any throw expressions are found in the
 		// function body.
-		throwsType = c.FreshVar()
+		throwsType = c.FreshVar(nil)
 	} else {
 		var throwsErrors []Error
 		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
@@ -2326,13 +2314,13 @@ func (c *Checker) inferFuncSig(
 		if promiseType, ok := returnType.(*TypeRefType); ok && promiseType.Name == "Promise" {
 			// User explicitly specified Promise<T, E>, use it as-is
 			finalReturnType = returnType
-			finalThrowsType = NewNeverType() // Async functions don't throw directly
+			finalThrowsType = NewNeverType(nil) // Async functions don't throw directly
 		} else {
 			// User didn't specify Promise, wrap the return type
 			promiseAlias := ctx.Scope.getTypeAlias("Promise")
 			if promiseAlias != nil {
-				finalReturnType = NewTypeRefType("Promise", promiseAlias, returnType, throwsType)
-				finalThrowsType = NewNeverType() // Async functions don't throw directly
+				finalReturnType = NewTypeRefType(nil, "Promise", promiseAlias, returnType, throwsType)
+				finalThrowsType = NewNeverType(nil) // Async functions don't throw directly
 			} else {
 				// Fallback if Promise type is not available
 				finalReturnType = returnType
@@ -2344,12 +2332,13 @@ func (c *Checker) inferFuncSig(
 		finalThrowsType = throwsType
 	}
 
-	t := &FuncType{
-		Params:     params,
-		Return:     finalReturnType,
-		Throws:     finalThrowsType,
-		TypeParams: typeParams,
-	}
+	t := NewFuncType(
+		&ast.NodeProvenance{Node: node},
+		typeParams,
+		params,
+		finalReturnType,
+		finalThrowsType,
+	)
 
 	return t, funcCtx, bindings, errors
 }
@@ -2558,12 +2547,12 @@ func (c *Checker) inferFuncBody(
 	if len(returnTypes) == 1 {
 		returnType = returnTypes[0]
 	} else if len(returnTypes) > 1 {
-		returnType = NewUnionType(returnTypes...)
+		returnType = NewUnionType(nil, returnTypes...)
 	} else {
-		returnType = NewLitType(&UndefinedLit{})
+		returnType = NewUndefinedType(nil)
 	}
 
-	throwType := NewUnionType(throwTypes...)
+	throwType := NewUnionType(nil, throwTypes...)
 
 	return returnType, throwType, errors
 }
@@ -2617,30 +2606,30 @@ func patToPat(p ast.Pat) Pat {
 }
 
 func (c *Checker) inferLit(lit ast.Lit) (Type, []Error) {
+	provenance := &ast.NodeProvenance{Node: lit}
+
 	var t Type
 	errors := []Error{}
 	switch lit := lit.(type) {
 	case *ast.StrLit:
-		t = NewLitType(&StrLit{Value: lit.Value})
+		t = NewStrLitType(provenance, lit.Value)
 	case *ast.NumLit:
-		t = NewLitType(&NumLit{Value: lit.Value})
+		t = NewNumLitType(provenance, lit.Value)
 	case *ast.BoolLit:
-		t = NewLitType(&BoolLit{Value: lit.Value})
+		t = NewBoolLitType(provenance, lit.Value)
 	case *ast.RegexLit:
 		// TODO: createa a separate type for regex literals
-		t, _ = NewRegexType(lit.Value)
+		t, _ = NewRegexTypeWithPatternString(provenance, lit.Value)
 	case *ast.BigIntLit:
-		t = NewLitType(&BigIntLit{Value: lit.Value})
+		t = NewBigIntLitType(provenance, lit.Value)
 	case *ast.NullLit:
-		t = NewLitType(&NullLit{})
+		t = NewNullType(provenance)
 	case *ast.UndefinedLit:
-		t = NewLitType(&UndefinedLit{})
+		t = NewUndefinedType(provenance)
 	default:
 		panic(fmt.Sprintf("Unknown literal type: %T", lit))
 	}
-	t.SetProvenance(&ast.NodeProvenance{
-		Node: lit,
-	})
+
 	return t, errors
 }
 
@@ -2655,6 +2644,7 @@ func (c *Checker) inferPattern(
 	inferPatRec = func(pat ast.Pat) (Type, []Error) {
 		var t Type
 		var errors []Error
+		provenance := &ast.NodeProvenance{Node: pat}
 
 		switch p := pat.(type) {
 		case *ast.IdentPat:
@@ -2663,7 +2653,7 @@ func (c *Checker) inferPattern(
 				// it with the type annotation.
 				t, errors = c.inferTypeAnn(ctx, p.TypeAnn)
 			} else {
-				tvar := c.FreshVar()
+				tvar := c.FreshVar(provenance)
 				if p.Default != nil {
 					defaultType, defaultErrors := c.inferExpr(ctx, p.Default)
 					errors = append(errors, defaultErrors...)
@@ -2674,7 +2664,7 @@ func (c *Checker) inferPattern(
 
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &Binding{
-				Source:  &ast.NodeProvenance{Node: p},
+				Source:  provenance,
 				Type:    t,
 				Mutable: false, // TODO
 			}
@@ -2687,7 +2677,7 @@ func (c *Checker) inferPattern(
 				elems[i] = elemType
 				errors = append(errors, elemErrors...)
 			}
-			t = NewTupleType(elems...)
+			t = NewTupleType(provenance, elems...)
 		case *ast.ObjectPat:
 			elems := []ObjTypeElem{}
 			for _, elem := range p.Elems {
@@ -2697,7 +2687,7 @@ func (c *Checker) inferPattern(
 					errors = append(errors, elemErrors...)
 					name := NewStrKey(elem.Key.Name)
 					optional := elem.Default != nil
-					prop := NewPropertyElemType(name, t)
+					prop := NewPropertyElem(name, t)
 					prop.Optional = optional
 					elems = append(elems, prop)
 				case *ast.ObjShorthandPat:
@@ -2711,7 +2701,7 @@ func (c *Checker) inferPattern(
 						t = elemType
 						errors = append(errors, elemErrors...)
 					} else {
-						tvar := c.FreshVar()
+						tvar := c.FreshVar(&ast.NodeProvenance{Node: elem})
 						if elem.Default != nil {
 							defaultType, defaultErrors := c.inferExpr(ctx, elem.Default)
 							errors = append(errors, defaultErrors...)
@@ -2726,15 +2716,15 @@ func (c *Checker) inferPattern(
 						Type:    t,
 						Mutable: false, // TODO
 					}
-					prop := NewPropertyElemType(name, t)
+					prop := NewPropertyElem(name, t)
 					elems = append(elems, prop)
 				case *ast.ObjRestPat:
 					t, restErrors := inferPatRec(elem.Pattern)
 					errors = slices.Concat(errors, restErrors)
-					elems = append(elems, NewRestSpreadElemType(t))
+					elems = append(elems, NewRestSpreadElem(t))
 				}
 			}
-			t = NewObjectType(elems)
+			t = NewObjectType(provenance, elems)
 		case *ast.ExtractorPat:
 			if binding := ctx.Scope.getValue(p.Name); binding != nil {
 				args := make([]Type, len(p.Args))
@@ -2743,22 +2733,20 @@ func (c *Checker) inferPattern(
 					args[i] = argType
 					errors = append(errors, argErrors...)
 				}
-				t = NewExtractorType(binding.Type, args...)
+				t = NewExtractorType(provenance, binding.Type, args...)
 			} else {
-				t = NewNeverType()
+				t = NewNeverType(nil)
 			}
 		case *ast.RestPat:
 			argType, argErrors := inferPatRec(p.Pattern)
 			errors = append(errors, argErrors...)
-			t = NewRestSpreadType(argType)
+			t = NewRestSpreadType(provenance, argType)
 		case *ast.WildcardPat:
-			t = c.FreshVar()
+			t = c.FreshVar(&ast.NodeProvenance{Node: pat})
 			errors = []Error{}
 		}
 
-		t.SetProvenance(&ast.NodeProvenance{
-			Node: pat,
-		})
+		t.SetProvenance(provenance)
 		pat.SetInferredType(t)
 		return t, errors
 	}
@@ -2807,7 +2795,7 @@ func (c *Checker) inferTypeDecl(
 
 		// Add type parameters as type aliases to the scope
 		for _, typeParam := range typeParams {
-			typeParamTypeRef := NewTypeRefType(typeParam.Name, nil)
+			typeParamTypeRef := NewTypeRefType(nil, typeParam.Name, nil)
 			typeParamAlias := &TypeAlias{
 				Type:       typeParamTypeRef,
 				TypeParams: []*TypeParam{},
@@ -2847,7 +2835,7 @@ func (c *Checker) inferFuncTypeAnn(
 		// annotations
 		var typeAnn Type
 		if param.TypeAnn == nil {
-			typeAnn = c.FreshVar()
+			typeAnn = c.FreshVar(nil)
 		} else {
 			var typeAnnErrors []Error
 			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
@@ -2870,7 +2858,7 @@ func (c *Checker) inferFuncTypeAnn(
 	funcType := FuncType{
 		Params:     params,
 		Return:     returnType,
-		Throws:     NewNeverType(),
+		Throws:     NewNeverType(nil),
 		TypeParams: []*TypeParam{},
 	}
 
@@ -2956,7 +2944,8 @@ func (c *Checker) inferTypeAnn(
 	typeAnn ast.TypeAnn,
 ) (Type, []Error) {
 	errors := []Error{}
-	var t Type = NewNeverType()
+	var t Type = NewNeverType(nil)
+	provenance := &ast.NodeProvenance{Node: typeAnn}
 
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
@@ -2970,48 +2959,45 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t = NewTypeRefType(typeName, typeAlias, typeArgs...)
+			t = NewTypeRefType(provenance, typeName, typeAlias, typeArgs...)
 		} else {
 			// TODO: include type args
-			typeRef := NewTypeRefType(typeName, nil, nil)
-			typeRef.SetProvenance(&ast.NodeProvenance{
-				Node: typeAnn,
-			})
+			typeRef := NewTypeRefType(provenance, typeName, nil, nil)
 			errors = append(errors, &UnknownTypeError{TypeName: typeName, typeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
-		t = NewNumType()
+		t = NewNumPrimType(provenance)
 	case *ast.StringTypeAnn:
-		t = NewStrType()
+		t = NewStrPrimType(provenance)
 	case *ast.BooleanTypeAnn:
-		t = NewBoolType()
+		t = NewBoolPrimType(provenance)
 	case *ast.SymbolTypeAnn:
-		t = NewSymType()
+		t = NewSymPrimType(provenance)
 	case *ast.UniqueSymbolTypeAnn:
 		c.SymbolID++
-		t = NewUniqueSymbolType(c.SymbolID)
+		t = NewUniqueSymbolType(provenance, c.SymbolID)
 	case *ast.AnyTypeAnn:
-		t = NewAnyType()
+		t = NewAnyType(provenance)
 	case *ast.UnknownTypeAnn:
-		t = NewUnknownType()
+		t = NewUnknownType(provenance)
 	case *ast.NeverTypeAnn:
-		t = NewNeverType()
+		t = NewNeverType(provenance)
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
-			t = NewLitType(&StrLit{Value: lit.Value})
+			t = NewStrLitType(provenance, lit.Value)
 		case *ast.NumLit:
-			t = NewLitType(&NumLit{Value: lit.Value})
+			t = NewNumLitType(provenance, lit.Value)
 		case *ast.BoolLit:
-			t = NewLitType(&BoolLit{Value: lit.Value})
+			t = NewBoolLitType(provenance, lit.Value)
 		case *ast.RegexLit:
-			t, _ = NewRegexType(lit.Value)
+			t, _ = NewRegexTypeWithPatternString(provenance, lit.Value)
 		case *ast.BigIntLit:
-			t = NewLitType(&BigIntLit{Value: lit.Value})
+			t = NewBigIntLitType(provenance, lit.Value)
 		case *ast.NullLit:
-			t = NewLitType(&NullLit{})
+			t = NewNullType(provenance)
 		case *ast.UndefinedLit:
-			t = NewLitType(&UndefinedLit{})
+			t = NewUndefinedType(provenance)
 		default:
 			panic(fmt.Sprintf("Unknown literal type: %T", lit))
 		}
@@ -3022,7 +3008,7 @@ func (c *Checker) inferTypeAnn(
 			elems[i] = elemType
 			errors = slices.Concat(errors, elemErrors)
 		}
-		t = NewTupleType(elems...)
+		t = NewTupleType(provenance, elems...)
 	case *ast.ObjectTypeAnn:
 		elems := make([]ObjTypeElem, len(typeAnn.Elems))
 		for i, elem := range typeAnn.Elems {
@@ -3030,11 +3016,11 @@ func (c *Checker) inferTypeAnn(
 			case *ast.CallableTypeAnn:
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &CallableElemType{Fn: fn}
+				elems[i] = &CallableElem{Fn: fn}
 			case *ast.ConstructorTypeAnn:
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &ConstructorElemType{Fn: fn}
+				elems[i] = &ConstructorElem{Fn: fn}
 			case *ast.MethodTypeAnn:
 				// TODO: handle `self` and `mut self` parameters
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -3044,7 +3030,7 @@ func (c *Checker) inferTypeAnn(
 				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = NewMethodElemType(*key, fn, nil)
+				elems[i] = NewMethodElem(*key, fn, nil)
 			case *ast.GetterTypeAnn:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
@@ -3053,7 +3039,7 @@ func (c *Checker) inferTypeAnn(
 				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &GetterElemType{Name: *key, Fn: fn}
+				elems[i] = &GetterElem{Name: *key, Fn: fn}
 			case *ast.SetterTypeAnn:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
@@ -3062,7 +3048,7 @@ func (c *Checker) inferTypeAnn(
 				}
 				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &SetterElemType{Name: *key, Fn: fn}
+				elems[i] = &SetterElem{Name: *key, Fn: fn}
 			case *ast.PropertyTypeAnn:
 				var t Type
 				if elem.Value != nil {
@@ -3070,14 +3056,14 @@ func (c *Checker) inferTypeAnn(
 					errors = slices.Concat(errors, typeAnnErrors)
 					t = typeAnnType
 				} else {
-					t = NewLitType(&UndefinedLit{})
+					t = NewUndefinedType(nil)
 				}
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key == nil {
 					continue
 				}
-				elems[i] = &PropertyElemType{
+				elems[i] = &PropertyElem{
 					Name:     *key,
 					Optional: elem.Optional,
 					Readonly: elem.Readonly,
@@ -3090,7 +3076,7 @@ func (c *Checker) inferTypeAnn(
 			}
 		}
 
-		t = NewObjectType(elems)
+		t = NewObjectType(provenance, elems)
 	case *ast.UnionTypeAnn:
 		types := make([]Type, len(typeAnn.Types))
 		for i, unionType := range typeAnn.Types {
@@ -3098,7 +3084,7 @@ func (c *Checker) inferTypeAnn(
 			types[i] = unionElemType
 			errors = slices.Concat(errors, unionElemErrors)
 		}
-		t = NewUnionType(types...)
+		t = NewUnionType(nil, types...)
 	case *ast.FuncTypeAnn:
 		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn)
 		t = funcType
@@ -3138,7 +3124,7 @@ func (c *Checker) inferTypeAnn(
 
 			// Add infer types as type aliases to the scope
 			for _, name := range names {
-				inferTypeRef := NewTypeRefType(name, nil)
+				inferTypeRef := NewTypeRefType(nil, name, nil)
 				inferTypeAlias := &TypeAlias{
 					Type:       inferTypeRef,
 					TypeParams: []*TypeParam{},
@@ -3159,20 +3145,18 @@ func (c *Checker) inferTypeAnn(
 		elseType, elseErrors := c.inferTypeAnn(condCtx, typeAnn.Else)
 		errors = slices.Concat(errors, elseErrors)
 
-		t = NewCondType(checkType, extendsType, thenType, elseType)
+		t = NewCondType(provenance, checkType, extendsType, thenType, elseType)
 	case *ast.InferTypeAnn:
-		t = NewInferType(typeAnn.Name)
+		t = NewInferType(provenance, typeAnn.Name)
 	case *ast.MutableTypeAnn:
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)
-		t = NewMutableType(targetType)
+		t = NewMutableType(provenance, targetType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
 
-	t.SetProvenance(&ast.NodeProvenance{
-		Node: typeAnn,
-	})
+	t.SetProvenance(provenance)
 	typeAnn.SetInferredType(t)
 
 	return t, errors
@@ -3280,7 +3264,7 @@ func (v *InferTypeFinder) ExitType(t Type) Type {
 			return existingVar
 		}
 		// Create fresh type variable
-		freshVar := v.checker.FreshVar()
+		freshVar := v.checker.FreshVar(&TypeProvenance{Type: inferType})
 		v.inferVars[inferType.Name] = freshVar
 		return freshVar
 	}

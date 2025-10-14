@@ -18,6 +18,11 @@ func (*FuncDecl) isDecl() {}
 func (*TypeDecl) isDecl() {}
 func (*EnumDecl) isDecl() {}
 
+func (*VarDecl) isNode()  {}
+func (*FuncDecl) isNode() {}
+func (*TypeDecl) isNode() {}
+func (*EnumDecl) isNode() {}
+
 type VariableKind int
 
 const (

@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -19,12 +20,9 @@ func NewChecker() *Checker {
 	}
 }
 
-func (c *Checker) FreshVar() *type_system.TypeVarType {
+func (c *Checker) FreshVar(provenance provenance.Provenance) *type_system.TypeVarType {
 	c.TypeVarID++
-	return &type_system.TypeVarType{
-		ID:       c.TypeVarID,
-		Instance: nil,
-	}
+	return type_system.NewTypeVarType(provenance, c.TypeVarID)
 }
 
 type Context struct {

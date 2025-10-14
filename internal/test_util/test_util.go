@@ -14,52 +14,54 @@ import (
 // without calling infer. This is useful for testing and other scenarios
 // where you want to directly convert a type annotation to a type.
 func typeAnnToType(typeAnn ast.TypeAnn) Type {
+	provenance := &ast.NodeProvenance{Node: typeAnn}
+
 	switch ta := typeAnn.(type) {
 	case *ast.LitTypeAnn:
 		return convertLitToLitType(ta.Lit)
 	case *ast.NumberTypeAnn:
-		return NewNumType()
+		return NewNumPrimType(provenance)
 	case *ast.StringTypeAnn:
-		return NewStrType()
+		return NewStrPrimType(provenance)
 	case *ast.BooleanTypeAnn:
-		return NewBoolType()
+		return NewBoolPrimType(provenance)
 	case *ast.AnyTypeAnn:
-		return NewAnyType()
+		return NewAnyType(provenance)
 	case *ast.UnknownTypeAnn:
-		return NewUnknownType()
+		return NewUnknownType(provenance)
 	case *ast.NeverTypeAnn:
-		return NewNeverType()
+		return NewNeverType(provenance)
 	case *ast.TypeRefTypeAnn:
 		name := ast.QualIdentToString(ta.Name)
 		typeArgs := make([]Type, len(ta.TypeArgs))
 		for i, arg := range ta.TypeArgs {
 			typeArgs[i] = typeAnnToType(arg)
 		}
-		return NewTypeRefType(name, nil, typeArgs...)
+		return NewTypeRefType(provenance, name, nil, typeArgs...)
 	case *ast.TupleTypeAnn:
 		elems := make([]Type, len(ta.Elems))
 		for i, elem := range ta.Elems {
 			elems[i] = typeAnnToType(elem)
 		}
-		return NewTupleType(elems...)
+		return NewTupleType(provenance, elems...)
 	case *ast.UnionTypeAnn:
 		types := make([]Type, len(ta.Types))
 		for i, t := range ta.Types {
 			types[i] = typeAnnToType(t)
 		}
-		return NewUnionType(types...)
+		return NewUnionType(provenance, types...)
 	case *ast.IntersectionTypeAnn:
 		types := make([]Type, len(ta.Types))
 		for i, t := range ta.Types {
 			types[i] = typeAnnToType(t)
 		}
-		return NewIntersectionType(types...)
+		return NewIntersectionType(provenance, types...)
 	case *ast.ObjectTypeAnn:
 		elems := make([]ObjTypeElem, len(ta.Elems))
 		for i, elem := range ta.Elems {
 			elems[i] = convertObjTypeAnnElem(elem)
 		}
-		return NewObjectType(elems)
+		return NewObjectType(provenance, elems)
 	case *ast.FuncTypeAnn:
 		params := make([]*FuncParam, len(ta.Params))
 		for i, param := range ta.Params {
@@ -67,7 +69,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 			if param.TypeAnn != nil {
 				paramType = typeAnnToType(param.TypeAnn)
 			} else {
-				paramType = NewAnyType() // Default to any if no type annotation
+				paramType = NewAnyType(nil) // Default to any if no type annotation
 			}
 			params[i] = &FuncParam{
 				Pattern:  convertPatternToTypePat(param.Pattern),
@@ -80,7 +82,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		if ta.Return != nil {
 			returnType = typeAnnToType(ta.Return)
 		} else {
-			returnType = NewNeverType() // Default to never if no return type
+			returnType = NewNeverType(nil) // Default to never if no return type
 		}
 
 		var throwsType Type
@@ -109,37 +111,35 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 			}
 		}
 
-		return &FuncType{
-			TypeParams: typeParams,
-			Params:     params,
-			Return:     returnType,
-			Throws:     throwsType,
-		}
+		return NewFuncType(
+			provenance,
+			typeParams,
+			params,
+			returnType,
+			throwsType,
+		)
 	case *ast.KeyOfTypeAnn:
 		targetType := typeAnnToType(ta.Type)
-		return &KeyOfType{
-			Type: targetType,
-		}
+		return NewKeyOfType(provenance, targetType)
 	case *ast.IndexTypeAnn:
 		targetType := typeAnnToType(ta.Target)
 		indexType := typeAnnToType(ta.Index)
-		return &IndexType{
-			Target: targetType,
-			Index:  indexType,
-		}
+		return NewIndexType(provenance, targetType, indexType)
 	case *ast.CondTypeAnn:
-		checkType := typeAnnToType(ta.Check)
-		extendsType := typeAnnToType(ta.Extends)
-		thenType := typeAnnToType(ta.Then)
-		elseType := typeAnnToType(ta.Else)
-		return NewCondType(checkType, extendsType, thenType, elseType)
+		return NewCondType(
+			provenance,
+			typeAnnToType(ta.Check),
+			typeAnnToType(ta.Extends),
+			typeAnnToType(ta.Then),
+			typeAnnToType(ta.Else),
+		)
 	case *ast.InferTypeAnn:
-		return NewInferType(ta.Name)
+		return NewInferType(provenance, ta.Name)
 	case *ast.MutableTypeAnn:
 		targetType := typeAnnToType(ta.Target)
-		return NewMutableType(targetType)
+		return NewMutableType(provenance, targetType)
 	case *ast.WildcardTypeAnn:
-		return &WildcardType{}
+		return NewWildcardType(provenance)
 	default:
 		panic(fmt.Sprintf("ConvertTypeAnnToType: unsupported type annotation: %T", typeAnn))
 	}
@@ -147,19 +147,21 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 
 // convertLitToLitType converts an ast.Lit to a type_system.LitType
 func convertLitToLitType(lit ast.Lit) Type {
+	provenance := &ast.NodeProvenance{Node: lit}
+
 	switch l := lit.(type) {
 	case *ast.StrLit:
-		return NewLitType(&StrLit{Value: l.Value})
+		return NewStrLitType(nil, l.Value)
 	case *ast.NumLit:
-		return NewLitType(&NumLit{Value: l.Value})
+		return NewNumLitType(nil, l.Value)
 	case *ast.BoolLit:
-		return NewLitType(&BoolLit{Value: l.Value})
+		return NewBoolLitType(nil, l.Value)
 	case *ast.BigIntLit:
-		return NewLitType(&BigIntLit{Value: l.Value})
+		return NewBigIntLitType(nil, l.Value)
 	case *ast.NullLit:
-		return NewLitType(&NullLit{})
+		return NewNullType(nil)
 	case *ast.UndefinedLit:
-		return NewLitType(&UndefinedLit{})
+		return NewUndefinedType(provenance)
 	default:
 		panic(fmt.Sprintf("convertLitToLitType: unsupported literal type: %T", lit))
 	}
@@ -214,9 +216,10 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 		if e.Value != nil {
 			valueType = typeAnnToType(e.Value)
 		} else {
-			valueType = NewLitType(&UndefinedLit{})
+			// TODO: raise an error about a missing property type?
+			valueType = NewUnknownType(nil)
 		}
-		return &PropertyElemType{
+		return &PropertyElem{
 			Name:     key,
 			Optional: e.Optional,
 			Readonly: e.Readonly,
@@ -225,46 +228,46 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 	case *ast.MethodTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
-		return &MethodElemType{
+		return &MethodElem{
 			Name: key,
 			Fn:   funcType,
 		}
 	case *ast.GetterTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
-		return &GetterElemType{
+		return &GetterElem{
 			Name: key,
 			Fn:   funcType,
 		}
 	case *ast.SetterTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
-		return &SetterElemType{
+		return &SetterElem{
 			Name: key,
 			Fn:   funcType,
 		}
 	case *ast.CallableTypeAnn:
 		funcType := typeAnnToType(e.Fn).(*FuncType)
-		return &CallableElemType{
+		return &CallableElem{
 			Fn: funcType,
 		}
 	case *ast.ConstructorTypeAnn:
 		funcType := typeAnnToType(e.Fn).(*FuncType)
-		return &ConstructorElemType{
+		return &ConstructorElem{
 			Fn: funcType,
 		}
 	case *ast.RestSpreadTypeAnn:
 		valueType := typeAnnToType(e.Value)
-		return NewRestSpreadElemType(valueType)
+		return NewRestSpreadElem(valueType)
 	case *ast.MappedTypeAnn:
 		var constraintType Type
 		if e.TypeParam.Constraint != nil {
 			constraintType = typeAnnToType(e.TypeParam.Constraint)
 		} else {
-			constraintType = NewAnyType()
+			constraintType = NewAnyType(nil)
 		}
 
-		typeParam := &IndexParamType{
+		typeParam := &IndexParam{
 			Name:       e.TypeParam.Name,
 			Constraint: constraintType,
 		}
@@ -272,7 +275,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 		valueType := typeAnnToType(e.Value)
 
 		// Create the MappedElemType directly since the name field is unexported
-		mapped := &MappedElemType{
+		mapped := &MappedElem{
 			TypeParam: typeParam,
 			Value:     valueType,
 			Optional:  convertMappedModifier(e.Optional),

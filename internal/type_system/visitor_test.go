@@ -99,8 +99,8 @@ func (v *SameKindReplacementVisitor) ExitType(t Type) Type {
 // TestEnterTypeReturnsSameKind tests that EnterType can return new instances of the same type kind
 func TestEnterTypeReturnsSameKind(t *testing.T) {
 	t.Run("EnterType returns new PrimType instance", func(t *testing.T) {
-		oldNumType := NewNumType()
-		newNumType := NewNumType() // Same kind, different instance
+		oldNumType := NewNumPrimType(nil)
+		newNumType := NewNumPrimType(nil) // Same kind, different instance
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldNumType: newNumType,
@@ -116,14 +116,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new LitType instance with same literal", func(t *testing.T) {
-		oldLitType := &LitType{
-			Lit:        &NumLit{Value: 42},
-			provenance: nil,
-		}
-		newLitType := &LitType{
-			Lit:        &NumLit{Value: 42}, // Same literal value
-			provenance: nil,
-		}
+		oldLitType := NewNumLitType(nil, 42)
+		newLitType := NewNumLitType(nil, 42) // Same literal value, different instance
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldLitType: newLitType,
@@ -139,24 +133,24 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new FuncType instance with same structure", func(t *testing.T) {
-		paramType := NewNumType()
-		returnType := NewStrType()
+		paramType := NewNumPrimType(nil)
+		returnType := NewStrPrimType(nil)
 
-		oldFuncType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
-			Return:     returnType,
-			Throws:     nil,
-			provenance: nil,
-		}
+		oldFuncType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
+			returnType,
+			nil,
+		)
 
-		newFuncType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
-			Return:     returnType,
-			Throws:     nil,
-			provenance: nil,
-		}
+		newFuncType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{NewFuncParam(NewIdentPat("x"), paramType)},
+			returnType,
+			nil,
+		)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldFuncType: newFuncType,
@@ -174,18 +168,11 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new UnionType instance with same members", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
 
-		oldUnionType := &UnionType{
-			Types:      []Type{numType, strType},
-			provenance: nil,
-		}
-
-		newUnionType := &UnionType{
-			Types:      []Type{numType, strType}, // Same members
-			provenance: nil,
-		}
+		oldUnionType := NewUnionType(nil, numType, strType)
+		newUnionType := NewUnionType(nil, numType, strType)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldUnionType: newUnionType,
@@ -203,13 +190,13 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new TupleType instance with same elements", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
-		boolType := NewBoolType()
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		boolType := NewBoolPrimType(nil)
 
-		oldTupleType := NewTupleType(numType, strType, boolType)
+		oldTupleType := NewTupleType(nil, numType, strType, boolType)
 
-		newTupleType := NewTupleType(numType, strType, boolType) // Same elements
+		newTupleType := NewTupleType(nil, numType, strType, boolType) // Same elements
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldTupleType: newTupleType,
@@ -228,32 +215,11 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new ObjectType instance with same properties", func(t *testing.T) {
-		propType := NewNumType()
-		prop := NewPropertyElemType(NewStrKey("x"), propType)
+		propType := NewNumPrimType(nil)
+		prop := NewPropertyElem(NewStrKey("x"), propType)
 
-		oldObjType := &ObjectType{
-			Elems:      []ObjTypeElem{prop},
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
-
-		newObjType := &ObjectType{
-			Elems:      []ObjTypeElem{prop}, // Same property
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
+		oldObjType := NewObjectType(nil, []ObjTypeElem{prop})
+		newObjType := NewObjectType(nil, []ObjTypeElem{prop}) // Same property
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldObjType: newObjType,
@@ -270,20 +236,16 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new IntersectionType instance with same members", func(t *testing.T) {
-		numType := NewNumType()
-		objType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewStrType()),
-		})
+		numType := NewNumPrimType(nil)
+		objType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+			},
+		)
 
-		oldIntersectionType := &IntersectionType{
-			Types:      []Type{numType, objType},
-			provenance: nil,
-		}
-
-		newIntersectionType := &IntersectionType{
-			Types:      []Type{numType, objType}, // Same members
-			provenance: nil,
-		}
+		oldIntersectionType := NewIntersectionType(nil, numType, objType).(*IntersectionType)
+		newIntersectionType := NewIntersectionType(nil, numType, objType).(*IntersectionType)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldIntersectionType: newIntersectionType,
@@ -301,26 +263,13 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new CondType instance with same structure", func(t *testing.T) {
-		checkType := NewNumType()
-		extendsType := NewStrType()
-		consType := NewBoolType()
-		altType := NewUnknownType()
+		checkType := NewNumPrimType(nil)
+		extendsType := NewStrPrimType(nil)
+		consType := NewBoolPrimType(nil)
+		altType := NewUnknownType(nil)
 
-		oldCondType := &CondType{
-			Check:      checkType,
-			Extends:    extendsType,
-			Then:       consType,
-			Else:       altType,
-			provenance: nil,
-		}
-
-		newCondType := &CondType{
-			Check:      checkType,   // Same check
-			Extends:    extendsType, // Same extends
-			Then:       consType,    // Same consequence
-			Else:       altType,     // Same alternative
-			provenance: nil,
-		}
+		oldCondType := NewCondType(nil, checkType, extendsType, consType, altType)
+		newCondType := NewCondType(nil, checkType, extendsType, consType, altType) // Same structure
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldCondType: newCondType,
@@ -340,25 +289,15 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new IndexType instance with same structure", func(t *testing.T) {
-		targetType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewNumType()),
-		})
-		indexType := &LitType{
-			Lit:        &StrLit{Value: "x"},
-			provenance: nil,
-		}
-
-		oldIndexType := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
-
-		newIndexType := &IndexType{
-			Target:     targetType, // Same target
-			Index:      indexType,  // Same index
-			provenance: nil,
-		}
+		targetType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
+			},
+		)
+		indexType := NewStrLitType(nil, "x")
+		oldIndexType := NewIndexType(nil, targetType, indexType)
+		newIndexType := NewIndexType(nil, targetType, indexType) // Same structure
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldIndexType: newIndexType,
@@ -376,20 +315,16 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new KeyOfType instance with same target", func(t *testing.T) {
-		targetType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewNumType()),
-			NewPropertyElemType(NewStrKey("y"), NewStrType()),
-		})
+		targetType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
+				NewPropertyElem(NewStrKey("y"), NewStrPrimType(nil)),
+			},
+		)
 
-		oldKeyOfType := &KeyOfType{
-			Type:       targetType,
-			provenance: nil,
-		}
-
-		newKeyOfType := &KeyOfType{
-			Type:       targetType, // Same target
-			provenance: nil,
-		}
+		oldKeyOfType := NewKeyOfType(nil, targetType)
+		newKeyOfType := NewKeyOfType(nil, targetType) // Same target
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldKeyOfType: newKeyOfType,
@@ -406,17 +341,8 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType returns new TypeVarType instance without instance", func(t *testing.T) {
-		oldTypeVarType := &TypeVarType{
-			ID:         1,
-			Instance:   nil, // No instance, so Prune returns the TypeVar itself
-			provenance: nil,
-		}
-
-		newTypeVarType := &TypeVarType{
-			ID:         1,   // Same ID
-			Instance:   nil, // Same (no) instance
-			provenance: nil,
-		}
+		oldTypeVarType := NewTypeVarType(nil, 1)
+		newTypeVarType := NewTypeVarType(nil, 1) // Same ID, no instance
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldTypeVarType: newTypeVarType,
@@ -434,14 +360,11 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 	})
 
 	t.Run("EnterType with TypeVarType that has instance - visitor operates on pruned type", func(t *testing.T) {
-		instanceType := NewNumType()
-		newInstanceType := NewNumType() // Same kind, different instance
+		instanceType := NewNumPrimType(nil)
+		newInstanceType := NewNumPrimType(nil) // Same kind, different instance
 
-		typeVarType := &TypeVarType{
-			ID:         1,
-			Instance:   instanceType,
-			provenance: nil,
-		}
+		typeVarType := NewTypeVarType(nil, 1)
+		typeVarType.Instance = instanceType
 
 		// The visitor will operate on the pruned type (instanceType), not the TypeVar
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
@@ -460,11 +383,11 @@ func TestEnterTypeReturnsSameKind(t *testing.T) {
 // TestEnterTypeReplacementInNestedStructures tests EnterType replacement within nested type structures
 func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 	t.Run("EnterType replacement in union member affects parent structure", func(t *testing.T) {
-		oldNumType := NewNumType()
-		newNumType := NewNumType() // Same kind, different instance
-		strType := NewStrType()
+		oldNumType := NewNumPrimType(nil)
+		newNumType := NewNumPrimType(nil) // Same kind, different instance
+		strType := NewStrPrimType(nil)
 
-		unionType := NewUnionType(oldNumType, strType).(*UnionType)
+		unionType := NewUnionType(nil, oldNumType, strType).(*UnionType)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldNumType: newNumType,
@@ -483,18 +406,18 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 	})
 
 	t.Run("EnterType replacement in function parameter affects parent function", func(t *testing.T) {
-		oldParamType := NewStrType()
-		newParamType := NewStrType() // Same kind, different instance
-		returnType := NewBoolType()
+		oldParamType := NewStrPrimType(nil)
+		newParamType := NewStrPrimType(nil) // Same kind, different instance
+		returnType := NewBoolPrimType(nil)
 
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
-		funcType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param},
-			Return:     returnType,
-			Throws:     nil,
-			provenance: nil,
-		}
+		funcType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param},
+			returnType,
+			nil,
+		)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldParamType: newParamType,
@@ -513,12 +436,15 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 	})
 
 	t.Run("EnterType replacement in object property affects parent object", func(t *testing.T) {
-		oldPropType := NewBoolType()
-		newPropType := NewBoolType() // Same kind, different instance
+		oldPropType := NewBoolPrimType(nil)
+		newPropType := NewBoolPrimType(nil) // Same kind, different instance
 
-		original := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), oldPropType),
-		})
+		original := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), oldPropType),
+			},
+		)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldPropType: newPropType,
@@ -529,32 +455,32 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		// Should create new object with replacement property type
 		resultObj := result.(*ObjectType)
 		assert.NotSame(t, original, resultObj) // New object instance
-		resultProp := resultObj.Elems[0].(*PropertyElemType)
+		resultProp := resultObj.Elems[0].(*PropertyElem)
 		assert.Same(t, newPropType, resultProp.Value)
 
 		// Original should be unchanged
-		originalProp := original.Elems[0].(*PropertyElemType)
+		originalProp := original.Elems[0].(*PropertyElem)
 		assert.Same(t, oldPropType, originalProp.Value)
 	})
 
 	t.Run("EnterType replacement takes precedence over child traversal", func(t *testing.T) {
-		innerType := NewNumType()
+		innerType := NewNumPrimType(nil)
 		param := NewFuncParam(NewIdentPat("x"), innerType)
-		oldFuncType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param},
-			Return:     NewBoolType(),
-			Throws:     nil,
-			provenance: nil,
-		}
+		oldFuncType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param},
+			NewBoolPrimType(nil),
+			nil,
+		)
 
-		newFuncType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), innerType)},
-			Return:     NewBoolType(),
-			Throws:     nil,
-			provenance: nil,
-		}
+		newFuncType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{NewFuncParam(NewIdentPat("x"), innerType)},
+			NewBoolPrimType(nil),
+			nil,
+		)
 
 		// Replace the function type itself, not its inner types
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
@@ -568,18 +494,21 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 	})
 
 	t.Run("Multiple EnterType replacements in deeply nested structure", func(t *testing.T) {
-		oldInnerType := NewNumType()
-		newInnerType := NewNumType() // Same kind, different instance
+		oldInnerType := NewNumPrimType(nil)
+		newInnerType := NewNumPrimType(nil) // Same kind, different instance
 
-		oldOuterType := NewStrType()
-		newOuterType := NewStrType() // Same kind, different instance
+		oldOuterType := NewStrPrimType(nil)
+		newOuterType := NewStrPrimType(nil) // Same kind, different instance
 
 		// Create: {x: oldInnerType, y: oldOuterType}[]
-		propType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), oldInnerType),
-			NewPropertyElemType(NewStrKey("y"), oldOuterType),
-		})
-		tupleType := NewTupleType(propType)
+		propType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), oldInnerType),
+				NewPropertyElem(NewStrKey("y"), oldOuterType),
+			},
+		)
+		tupleType := NewTupleType(nil, propType)
 
 		visitor := NewSameKindReplacementVisitor(map[Type]Type{
 			oldInnerType: newInnerType,
@@ -592,15 +521,15 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 		resultTuple := result.(*TupleType)
 		assert.NotSame(t, tupleType, resultTuple) // New tuple instance
 		resultObj := resultTuple.Elems[0].(*ObjectType)
-		resultProp1 := resultObj.Elems[0].(*PropertyElemType)
-		resultProp2 := resultObj.Elems[1].(*PropertyElemType)
+		resultProp1 := resultObj.Elems[0].(*PropertyElem)
+		resultProp2 := resultObj.Elems[1].(*PropertyElem)
 		assert.Same(t, newInnerType, resultProp1.Value)
 		assert.Same(t, newOuterType, resultProp2.Value)
 
 		// Original should be unchanged
 		originalObj := tupleType.Elems[0].(*ObjectType)
-		originalProp1 := originalObj.Elems[0].(*PropertyElemType)
-		originalProp2 := originalObj.Elems[1].(*PropertyElemType)
+		originalProp1 := originalObj.Elems[0].(*PropertyElem)
+		originalProp2 := originalObj.Elems[1].(*PropertyElem)
 		assert.Same(t, oldInnerType, originalProp1.Value)
 		assert.Same(t, oldOuterType, originalProp2.Value)
 	})
@@ -609,7 +538,7 @@ func TestEnterTypeReplacementInNestedStructures(t *testing.T) {
 // TestVisitorNoMutation tests that visitors don't mutate the original types
 func TestVisitorNoMutation(t *testing.T) {
 	t.Run("PrimType immutability", func(t *testing.T) {
-		original := NewNumType()
+		original := NewNumPrimType(nil)
 		originalProvenance := original.Provenance()
 
 		visitor := &IdentityVisitor{}
@@ -622,10 +551,7 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("LitType immutability", func(t *testing.T) {
-		original := &LitType{
-			Lit:        &NumLit{Value: 42},
-			provenance: nil,
-		}
+		original := NewNumLitType(nil, 42)
 		originalLit := original.Lit
 
 		visitor := &IdentityVisitor{}
@@ -638,15 +564,15 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("FuncType immutability", func(t *testing.T) {
-		param1 := NewFuncParam(NewIdentPat("x"), NewNumType())
-		param2 := NewFuncParam(NewIdentPat("y"), NewStrType())
-		original := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param1, param2},
-			Return:     NewBoolType(),
-			Throws:     NewNeverType(),
-			provenance: nil,
-		}
+		param1 := NewFuncParam(NewIdentPat("x"), NewNumPrimType(nil))
+		param2 := NewFuncParam(NewIdentPat("y"), NewStrPrimType(nil))
+		original := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param1, param2},
+			NewBoolPrimType(nil),
+			NewNeverType(nil),
+		)
 		originalParams := original.Params
 		originalReturn := original.Return
 
@@ -663,12 +589,9 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("UnionType immutability", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
-		original := &UnionType{
-			Types:      []Type{numType, strType},
-			provenance: nil,
-		}
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		original := NewUnionType(nil, numType, strType).(*UnionType)
 		originalTypes := original.Types
 
 		visitor := &IdentityVisitor{}
@@ -683,18 +606,8 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("ObjectType immutability", func(t *testing.T) {
-		prop := NewPropertyElemType(NewStrKey("x"), NewNumType())
-		original := &ObjectType{
-			Elems:      []ObjTypeElem{prop},
-			Exact:      false,
-			Immutable:  false,
-			Mutable:    false,
-			Nominal:    false,
-			Interface:  false,
-			Extends:    nil,
-			Implements: nil,
-			provenance: nil,
-		}
+		prop := NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil))
+		original := NewObjectType(nil, []ObjTypeElem{prop})
 		originalElems := original.Elems
 
 		visitor := &IdentityVisitor{}
@@ -708,9 +621,9 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("TupleType immutability", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
-		original := NewTupleType(numType, strType)
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		original := NewTupleType(nil, numType, strType)
 		originalElems := original.Elems
 
 		visitor := &IdentityVisitor{}
@@ -725,11 +638,14 @@ func TestVisitorNoMutation(t *testing.T) {
 	})
 
 	t.Run("IntersectionType immutability", func(t *testing.T) {
-		numType := NewNumType()
-		objType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewStrType()),
-		})
-		original := NewIntersectionType(numType, objType)
+		numType := NewNumPrimType(nil)
+		objType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+			},
+		)
+		original := NewIntersectionType(nil, numType, objType).(*IntersectionType)
 		originalTypes := original.Types
 
 		visitor := &IdentityVisitor{}
@@ -747,17 +663,17 @@ func TestVisitorNoMutation(t *testing.T) {
 // TestVisitorCreatesNewInstances tests that when changes are made, new instances are created
 func TestVisitorCreatesNewInstances(t *testing.T) {
 	t.Run("FuncType parameter replacement creates new instance", func(t *testing.T) {
-		oldParamType := NewNumType()
-		newParamType := NewStrType()
+		oldParamType := NewNumPrimType(nil)
+		newParamType := NewStrPrimType(nil)
 
 		param := NewFuncParam(NewIdentPat("x"), oldParamType)
-		original := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param},
-			Return:     NewBoolType(),
-			Throws:     NewNeverType(),
-			provenance: nil,
-		}
+		original := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param},
+			NewBoolPrimType(nil),
+			NewNeverType(nil),
+		)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
 			oldParamType: newParamType,
@@ -780,14 +696,11 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 	})
 
 	t.Run("UnionType member replacement creates new instance", func(t *testing.T) {
-		oldType := NewNumType()
-		newType := NewStrType()
-		otherType := NewBoolType()
+		oldType := NewNumPrimType(nil)
+		newType := NewStrPrimType(nil)
+		otherType := NewBoolPrimType(nil)
 
-		original := &UnionType{
-			Types:      []Type{oldType, otherType},
-			provenance: nil,
-		}
+		original := NewUnionType(nil, oldType, otherType).(*UnionType)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
 			oldType: newType,
@@ -808,11 +721,11 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 	})
 
 	t.Run("TupleType element replacement creates new instance", func(t *testing.T) {
-		oldType := NewNumType()
-		newType := NewStrType()
-		otherType := NewBoolType()
+		oldType := NewNumPrimType(nil)
+		newType := NewStrPrimType(nil)
+		otherType := NewBoolPrimType(nil)
 
-		original := NewTupleType(oldType, otherType)
+		original := NewTupleType(nil, oldType, otherType)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
 			oldType: newType,
@@ -833,12 +746,15 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 	})
 
 	t.Run("ObjectType property replacement creates new instance", func(t *testing.T) {
-		oldType := NewNumType()
-		newType := NewStrType()
+		oldType := NewNumPrimType(nil)
+		newType := NewStrPrimType(nil)
 
-		original := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), oldType),
-		})
+		original := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), oldType),
+			},
+		)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
 			oldType: newType,
@@ -849,12 +765,12 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 		assert.NotSame(t, original, result)
 
 		// Original should be unchanged
-		originalProp := original.Elems[0].(*PropertyElemType)
+		originalProp := original.Elems[0].(*PropertyElem)
 		assert.Same(t, oldType, originalProp.Value)
 
 		// Result should have the new type
 		resultObj := result.(*ObjectType)
-		resultProp := resultObj.Elems[0].(*PropertyElemType)
+		resultProp := resultObj.Elems[0].(*PropertyElem)
 		assert.Same(t, newType, resultProp.Value)
 	})
 }
@@ -862,21 +778,18 @@ func TestVisitorCreatesNewInstances(t *testing.T) {
 // TestNestedVisitorImmutability tests that deeply nested structures don't mutate originals
 func TestNestedVisitorImmutability(t *testing.T) {
 	t.Run("Nested function in union doesn't mutate original", func(t *testing.T) {
-		innerNumType := NewNumType()
-		innerStrType := NewStrType()
+		innerNumType := NewNumPrimType(nil)
+		innerStrType := NewStrPrimType(nil)
 
-		funcType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), innerNumType)},
-			Return:     innerStrType,
-			Throws:     NewNeverType(),
-			provenance: nil,
-		}
+		funcType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{NewFuncParam(NewIdentPat("x"), innerNumType)},
+			innerStrType,
+			NewNeverType(nil),
+		)
 
-		unionType := &UnionType{
-			Types:      []Type{funcType, NewBoolType()},
-			provenance: nil,
-		}
+		unionType := NewUnionType(nil, funcType, NewBoolPrimType(nil)).(*UnionType)
 
 		// Store references to verify immutability
 		originalFuncType := unionType.Types[0]
@@ -896,22 +809,19 @@ func TestNestedVisitorImmutability(t *testing.T) {
 	})
 
 	t.Run("Deeply nested replacement creates appropriate new instances", func(t *testing.T) {
-		oldType := NewNumType()
-		newType := NewStrType()
+		oldType := NewNumPrimType(nil)
+		newType := NewStrPrimType(nil)
 
 		// Create: (oldType) => boolean | string
-		funcType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{NewFuncParam(NewIdentPat("x"), oldType)},
-			Return:     NewBoolType(),
-			Throws:     NewNeverType(),
-			provenance: nil,
-		}
+		funcType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{NewFuncParam(NewIdentPat("x"), oldType)},
+			NewBoolPrimType(nil),
+			NewNeverType(nil),
+		)
 
-		unionType := &UnionType{
-			Types:      []Type{funcType, NewStrType()},
-			provenance: nil,
-		}
+		unionType := NewUnionType(nil, funcType, NewStrPrimType(nil)).(*UnionType)
 
 		visitor := NewTypeReplacementVisitor(map[Type]Type{
 			oldType: newType,
@@ -937,18 +847,18 @@ func TestNestedVisitorImmutability(t *testing.T) {
 // TestComplexTypeStructures tests visitor behavior with complex type structures
 func TestComplexTypeStructures(t *testing.T) {
 	t.Run("Conditional type immutability", func(t *testing.T) {
-		checkType := NewNumType()
-		extendsType := NewStrType()
-		consType := NewBoolType()
-		altType := NewUnknownType()
+		checkType := NewNumPrimType(nil)
+		extendsType := NewStrPrimType(nil)
+		consType := NewBoolPrimType(nil)
+		altType := NewUnknownType(nil)
 
-		original := &CondType{
-			Check:      checkType,
-			Extends:    extendsType,
-			Then:       consType,
-			Else:       altType,
-			provenance: nil,
-		}
+		original := NewCondType(
+			nil,
+			checkType,
+			extendsType,
+			consType,
+			altType,
+		)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -964,19 +874,14 @@ func TestComplexTypeStructures(t *testing.T) {
 	})
 
 	t.Run("Index type immutability", func(t *testing.T) {
-		targetType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewNumType()),
-		})
-		indexType := &LitType{
-			Lit:        &StrLit{Value: "x"},
-			provenance: nil,
-		}
-
-		original := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
+		targetType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
+			},
+		)
+		indexType := NewStrLitType(nil, "x")
+		original := NewIndexType(nil, targetType, indexType)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -990,15 +895,15 @@ func TestComplexTypeStructures(t *testing.T) {
 	})
 
 	t.Run("KeyOf type immutability", func(t *testing.T) {
-		targetType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewNumType()),
-			NewPropertyElemType(NewStrKey("y"), NewStrType()),
-		})
+		targetType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
+				NewPropertyElem(NewStrKey("y"), NewStrPrimType(nil)),
+			},
+		)
 
-		original := &KeyOfType{
-			Type:       targetType,
-			provenance: nil,
-		}
+		original := NewKeyOfType(nil, targetType)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1014,11 +919,7 @@ func TestComplexTypeStructures(t *testing.T) {
 // TestTypeVarVisitor tests visitor behavior with type variables
 func TestTypeVarVisitor(t *testing.T) {
 	t.Run("TypeVar without instance", func(t *testing.T) {
-		original := &TypeVarType{
-			ID:         1,
-			Instance:   nil,
-			provenance: nil,
-		}
+		original := NewTypeVarType(nil, 1)
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1032,12 +933,9 @@ func TestTypeVarVisitor(t *testing.T) {
 	})
 
 	t.Run("TypeVar with instance", func(t *testing.T) {
-		instanceType := NewNumType()
-		original := &TypeVarType{
-			ID:         1,
-			Instance:   instanceType,
-			provenance: nil,
-		}
+		instanceType := NewNumPrimType(nil)
+		original := NewTypeVarType(nil, 1)
+		original.Instance = instanceType
 
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
@@ -1056,7 +954,7 @@ func TestTypeVarVisitor(t *testing.T) {
 // TestEnterTypeIsCalled tests that EnterType is called for all types during traversal
 func TestEnterTypeIsCalled(t *testing.T) {
 	t.Run("Simple type calls EnterType", func(t *testing.T) {
-		numType := NewNumType()
+		numType := NewNumPrimType(nil)
 		visitor := NewTrackingVisitor()
 
 		numType.Accept(visitor)
@@ -1071,9 +969,9 @@ func TestEnterTypeIsCalled(t *testing.T) {
 	})
 
 	t.Run("Union type calls EnterType for all members", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
-		unionType := NewUnionType(numType, strType).(*UnionType)
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		unionType := NewUnionType(nil, numType, strType).(*UnionType)
 		visitor := NewTrackingVisitor()
 
 		unionType.Accept(visitor)
@@ -1093,16 +991,16 @@ func TestEnterTypeIsCalled(t *testing.T) {
 	})
 
 	t.Run("Function type calls EnterType for parameters and return type", func(t *testing.T) {
-		paramType := NewNumType()
-		returnType := NewStrType()
+		paramType := NewNumPrimType(nil)
+		returnType := NewStrPrimType(nil)
 		param := NewFuncParam(NewIdentPat("x"), paramType)
-		funcType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param},
-			Return:     returnType,
-			Throws:     nil,
-			provenance: nil,
-		}
+		funcType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param},
+			returnType,
+			nil,
+		)
 		visitor := NewTrackingVisitor()
 
 		funcType.Accept(visitor)
@@ -1122,9 +1020,9 @@ func TestEnterTypeIsCalled(t *testing.T) {
 	})
 
 	t.Run("Object type calls EnterType for property types", func(t *testing.T) {
-		propType := NewNumType()
-		prop := NewPropertyElemType(NewStrKey("x"), propType)
-		objType := NewObjectType([]ObjTypeElem{prop})
+		propType := NewNumPrimType(nil)
+		prop := NewPropertyElem(NewStrKey("x"), propType)
+		objType := NewObjectType(nil, []ObjTypeElem{prop})
 		visitor := NewTrackingVisitor()
 
 		objType.Accept(visitor)
@@ -1142,10 +1040,10 @@ func TestEnterTypeIsCalled(t *testing.T) {
 	})
 
 	t.Run("Tuple type calls EnterType for all elements", func(t *testing.T) {
-		numType := NewNumType()
-		strType := NewStrType()
-		boolType := NewBoolType()
-		tupleType := NewTupleType(numType, strType, boolType)
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		boolType := NewBoolPrimType(nil)
+		tupleType := NewTupleType(nil, numType, strType, boolType)
 		visitor := NewTrackingVisitor()
 
 		tupleType.Accept(visitor)
@@ -1168,18 +1066,18 @@ func TestEnterTypeIsCalled(t *testing.T) {
 
 	t.Run("Nested types call EnterType in correct order", func(t *testing.T) {
 		// Create: (number | string) => boolean
-		innerNumType := NewNumType()
-		innerStrType := NewStrType()
-		unionType := NewUnionType(innerNumType, innerStrType).(*UnionType)
-		returnType := NewBoolType()
+		innerNumType := NewNumPrimType(nil)
+		innerStrType := NewStrPrimType(nil)
+		unionType := NewUnionType(nil, innerNumType, innerStrType).(*UnionType)
+		returnType := NewBoolPrimType(nil)
 		param := NewFuncParam(NewIdentPat("x"), unionType)
-		funcType := &FuncType{
-			TypeParams: nil,
-			Params:     []*FuncParam{param},
-			Return:     returnType,
-			Throws:     nil,
-			provenance: nil,
-		}
+		funcType := NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{param},
+			returnType,
+			nil,
+		)
 		visitor := NewTrackingVisitor()
 
 		funcType.Accept(visitor)
@@ -1206,8 +1104,8 @@ func TestEnterTypeIsCalled(t *testing.T) {
 // TestEnterTypeWithTransformation tests that EnterType is called even when transformations occur
 func TestEnterTypeWithTransformation(t *testing.T) {
 	t.Run("EnterType called before transformation", func(t *testing.T) {
-		oldType := NewNumType()
-		newType := NewStrType()
+		oldType := NewNumPrimType(nil)
+		newType := NewStrPrimType(nil)
 
 		// Create a visitor that both tracks and transforms
 		visitor := &TransformingTrackingVisitor{
@@ -1295,9 +1193,9 @@ func TestEnterTypeCallOrderMatters(t *testing.T) {
 			exitFunc:  exitFunc,
 		}
 
-		numType := NewNumType()
-		strType := NewStrType()
-		unionType := NewUnionType(numType, strType).(*UnionType)
+		numType := NewNumPrimType(nil)
+		strType := NewStrPrimType(nil)
+		unionType := NewUnionType(nil, numType, strType).(*UnionType)
 
 		unionType.Accept(typedVisitor)
 
@@ -1325,18 +1223,11 @@ func (v *OrderTrackingVisitor) ExitType(t Type) Type {
 // TestEnterTypeWithComplexStructures tests EnterType with more complex type structures
 func TestEnterTypeWithComplexStructures(t *testing.T) {
 	t.Run("Conditional type structure", func(t *testing.T) {
-		checkType := NewNumType()
-		extendsType := NewStrType()
-		consType := NewBoolType()
-		altType := NewUnknownType()
-
-		condType := &CondType{
-			Check:      checkType,
-			Extends:    extendsType,
-			Then:       consType,
-			Else:       altType,
-			provenance: nil,
-		}
+		checkType := NewNumPrimType(nil)
+		extendsType := NewStrPrimType(nil)
+		consType := NewBoolPrimType(nil)
+		altType := NewUnknownType(nil)
+		condType := NewCondType(nil, checkType, extendsType, consType, altType)
 
 		visitor := NewTrackingVisitor()
 		condType.Accept(visitor)
@@ -1352,19 +1243,14 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 	})
 
 	t.Run("Index type structure", func(t *testing.T) {
-		targetType := NewObjectType([]ObjTypeElem{
-			NewPropertyElemType(NewStrKey("x"), NewNumType()),
-		})
-		indexType := &LitType{
-			Lit:        &StrLit{Value: "x"},
-			provenance: nil,
-		}
-
-		idxType := &IndexType{
-			Target:     targetType,
-			Index:      indexType,
-			provenance: nil,
-		}
+		targetType := NewObjectType(
+			nil,
+			[]ObjTypeElem{
+				NewPropertyElem(NewStrKey("x"), NewNumPrimType(nil)),
+			},
+		)
+		indexType := NewStrLitType(nil, "x")
+		idxType := NewIndexType(nil, targetType, indexType)
 
 		visitor := NewTrackingVisitor()
 		idxType.Accept(visitor)
@@ -1390,32 +1276,35 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 // BenchmarkVisitorTraversal benchmarks visitor performance on complex type structures
 func BenchmarkVisitorTraversal(b *testing.B) {
 	// Create a complex nested type structure
-	complexType := &UnionType{
-		Types: []Type{
-			&FuncType{
-				TypeParams: nil,
-				Params: []*FuncParam{
-					NewFuncParam(NewIdentPat("x"), NewNumType()),
-					NewFuncParam(NewIdentPat("y"), NewStrType()),
-				},
-				Return: &IntersectionType{
-					Types: []Type{
-						NewObjectType([]ObjTypeElem{
-							NewPropertyElemType(NewStrKey("a"), NewBoolType()),
-						}),
-						NewObjectType([]ObjTypeElem{
-							NewPropertyElemType(NewStrKey("b"), NewNumType()),
-						}),
-					},
-					provenance: nil,
-				},
-				Throws:     NewNeverType(),
-				provenance: nil,
+	complexType := NewUnionType(
+		nil,
+
+		NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{
+				NewFuncParam(NewIdentPat("x"), NewNumPrimType(nil)),
+				NewFuncParam(NewIdentPat("y"), NewStrPrimType(nil)),
 			},
-			NewTupleType(NewNumType(), NewStrType(), NewBoolType()),
-		},
-		provenance: nil,
-	}
+			NewIntersectionType(
+				nil,
+				NewObjectType(
+					nil,
+					[]ObjTypeElem{
+						NewPropertyElem(NewStrKey("a"), NewBoolPrimType(nil)),
+					},
+				),
+				NewObjectType(
+					nil,
+					[]ObjTypeElem{
+						NewPropertyElem(NewStrKey("b"), NewNumPrimType(nil)),
+					},
+				),
+			),
+			NewNeverType(nil),
+		),
+		NewTupleType(nil, NewNumPrimType(nil), NewStrPrimType(nil), NewBoolPrimType(nil)),
+	)
 
 	visitor := &IdentityVisitor{}
 

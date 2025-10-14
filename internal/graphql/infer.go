@@ -42,10 +42,8 @@ func inferUnionType(schema *gqlast.Schema, unionDef *gqlast.Definition, selectio
 		}
 		unionTypes = append(unionTypes, inferSelectionSet(schema, typeDef, selSetForType))
 	}
-	unionType := NewUnionType(unionTypes...)
-	unionType.SetProvenance(&GraphQLProvenance{
-		Position: unionDef.Position,
-	})
+	provenance := &GraphQLProvenance{Position: unionDef.Position}
+	unionType := NewUnionType(provenance, unionTypes...)
 	return unionType
 }
 
@@ -76,6 +74,9 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 		}
 
 		var fieldType Type
+		fieldDefProvenance := &GraphQLProvenance{
+			Position: fieldDef.Position,
+		}
 
 		// Check if the field type is a list
 		if fieldDef.Type.Elem != nil {
@@ -96,7 +97,7 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 			}
 
 			// Wrap in Array type
-			arrayType := NewTypeRefType("Array", nil, elemType)
+			arrayType := NewTypeRefType(nil, "Array", nil, elemType)
 			arrayType.SetProvenance(&GraphQLProvenance{
 				Position: field.Position,
 			})
@@ -104,11 +105,8 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 
 			// Check if the list itself is nullable
 			if !fieldDef.Type.NonNull {
-				nullType := NewLitType(&NullLit{})
-				fieldType = NewUnionType(fieldType, nullType)
-				fieldType.SetProvenance(&GraphQLProvenance{
-					Position: fieldDef.Position,
-				})
+				nullType := NewNullType(nil)
+				fieldType = NewUnionType(fieldDefProvenance, fieldType, nullType)
 			}
 		} else {
 			// Not a list type - handle as before
@@ -119,11 +117,8 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 
 				// Check if this object field is nullable and add | null if so
 				if !fieldDef.Type.NonNull {
-					nullType := NewLitType(&NullLit{})
-					fieldType = NewUnionType(fieldType, nullType)
-					fieldType.SetProvenance(&GraphQLProvenance{
-						Position: fieldDef.Position,
-					})
+					nullType := NewNullType(nil)
+					fieldType = NewUnionType(fieldDefProvenance, fieldType, nullType)
 				}
 			} else if fieldTypeDef != nil && fieldTypeDef.Kind == gqlast.Union {
 				// For unions, use the field's selection set for inline fragments
@@ -138,7 +133,7 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 		isNullable := !fieldDef.Type.NonNull
 
 		// Create property element with optional flag for nullable fields
-		propertyElem := &PropertyElemType{
+		propertyElem := &PropertyElem{
 			Name:     NewStrKey(field.Name),
 			Optional: isNullable,
 			Readonly: false,
@@ -147,10 +142,8 @@ func inferSelectionSet(schema *gqlast.Schema, parentType *gqlast.Definition, sel
 		elems = append(elems, propertyElem)
 	}
 
-	objType := NewObjectType(elems)
-	objType.SetProvenance(&GraphQLProvenance{
-		Position: parentType.Position,
-	})
+	provenance := &GraphQLProvenance{Position: parentType.Position}
+	objType := NewObjectType(provenance, elems)
 	return objType
 }
 
@@ -197,7 +190,7 @@ func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQ
 		varType := InferGraphQLType(schema, varDef.Type)
 		isNullable := !varDef.Type.NonNull
 
-		propertyElem := &PropertyElemType{
+		propertyElem := &PropertyElem{
 			Name:     NewStrKey(varDef.Variable),
 			Optional: isNullable,
 			Readonly: false,
@@ -205,10 +198,8 @@ func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQ
 		}
 		variablesElems = append(variablesElems, propertyElem)
 	}
-	variablesType := NewObjectType(variablesElems)
-	variablesType.SetProvenance(&GraphQLProvenance{
-		Position: op.Position,
-	})
+	provenance := &GraphQLProvenance{Position: op.Position}
+	variablesType := NewObjectType(provenance, variablesElems)
 
 	return &GraphQLInferenceResult{
 		ResultType:    resultType,
@@ -218,62 +209,47 @@ func InferGraphQLQuery(schema *gqlast.Schema, doc *gqlast.QueryDocument) *GraphQ
 
 // InferGraphQLType converts a GraphQL type definition to an Escalier type
 func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
+	gqlTypeProvenance := &GraphQLProvenance{
+		Position: gqlType.Position,
+	}
 	// Handle named types
 	if gqlType.NamedType != "" {
 		var baseType Type
 		switch gqlType.NamedType {
 		case "String":
-			baseType = NewStrType()
-			baseType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
+			baseType = NewStrPrimType(gqlTypeProvenance)
 		case "Int", "Float":
-			baseType = NewNumType()
-			baseType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
+			baseType = NewNumPrimType(gqlTypeProvenance)
 		case "Boolean":
-			baseType = NewBoolType()
-			baseType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
+			baseType = NewBoolPrimType(gqlTypeProvenance)
 		case "ID":
 			// Keep ID as a type reference to preserve the ID semantics
-			baseType = NewTypeRefType("ID", nil)
-			baseType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
+			baseType = NewTypeRefType(gqlTypeProvenance, "ID", nil)
 		default:
 			// Check if it's a defined type in the schema
 			if typeDef := schema.Types[gqlType.NamedType]; typeDef != nil {
+				typeDefProvenance := &GraphQLProvenance{Position: typeDef.Position}
+
 				switch typeDef.Kind {
 				case gqlast.Enum:
 					// Expand enums as a union of string literal types
 					var enumTypes []Type
 					for _, v := range typeDef.EnumValues {
-						enumType := NewLitType(&StrLit{Value: v.Name})
-						enumType.SetProvenance(&GraphQLProvenance{
-							Position: v.Position,
-						})
+						provenance := &GraphQLProvenance{Position: v.Position}
+						enumType := NewStrLitType(provenance, v.Name)
 						enumTypes = append(enumTypes, enumType)
 					}
-					baseType = NewUnionType(enumTypes...)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewUnionType(typeDefProvenance, enumTypes...)
 				case gqlast.Scalar:
 					// For custom scalars, fall back to the base type or use a type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				case gqlast.InputObject:
 					// For input objects, create an object type with all fields
 					var elems []ObjTypeElem
 					for _, field := range typeDef.Fields {
 						fieldType := InferGraphQLType(schema, field.Type)
 						isNullable := !field.Type.NonNull
-						propertyElem := &PropertyElemType{
+						propertyElem := &PropertyElem{
 							Name:     NewStrKey(field.Name),
 							Optional: isNullable,
 							Readonly: false,
@@ -281,40 +257,24 @@ func InferGraphQLType(schema *gqlast.Schema, gqlType *gqlast.Type) Type {
 						}
 						elems = append(elems, propertyElem)
 					}
-					baseType = NewObjectType(elems)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewObjectType(typeDefProvenance, elems)
 				case gqlast.Object, gqlast.Interface, gqlast.Union:
 					// For other types (Object, Interface, Union), use type reference
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				default:
 					// Fallback for any other types
-					baseType = NewTypeRefType(gqlType.NamedType, nil)
-					baseType.SetProvenance(&GraphQLProvenance{
-						Position: typeDef.Position,
-					})
+					baseType = NewTypeRefType(typeDefProvenance, gqlType.NamedType, nil)
 				}
 			} else {
 				// Fallback to type reference for unknown types
-				baseType = NewTypeRefType(gqlType.NamedType, nil)
-				baseType.SetProvenance(&GraphQLProvenance{
-					Position: gqlType.Position,
-				})
+				baseType = NewTypeRefType(gqlTypeProvenance, gqlType.NamedType, nil)
 			}
 		}
 
 		// If the type is nullable (NonNull is false), create union with null
 		if !gqlType.NonNull {
-			nullType := NewLitType(&NullLit{})
-			unionType := NewUnionType(baseType, nullType)
-			unionType.SetProvenance(&GraphQLProvenance{
-				Position: gqlType.Position,
-			})
-			return unionType
+			nullType := NewNullType(nil)
+			return NewUnionType(gqlTypeProvenance, baseType, nullType)
 		}
 		return baseType
 	}

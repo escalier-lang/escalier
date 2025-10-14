@@ -7,60 +7,64 @@ import (
 func Prelude(c *Checker) *Scope {
 	scope := NewScope()
 
-	binArithType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumType()),
-			NewFuncParam(NewIdentPat("b"), NewNumType()),
+	binArithType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
+			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
 		},
-		Return: NewNumType(),
-		Throws: NewNeverType(),
-	}
+		NewNumPrimType(nil),
+		NewNeverType(nil),
+	)
 	binArithBinding := Binding{
 		Source:  nil,
 		Type:    binArithType,
 		Mutable: false,
 	}
 
-	binCompType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumType()),
-			NewFuncParam(NewIdentPat("b"), NewNumType()),
+	binCompType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
+			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
 		},
-		Return: NewBoolType(),
-		Throws: NewNeverType(),
-	}
+		NewBoolPrimType(nil),
+		NewNeverType(nil),
+	)
 	binACompBinding := Binding{
 		Source:  nil,
 		Type:    binCompType,
 		Mutable: false,
 	}
 
-	binEqType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewAnyType()),
-			NewFuncParam(NewIdentPat("b"), NewAnyType()),
+	binEqType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewAnyType(nil)),
+			NewFuncParam(NewIdentPat("b"), NewAnyType(nil)),
 		},
-		Return: NewBoolType(),
-		Throws: NewNeverType(),
-	}
+		NewBoolPrimType(nil),
+		NewNeverType(nil),
+	)
 	binEqBinding := Binding{
 		Source:  nil,
 		Type:    binEqType,
 		Mutable: false,
 	}
 
-	binLogicType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewBoolType()),
-			NewFuncParam(NewIdentPat("b"), NewBoolType()),
+	binLogicType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
+			NewFuncParam(NewIdentPat("b"), NewBoolPrimType(nil)),
 		},
-		Return: NewBoolType(),
-		Throws: NewNeverType(),
-	}
+		NewBoolPrimType(nil),
+		NewNeverType(nil),
+	)
 	binLogicBinding := Binding{
 		Source:  nil,
 		Type:    binLogicType,
@@ -79,14 +83,15 @@ func Prelude(c *Checker) *Scope {
 	// 	Mutable: false,
 	// }
 
-	unaryLogicType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewBoolType()),
+	unaryLogicType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
 		},
-		Return: NewBoolType(),
-		Throws: NewNeverType(),
-	}
+		NewBoolPrimType(nil),
+		NewNeverType(nil),
+	)
 	unaryLogicBinding := Binding{
 		Source:  nil,
 		Type:    unaryLogicType,
@@ -119,68 +124,70 @@ func Prelude(c *Checker) *Scope {
 
 	var objElems []ObjTypeElem
 
-	objElems = append(objElems, &MethodElemType{
+	objElems = append(objElems, &MethodElem{
 		Name: NewStrKey("log"),
-		Fn: &FuncType{
-			TypeParams: nil,
-			Params: []*FuncParam{
-				NewFuncParam(NewIdentPat("msg"), NewStrType()),
+		Fn: NewFuncType(
+			nil,
+			nil,
+			[]*FuncParam{
+				NewFuncParam(NewIdentPat("msg"), NewStrPrimType(nil)),
 			},
-			Return: NewLitType(&UndefinedLit{}),
-			Throws: NewNeverType(),
-		},
+			NewUndefinedType(nil),
+			NewNeverType(nil),
+		),
 		MutSelf: nil,
 	})
 
 	scope.Namespace.Values["console"] = &Binding{
 		Source:  nil,
-		Type:    NewObjectType(objElems),
+		Type:    NewObjectType(nil, objElems),
 		Mutable: false,
 	}
 
 	// Promise type with a simple then property to distinguish it from empty object
 	promiseTypeParams := []*TypeParam{
 		NewTypeParam("T"),
-		NewTypeParamWithDefault("E", NewNeverType()),
+		NewTypeParamWithDefault("E", NewNeverType(nil)),
 	}
 
 	promiseElems := []ObjTypeElem{
-		&PropertyElemType{
+		&PropertyElem{
 			Name:     NewStrKey("then"),
-			Value:    NewStrType(), // Simplified for now
+			Value:    NewStrPrimType(nil), // Simplified for now
 			Optional: false,
 			Readonly: true,
 		},
 	}
 
 	scope.setTypeAlias("Promise", &TypeAlias{
-		Type:       NewObjectType(promiseElems),
+		Type:       NewObjectType(nil, promiseElems),
 		TypeParams: promiseTypeParams,
 	})
 
 	// Error type with message property
 	errorElems := []ObjTypeElem{
-		&PropertyElemType{
+		&PropertyElem{
 			Name:     NewStrKey("message"),
-			Value:    NewStrType(),
+			Value:    NewStrPrimType(nil),
 			Optional: false,
 			Readonly: true,
 		},
 	}
 	scope.setTypeAlias("Error", &TypeAlias{
-		Type:       NewObjectType(errorElems),
+		Type:       NewObjectType(nil, errorElems),
 		TypeParams: []*TypeParam{},
 	})
 
 	// Error constructor function
-	errorConstructorType := &FuncType{
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("message"), NewStrType()),
+	errorConstructorType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("message"), NewStrPrimType(nil)),
 		},
-		Return:     NewTypeRefType("Error", nil),
-		Throws:     NewNeverType(),
-		TypeParams: []*TypeParam{},
-	}
+		NewTypeRefType(nil, "Error", nil),
+		NewNeverType(nil),
+	)
 	errorConstructorBinding := Binding{
 		Source:  nil,
 		Type:    errorConstructorType,
@@ -188,13 +195,13 @@ func Prelude(c *Checker) *Scope {
 	}
 	scope.Namespace.Values["Error"] = &errorConstructorBinding
 
-	length := &PropertyElemType{
+	length := &PropertyElem{
 		Name:     NewStrKey("length"),
-		Value:    NewNumType(),
+		Value:    NewNumPrimType(nil),
 		Optional: false,
 		Readonly: true,
 	}
-	arrayType := NewObjectType([]ObjTypeElem{length})
+	arrayType := NewObjectType(nil, []ObjTypeElem{length})
 	typeParam := NewTypeParam("T")
 	scope.setTypeAlias("Array", &TypeAlias{
 		Type:       arrayType,
@@ -202,15 +209,16 @@ func Prelude(c *Checker) *Scope {
 	})
 
 	// String concatenation operator
-	strConcatType := &FuncType{
-		TypeParams: nil,
-		Params: []*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewStrType()),
-			NewFuncParam(NewIdentPat("b"), NewStrType()),
+	strConcatType := NewFuncType(
+		nil,
+		nil,
+		[]*FuncParam{
+			NewFuncParam(NewIdentPat("a"), NewStrPrimType(nil)),
+			NewFuncParam(NewIdentPat("b"), NewStrPrimType(nil)),
 		},
-		Return: NewStrType(),
-		Throws: NewNeverType(),
-	}
+		NewStrPrimType(nil),
+		NewNeverType(nil),
+	)
 	strConcatBinding := Binding{
 		Source:  nil,
 		Type:    strConcatType,
@@ -221,18 +229,18 @@ func Prelude(c *Checker) *Scope {
 
 	// Symbol object with iterator and customMatcher unique symbols
 	c.SymbolID++
-	iteratorSymbol := NewUniqueSymbolType(c.SymbolID)
+	iteratorSymbol := NewUniqueSymbolType(nil, c.SymbolID)
 	c.SymbolID++
-	customMatcherSymbol := NewUniqueSymbolType(c.SymbolID)
+	customMatcherSymbol := NewUniqueSymbolType(nil, c.SymbolID)
 
 	symbolElems := []ObjTypeElem{
-		&PropertyElemType{
+		&PropertyElem{
 			Name:     NewStrKey("iterator"),
 			Value:    iteratorSymbol,
 			Optional: false,
 			Readonly: true,
 		},
-		&PropertyElemType{
+		&PropertyElem{
 			Name:     NewStrKey("customMatcher"),
 			Value:    customMatcherSymbol,
 			Optional: false,
@@ -242,7 +250,7 @@ func Prelude(c *Checker) *Scope {
 
 	scope.Namespace.Values["Symbol"] = &Binding{
 		Source:  nil,
-		Type:    NewObjectType(symbolElems),
+		Type:    NewObjectType(nil, symbolElems),
 		Mutable: false,
 	}
 

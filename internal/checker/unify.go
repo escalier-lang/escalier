@@ -129,9 +129,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				remainingElems := tuple1.Elems[len(elems2):]
-				tuple := &TupleType{
-					Elems: remainingElems,
-				}
+				tuple := NewTupleType(nil, remainingElems...)
 				unifyErrors := c.unify(ctx, tuple, restElem2.Type)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
@@ -147,9 +145,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				remainingElems := tuple2.Elems[len(elems1):]
-				tuple := &TupleType{
-					Elems: remainingElems,
-				}
+				tuple := NewTupleType(nil, remainingElems...)
 				unifyErrors := c.unify(ctx, restElem1.Type, tuple)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
@@ -169,14 +165,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				// Any remaining elements in tuple2 should be typed as `undefined`
 				// since they are not present in tuple1.
 				for _, elem2 := range extraElems {
-					undefinedType := NewLitType(&UndefinedLit{})
 					node := GetNode(elem2.Provenance())
-					// We set the provenance just in case it's needed for error
-					// reporting.
-					undefinedType.SetProvenance(&ast.NodeProvenance{
-						Node: node,
-					})
-					unifyErrors := c.unify(ctx, elem2, undefinedType)
+					undefined := NewUndefinedType(&ast.NodeProvenance{Node: node})
+					unifyErrors := c.unify(ctx, elem2, undefined)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 
@@ -417,7 +408,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						if name != "" {
 							groupErrors := c.unify(
 								ctx,
-								NewLitType(&StrLit{Value: matches[i]}),
+								NewStrLitType(nil, matches[i]),
 								// By default this will be a `string` type, but
 								// if the RegexType appears in a CondType's
 								// Extend field, it will be a TypeVarType.
@@ -463,7 +454,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if ext, ok := t2.(*ExtractorType); ok {
 		if extObj, ok := ext.Extractor.(*ObjectType); ok {
 			for _, elem := range extObj.Elems {
-				if methodElem, ok := elem.(*MethodElemType); ok {
+				if methodElem, ok := elem.(*MethodElem); ok {
 					// TODO: look up the symbol ID for `Symbol.customMatcher`
 					if methodElem.Name.Kind == SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
 						if len(methodElem.Fn.Params) != 1 {
@@ -507,11 +498,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 								// Unify rest arguments with rest element type
 								if len(ext.Args) > restIndex {
 									restElem := ext.Args[restIndex].(*RestSpreadType)
-									reaminingArgsTupleType := &TupleType{
-										Elems: tuple.Elems[restIndex:],
-									}
+									remainingArgsTupleType := NewTupleType(nil, tuple.Elems[restIndex:]...)
 
-									restErrors := c.unify(ctx, restElem.Type, reaminingArgsTupleType)
+									restErrors := c.unify(ctx, restElem.Type, remainingArgsTupleType)
 									errors = slices.Concat(errors, restErrors)
 								}
 							} else {
@@ -583,23 +572,23 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
-				case *MethodElemType:
+				case *MethodElem:
 					namedElems1[elem.Name] = elem.Fn
 					keys1 = append(keys1, elem.Name)
-				case *GetterElemType:
+				case *GetterElem:
 					namedElems1[elem.Name] = elem.Fn.Return
 					keys1 = append(keys1, elem.Name)
-				case *SetterElemType:
+				case *SetterElem:
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
 					keys1 = append(keys1, elem.Name)
-				case *PropertyElemType:
+				case *PropertyElem:
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
 					}
 					namedElems1[elem.Name] = propType
 					keys1 = append(keys1, elem.Name)
-				case *RestSpreadElemType:
+				case *RestSpreadElem:
 					restType1 = elem.Value
 				default: // skip other types of elems
 				}
@@ -607,23 +596,23 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			for _, elem := range obj2.Elems {
 				switch elem := elem.(type) {
-				case *MethodElemType:
+				case *MethodElem:
 					namedElems2[elem.Name] = elem.Fn
 					keys2 = append(keys2, elem.Name)
-				case *GetterElemType:
+				case *GetterElem:
 					namedElems2[elem.Name] = elem.Fn.Return
 					keys2 = append(keys2, elem.Name)
-				case *SetterElemType:
+				case *SetterElem:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
 					keys2 = append(keys2, elem.Name)
-				case *PropertyElemType:
+				case *PropertyElem:
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(propType, NewLitType(&UndefinedLit{}))
+						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
 					}
 					namedElems2[elem.Name] = propType
 					keys2 = append(keys2, elem.Name)
-				case *RestSpreadElemType:
+				case *RestSpreadElem:
 					restType2 = elem.Value
 				default: // skip other types of elems
 				}
@@ -649,7 +638,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				restElems := []ObjTypeElem{}
 				for _, key := range keys2 {
 					if _, ok := usedKeys2[key]; !ok {
-						restElems = append(restElems, &PropertyElemType{
+						restElems = append(restElems, &PropertyElem{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
@@ -658,7 +647,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 
-				objType := NewObjectType(restElems)
+				objType := NewObjectType(nil, restElems)
 
 				unifyErrors := c.unify(ctx, objType, restType1)
 				errors = slices.Concat(errors, unifyErrors)
@@ -681,7 +670,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					restElems := []ObjTypeElem{}
 					for _, key := range keys1 {
 						if _, ok := usedKeys1[key]; !ok {
-							restElems = append(restElems, &PropertyElemType{
+							restElems = append(restElems, &PropertyElem{
 								Name:     key,
 								Optional: false, // TODO
 								Readonly: false, // TODO
@@ -690,7 +679,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}
 					}
 
-					objType := NewObjectType(restElems)
+					objType := NewObjectType(nil, restElems)
 
 					unifyErrors := c.unify(ctx, restType2, objType)
 					errors = slices.Concat(errors, unifyErrors)
@@ -924,10 +913,10 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			// Create an Array type from excess parameters
 			// We need to find a type that all excess parameters can unify to
 			// For simplicity, we'll create a union of all excess parameter types
-			elementType := NewUnionType(excessParamTypes...)
+			elementType := NewUnionType(nil, excessParamTypes...)
 
 			// Create Array<elementType> and unify with rest parameter type
-			arrayType := NewTypeRefType("Array", nil, elementType)
+			arrayType := NewTypeRefType(nil, "Array", nil, elementType)
 			unifyErrors := c.unify(ctx, restParam.Type, arrayType)
 			errors = slices.Concat(errors, unifyErrors)
 		} else {
@@ -1052,7 +1041,7 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 
 						if len(union.Types) > len(definedTypes) {
 							definedTypes = append(definedTypes, typeVar1.Default)
-							t2 = NewUnionType(definedTypes...)
+							t2 = NewUnionType(nil, definedTypes...)
 						}
 					}
 				}
@@ -1079,7 +1068,7 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 
 						if len(union.Types) > len(definedTypes) {
 							definedTypes = append(definedTypes, typeVar2.Default)
-							t1 = NewUnionType(definedTypes...)
+							t1 = NewUnionType(nil, definedTypes...)
 						}
 					}
 				}

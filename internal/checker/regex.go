@@ -35,19 +35,14 @@ func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
 		newGroups := make(map[string]Type)
 		for name := range regexType.Groups {
 			if name != "" {
-				freshVar := v.checker.FreshVar()
+				freshVar := v.checker.FreshVar(nil)
 				v.namedGroups[name] = freshVar
 				newGroups[name] = freshVar
 			}
 		}
 
 		// Return a new RegexType with the fresh type variables
-		newRegexType := &RegexType{
-			Regex:  regexType.Regex,
-			Groups: newGroups,
-		}
-		newRegexType.SetProvenance(regexType.Provenance())
-		return newRegexType
+		return NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -95,12 +90,7 @@ func (v *RegexTypeReplacer) ExitType(t Type) Type {
 
 		// Only create a new RegexType if there were substitutions
 		if hasSubstitutions {
-			newRegexType := &RegexType{
-				Regex:  regexType.Regex,
-				Groups: newGroups,
-			}
-			newRegexType.SetProvenance(regexType.Provenance())
-			return newRegexType
+			return NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
 		}
 	}
 
