@@ -790,7 +790,16 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 	case *AnyTypeAnn:
 		p.print("any")
 	case *TemplateLitTypeAnn:
-		panic("PrintTypeAnn: TemplateLitTypeAnn not implemented")
+		p.print("`")
+		for i, quasi := range ta.Quasis {
+			p.print(quasi.Value)
+			if i < len(ta.TypeAnns) {
+				p.print("${")
+				p.PrintTypeAnn(ta.TypeAnns[i])
+				p.print("}")
+			}
+		}
+		p.print("`")
 	case *IntrinsicTypeAnn:
 		panic("PrintTypeAnn: IntrinsicTypeAnn not implemented")
 	case *ImportType:

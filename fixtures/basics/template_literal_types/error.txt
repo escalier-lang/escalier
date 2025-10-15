@@ -1,0 +1,5 @@
+lib/index.esc:7:12: "c-c" cannot be assigned to "a-c" | "b-c"
+
+7:  val z: T = "c-c"
+               ^^^^^
+

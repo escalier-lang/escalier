@@ -1682,10 +1682,116 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			return nil // No filtering needed, return nil to let Accept handle it
 		}
 		return NewUnionType(nil, filteredTypes...)
+	case *TemplateLitType:
+		// Expand template literal types by generating all possible string combinations
+		// from the cartesian product of the union types in the template
+		return v.expandTemplateLitType(t)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// expandTemplateLitType expands a template literal type by generating all possible
+// string combinations from the cartesian product of union types in the template.
+// Example: `${0 | 1},${0 | 1}` => "0,0" | "0,1" | "1,0" | "1,1"
+func (v *TypeExpansionVisitor) expandTemplateLitType(t *TemplateLitType) Type {
+	// Extract the members of each type in the template
+	// If a type is a union, we get all its members
+	// If it's a literal, we get just that literal
+	typeOptions := make([][]Type, len(t.Types))
+
+	for i, t := range t.Types {
+		t = Prune(t)
+		// If this is a TypeRefType, we need to expand it first to get the underlying type
+		if typeRef, ok := t.(*TypeRefType); ok {
+			typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, typeRef.Name)
+			if typeAlias != nil {
+				t = typeAlias.Type
+				t = Prune(t)
+			}
+		}
+		if unionType, ok := t.(*UnionType); ok {
+			typeOptions[i] = unionType.Types
+		} else {
+			typeOptions[i] = []Type{t}
+		}
+	}
+
+	// Generate cartesian product of all type options
+	combinations := v.cartesianProduct(typeOptions)
+
+	// Convert each combination into a string literal type
+	resultTypes := make([]Type, 0, len(combinations))
+
+	for _, combo := range combinations {
+		// Build the string by interleaving quasis and type values
+		var result strings.Builder
+
+		for i, quasi := range t.Quasis {
+			result.WriteString(quasi.Value)
+
+			if i < len(combo) {
+				// Convert the type to a string value
+				if litType, ok := combo[i].(*LitType); ok {
+					// Extract the actual value from the literal without quotes
+					switch lit := litType.Lit.(type) {
+					case *StrLit:
+						result.WriteString(lit.Value)
+					case *NumLit:
+						result.WriteString(fmt.Sprintf("%v", lit.Value))
+					case *BoolLit:
+						result.WriteString(fmt.Sprintf("%v", lit.Value))
+					case *BigIntLit:
+						result.WriteString(lit.Value.String())
+					default:
+						result.WriteString(litType.Lit.String())
+					}
+				} else if strPrimType, ok := combo[i].(*PrimType); ok && strPrimType.Prim == StrPrim {
+					// If we have a string primitive type (not a literal), we can't expand it
+					// In this case, we should return the original template literal type
+					return nil
+				} else {
+					// For other types, use their string representation
+					result.WriteString(combo[i].String())
+				}
+			}
+		}
+
+		resultTypes = append(resultTypes, NewStrLitType(t.Provenance(), result.String()))
+	}
+
+	// Return a union of all possible string literals
+	return NewUnionType(t.Provenance(), resultTypes...)
+}
+
+// cartesianProduct generates the cartesian product of multiple slices of types
+func (v *TypeExpansionVisitor) cartesianProduct(sets [][]Type) [][]Type {
+	if len(sets) == 0 {
+		return [][]Type{{}}
+	}
+
+	// Start with combinations from the first set
+	result := make([][]Type, 0)
+	for _, item := range sets[0] {
+		result = append(result, []Type{item})
+	}
+
+	// For each remaining set, combine with existing results
+	for i := 1; i < len(sets); i++ {
+		var newResult [][]Type
+		for _, existing := range result {
+			for _, item := range sets[i] {
+				combination := make([]Type, len(existing)+1)
+				copy(combination, existing)
+				combination[len(existing)] = item
+				newResult = append(newResult, combination)
+			}
+		}
+		result = newResult
+	}
+
+	return result
 }
 
 func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
@@ -3152,6 +3258,25 @@ func (c *Checker) inferTypeAnn(
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)
 		t = NewMutableType(provenance, targetType)
+	case *ast.TemplateLitTypeAnn:
+		types := make([]Type, len(typeAnn.TypeAnns))
+		quasis := make([]*Quasi, len(typeAnn.Quasis))
+		strOrNumType := NewUnionType(nil, NewStrPrimType(nil), NewNumPrimType(nil))
+		for i, typeAnn := range typeAnn.TypeAnns {
+			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+			// Each type in a template literal type must be a subtype of either
+			// string or number.
+			// TODO: Also check if the value has a .toString() method.
+			unifyErrors := c.unify(ctx, typeAnnType, strOrNumType)
+			types[i] = typeAnnType
+			errors = slices.Concat(errors, unifyErrors, typeAnnErrors)
+		}
+		for i, quasi := range typeAnn.Quasis {
+			quasis[i] = &Quasi{
+				Value: quasi.Value,
+			}
+		}
+		t = NewTemplateLitType(provenance, quasis, types)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

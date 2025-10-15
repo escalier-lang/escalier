@@ -1606,12 +1606,11 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 }
 func (t *TemplateLitType) String() string {
 	result := "`"
-	if len(t.Quasis) > 0 {
-		for i, quasi := range t.Quasis {
-			if i > 0 {
-				result += "${" + quasi.Value + "}"
-			}
-			result += quasi.Value
+	for i, quasi := range t.Quasis {
+		result += quasi.Value
+		// Add the interpolated type if there is one at this position
+		if i < len(t.Types) {
+			result += "${" + t.Types[i].String() + "}"
 		}
 	}
 	result += "`"

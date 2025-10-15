@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
@@ -351,6 +352,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			} else {
 				typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 			}
+		case BackTick: // template literal type
+			typeAnn = p.templateLitTypeAnn(token)
 		default:
 			p.reportError(token.Span, "expected type annotation")
 			p.lexer.consume()
@@ -689,4 +692,39 @@ func getQualIdentSpan(qi ast.QualIdent) ast.Span {
 	default:
 		panic("getQualIdentSpan - unknown QualIdent type")
 	}
+}
+
+// templateLitTypeAnn parses a template literal type annotation like `${T}-${U}`
+func (p *Parser) templateLitTypeAnn(token *Token) ast.TypeAnn {
+	p.lexer.consume() // consume backtick
+	quasis := []*ast.Quasi{}
+	typeAnns := []ast.TypeAnn{}
+	for {
+		quasi := p.lexer.lexQuasi()
+
+		var raw string
+		if strings.HasSuffix(quasi.Value, "`") {
+			raw = quasi.Value[:len(quasi.Value)-1]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
+			break
+		} else if strings.HasSuffix(quasi.Value, "${") {
+			raw = quasi.Value[:len(quasi.Value)-2]
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
+			typeAnn := p.typeAnn()
+			if typeAnn != nil {
+				typeAnns = append(typeAnns, typeAnn)
+			}
+			p.lexer.consume() // consumes the closing brace
+		} else {
+			// This case happens when the template literal is not closed which
+			// means we've reached the end of the file.
+			raw = quasi.Value
+			quasis = append(quasis, &ast.Quasi{Value: raw, Span: quasi.Span})
+			span := ast.Span{Start: token.Span.Start, End: quasi.Span.End, SourceID: p.lexer.source.ID}
+			p.reportError(span, "Expected a closing backtick")
+			break
+		}
+	}
+	span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
+	return ast.NewTemplateLitTypeAnn(quasis, typeAnns, span)
 }

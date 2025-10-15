@@ -2371,6 +2371,163 @@ func TestExpandType(t *testing.T) {
 		assert.Empty(t, errors)
 		assert.Equal(t, "\"ok\" | \"error\"", result.String())
 	})
+
+	t.Run("TemplateLitType - simple string literal", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal with no interpolations: `hello`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello"}},
+			[]Type{},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello"`, result.String())
+	})
+
+	t.Run("TemplateLitType - single interpolation with string literal", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal: `hello-${world}`
+		worldLit := NewStrLitType(nil, "world")
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello-"}, {Value: ""}},
+			[]Type{worldLit},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello-world"`, result.String())
+	})
+
+	t.Run("TemplateLitType - union expansion (BinPair example)", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create BinDigit = 0 | 1
+		zero := NewNumLitType(nil, 0)
+		one := NewNumLitType(nil, 1)
+		binDigit := NewUnionType(nil, zero, one)
+
+		// Create BinPair = `${BinDigit},${BinDigit}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: ","}, {Value: ""}},
+			[]Type{binDigit, binDigit},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		// Should expand to "0,0" | "0,1" | "1,0" | "1,1"
+		assert.Contains(t, result.String(), `"0,0"`)
+		assert.Contains(t, result.String(), `"0,1"`)
+		assert.Contains(t, result.String(), `"1,0"`)
+		assert.Contains(t, result.String(), `"1,1"`)
+	})
+
+	t.Run("TemplateLitType - CSS prop example", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create Vert = "top" | "bottom"
+		top := NewStrLitType(nil, "top")
+		bottom := NewStrLitType(nil, "bottom")
+		vert := NewUnionType(nil, top, bottom)
+
+		// Create Horiz = "left" | "right"
+		left := NewStrLitType(nil, "left")
+		right := NewStrLitType(nil, "right")
+		horiz := NewUnionType(nil, left, right)
+
+		// Create margin literal
+		margin := NewStrLitType(nil, "margin")
+
+		// Create `${Vert}-${Horiz}-${Name}` with Name = "margin"
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: "-"}, {Value: ""}},
+			[]Type{vert, horiz, margin},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		// Should expand to "top-left-margin" | "top-right-margin" | "bottom-left-margin" | "bottom-right-margin"
+		assert.Contains(t, result.String(), `"top-left-margin"`)
+		assert.Contains(t, result.String(), `"top-right-margin"`)
+		assert.Contains(t, result.String(), `"bottom-left-margin"`)
+		assert.Contains(t, result.String(), `"bottom-right-margin"`)
+	})
+
+	t.Run("TemplateLitType - multiple parts without interpolation", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal: `hello world`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello world"}},
+			[]Type{},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello world"`, result.String())
+	})
+
+	t.Run("TemplateLitType - mixed literals and unions", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union: "a" | "b"
+		a := NewStrLitType(nil, "a")
+		b := NewStrLitType(nil, "b")
+		union := NewUnionType(nil, a, b)
+
+		// Create a literal: "c"
+		c := NewStrLitType(nil, "c")
+
+		// Create template: `${union}-${c}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]Type{union, c},
+		)
+
+		result, errors := checker.expandType(ctx, templateType)
+
+		assert.Empty(t, errors)
+		// Should expand to "a-c" | "b-c"
+		assert.Contains(t, result.String(), `"a-c"`)
+		assert.Contains(t, result.String(), `"b-c"`)
+	})
 }
 
 func TestExtractNamedCaptureGroups(t *testing.T) {
