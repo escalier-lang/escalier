@@ -107,6 +107,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"UniqueSymbol": {
 			input: "unique symbol",
 		},
+		"TemplateLiteralType": {
+			input: "`hello-${T}`",
+		},
+		"TemplateLiteralTypeMultipleParams": {
+			input: "`${A}-${B}-${C}`",
+		},
+		"TemplateLiteralTypeNoParams": {
+			input: "`hello-world`",
+		},
 	}
 
 	for name, test := range tests {

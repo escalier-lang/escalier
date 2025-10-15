@@ -1643,3 +1643,176 @@
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/TemplateLiteralTypeNoParams - 1]
+&ast.TemplateLitTypeAnn{
+    Quasis: {
+        &ast.Quasi{
+            Value: "hello-world",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeAnns: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TemplateLiteralType - 1]
+&ast.TemplateLitTypeAnn{
+    Quasis: {
+        &ast.Quasi{
+            Value: "hello-",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+        },
+        &ast.Quasi{
+            Value: "",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeAnns: {
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "T",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:10},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:11},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TemplateLiteralTypeMultipleParams - 1]
+&ast.TemplateLitTypeAnn{
+    Quasis: {
+        &ast.Quasi{
+            Value: "",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
+        },
+        &ast.Quasi{
+            Value: "-",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+        },
+        &ast.Quasi{
+            Value: "-",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+        },
+        &ast.Quasi{
+            Value: "",
+            Span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+        },
+    },
+    TypeAnns: {
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "A",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:4},
+                    End:      ast.Location{Line:1, Column:5},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "B",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:10},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "C",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:15},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:17},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

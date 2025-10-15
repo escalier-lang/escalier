@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["type AB = \"a\" | \"b\"\ntype C = \"c\"\ntype T = `${AB}-${C}`\n\nval x: T = \"a-c\"\nval y: T = \"b-c\"\nval z: T = \"c-c\"\n"],"names":[],"mappings":"MAII,AAAA,IAAO;MACP,AAAA,IAAO;MACP,AAAA,IAAO"}
