@@ -1540,35 +1540,102 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 // TypeExpansionVisitor implements TypeVisitor for expanding type references
 type TypeExpansionVisitor struct {
-	checker  *Checker
-	ctx      Context
-	errors   []Error
-	depth    int // current expansion depth
-	maxDepth int // maximum allowed expansion depth
+	checker             *Checker
+	ctx                 Context
+	errors              []Error
+	skipTypeRefsCount   int // if > 0, skip expanding TypeRefTypes
+	expandTypeRefsCount int // if > 0, number of TypeRefTypes expanded, if -1 then unlimited
 }
 
 // NewTypeExpansionVisitor creates a new visitor for expanding type references
-func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisitor {
+func NewTypeExpansionVisitor(checker *Checker, ctx Context, expandTypeRefsCount int) *TypeExpansionVisitor {
 	return &TypeExpansionVisitor{
-		checker:  checker,
-		ctx:      ctx,
-		errors:   []Error{},
-		depth:    0,
-		maxDepth: 1, // Limit expansion to depth of 1
+		checker:             checker,
+		ctx:                 ctx,
+		errors:              []Error{},
+		skipTypeRefsCount:   0,
+		expandTypeRefsCount: expandTypeRefsCount,
 	}
 }
 
 func (v *TypeExpansionVisitor) EnterType(t Type) Type {
-	v.depth++
-
 	switch t := t.(type) {
+	case *FuncType:
+		v.skipTypeRefsCount++ // don't expand type refs inside function types
+	case *ObjectType:
+		v.skipTypeRefsCount++ // don't expand type refs inside object types
+	case *CondType:
+		// We need to expand the CondType's extends type on entering so that
+		// we can replace InferTypes in the extends type with fresh type variables
+		// and then replace the corresponding TypeVarTypes in the alt and cons types
+		// with those fresh type variables.  If we did this on exit, we wouldn't
+		// be able to replace all the types in nested CondTypes.
+		// TODO: Add a test case to ensure that infer type shadowing works and
+		// fix the bug if it doesn't.
+
+		inferSubs := v.checker.findInferTypes(t.Extends)
+		groupSubs := v.checker.findNamedGroups(t.Extends)
+		extendsType := v.checker.replaceRegexGroupTypes(t.Extends, groupSubs)
+		extendsType = v.checker.replaceInferTypes(extendsType, inferSubs)
+
+		maps.Copy(inferSubs, groupSubs)
+
+		return NewCondType(
+			t.Provenance(),
+			t.Check,
+			extendsType,
+			v.checker.substituteTypeParams(t.Then, inferSubs),
+			// TODO: don't use substitutions for the Then type because the Checks
+			// type didn't have any InferTypes in it, so we don't need to
+			// replace them with fresh type variables.
+			v.checker.substituteTypeParams(t.Else, inferSubs),
+		)
+	}
+
+	return nil
+}
+
+func (v *TypeExpansionVisitor) ExitType(t Type) Type {
+	switch t := t.(type) {
+	case *FuncType:
+		v.skipTypeRefsCount--
+	case *ObjectType:
+		v.skipTypeRefsCount--
+	case *CondType:
+		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
+		if len(errors) == 0 {
+			return t.Then
+		} else {
+			return t.Else
+		}
+	case *UnionType:
+		// filter out `never` types from the union
+		var filteredTypes []Type
+		for _, typ := range t.Types {
+			if _, ok := typ.(*NeverType); !ok {
+				filteredTypes = append(filteredTypes, typ)
+			}
+		}
+		if len(filteredTypes) == len(t.Types) {
+			return nil // No filtering needed, return nil to let Accept handle it
+		}
+		return NewUnionType(nil, filteredTypes...)
 	case *TypeRefType:
+		// TODO: implement once TypeAliases have been marked as recursive.
+		// `expandType` is eager so we can't expand recursive type aliases as it
+		// would lead to infinite recursion.
+
 		if t.Name == "Array" || t.Name == "Error" {
 			return nil
 		}
 
 		// Check if we've reached the maximum expansion depth
-		if v.depth > v.maxDepth {
+		if v.skipTypeRefsCount > 0 {
+			// Return the type reference without expanding
+			return nil
+		}
+
+		if v.expandTypeRefsCount == 0 {
 			// Return the type reference without expanding
 			return nil
 		}
@@ -1583,6 +1650,7 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 
 		// Replace type params with type args if the type is generic
 		expandedType := typeAlias.Type
+
 		// TODO:
 		// - ensure that the number of type args matches the number of type params
 		// - handle type params with defaults
@@ -1623,65 +1691,15 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 			}
 		}
+
 		// Recursively expand the resolved type using the same visitor to maintain state
-		return expandedType.Accept(v)
-	case *CondType:
-		// We need to expand the CondType's extends type on entering so that
-		// we can replace InferTypes in the extends type with fresh type variables
-		// and then replace the corresponding TypeVarTypes in the alt and cons types
-		// with those fresh type variables.  If we did this on exit, we wouldn't
-		// be able to replace all the types in nested CondTypes.
-		// TODO: Add a test case to ensure that infer type shadowing works and
-		// fix the bug if it doesn't.
-
-		inferSubs := v.checker.findInferTypes(t.Extends)
-		groupSubs := v.checker.findNamedGroups(t.Extends)
-		extendsType := v.checker.replaceRegexGroupTypes(t.Extends, groupSubs)
-		extendsType = v.checker.replaceInferTypes(extendsType, inferSubs)
-
-		maps.Copy(inferSubs, groupSubs)
-
-		return NewCondType(
-			t.Provenance(),
-			t.Check,
-			extendsType,
-			v.checker.substituteTypeParams(t.Then, inferSubs),
-			// TODO: don't use substitutions for the Then type because the Checks
-			// type didn't have any InferTypes in it, so we don't need to
-			// replace them with fresh type variables.
-			v.checker.substituteTypeParams(t.Else, inferSubs),
-		)
-	}
-
-	return nil
-}
-
-func (v *TypeExpansionVisitor) ExitType(t Type) Type {
-	defer func() { v.depth-- }()
-
-	switch t := t.(type) {
-	case *NamespaceType:
-		// Don't expand NamespaceTypes - return them as-is
-		return nil
-	case *CondType:
-		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
-		if len(errors) == 0 {
-			return t.Then
-		} else {
-			return t.Else
+		if v.expandTypeRefsCount == -1 {
+			result, _ := v.checker.expandType(v.ctx, expandedType, -1)
+			return result
 		}
-	case *UnionType:
-		// filter out `never` types from the union
-		var filteredTypes []Type
-		for _, typ := range t.Types {
-			if _, ok := typ.(*NeverType); !ok {
-				filteredTypes = append(filteredTypes, typ)
-			}
-		}
-		if len(filteredTypes) == len(t.Types) {
-			return nil // No filtering needed, return nil to let Accept handle it
-		}
-		return NewUnionType(nil, filteredTypes...)
+
+		result, _ := v.checker.expandType(v.ctx, expandedType, v.expandTypeRefsCount-1)
+		return result
 	case *TemplateLitType:
 		// Expand template literal types by generating all possible string combinations
 		// from the cartesian product of the union types in the template
@@ -1703,14 +1721,8 @@ func (v *TypeExpansionVisitor) expandTemplateLitType(t *TemplateLitType) Type {
 
 	for i, t := range t.Types {
 		t = Prune(t)
-		// If this is a TypeRefType, we need to expand it first to get the underlying type
-		if typeRef, ok := t.(*TypeRefType); ok {
-			typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, typeRef.Name)
-			if typeAlias != nil {
-				t = typeAlias.Type
-				t = Prune(t)
-			}
-		}
+		t, _ = v.checker.expandType(v.ctx, t, -1) // fully expand nested type refs
+
 		if unionType, ok := t.(*UnionType); ok {
 			typeOptions[i] = unionType.Types
 		} else {
@@ -1725,6 +1737,8 @@ func (v *TypeExpansionVisitor) expandTemplateLitType(t *TemplateLitType) Type {
 	resultTypes := make([]Type, 0, len(combinations))
 
 	for _, combo := range combinations {
+		// NOTE: we can only expand this to a string literal if all the quasis
+		// are literal types
 		// Build the string by interleaving quasis and type values
 		var result strings.Builder
 
@@ -1794,9 +1808,9 @@ func (v *TypeExpansionVisitor) cartesianProduct(sets [][]Type) [][]Type {
 	return result
 }
 
-func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
+func (c *Checker) expandType(ctx Context, t Type, expandTypeRefsCount int) (Type, []Error) {
 	t = Prune(t)
-	visitor := NewTypeExpansionVisitor(c, ctx)
+	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
 
 	result := t.Accept(visitor)
 	return result, visitor.errors
@@ -1831,7 +1845,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
 	// or can't be expanded any further
 	for {
-		expandedType, expandErrors := c.expandType(ctx, objType)
+		expandedType, expandErrors := c.expandType(ctx, objType, 1)
 		errors = slices.Concat(errors, expandErrors)
 
 		// If expansion didn't change the type, we're done expanding
@@ -3306,7 +3320,7 @@ func (c *Checker) generateSubstitutionSets(
 	for i, argType := range typeArgs {
 		// TODO: recursively expand union types in case some of the elements are
 		// also union types.
-		argType, argErrors := c.expandType(ctx, argType)
+		argType, argErrors := c.expandType(ctx, argType, 1)
 		if len(argErrors) > 0 {
 			errors = append(errors, argErrors...)
 		}

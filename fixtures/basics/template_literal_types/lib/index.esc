@@ -1,4 +1,6 @@
-type AB = "a" | "b"
+type A = "a"
+type B = "b"
+type AB = A | B
 type C = "c"
 type T = `${AB}-${C}`
 

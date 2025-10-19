@@ -25,12 +25,12 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *MutableType) []Error {
 
 	// Try expanding the types and check again if they changed
 	retry := false
-	expandedT1, _ := c.expandType(ctx, t1)
+	expandedT1, _ := c.expandType(ctx, t1, 1)
 	if expandedT1 != t1 {
 		t1 = expandedT1
 		retry = true
 	}
-	expandedT2, _ := c.expandType(ctx, t2)
+	expandedT2, _ := c.expandType(ctx, t2, 1)
 	if expandedT2 != t2 {
 		t2 = expandedT2
 		retry = true
