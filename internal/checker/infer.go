@@ -1737,42 +1737,55 @@ func (v *TypeExpansionVisitor) expandTemplateLitType(t *TemplateLitType) Type {
 	resultTypes := make([]Type, 0, len(combinations))
 
 	for _, combo := range combinations {
-		// NOTE: we can only expand this to a string literal if all the quasis
-		// are literal types
-		// Build the string by interleaving quasis and type values
-		var result strings.Builder
+		newQuasis := []*Quasi{}
+		newTypes := []Type{}
+		currentQuasi := ""
 
 		for i, quasi := range t.Quasis {
-			result.WriteString(quasi.Value)
+			currentQuasi += quasi.Value
 
 			if i < len(combo) {
-				// Convert the type to a string value
+				// Check if this is a literal type that should be concatenated to currentQuasi
 				if litType, ok := combo[i].(*LitType); ok {
-					// Extract the actual value from the literal without quotes
 					switch lit := litType.Lit.(type) {
 					case *StrLit:
-						result.WriteString(lit.Value)
+						currentQuasi += lit.Value
 					case *NumLit:
-						result.WriteString(fmt.Sprintf("%v", lit.Value))
+						currentQuasi += fmt.Sprintf("%v", lit.Value)
 					case *BoolLit:
-						result.WriteString(fmt.Sprintf("%v", lit.Value))
+						currentQuasi += fmt.Sprintf("%v", lit.Value)
 					case *BigIntLit:
-						result.WriteString(lit.Value.String())
+						currentQuasi += lit.Value.String()
 					default:
-						result.WriteString(litType.Lit.String())
+						// Other literal types: append currentQuasi and add the type
+						newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+						currentQuasi = ""
+						newTypes = append(newTypes, combo[i])
 					}
-				} else if strPrimType, ok := combo[i].(*PrimType); ok && strPrimType.Prim == StrPrim {
-					// If we have a string primitive type (not a literal), we can't expand it
-					// In this case, we should return the original template literal type
-					return nil
 				} else {
-					// For other types, use their string representation
-					result.WriteString(combo[i].String())
+					// Non-literal types: append currentQuasi and add the type
+					newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+					currentQuasi = ""
+					newTypes = append(newTypes, combo[i])
 				}
 			}
 		}
 
-		resultTypes = append(resultTypes, NewStrLitType(t.Provenance(), result.String()))
+		// Append the final currentQuasi (this is the tail)
+		newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+
+		// If we have no types (all were literals), convert to a string literal
+		if len(newTypes) == 0 {
+			resultTypes = append(resultTypes, NewStrLitType(t.Provenance(), newQuasis[0].Value))
+		} else {
+			// Otherwise, create a new template literal type
+			newTemplateLitType := &TemplateLitType{
+				Quasis: newQuasis,
+				Types:  newTypes,
+			}
+			newTemplateLitType.SetProvenance(t.Provenance())
+			resultTypes = append(resultTypes, newTemplateLitType)
+		}
 	}
 
 	// Return a union of all possible string literals

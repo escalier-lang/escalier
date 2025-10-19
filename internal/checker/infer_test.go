@@ -2582,8 +2582,78 @@ func TestExpandType(t *testing.T) {
 
 		assert.Empty(t, errors)
 		// Should expand to "a-c" | "b-c"
-		assert.Contains(t, result.String(), `"a-c"`)
-		assert.Contains(t, result.String(), `"b-c"`)
+		assert.Equal(t, result.String(), `"a-c" | "b-c"`)
+	})
+
+	t.Run("TemplateLitType - with number primitive type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template with number primitive: `id-${number}`
+		numberType := NewNumPrimType(nil)
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "id-"}, {Value: ""}},
+			[]Type{numberType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, result.String(), "`id-${number}`")
+	})
+
+	t.Run("TemplateLitType - with string primitive type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template with string primitive: `prefix-${string}-suffix`
+		stringType := NewStrPrimType(nil)
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "prefix-"}, {Value: "-suffix"}},
+			[]Type{stringType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, result.String(), "`prefix-${string}-suffix`")
+	})
+
+	t.Run("TemplateLitType - mixed literals and primitive types", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union: "a" | "b"
+		a := NewStrLitType(nil, "a")
+		b := NewStrLitType(nil, "b")
+		union := NewUnionType(nil, a, b)
+
+		// Create a number primitive
+		numberType := NewNumPrimType(nil)
+
+		// Create template: `${union}-${number}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]Type{union, numberType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to a union of two template literal types
+		assert.Equal(t, result.String(), "`a-${number}` | `b-${number}`")
 	})
 }
 
