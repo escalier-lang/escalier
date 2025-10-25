@@ -951,6 +951,7 @@ func (r *RestSpreadElem) Accept(v TypeVisitor) ObjTypeElem {
 }
 
 type ObjectType struct {
+	ID         int
 	Elems      []ObjTypeElem
 	Exact      bool // Can't be true if any of Interface, Implements, or Extends are true
 	Immutable  bool // true for `#{...}`, false for `{...}`
@@ -967,14 +968,33 @@ type ObjectType struct {
 	provenance   Provenance
 }
 
+var idCounter int = 0
+
 // TODO: add different constructors for different types of object types
 func NewObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
 	return &ObjectType{
+		ID:           0,
 		Elems:        elems,
 		Exact:        false,
 		Immutable:    false,
 		Mutable:      false,
 		Nominal:      false,
+		Interface:    false,
+		Extends:      nil,
+		Implements:   nil,
+		SymbolKeyMap: nil,
+		provenance:   provenance,
+	}
+}
+func NewNominalObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectType {
+	idCounter++
+	return &ObjectType{
+		ID:           idCounter,
+		Elems:        elems,
+		Exact:        false,
+		Immutable:    false,
+		Mutable:      false,
+		Nominal:      true,
 		Interface:    false,
 		Extends:      nil,
 		Implements:   nil,
@@ -1019,6 +1039,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	var result *ObjectType = t
 	if changed {
 		result = NewObjectType(t.provenance, newElems)
+		result.ID = t.ID
 		result.Exact = t.Exact
 		result.Immutable = t.Immutable
 		result.Mutable = t.Mutable

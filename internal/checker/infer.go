@@ -389,8 +389,7 @@ func (c *Checker) InferComponent(
 			}
 
 			provenance := &ast.NodeProvenance{Node: decl}
-			objType := NewObjectType(provenance, objTypeElems)
-			objType.Nominal = true
+			objType := NewNominalObjectType(provenance, objTypeElems)
 			objType.SymbolKeyMap = instanceSymbolKeyMap
 
 			// TODO: call c.bind() directly

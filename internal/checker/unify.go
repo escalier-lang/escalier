@@ -304,7 +304,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | TypeRefType, TypeRefType (different alias name) -> ...
 	if ref1, ok := t1.(*TypeRefType); ok {
 		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name != ref2.Name {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
+			// panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
 			// TODO
 		}
 	}
@@ -550,6 +550,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
 		if obj2, ok := t2.(*ObjectType); ok {
+
+			fmt.Fprintf(os.Stderr, "obj1.Nominal: %v, obj2.Nominal: %v\n", obj1.Nominal, obj2.Nominal)
+			fmt.Fprintf(os.Stderr, "obj1.ID: %d, obj2.ID: %d\n", obj1.ID, obj2.ID)
+
+			if obj2.Nominal {
+				if obj1.ID == obj2.ID {
+					return nil
+				}
+				// TODO: check what classes the objects extend
+				return []Error{&CannotUnifyTypesError{
+					T1: obj1,
+					T2: obj2,
+				}}
+			}
 
 			// TODO: handle exactness
 			// TODO: handle unnamed elems, e.g. callable and newable signatures
