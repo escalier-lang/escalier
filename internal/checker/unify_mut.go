@@ -23,14 +23,6 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *MutableType) []Error {
 		return nil
 	}
 
-	// if obj1, ok1 := t1.(*ObjectType); ok1 {
-	// 	if obj2, ok2 := t2.(*ObjectType); ok2 {
-	// 		if obj1.Equals(obj2) {
-	// 			return nil
-	// 		}
-	// 	}
-	// }
-
 	// Try expanding the types and check again if they changed
 	retry := false
 	expandedT1, _ := c.expandType(ctx, t1, 1)

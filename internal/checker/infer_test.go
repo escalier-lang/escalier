@@ -882,6 +882,20 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"productId": "UserId",
 			},
 		},
+		"NomimalCanBeAssignedToStructural": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				type HasId = {id: number}
+				val userId = UserId(5)
+				val hasId: HasId = userId
+			`,
+			expectedTypes: map[string]string{
+				"userId": "UserId",
+				"hasId":  "HasId",
+			},
+		},
 		"StructuralObjectTypes": {
 			input: `
 				type UserId = {id: number}
@@ -1000,9 +1014,20 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				val productId: ProductId = userId
 			`,
 			expectedErrors: []string{
-				// TODO: improve error message
-				// We should report the names of the classes involved in the mismatch
-				`{id: number} cannot be assigned to {id: number}`,
+				`UserId cannot be assigned to ProductId`,
+			},
+		},
+		"StructuralCannotBeAssignedToNominal": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				type HasId = {id: number}
+				val hasId: HasId = {id: 5}
+				val userId: UserId = hasId
+			`,
+			expectedErrors: []string{
+				`{id: number} cannot be assigned to UserId`,
 			},
 		},
 	}

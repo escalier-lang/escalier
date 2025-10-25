@@ -558,6 +558,27 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				if obj1.ID == obj2.ID {
 					return nil
 				}
+
+				prov1 := obj1.Provenance()
+				prov2 := obj2.Provenance()
+
+				fmt.Fprintf(os.Stderr, "obj1 provenance: %#v\n", prov1)
+				fmt.Fprintf(os.Stderr, "obj2 provenance: %#v\n", prov2)
+
+				// if prov1, ok := prov1.(*ast.NodeProvenance); ok {
+				// 	if prov2, ok := prov2.(*ast.NodeProvenance); ok {
+				// 		if decl1, ok := prov1.Node.(*ast.ClassDecl); ok {
+				// 			if decl2, ok := prov2.Node.(*ast.ClassDecl); ok {
+				// 				// TODO: check what classes the objects extend
+				// 				return []Error{&CannotUnifyTypesError{
+				// 					T1: obj1,
+				// 					T2: obj2,
+				// 				}}
+				// 			}
+				// 		}
+				// 	}
+				// }
+
 				// TODO: check what classes the objects extend
 				return []Error{&CannotUnifyTypesError{
 					T1: obj1,

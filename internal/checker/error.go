@@ -147,7 +147,32 @@ func (e CannotUnifyTypesError) Span() ast.Span {
 	return t1Node.Span()
 }
 func (e CannotUnifyTypesError) Message() string {
-	return e.T1.String() + " cannot be assigned to " + e.T2.String()
+	t1Str := e.T1.String()
+	t2Str := e.T2.String()
+
+	if obj1, ok := e.T1.(*ObjectType); ok {
+		if obj1.Nominal {
+			prov1 := e.T1.Provenance()
+			if node1, ok := prov1.(*ast.NodeProvenance); ok {
+				if decl1, ok := node1.Node.(*ast.ClassDecl); ok {
+					t1Str = decl1.Name.Name
+				}
+			}
+		}
+	}
+
+	if obj2, ok := e.T2.(*ObjectType); ok {
+		if obj2.Nominal {
+			prov2 := e.T2.Provenance()
+			if node2, ok := prov2.(*ast.NodeProvenance); ok {
+				if decl2, ok := node2.Node.(*ast.ClassDecl); ok {
+					t2Str = decl2.Name.Name
+				}
+			}
+		}
+	}
+
+	return t1Str + " cannot be assigned to " + t2Str
 }
 
 type UnknownIdentifierError struct {
