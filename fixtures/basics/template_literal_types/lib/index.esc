@@ -1,0 +1,9 @@
+type A = "a"
+type B = "b"
+type AB = A | B
+type C = "c"
+type T = `${AB}-${C}`
+
+val x: T = "a-c"
+val y: T = "b-c"
+val z: T = "c-c"

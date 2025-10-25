@@ -1540,35 +1540,102 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 // TypeExpansionVisitor implements TypeVisitor for expanding type references
 type TypeExpansionVisitor struct {
-	checker  *Checker
-	ctx      Context
-	errors   []Error
-	depth    int // current expansion depth
-	maxDepth int // maximum allowed expansion depth
+	checker             *Checker
+	ctx                 Context
+	errors              []Error
+	skipTypeRefsCount   int // if > 0, skip expanding TypeRefTypes
+	expandTypeRefsCount int // if > 0, number of TypeRefTypes expanded, if -1 then unlimited
 }
 
 // NewTypeExpansionVisitor creates a new visitor for expanding type references
-func NewTypeExpansionVisitor(checker *Checker, ctx Context) *TypeExpansionVisitor {
+func NewTypeExpansionVisitor(checker *Checker, ctx Context, expandTypeRefsCount int) *TypeExpansionVisitor {
 	return &TypeExpansionVisitor{
-		checker:  checker,
-		ctx:      ctx,
-		errors:   []Error{},
-		depth:    0,
-		maxDepth: 1, // Limit expansion to depth of 1
+		checker:             checker,
+		ctx:                 ctx,
+		errors:              []Error{},
+		skipTypeRefsCount:   0,
+		expandTypeRefsCount: expandTypeRefsCount,
 	}
 }
 
 func (v *TypeExpansionVisitor) EnterType(t Type) Type {
-	v.depth++
-
 	switch t := t.(type) {
+	case *FuncType:
+		v.skipTypeRefsCount++ // don't expand type refs inside function types
+	case *ObjectType:
+		v.skipTypeRefsCount++ // don't expand type refs inside object types
+	case *CondType:
+		// We need to expand the CondType's extends type on entering so that
+		// we can replace InferTypes in the extends type with fresh type variables
+		// and then replace the corresponding TypeVarTypes in the alt and cons types
+		// with those fresh type variables.  If we did this on exit, we wouldn't
+		// be able to replace all the types in nested CondTypes.
+		// TODO: Add a test case to ensure that infer type shadowing works and
+		// fix the bug if it doesn't.
+
+		inferSubs := v.checker.findInferTypes(t.Extends)
+		groupSubs := v.checker.findNamedGroups(t.Extends)
+		extendsType := v.checker.replaceRegexGroupTypes(t.Extends, groupSubs)
+		extendsType = v.checker.replaceInferTypes(extendsType, inferSubs)
+
+		maps.Copy(inferSubs, groupSubs)
+
+		return NewCondType(
+			t.Provenance(),
+			t.Check,
+			extendsType,
+			v.checker.substituteTypeParams(t.Then, inferSubs),
+			// TODO: don't use substitutions for the Then type because the Checks
+			// type didn't have any InferTypes in it, so we don't need to
+			// replace them with fresh type variables.
+			v.checker.substituteTypeParams(t.Else, inferSubs),
+		)
+	}
+
+	return nil
+}
+
+func (v *TypeExpansionVisitor) ExitType(t Type) Type {
+	switch t := t.(type) {
+	case *FuncType:
+		v.skipTypeRefsCount--
+	case *ObjectType:
+		v.skipTypeRefsCount--
+	case *CondType:
+		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
+		if len(errors) == 0 {
+			return t.Then
+		} else {
+			return t.Else
+		}
+	case *UnionType:
+		// filter out `never` types from the union
+		var filteredTypes []Type
+		for _, typ := range t.Types {
+			if _, ok := typ.(*NeverType); !ok {
+				filteredTypes = append(filteredTypes, typ)
+			}
+		}
+		if len(filteredTypes) == len(t.Types) {
+			return nil // No filtering needed, return nil to let Accept handle it
+		}
+		return NewUnionType(nil, filteredTypes...)
 	case *TypeRefType:
+		// TODO: implement once TypeAliases have been marked as recursive.
+		// `expandType` is eager so we can't expand recursive type aliases as it
+		// would lead to infinite recursion.
+
 		if t.Name == "Array" || t.Name == "Error" {
 			return nil
 		}
 
 		// Check if we've reached the maximum expansion depth
-		if v.depth > v.maxDepth {
+		if v.skipTypeRefsCount > 0 {
+			// Return the type reference without expanding
+			return nil
+		}
+
+		if v.expandTypeRefsCount == 0 {
 			// Return the type reference without expanding
 			return nil
 		}
@@ -1583,6 +1650,7 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 
 		// Replace type params with type args if the type is generic
 		expandedType := typeAlias.Type
+
 		// TODO:
 		// - ensure that the number of type args matches the number of type params
 		// - handle type params with defaults
@@ -1623,74 +1691,139 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 			}
 		}
+
 		// Recursively expand the resolved type using the same visitor to maintain state
-		return expandedType.Accept(v)
-	case *CondType:
-		// We need to expand the CondType's extends type on entering so that
-		// we can replace InferTypes in the extends type with fresh type variables
-		// and then replace the corresponding TypeVarTypes in the alt and cons types
-		// with those fresh type variables.  If we did this on exit, we wouldn't
-		// be able to replace all the types in nested CondTypes.
-		// TODO: Add a test case to ensure that infer type shadowing works and
-		// fix the bug if it doesn't.
-
-		inferSubs := v.checker.findInferTypes(t.Extends)
-		groupSubs := v.checker.findNamedGroups(t.Extends)
-		extendsType := v.checker.replaceRegexGroupTypes(t.Extends, groupSubs)
-		extendsType = v.checker.replaceInferTypes(extendsType, inferSubs)
-
-		maps.Copy(inferSubs, groupSubs)
-
-		return NewCondType(
-			t.Provenance(),
-			t.Check,
-			extendsType,
-			v.checker.substituteTypeParams(t.Then, inferSubs),
-			// TODO: don't use substitutions for the Then type because the Checks
-			// type didn't have any InferTypes in it, so we don't need to
-			// replace them with fresh type variables.
-			v.checker.substituteTypeParams(t.Else, inferSubs),
-		)
-	}
-
-	return nil
-}
-
-func (v *TypeExpansionVisitor) ExitType(t Type) Type {
-	defer func() { v.depth-- }()
-
-	switch t := t.(type) {
-	case *NamespaceType:
-		// Don't expand NamespaceTypes - return them as-is
-		return nil
-	case *CondType:
-		errors := v.checker.unify(v.ctx, t.Check, t.Extends)
-		if len(errors) == 0 {
-			return t.Then
-		} else {
-			return t.Else
+		if v.expandTypeRefsCount == -1 {
+			result, _ := v.checker.expandType(v.ctx, expandedType, -1)
+			return result
 		}
-	case *UnionType:
-		// filter out `never` types from the union
-		var filteredTypes []Type
-		for _, typ := range t.Types {
-			if _, ok := typ.(*NeverType); !ok {
-				filteredTypes = append(filteredTypes, typ)
-			}
-		}
-		if len(filteredTypes) == len(t.Types) {
-			return nil // No filtering needed, return nil to let Accept handle it
-		}
-		return NewUnionType(nil, filteredTypes...)
+
+		result, _ := v.checker.expandType(v.ctx, expandedType, v.expandTypeRefsCount-1)
+		return result
+	case *TemplateLitType:
+		// Expand template literal types by generating all possible string combinations
+		// from the cartesian product of the union types in the template
+		return v.expandTemplateLitType(t)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
 }
 
-func (c *Checker) expandType(ctx Context, t Type) (Type, []Error) {
+// expandTemplateLitType expands a template literal type by generating all possible
+// string combinations from the cartesian product of union types in the template.
+// Example: `${0 | 1},${0 | 1}` => "0,0" | "0,1" | "1,0" | "1,1"
+func (v *TypeExpansionVisitor) expandTemplateLitType(t *TemplateLitType) Type {
+	// Extract the members of each type in the template
+	// If a type is a union, we get all its members
+	// If it's a literal, we get just that literal
+	typeOptions := make([][]Type, len(t.Types))
+
+	for i, t := range t.Types {
+		t = Prune(t)
+		t, _ = v.checker.expandType(v.ctx, t, -1) // fully expand nested type refs
+
+		if unionType, ok := t.(*UnionType); ok {
+			typeOptions[i] = unionType.Types
+		} else {
+			typeOptions[i] = []Type{t}
+		}
+	}
+
+	// Generate cartesian product of all type options
+	combinations := v.cartesianProduct(typeOptions)
+
+	// Convert each combination into a string literal type
+	resultTypes := make([]Type, 0, len(combinations))
+
+	for _, combo := range combinations {
+		newQuasis := []*Quasi{}
+		newTypes := []Type{}
+		currentQuasi := ""
+
+		for i, quasi := range t.Quasis {
+			currentQuasi += quasi.Value
+
+			if i < len(combo) {
+				// Check if this is a literal type that should be concatenated to currentQuasi
+				if litType, ok := combo[i].(*LitType); ok {
+					switch lit := litType.Lit.(type) {
+					case *StrLit:
+						currentQuasi += lit.Value
+					case *NumLit:
+						currentQuasi += fmt.Sprintf("%v", lit.Value)
+					case *BoolLit:
+						currentQuasi += fmt.Sprintf("%v", lit.Value)
+					case *BigIntLit:
+						currentQuasi += lit.Value.String()
+					default:
+						// Other literal types: append currentQuasi and add the type
+						newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+						currentQuasi = ""
+						newTypes = append(newTypes, combo[i])
+					}
+				} else {
+					// Non-literal types: append currentQuasi and add the type
+					newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+					currentQuasi = ""
+					newTypes = append(newTypes, combo[i])
+				}
+			}
+		}
+
+		// Append the final currentQuasi (this is the tail)
+		newQuasis = append(newQuasis, &Quasi{Value: currentQuasi})
+
+		// If we have no types (all were literals), convert to a string literal
+		if len(newTypes) == 0 {
+			resultTypes = append(resultTypes, NewStrLitType(t.Provenance(), newQuasis[0].Value))
+		} else {
+			// Otherwise, create a new template literal type
+			newTemplateLitType := &TemplateLitType{
+				Quasis: newQuasis,
+				Types:  newTypes,
+			}
+			newTemplateLitType.SetProvenance(t.Provenance())
+			resultTypes = append(resultTypes, newTemplateLitType)
+		}
+	}
+
+	// Return a union of all possible string literals
+	return NewUnionType(t.Provenance(), resultTypes...)
+}
+
+// cartesianProduct generates the cartesian product of multiple slices of types
+func (v *TypeExpansionVisitor) cartesianProduct(sets [][]Type) [][]Type {
+	if len(sets) == 0 {
+		return [][]Type{{}}
+	}
+
+	// Start with combinations from the first set
+	result := make([][]Type, 0)
+	for _, item := range sets[0] {
+		result = append(result, []Type{item})
+	}
+
+	// For each remaining set, combine with existing results
+	for i := 1; i < len(sets); i++ {
+		var newResult [][]Type
+		for _, existing := range result {
+			for _, item := range sets[i] {
+				combination := make([]Type, len(existing)+1)
+				copy(combination, existing)
+				combination[len(existing)] = item
+				newResult = append(newResult, combination)
+			}
+		}
+		result = newResult
+	}
+
+	return result
+}
+
+func (c *Checker) expandType(ctx Context, t Type, expandTypeRefsCount int) (Type, []Error) {
 	t = Prune(t)
-	visitor := NewTypeExpansionVisitor(c, ctx)
+	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
 
 	result := t.Accept(visitor)
 	return result, visitor.errors
@@ -1725,7 +1858,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
 	// or can't be expanded any further
 	for {
-		expandedType, expandErrors := c.expandType(ctx, objType)
+		expandedType, expandErrors := c.expandType(ctx, objType, 1)
 		errors = slices.Concat(errors, expandErrors)
 
 		// If expansion didn't change the type, we're done expanding
@@ -3152,6 +3285,25 @@ func (c *Checker) inferTypeAnn(
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)
 		t = NewMutableType(provenance, targetType)
+	case *ast.TemplateLitTypeAnn:
+		types := make([]Type, len(typeAnn.TypeAnns))
+		quasis := make([]*Quasi, len(typeAnn.Quasis))
+		strOrNumType := NewUnionType(nil, NewStrPrimType(nil), NewNumPrimType(nil))
+		for i, typeAnn := range typeAnn.TypeAnns {
+			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
+			// Each type in a template literal type must be a subtype of either
+			// string or number.
+			// TODO: Also check if the value has a .toString() method.
+			unifyErrors := c.unify(ctx, typeAnnType, strOrNumType)
+			types[i] = typeAnnType
+			errors = slices.Concat(errors, unifyErrors, typeAnnErrors)
+		}
+		for i, quasi := range typeAnn.Quasis {
+			quasis[i] = &Quasi{
+				Value: quasi.Value,
+			}
+		}
+		t = NewTemplateLitType(provenance, quasis, types)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
@@ -3181,7 +3333,7 @@ func (c *Checker) generateSubstitutionSets(
 	for i, argType := range typeArgs {
 		// TODO: recursively expand union types in case some of the elements are
 		// also union types.
-		argType, argErrors := c.expandType(ctx, argType)
+		argType, argErrors := c.expandType(ctx, argType, 1)
 		if len(argErrors) > 0 {
 			errors = append(errors, argErrors...)
 		}

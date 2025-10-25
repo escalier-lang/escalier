@@ -195,7 +195,7 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 				binding, exists := scope.Types[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
-				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+				expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
 				actualType := expandedTyped.String()
 
 				if exists {
@@ -384,7 +384,7 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 				binding, exists := scope.Types[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
-				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+				expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
 				actualType := expandedTyped.String()
 
 				if exists {
@@ -614,7 +614,7 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
 				if exists {
-					expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+					expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
 					actualType := expandedTyped.String()
 					assert.Equal(t, expectedType, actualType, "Type alias mismatch for %s", expectedName)
 				}

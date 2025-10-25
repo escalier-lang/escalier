@@ -755,12 +755,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 
 	retry := false
-	expandedT1, _ := c.expandType(ctx, t1)
+	expandedT1, _ := c.expandType(ctx, t1, 1)
 	if expandedT1 != t1 {
 		t1 = expandedT1
 		retry = true
 	}
-	expandedT2, _ := c.expandType(ctx, t2)
+	expandedT2, _ := c.expandType(ctx, t2, 1)
 	if expandedT2 != t2 {
 		t2 = expandedT2
 		retry = true

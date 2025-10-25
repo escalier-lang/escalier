@@ -855,6 +855,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b": "string | \"world\"",
 			},
 		},
+		"MultilayerTypeAliases": {
+			input: `
+				type A = "a"
+				type B = "b"
+				type AB = A | B
+				val x: AB = "a"
+			`,
+			expectedTypes: map[string]string{
+				"x": "AB",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -1006,8 +1017,9 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type ContainerOfContainers = Container<NumberContainer>
 			`,
 			expectedTypes: map[string]string{
-				"NumberContainer":       "{items: number}",
-				"ContainerOfContainers": "{items: NumberContainer}",
+				"NumberContainer": "{items: number}",
+				// NOTE: we also expand type arguments when expanding type aliases
+				"ContainerOfContainers": "{items: Container<number>}",
 			},
 		},
 		"GenericTupleTypes": {
@@ -1046,7 +1058,8 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type OptionalStringList = List<Optional<string>>
 			`,
 			expectedTypes: map[string]string{
-				"OptionalStringList": "{items: Array<Optional<string>>, length: number}",
+				// NOTE: we also expand type arguments when expanding type aliases
+				"OptionalStringList": "{items: Array<string | null>, length: number}",
 			},
 		},
 		"GenericTypeWithMultipleInstantiations": {
@@ -1098,7 +1111,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				binding, exists := scope.Types[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
-				expandedTyped, _ := c.expandType(inferCtx, binding.Type)
+				expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
 				actualType := expandedTyped.String()
 
 				if exists {
@@ -1109,6 +1122,50 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 			// Note: We don't check for unexpected type aliases since the scope may include
 			// prelude types that are implementation details
 		})
+	}
+}
+
+func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
+	source := &ast.Source{
+		ID:   0,
+		Path: "input.esc",
+		Contents: `
+			type A = "a"
+			type B = "b"
+			type AB = A | B
+		`,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	if len(errors) > 0 {
+		for i, err := range errors {
+			fmt.Printf("Error[%d]: %#v\n", i, err)
+		}
+	}
+	assert.Len(t, errors, 0)
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	scope, inferErrors := c.InferModule(inferCtx, module)
+	if len(inferErrors) > 0 {
+		assert.Equal(t, inferErrors, []*Error{})
+	}
+
+	binding, exists := scope.Types["AB"]
+
+	expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
+	expandedTyped, _ = c.expandType(inferCtx, expandedTyped, 1)
+	actualType := expandedTyped.String()
+
+	if exists {
+		assert.Equal(t, `"a" | "b"`, actualType)
 	}
 }
 
@@ -2168,7 +2225,7 @@ func TestExpandType(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				result, errors := checker.expandType(ctx, test.input)
+				result, errors := checker.expandType(ctx, test.input, 1)
 				assert.Empty(t, errors)
 				assert.Equal(t, test.expected.String(), result.String())
 			})
@@ -2187,7 +2244,7 @@ func TestExpandType(t *testing.T) {
 		numLit := NewNumLitType(nil, 42)
 		unionType := NewUnionType(nil, strLit, numLit)
 
-		result, errors := checker.expandType(ctx, unionType)
+		result, errors := checker.expandType(ctx, unionType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello" | 42`, result.String())
@@ -2203,7 +2260,7 @@ func TestExpandType(t *testing.T) {
 		// Create a TypeRefType that references a non-existent type alias
 		typeRef := NewTypeRefType(nil, "UnknownType", nil)
 
-		result, errors := checker.expandType(ctx, typeRef)
+		result, errors := checker.expandType(ctx, typeRef, 1)
 
 		assert.Len(t, errors, 1)
 		// Check that the error is an UnknownTypeError
@@ -2234,7 +2291,7 @@ func TestExpandType(t *testing.T) {
 		// Create a TypeRefType that references the alias
 		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
 
-		result, errors := checker.expandType(ctx, typeRef)
+		result, errors := checker.expandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"literal"`, result.String())
@@ -2268,7 +2325,7 @@ func TestExpandType(t *testing.T) {
 		stringLitType := NewStrLitType(nil, "hello")
 		typeRef := NewTypeRefType(nil, "Identity", typeAlias, stringLitType)
 
-		result, errors := checker.expandType(ctx, typeRef)
+		result, errors := checker.expandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello"`, result.String())
@@ -2302,7 +2359,7 @@ func TestExpandType(t *testing.T) {
 		// Create a TypeRefType that references the outer alias
 		outerTypeRef := NewTypeRefType(nil, "Outer", outerAlias)
 
-		result, errors := checker.expandType(ctx, outerTypeRef)
+		result, errors := checker.expandType(ctx, outerTypeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, "Inner", result.String())
@@ -2331,10 +2388,10 @@ func TestExpandType(t *testing.T) {
 		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
 		unionType := NewUnionType(nil, numLit, typeRef)
 
-		result, errors := checker.expandType(ctx, unionType)
+		result, errors := checker.expandType(ctx, unionType, 1)
 
 		assert.Empty(t, errors)
-		assert.Equal(t, "42 | MyString", result.String())
+		assert.Equal(t, "42 | \"mystring\"", result.String())
 	})
 
 	t.Run("Complex generic type alias", func(t *testing.T) {
@@ -2366,10 +2423,237 @@ func TestExpandType(t *testing.T) {
 		errorLitType := NewStrLitType(nil, "error")
 		typeRef := NewTypeRefType(nil, "Result", typeAlias, okLitType, errorLitType)
 
-		result, errors := checker.expandType(ctx, typeRef)
+		result, errors := checker.expandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, "\"ok\" | \"error\"", result.String())
+	})
+
+	t.Run("TemplateLitType - simple string literal", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal with no interpolations: `hello`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello"}},
+			[]Type{},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello"`, result.String())
+	})
+
+	t.Run("TemplateLitType - single interpolation with string literal", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal: `hello-${world}`
+		worldLit := NewStrLitType(nil, "world")
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello-"}, {Value: ""}},
+			[]Type{worldLit},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello-world"`, result.String())
+	})
+
+	t.Run("TemplateLitType - union expansion (BinPair example)", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create BinDigit = 0 | 1
+		zero := NewNumLitType(nil, 0)
+		one := NewNumLitType(nil, 1)
+		binDigit := NewUnionType(nil, zero, one)
+
+		// Create BinPair = `${BinDigit},${BinDigit}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: ","}, {Value: ""}},
+			[]Type{binDigit, binDigit},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "0,0" | "0,1" | "1,0" | "1,1"
+		assert.Contains(t, result.String(), `"0,0"`)
+		assert.Contains(t, result.String(), `"0,1"`)
+		assert.Contains(t, result.String(), `"1,0"`)
+		assert.Contains(t, result.String(), `"1,1"`)
+	})
+
+	t.Run("TemplateLitType - CSS prop example", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create Vert = "top" | "bottom"
+		top := NewStrLitType(nil, "top")
+		bottom := NewStrLitType(nil, "bottom")
+		vert := NewUnionType(nil, top, bottom)
+
+		// Create Horiz = "left" | "right"
+		left := NewStrLitType(nil, "left")
+		right := NewStrLitType(nil, "right")
+		horiz := NewUnionType(nil, left, right)
+
+		// Create margin literal
+		margin := NewStrLitType(nil, "margin")
+
+		// Create `${Vert}-${Horiz}-${Name}` with Name = "margin"
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: "-"}, {Value: ""}},
+			[]Type{vert, horiz, margin},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "top-left-margin" | "top-right-margin" | "bottom-left-margin" | "bottom-right-margin"
+		assert.Contains(t, result.String(), `"top-left-margin"`)
+		assert.Contains(t, result.String(), `"top-right-margin"`)
+		assert.Contains(t, result.String(), `"bottom-left-margin"`)
+		assert.Contains(t, result.String(), `"bottom-right-margin"`)
+	})
+
+	t.Run("TemplateLitType - multiple parts without interpolation", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template literal: `hello world`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "hello world"}},
+			[]Type{},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"hello world"`, result.String())
+	})
+
+	t.Run("TemplateLitType - mixed literals and unions", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union: "a" | "b"
+		a := NewStrLitType(nil, "a")
+		b := NewStrLitType(nil, "b")
+		union := NewUnionType(nil, a, b)
+
+		// Create a literal: "c"
+		c := NewStrLitType(nil, "c")
+
+		// Create template: `${union}-${c}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]Type{union, c},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "a-c" | "b-c"
+		assert.Equal(t, result.String(), `"a-c" | "b-c"`)
+	})
+
+	t.Run("TemplateLitType - with number primitive type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template with number primitive: `id-${number}`
+		numberType := NewNumPrimType(nil)
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "id-"}, {Value: ""}},
+			[]Type{numberType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, result.String(), "`id-${number}`")
+	})
+
+	t.Run("TemplateLitType - with string primitive type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a template with string primitive: `prefix-${string}-suffix`
+		stringType := NewStrPrimType(nil)
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: "prefix-"}, {Value: "-suffix"}},
+			[]Type{stringType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, result.String(), "`prefix-${string}-suffix`")
+	})
+
+	t.Run("TemplateLitType - mixed literals and primitive types", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a union: "a" | "b"
+		a := NewStrLitType(nil, "a")
+		b := NewStrLitType(nil, "b")
+		union := NewUnionType(nil, a, b)
+
+		// Create a number primitive
+		numberType := NewNumPrimType(nil)
+
+		// Create template: `${union}-${number}`
+		templateType := NewTemplateLitType(
+			nil,
+			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]Type{union, numberType},
+		)
+
+		result, errors := checker.expandType(ctx, templateType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to a union of two template literal types
+		assert.Equal(t, result.String(), "`a-${number}` | `b-${number}`")
 	})
 }
 
