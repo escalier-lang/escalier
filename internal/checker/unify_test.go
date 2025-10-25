@@ -429,6 +429,9 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutObj2 := test_util.ParseTypeAnn("mut {x: number, y: string}")
 
 		errors := checker.unify(ctx, mutObj1, mutObj2)
+		for _, err := range errors {
+			t.Logf("Error: %v", err)
+		}
 		assert.Empty(t, errors, "mutable object types with identical structure should unify")
 	})
 

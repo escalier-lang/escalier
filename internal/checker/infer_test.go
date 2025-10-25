@@ -866,6 +866,48 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x": "AB",
 			},
 		},
+		"NominalClasses": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				class ProductId(id: number) {
+					id
+				}
+				val userId = UserId(5)
+				val productId: UserId = userId
+			`,
+			expectedTypes: map[string]string{
+				"userId":    "UserId",
+				"productId": "UserId",
+			},
+		},
+		"NomimalCanBeAssignedToStructural": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				type HasId = {id: number}
+				val userId = UserId(5)
+				val hasId: HasId = userId
+			`,
+			expectedTypes: map[string]string{
+				"userId": "UserId",
+				"hasId":  "HasId",
+			},
+		},
+		"StructuralObjectTypes": {
+			input: `
+				type UserId = {id: number}
+				type ProductId = {id: number}
+				val userId: UserId = {id: 5}
+				val productId: ProductId = userId
+			`,
+			expectedTypes: map[string]string{
+				"userId":    "UserId",
+				"productId": "ProductId",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -923,6 +965,119 @@ func TestCheckModuleNoErrors(t *testing.T) {
 
 			// Note: We don't check for unexpected variables since the scope includes
 			// prelude functions and operators that are implementation details
+		})
+	}
+}
+
+func TestCheckModuleWithErrors(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"TypeMismatch": {
+			input: `
+				val x: number = "hello"
+			`,
+			expectedErrors: []string{
+				`"hello" cannot be assigned to number`,
+			},
+		},
+		"UndefinedVariable": {
+			input: `
+				val x = y + 1
+			`,
+			expectedErrors: []string{
+				`Unknown identifier: y`,
+			},
+		},
+		"InvalidOperation": {
+			input: `
+				val x: string = "hello"
+				val y: boolean = true
+				val z = x + y
+			`,
+			expectedErrors: []string{
+				// TODO: improve error message
+				`boolean cannot be assigned to number`,
+				`string cannot be assigned to number`,
+			},
+		},
+		"NominalClasses": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				class ProductId(id: number) {
+					id
+				}
+				val userId = UserId(5)
+				val productId: ProductId = userId
+			`,
+			expectedErrors: []string{
+				`UserId cannot be assigned to ProductId`,
+			},
+		},
+		"StructuralCannotBeAssignedToNominal": {
+			input: `
+				class UserId(id: number) {
+					id
+				}
+				type HasId = {id: number}
+				val hasId: HasId = {id: 5}
+				val userId: UserId = hasId
+			`,
+			expectedErrors: []string{
+				`{id: number} cannot be assigned to UserId`,
+			},
+		},
+	}
+
+	schema := loadSchema(t)
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			c.Schema = schema
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			// Verify we got the expected number of errors
+			assert.Len(t, inferErrors, len(test.expectedErrors), "Expected %d errors but got %d", len(test.expectedErrors), len(inferErrors))
+
+			// Verify each expected error message appears in the actual errors
+			for _, expectedMsg := range test.expectedErrors {
+				found := false
+				for _, err := range inferErrors {
+					fmt.Fprintf(os.Stderr, "Got error: %s\n", err.Message())
+					if err.Message() == expectedMsg {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "Expected error message not found: %s", expectedMsg)
+			}
 		})
 	}
 }
