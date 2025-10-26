@@ -3202,6 +3202,28 @@ func TestMatchExprInference(t *testing.T) {
 				"result": "number | string",
 			},
 		},
+		// TODO(#174): Rework how `unify` works for pattern matching so that this
+		// test case passes.
+		// "MatchClassesWithObjPat": {
+		// 	input: `
+		// 		class Point(x: number, y: number) {
+		// 			x,
+		// 			y,
+		// 		}
+		// 		class Event(kind: string) {
+		// 			kind,
+		// 		}
+		// 		declare val obj: Point | Event
+		// 		val result = match obj {
+		// 			{x, y} => x + y,
+		// 			{kind} => kind,
+		// 		}
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"obj":    "Point | Event",
+		// 		"result": "number | string",
+		// 	},
+		// },
 	}
 
 	for name, test := range tests {
