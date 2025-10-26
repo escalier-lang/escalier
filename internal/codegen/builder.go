@@ -1515,6 +1515,34 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 		return finalCondition, []Stmt{bindingStmt}
 
+	case *ast.InstancePat:
+		// Instance patterns: check instanceof and destructure the object pattern
+		var conditions []Expr
+
+		// Create instanceof check: targetExpr instanceof ClassName
+		instanceofCheck := NewBinaryExpr(
+			targetExpr,
+			InstanceOf,
+			NewIdentExpr(pat.ClassName, "", pat),
+			pat,
+		)
+		conditions = append(conditions, instanceofCheck)
+
+		// If there's an object pattern, recursively check it
+		// TODO: Exclude pattern conditions for fields immediately on the class
+		// instance so we know those exist based on the instanceof check.
+		var bindingStmts []Stmt
+		if pat.Object != nil {
+			objCond, objBindings := b.buildPatternCondition(pat.Object, targetExpr)
+			conditions = append(conditions, objCond)
+			bindingStmts = append(bindingStmts, objBindings...)
+		}
+
+		// Combine all conditions with &&
+		finalCondition := combineConditions(conditions, pat)
+
+		return finalCondition, bindingStmts
+
 	default:
 		// For now, handle other patterns as always matching
 		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}

@@ -149,4 +149,31 @@ if (temp26 != null && "value" in temp26 && temp26.value == "string") {
   temp25 = "boolean";
 }
 export const refMatch = temp25;
+class Color {
+  constructor(temp27, temp28, temp29) {
+    const r = temp27;
+    const g = temp28;
+    const b = temp29;
+    this.r = r;
+    this.g = g;
+    this.b = b;
+  }
+}
+class Event {
+  constructor(temp30) {
+    const kind = temp30;
+    this.kind = kind;
+  }
+}
+let temp31;
+let temp32;
+temp32 = obj;
+if (temp32 instanceof Color && temp32 != null && "r" in temp32 && "g" in temp32 && "b" in temp32) {
+  const {r, g, b} = temp32;
+  temp31 = r + g + b;
+} else if (temp32 instanceof Event && temp32 != null && "kind" in temp32) {
+  const {kind} = temp32;
+  temp31 = kind;
+}
+const result = temp31;
 //# sourceMappingURL=./index.js.map
