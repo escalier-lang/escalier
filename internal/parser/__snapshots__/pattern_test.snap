@@ -872,7 +872,7 @@
 [TestParsePatternNoErrors/InstancePattern - 1]
 &ast.InstancePat{
     ClassName: "Point",
-    Object:    ast.ObjectPat{
+    Object:    &ast.ObjectPat{
         Elems: {
             &ast.ObjShorthandPat{
                 Key: &ast.Ident{

@@ -594,7 +594,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.InstancePat{
                         ClassName: "b",
-                        Object:    ast.ObjectPat{
+                        Object:    &ast.ObjectPat{
                             Elems: {
                                 &ast.ObjShorthandPat{
                                     Key: &ast.Ident{

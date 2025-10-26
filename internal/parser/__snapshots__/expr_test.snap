@@ -511,7 +511,7 @@
             &ast.Param{
                 Pattern: &ast.InstancePat{
                     ClassName: "b",
-                    Object:    ast.ObjectPat{
+                    Object:    &ast.ObjectPat{
                         Elems: {
                             &ast.ObjShorthandPat{
                                 Key: &ast.Ident{
@@ -8099,7 +8099,7 @@
         &ast.MatchCase{
             Pattern: &ast.InstancePat{
                 ClassName: "Point",
-                Object:    ast.ObjectPat{
+                Object:    &ast.ObjectPat{
                     Elems: {
                         &ast.ObjShorthandPat{
                             Key: &ast.Ident{
@@ -8194,7 +8194,7 @@
         &ast.MatchCase{
             Pattern: &ast.InstancePat{
                 ClassName: "Circle",
-                Object:    ast.ObjectPat{
+                Object:    &ast.ObjectPat{
                     Elems: {
                         &ast.ObjShorthandPat{
                             Key: &ast.Ident{
