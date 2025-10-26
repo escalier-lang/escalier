@@ -1543,6 +1543,91 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 		return finalCondition, bindingStmts
 
+	case *ast.ExtractorPat:
+		// Extractor patterns: check instanceof the extractor class and call the custom matcher
+		var conditions []Expr
+
+		// Create instanceof check: targetExpr instanceof ExtractorName
+		instanceofCheck := NewBinaryExpr(
+			targetExpr,
+			InstanceOf,
+			NewIdentExpr(pat.Name, "", pat),
+			pat,
+		)
+		conditions = append(conditions, instanceofCheck)
+
+		// Create temporary variables for the extracted values
+		tempVars := []Expr{}
+		tempVarPats := []Pat{}
+
+		for _, arg := range pat.Args {
+			tempId := b.NewTempId()
+			tempVar := NewIdentExpr(tempId, "", nil)
+
+			var init Expr
+			switch arg := arg.(type) {
+			case *ast.IdentPat:
+				if arg.Default != nil {
+					// TODO: Handle defaults if needed
+				}
+			}
+			tempVarPat := NewIdentPat(tempId, init, pat)
+
+			tempVarPats = append(tempVarPats, tempVarPat)
+			tempVars = append(tempVars, tempVar)
+		}
+
+		// Call the custom matcher: InvokeCustomMatcherOrThrow(extractor, subject, undefined)
+		extractor := NewIdentExpr(pat.Name, "", pat)
+		receiver := NewIdentExpr("undefined", "", nil)
+
+		call := NewCallExpr(
+			NewIdentExpr("InvokeCustomMatcherOrThrow", "", nil),
+			[]Expr{extractor, targetExpr, receiver},
+			false,
+			nil,
+		)
+
+		// Create the tuple destructuring for the result
+		decls := []*Declarator{
+			{
+				Pattern: NewTuplePat(tempVarPats, nil),
+				TypeAnn: nil,
+				Init:    call,
+			},
+		}
+
+		decl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   decls,
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  nil,
+		}
+
+		callStmt := &DeclStmt{
+			Decl:   decl,
+			span:   nil,
+			source: nil,
+		}
+
+		var bindingStmts []Stmt
+		bindingStmts = append(bindingStmts, callStmt)
+
+		// Recursively build conditions and bindings for each argument pattern
+		for i, argPat := range pat.Args {
+			tempVar := tempVars[i]
+			argCond, argBindings := b.buildPatternCondition(argPat, tempVar)
+			conditions = append(conditions, argCond)
+			bindingStmts = append(bindingStmts, argBindings...)
+		}
+
+		// Combine all conditions with &&
+		finalCondition := combineConditions(conditions, pat)
+
+		return finalCondition, bindingStmts
+
 	default:
 		// For now, handle other patterns as always matching
 		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}

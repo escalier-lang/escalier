@@ -150,30 +150,53 @@ if (temp26 != null && "value" in temp26 && temp26.value == "string") {
 }
 export const refMatch = temp25;
 class Color {
-  constructor(temp27, temp28, temp29) {
-    const r = temp27;
-    const g = temp28;
-    const b = temp29;
+  constructor(temp28, temp29, temp30) {
+    const r = temp28;
+    const g = temp29;
+    const b = temp30;
     this.r = r;
     this.g = g;
     this.b = b;
   }
-}
-class Event {
-  constructor(temp30) {
-    const kind = temp30;
-    this.kind = kind;
+  static [Symbol.customMatcher](temp27) {
+    const subject = temp27;
+    return [subject.r, subject.g, subject.b];
   }
 }
-let temp31;
-let temp32;
-temp32 = obj;
-if (temp32 instanceof Color && temp32 != null && "r" in temp32 && "g" in temp32 && "b" in temp32) {
-  const {r, g, b} = temp32;
-  temp31 = r + g + b;
-} else if (temp32 instanceof Event && temp32 != null && "kind" in temp32) {
-  const {kind} = temp32;
-  temp31 = kind;
+class Event {
+  constructor(temp32) {
+    const kind = temp32;
+    this.kind = kind;
+  }
+  static [Symbol.customMatcher](temp31) {
+    const subject = temp31;
+    return [subject.kind];
+  }
 }
-const result = temp31;
+let temp33;
+let temp34;
+temp34 = obj;
+if (temp34 instanceof Color && temp34 != null && "r" in temp34 && "g" in temp34 && "b" in temp34) {
+  const {r, g, b} = temp34;
+  temp33 = r + g + b;
+} else if (temp34 instanceof Event && temp34 != null && "kind" in temp34) {
+  const {kind} = temp34;
+  temp33 = kind;
+}
+const result1 = temp33;
+let temp35;
+let temp36;
+temp36 = obj;
+if (temp36 instanceof Color) {
+  const [temp38, temp39, temp40] = InvokeCustomMatcherOrThrow(Color, temp36, undefined);
+  const r = temp38;
+  const g = temp39;
+  const b = temp40;
+  temp35 = r + g + b;
+} else if (temp36 instanceof Event) {
+  const [temp37] = InvokeCustomMatcherOrThrow(Event, temp36, undefined);
+  const kind = temp37;
+  temp35 = kind;
+}
+const result2 = temp35;
 //# sourceMappingURL=./index.js.map

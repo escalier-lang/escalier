@@ -450,6 +450,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			}
 		}
 	}
+	// TODO: dedupe with next case
 	// | _, ExtractorType -> ...
 	if ext, ok := t2.(*ExtractorType); ok {
 		if extObj, ok := ext.Extractor.(*ObjectType); ok {
@@ -539,13 +540,95 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			ActualType:    ext.Extractor,
 		}}
 	}
-	// }
-	// | ExtractorType, ObjectType -> ...
+	// TODO: dedupe with previous case
+	// | ExtractorType, _ -> ...
 	if ext, ok := t1.(*ExtractorType); ok {
-		if obj, ok := t2.(*ObjectType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", ext, obj))
-			// TODO
+		if extObj, ok := ext.Extractor.(*ObjectType); ok {
+			for _, elem := range extObj.Elems {
+				if methodElem, ok := elem.(*MethodElem); ok {
+					// TODO: look up the symbol ID for `Symbol.customMatcher`
+					if methodElem.Name.Kind == SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+						if len(methodElem.Fn.Params) != 1 {
+							return []Error{&IncorrectParamCountForCustomMatcherError{
+								Method:    methodElem.Fn,
+								NumParams: len(methodElem.Fn.Params),
+							}}
+						}
+
+						paramType := methodElem.Fn.Params[0].Type
+						errors := c.unify(ctx, paramType, t2)
+
+						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+							// Find if the args have a rest element
+							var restIndex = -1
+							for i, elem := range ext.Args {
+								if _, isRest := elem.(*RestSpreadType); isRest {
+									restIndex = i
+									break
+								}
+							}
+
+							if restIndex != -1 {
+								// Tuple has rest element
+								// Must have at least as many args as elements before rest
+								if len(ext.Args) < restIndex {
+									return []Error{&ExtractorReturnTypeMismatchError{
+										ExtractorType: ext,
+										ReturnType:    tuple,
+										NumArgs:       len(ext.Args),
+										NumReturns:    len(tuple.Elems),
+									}}
+								}
+
+								// Unify fixed elements (before rest)
+								for i := 0; i < restIndex; i++ {
+									argErrors := c.unify(ctx, ext.Args[i], tuple.Elems[i])
+									errors = slices.Concat(errors, argErrors)
+								}
+
+								// Unify rest arguments with rest element type
+								if len(ext.Args) > restIndex {
+									restElem := ext.Args[restIndex].(*RestSpreadType)
+									remainingArgsTupleType := NewTupleType(nil, tuple.Elems[restIndex:]...)
+
+									restErrors := c.unify(ctx, remainingArgsTupleType, restElem.Type)
+									errors = slices.Concat(errors, restErrors)
+								}
+							} else {
+								// Tuple has no rest element, use strict equality check
+								if len(tuple.Elems) == len(ext.Args) {
+									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
+										argErrors := c.unify(ctx, argType, retElem)
+										errors = slices.Concat(errors, argErrors)
+									}
+								} else {
+									return []Error{&ExtractorReturnTypeMismatchError{
+										ExtractorType: ext,
+										ReturnType:    tuple,
+										NumArgs:       len(ext.Args),
+										NumReturns:    len(tuple.Elems),
+									}}
+								}
+							}
+						} else {
+							return []Error{&ExtractorMustReturnTupleError{
+								ExtractorType: ext,
+								ReturnType:    methodElem.Fn.Return,
+							}}
+						}
+
+						return errors
+					}
+				}
+			}
+			return []Error{&MissingCustomMatcherError{
+				ObjectType: extObj,
+			}}
 		}
+		return []Error{&InvalidExtractorTypeError{
+			ExtractorType: ext,
+			ActualType:    ext.Extractor,
+		}}
 	}
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
