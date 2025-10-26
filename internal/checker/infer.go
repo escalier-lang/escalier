@@ -2869,6 +2869,35 @@ func (c *Checker) inferPattern(
 			} else {
 				t = NewNeverType(nil)
 			}
+		case *ast.InstancePat:
+			patType, patBindings, patErrors := c.inferPattern(ctx, p.Object)
+			typeAlias := ctx.Scope.getTypeAlias(p.ClassName)
+
+			for name, binding := range patBindings {
+				bindings[name] = binding
+			}
+
+			typeAliasType := Prune(typeAlias.Type)
+
+			if clsType, ok := typeAliasType.(*ObjectType); ok {
+				if patType, ok := Prune(patType).(*ObjectType); ok {
+					// We know that the object type inferred from this pattern
+					// must be an instance of the class type, so we set the ID
+					// of the pattern type to be the same as the class type.
+					// Without this, the unify call below would fail because
+					// an object type without a matching ID is not assignable
+					// to an object type with a non-zero ID.
+					patType.Nominal = true
+					patType.ID = clsType.ID
+				}
+			}
+
+			unifyErrors := c.unify(ctx, patType, typeAliasType)
+
+			errors = append(errors, patErrors...)
+			errors = append(errors, unifyErrors...)
+
+			t = typeAliasType
 		case *ast.RestPat:
 			argType, argErrors := inferPatRec(p.Pattern)
 			errors = append(errors, argErrors...)

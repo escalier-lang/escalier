@@ -96,3 +96,18 @@ export val refMatch = match ref {
     {value: b:number} => "number",
     {value: c:boolean} => "boolean",
 }
+
+// Class instance patterns
+class Color(r: number, g: number, b: number) {
+	r,
+	g,
+    b,
+}
+class Event(kind: string) {
+	kind,
+}
+declare val obj: Color | Event
+val result = match obj {
+	Color {r, g, b} => r + g + b,
+	Event {kind} => kind,
+}

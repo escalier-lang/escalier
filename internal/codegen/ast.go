@@ -362,6 +362,7 @@ const (
 	LogicalOr         BinaryOp = "||"
 	NullishCoalescing BinaryOp = "??"
 	In                BinaryOp = "in"
+	InstanceOf        BinaryOp = "instanceof"
 	Assign            BinaryOp = "="
 )
 

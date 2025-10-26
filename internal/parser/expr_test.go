@@ -197,6 +197,14 @@ func TestParseExprNoErrors(t *testing.T) {
 		"MatchComplex": {
 			input: "match result { Some(value) if value > 0 => value, Some(_) => 0, None => -1 }",
 		},
+		"MatchClassInstance": {
+			input: `
+				match shape {
+					Point {x, y} => x + y,
+					Circle {radius} => radius * 2,
+				}
+			`,
+		},
 		"TryBasic": {
 			input: "try { riskyOperation() }",
 		},

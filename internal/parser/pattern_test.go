@@ -74,6 +74,9 @@ func TestParsePatternNoErrors(t *testing.T) {
 		"ExtractPattern": {
 			input: "Foo(a, b)",
 		},
+		"InstancePattern": {
+			input: "Point {x, y}",
+		},
 		"WildcardPattern": {
 			input: "_",
 		},

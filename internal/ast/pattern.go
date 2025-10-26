@@ -14,6 +14,7 @@ func (*IdentPat) isPat()     {}
 func (*ObjectPat) isPat()    {}
 func (*TuplePat) isPat()     {}
 func (*ExtractorPat) isPat() {}
+func (*InstancePat) isPat()  {}
 func (*RestPat) isPat()      {}
 func (*LitPat) isPat()       {}
 func (*WildcardPat) isPat()  {}
@@ -157,6 +158,23 @@ func (p *ExtractorPat) Accept(v Visitor) {
 		for _, arg := range p.Args {
 			arg.Accept(v)
 		}
+	}
+	v.ExitPat(p)
+}
+
+type InstancePat struct {
+	ClassName    string // TODO: QualIdent
+	Object       *ObjectPat
+	span         Span
+	inferredType Type
+}
+
+func NewInstancePat(className string, object *ObjectPat, span Span) *InstancePat {
+	return &InstancePat{ClassName: className, Object: object, span: span, inferredType: nil}
+}
+func (p *InstancePat) Accept(v Visitor) {
+	if v.EnterPat(p) {
+		p.Object.Accept(v)
 	}
 	v.ExitPat(p)
 }

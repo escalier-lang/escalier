@@ -550,40 +550,17 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*ObjectType); ok {
 		if obj2, ok := t2.(*ObjectType); ok {
-
-			fmt.Fprintf(os.Stderr, "obj1.Nominal: %v, obj2.Nominal: %v\n", obj1.Nominal, obj2.Nominal)
-			fmt.Fprintf(os.Stderr, "obj1.ID: %d, obj2.ID: %d\n", obj1.ID, obj2.ID)
-
 			if obj2.Nominal {
-				if obj1.ID == obj2.ID {
-					return nil
+				// NOTE: We can't do an early return because if one of the object
+				// types was inferred from a pattern, some of its properties may
+				// be type variables that need to be unified.
+				if obj1.ID != obj2.ID {
+					// TODO: check what classes the objects extend
+					return []Error{&CannotUnifyTypesError{
+						T1: obj1,
+						T2: obj2,
+					}}
 				}
-
-				prov1 := obj1.Provenance()
-				prov2 := obj2.Provenance()
-
-				fmt.Fprintf(os.Stderr, "obj1 provenance: %#v\n", prov1)
-				fmt.Fprintf(os.Stderr, "obj2 provenance: %#v\n", prov2)
-
-				// if prov1, ok := prov1.(*ast.NodeProvenance); ok {
-				// 	if prov2, ok := prov2.(*ast.NodeProvenance); ok {
-				// 		if decl1, ok := prov1.Node.(*ast.ClassDecl); ok {
-				// 			if decl2, ok := prov2.Node.(*ast.ClassDecl); ok {
-				// 				// TODO: check what classes the objects extend
-				// 				return []Error{&CannotUnifyTypesError{
-				// 					T1: obj1,
-				// 					T2: obj2,
-				// 				}}
-				// 			}
-				// 		}
-				// 	}
-				// }
-
-				// TODO: check what classes the objects extend
-				return []Error{&CannotUnifyTypesError{
-					T1: obj1,
-					T2: obj2,
-				}}
 			}
 
 			// TODO: handle exactness
@@ -743,12 +720,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | ObjectType, UnionType -> ...
-	if obj, ok := t1.(*ObjectType); ok {
-		if union, ok := t2.(*UnionType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, union))
-			// TODO
-		}
-	}
+	// if obj, ok := t1.(*ObjectType); ok {
+	// 	if union, ok := t2.(*UnionType); ok {
+	// 		panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, union))
+	// 		// TODO
+	// 	}
+	// }
 	// | IntersectionType, IntersectionType -> ...
 	if intersection1, ok := t1.(*IntersectionType); ok {
 		if intersection2, ok := t2.(*IntersectionType); ok {
