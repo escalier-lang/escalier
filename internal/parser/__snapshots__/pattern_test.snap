@@ -868,3 +868,59 @@
     inferredType: nil,
 }
 ---
+
+[TestParsePatternNoErrors/InstancePattern - 1]
+&ast.InstancePat{
+    ClassName: "Point",
+    Object:    ast.ObjectPat{
+        Elems: {
+            &ast.ObjShorthandPat{
+                Key: &ast.Ident{
+                    Name: "x",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:8},
+                        End:      ast.Location{Line:1, Column:9},
+                        SourceID: 0,
+                    },
+                },
+                TypeAnn: nil,
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            &ast.ObjShorthandPat{
+                Key: &ast.Ident{
+                    Name: "y",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:12},
+                        SourceID: 0,
+                    },
+                },
+                TypeAnn: nil,
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:11},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

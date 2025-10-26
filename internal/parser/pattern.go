@@ -17,6 +17,8 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		next := p.lexer.peek()
 		if next.Type == OpenParen {
 			return p.extractorPat(token)
+		} else if next.Type == OpenBrace {
+			return p.instancePat(token)
 		} else {
 			return p.identPat(token, allowIdentDefault, allowColonTypeAnn)
 		}
@@ -43,6 +45,17 @@ func (p *Parser) extractorPat(nameToken *Token) ast.Pat {
 	end := p.expect(CloseParen, AlwaysConsume)
 	span := ast.NewSpan(nameToken.Span.Start, end, p.lexer.source.ID)
 	return ast.NewExtractorPat(nameToken.Value, patArgs, span)
+}
+
+// instancePat = identifier '{' (objPatElem (',' objPatElem)*)? '}'
+func (p *Parser) instancePat(nameToken *Token) ast.Pat {
+	start := nameToken.Span.Start
+	p.lexer.consume() // consume '{'
+	patElems := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	objectPat := ast.NewObjectPat(patElems, span)
+	return ast.NewInstancePat(nameToken.Value, objectPat, span)
 }
 
 // identPat = identifier (':' typeAnn)? ('=' expr)?

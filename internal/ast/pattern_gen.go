@@ -22,6 +22,10 @@ func (node *ExtractorPat) Span() Span             { return node.span }
 func (node *ExtractorPat) InferredType() Type     { return node.inferredType }
 func (node *ExtractorPat) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *InstancePat) Span() Span             { return node.span }
+func (node *InstancePat) InferredType() Type     { return node.inferredType }
+func (node *InstancePat) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *RestPat) Span() Span             { return node.span }
 func (node *RestPat) InferredType() Type     { return node.inferredType }
 func (node *RestPat) SetInferredType(t Type) { node.inferredType = t }
