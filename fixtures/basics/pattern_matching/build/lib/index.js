@@ -180,7 +180,7 @@ if (temp34 instanceof Color && temp34 != null && "r" in temp34 && "g" in temp34 
   const {r, g, b} = temp34;
   temp33 = r + g + b;
 } else if (temp34 instanceof Event && temp34 != null && "kind" in temp34) {
-  const {kind} = temp34;
+  const {kind = "default"} = temp34;
   temp33 = kind;
 }
 const result1 = temp33;
@@ -194,7 +194,7 @@ if (temp36 instanceof Color) {
   const b = temp40;
   temp35 = r + g + b;
 } else if (temp36 instanceof Event) {
-  const [temp37] = InvokeCustomMatcherOrThrow(Event, temp36, undefined);
+  const [temp37 = "default"] = InvokeCustomMatcherOrThrow(Event, temp36, undefined);
   const kind = temp37;
   temp35 = kind;
 }

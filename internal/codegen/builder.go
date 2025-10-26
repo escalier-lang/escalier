@@ -1449,6 +1449,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		conditions = append(conditions, nullCheck)
 
 		objPatElems := []ObjPatElem{}
+		var defaultStmts []Stmt
 
 		for _, elem := range pat.Elems {
 			switch objElem := elem.(type) {
@@ -1467,8 +1468,16 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				cond, _ := b.buildPatternCondition(objElem.Value, propTarget)
 				conditions = append(conditions, cond)
 
+				// Handle defaults for key-value patterns
+				var defExpr Expr
+				if objElem.Default != nil {
+					var defStmts []Stmt
+					defExpr, defStmts = b.buildExpr(objElem.Default, nil)
+					defaultStmts = append(defaultStmts, defStmts...)
+				}
+
 				valuePat := b.buildDestructuringPattern(objElem.Value)
-				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, defExpr, objElem))
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object
@@ -1480,7 +1489,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
+				// Handle defaults for shorthand patterns
+				var defExpr Expr
+				if objElem.Default != nil {
+					var defStmts []Stmt
+					defExpr, defStmts = b.buildExpr(objElem.Default, nil)
+					defaultStmts = append(defaultStmts, defStmts...)
+				}
+
+				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, defExpr, objElem))
 
 			case *ast.ObjRestPat:
 				// TODO: Implement object rest pattern properly
@@ -1510,10 +1527,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			source: pat,
 		}
 
+		// Combine all binding statements (defaults first, then destructuring)
+		var allBindingStmts []Stmt
+		allBindingStmts = append(allBindingStmts, defaultStmts...)
+		allBindingStmts = append(allBindingStmts, bindingStmt)
+
 		// Combine all conditions with &&
 		finalCondition := combineConditions(conditions, pat)
 
-		return finalCondition, []Stmt{bindingStmt}
+		return finalCondition, allBindingStmts
 
 	case *ast.InstancePat:
 		// Instance patterns: check instanceof and destructure the object pattern
@@ -1559,6 +1581,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		// Create temporary variables for the extracted values
 		tempVars := []Expr{}
 		tempVarPats := []Pat{}
+		var defaultStmts []Stmt
 
 		for _, arg := range pat.Args {
 			tempId := b.NewTempId()
@@ -1568,7 +1591,9 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			switch arg := arg.(type) {
 			case *ast.IdentPat:
 				if arg.Default != nil {
-					// TODO: Handle defaults if needed
+					defExpr, defStmts := b.buildExpr(arg.Default, nil)
+					defaultStmts = append(defaultStmts, defStmts...)
+					init = defExpr
 				}
 			}
 			tempVarPat := NewIdentPat(tempId, init, pat)
@@ -1613,6 +1638,9 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 
 		var bindingStmts []Stmt
+		// Add any statements from building default expressions first
+		bindingStmts = append(bindingStmts, defaultStmts...)
+		// Then add the call to the custom matcher
 		bindingStmts = append(bindingStmts, callStmt)
 
 		// Recursively build conditions and bindings for each argument pattern

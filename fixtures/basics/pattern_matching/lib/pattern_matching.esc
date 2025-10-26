@@ -116,11 +116,11 @@ declare val obj: Color | Event
 // Class instance patterns
 val result1 = match obj {
 	Color {r, g, b} => r + g + b,
-	Event {kind} => kind,
+	Event {kind = "default"} => kind,
 }
 
 // Extractor patterns
 val result2 = match obj {
 	Color(r, g, b) => r + g + b,
-	Event(kind) => kind,
+	Event(kind = "default") => kind,
 }
