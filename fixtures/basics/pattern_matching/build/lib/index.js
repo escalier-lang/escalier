@@ -118,7 +118,7 @@ let temp21;
 let temp22;
 temp22 = longTuple;
 if (temp22.length == 2) {
-  const [first, ...rest] = temp22;
+  const [first = 0, ...rest] = temp22;
   temp21 = rest;
 } else {
   temp21 = 0;
@@ -177,8 +177,8 @@ let temp33;
 let temp34;
 temp34 = obj;
 if (temp34 instanceof Color && temp34 != null && "r" in temp34 && "g" in temp34 && "b" in temp34) {
-  const {r, g, b} = temp34;
-  temp33 = r + g + b;
+  const {r, g = 0, b: blue = 0} = temp34;
+  temp33 = r + g + blue;
 } else if (temp34 instanceof Event && temp34 != null && "kind" in temp34) {
   const {kind = "default"} = temp34;
   temp33 = kind;
@@ -188,11 +188,11 @@ let temp35;
 let temp36;
 temp36 = obj;
 if (temp36 instanceof Color) {
-  const [temp38, temp39, temp40] = InvokeCustomMatcherOrThrow(Color, temp36, undefined);
+  const [temp38, temp39, temp40 = 0] = InvokeCustomMatcherOrThrow(Color, temp36, undefined);
   const r = temp38;
   const g = temp39;
-  const b = temp40;
-  temp35 = r + g + b;
+  const blue = temp40;
+  temp35 = r + g + blue;
 } else if (temp36 instanceof Event) {
   const [temp37 = "default"] = InvokeCustomMatcherOrThrow(Event, temp36, undefined);
   const kind = temp37;

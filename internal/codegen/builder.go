@@ -1666,7 +1666,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
 	switch pat := pattern.(type) {
 	case *ast.IdentPat:
-		return NewIdentPat(pat.Name, nil, pat)
+		var defExpr Expr
+		if pat.Default != nil {
+			var defStmts []Stmt
+			defExpr, defStmts = b.buildExpr(pat.Default, nil)
+			// Note: defStmts are ignored here as they should have been handled
+			// by the calling code in buildPatternCondition
+			_ = defStmts
+		}
+		return NewIdentPat(pat.Name, defExpr, pat)
 	case *ast.WildcardPat:
 		// Wildcards in destructuring are typically represented as identifier patterns
 		// with a special name like "_" - but for now we'll skip them

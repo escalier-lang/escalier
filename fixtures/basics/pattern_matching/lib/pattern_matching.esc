@@ -78,7 +78,7 @@ export val mixedMatch = match num3 {
 // Tuple rest patterns
 export val longTuple: [number, number, number] = [1, 2, 3]
 export val tupleRestMatch = match longTuple {
-    [first, ...rest] => rest,
+    [first = 0, ...rest] => rest,
     _ => 0
 }
 
@@ -115,12 +115,12 @@ declare val obj: Color | Event
 
 // Class instance patterns
 val result1 = match obj {
-	Color {r, g, b} => r + g + b,
+	Color {r, g = 0, b: blue = 0} => r + g + blue,
 	Event {kind = "default"} => kind,
 }
 
 // Extractor patterns
 val result2 = match obj {
-	Color(r, g, b) => r + g + b,
+	Color(r, g, blue = 0) => r + g + blue,
 	Event(kind = "default") => kind,
 }
