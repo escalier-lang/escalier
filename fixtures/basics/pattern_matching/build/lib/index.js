@@ -37,7 +37,7 @@ let temp7;
 let temp8;
 temp8 = objectValue;
 if (temp8 != null && "x" in temp8 && "y" in temp8) {
-  const {x, y} = temp8;
+  const {x, y = 0} = temp8;
   temp7 = x + y;
 } else {
   temp7 = 0;
@@ -47,7 +47,7 @@ let temp9;
 let temp10;
 temp10 = objectValue;
 if (temp10 != null && "x" in temp10 && "y" in temp10) {
-  const {x: a, y: b} = temp10;
+  const {x: a, y: b = 0} = temp10;
   temp9 = a * b;
 } else {
   temp9 = 0;

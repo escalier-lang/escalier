@@ -27,13 +27,13 @@ export val tupleMatch = match tupleValue {
 // Object pattern matching
 export val objectValue: Point = {x: 10, y: 20}
 export val objectMatch = match objectValue {
-    {x, y} => x + y,
+    {x, y = 0} => x + y,
     _ => 0
 }
 
 // Object pattern with renaming
 export val objectRename = match objectValue {
-    {x: a, y: b} => a * b,
+    {x: a, y: b = 0} => a * b,
     _ => 0
 }
 
