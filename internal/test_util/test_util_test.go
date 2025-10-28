@@ -409,13 +409,11 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("a", emptySpan()),
 				ast.NewIdentPat("x", nil, nil, emptySpan()),
-				nil,
 				emptySpan(),
 			),
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("b", emptySpan()),
 				ast.NewIdentPat("y", nil, nil, emptySpan()),
-				nil,
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -531,7 +529,6 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("b", emptySpan()),
 				ast.NewIdentPat("c", nil, nil, emptySpan()),
-				nil,
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -540,7 +537,6 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("a", emptySpan()),
 				nestedObject,
-				nil,
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -581,7 +577,6 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("a", emptySpan()),
 				ast.NewIdentPat("x", nil, nil, emptySpan()),
-				nil,
 				emptySpan(),
 			),
 			ast.NewObjShorthandPat(

@@ -3224,6 +3224,32 @@ func TestMatchExprInference(t *testing.T) {
 		// 		"result": "number | string",
 		// 	},
 		// },
+		"MatchExtractors": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+					static [Symbol.customMatcher](subject: Point) -> [number, number] {
+						return [subject.x, subject.y]
+					},
+				}
+				class Event(kind: string) {
+					kind,
+					static [Symbol.customMatcher](subject: Event) -> [string] {
+						return [subject.kind]
+					},
+				}
+				declare val obj: Point | Event
+				val result = match obj {
+					Point(x, y) => x + y,
+					Event(kind) => kind,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"obj":    "Point | Event",
+				"result": "number | string",
+			},
+		},
 	}
 
 	for name, test := range tests {

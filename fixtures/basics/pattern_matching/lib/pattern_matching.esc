@@ -27,13 +27,13 @@ export val tupleMatch = match tupleValue {
 // Object pattern matching
 export val objectValue: Point = {x: 10, y: 20}
 export val objectMatch = match objectValue {
-    {x, y} => x + y,
+    {x, y = 0} => x + y,
     _ => 0
 }
 
 // Object pattern with renaming
 export val objectRename = match objectValue {
-    {x: a, y: b} => a * b,
+    {x: a, y: b = 0} => a * b,
     _ => 0
 }
 
@@ -78,7 +78,7 @@ export val mixedMatch = match num3 {
 // Tuple rest patterns
 export val longTuple: [number, number, number] = [1, 2, 3]
 export val tupleRestMatch = match longTuple {
-    [first, ...rest] => rest,
+    [first = 0, ...rest] => rest,
     _ => 0
 }
 
@@ -97,17 +97,30 @@ export val refMatch = match ref {
     {value: c:boolean} => "boolean",
 }
 
-// Class instance patterns
 class Color(r: number, g: number, b: number) {
 	r,
 	g,
     b,
+    static [Symbol.customMatcher](subject: Color) -> [number, number, number] {
+        return [subject.r, subject.g, subject.b]
+    },
 }
 class Event(kind: string) {
 	kind,
+    static [Symbol.customMatcher](subject: Event) -> [string] {
+        return [subject.kind]
+    },
 }
 declare val obj: Color | Event
-val result = match obj {
-	Color {r, g, b} => r + g + b,
-	Event {kind} => kind,
+
+// Class instance patterns
+val result1 = match obj {
+	Color {r, g = 0, b: blue = 0} => r + g + blue,
+	Event {kind = "default"} => kind,
+}
+
+// Extractor patterns
+val result2 = match obj {
+	Color(r, g, blue = 0) => r + g + blue,
+	Event(kind = "default") => kind,
 }

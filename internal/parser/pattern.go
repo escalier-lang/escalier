@@ -180,23 +180,12 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 				span = ast.MergeSpans(span, value.Span())
 			}
 
-			var init ast.Expr
-			token = p.lexer.peek()
-			if token.Type == Equal {
-				p.lexer.consume()
-				expr := p.expr()
-				init = expr
-				if init != nil {
-					span = ast.MergeSpans(span, init.Span())
-				}
-			}
-
 			if value == nil {
 				return nil
 			}
 
 			span = ast.MergeSpans(span, value.Span())
-			return ast.NewObjKeyValuePat(key, value, init, span)
+			return ast.NewObjKeyValuePat(key, value, span)
 		} else {
 			// Handle shorthand pattern: {x::number} or {x::number = 0} or {x = 0}
 			var typeAnn ast.TypeAnn

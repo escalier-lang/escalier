@@ -120,16 +120,10 @@ func (b *Builder) buildPattern(
 						)
 					}
 
-					var defExpr Expr
-					if e.Default != nil {
-						var defStmts []Stmt
-						defExpr, defStmts = b.buildExpr(e.Default, nil)
-						stmts = slices.Concat(stmts, defStmts)
-					}
 					elems = append(elems, NewObjKeyValuePat(
 						fullyQualifyName(e.Key.Name, nsName),
 						buildPatternRec(e.Value, newTarget),
-						defExpr,
+						nil,
 						e,
 					))
 				case *ast.ObjShorthandPat:
@@ -1449,6 +1443,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		conditions = append(conditions, nullCheck)
 
 		objPatElems := []ObjPatElem{}
+		var defaultStmts []Stmt
 
 		for _, elem := range pat.Elems {
 			switch objElem := elem.(type) {
@@ -1480,7 +1475,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				)
 				conditions = append(conditions, propExistsCheck)
 
-				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, nil, objElem))
+				// Handle defaults for shorthand patterns
+				var defExpr Expr
+				if objElem.Default != nil {
+					var defStmts []Stmt
+					defExpr, defStmts = b.buildExpr(objElem.Default, nil)
+					defaultStmts = append(defaultStmts, defStmts...)
+				}
+
+				objPatElems = append(objPatElems, NewObjShorthandPat(objElem.Key.Name, defExpr, objElem))
 
 			case *ast.ObjRestPat:
 				// TODO: Implement object rest pattern properly
@@ -1510,10 +1513,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			source: pat,
 		}
 
+		// Combine all binding statements (defaults first, then destructuring)
+		var allBindingStmts []Stmt
+		allBindingStmts = append(allBindingStmts, defaultStmts...)
+		allBindingStmts = append(allBindingStmts, bindingStmt)
+
 		// Combine all conditions with &&
 		finalCondition := combineConditions(conditions, pat)
 
-		return finalCondition, []Stmt{bindingStmt}
+		return finalCondition, allBindingStmts
 
 	case *ast.InstancePat:
 		// Instance patterns: check instanceof and destructure the object pattern
@@ -1543,6 +1551,97 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 		return finalCondition, bindingStmts
 
+	case *ast.ExtractorPat:
+		// Extractor patterns: check instanceof the extractor class and call the custom matcher
+		var conditions []Expr
+
+		// Create instanceof check: targetExpr instanceof ExtractorName
+		instanceofCheck := NewBinaryExpr(
+			targetExpr,
+			InstanceOf,
+			NewIdentExpr(pat.Name, "", pat),
+			pat,
+		)
+		conditions = append(conditions, instanceofCheck)
+
+		// Create temporary variables for the extracted values
+		tempVars := []Expr{}
+		tempVarPats := []Pat{}
+		var defaultStmts []Stmt
+
+		for _, arg := range pat.Args {
+			tempId := b.NewTempId()
+			tempVar := NewIdentExpr(tempId, "", nil)
+
+			var init Expr
+			switch arg := arg.(type) {
+			case *ast.IdentPat:
+				if arg.Default != nil {
+					defExpr, defStmts := b.buildExpr(arg.Default, nil)
+					defaultStmts = append(defaultStmts, defStmts...)
+					init = defExpr
+				}
+			}
+			tempVarPat := NewIdentPat(tempId, init, pat)
+
+			tempVarPats = append(tempVarPats, tempVarPat)
+			tempVars = append(tempVars, tempVar)
+		}
+
+		// Call the custom matcher: InvokeCustomMatcherOrThrow(extractor, subject, undefined)
+		extractor := NewIdentExpr(pat.Name, "", pat)
+		receiver := NewIdentExpr("undefined", "", nil)
+
+		call := NewCallExpr(
+			NewIdentExpr("InvokeCustomMatcherOrThrow", "", nil),
+			[]Expr{extractor, targetExpr, receiver},
+			false,
+			nil,
+		)
+
+		// Create the tuple destructuring for the result
+		decls := []*Declarator{
+			{
+				Pattern: NewTuplePat(tempVarPats, nil),
+				TypeAnn: nil,
+				Init:    call,
+			},
+		}
+
+		decl := &VarDecl{
+			Kind:    ValKind,
+			Decls:   decls,
+			declare: false,
+			export:  false,
+			span:    nil,
+			source:  nil,
+		}
+
+		callStmt := &DeclStmt{
+			Decl:   decl,
+			span:   nil,
+			source: nil,
+		}
+
+		var bindingStmts []Stmt
+		// Add any statements from building default expressions first
+		bindingStmts = append(bindingStmts, defaultStmts...)
+		// Then add the call to the custom matcher
+		bindingStmts = append(bindingStmts, callStmt)
+
+		// Recursively build conditions and bindings for each argument pattern
+		for i, argPat := range pat.Args {
+			tempVar := tempVars[i]
+			argCond, argBindings := b.buildPatternCondition(argPat, tempVar)
+			conditions = append(conditions, argCond)
+			bindingStmts = append(bindingStmts, argBindings...)
+		}
+
+		// Combine all conditions with &&
+		finalCondition := combineConditions(conditions, pat)
+
+		return finalCondition, bindingStmts
+
 	default:
 		// For now, handle other patterns as always matching
 		return NewLitExpr(NewBoolLit(true, pattern), pattern), []Stmt{}
@@ -1553,7 +1652,15 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
 	switch pat := pattern.(type) {
 	case *ast.IdentPat:
-		return NewIdentPat(pat.Name, nil, pat)
+		var defExpr Expr
+		if pat.Default != nil {
+			var defStmts []Stmt
+			defExpr, defStmts = b.buildExpr(pat.Default, nil)
+			// Note: defStmts are ignored here as they should have been handled
+			// by the calling code in buildPatternCondition
+			_ = defStmts
+		}
+		return NewIdentPat(pat.Name, defExpr, pat)
 	case *ast.WildcardPat:
 		// Wildcards in destructuring are typically represented as identifier patterns
 		// with a special name like "_" - but for now we'll skip them

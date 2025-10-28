@@ -53,13 +53,11 @@ func TestFindBindings(t *testing.T) {
 				NewObjKeyValuePat(
 					&Ident{Name: "key1", span: emptySpan()},
 					NewIdentPat("value1", nil, nil, emptySpan()),
-					nil,
 					emptySpan(),
 				),
 				NewObjKeyValuePat(
 					&Ident{Name: "key2", span: emptySpan()},
 					NewIdentPat("value2", nil, nil, emptySpan()),
-					nil,
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -89,7 +87,6 @@ func TestFindBindings(t *testing.T) {
 				NewObjKeyValuePat(
 					&Ident{Name: "key", span: emptySpan()},
 					NewIdentPat("value", nil, nil, emptySpan()),
-					nil,
 					emptySpan(),
 				),
 				NewObjRestPat(
@@ -147,7 +144,6 @@ func TestFindBindings(t *testing.T) {
 							NewIdentPat("x", nil, nil, emptySpan()),
 							NewIdentPat("y", nil, nil, emptySpan()),
 						}, emptySpan()),
-						nil,
 						emptySpan(),
 					),
 					NewObjRestPat(
