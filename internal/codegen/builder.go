@@ -120,16 +120,10 @@ func (b *Builder) buildPattern(
 						)
 					}
 
-					var defExpr Expr
-					if e.Default != nil {
-						var defStmts []Stmt
-						defExpr, defStmts = b.buildExpr(e.Default, nil)
-						stmts = slices.Concat(stmts, defStmts)
-					}
 					elems = append(elems, NewObjKeyValuePat(
 						fullyQualifyName(e.Key.Name, nsName),
 						buildPatternRec(e.Value, newTarget),
-						defExpr,
+						nil,
 						e,
 					))
 				case *ast.ObjShorthandPat:
@@ -1468,16 +1462,8 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				cond, _ := b.buildPatternCondition(objElem.Value, propTarget)
 				conditions = append(conditions, cond)
 
-				// Handle defaults for key-value patterns
-				var defExpr Expr
-				if objElem.Default != nil {
-					var defStmts []Stmt
-					defExpr, defStmts = b.buildExpr(objElem.Default, nil)
-					defaultStmts = append(defaultStmts, defStmts...)
-				}
-
 				valuePat := b.buildDestructuringPattern(objElem.Value)
-				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, defExpr, objElem))
+				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object

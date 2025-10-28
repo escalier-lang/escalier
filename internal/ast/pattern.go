@@ -54,13 +54,12 @@ func (*ObjRestPat) isObjPatElem()      {}
 type ObjKeyValuePat struct {
 	Key          *Ident
 	Value        Pat
-	Default      Expr // optional
 	span         Span
 	inferredType Type
 }
 
-func NewObjKeyValuePat(key *Ident, value Pat, _default Expr, span Span) *ObjKeyValuePat {
-	return &ObjKeyValuePat{Key: key, Value: value, Default: _default, span: span, inferredType: nil}
+func NewObjKeyValuePat(key *Ident, value Pat, span Span) *ObjKeyValuePat {
+	return &ObjKeyValuePat{Key: key, Value: value, span: span, inferredType: nil}
 }
 func (p *ObjKeyValuePat) Accept(v Visitor) {
 	// TODO

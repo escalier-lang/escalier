@@ -2818,9 +2818,8 @@ func (c *Checker) inferPattern(
 					t, elemErrors := inferPatRec(elem.Value)
 					errors = append(errors, elemErrors...)
 					name := NewStrKey(elem.Key.Name)
-					optional := elem.Default != nil
 					prop := NewPropertyElem(name, t)
-					prop.Optional = optional
+					prop.Optional = false
 					elems = append(elems, prop)
 				case *ast.ObjShorthandPat:
 					// We can't infer the type of the shorthand pattern yet, so
