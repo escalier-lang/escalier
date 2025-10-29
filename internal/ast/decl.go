@@ -169,7 +169,7 @@ func (d *TypeDecl) Accept(v Visitor) {
 }
 
 // EnumVariant represents a single variant of an enum
-// e.g., Some(T) or None
+// e.g., Some(T) or None or Circle {center: Point, radius: number}
 // EnumElem is an interface for enum elements (variants or spreads)
 type EnumElem interface {
 	IsEnumElem()
@@ -177,16 +177,18 @@ type EnumElem interface {
 }
 
 type EnumVariant struct {
-	Name   *Ident
-	Params []TypeAnn // optional tuple parameters
-	span   Span
+	Name       *Ident
+	TupleElems []TypeAnn        // optional tuple parameters, e.g., Some(T)
+	ObjElems   []ObjTypeAnnElem // optional object elements, e.g., Circle {x: number, y: number}
+	span       Span
 }
 
-func NewEnumVariant(name *Ident, params []TypeAnn, span Span) *EnumVariant {
+func NewEnumVariant(name *Ident, tupleElems []TypeAnn, objElems []ObjTypeAnnElem, span Span) *EnumVariant {
 	return &EnumVariant{
-		Name:   name,
-		Params: params,
-		span:   span,
+		Name:       name,
+		TupleElems: tupleElems,
+		ObjElems:   objElems,
+		span:       span,
 	}
 }
 func (v *EnumVariant) Span() Span  { return v.span }
@@ -239,8 +241,20 @@ func (d *EnumDecl) Accept(v Visitor) {
 			switch e := elem.(type) {
 			case *EnumVariant:
 				e.Name.Accept(v)
-				for _, param := range e.Params {
+				for _, param := range e.TupleElems {
 					param.Accept(v)
+				}
+				for _, objElem := range e.ObjElems {
+					switch oe := objElem.(type) {
+					case *PropertyTypeAnn:
+						if oe.Value != nil {
+							oe.Value.Accept(v)
+						}
+					case *MethodTypeAnn:
+						if oe.Fn != nil {
+							oe.Fn.Accept(v)
+						}
+					}
 				}
 			case *EnumSpread:
 				e.Arg.Accept(v)

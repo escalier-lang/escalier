@@ -2677,7 +2677,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.NumberTypeAnn{
                         span: ast.Span{
                             Start:    ast.Location{Line:4, Column:12},
@@ -2703,7 +2703,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:35},
                     SourceID: 0,
@@ -2754,7 +2755,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "T",
@@ -2774,7 +2775,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:13},
                     SourceID: 0,
@@ -2789,8 +2791,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:10},
                     SourceID: 0,
@@ -2930,7 +2933,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "T",
@@ -2950,7 +2953,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:11},
                     SourceID: 0,
@@ -2965,7 +2969,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "E",
@@ -2985,7 +2989,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:12},
                     SourceID: 0,
@@ -3030,7 +3035,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.NumberTypeAnn{
                         span: ast.Span{
                             Start:    ast.Location{Line:3, Column:10},
@@ -3056,7 +3061,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:33},
                     SourceID: 0,
@@ -3071,7 +3077,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.NumberTypeAnn{
                         span: ast.Span{
                             Start:    ast.Location{Line:4, Column:10},
@@ -3097,7 +3103,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:33},
                     SourceID: 0,
@@ -3142,8 +3149,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:9},
                     SourceID: 0,
@@ -3158,8 +3166,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:11},
                     SourceID: 0,
@@ -3174,8 +3183,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:5, Column:6},
                     End:      ast.Location{Line:5, Column:10},
                     SourceID: 0,
@@ -3409,8 +3419,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:17},
                     SourceID: 0,
@@ -3538,8 +3549,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:19},
                     SourceID: 0,
@@ -3554,8 +3566,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:1, Column:21},
                     End:      ast.Location{Line:1, Column:24},
                     SourceID: 0,
@@ -3600,8 +3613,9 @@
                         SourceID: 0,
                     },
                 },
-                Params: nil,
-                span:   ast.Span{
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:19},
                     SourceID: 0,
@@ -3939,7 +3953,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.StringTypeAnn{
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:20},
@@ -3967,7 +3981,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:33},
                     SourceID: 0,
@@ -4431,7 +4446,7 @@
                         SourceID: 0,
                     },
                 },
-                Params: {
+                TupleElems: {
                     &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "T",
@@ -4451,7 +4466,8 @@
                         inferredType: nil,
                     },
                 },
-                span: ast.Span{
+                ObjElems: nil,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:22},
                     SourceID: 0,
@@ -4549,6 +4565,342 @@
             SourceID: 0,
         },
         Message: "Unexpected token",
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithObjectVariants - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Shape",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Circle",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:12},
+                        SourceID: 0,
+                    },
+                },
+                TupleElems: nil,
+                ObjElems:   {
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "center",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:3, Column:14},
+                                End:      ast.Location{Line:3, Column:20},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "Point",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:3, Column:22},
+                                    End:      ast.Location{Line:3, Column:27},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:22},
+                                End:      ast.Location{Line:3, Column:27},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "radius",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:3, Column:29},
+                                End:      ast.Location{Line:3, Column:35},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:37},
+                                End:      ast.Location{Line:3, Column:43},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:44},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Rectangle",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:15},
+                        SourceID: 0,
+                    },
+                },
+                TupleElems: nil,
+                ObjElems:   {
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "x",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:4, Column:17},
+                                End:      ast.Location{Line:4, Column:18},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:20},
+                                End:      ast.Location{Line:4, Column:26},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "y",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:4, Column:28},
+                                End:      ast.Location{Line:4, Column:29},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:31},
+                                End:      ast.Location{Line:4, Column:37},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "width",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:4, Column:39},
+                                End:      ast.Location{Line:4, Column:44},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:46},
+                                End:      ast.Location{Line:4, Column:52},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "height",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:4, Column:54},
+                                End:      ast.Location{Line:4, Column:60},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:62},
+                                End:      ast.Location{Line:4, Column:68},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:69},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/EnumDeclWithMixedVariants - 1]
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Mixed",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Tuple",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:11},
+                        SourceID: 0,
+                    },
+                },
+                TupleElems: {
+                    &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:12},
+                            End:      ast.Location{Line:3, Column:18},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:20},
+                            End:      ast.Location{Line:3, Column:26},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                ObjElems: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:27},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Object",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:6},
+                        End:      ast.Location{Line:4, Column:12},
+                        SourceID: 0,
+                    },
+                },
+                TupleElems: nil,
+                ObjElems:   {
+                    &ast.PropertyTypeAnn{
+                        Name: &ast.IdentExpr{
+                            Name:      "value",
+                            Namespace: 0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:4, Column:14},
+                                End:      ast.Location{Line:4, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        Value:    &ast.StringTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:21},
+                                End:      ast.Location{Line:4, Column:27},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:4, Column:6},
+                    End:      ast.Location{Line:4, Column:28},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "None",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:5, Column:6},
+                        End:      ast.Location{Line:5, Column:10},
+                        SourceID: 0,
+                    },
+                },
+                TupleElems: nil,
+                ObjElems:   nil,
+                span:       ast.Span{
+                    Start:    ast.Location{Line:5, Column:6},
+                    End:      ast.Location{Line:5, Column:10},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
     },
 }
 ---

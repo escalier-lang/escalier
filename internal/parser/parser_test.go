@@ -153,6 +153,23 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"EnumDeclWithObjectVariants": {
+			input: `
+				enum Shape {
+					Circle {center: Point, radius: number},
+					Rectangle {x: number, y: number, width: number, height: number},
+				}
+			`,
+		},
+		"EnumDeclWithMixedVariants": {
+			input: `
+				enum Mixed {
+					Tuple(string, number),
+					Object {value: string},
+					None,
+				}
+			`,
+		},
 		"EnumDeclWithExtension": {
 			input: `
 				enum FutureColor {
