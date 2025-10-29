@@ -111,7 +111,14 @@
 
 [TestParsePatternNoErrors/ExtractPattern - 1]
 &ast.ExtractorPat{
-    Name: "Foo",
+    Name: &ast.Ident{
+        Name: "Foo",
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 0,
+        },
+    },
     Args: {
         &ast.IdentPat{
             Name:    "a",
@@ -865,8 +872,15 @@
 
 [TestParsePatternNoErrors/InstancePattern - 1]
 &ast.InstancePat{
-    ClassName: "Point",
-    Object:    &ast.ObjectPat{
+    ClassName: &ast.Ident{
+        Name: "Point",
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+    },
+    Object: &ast.ObjectPat{
         Elems: {
             &ast.ObjShorthandPat{
                 Key: &ast.Ident{
@@ -913,6 +927,132 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/NamespacedInstancePattern - 1]
+&ast.InstancePat{
+    ClassName: &ast.Member{
+        Left: &ast.Ident{
+            Name: "MyNamespace",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        Right: &ast.Ident{
+            Name: "Point",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+    },
+    Object: &ast.ObjectPat{
+        Elems: {
+            &ast.ObjShorthandPat{
+                Key: &ast.Ident{
+                    Name: "x",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:20},
+                        End:      ast.Location{Line:1, Column:21},
+                        SourceID: 0,
+                    },
+                },
+                TypeAnn: nil,
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:20},
+                    End:      ast.Location{Line:1, Column:21},
+                    SourceID: 0,
+                },
+            },
+            &ast.ObjShorthandPat{
+                Key: &ast.Ident{
+                    Name: "y",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                TypeAnn: nil,
+                Default: nil,
+                span:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:25},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:25},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParsePatternNoErrors/NamespacedExtractPattern - 1]
+&ast.ExtractorPat{
+    Name: &ast.Member{
+        Left: &ast.Ident{
+            Name: "MyNamespace",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        Right: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+    },
+    Args: {
+        &ast.IdentPat{
+            Name:    "a",
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.IdentPat{
+            Name:    "b",
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:20},
+                End:      ast.Location{Line:1, Column:21},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:22},
         SourceID: 0,
     },
     inferredType: nil,

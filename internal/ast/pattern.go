@@ -143,13 +143,13 @@ func (p *TuplePat) Accept(v Visitor) {
 }
 
 type ExtractorPat struct {
-	Name         string // TODO: QualIdent
+	Name         QualIdent
 	Args         []Pat
 	span         Span
 	inferredType Type
 }
 
-func NewExtractorPat(name string, args []Pat, span Span) *ExtractorPat {
+func NewExtractorPat(name QualIdent, args []Pat, span Span) *ExtractorPat {
 	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil}
 }
 func (p *ExtractorPat) Accept(v Visitor) {
@@ -162,13 +162,13 @@ func (p *ExtractorPat) Accept(v Visitor) {
 }
 
 type InstancePat struct {
-	ClassName    string // TODO: QualIdent
+	ClassName    QualIdent
 	Object       *ObjectPat
 	span         Span
 	inferredType Type
 }
 
-func NewInstancePat(className string, object *ObjectPat, span Span) *InstancePat {
+func NewInstancePat(className QualIdent, object *ObjectPat, span Span) *InstancePat {
 	return &InstancePat{ClassName: className, Object: object, span: span, inferredType: nil}
 }
 func (p *InstancePat) Accept(v Visitor) {

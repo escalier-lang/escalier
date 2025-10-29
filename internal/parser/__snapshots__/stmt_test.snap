@@ -593,8 +593,15 @@ nil
                 },
                 &ast.Param{
                     Pattern: &ast.InstancePat{
-                        ClassName: "b",
-                        Object:    &ast.ObjectPat{
+                        ClassName: &ast.Ident{
+                            Name: "b",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:12},
+                                End:      ast.Location{Line:1, Column:13},
+                                SourceID: 0,
+                            },
+                        },
+                        Object: &ast.ObjectPat{
                             Elems: {
                                 &ast.ObjShorthandPat{
                                     Key: &ast.Ident{

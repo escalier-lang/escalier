@@ -1,0 +1,14 @@
+class Color(r: number, g: number, b: number) {
+	r,
+	g,
+    b,
+    static [Symbol.customMatcher](subject: Color) -> [number, number, number] {
+        return [subject.r, subject.g, subject.b]
+    },
+}
+class Event(kind: string) {
+	kind,
+    static [Symbol.customMatcher](subject: Event) -> [string] {
+        return [subject.kind]
+    },
+}

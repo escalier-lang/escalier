@@ -1,0 +1,14 @@
+type MyEnum = MyEnum.Color | MyEnum.Event
+declare val obj: MyEnum
+
+// Instance patterns
+val result1 = match obj {
+	MyEnum.Color {r, g, b: blue = 0} => r + g + blue,
+	MyEnum.Event {kind = "default"} => kind,
+}
+
+// Extractor patterns
+val result2 = match obj {
+	MyEnum.Color(r, g, blue = 0) => r + g + blue,
+	MyEnum.Event(kind = "default") => kind,
+}
