@@ -1,5 +1,7 @@
 package ast
 
+import "github.com/escalier-lang/escalier/internal/provenance"
+
 type ClassDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam // generic type parameters
@@ -8,6 +10,7 @@ type ClassDecl struct {
 	export     bool
 	declare    bool
 	span       Span
+	provenance provenance.Provenance
 }
 
 type ClassElem interface {
@@ -40,6 +43,12 @@ func (d *ClassDecl) Accept(v Visitor) {
 		}
 	}
 	v.ExitDecl(d)
+}
+func (d *ClassDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *ClassDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
 }
 
 type FieldElem struct {

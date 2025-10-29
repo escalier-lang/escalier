@@ -1,8 +1,12 @@
 package ast
 
+import "github.com/escalier-lang/escalier/internal/provenance"
+
 type DeclGetters interface {
 	Export() bool
 	Declare() bool
+	Provenance() provenance.Provenance
+	SetProvenance(p provenance.Provenance)
 }
 
 //sumtype:decl
@@ -17,11 +21,6 @@ func (*VarDecl) isDecl()  {}
 func (*FuncDecl) isDecl() {}
 func (*TypeDecl) isDecl() {}
 func (*EnumDecl) isDecl() {}
-
-func (*VarDecl) isNode()  {}
-func (*FuncDecl) isNode() {}
-func (*TypeDecl) isNode() {}
-func (*EnumDecl) isNode() {}
 
 type VariableKind int
 
@@ -39,6 +38,7 @@ type VarDecl struct {
 	declare      bool
 	span         Span
 	InferredType Type // optional, used to store the inferred pattern type
+	provenance   provenance.Provenance
 }
 
 func NewVarDecl(
@@ -59,6 +59,7 @@ func NewVarDecl(
 		declare:      declare,
 		span:         span,
 		InferredType: nil,
+		provenance:   nil,
 	}
 }
 func (d *VarDecl) Export() bool  { return d.export }
@@ -72,6 +73,12 @@ func (d *VarDecl) Accept(v Visitor) {
 		}
 	}
 	v.ExitDecl(d)
+}
+func (d *VarDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *VarDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
 }
 
 type Param struct {
@@ -87,10 +94,11 @@ func (p *Param) Span() Span {
 type FuncDecl struct {
 	Name *Ident
 	FuncSig
-	Body    *Block // optional
-	export  bool
-	declare bool
-	span    Span
+	Body       *Block // optional
+	export     bool
+	declare    bool
+	span       Span
+	provenance provenance.Provenance
 }
 
 func NewFuncDecl(
@@ -137,6 +145,12 @@ func (d *FuncDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
+func (d *FuncDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *FuncDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
+}
 
 type TypeDecl struct {
 	Name       *Ident
@@ -145,6 +159,7 @@ type TypeDecl struct {
 	export     bool
 	declare    bool
 	span       Span
+	provenance provenance.Provenance
 }
 
 func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *TypeDecl {
@@ -166,6 +181,12 @@ func (d *TypeDecl) Accept(v Visitor) {
 		d.TypeAnn.Accept(v)
 	}
 	v.ExitDecl(d)
+}
+func (d *TypeDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
 }
 
 // EnumVariant represents a single variant of an enum
@@ -219,6 +240,7 @@ type EnumDecl struct {
 	export     bool
 	declare    bool
 	span       Span
+	provenance provenance.Provenance
 }
 
 func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export, declare bool, span Span) *EnumDecl {
@@ -262,4 +284,10 @@ func (d *EnumDecl) Accept(v Visitor) {
 		}
 	}
 	v.ExitDecl(d)
+}
+func (d *EnumDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *EnumDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
 }
