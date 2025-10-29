@@ -2857,7 +2857,7 @@ func (c *Checker) inferPattern(
 			}
 			t = NewObjectType(provenance, elems)
 		case *ast.ExtractorPat:
-			if binding := ctx.Scope.getValue(ast.QualIdentToString(p.Name)); binding != nil {
+			if binding := c.resolveQualifiedValue(ctx, p.Name); binding != nil {
 				args := make([]Type, len(p.Args))
 				for i, arg := range p.Args {
 					argType, argErrors := inferPatRec(arg)
@@ -2866,11 +2866,12 @@ func (c *Checker) inferPattern(
 				}
 				t = NewExtractorType(provenance, binding.Type, args...)
 			} else {
+				// TODO: generate an error for unresolved identifier
 				t = NewNeverType(nil)
 			}
 		case *ast.InstancePat:
 			patType, patBindings, patErrors := c.inferPattern(ctx, p.Object)
-			typeAlias := ctx.Scope.getTypeAlias(ast.QualIdentToString(p.ClassName))
+			typeAlias := c.resolveQualifiedTypeAlias(ctx, p.ClassName)
 
 			for name, binding := range patBindings {
 				bindings[name] = binding
@@ -3069,6 +3070,28 @@ func (c *Checker) resolveQualifiedTypeAlias(ctx Context, qualIdent ast.QualIdent
 		// Then look for the type in the resolved namespace
 		if typeAlias, ok := leftNamespace.Types[qi.Right.Name]; ok {
 			return typeAlias
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (c *Checker) resolveQualifiedValue(ctx Context, qualIdent ast.QualIdent) *Binding {
+	switch qi := qualIdent.(type) {
+	case *ast.Ident:
+		// Simple identifier, use existing scope lookup
+		return ctx.Scope.getValue(qi.Name)
+	case *ast.Member:
+		// Qualified identifier like A.B.Type
+		// First resolve the left part (A.B)
+		leftNamespace := c.resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the type in the resolved namespace
+		if binding, ok := leftNamespace.Values[qi.Right.Name]; ok {
+			return binding
 		}
 		return nil
 	default:
