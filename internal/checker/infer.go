@@ -2729,7 +2729,7 @@ func patToPat(p ast.Pat) Pat {
 		for i, arg := range p.Args {
 			args[i] = patToPat(arg)
 		}
-		return &ExtractorPat{Name: p.Name, Args: args}
+		return &ExtractorPat{Name: ast.QualIdentToString(p.Name), Args: args}
 	case *ast.RestPat:
 		return &RestPat{Pattern: patToPat(p.Pattern)}
 	default:
@@ -2857,7 +2857,7 @@ func (c *Checker) inferPattern(
 			}
 			t = NewObjectType(provenance, elems)
 		case *ast.ExtractorPat:
-			if binding := ctx.Scope.getValue(p.Name); binding != nil {
+			if binding := ctx.Scope.getValue(ast.QualIdentToString(p.Name)); binding != nil {
 				args := make([]Type, len(p.Args))
 				for i, arg := range p.Args {
 					argType, argErrors := inferPatRec(arg)
@@ -2870,7 +2870,7 @@ func (c *Checker) inferPattern(
 			}
 		case *ast.InstancePat:
 			patType, patBindings, patErrors := c.inferPattern(ctx, p.Object)
-			typeAlias := ctx.Scope.getTypeAlias(p.ClassName)
+			typeAlias := ctx.Scope.getTypeAlias(ast.QualIdentToString(p.ClassName))
 
 			for name, binding := range patBindings {
 				bindings[name] = binding

@@ -198,7 +198,7 @@ func (b *Builder) buildPattern(
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
 			}
-			extractor := NewIdentExpr(p.Name, "", p)
+			extractor := NewIdentExpr(ast.QualIdentToString(p.Name), "", p)
 			subject := target
 			receiver := NewIdentExpr("undefined", "", nil)
 
@@ -1531,7 +1531,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		instanceofCheck := NewBinaryExpr(
 			targetExpr,
 			InstanceOf,
-			NewIdentExpr(pat.ClassName, "", pat),
+			NewIdentExpr(ast.QualIdentToString(pat.ClassName), "", pat),
 			pat,
 		)
 		conditions = append(conditions, instanceofCheck)
@@ -1559,7 +1559,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		instanceofCheck := NewBinaryExpr(
 			targetExpr,
 			InstanceOf,
-			NewIdentExpr(pat.Name, "", pat),
+			NewIdentExpr(ast.QualIdentToString(pat.Name), "", pat),
 			pat,
 		)
 		conditions = append(conditions, instanceofCheck)
@@ -1589,7 +1589,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 
 		// Call the custom matcher: InvokeCustomMatcherOrThrow(extractor, subject, undefined)
-		extractor := NewIdentExpr(pat.Name, "", pat)
+		extractor := NewIdentExpr(ast.QualIdentToString(pat.Name), "", pat)
 		receiver := NewIdentExpr("undefined", "", nil)
 
 		call := NewCallExpr(
@@ -1597,9 +1597,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			[]Expr{extractor, targetExpr, receiver},
 			false,
 			nil,
-		)
-
-		// Create the tuple destructuring for the result
+		) // Create the tuple destructuring for the result
 		decls := []*Declarator{
 			{
 				Pattern: NewTuplePat(tempVarPats, nil),

@@ -13,8 +13,25 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 	// nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		p.lexer.consume()
+		// Look ahead to determine if this is an extractor or instance pattern
+		// by checking if the qualified identifier is followed by '(' or '{'
+		savedState := p.lexer.saveState()
+		p.lexer.consume() // consume first identifier
+
+		// Skip through any dots and identifiers (qualified identifier)
+		for p.lexer.peek().Type == Dot {
+			p.lexer.consume() // consume dot
+			if p.lexer.peek().Type == Identifier {
+				p.lexer.consume() // consume identifier
+			} else {
+				break
+			}
+		}
+
 		next := p.lexer.peek()
+		p.lexer.restoreState(savedState) // restore to start
+		p.lexer.consume()                // consume first identifier again
+
 		if next.Type == OpenParen {
 			return p.extractorPat(token)
 		} else if next.Type == OpenBrace {
@@ -38,24 +55,26 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 
 // extractorPat = identifier '(' (pattern (',' pattern)*)? ')'
 func (p *Parser) extractorPat(nameToken *Token) ast.Pat {
+	qualIdent := p.parseQualifiedIdent(nameToken)
 	p.lexer.consume() // consume '('
 	patArgs := parseDelimSeq(p, CloseParen, Comma, func() ast.Pat {
 		return p.pattern(true, true)
 	})
 	end := p.expect(CloseParen, AlwaysConsume)
 	span := ast.NewSpan(nameToken.Span.Start, end, p.lexer.source.ID)
-	return ast.NewExtractorPat(nameToken.Value, patArgs, span)
+	return ast.NewExtractorPat(qualIdent, patArgs, span)
 }
 
 // instancePat = identifier '{' (objPatElem (',' objPatElem)*)? '}'
 func (p *Parser) instancePat(nameToken *Token) ast.Pat {
+	qualIdent := p.parseQualifiedIdent(nameToken)
 	start := nameToken.Span.Start
 	p.lexer.consume() // consume '{'
 	patElems := parseDelimSeq(p, CloseBrace, Comma, p.objPatElem)
 	end := p.expect(CloseBrace, AlwaysConsume)
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	objectPat := ast.NewObjectPat(patElems, span)
-	return ast.NewInstancePat(nameToken.Value, objectPat, span)
+	return ast.NewInstancePat(qualIdent, objectPat, span)
 }
 
 // identPat = identifier (':' typeAnn)? ('=' expr)?

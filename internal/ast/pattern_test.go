@@ -106,15 +106,15 @@ func TestFindBindings(t *testing.T) {
 		},
 		{
 			name: "extractor pattern",
-			pat: NewExtractorPat("Some", []Pat{
+			pat: NewExtractorPat(NewIdentifier("Some", emptySpan()), []Pat{
 				NewIdentPat("inner", nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"inner"}),
 		},
 		{
 			name: "nested extractor pattern",
-			pat: NewExtractorPat("Result", []Pat{
-				NewExtractorPat("Ok", []Pat{
+			pat: NewExtractorPat(NewIdentifier("Result", emptySpan()), []Pat{
+				NewExtractorPat(NewIdentifier("Ok", emptySpan()), []Pat{
 					NewIdentPat("value", nil, nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
