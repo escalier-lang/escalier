@@ -463,9 +463,24 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}
 
 						paramType := methodElem.Fn.Params[0].Type
+						fmt.Fprintf(os.Stderr, "Unifying %s with extractor param type %s\n", paramType.String(), t1.String())
 						errors := c.unify(ctx, t1, paramType)
 
 						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+							// If the subject is a type reference, then we need
+							// to substitute any type parameters in the tuple for
+							// the type arguments specified in the subject's type
+							// reference.
+							// TODO: We might have to expand `t1` if the type alias
+							// it's using points to another type alias.
+							if typeRef, ok := t1.(*TypeRefType); ok {
+								substitutions := make(map[string]Type)
+								for i, typeParam := range typeRef.TypeAlias.TypeParams {
+									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
+								}
+								tuple = c.substituteTypeParams(tuple, substitutions).(*TupleType)
+							}
+
 							// Find if the args have a rest element
 							var restIndex = -1
 							for i, elem := range ext.Args {
@@ -556,6 +571,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						errors := c.unify(ctx, paramType, t2)
 
 						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+							// If the subject is a type reference, then we need
+							// to substitute any type parameters in the tuple for
+							// the type arguments specified in the subject's type
+							// reference.
+							// TODO: We might have to expand `t2` if the type alias
+							// it's using points to another type alias.
+							if typeRef, ok := t2.(*TypeRefType); ok {
+								substitutions := make(map[string]Type)
+								for i, typeParam := range typeRef.TypeAlias.TypeParams {
+									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
+								}
+								tuple = c.substituteTypeParams(tuple, substitutions).(*TupleType)
+							}
+
 							// Find if the args have a rest element
 							var restIndex = -1
 							for i, elem := range ext.Args {

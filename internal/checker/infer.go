@@ -576,7 +576,6 @@ func (c *Checker) InferComponent(
 			}
 
 			enumUnionType := NewUnionType(&ast.NodeProvenance{Node: decl}, variantTypes...)
-			fmt.Fprintf(os.Stderr, "enumUnionType: %s\n", enumUnionType.String())
 			enumTypeAlias := &TypeAlias{
 				Type:       enumUnionType,
 				TypeParams: typeParams,

@@ -942,13 +942,30 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 				declare val color: Color
 				val result = match color {
-				    Color.RGB(r, g, b) => r + g + b,
+					Color.RGB(r, g, b) => r + g + b,
 					Color.Hex(code) => code,
 				}
 			`,
 			expectedTypes: map[string]string{
 				"color":  "Color",
 				"result": "number | string",
+			},
+		},
+		"GenericEnumWithPatternMatching": {
+			input: `
+				enum Option<T> {
+					Some(value: T),
+					None(),
+				}
+				declare val option: Option<number>
+				val result = match option {
+					Option.Some(value) => value,
+					Option.None() => 0,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"option": "Option<number>",
+				"result": "number | 0",
 			},
 		},
 	}
