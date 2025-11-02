@@ -494,7 +494,7 @@ func (c *Checker) InferComponent(
 					instanceType := NewNominalObjectType(&ast.NodeProvenance{Node: elem}, []ObjTypeElem{})
 					instanceTypeAlias := &TypeAlias{
 						Type:       instanceType,
-						TypeParams: nil,
+						TypeParams: typeParams,
 					}
 					ns.Types[elem.Name.Name] = instanceTypeAlias
 
@@ -502,9 +502,10 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, paramErrors)
 
 					// Build the constructor function type
+					// If the enum has type parameters, the constructor should be generic
 					funcType := NewFuncType(
 						&ast.NodeProvenance{Node: elem},
-						nil,
+						typeParams,
 						params,
 						NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
 						NewNeverType(nil),
@@ -525,7 +526,8 @@ func (c *Checker) InferComponent(
 					case *UniqueSymbolType:
 						self := false
 						subjectPat := &IdentPat{Name: "subject"}
-						subjectType := NewTypeRefType(nil, elem.Name.Name, instanceTypeAlias)
+						// The subject type should include type arguments if the enum is generic
+						subjectType := NewTypeRefType(nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
 						paramTypes := make([]Type, len(elem.Params))
 						for i, param := range elem.Params {
 							t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
@@ -537,7 +539,7 @@ func (c *Checker) InferComponent(
 							Name: ObjTypeKey{Kind: SymObjTypeKeyKind, Sym: customMatcher.Value},
 							Fn: NewFuncType(
 								nil,
-								nil,
+								typeParams,
 								[]*FuncParam{{Pattern: subjectPat, Type: subjectType}},
 								returnType,
 								NewNeverType(nil),

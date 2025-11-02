@@ -616,7 +616,27 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.print(": ")
 				p.PrintTypeAnn(elem.Fn.Return)
 			case *ConstructorTypeAnn:
-				p.print("new (")
+				p.print("new ")
+				// Print type parameters if present
+				if len(elem.Fn.TypeParams) > 0 {
+					p.print("<")
+					for i, tp := range elem.Fn.TypeParams {
+						if i > 0 {
+							p.print(", ")
+						}
+						p.print(tp.Name)
+						if tp.Constraint != nil {
+							p.print(" extends ")
+							p.PrintTypeAnn(tp.Constraint)
+						}
+						if tp.Default != nil {
+							p.print(" = ")
+							p.PrintTypeAnn(tp.Default)
+						}
+					}
+					p.print(">")
+				}
+				p.print("(")
 				for i, param := range elem.Fn.Params {
 					if i > 0 {
 						p.print(", ")

@@ -958,6 +958,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					None(),
 				}
 				declare val option: Option<number>
+				val some = Option.Some
+				val none = Option.None
 				val result = match option {
 					Option.Some(value) => value,
 					Option.None() => 0,
@@ -965,6 +967,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "Option<number>",
+				"some":   "{new fn <T>(value: T) -> Option<T> throws never, symbol2<T>(subject: Some<T>) -> [T] throws never}",
+				"none":   "{new fn <T>() -> Option<T> throws never, symbol2<T>(subject: None<T>) -> [] throws never}",
 				"result": "number | 0",
 			},
 		},

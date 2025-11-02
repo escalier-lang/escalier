@@ -1,8 +1,8 @@
 declare namespace MyOption {
-  export type Some = {};
-  export const Some: {new (value: T): MyOption<T>, "[Symbol(2)]"(subject: Some): [T]};
-  export type None = {};
-  export const None: {new (): MyOption<T>, "[Symbol(2)]"(subject: None): []};
+  export type Some<T> = {};
+  export const Some: {new <T>(value: T): MyOption<T>, "[Symbol(2)]"<T>(subject: Some<T>): [T]};
+  export type None<T> = {};
+  export const None: {new <T>(): MyOption<T>, "[Symbol(2)]"<T>(subject: None<T>): []};
 }
 declare type MyOption<T> = MyOption.Some<T> | MyOption.None<T>;
 declare const option: MyOption<number>;

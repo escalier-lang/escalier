@@ -294,9 +294,28 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		// Generate instance type declaration using the inferred object type
 		instanceTypeAnn := b.buildTypeAnn(objType)
 
+		// Build type parameters from the type alias
+		classTypeParams := make([]*TypeParam, len(typeAlias.TypeParams))
+		for i, param := range typeAlias.TypeParams {
+			var constraint TypeAnn
+			if param.Constraint != nil {
+				constraint = b.buildTypeAnn(param.Constraint)
+			}
+			var default_ TypeAnn
+			if param.Default != nil {
+				default_ = b.buildTypeAnn(param.Default)
+			}
+
+			classTypeParams[i] = &TypeParam{
+				Name:       param.Name,
+				Constraint: constraint,
+				Default:    default_,
+			}
+		}
+
 		instanceTypeDecl := &TypeDecl{
 			Name:       NewIdentifier(localName, decl.Name),
-			TypeParams: nil, // TODO: handle generic classes
+			TypeParams: classTypeParams,
 			TypeAnn:    instanceTypeAnn,
 			Interface:  false,
 			declare:    isTopLevel,
@@ -372,9 +391,28 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 					variantType := type_sys.Prune(variantTypeAlias.Type)
 					variantTypeAnn := b.buildTypeAnn(variantType)
 
+					// Build type parameters from the variant's type alias
+					variantTypeParams := make([]*TypeParam, len(variantTypeAlias.TypeParams))
+					for i, param := range variantTypeAlias.TypeParams {
+						var constraint TypeAnn
+						if param.Constraint != nil {
+							constraint = b.buildTypeAnn(param.Constraint)
+						}
+						var default_ TypeAnn
+						if param.Default != nil {
+							default_ = b.buildTypeAnn(param.Default)
+						}
+
+						variantTypeParams[i] = &TypeParam{
+							Name:       param.Name,
+							Constraint: constraint,
+							Default:    default_,
+						}
+					}
+
 					variantTypeDecl := &TypeDecl{
 						Name:       NewIdentifier(variantLocalName, elem.Name),
-						TypeParams: nil,
+						TypeParams: variantTypeParams,
 						TypeAnn:    variantTypeAnn,
 						Interface:  false,
 						declare:    false, // Inside namespace, no declare keyword
