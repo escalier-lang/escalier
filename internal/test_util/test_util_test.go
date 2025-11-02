@@ -107,7 +107,7 @@ func TestConvertTypeAnnToType(t *testing.T) {
 		// Check that the parameter type is Array<string>
 		arrayType, isTypeRef := restParam.Type.(*TypeRefType)
 		assert.True(t, isTypeRef, "Expected rest parameter type to be TypeRefType")
-		assert.Equal(t, "Array", arrayType.Name)
+		assert.Equal(t, NewIdent("Array"), arrayType.Name)
 		assert.Equal(t, 1, len(arrayType.TypeArgs))
 
 		elementType, isPrimType := arrayType.TypeArgs[0].(*PrimType)
@@ -155,7 +155,7 @@ func TestConvertTypeAnnToType(t *testing.T) {
 
 		arrayType, isTypeRef := restParam.Type.(*TypeRefType)
 		assert.True(t, isTypeRef, "Expected rest parameter type to be TypeRefType")
-		assert.Equal(t, "Array", arrayType.Name)
+		assert.Equal(t, NewIdent("Array"), arrayType.Name)
 		assert.Equal(t, 1, len(arrayType.TypeArgs))
 
 		elementType, isBoolType := arrayType.TypeArgs[0].(*PrimType)
@@ -190,18 +190,18 @@ func TestConvertTypeAnnToType(t *testing.T) {
 		// Check that the parameter type is Array<T>
 		arrayType, isTypeRef := restParam.Type.(*TypeRefType)
 		assert.True(t, isTypeRef, "Expected rest parameter type to be TypeRefType")
-		assert.Equal(t, "Array", arrayType.Name)
+		assert.Equal(t, NewIdent("Array"), arrayType.Name)
 		assert.Equal(t, 1, len(arrayType.TypeArgs))
 
 		// The element type should be a TypeRefType referring to T
 		elementType, isElementTypeRef := arrayType.TypeArgs[0].(*TypeRefType)
 		assert.True(t, isElementTypeRef, "Expected array element type to be TypeRefType")
-		assert.Equal(t, "T", elementType.Name)
+		assert.Equal(t, NewIdent("T"), elementType.Name)
 
 		// Check return type (should also be T)
 		returnType, isReturnTypeRef := fnType.Return.(*TypeRefType)
 		assert.True(t, isReturnTypeRef, "Expected return type to be TypeRefType")
-		assert.Equal(t, "T", returnType.Name)
+		assert.Equal(t, NewIdent("T"), returnType.Name)
 	})
 
 	t.Run("convert function types with optional params", func(t *testing.T) {

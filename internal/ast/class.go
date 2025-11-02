@@ -29,6 +29,7 @@ func NewClassDecl(name *Ident, typeParams []*TypeParam, params []*Param, body []
 		export:     export,
 		declare:    declare,
 		span:       span,
+		provenance: nil,
 	}
 }
 

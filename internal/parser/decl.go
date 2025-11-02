@@ -541,26 +541,17 @@ func (p *Parser) enumElem() ast.EnumElem {
 
 		token = p.lexer.peek()
 
-		// Check for tuple parameters
-		var tupleElems []ast.TypeAnn
+		// Check for params
+		var params []*ast.Param
 		if token.Type == OpenParen {
 			p.lexer.consume()
-			tupleElems = parseDelimSeq(p, CloseParen, Comma, p.typeAnn)
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			p.expect(CloseParen, AlwaysConsume)
-		}
-
-		// Check for object type
-		var objElems []ast.ObjTypeAnnElem
-		token = p.lexer.peek()
-		if token.Type == OpenBrace {
-			p.lexer.consume()
-			objElems = parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
-			p.expect(CloseBrace, AlwaysConsume)
 		}
 
 		variantEnd := p.lexer.currentLocation
 		variantSpan := ast.NewSpan(variantStart, variantEnd, p.lexer.source.ID)
-		return ast.NewEnumVariant(variantName, tupleElems, objElems, variantSpan)
+		return ast.NewEnumVariant(variantName, params, variantSpan)
 	}
 
 	p.reportError(token.Span, "Expected variant name or '...' for extension")

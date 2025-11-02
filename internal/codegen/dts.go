@@ -404,7 +404,7 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		for i, arg := range t.TypeArgs {
 			typeArgs[i] = b.buildTypeAnn(arg)
 		}
-		return NewRefTypeAnn(t.Name, typeArgs)
+		return NewRefTypeAnn(type_sys.QualIdentToString(t.Name), typeArgs)
 	case *type_sys.PrimType:
 		switch t.Prim {
 		case type_sys.NumPrim:

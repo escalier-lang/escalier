@@ -15,6 +15,41 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+// QualIdent represents a qualified identifier (e.g., "Foo" or "Foo.Bar.Baz")
+type QualIdent interface{ isQualIdent() }
+
+func (*Ident) isQualIdent()  {}
+func (*Member) isQualIdent() {}
+
+// Ident represents a simple identifier
+type Ident struct {
+	Name string
+}
+
+// Member represents a member access in a qualified identifier
+type Member struct {
+	Left  QualIdent
+	Right *Ident
+}
+
+// QualIdentToString converts a QualIdent to its string representation
+func QualIdentToString(qi QualIdent) string {
+	switch q := qi.(type) {
+	case *Ident:
+		return q.Name
+	case *Member:
+		left := QualIdentToString(q.Left)
+		return left + "." + q.Right.Name
+	default:
+		return ""
+	}
+}
+
+// NewIdent creates a new simple identifier
+func NewIdent(name string) *Ident {
+	return &Ident{Name: name}
+}
+
 //sumtype:decl
 type Type interface {
 	isType()
@@ -116,13 +151,22 @@ type TypeAlias struct {
 }
 
 type TypeRefType struct {
-	Name       string // TODO: Make this a qualified identifier
+	Name       QualIdent
 	TypeArgs   []Type
 	TypeAlias  *TypeAlias // optional, resolved type alias (definition)
 	provenance Provenance
 }
 
 func NewTypeRefType(provenance Provenance, name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
+	return &TypeRefType{
+		Name:       NewIdent(name),
+		TypeArgs:   typeArgs,
+		TypeAlias:  typeAlias,
+		provenance: nil,
+	}
+}
+
+func NewTypeRefTypeFromQualIdent(provenance Provenance, name QualIdent, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
 	return &TypeRefType{
 		Name:       name,
 		TypeArgs:   typeArgs,
@@ -152,7 +196,7 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = NewTypeRefType(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
+		result = NewTypeRefTypeFromQualIdent(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -161,7 +205,7 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	return result
 }
 func (t *TypeRefType) String() string {
-	result := t.Name
+	result := QualIdentToString(t.Name)
 	if len(t.TypeArgs) > 0 {
 		result += "<"
 		for i, arg := range t.TypeArgs {
@@ -1786,7 +1830,7 @@ func Equals(t1 Type, t2 Type) bool {
 			// nolint:exhaustruct
 			MutableType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
 			// nolint:exhaustruct
-			IntrinsicType{}, NamespaceType{}, MappedElem{},
+			IntrinsicType{}, NamespaceType{}, MappedElem{}, Ident{}, Member{},
 		),
 		cmp.Comparer(regexEqual),
 	)

@@ -193,7 +193,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// | TupleType, ArrayType -> ...
 	if tuple1, ok := t1.(*TupleType); ok {
-		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
+		if array2, ok := t2.(*TypeRefType); ok && QualIdentToString(array2.Name) == "Array" {
 			// A tuple can be unified with an array if all tuple elements
 			// can be unified with the array's element type
 			if len(array2.TypeArgs) == 1 {
@@ -211,7 +211,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | ArrayType, TupleType -> ...
-	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
+	if array1, ok := t1.(*TypeRefType); ok && QualIdentToString(array1.Name) == "Array" {
 		if tuple2, ok := t2.(*TupleType); ok {
 			// An array can be unified with a tuple if the array's element type
 			// can be unified with all tuple elements
@@ -230,8 +230,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | ArrayType, ArrayType -> ...
-	if array1, ok := t1.(*TypeRefType); ok && array1.Name == "Array" {
-		if array2, ok := t2.(*TypeRefType); ok && array2.Name == "Array" {
+	if array1, ok := t1.(*TypeRefType); ok && QualIdentToString(array1.Name) == "Array" {
+		if array2, ok := t2.(*TypeRefType); ok && QualIdentToString(array2.Name) == "Array" {
 			// Both are Array types, unify their element types
 			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
 				return c.unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
@@ -245,7 +245,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// | RestSpreadType, ArrayType -> ...
 	if rest, ok := t1.(*RestSpreadType); ok {
-		if array, ok := t2.(*TypeRefType); ok && array.Name == "Array" {
+		if array, ok := t2.(*TypeRefType); ok && QualIdentToString(array.Name) == "Array" {
 			return c.unify(ctx, rest.Type, array)
 		}
 	}
@@ -257,7 +257,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
 	if ref1, ok := t1.(*TypeRefType); ok {
-		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name == ref2.Name {
+		if ref2, ok := t2.(*TypeRefType); ok && QualIdentToString(ref1.Name) == QualIdentToString(ref2.Name) {
 			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
 				// If both type references have no type arguments, we can unify them
 				// directly.
@@ -269,33 +269,30 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 				typeAlias1 := ref1.TypeAlias
 				if typeAlias1 == nil {
-					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, ref1.Name)
+					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, QualIdentToString(ref1.Name))
 					if typeAlias1 == nil {
 						return []Error{&UnknownTypeError{
-							TypeName: ref1.Name,
+							TypeName: QualIdentToString(ref1.Name),
 							typeRef:  ref1,
 						}}
 					}
 				}
 				typeAlias2 := ref2.TypeAlias
 				if typeAlias2 == nil {
-					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, ref2.Name)
+					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, QualIdentToString(ref2.Name))
 					if typeAlias2 == nil {
 						return []Error{&UnknownTypeError{
-							TypeName: ref2.Name,
+							TypeName: QualIdentToString(ref2.Name),
 							typeRef:  ref2,
 						}}
 					}
 				}
-
 				return []Error{}
 				// TODO: Give each TypeAlias a unique ID and if they so avoid
 				// situations where two different type aliases have the same
 				// name but different definitions.
 				// return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
-			}
-
-			// TODO: handle type args
+			} // TODO: handle type args
 			// We need to replace type type params in the type alias's type
 			// with the type args from the type reference.
 			panic(fmt.Sprintf("TODO: unify types %s and %s", ref1.String(), ref2.String()))

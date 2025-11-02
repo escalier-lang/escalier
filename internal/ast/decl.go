@@ -122,10 +122,11 @@ func NewFuncDecl(
 			Throws:     throwsType,
 			Async:      async,
 		},
-		Body:    body,
-		export:  export,
-		declare: declare,
-		span:    span,
+		Body:       body,
+		export:     export,
+		declare:    declare,
+		span:       span,
+		provenance: nil,
 	}
 }
 func (d *FuncDecl) Export() bool  { return d.export }
@@ -170,6 +171,7 @@ func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, 
 		export:     export,
 		declare:    declare,
 		span:       span,
+		provenance: nil,
 	}
 }
 func (d *TypeDecl) Export() bool  { return d.export }
@@ -195,25 +197,27 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 type EnumElem interface {
 	IsEnumElem()
 	Span() Span
+	Node
 }
 
 type EnumVariant struct {
-	Name       *Ident
-	TupleElems []TypeAnn        // optional tuple parameters, e.g., Some(T)
-	ObjElems   []ObjTypeAnnElem // optional object elements, e.g., Circle {x: number, y: number}
-	span       Span
+	Name   *Ident
+	Params []*Param // optional tuple parameters, e.g., Some(value: T)
+	span   Span
 }
 
-func NewEnumVariant(name *Ident, tupleElems []TypeAnn, objElems []ObjTypeAnnElem, span Span) *EnumVariant {
+func NewEnumVariant(name *Ident, params []*Param, span Span) *EnumVariant {
 	return &EnumVariant{
-		Name:       name,
-		TupleElems: tupleElems,
-		ObjElems:   objElems,
-		span:       span,
+		Name:   name,
+		Params: params,
+		span:   span,
 	}
 }
 func (v *EnumVariant) Span() Span  { return v.span }
 func (v *EnumVariant) IsEnumElem() {}
+func (v *EnumVariant) Accept(vis Visitor) {
+	// TODO
+}
 
 // EnumSpread represents a spread notation in an enum
 // e.g., ...OtherEnum
@@ -230,6 +234,9 @@ func NewEnumSpread(arg *Ident, span Span) *EnumSpread {
 }
 func (s *EnumSpread) Span() Span  { return s.span }
 func (s *EnumSpread) IsEnumElem() {}
+func (s *EnumSpread) Accept(v Visitor) {
+	// TODO
+}
 
 // EnumDecl represents an enum declaration
 // e.g., enum Maybe<T> { Some(T), None }
@@ -251,6 +258,7 @@ func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export,
 		export:     export,
 		declare:    declare,
 		span:       span,
+		provenance: nil,
 	}
 }
 func (d *EnumDecl) Export() bool  { return d.export }
@@ -263,20 +271,8 @@ func (d *EnumDecl) Accept(v Visitor) {
 			switch e := elem.(type) {
 			case *EnumVariant:
 				e.Name.Accept(v)
-				for _, param := range e.TupleElems {
-					param.Accept(v)
-				}
-				for _, objElem := range e.ObjElems {
-					switch oe := objElem.(type) {
-					case *PropertyTypeAnn:
-						if oe.Value != nil {
-							oe.Value.Accept(v)
-						}
-					case *MethodTypeAnn:
-						if oe.Fn != nil {
-							oe.Fn.Accept(v)
-						}
-					}
+				for _, param := range e.Params {
+					param.Pattern.Accept(v)
 				}
 			case *EnumSpread:
 				e.Arg.Accept(v)

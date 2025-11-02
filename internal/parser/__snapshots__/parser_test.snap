@@ -2698,36 +2698,77 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:12},
-                            End:      ast.Location{Line:4, Column:18},
-                            SourceID: 0,
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "l",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:12},
+                                End:      ast.Location{Line:4, Column:13},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:15},
+                                End:      ast.Location{Line:4, Column:21},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:20},
-                            End:      ast.Location{Line:4, Column:26},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "a",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:23},
+                                End:      ast.Location{Line:4, Column:24},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:26},
+                                End:      ast.Location{Line:4, Column:32},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:28},
-                            End:      ast.Location{Line:4, Column:34},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:34},
+                                End:      ast.Location{Line:4, Column:35},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:37},
+                                End:      ast.Location{Line:4, Column:43},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
-                    End:      ast.Location{Line:4, Column:35},
+                    End:      ast.Location{Line:4, Column:44},
                     SourceID: 0,
                 },
             },
@@ -2777,30 +2818,43 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "T",
-                            span: ast.Span{
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "value",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
                                 Start:    ast.Location{Line:3, Column:11},
-                                End:      ast.Location{Line:3, Column:12},
+                                End:      ast.Location{Line:3, Column:16},
                                 SourceID: 0,
                             },
+                            inferredType: nil,
                         },
-                        TypeArgs: {
+                        Optional: false,
+                        TypeAnn:  &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:3, Column:18},
+                                    End:      ast.Location{Line:3, Column:19},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:18},
+                                End:      ast.Location{Line:3, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:3, Column:11},
-                            End:      ast.Location{Line:3, Column:12},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
-                    End:      ast.Location{Line:3, Column:13},
+                    End:      ast.Location{Line:3, Column:20},
                     SourceID: 0,
                 },
             },
@@ -2813,9 +2867,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:10},
                     SourceID: 0,
@@ -2956,30 +3009,43 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "T",
-                            span: ast.Span{
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "value",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
                                 Start:    ast.Location{Line:3, Column:9},
-                                End:      ast.Location{Line:3, Column:10},
+                                End:      ast.Location{Line:3, Column:14},
                                 SourceID: 0,
                             },
+                            inferredType: nil,
                         },
-                        TypeArgs: {
+                        Optional: false,
+                        TypeAnn:  &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:3, Column:16},
+                                    End:      ast.Location{Line:3, Column:17},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:16},
+                                End:      ast.Location{Line:3, Column:17},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:3, Column:9},
-                            End:      ast.Location{Line:3, Column:10},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
-                    End:      ast.Location{Line:3, Column:11},
+                    End:      ast.Location{Line:3, Column:18},
                     SourceID: 0,
                 },
             },
@@ -2992,30 +3058,43 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "E",
-                            span: ast.Span{
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "error",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
                                 Start:    ast.Location{Line:4, Column:10},
-                                End:      ast.Location{Line:4, Column:11},
+                                End:      ast.Location{Line:4, Column:15},
                                 SourceID: 0,
                             },
+                            inferredType: nil,
                         },
-                        TypeArgs: {
+                        Optional: false,
+                        TypeAnn:  &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "E",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:17},
+                                    End:      ast.Location{Line:4, Column:18},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:17},
+                                End:      ast.Location{Line:4, Column:18},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:10},
-                            End:      ast.Location{Line:4, Column:11},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
-                    End:      ast.Location{Line:4, Column:12},
+                    End:      ast.Location{Line:4, Column:19},
                     SourceID: 0,
                 },
             },
@@ -3059,36 +3138,77 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:3, Column:10},
-                            End:      ast.Location{Line:3, Column:16},
-                            SourceID: 0,
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "r",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:3, Column:10},
+                                End:      ast.Location{Line:3, Column:11},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:13},
+                                End:      ast.Location{Line:3, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:3, Column:18},
-                            End:      ast.Location{Line:3, Column:24},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "g",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:3, Column:21},
+                                End:      ast.Location{Line:3, Column:22},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:24},
+                                End:      ast.Location{Line:3, Column:30},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:3, Column:26},
-                            End:      ast.Location{Line:3, Column:32},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "b",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:3, Column:32},
+                                End:      ast.Location{Line:3, Column:33},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:3, Column:35},
+                                End:      ast.Location{Line:3, Column:41},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
-                    End:      ast.Location{Line:3, Column:33},
+                    End:      ast.Location{Line:3, Column:42},
                     SourceID: 0,
                 },
             },
@@ -3101,36 +3221,77 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:10},
-                            End:      ast.Location{Line:4, Column:16},
-                            SourceID: 0,
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "h",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:10},
+                                End:      ast.Location{Line:4, Column:11},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:13},
+                                End:      ast.Location{Line:4, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:18},
-                            End:      ast.Location{Line:4, Column:24},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "s",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:21},
+                                End:      ast.Location{Line:4, Column:22},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:24},
+                                End:      ast.Location{Line:4, Column:30},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
-                    &ast.NumberTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:26},
-                            End:      ast.Location{Line:4, Column:32},
-                            SourceID: 0,
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "l",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:32},
+                                End:      ast.Location{Line:4, Column:33},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:35},
+                                End:      ast.Location{Line:4, Column:41},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
-                    End:      ast.Location{Line:4, Column:33},
+                    End:      ast.Location{Line:4, Column:42},
                     SourceID: 0,
                 },
             },
@@ -3174,9 +3335,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:9},
                     SourceID: 0,
@@ -3191,9 +3351,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:11},
                     SourceID: 0,
@@ -3208,9 +3367,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:5, Column:6},
                     End:      ast.Location{Line:5, Column:10},
                     SourceID: 0,
@@ -3445,9 +3603,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:17},
                     SourceID: 0,
@@ -3576,9 +3733,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:19},
                     SourceID: 0,
@@ -3593,9 +3749,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:1, Column:21},
                     End:      ast.Location{Line:1, Column:24},
                     SourceID: 0,
@@ -3641,9 +3796,8 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: nil,
-                ObjElems:   nil,
-                span:       ast.Span{
+                Params: nil,
+                span:   ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:19},
                     SourceID: 0,
@@ -3654,14 +3808,14 @@
         declare: false,
         span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:26},
+            End:      ast.Location{Line:1, Column:25},
             SourceID: 0,
         },
         provenance: nil,
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:26},
+        End:      ast.Location{Line:1, Column:25},
         SourceID: 0,
     },
 }
@@ -3920,15 +4074,15 @@
         Namespace: 0,
         Source:    nil,
         span:      ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:32},
+            Start:    ast.Location{Line:1, Column:36},
+            End:      ast.Location{Line:1, Column:39},
             SourceID: 0,
         },
         inferredType: nil,
     },
     span: ast.Span{
-        Start:    ast.Location{Line:1, Column:29},
-        End:      ast.Location{Line:1, Column:32},
+        Start:    ast.Location{Line:1, Column:36},
+        End:      ast.Location{Line:1, Column:39},
         SourceID: 0,
     },
 }
@@ -3982,38 +4136,48 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.StringTypeAnn{
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:20},
-                            End:      ast.Location{Line:1, Column:26},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "Err",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:28},
-                                End:      ast.Location{Line:1, Column:31},
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "value",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:1, Column:20},
+                                End:      ast.Location{Line:1, Column:25},
                                 SourceID: 0,
                             },
+                            inferredType: nil,
                         },
-                        TypeArgs: {
+                        Optional: false,
+                        TypeAnn:  &ast.StringTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:27},
+                                End:      ast.Location{Line:1, Column:33},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:28},
-                            End:      ast.Location{Line:1, Column:31},
-                            SourceID: 0,
+                    },
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "Err",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:1, Column:35},
+                                End:      ast.Location{Line:1, Column:38},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
                         },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  nil,
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
-                    End:      ast.Location{Line:1, Column:33},
+                    End:      ast.Location{Line:1, Column:40},
                     SourceID: 0,
                 },
             },
@@ -4022,14 +4186,14 @@
         declare: false,
         span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:33},
+            End:      ast.Location{Line:1, Column:40},
             SourceID: 0,
         },
         provenance: nil,
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:33},
+        End:      ast.Location{Line:1, Column:40},
         SourceID: 0,
     },
 }
@@ -4071,31 +4235,47 @@
     &parser.Error{
         Span: ast.Span{
             Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:26},
+            End:      ast.Location{Line:1, Column:25},
             SourceID: 0,
         },
-        Message: "Expected } but got ",
+        Message: "Expected } but got identifier",
     },
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:26},
-            End:      ast.Location{Line:1, Column:27},
+            Start:    ast.Location{Line:1, Column:25},
+            End:      ast.Location{Line:1, Column:26},
+            SourceID: 0,
+        },
+        Message: "Unexpected token, ':'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:27},
+            End:      ast.Location{Line:1, Column:33},
+            SourceID: 0,
+        },
+        Message: "Unexpected token, 'string'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:33},
+            End:      ast.Location{Line:1, Column:34},
             SourceID: 0,
         },
         Message: "Unexpected token",
     },
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:27},
-            End:      ast.Location{Line:1, Column:28},
+            Start:    ast.Location{Line:1, Column:34},
+            End:      ast.Location{Line:1, Column:35},
             SourceID: 0,
         },
         Message: "Unexpected token, ','",
     },
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:34},
+            Start:    ast.Location{Line:1, Column:40},
+            End:      ast.Location{Line:1, Column:41},
             SourceID: 0,
         },
         Message: "Unexpected token",
@@ -4107,16 +4287,16 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:32},
-            End:      ast.Location{Line:1, Column:33},
+            Start:    ast.Location{Line:1, Column:39},
+            End:      ast.Location{Line:1, Column:40},
             SourceID: 0,
         },
         Message: "Expected ) but got }",
     },
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:33},
+            Start:    ast.Location{Line:1, Column:40},
+            End:      ast.Location{Line:1, Column:40},
             SourceID: 0,
         },
         Message: "Expected } but got ",
@@ -4479,28 +4659,24 @@
                         SourceID: 0,
                     },
                 },
-                TupleElems: {
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "T",
-                            span: ast.Span{
+                Params: {
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name:    "T",
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
                                 Start:    ast.Location{Line:1, Column:20},
                                 End:      ast.Location{Line:1, Column:21},
                                 SourceID: 0,
                             },
+                            inferredType: nil,
                         },
-                        TypeArgs: {
-                        },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:20},
-                            End:      ast.Location{Line:1, Column:21},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
+                        Optional: false,
+                        TypeAnn:  nil,
                     },
                 },
-                ObjElems: nil,
-                span:     ast.Span{
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:15},
                     End:      ast.Location{Line:1, Column:22},
                     SourceID: 0,

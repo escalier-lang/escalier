@@ -52,13 +52,14 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {
 	switch t := t.(type) {
 	case *TypeRefType:
 		// Check if this type parameter is shadowed by any inner function
-		if v.isShadowed(t.Name) {
+		typeName := QualIdentToString(t.Name)
+		if v.isShadowed(typeName) {
 			// Don't substitute if shadowed
 			return nil // Return original type unchanged
 		}
 
 		// Check if this is a type parameter reference that should be substituted
-		if substitute, found := v.substitutions[t.Name]; found {
+		if substitute, found := v.substitutions[typeName]; found {
 			return substitute
 		}
 
@@ -75,7 +76,7 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t Type) Type {
 			}
 
 			if changed {
-				return NewTypeRefType(t.Provenance(), t.Name, t.TypeAlias, newTypeArgs...)
+				return NewTypeRefType(t.Provenance(), typeName, t.TypeAlias, newTypeArgs...)
 			}
 		}
 	}
