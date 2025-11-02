@@ -325,6 +325,102 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			ns:         "",
 			expected:   "function getData(temp1) {\n  const id = temp1;\n  return foo.bar(id);\n}",
 		},
+		"EnumDecl_Simple_NoNamespace": {
+			declSource: "enum Color { Red(), Green(), Blue() }",
+			ns:         "",
+			expected: `const Color = {};
+class Color__Red {
+  constructor() {
+  }
+  [Symbol.customMatcher](subject) {
+    return [];
+  }
+}
+Color.Red = Color__Red;
+class Color__Green {
+  constructor() {
+  }
+  [Symbol.customMatcher](subject) {
+    return [];
+  }
+}
+Color.Green = Color__Green;
+class Color__Blue {
+  constructor() {
+  }
+  [Symbol.customMatcher](subject) {
+    return [];
+  }
+}
+Color.Blue = Color__Blue;`,
+		},
+		"EnumDecl_WithParams_NoNamespace": {
+			declSource: "enum Option { Some(value: number), None() }",
+			ns:         "",
+			expected: `const Option = {};
+class Option__Some {
+  constructor(temp1) {
+    const value = temp1;
+    this.value = value;
+  }
+  [Symbol.customMatcher](subject) {
+    return [subject.value];
+  }
+}
+Option.Some = Option__Some;
+class Option__None {
+  constructor() {
+  }
+  [Symbol.customMatcher](subject) {
+    return [];
+  }
+}
+Option.None = Option__None;`,
+		},
+		"EnumDecl_WithNamespace": {
+			declSource: "enum Result { Ok(value: string), Err(msg: string) }",
+			ns:         "types",
+			expected: `const types__Result = {};
+class types__Result__Ok {
+  constructor(temp1) {
+    const value = temp1;
+    this.value = value;
+  }
+  [Symbol.customMatcher](subject) {
+    return [subject.value];
+  }
+}
+types__Result.Ok = types__Result__Ok;
+class types__Result__Err {
+  constructor(temp2) {
+    const msg = temp2;
+    this.msg = msg;
+  }
+  [Symbol.customMatcher](subject) {
+    return [subject.msg];
+  }
+}
+types__Result.Err = types__Result__Err;`,
+		},
+		"EnumDecl_WithMultipleParams": {
+			declSource: "enum Color { RGB(r: number, g: number, b: number) }",
+			ns:         "",
+			expected: `const Color = {};
+class Color__RGB {
+  constructor(temp1, temp2, temp3) {
+    const r = temp1;
+    const g = temp2;
+    const b = temp3;
+    this.r = r;
+    this.g = g;
+    this.b = b;
+  }
+  [Symbol.customMatcher](subject) {
+    return [subject.r, subject.g, subject.b];
+  }
+}
+Color.RGB = Color__RGB;`,
+		},
 	}
 
 	for name, test := range tests {

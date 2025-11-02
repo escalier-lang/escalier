@@ -1,0 +1,9 @@
+enum MyOption<T> {
+    Some(value: T),
+    None(),
+}
+declare val option: MyOption<number>
+val result = match option {
+    MyOption.Some(value) => value,
+    MyOption.None() => 0,
+}

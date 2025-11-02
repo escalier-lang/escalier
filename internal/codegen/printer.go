@@ -482,6 +482,7 @@ func (p *Printer) PrintDecl(decl Decl) {
 					p.PrintTypeAnn(param.Default)
 				}
 			}
+			p.print(">")
 		}
 		if !d.Interface {
 			p.print(" = ")

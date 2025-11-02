@@ -343,6 +343,156 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		})
 
 		return stmts
+
+	case *ast.EnumDecl:
+		// For enum declarations, we need to:
+		// 1. Create a namespace with the enum name
+		// 2. Inside the namespace, declare each variant as a type and a value
+		// 3. Outside the namespace, create a type alias for the enum (union of variants)
+
+		// Get the enum namespace from the type system
+		enumNS := namespace.Namespaces[decl.Name.Name]
+		if enumNS == nil {
+			return nil
+		}
+
+		localName := extractLocalName(decl.Name.Name)
+		namespaceStmts := []Stmt{}
+
+		// For each variant, create both a type declaration and a value declaration
+		for _, elem := range decl.Elems {
+			switch elem := elem.(type) {
+			case *ast.EnumVariant:
+				variantLocalName := elem.Name.Name
+
+				// TODO(#178): Make the generated class nomimal
+				// Create type declaration for the variant instance type
+				variantTypeAlias := enumNS.Types[variantLocalName]
+				if variantTypeAlias != nil {
+					variantType := type_sys.Prune(variantTypeAlias.Type)
+					variantTypeAnn := b.buildTypeAnn(variantType)
+
+					variantTypeDecl := &TypeDecl{
+						Name:       NewIdentifier(variantLocalName, elem.Name),
+						TypeParams: nil,
+						TypeAnn:    variantTypeAnn,
+						Interface:  false,
+						declare:    false, // Inside namespace, no declare keyword
+						export:     true,  // Export from namespace
+						span:       nil,
+						source:     elem,
+					}
+
+					namespaceStmts = append(namespaceStmts, &DeclStmt{
+						Decl:   variantTypeDecl,
+						span:   nil,
+						source: nil,
+					})
+				}
+
+				// Create value declaration for the variant constructor
+				variantBinding := enumNS.Values[variantLocalName]
+				if variantBinding != nil {
+					constructorType := type_sys.Prune(variantBinding.Type)
+					constructorTypeAnn := b.buildTypeAnn(constructorType)
+
+					variantValueDecl := &VarDecl{
+						Kind: ValKind,
+						Decls: []*Declarator{{
+							Pattern: NewIdentPat(variantLocalName, nil, elem.Name),
+							TypeAnn: constructorTypeAnn,
+							Init:    nil,
+						}},
+						declare: false, // Inside namespace, no declare keyword
+						export:  true,  // Export from namespace
+						span:    nil,
+						source:  elem,
+					}
+
+					namespaceStmts = append(namespaceStmts, &DeclStmt{
+						Decl:   variantValueDecl,
+						span:   nil,
+						source: nil,
+					})
+				}
+
+			case *ast.EnumSpread:
+				// TODO: Handle enum spreads
+				// For now, skip them
+			}
+		}
+
+		var stmts []Stmt
+
+		// Create the namespace declaration if there are any statements
+		if len(namespaceStmts) > 0 {
+			namespaceDecl := &NamespaceDecl{
+				Name:    NewIdentifier(localName, decl.Name),
+				Body:    namespaceStmts,
+				export:  decl.Export(),
+				declare: isTopLevel,
+				span:    nil,
+				source:  decl,
+			}
+
+			stmts = append(stmts, &DeclStmt{
+				Decl:   namespaceDecl,
+				span:   nil,
+				source: nil,
+			})
+		}
+
+		// Create the type alias for the enum (union of all variants)
+		enumTypeAlias := namespace.Types[decl.Name.Name]
+		if enumTypeAlias != nil {
+			enumType := type_sys.Prune(enumTypeAlias.Type)
+			enumTypeAnn := b.buildTypeAnn(enumType)
+
+			// Build type parameters from the declaration
+			typeParams := make([]*TypeParam, len(decl.TypeParams))
+			for i, param := range decl.TypeParams {
+				var constraint TypeAnn
+				if param.Constraint != nil {
+					t := param.Constraint.InferredType()
+					if t != nil {
+						constraint = b.buildTypeAnn(t)
+					}
+				}
+				var default_ TypeAnn
+				if param.Default != nil {
+					t := param.Default.InferredType()
+					if t != nil {
+						default_ = b.buildTypeAnn(t)
+					}
+				}
+
+				typeParams[i] = &TypeParam{
+					Name:       param.Name,
+					Constraint: constraint,
+					Default:    default_,
+				}
+			}
+
+			enumTypeDecl := &TypeDecl{
+				Name:       NewIdentifier(localName, decl.Name),
+				TypeParams: typeParams,
+				TypeAnn:    enumTypeAnn,
+				Interface:  false,
+				declare:    isTopLevel,
+				export:     decl.Export(),
+				span:       nil,
+				source:     decl,
+			}
+
+			stmts = append(stmts, &DeclStmt{
+				Decl:   enumTypeDecl,
+				span:   nil,
+				source: nil,
+			})
+		}
+
+		return stmts
+
 	default:
 		return nil
 	}
@@ -655,6 +805,17 @@ func (b *Builder) buildTypeAnnObjKey(key type_sys.ObjTypeKey, symbolExprMap map[
 		}
 	case type_sys.SymObjTypeKeyKind:
 		e := symbolExprMap[key.Sym]
+		// TODO: Keep track of well-known symbols and generate proper computed keys for them
+		if e == nil {
+			// If the symbol is not in the map, we can't generate a proper computed key
+			// For .d.ts files, we'll use a placeholder string representation
+			// This can happen with well-known symbols like Symbol.customMatcher
+			return &StrLit{
+				Value:  fmt.Sprintf("[Symbol(%d)]", key.Sym),
+				span:   nil,
+				source: nil,
+			}
+		}
 		expr, _ := b.buildExpr(e.(ast.Expr), nil)
 		return &ComputedKey{
 			Expr:   expr,

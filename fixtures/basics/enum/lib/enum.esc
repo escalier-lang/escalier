@@ -1,0 +1,9 @@
+enum Color {
+	RGB(r: number, g: number, b: number),
+	Hex(code: string),
+}
+declare val color: Color
+val result = match color {
+	Color.RGB(r, g, b) => r + g + b,
+	Color.Hex(code) => code,
+}
