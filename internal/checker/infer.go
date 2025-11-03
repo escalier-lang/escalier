@@ -522,6 +522,10 @@ func (c *Checker) InferComponent(
 						Span:     DEFAULT_SPAN,
 					}
 					customMatcher, _ := c.getMemberType(ctx, symbol.Type, key)
+
+					// Create the SymbolKeyMap for the object type
+					symbolKeyMap := make(map[int]any)
+
 					switch customMatcher := Prune(customMatcher).(type) {
 					case *UniqueSymbolType:
 						self := false
@@ -547,12 +551,22 @@ func (c *Checker) InferComponent(
 							MutSelf: &self,
 						}
 						classObjTypeElems = append(classObjTypeElems, methodElem)
+
+						// Store the Symbol.customMatcher expression in the SymbolKeyMap
+						symbolMemberExpr := ast.NewMember(
+							ast.NewIdent("Symbol", DEFAULT_SPAN),
+							ast.NewIdentifier("customMatcher", DEFAULT_SPAN),
+							false,
+							DEFAULT_SPAN,
+						)
+						symbolKeyMap[customMatcher.Value] = symbolMemberExpr
 					default:
 						panic("Symbol.customMatcher is not a unique symbol")
 					}
 
 					provenance := &ast.NodeProvenance{Node: elem}
 					classObjType := NewObjectType(provenance, classObjTypeElems)
+					classObjType.SymbolKeyMap = symbolKeyMap
 
 					ctor := &Binding{
 						Source:  provenance,

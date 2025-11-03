@@ -843,11 +843,9 @@ func (b *Builder) buildTypeAnnObjKey(key type_sys.ObjTypeKey, symbolExprMap map[
 		}
 	case type_sys.SymObjTypeKeyKind:
 		e := symbolExprMap[key.Sym]
-		// TODO: Keep track of well-known symbols and generate proper computed keys for them
 		if e == nil {
 			// If the symbol is not in the map, we can't generate a proper computed key
 			// For .d.ts files, we'll use a placeholder string representation
-			// This can happen with well-known symbols like Symbol.customMatcher
 			return &StrLit{
 				Value:  fmt.Sprintf("[Symbol(%d)]", key.Sym),
 				span:   nil,
