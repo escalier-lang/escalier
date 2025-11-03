@@ -539,12 +539,13 @@ func (p *Parser) enumElem() ast.EnumElem {
 		p.lexer.consume()
 		variantName := ast.NewIdentifier(token.Value, token.Span)
 
-		// Check for tuple parameters
-		var params []ast.TypeAnn
 		token = p.lexer.peek()
+
+		// Check for params
+		var params []*ast.Param
 		if token.Type == OpenParen {
 			p.lexer.consume()
-			params = parseDelimSeq(p, CloseParen, Comma, p.typeAnn)
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			p.expect(CloseParen, AlwaysConsume)
 		}
 

@@ -916,6 +916,62 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x": "string | number",
 			},
 		},
+		"BasicEnum": {
+			input: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+				val rgb = Color.RGB
+				val hex = Color.Hex
+				val red: Color = Color.RGB(255, 0, 0)
+				val blue = Color.Hex("#0000FF")
+			`,
+			expectedTypes: map[string]string{
+				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol2(subject: RGB) -> [number, number, number] throws never}",
+				"hex":  "{new fn (code: string) -> Color throws never, symbol2(subject: Hex) -> [string] throws never}",
+				"red":  "Color",
+				"blue": "Color",
+			},
+		},
+		"BasicEnumWithPatternMatching": {
+			input: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+				declare val color: Color
+				val result = match color {
+					Color.RGB(r, g, b) => r + g + b,
+					Color.Hex(code) => code,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"color":  "Color",
+				"result": "number | string",
+			},
+		},
+		"GenericEnumWithPatternMatching": {
+			input: `
+				enum Option<T> {
+					Some(value: T),
+					None(),
+				}
+				declare val option: Option<number>
+				val some = Option.Some
+				val none = Option.None
+				val result = match option {
+					Option.Some(value) => value,
+					Option.None() => 0,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"option": "Option<number>",
+				"some":   "{new fn <T>(value: T) -> Option<T> throws never, symbol2<T>(subject: Some<T>) -> [T] throws never}",
+				"none":   "{new fn <T>() -> Option<T> throws never, symbol2<T>(subject: None<T>) -> [] throws never}",
+				"result": "number | 0",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -1234,6 +1290,17 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 			expectedTypes: map[string]string{
 				"StringToNumber":  "{key: string, value: number}",
 				"NumberToBoolean": "{key: number, value: boolean}",
+			},
+		},
+		"BasicEnum": {
+			input: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Color": "Color.RGB | Color.Hex",
 			},
 		},
 	}

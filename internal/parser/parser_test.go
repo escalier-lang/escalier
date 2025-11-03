@@ -131,7 +131,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 		"EnumDecl": {
 			input: `
 				enum Maybe<T> {
-					Some(T),
+					Some(value: T),
 					None,
 				}
 			`,
@@ -148,8 +148,8 @@ func TestParseModuleNoErrors(t *testing.T) {
 		"EnumDeclWithMultipleParams": {
 			input: `
 				enum Color {
-					RGB(number, number, number),
-					HSL(number, number, number),
+					RGB(r: number, g: number, b: number),
+					HSL(h: number, s: number, l: number),
 				}
 			`,
 		},
@@ -157,15 +157,15 @@ func TestParseModuleNoErrors(t *testing.T) {
 			input: `
 				enum FutureColor {
 					...Color,
-					Oklab(number, number, number),
+					Oklab(l: number, a: number, b: number),
 				}
 			`,
 		},
 		"ExportEnumDecl": {
 			input: `
 				export enum Result<T, E> {
-					Ok(T),
-					Err(E),
+					Ok(value: T),
+					Err(error: E),
 				}
 			`,
 		},
@@ -212,10 +212,10 @@ func TestParseEnumErrorHandling(t *testing.T) {
 			input: `enum Result { Some, Err`,
 		},
 		"EnumVariantMissingClosingParen": {
-			input: `enum Result { Some(string, Err }`,
+			input: `enum Result { Some(value: string, Err }`,
 		},
 		"EnumVariantMissingOpeningParen": {
-			input: `enum Result { Some string), Err }`,
+			input: `enum Result { Some value: string), Err }`,
 		},
 		"EnumSpreadMissingIdent": {
 			input: `enum Extended { ..., Other }`,

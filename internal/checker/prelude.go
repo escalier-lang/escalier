@@ -160,7 +160,7 @@ func Prelude(c *Checker) *Scope {
 	}
 
 	scope.setTypeAlias("Promise", &TypeAlias{
-		Type:       NewObjectType(nil, promiseElems),
+		Type:       NewNominalObjectType(nil, promiseElems),
 		TypeParams: promiseTypeParams,
 	})
 
@@ -174,7 +174,7 @@ func Prelude(c *Checker) *Scope {
 		},
 	}
 	scope.setTypeAlias("Error", &TypeAlias{
-		Type:       NewObjectType(nil, errorElems),
+		Type:       NewNominalObjectType(nil, errorElems),
 		TypeParams: []*TypeParam{},
 	})
 
@@ -201,7 +201,7 @@ func Prelude(c *Checker) *Scope {
 		Optional: false,
 		Readonly: true,
 	}
-	arrayType := NewObjectType(nil, []ObjTypeElem{length})
+	arrayType := NewNominalObjectType(nil, []ObjTypeElem{length})
 	typeParam := NewTypeParam("T")
 	scope.setTypeAlias("Array", &TypeAlias{
 		Type:       arrayType,

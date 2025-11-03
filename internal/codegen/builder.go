@@ -685,6 +685,187 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		allStmts = append(allStmts, stmt)
 
 		return allStmts
+	case *ast.EnumDecl:
+		allStmts := []Stmt{}
+
+		// Create a namespace object for the enum
+		// e.g., const Color = {}
+		enumNamespace := fullyQualifyName(d.Name.Name, nsName)
+		namespacePattern := NewIdentPat(enumNamespace, nil, nil)
+		namespaceInit := NewObjectExpr([]ObjExprElem{}, nil)
+
+		namespaceDecl := &VarDecl{
+			Kind: VariableKind(ast.ValKind),
+			Decls: []*Declarator{
+				{
+					Pattern: namespacePattern,
+					TypeAnn: nil,
+					Init:    namespaceInit,
+				},
+			},
+			declare: false,
+			export:  d.Export(),
+			span:    nil,
+			source:  d,
+		}
+
+		allStmts = append(allStmts, &DeclStmt{
+			Decl:   namespaceDecl,
+			span:   nil,
+			source: d,
+		})
+
+		// Process each enum element
+		for _, elem := range d.Elems {
+			switch elem := elem.(type) {
+			case *ast.EnumVariant:
+				// For each variant, create a class with:
+				// 1. Constructor that accepts the variant's parameters
+				// 2. Symbol.customMatcher method for pattern matching
+
+				// Build constructor parameters
+				params, paramStmts := b.buildParams(elem.Params)
+
+				// Constructor body: assign parameters to instance properties
+				var constructorBodyStmts []Stmt
+				constructorBodyStmts = slices.Concat(constructorBodyStmts, paramStmts)
+
+				// Assign each parameter to this.paramName
+				for _, param := range elem.Params {
+					if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
+						lhs := NewMemberExpr(
+							NewIdentExpr("this", "", nil),
+							NewIdentifier(identPat.Name, param.Pattern),
+							false,
+							nil,
+						)
+						rhs := NewIdentExpr(identPat.Name, "", param.Pattern)
+						assignment := &ExprStmt{
+							Expr:   NewBinaryExpr(lhs, Assign, rhs, param.Pattern),
+							span:   nil,
+							source: elem,
+						}
+						constructorBodyStmts = append(constructorBodyStmts, assignment)
+					}
+				}
+
+				// Create constructor method
+				constructorMethod := &MethodElem{
+					Name:    NewIdentExpr("constructor", "", elem),
+					Params:  params,
+					Body:    constructorBodyStmts,
+					MutSelf: nil,
+					Static:  false,
+					Private: false,
+					Async:   false,
+					span:    nil,
+					source:  elem,
+				}
+
+				// Create Symbol.customMatcher method
+				// This method destructures the instance and returns the parameters as a tuple
+				// Method signature: [Symbol.customMatcher](subject) { return [subject.param1, subject.param2, ...]; }
+
+				matcherParams := []*Param{
+					{
+						Pattern: NewIdentPat("subject", nil, elem),
+						TypeAnn: nil,
+					},
+				}
+
+				// Build return array with subject.paramName for each parameter
+				var returnElements []Expr
+				for _, param := range elem.Params {
+					if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
+						returnElements = append(returnElements, NewMemberExpr(
+							NewIdentExpr("subject", "", nil),
+							NewIdentifier(identPat.Name, param.Pattern),
+							false,
+							nil,
+						))
+					}
+				}
+
+				matcherBody := []Stmt{
+					&ReturnStmt{
+						Expr:   NewArrayExpr(returnElements, nil),
+						span:   nil,
+						source: elem,
+					},
+				}
+
+				// Use Symbol.customMatcher as the method key
+				// We need to access Symbol.customMatcher which is a computed property
+				symbolCustomMatcher := NewMemberExpr(
+					NewIdentExpr("Symbol", "", nil),
+					NewIdentifier("customMatcher", nil),
+					false,
+					nil,
+				)
+
+				matcherMethod := &MethodElem{
+					Name:    NewComputedKey(symbolCustomMatcher, elem),
+					Params:  matcherParams,
+					Body:    matcherBody,
+					MutSelf: nil,
+					Static:  false,
+					Private: false,
+					Async:   false,
+					span:    nil,
+					source:  elem,
+				}
+
+				// Create the class for this variant
+				classElems := []ClassElem{constructorMethod, matcherMethod}
+
+				variantClassName := fullyQualifyName(d.Name.Name+"__"+elem.Name.Name, nsName)
+				variantClass := &ClassDecl{
+					Name: &Identifier{
+						Name:   variantClassName,
+						span:   nil,
+						source: elem.Name,
+					},
+					Body:    classElems,
+					export:  false,
+					declare: false,
+					span:    nil,
+					source:  elem,
+				}
+
+				allStmts = append(allStmts, &DeclStmt{
+					Decl:   variantClass,
+					span:   nil,
+					source: elem,
+				})
+
+				// Assign the variant class to the enum namespace
+				// e.g., Color.RGB = Color__RGB
+				assignExpr := NewBinaryExpr(
+					NewMemberExpr(
+						NewIdentExpr(enumNamespace, "", nil),
+						NewIdentifier(elem.Name.Name, elem.Name),
+						false,
+						nil,
+					),
+					Assign,
+					NewIdentExpr(variantClassName, "", elem),
+					nil,
+				)
+
+				allStmts = append(allStmts, &ExprStmt{
+					Expr:   assignExpr,
+					span:   nil,
+					source: elem,
+				})
+
+			case *ast.EnumSpread:
+				// TODO: Handle enum spreads
+				// For now, we'll panic as this is a more advanced feature
+				panic("TODO: EnumSpread codegen not yet implemented")
+			}
+		}
+
+		return allStmts
 	default:
 		panic("TODO - TransformDecl - default case")
 	}

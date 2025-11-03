@@ -428,6 +428,176 @@ func (c *Checker) InferComponent(
 			}
 			nsCtx.Scope.setValue(decl.Name.Name, ctor)
 			declMethodCtxs[i] = methodCtxs
+		case *ast.EnumDecl:
+			// I think we can infer the whole thing at once here.
+
+			// We need a new namespace
+			ns := NewNamespace()
+			nsCtx.Scope.setNamespace(decl.Name.Name, ns)
+
+			enumType := c.FreshVar(&ast.NodeProvenance{Node: decl})
+
+			typeParams := make([]*TypeParam, len(decl.TypeParams))
+			for i, typeParam := range decl.TypeParams {
+				var constraintType Type
+				var defaultType Type
+				if typeParam.Constraint != nil {
+					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
+				}
+				if typeParam.Default != nil {
+					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
+				}
+				typeParams[i] = &TypeParam{
+					Name:       typeParam.Name,
+					Constraint: constraintType,
+					Default:    defaultType,
+				}
+			}
+
+			declCtx := nsCtx.WithNewScope()
+			declCtxMap[declID] = declCtx
+
+			// Add each type param as a type alias in the declCtx so that
+			// they can be referenced when inferring the enum variants
+			for _, typeParam := range typeParams {
+				var t Type = NewUnknownType(nil)
+				if typeParam.Constraint != nil {
+					t = typeParam.Constraint
+				}
+				declCtx.Scope.setTypeAlias(typeParam.Name, &TypeAlias{
+					Type:       t,
+					TypeParams: []*TypeParam{},
+				})
+			}
+
+			typeAlias := &TypeAlias{
+				Type:       enumType,
+				TypeParams: typeParams,
+			}
+
+			typeArgs := make([]Type, len(typeParams))
+			for i := range typeParams {
+				typeArgs[i] = NewTypeRefType(nil, typeParams[i].Name, nil)
+			}
+
+			variantTypes := make([]Type, len(decl.Elems))
+
+			for i, elem := range decl.Elems {
+				switch elem := elem.(type) {
+				case *ast.EnumVariant:
+					// TODO: build an instance type, e.g. given the enum variant
+					// Some(value: T)
+					// we want to build a type that looks like:
+					// { [Symbol.customMatcher](subject: C) -> [T] }
+					// Where `C` is the instance type of the enum variant
+
+					instanceType := NewNominalObjectType(&ast.NodeProvenance{Node: elem}, []ObjTypeElem{})
+					instanceTypeAlias := &TypeAlias{
+						Type:       instanceType,
+						TypeParams: typeParams,
+					}
+					ns.Types[elem.Name.Name] = instanceTypeAlias
+
+					params, _, paramErrors := c.inferFuncParams(declCtx, elem.Params)
+					errors = slices.Concat(errors, paramErrors)
+
+					// Build the constructor function type
+					// If the enum has type parameters, the constructor should be generic
+					funcType := NewFuncType(
+						&ast.NodeProvenance{Node: elem},
+						typeParams,
+						params,
+						NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
+						NewNeverType(nil),
+					)
+					constructorElem := &ConstructorElem{Fn: funcType}
+
+					classObjTypeElems := []ObjTypeElem{constructorElem}
+
+					// Build [Symbol.customMatcher](subject: C) -> [T] method
+					symbol := ctx.Scope.getValue("Symbol")
+					key := PropertyKey{
+						Name:     "customMatcher",
+						OptChain: false,
+						Span:     DEFAULT_SPAN,
+					}
+					customMatcher, _ := c.getMemberType(ctx, symbol.Type, key)
+
+					// Create the SymbolKeyMap for the object type
+					symbolKeyMap := make(map[int]any)
+
+					switch customMatcher := Prune(customMatcher).(type) {
+					case *UniqueSymbolType:
+						self := false
+						subjectPat := &IdentPat{Name: "subject"}
+						// The subject type should include type arguments if the enum is generic
+						subjectType := NewTypeRefType(nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
+						paramTypes := make([]Type, len(elem.Params))
+						for i, param := range elem.Params {
+							t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
+							paramTypes[i] = t
+						}
+						returnType := NewTupleType(nil, paramTypes...)
+
+						methodElem := &MethodElem{
+							Name: ObjTypeKey{Kind: SymObjTypeKeyKind, Sym: customMatcher.Value},
+							Fn: NewFuncType(
+								nil,
+								typeParams,
+								[]*FuncParam{{Pattern: subjectPat, Type: subjectType}},
+								returnType,
+								NewNeverType(nil),
+							),
+							MutSelf: &self,
+						}
+						classObjTypeElems = append(classObjTypeElems, methodElem)
+
+						// Store the Symbol.customMatcher expression in the SymbolKeyMap
+						symbolMemberExpr := ast.NewMember(
+							ast.NewIdent("Symbol", DEFAULT_SPAN),
+							ast.NewIdentifier("customMatcher", DEFAULT_SPAN),
+							false,
+							DEFAULT_SPAN,
+						)
+						symbolKeyMap[customMatcher.Value] = symbolMemberExpr
+					default:
+						panic("Symbol.customMatcher is not a unique symbol")
+					}
+
+					provenance := &ast.NodeProvenance{Node: elem}
+					classObjType := NewObjectType(provenance, classObjTypeElems)
+					classObjType.SymbolKeyMap = symbolKeyMap
+
+					ctor := &Binding{
+						Source:  provenance,
+						Type:    classObjType,
+						Mutable: false,
+					}
+
+					ns.Values[elem.Name.Name] = ctor
+
+					variantName := &Member{
+						Left:  NewIdent(decl.Name.Name),
+						Right: NewIdent(elem.Name.Name),
+					}
+
+					variantTypes[i] = &TypeRefType{
+						Name:      variantName,
+						TypeArgs:  typeArgs,
+						TypeAlias: instanceTypeAlias,
+					}
+				case *ast.EnumSpread:
+					panic("TODO: infer enum spreads")
+				}
+			}
+
+			enumUnionType := NewUnionType(&ast.NodeProvenance{Node: decl}, variantTypes...)
+			enumTypeAlias := &TypeAlias{
+				Type:       enumUnionType,
+				TypeParams: typeParams,
+			}
+
+			nsCtx.Scope.setTypeAlias(decl.Name.Name, enumTypeAlias)
 		}
 	}
 
@@ -832,7 +1002,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {
 		// For declared async functions, validate that the return type is a Promise
 		if decl.FuncSig.Async {
-			if promiseType, ok := funcType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
+			if promiseType, ok := funcType.Return.(*TypeRefType); ok && QualIdentToString(promiseType.Name) == "Promise" {
 				// Good, it's a Promise type. Ensure it has the right structure.
 				if len(promiseType.TypeArgs) == 1 {
 					// Promise<T> should become Promise<T, never>
@@ -945,7 +1115,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			if len(expr.Args) > restIndex {
 				restParam := fnType.Params[restIndex]
 				// Rest parameter should be Array<T>, extract T
-				if arrayType, ok := restParam.Type.(*TypeRefType); ok && arrayType.Name == "Array" && len(arrayType.TypeArgs) > 0 {
+				if arrayType, ok := restParam.Type.(*TypeRefType); ok && QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
 					elementType := arrayType.TypeArgs[0]
 					// Unify each excess argument with the element type
 					for i := restIndex; i < len(expr.Args); i++ {
@@ -1054,7 +1224,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			if len(expr.Args) > restIndex {
 				restParam := fnTypeToUse.Params[restIndex]
 				// Rest parameter should be Array<T>, extract T
-				if arrayType, ok := restParam.Type.(*TypeRefType); ok && arrayType.Name == "Array" && len(arrayType.TypeArgs) > 0 {
+				if arrayType, ok := restParam.Type.(*TypeRefType); ok && QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
 					elementType := arrayType.TypeArgs[0]
 					// Unify each excess argument with the element type
 					for i := restIndex; i < len(expr.Args); i++ {
@@ -1215,7 +1385,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		resultType = propType
 
 		if methodType, ok := propType.(*FuncType); ok {
-			if retType, ok := methodType.Return.(*TypeRefType); ok && retType.Name == "Self" {
+			if retType, ok := methodType.Return.(*TypeRefType); ok && QualIdentToString(retType.Name) == "Self" {
 				t := *methodType   // Create a copy of the struct
 				t.Return = objType // Replace `Self` with the object type
 				resultType = &t
@@ -1440,7 +1610,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 			// If the argument is a Promise<T, E>, the result type is T
 			// and the throws type should be E (stored in expr.Throws for later use)
-			if promiseType, ok := argType.(*TypeRefType); ok && promiseType.Name == "Promise" {
+			if promiseType, ok := argType.(*TypeRefType); ok && QualIdentToString(promiseType.Name) == "Promise" {
 				if len(promiseType.TypeArgs) >= 2 {
 					resultType = promiseType.TypeArgs[0]  // T
 					expr.Throws = promiseType.TypeArgs[1] // E (store for throw inference)
@@ -1624,10 +1794,6 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// `expandType` is eager so we can't expand recursive type aliases as it
 		// would lead to infinite recursion.
 
-		if t.Name == "Array" || t.Name == "Error" {
-			return nil
-		}
-
 		// Check if we've reached the maximum expansion depth
 		if v.skipTypeRefsCount > 0 {
 			// Return the type reference without expanding
@@ -1639,16 +1805,21 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			return nil
 		}
 
-		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, t.Name)
+		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, QualIdentToString(t.Name))
 		if typeAlias == nil {
-			v.errors = append(v.errors, &UnknownTypeError{TypeName: t.Name, typeRef: t})
+			v.errors = append(v.errors, &UnknownTypeError{TypeName: QualIdentToString(t.Name), typeRef: t})
 			neverType := NewNeverType(nil)
 			neverType.SetProvenance(&TypeProvenance{Type: t})
 			return neverType
-		}
-
-		// Replace type params with type args if the type is generic
+		} // Replace type params with type args if the type is generic
 		expandedType := typeAlias.Type
+
+		// Don't expand nominal object types
+		if t, ok := expandedType.(*ObjectType); ok {
+			if t.Nominal {
+				return nil
+			}
+		}
 
 		// TODO:
 		// - ensure that the number of type args matches the number of type params
@@ -1883,17 +2054,17 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 		return c.getMemberType(ctx, t.Type, key)
 	case *TypeRefType:
 		// Handle Array access
-		if indexKey, ok := key.(IndexKey); ok && t.Name == "Array" {
+		if indexKey, ok := key.(IndexKey); ok && QualIdentToString(t.Name) == "Array" {
 			unifyErrors := c.unify(ctx, indexKey.Type, NewNumPrimType(nil))
 			errors = slices.Concat(errors, unifyErrors)
 			return t.TypeArgs[0], errors
-		} else if _, ok := key.(IndexKey); ok && t.Name == "Array" {
+		} else if _, ok := key.(IndexKey); ok && QualIdentToString(t.Name) == "Array" {
 			errors = append(errors, &ExpectedArrayError{Type: t})
 			return NewNeverType(nil), errors
 		}
 
 		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
-		if t.Name == "Error" {
+		if QualIdentToString(t.Name) == "Error" {
 			// Built-in Error type doesn't support property access directly
 			errors = append(errors, &ExpectedObjectError{Type: objType})
 			return NewNeverType(nil), errors
@@ -1961,9 +2132,9 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 
 func (c *Checker) expandTypeRef(ctx Context, t *TypeRefType) (Type, []Error) {
 	// Resolve the type alias
-	typeAlias := c.resolveQualifiedTypeAliasFromString(ctx, t.Name)
+	typeAlias := c.resolveQualifiedTypeAliasFromString(ctx, QualIdentToString(t.Name))
 	if typeAlias == nil {
-		return NewNeverType(nil), []Error{&UnknownTypeError{TypeName: t.Name, typeRef: t}}
+		return NewNeverType(nil), []Error{&UnknownTypeError{TypeName: QualIdentToString(t.Name), typeRef: t}}
 	}
 
 	// Expand the type alias
@@ -2443,7 +2614,7 @@ func (c *Checker) inferFuncSig(
 	var finalThrowsType Type
 	if sig.Async {
 		// For async functions, check if the user explicitly specified a Promise return type
-		if promiseType, ok := returnType.(*TypeRefType); ok && promiseType.Name == "Promise" {
+		if promiseType, ok := returnType.(*TypeRefType); ok && QualIdentToString(promiseType.Name) == "Promise" {
 			// User explicitly specified Promise<T, E>, use it as-is
 			finalReturnType = returnType
 			finalThrowsType = NewNeverType(nil) // Async functions don't throw directly
@@ -2594,7 +2765,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	if isAsync {
 		// For async functions, the funcType.Return is Promise<T, E>
 		// We need to unify the inferred return and throw types with the Promise type args
-		if promiseType, ok := funcSigType.Return.(*TypeRefType); ok && promiseType.Name == "Promise" {
+		if promiseType, ok := funcSigType.Return.(*TypeRefType); ok && QualIdentToString(promiseType.Name) == "Promise" {
 			if len(promiseType.TypeArgs) >= 2 {
 				unifyErrors := c.unify(ctx, returnType, promiseType.TypeArgs[0])
 				unifyThrowsErrors := c.unify(ctx, inferredThrowType, promiseType.TypeArgs[1])
