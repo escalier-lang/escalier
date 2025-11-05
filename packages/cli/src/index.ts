@@ -1,6 +1,6 @@
+import * as fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
-import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import './wasm_exec.js'; // run for side-effects
