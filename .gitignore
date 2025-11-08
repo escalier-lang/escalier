@@ -30,3 +30,4 @@ tsconfig.tsbuildinfo
 bin
 .DS_Store
 coverage
+dist

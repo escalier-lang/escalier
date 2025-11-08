@@ -6,6 +6,7 @@
   },
   "files": [],
   "references": [
+    { "path": "./packages/cli" },
     { "path": "./packages/vscode-escalier" },
     { "path": "./playground" },
   ]
