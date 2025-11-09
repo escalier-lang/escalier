@@ -1,22 +1,28 @@
 {
-  "name": "@escalier/cli",
+  "name": "@escalier/runtime",
   "version": "0.0.1",
-  "description": "Command-line interface for the Escalier programming language compiler",
+  "description": "Runtime library for the Escalier programming language",
   "type": "module",
-  "bin": {
-    "escalier": "dist/index.js"
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "vite build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "test": "vitest run"
   },
   "keywords": [
     "escalier",
-    "compiler",
-    "cli",
+    "runtime",
     "programming-language",
     "typescript"
   ],
@@ -25,7 +31,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/escalier-lang/escalier.git",
-    "directory": "packages/cli"
+    "directory": "packages/runtime"
   },
   "homepage": "https://github.com/escalier-lang/escalier#readme",
   "bugs": {
@@ -35,6 +41,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "vitest": "^4.0.8"
   }
 }

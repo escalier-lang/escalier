@@ -72,3 +72,49 @@ jobs:
         with:
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  build_cli:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '22'
+      
+      - name: Install dependencies
+        working-directory: ./packages/cli
+        run: npm install
+
+      - name: Build
+        working-directory: ./packages/cli
+        run: npm run build
+ 
+  build_runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '22'
+      
+      - name: Install dependencies
+        working-directory: ./packages/runtime
+        run: npm install
+
+      - name: Build
+        working-directory: ./packages/runtime
+        run: npm run build
+ 
+      - name: Run Tests
+        working-directory: ./packages/runtime
+        run: npm run test
