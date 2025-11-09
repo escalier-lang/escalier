@@ -1,3 +1,4 @@
+import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
 const Color = {};
 class Color__RGB {
   constructor(temp1, temp2, temp3) {
@@ -8,7 +9,7 @@ class Color__RGB {
     this.g = g;
     this.b = b;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.r, subject.g, subject.b];
   }
 }
@@ -18,7 +19,7 @@ class Color__Hex {
     const code = temp4;
     this.code = code;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.code];
   }
 }

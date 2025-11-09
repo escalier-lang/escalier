@@ -1,10 +1,11 @@
+import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
 const MyOption = {};
 class MyOption__Some {
   constructor(temp1) {
     const value = temp1;
     this.value = value;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.value];
   }
 }
@@ -12,7 +13,7 @@ MyOption.Some = MyOption__Some;
 class MyOption__None {
   constructor() {
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [];
   }
 }

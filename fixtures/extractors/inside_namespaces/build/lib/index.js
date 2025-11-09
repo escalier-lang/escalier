@@ -1,3 +1,4 @@
+import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
 const MyEnum = {};
 class MyEnum__Color {
   constructor(temp2, temp3, temp4) {

@@ -500,6 +500,7 @@ func (*FuncDecl) isDecl()      {}
 func (*TypeDecl) isDecl()      {}
 func (*NamespaceDecl) isDecl() {}
 func (*ClassDecl) isDecl()     {}
+func (*ImportDecl) isDecl()    {}
 
 type VariableKind int
 
@@ -895,6 +896,32 @@ func (d *ClassDecl) Declare() bool      { return d.declare }
 func (d *ClassDecl) Span() *Span        { return d.span }
 func (d *ClassDecl) SetSpan(span *Span) { d.span = span }
 func (d *ClassDecl) Source() ast.Node   { return d.source }
+
+type ImportDecl struct {
+	Specifiers []string // Named imports, e.g., ["InvokeCustomMatcherOrThrow"]
+	Path       string   // The module path, e.g., "escalier/runtime"
+	export     bool
+	declare    bool
+	span       *Span
+	source     ast.Node
+}
+
+func NewImportDecl(specifiers []string, path string, source ast.Node) *ImportDecl {
+	return &ImportDecl{
+		Specifiers: specifiers,
+		Path:       path,
+		export:     false,
+		declare:    false,
+		source:     source,
+		span:       nil,
+	}
+}
+
+func (d *ImportDecl) Export() bool       { return d.export }
+func (d *ImportDecl) Declare() bool      { return d.declare }
+func (d *ImportDecl) Span() *Span        { return d.span }
+func (d *ImportDecl) SetSpan(span *Span) { d.span = span }
+func (d *ImportDecl) Source() ast.Node   { return d.source }
 
 //sumtype:decl
 type ClassElem interface {
