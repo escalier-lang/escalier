@@ -1,6 +1,6 @@
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
-import { InvokeCustomMatcherOrThrow, type Extractor } from './extractor';
+import { type Extractor, InvokeCustomMatcherOrThrow } from './extractor';
 
 describe('Sample Test', () => {
     test('should pass', () => {
