@@ -125,10 +125,6 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
-      - name: Install CLI dependencies
-        working-directory: ./packages/cli
-        run: npm install
-
       - name: Build
         working-directory: ./packages/cli
         run: npm run build
@@ -147,10 +143,6 @@ jobs:
           node-version: '22'
       
       - name: Install root dependencies
-        run: npm install
-
-      - name: Install runtime dependencies
-        working-directory: ./packages/runtime
         run: npm install
 
       - name: Build
