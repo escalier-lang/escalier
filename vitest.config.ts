@@ -4,7 +4,7 @@ export default defineConfig({
     test: {
         exclude: ['**/node_modules/**', '**/out/**'],
         coverage: {
-            include: ['playground/src/lsp-client/**'],
+            include: ['playground/src/lsp-client/**', 'packages/*/src/**'],
         },
     },
 });

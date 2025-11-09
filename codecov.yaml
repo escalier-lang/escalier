@@ -9,6 +9,6 @@ ignore:
   - "internal/test_util/**"
   - "internal/type_system/**"
   - "tools/**"
-  - "wasm_exec.js"
+  - "**/wasm_exec.js"
   - "**/examples/**"
   - "**/fixtures/**"
