@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
@@ -57,8 +57,11 @@ jobs:
 
       - name: Set up Go
         uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
 
-      - name: Install dependencies
+      - name: Install Go dependencies
         run: go mod download
 
       - name: Build lsp-server
@@ -94,7 +97,7 @@ jobs:
         run: make escalier-wasm
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: escalier.wasm
           path: ./bin/escalier.wasm
@@ -109,16 +112,20 @@ jobs:
           fetch-depth: 0
 
       - name: Download escalier.wasm artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: escalier.wasm
+          path: ./bin
 
       - name: Install Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
       
-      - name: Install dependencies
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install CLI dependencies
         working-directory: ./packages/cli
         run: npm install
 
@@ -135,11 +142,14 @@ jobs:
           fetch-depth: 0
 
       - name: Install Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
       
-      - name: Install dependencies
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install runtime dependencies
         working-directory: ./packages/runtime
         run: npm install
 
