@@ -143,4 +143,76 @@ describe('Sample Test', () => {
 
         expect(x).toBe('data');
     });
+
+    describe('TypeError cases', () => {
+        test('should throw TypeError when extractor is not an object', () => {
+            expect(() => {
+                InvokeCustomMatcherOrThrow(null, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when extractor is a primitive', () => {
+            expect(() => {
+                // @ts-expect-error - Testing invalid input
+                InvokeCustomMatcherOrThrow(42, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when Symbol.customMatcher is not a function', () => {
+            const extractor = {
+                [Symbol.customMatcher]: 'not a function',
+            };
+
+            expect(() => {
+                // @ts-expect-error - Testing invalid input
+                InvokeCustomMatcherOrThrow(extractor, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when Symbol.customMatcher is missing', () => {
+            const extractor = {};
+
+            expect(() => {
+                // @ts-expect-error - Testing invalid input
+                InvokeCustomMatcherOrThrow(extractor, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when custom matcher returns null', () => {
+            const extractor = {
+                [Symbol.customMatcher]() {
+                    return null;
+                },
+            };
+
+            expect(() => {
+                InvokeCustomMatcherOrThrow(extractor, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when custom matcher returns a primitive', () => {
+            const extractor = {
+                [Symbol.customMatcher]() {
+                    return 42;
+                },
+            };
+
+            expect(() => {
+                // @ts-expect-error - Testing invalid return value
+                InvokeCustomMatcherOrThrow(extractor, {}, undefined);
+            }).toThrow(TypeError);
+        });
+
+        test('should throw TypeError when custom matcher returns undefined', () => {
+            const extractor = {
+                [Symbol.customMatcher]() {
+                    return undefined;
+                },
+            };
+
+            expect(() => {
+                InvokeCustomMatcherOrThrow(extractor, {}, undefined);
+            }).toThrow(TypeError);
+        });
+    });
 });
