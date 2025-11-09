@@ -1,1 +1,5 @@
-source not found for error
+lib/exception_handling.esc:37:43: Error cannot be assigned to string
+
+37:     if value != "" { value } else { throw Error("value is empty") }
+                                              ^^^^^^^^^^^^^^^^^^^^^^^
+

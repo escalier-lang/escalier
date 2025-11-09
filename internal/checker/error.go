@@ -224,12 +224,13 @@ func (e CalleeIsNotCallableError) Message() string {
 }
 
 type InvalidNumberOfArgumentsError struct {
-	Callee *FuncType
-	Args   []ast.Expr
+	CallExpr ast.Expr
+	Callee   *FuncType
+	Args     []ast.Expr
 }
 
 func (e InvalidNumberOfArgumentsError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.CallExpr.Span()
 }
 func (e InvalidNumberOfArgumentsError) Message() string {
 	return "Invalid number of arguments for function: " + e.Callee.String() +
