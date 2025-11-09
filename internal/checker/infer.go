@@ -1047,6 +1047,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 	errors = []Error{}
 	calleeType, calleeErrors := c.inferExpr(ctx, expr.Callee)
 	errors = slices.Concat(errors, calleeErrors)
+	provneance := &ast.NodeProvenance{Node: expr}
 
 	argTypes := make([]Type, len(expr.Args))
 	for i, arg := range expr.Args {
@@ -1097,9 +1098,10 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			// Function has rest parameters
 			// Must have at least as many args as required parameters (before rest)
 			if len(expr.Args) < restIndex {
-				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnType,
-					Args:   expr.Args,
+				return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+					CallExpr: expr,
+					Callee:   fnType,
+					Args:     expr.Args,
 				}}
 			}
 
@@ -1125,20 +1127,24 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					}
 				} else {
 					// Rest parameter is not Array<T>, this is an error
-					return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-						Callee: fnType,
-						Args:   expr.Args,
+					return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+						CallExpr: expr,
+						Callee:   fnType,
+						Args:     expr.Args,
 					}}
 				}
 			}
 
-			return fnType.Return, errors
+			returnType := fnType.Return.Copy()
+			returnType.SetProvenance(provneance)
+			return returnType, errors
 		} else {
 			// Function has no rest parameters, use strict equality check
 			if len(fnType.Params) != len(expr.Args) {
-				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnType,
-					Args:   expr.Args,
+				return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+					CallExpr: expr,
+					Callee:   fnType,
+					Args:     expr.Args,
 				}}
 			} else {
 				for argType, param := range Zip(argTypes, fnType.Params) {
@@ -1147,7 +1153,9 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					errors = slices.Concat(errors, paramErrors)
 				}
 
-				return fnType.Return, errors
+				returnType := fnType.Return.Copy()
+				returnType.SetProvenance(provneance)
+				return returnType, errors
 			}
 		}
 	} else if objType, ok := calleeType.(*ObjectType); ok {
@@ -1165,7 +1173,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 		}
 
 		if fnTypeToUse == nil {
-			return NewNeverType(nil), []Error{
+			return NewNeverType(provneance), []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 
@@ -1206,9 +1214,10 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			// Function has rest parameters
 			// Must have at least as many args as required parameters (before rest)
 			if len(expr.Args) < restIndex {
-				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnTypeToUse,
-					Args:   expr.Args,
+				return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+					CallExpr: expr,
+					Callee:   fnTypeToUse,
+					Args:     expr.Args,
 				}}
 			}
 
@@ -1234,20 +1243,24 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					}
 				} else {
 					// Rest parameter is not Array<T>, this is an error
-					return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-						Callee: fnTypeToUse,
-						Args:   expr.Args,
+					return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+						CallExpr: expr,
+						Callee:   fnTypeToUse,
+						Args:     expr.Args,
 					}}
 				}
 			}
 
-			return fnTypeToUse.Return, errors
+			returnType := fnTypeToUse.Return.Copy()
+			returnType.SetProvenance(provneance)
+			return returnType, errors
 		} else {
 			// Function has no rest parameters, use strict equality check
 			if len(fnTypeToUse.Params) != len(expr.Args) {
-				return NewNeverType(nil), []Error{&InvalidNumberOfArgumentsError{
-					Callee: fnTypeToUse,
-					Args:   expr.Args,
+				return NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+					CallExpr: expr,
+					Callee:   fnTypeToUse,
+					Args:     expr.Args,
 				}}
 			} else {
 				for argType, param := range Zip(argTypes, fnTypeToUse.Params) {
@@ -1256,11 +1269,13 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 					errors = slices.Concat(errors, paramErrors)
 				}
 
-				return fnTypeToUse.Return, errors
+				returnType := fnTypeToUse.Return.Copy()
+				returnType.SetProvenance(provneance)
+				return returnType, errors
 			}
 		}
 	} else {
-		return NewNeverType(nil), []Error{
+		return NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 	}
 }
@@ -1326,8 +1341,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 					if len(fnType.Params) != 2 {
 						resultType = neverType
 						errors = []Error{&InvalidNumberOfArgumentsError{
-							Callee: fnType,
-							Args:   []ast.Expr{expr.Left, expr.Right},
+							CallExpr: expr,
+							Callee:   fnType,
+							Args:     []ast.Expr{expr.Left, expr.Right},
 						}}
 					} else {
 						errors = []Error{}
