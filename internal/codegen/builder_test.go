@@ -332,7 +332,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 class Color__Red {
   constructor() {
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [];
   }
 }
@@ -340,7 +340,7 @@ Color.Red = Color__Red;
 class Color__Green {
   constructor() {
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [];
   }
 }
@@ -348,7 +348,7 @@ Color.Green = Color__Green;
 class Color__Blue {
   constructor() {
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [];
   }
 }
@@ -363,7 +363,7 @@ class Option__Some {
     const value = temp1;
     this.value = value;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.value];
   }
 }
@@ -371,7 +371,7 @@ Option.Some = Option__Some;
 class Option__None {
   constructor() {
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [];
   }
 }
@@ -386,7 +386,7 @@ class types__Result__Ok {
     const value = temp1;
     this.value = value;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.value];
   }
 }
@@ -396,7 +396,7 @@ class types__Result__Err {
     const msg = temp2;
     this.msg = msg;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.msg];
   }
 }
@@ -415,7 +415,7 @@ class Color__RGB {
     this.g = g;
     this.b = b;
   }
-  [Symbol.customMatcher](subject) {
+  static [Symbol.customMatcher](subject) {
     return [subject.r, subject.g, subject.b];
   }
 }
