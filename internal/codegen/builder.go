@@ -12,8 +12,9 @@ import (
 )
 
 type Builder struct {
-	tempId   int
-	depGraph *dep_graph.DepGraph
+	tempId       int
+	depGraph     *dep_graph.DepGraph
+	hasExtractor bool
 }
 
 func (b *Builder) NewTempId() string {
@@ -176,6 +177,8 @@ func (b *Builder) buildPattern(
 
 			return NewTuplePat(elems, p)
 		case *ast.ExtractorPat:
+			b.hasExtractor = true
+
 			tempVars := []Expr{}
 			tempVarPats := []Pat{}
 
@@ -218,6 +221,7 @@ func (b *Builder) buildPattern(
 			}
 
 			decl := &VarDecl{
+				Kind:    VariableKind(kind),
 				Decls:   decls,
 				declare: false,
 				export:  export,
@@ -335,21 +339,6 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	}
 }
 
-func (b *Builder) BuildModule(mod *ast.Module) *Module {
-	var stmts []Stmt
-	if ns, ok := mod.Namespaces.Get(""); ok {
-		// If the module has a default namespace, we build its declarations.
-		for _, d := range ns.Decls {
-			stmts = slices.Concat(stmts, b.buildDecl(d))
-		}
-	} else {
-		panic("TODO - TransformModule - default namespace is missing")
-	}
-	return &Module{
-		Stmts: stmts,
-	}
-}
-
 // declIDs must be sorted according to reverse topological order based on the
 // the strongly connected components of the dependency graph.  The reason why
 // we pass this in is because we don't want to compute the strongly connected
@@ -410,6 +399,24 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// We need to be able to look up the declaration for the identifier by their
 	// ID.  This means we should probably give each declaration a unique ID field
 	// and the Source field on the identifier can just be the declaration ID.
+
+	if b.hasExtractor {
+		// Add an import statement at the start of `stmts`
+		importDecl := NewImportDecl(
+			[]string{"InvokeCustomMatcherOrThrow"},
+			"escalier/runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset hasExtractor for future builds
+		b.hasExtractor = false
+	}
 
 	return &Module{
 		Stmts: stmts,
@@ -544,14 +551,15 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				span:   nil,
 				source: d.Name,
 			},
-			Params:  params,
-			Body:    slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
-			TypeAnn: nil,
-			declare: decl.Declare(),
-			export:  decl.Export(),
-			async:   d.Async,
-			span:    nil,
-			source:  decl,
+			TypeParams: nil,
+			Params:     params,
+			Body:       slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
+			TypeAnn:    nil,
+			declare:    decl.Declare(),
+			export:     decl.Export(),
+			async:      d.Async,
+			span:       nil,
+			source:     decl,
 		}
 		stmt := &DeclStmt{
 			Decl:   fnDecl,
@@ -808,7 +816,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 					Params:  matcherParams,
 					Body:    matcherBody,
 					MutSelf: nil,
-					Static:  false,
+					Static:  true,
 					Private: false,
 					Async:   false,
 					span:    nil,
@@ -1733,6 +1741,8 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		return finalCondition, bindingStmts
 
 	case *ast.ExtractorPat:
+		b.hasExtractor = true
+
 		// Extractor patterns: check instanceof the extractor class and call the custom matcher
 		var conditions []Expr
 

@@ -520,6 +520,17 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.indent--
 		p.NewLine()
 		p.print("}")
+	case *ImportDecl:
+		p.print("import { ")
+		for i, spec := range d.Specifiers {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.print(spec)
+		}
+		p.print(" } from \"")
+		p.print(d.Path)
+		p.print("\";")
 	}
 
 	end := p.location
