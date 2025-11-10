@@ -16,10 +16,10 @@ import (
 func build(stdout io.Writer, stderr io.Writer, files []string) {
 	fmt.Fprintln(stdout, "building module...")
 
-	sources := make([]*ast.Source, len(files))
+	sources := make([]*ast.Source, 0, len(files))
 	idToSource := make(map[int]*ast.Source)
 
-	for i, file := range files {
+	for _, file := range files {
 		// check that file has .esc extension
 		if path.Ext(file) != ".esc" {
 			fmt.Fprintln(stdout, "file does not have .esc extension")
@@ -45,15 +45,17 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 			fmt.Fprintln(stdout, "failed to read file content")
 			continue
 		}
-		sources[i] = &ast.Source{
-			ID:       i,
+
+		source := &ast.Source{
+			ID:       len(sources),
 			Path:     file,
 			Contents: string(bytes),
 		}
-		idToSource[i] = sources[i]
+		sources = append(sources, source)
+		idToSource[source.ID] = source
 	}
 
-	output := compiler.CompileLib(sources)
+	output := compiler.CompilePackage(sources)
 
 	for _, err := range output.ParseErrors {
 		fmt.Fprintln(stderr, err)

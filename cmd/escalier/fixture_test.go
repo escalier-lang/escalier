@@ -28,7 +28,7 @@ func checkFile(t *testing.T, fixtureDir string, ext string) {
 	}
 }
 
-// TODO: print errors to a file
+// TODO: Update this to work with changes to `build` in build.go
 func checkFixture(t *testing.T, fixtureDir string) {
 	tmpDir := t.TempDir()
 

@@ -97,8 +97,11 @@ func TestBuildErrorHandling(t *testing.T) {
 				err := os.Chdir(tmpDir)
 				require.NoError(t, err)
 
+				err = os.Mkdir("lib", 0755)
+				require.NoError(t, err)
+
 				// Create a valid .esc file
-				filename := filepath.Join(tmpDir, "test.esc")
+				filename := filepath.Join("lib", "test.esc")
 				err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
 				require.NoError(t, err)
 
@@ -210,8 +213,11 @@ func TestBuildFileSystemErrors(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
+	err = os.Mkdir("lib", 0755)
+	require.NoError(t, err)
+
 	// Create a valid .esc file with minimal content
-	filename := filepath.Join(tmpDir, "test.esc")
+	filename := filepath.Join("lib", "test.esc")
 	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
 	require.NoError(t, err)
 
@@ -256,8 +262,11 @@ func TestBuildWithValidFile(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
+	err = os.Mkdir("lib", 0755)
+	require.NoError(t, err)
+
 	// Create a valid .esc file
-	filename := filepath.Join(tmpDir, "test.esc")
+	filename := filepath.Join("lib", "test.esc")
 	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
 	require.NoError(t, err)
 
@@ -427,8 +436,11 @@ func TestBuildErrorSourceNotFound(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
+	err = os.Mkdir("lib", 0755)
+	require.NoError(t, err)
+
 	// Create an invalid .esc file that will cause type errors
-	filename := filepath.Join(tmpDir, "invalid.esc")
+	filename := filepath.Join("lib", "invalid.esc")
 	err = os.WriteFile(filename, []byte("let x: invalid_type = 5;"), 0644)
 	require.NoError(t, err)
 
@@ -457,8 +469,11 @@ func TestBuildFileWriteErrors(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
+	err = os.Mkdir("lib", 0755)
+	require.NoError(t, err)
+
 	// Create a valid .esc file
-	filename := filepath.Join(tmpDir, "test.esc")
+	filename := filepath.Join("lib", "test.esc")
 	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
 	require.NoError(t, err)
 
@@ -537,8 +552,11 @@ func TestBuildCompilerErrors(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
+	err = os.Mkdir("lib", 0755)
+	require.NoError(t, err)
+
 	// Create a .esc file with syntax errors
-	filename := filepath.Join(tmpDir, "syntax_error.esc")
+	filename := filepath.Join("lib", "syntax_error.esc")
 	err = os.WriteFile(filename, []byte("let x = [unclosed bracket"), 0644)
 	require.NoError(t, err)
 
