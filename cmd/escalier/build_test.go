@@ -88,7 +88,7 @@ func TestBuildErrorHandling(t *testing.T) {
 
 				return tmpDir, []string{validFile, noAccessFile}
 			},
-			expectedStdout: []string{"building module...", "failed to open file"},
+			expectedStdout: []string{"building module...", "failed to read file content"},
 			expectedStderr: []string{},
 		}, {
 			name: "build directory creation failure",
