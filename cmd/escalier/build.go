@@ -95,65 +95,57 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 		fmt.Fprintln(stderr, message)
 	}
 
-	// create build/ directory if it doesn't exist
-	if _, err := os.Stat("build"); os.IsNotExist(err) {
-		err := os.Mkdir("build", 0755)
+	for moduleName, output := range output.Modules {
+		dir := filepath.Join("build", filepath.Dir(moduleName))
+		err := os.MkdirAll(dir, 0755)
 		if err != nil {
-			fmt.Fprintln(stderr, "failed to create build directory")
+			fmt.Fprintln(stderr, "failed to create directory for module")
 			return
 		}
 
-		if _, err := os.Stat("build/lib"); os.IsNotExist(err) {
-			err := os.Mkdir("build/lib", 0755)
-			if err != nil {
-				fmt.Fprintln(stderr, "failed to create build/lib directory")
-				return
-			}
+		// create .js file
+		jsFile := filepath.Join("build", moduleName+".js")
+		jsOut, err := os.Create(jsFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create .js file")
+			return
 		}
-	}
 
-	// create .js file
-	jsFile := filepath.Join("build", "lib", "index.js")
-	jsOut, err := os.Create(jsFile)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to create .js file")
-		return
-	}
+		// write .js output to file
+		_, err = jsOut.WriteString(output.JS)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to write .js to file")
+			return
+		}
 
-	// write .js output to file
-	_, err = jsOut.WriteString(output.JS)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to write .js to file")
-		return
-	}
+		// create .d.ts file
+		defFile := filepath.Join("build", moduleName+".d.ts")
+		defOut, err := os.Create(defFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create .d.ts file")
+			return
+		}
 
-	// create .d.ts file
-	defFile := filepath.Join("build", "lib", "index.d.ts")
-	defOut, err := os.Create(defFile)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to create .d.ts file")
-		return
-	}
+		// write .d.ts output to file
+		_, err = defOut.WriteString(output.DTS)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to write .d.ts to file")
+			return
+		}
 
-	// write .d.ts output to file
-	_, err = defOut.WriteString(output.DTS)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to write .d.ts to file")
-		return
-	}
+		// create sourcemap file
+		mapFile := filepath.Join("build", moduleName+".js.map")
+		mapOut, err := os.Create(mapFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to create map file")
+			return
+		}
 
-	// create sourcemap file
-	mapFile := filepath.Join("build", "lib", "index.js.map")
-	mapOut, err := os.Create(mapFile)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to create map file")
-		return
-	}
-
-	// write sourcemap output to file
-	_, err = mapOut.WriteString(output.SourceMap)
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to write source map to file")
-		return
+		// write sourcemap output to file
+		_, err = mapOut.WriteString(output.SourceMap)
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to write source map to file")
+			return
+		}
 	}
 }

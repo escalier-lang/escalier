@@ -27,7 +27,7 @@ go.work.sum
 node_modules
 out
 tsconfig.tsbuildinfo
-bin
+bin/**
 .DS_Store
 coverage
 dist

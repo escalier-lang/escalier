@@ -1,0 +1,4 @@
+enum Color {
+	RGB(r: number, g: number, b: number),
+	Hex(code: string),
+}

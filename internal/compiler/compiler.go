@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,12 +14,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+type ModuleOutput struct {
+	JS        string
+	SourceMap string
+	DTS       string
+}
+
 type CompilerOutput struct {
 	ParseErrors []*parser.Error
 	TypeErrors  []checker.Error
-	JS          string
-	SourceMap   string
-	DTS         string
+	Modules     map[string]ModuleOutput
 }
 
 func Compile(source *ast.Source) CompilerOutput {
@@ -36,16 +41,6 @@ func Compile(source *ast.Source) CompilerOutput {
 	_, typeErrors := c.InferScript(inferCtx, inMod)
 
 	// namespace := scope.Namespace
-
-	if len(parseErrors) > 0 {
-		return CompilerOutput{
-			JS:          "",
-			DTS:         "",
-			SourceMap:   "",
-			ParseErrors: parseErrors,
-			TypeErrors:  typeErrors,
-		}
-	}
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
@@ -76,9 +71,13 @@ func Compile(source *ast.Source) CompilerOutput {
 	return CompilerOutput{
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
-		JS:          jsOutput,
-		SourceMap:   sourceMap,
-		DTS:         dtsOutput,
+		Modules: map[string]ModuleOutput{
+			"index": {
+				JS:        jsOutput,
+				SourceMap: sourceMap,
+				DTS:       dtsOutput,
+			},
+		},
 	}
 }
 
@@ -94,42 +93,51 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
-	depGraph := dep_graph.BuildDepGraph(inMod)
-
-	c := checker.NewChecker()
-	inferCtx := checker.Context{
-		Scope:      checker.Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
+	output := CompilerOutput{
+		ParseErrors: []*parser.Error{},
+		TypeErrors:  []checker.Error{},
+		Modules:     map[string]ModuleOutput{},
 	}
-	libNS, typeErrors := c.InferDepGraph(inferCtx, depGraph)
 
-	if len(parseErrors) > 0 {
-		return CompilerOutput{
-			JS:          "",
-			DTS:         "",
-			SourceMap:   "",
-			ParseErrors: parseErrors,
-			TypeErrors:  typeErrors,
+	var libNS *type_system.Namespace
+
+	if len(libSources) > 0 {
+		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
+		depGraph := dep_graph.BuildDepGraph(inMod)
+
+		c := checker.NewChecker()
+		inferCtx := checker.Context{
+			Scope:      checker.Prelude(c),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		_libNS, typeErrors := c.InferDepGraph(inferCtx, depGraph)
+		libNS = _libNS
+
+		builder := &codegen.Builder{}
+		jsMod := builder.BuildTopLevelDecls(depGraph)
+		dtsMod := builder.BuildDefinitions(depGraph, libNS)
+
+		printer := codegen.NewPrinter()
+		jsOutput := printer.PrintModule(jsMod)
+
+		jsFile := "./index.js"
+		sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+
+		outmap := "./index.js.map"
+		jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+
+		printer = codegen.NewPrinter()
+		dtsOutput := printer.PrintModule(dtsMod)
+
+		output.ParseErrors = append(output.ParseErrors, parseErrors...)
+		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+		output.Modules["lib/index"] = ModuleOutput{
+			JS:        jsOutput,
+			SourceMap: sourceMap,
+			DTS:       dtsOutput,
 		}
 	}
-
-	builder := &codegen.Builder{}
-	jsMod := builder.BuildTopLevelDecls(depGraph)
-	dtsMod := builder.BuildDefinitions(depGraph, libNS)
-
-	printer := codegen.NewPrinter()
-	jsOutput := printer.PrintModule(jsMod)
-
-	jsFile := "./index.js"
-	sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
-
-	outmap := "./index.js.map"
-	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
-
-	printer = codegen.NewPrinter()
-	dtsOutput := printer.PrintModule(dtsMod)
 
 	// Compile each of the bin/ scripts, using the libNS as the base namespace.
 	binSources := []*ast.Source{}
@@ -140,18 +148,16 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	}
 
 	for _, src := range binSources {
-		compileOutput := CompileScript(libNS, src)
-		parseErrors = append(parseErrors, compileOutput.ParseErrors...)
-		typeErrors = append(typeErrors, compileOutput.TypeErrors...)
+		scriptOutput := CompileScript(libNS, src)
+		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
+		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
+
+		ext := filepath.Ext(src.Path)
+		name := src.Path[:len(src.Path)-len(ext)]
+		output.Modules[name] = scriptOutput.Modules["bin/index"]
 	}
 
-	return CompilerOutput{
-		ParseErrors: parseErrors,
-		TypeErrors:  typeErrors,
-		JS:          jsOutput,
-		SourceMap:   sourceMap,
-		DTS:         dtsOutput,
-	}
+	return output
 }
 
 // TODO: Update this so that we inject an `import` statement at the start of
@@ -163,24 +169,18 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	inMod, parseErrors := p.ParseScript()
 
 	c := checker.NewChecker()
-	inferCtx := checker.Context{
-		Scope: &checker.Scope{
+	scope := checker.Prelude(c)
+	if libNS != nil {
+		scope = &checker.Scope{
 			Namespace: libNS,
-		},
+		}
+	}
+	inferCtx := checker.Context{
+		Scope:      scope,
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
 	_, typeErrors := c.InferScript(inferCtx, inMod)
-
-	if len(parseErrors) > 0 {
-		return CompilerOutput{
-			JS:          "",
-			DTS:         "",
-			SourceMap:   "",
-			ParseErrors: parseErrors,
-			TypeErrors:  typeErrors,
-		}
-	}
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
@@ -198,6 +198,8 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
 
+	// TODO: Use the name of the source file here instead of always "index.js".
+
 	jsFile := "./index.js"
 	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
 
@@ -211,8 +213,12 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	return CompilerOutput{
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
-		JS:          jsOutput,
-		SourceMap:   sourceMap,
-		DTS:         dtsOutput,
+		Modules: map[string]ModuleOutput{
+			"bin/index": {
+				JS:        jsOutput,
+				SourceMap: sourceMap,
+				DTS:       dtsOutput,
+			},
+		},
 	}
 }

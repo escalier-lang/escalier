@@ -57,7 +57,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 		URI:        strings.TrimSuffix(uri, ".esc") + ".js",
 		LanguageID: "javascript",
 		Version:    0,
-		Text:       output.JS,
+		Text:       output.Modules["index"].JS,
 	}
 
 	return response, nil
