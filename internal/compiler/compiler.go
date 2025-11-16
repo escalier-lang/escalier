@@ -108,7 +108,8 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		c := checker.NewChecker()
 		inferCtx := checker.Context{
-			Scope:      checker.Prelude(c),
+			// We add a new scope here to avoid polluting the prelude scope.
+			Scope:      checker.Prelude(c).WithNewScope(),
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
