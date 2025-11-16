@@ -1,4 +1,4 @@
-class Person {
+export class Person {
   constructor(temp2, temp3) {
     const firstName = temp2;
     const lastName = temp3;
@@ -15,9 +15,9 @@ class Person {
     this.lastName = parts[1];
   }
 }
-const person = new Person("John", "Doe");
-const name = person.fullName;
-function main() {
+export const person = new Person("John", "Doe");
+export const name = person.fullName;
+export function main() {
   person.fullName = "Jane Smith";
 }
 //# sourceMappingURL=./index.js.map

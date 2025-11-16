@@ -1,4 +1,4 @@
-class Point {
+export class Point {
   constructor(temp4, temp5) {
     const x = temp4;
     const y = temp5;
@@ -19,6 +19,6 @@ class Point {
     return this;
   }
 }
-const p = new Point(5, 10);
-const q = p.scale(2).translate(1, -1);
+export const p = new Point(5, 10);
+export const q = p.scale(2).translate(1, -1);
 //# sourceMappingURL=./index.js.map

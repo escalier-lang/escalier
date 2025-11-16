@@ -15,6 +15,8 @@ type Builder struct {
 	tempId       int
 	depGraph     *dep_graph.DepGraph
 	hasExtractor bool
+	isModule     bool
+	inBlockScope bool
 }
 
 func (b *Builder) NewTempId() string {
@@ -187,6 +189,7 @@ func (b *Builder) buildPattern(
 				tempVar := NewIdentExpr(tempId, "", nil)
 
 				var init Expr
+				var tempVarPat Pat
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
 					if arg.Default != nil {
@@ -195,8 +198,15 @@ func (b *Builder) buildPattern(
 						stmts = slices.Concat(stmts, defStmts)
 						init = defExpr
 					}
+					tempVarPat = NewIdentPat(tempId, init, p)
+				case *ast.RestPat:
+					// For rest patterns, wrap the IdentPat in a RestPat
+					tempVarPat = NewRestPat(NewIdentPat(tempId, nil, p), arg)
+				case *ast.ExtractorPat:
+					tempVarPat = NewIdentPat(tempId, init, p)
+				default:
+					panic("TODO - buildPattern - ExtractorPat - default case")
 				}
-				tempVarPat := NewIdentPat(tempId, init, p)
 
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
@@ -238,6 +248,17 @@ func (b *Builder) buildPattern(
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
+				// If the arg is a RestPat, unwrap it since the rest has already been
+				// destructured into the temp variable
+				if restPat, ok := arg.(*ast.RestPat); ok {
+					arg = restPat.Pattern
+				}
+				// If the arg is an IdentPat with a default, remove the default since it's
+				// already been applied in the destructuring pattern
+				if identPat, ok := arg.(*ast.IdentPat); ok && identPat.Default != nil {
+					// Create a new IdentPat without the default
+					arg = ast.NewIdentPat(identPat.Name, identPat.TypeAnn, nil, identPat.Span())
+				}
 				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
@@ -330,10 +351,30 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 }
 
 func (b *Builder) BuildScript(mod *ast.Script) *Module {
+	b.isModule = false
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))
 	}
+
+	if b.hasExtractor {
+		// Add an import statement at the start of `stmts`
+		importDecl := NewImportDecl(
+			[]string{"InvokeCustomMatcherOrThrow"},
+			"@escalier/runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset hasExtractor for future builds
+		b.hasExtractor = false
+	}
+
 	return &Module{
 		Stmts: stmts,
 	}
@@ -346,6 +387,7 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
+	b.isModule = true
 
 	var stmts []Stmt
 
@@ -538,13 +580,22 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
+		// Only export if we're in module mode AND not inside a block scope
+		export := b.isModule && !b.inBlockScope
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
 		}
+
+		// Mark that we're inside a function body
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+		bodyStmts := slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
 		fnDecl := &FuncDecl{
 			Name: &Identifier{
 				Name:   fullyQualifyName(d.Name.Name, nsName),
@@ -553,10 +604,10 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			},
 			TypeParams: nil,
 			Params:     params,
-			Body:       slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
+			Body:       bodyStmts,
 			TypeAnn:    nil,
 			declare:    decl.Declare(),
-			export:     decl.Export(),
+			export:     b.isModule && !prevInBlockScope,
 			async:      d.Async,
 			span:       nil,
 			source:     decl,
@@ -678,7 +729,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				source: d.Name,
 			},
 			Body:    classElems,
-			export:  d.Export(),
+			export:  b.isModule,
 			declare: d.Declare(),
 			span:    nil,
 			source:  d,
@@ -712,7 +763,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				},
 			},
 			declare: false,
-			export:  d.Export(),
+			export:  b.isModule,
 			span:    nil,
 			source:  d,
 		}
@@ -977,12 +1028,11 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
 				params, allParamStmts := b.buildParams(elem.Fn.Params)
-				stmts = slices.Concat(stmts, allParamStmts)
 
 				elems[i] = NewMethodExpr(
 					key,
 					params,
-					b.buildStmts(elem.Fn.Body.Stmts),
+					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
 					elem,
 				)
 			case *ast.GetterExpr:
@@ -998,11 +1048,10 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
 				params, allParamStmts := b.buildParams(elem.Fn.Params)
-				stmts = slices.Concat(stmts, allParamStmts)
 				elems[i] = NewSetterExpr(
 					key,
 					params,
-					b.buildStmts(elem.Fn.Body.Stmts),
+					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
 					elem,
 				)
 			case *ast.PropertyExpr:
@@ -1026,9 +1075,16 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		), stmts
 	case *ast.FuncExpr:
 		params, allParamStmts := b.buildParams(expr.Params)
+
+		// Mark that we're inside a function body
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+		bodyStmts := slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
 		return NewFuncExpr(
 			params,
-			slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts)),
+			bodyStmts,
 			expr.Async,
 			expr,
 		), []Stmt{}
@@ -1195,6 +1251,13 @@ func (b *Builder) buildBlockWithTempVar(stmts []ast.Stmt, sourceExpr ast.Expr) (
 func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Expr, sourceExpr ast.Expr) []Stmt {
 	blockStmts := []Stmt{}
 
+	// Mark that we're inside a block scope
+	prevInBlockScope := b.inBlockScope
+	b.inBlockScope = true
+	defer func() {
+		b.inBlockScope = prevInBlockScope
+	}()
+
 	if len(stmts) > 0 {
 		// Build all statements except the last one
 		for _, stmt := range stmts[:len(stmts)-1] {
@@ -1327,7 +1390,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a method body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -1352,7 +1419,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			}
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a getter body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -1375,7 +1446,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a setter body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)

@@ -1,5 +1,5 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-class C {
+export class C {
   constructor(temp2, temp3) {
     const msg = temp2;
     const value = temp3;
@@ -11,8 +11,8 @@ class C {
     return [subject.msg, subject.value];
   }
 }
-const subject = new C(undefined, 5);
-const [temp4 = "hello", temp5] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-const x = "hello" = temp4;
-const y = temp5;
+export const subject = new C(undefined, 5);
+export const [temp4 = "hello", temp5] = InvokeCustomMatcherOrThrow(C, subject, undefined);
+export const x = temp4;
+export const y = temp5;
 //# sourceMappingURL=./index.js.map
