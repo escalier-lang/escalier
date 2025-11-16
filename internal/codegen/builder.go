@@ -336,6 +336,25 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))
 	}
+	
+	if b.hasExtractor {
+		// Add an import statement at the start of `stmts`
+		importDecl := NewImportDecl(
+			[]string{"InvokeCustomMatcherOrThrow"},
+			"@escalier/runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset hasExtractor for future builds
+		b.hasExtractor = false
+	}
+	
 	return &Module{
 		Stmts: stmts,
 	}
