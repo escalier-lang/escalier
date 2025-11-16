@@ -404,7 +404,7 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 		// Add an import statement at the start of `stmts`
 		importDecl := NewImportDecl(
 			[]string{"InvokeCustomMatcherOrThrow"},
-			"escalier/runtime",
+			"@escalier/runtime",
 			nil,
 		)
 		importStmt := &DeclStmt{

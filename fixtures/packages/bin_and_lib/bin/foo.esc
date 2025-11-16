@@ -1,0 +1,7 @@
+val color = Color.Hex("#FF0000")
+val result = match color {
+	Color.RGB(r, g, b) => r + g + b,
+	Color.Hex(code) => code,
+}
+
+console.log("hello, world")

@@ -1,4 +1,4 @@
-import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
+import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const num1 = 5;
 let temp1;
 let temp2;

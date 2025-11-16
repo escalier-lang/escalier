@@ -1,4 +1,4 @@
-import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
+import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 class C {
   constructor(temp2, temp3, temp4) {
     const msg = temp2;

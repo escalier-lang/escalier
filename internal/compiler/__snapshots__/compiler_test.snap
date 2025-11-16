@@ -4,9 +4,9 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}",
-    DTS:        "",
+    Modules:    {
+        "index": {JS:"const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}", DTS:""},
+    },
 }
 ---
 
@@ -15,9 +15,9 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
-    DTS:        "",
+    Modules:    {
+        "index": {JS:"function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}", DTS:""},
+    },
 }
 ---
 
@@ -26,9 +26,9 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}",
-    DTS:        "",
+    Modules:    {
+        "index": {JS:"const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}", DTS:""},
+    },
 }
 ---
 
@@ -37,9 +37,9 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}",
-    DTS:        "",
+    Modules:    {
+        "index": {JS:"console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}", DTS:""},
+    },
 }
 ---
 
@@ -48,8 +48,8 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    JS:         "const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
-    SourceMap:  "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}",
-    DTS:        "",
+    Modules:    {
+        "index": {JS:"const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}", DTS:""},
+    },
 }
 ---

@@ -28,7 +28,48 @@ func checkFile(t *testing.T, fixtureDir string, ext string) {
 	}
 }
 
-// TODO: print errors to a file
+func copyDir(src string, dst string) error {
+	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Get the relative path from the fixture lib directory
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(dst, relPath)
+
+		if d.IsDir() {
+			// Create directory in destination
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		// Ensure the destination directory exists
+		destDir := filepath.Dir(destPath)
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return err
+		}
+
+		input, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		err = os.WriteFile(destPath, input, 0644)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+// TODO: Update this to work with changes to `build` in build.go
 func checkFixture(t *testing.T, fixtureDir string) {
 	tmpDir := t.TempDir()
 
@@ -40,119 +81,119 @@ func checkFixture(t *testing.T, fixtureDir string) {
 
 	// find all .esc files in the fixture directory and copy them over to the tmpDir
 	// maintaining the directory structure
-	fixtureLibDir := filepath.Join(fixtureDir, "lib")
-	err = filepath.WalkDir(fixtureLibDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
 
-		// Get the relative path from the fixture lib directory
-		relPath, err := filepath.Rel(fixtureLibDir, path)
-		if err != nil {
-			return err
-		}
+	_, err = os.Stat(filepath.Join(fixtureDir, "lib"))
+	if !os.IsNotExist(err) {
+		err = copyDir(filepath.Join(fixtureDir, "lib"), filepath.Join(tmpDir, "lib"))
+		require.NoError(t, err)
+	}
 
-		destPath := filepath.Join(tmpDir, "lib", relPath)
-
-		if d.IsDir() {
-			// Create directory in destination
-			return os.MkdirAll(destPath, 0755)
-		}
-
-		// Check if it's a file and ends with .esc
-		if strings.HasSuffix(d.Name(), ".esc") {
-			// Ensure the destination directory exists
-			destDir := filepath.Dir(destPath)
-			if err := os.MkdirAll(destDir, 0755); err != nil {
-				return err
-			}
-
-			input, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			err = os.WriteFile(destPath, input, 0644)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	stdout := bytes.NewBuffer(nil)
-	stderr := bytes.NewBuffer(nil)
+	_, err = os.Stat(filepath.Join(fixtureDir, "bin"))
+	if !os.IsNotExist(err) {
+		err = copyDir(filepath.Join(fixtureDir, "bin"), filepath.Join(tmpDir, "bin"))
+		require.NoError(t, err)
+	}
 
 	// Find all .esc files in the lib directory
 	var files []string
-	err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+	_, err = os.Stat("lib")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return
 		}
-
-		// Check if it's a file and ends with .esc
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-			files = append(files, path)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to walk directory:", err)
-		return
 	}
 
+	_, err = os.Stat("bin")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("bin", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return
+		}
+	}
+
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
 	build(stdout, stderr, files)
 	fmt.Println("stderr =", stderr.String())
 
-	// create build/ directory if it doesn't exist
-	if _, err := os.Stat(filepath.Join(fixtureDir, "build")); os.IsNotExist(err) {
-		err := os.Mkdir(filepath.Join(fixtureDir, "build"), 0755)
+	if os.Getenv("UPDATE_FIXTURES") == "true" {
+		err = os.RemoveAll(filepath.Join(fixtureDir, "build"))
 		if err != nil {
-			fmt.Fprintln(stderr, "failed to create build directory")
+			fmt.Fprintln(stderr, "failed to remove build directory:", err)
+			return
 		}
-		if _, err := os.Stat(filepath.Join(fixtureDir, "build", "lib")); os.IsNotExist(err) {
-			err := os.Mkdir(filepath.Join(fixtureDir, "build", "lib"), 0755)
+
+		err = copyDir(filepath.Join(tmpDir, "build"), filepath.Join(fixtureDir, "build"))
+		if err != nil {
+			fmt.Fprintln(stderr, "failed to copy build directory:", err)
+			return
+		}
+	} else {
+		// Check if all of the files are the same
+		buildDir := filepath.Join(tmpDir, "build")
+		err = filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				fmt.Fprintln(stderr, "failed to create build/lib directory")
+				return err
 			}
-		}
-	}
 
-	checkFile(t, fixtureDir, ".js")
-	checkFile(t, fixtureDir, ".d.ts")
-	checkFile(t, fixtureDir, ".js.map")
-
-	// check errors
-	if stderr.Len() > 0 {
-		actualErr := stderr.Bytes()
-		if os.Getenv("UPDATE_FIXTURES") == "true" {
-			err = os.WriteFile(filepath.Join(fixtureDir, "error.txt"), actualErr, 0644)
-			require.NoError(t, err)
-		} else {
-			expectedErr, err := os.ReadFile(filepath.Join(fixtureDir, "error.txt"))
-			require.NoError(t, err)
-			require.Equal(t, string(expectedErr), string(actualErr))
-		}
-	}
-
-	// if there are no errors, check that the error file does not exist
-	if stderr.Len() == 0 {
-		if os.Getenv("UPDATE_FIXTURES") == "true" {
-			// remove the error file if it exists
-			if _, err := os.Stat(filepath.Join(fixtureDir, "error.txt")); !os.IsNotExist(err) {
-				// file exists, remove it
-				err = os.Remove(filepath.Join(fixtureDir, "error.txt"))
-				require.NoError(t, err)
+			// Skip the build directory itself
+			if path == buildDir {
+				return nil
 			}
-		} else {
-			// check that the error file does not exist
-			_, err := os.Stat(filepath.Join(fixtureDir, "error.txt"))
-			require.True(t, os.IsNotExist(err), "error file should not exist")
-		}
+
+			// Get the relative path from the build directory
+			relPath, err := filepath.Rel(buildDir, path)
+			if err != nil {
+				return err
+			}
+
+			expectedPath := filepath.Join(fixtureDir, "build", relPath)
+
+			if d.IsDir() {
+				// Check that the directory exists in the fixture
+				_, err := os.Stat(expectedPath)
+				require.NoError(t, err, "directory %s should exist in fixture", relPath)
+			} else {
+				// Compare file contents
+				actualContent, err := os.ReadFile(path)
+				require.NoError(t, err, "failed to read generated file %s", relPath)
+
+				expectedContent, err := os.ReadFile(expectedPath)
+				require.NoError(t, err, "expected file %s should exist in fixture", relPath)
+
+				require.Equal(t, string(expectedContent), string(actualContent), "file %s contents should match", relPath)
+			}
+
+			return nil
+		})
+		require.NoError(t, err)
 	}
 }
 
