@@ -230,20 +230,20 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
-	
+
 	// Collect used library symbols and add import statement if needed
 	usedSymbols := collectUsedLibSymbols(inMod, libNS)
 	if len(usedSymbols) > 0 {
 		// Create an import declaration for the used symbols
 		importDecl := codegen.NewImportDecl(usedSymbols, "../lib/index.js", nil)
 		importStmt := &codegen.DeclStmt{
-			Decl:   importDecl,
+			Decl: importDecl,
 			// span and source are nil, which is fine
 		}
 		// Prepend the import statement to the module
 		jsMod.Stmts = append([]codegen.Stmt{importStmt}, jsMod.Stmts...)
 	}
-	
+
 	var decls []ast.Decl
 	for _, d := range inMod.Stmts {
 		if ds, ok := d.(*ast.DeclStmt); ok {

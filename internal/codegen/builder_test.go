@@ -458,7 +458,7 @@ func TestBuildDecls(t *testing.T) {
 					Contents: "val x = 42",
 				},
 			},
-			expected: "const x = 42;",
+			expected: "export const x = 42;",
 		},
 		"Single_Decl_With_Namespace": {
 			sources: []*ast.Source{
@@ -469,7 +469,7 @@ func TestBuildDecls(t *testing.T) {
 				},
 			},
 			expected: `const foo = {};
-const foo__x = 42;
+export const foo__x = 42;
 foo.x = foo__x;`,
 		},
 		"Multiple_Decls_Same_Namespace": {
@@ -486,9 +486,9 @@ foo.x = foo__x;`,
 				},
 			},
 			expected: `const math = {};
-const math__x = 42;
+export const math__x = 42;
 math.x = math__x;
-function math__double(temp1) {
+export function math__double(temp1) {
   const n = temp1;
   return n * 2;
 }
@@ -509,9 +509,9 @@ math.double = math__double;`,
 			},
 			expected: `const math = {};
 const strings = {};
-const math__PI = 3.14159;
+export const math__PI = 3.14159;
 math.PI = math__PI;
-const strings__message = "hello";
+export const strings__message = "hello";
 strings.message = strings__message;`,
 		},
 		"Nested_Namespaces": {
@@ -531,9 +531,9 @@ strings.message = strings__message;`,
 constants.math = {};
 const utils = {};
 utils.math = {};
-const constants__math__PI = 3.14;
+export const constants__math__PI = 3.14;
 constants.math.PI = constants__math__PI;
-const utils__math__add = 42;
+export const utils__math__add = 42;
 utils.math.add = utils__math__add;`,
 		},
 		"Mixed_Namespace_Levels": {
@@ -557,10 +557,10 @@ utils.math.add = utils__math__add;`,
 			expected: `const constants = {};
 constants.app = {};
 const utils = {};
-const config = {debug: true};
-const constants__app__VERSION = "1.0.0";
+export const config = {debug: true};
+export const constants__app__VERSION = "1.0.0";
 constants.app.VERSION = constants__app__VERSION;
-function utils__log(temp1) {
+export function utils__log(temp1) {
   const msg = temp1;
   console.log(msg);
 }
@@ -577,7 +577,7 @@ utils.log = utils__log;`,
 			expected: `const services = {};
 services.data = {};
 services.data.processing = {};
-function services__data__processing__processData(temp1) {
+export function services__data__processing__processData(temp1) {
   const input = temp1;
   return input;
 }
@@ -592,7 +592,7 @@ services.data.processing.processData = services__data__processing__processData;`
 				},
 			},
 			expected: `const coords = {};
-const {coords__x, coords__y} = getPoint();
+export const {coords__x, coords__y} = getPoint();
 coords.x = coords__x;
 coords.y = coords__y;`,
 		},
@@ -617,14 +617,14 @@ coords.y = coords__y;`,
 			expected: `const models = {};
 models.user = {};
 models.user.defaults = {};
-const models__user__user = {name: "Alice"};
+export const models__user__user = {name: "Alice"};
 models.user.user = models__user__user;
-function models__user__createUser(temp1) {
+export function models__user__createUser(temp1) {
   const name = temp1;
   return {name};
 }
 models.user.createUser = models__user__createUser;
-const models__user__defaults__defaultUser = null;
+export const models__user__defaults__defaultUser = null;
 models.user.defaults.defaultUser = models__user__defaults__defaultUser;`,
 		},
 		"Type_Declaration_Skip": {
@@ -642,7 +642,7 @@ models.user.defaults.defaultUser = models__user__defaults__defaultUser;`,
 			},
 			expected: `const data = {};
 const types = {};
-const data__admin = {name: "admin", age: 30};
+export const data__admin = {name: "admin", age: 30};
 data.admin = data__admin;`,
 		},
 		"Var_Declaration_With_Namespace": {
@@ -661,9 +661,9 @@ data.admin = data__admin;`,
 			expected: `const state = {};
 state.app = {};
 state.ui = {};
-let state__app__counter = 0;
+export let state__app__counter = 0;
 state.app.counter = state__app__counter;
-let state__ui__isEnabled = true;
+export let state__ui__isEnabled = true;
 state.ui.isEnabled = state__ui__isEnabled;`,
 		},
 	}
@@ -719,9 +719,9 @@ func TestBuildDecls_WithDependencies(t *testing.T) {
 				},
 			},
 			expected: `const math = {};
-const math__base = 10;
+export const math__base = 10;
 math.base = math__base;
-const math__derived = math__base * 2;
+export const math__derived = math__base * 2;
 math.derived = math__derived;`,
 		},
 		"Cross_Namespace_Dependencies": {
@@ -739,9 +739,9 @@ math.derived = math__derived;`,
 			},
 			expected: `const constants = {};
 const geometry = {};
-const constants__PI = 3.14159;
+export const constants__PI = 3.14159;
 constants.PI = constants__PI;
-function geometry__circleArea(temp1) {
+export function geometry__circleArea(temp1) {
   const r = temp1;
   return constants.PI * r * r;
 }
@@ -767,11 +767,11 @@ geometry.circleArea = geometry__circleArea;`,
 			},
 			expected: `const app = {};
 app.utils = {};
-const app__config = {multiplier: 2};
+export const app__config = {multiplier: 2};
 app.config = app__config;
-const app__utils__factor = app.config.multiplier;
+export const app__utils__factor = app.config.multiplier;
 app.utils.factor = app__utils__factor;
-function app__utils__calculate(temp1) {
+export function app__utils__calculate(temp1) {
   const x = temp1;
   return x * app.utils.factor;
 }
@@ -849,7 +849,7 @@ company.project = {};
 company.project.module = {};
 company.project.module.submodule = {};
 company.project.module.submodule.utils = {};
-const company__project__module__submodule__utils__constant = "deep";
+export const company__project__module__submodule__utils__constant = "deep";
 company.project.module.submodule.utils.constant = company__project__module__submodule__utils__constant;`,
 		},
 	}

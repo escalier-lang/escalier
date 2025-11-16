@@ -336,7 +336,7 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))
 	}
-	
+
 	if b.hasExtractor {
 		// Add an import statement at the start of `stmts`
 		importDecl := NewImportDecl(
@@ -354,7 +354,7 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 		// Reset hasExtractor for future builds
 		b.hasExtractor = false
 	}
-	
+
 	return &Module{
 		Stmts: stmts,
 	}
