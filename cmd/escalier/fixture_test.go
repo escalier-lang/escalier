@@ -12,21 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func checkFile(t *testing.T, fixtureDir string, ext string) {
-	outPath := filepath.Join("build", "lib", "index"+ext)
-	actualJs, err := os.ReadFile(outPath)
-	require.NoError(t, err)
-
-	if os.Getenv("UPDATE_FIXTURES") == "true" {
-		err = os.WriteFile(filepath.Join(fixtureDir, outPath), actualJs, 0644)
-		require.NoError(t, err)
-	} else {
-		expectedJs, err := os.ReadFile(filepath.Join(fixtureDir, outPath))
-		require.NoError(t, err)
-		require.Equal(t, string(expectedJs), string(actualJs))
-	}
-}
-
 func copyDir(src string, dst string) error {
 	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -163,23 +148,13 @@ func TestBuildFixtureTests(t *testing.T) {
 	_, currentFile, _, _ := runtime.Caller(0)
 	rootDir := filepath.Join(filepath.Dir(currentFile), "..", "..")
 
-	groups, err := os.ReadDir(filepath.Join(rootDir, "fixtures"))
+	fixtures, err := os.ReadDir(filepath.Join(rootDir, "fixtures"))
 	require.NoError(t, err)
 
-	for _, group := range groups {
-		if !group.IsDir() {
-			continue
-		}
-
-		fixtures, err := os.ReadDir(filepath.Join(rootDir, "fixtures", group.Name()))
-		require.NoError(t, err)
-
-		for _, fixture := range fixtures {
-			name := group.Name() + "/" + fixture.Name()
-			t.Run(name, func(t *testing.T) {
-				fixtureDir := filepath.Join(rootDir, "fixtures", group.Name(), fixture.Name())
-				checkFixture(t, fixtureDir)
-			})
-		}
+	for _, fixture := range fixtures {
+		t.Run(fixture.Name(), func(t *testing.T) {
+			fixtureDir := filepath.Join(rootDir, "fixtures", fixture.Name())
+			checkFixture(t, fixtureDir)
+		})
 	}
 }

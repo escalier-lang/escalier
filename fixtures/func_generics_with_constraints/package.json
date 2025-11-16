@@ -1,0 +1,6 @@
+{
+    "name": "func_generics_with_constraints",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

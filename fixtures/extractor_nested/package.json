@@ -1,0 +1,6 @@
+{
+    "name": "extractor_nested",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

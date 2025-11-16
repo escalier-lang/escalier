@@ -1,0 +1,6 @@
+{
+    "name": "class_with_static_members",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}
