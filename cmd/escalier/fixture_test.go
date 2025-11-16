@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,9 +78,7 @@ func checkFixture(t *testing.T, fixtureDir string) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	// find all .esc files in the fixture directory and copy them over to the tmpDir
-	// maintaining the directory structure
-
+	// Copy the fixture's lib and bin directories over to the temp directory
 	_, err = os.Stat(filepath.Join(fixtureDir, "lib"))
 	if !os.IsNotExist(err) {
 		err = copyDir(filepath.Join(fixtureDir, "lib"), filepath.Join(tmpDir, "lib"))
@@ -94,53 +91,12 @@ func checkFixture(t *testing.T, fixtureDir string) {
 		require.NoError(t, err)
 	}
 
-	// Find all .esc files in the lib directory
-	var files []string
-	_, err = os.Stat("lib")
-	if !os.IsNotExist(err) {
-		err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Check if it's a file and ends with .esc
-			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
-			return
-		}
-	}
-
-	_, err = os.Stat("bin")
-	if !os.IsNotExist(err) {
-		err = filepath.WalkDir("bin", func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Check if it's a file and ends with .esc
-			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
-			return
-		}
-	}
+	// files, err := compiler.FindSourceFiles()
+	// require.NoError(t, err)
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
-	build(stdout, stderr, files)
+	build(stdout, stderr, []string{"."})
 	fmt.Println("stderr =", stderr.String())
 
 	if os.Getenv("UPDATE_FIXTURES") == "true" {
