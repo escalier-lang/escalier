@@ -1,4 +1,4 @@
-class Person {
+export class Person {
   constructor(temp2, temp3) {
     const firstName = temp2;
     const lastName = temp3;
@@ -10,14 +10,14 @@ class Person {
   }
   set fullName(temp1) {
     const value = temp1;
-    const parts = split(value, " ");
+    export const parts = split(value, " ");
     this.firstName = parts[0];
     this.lastName = parts[1];
   }
 }
-const person = new Person("John", "Doe");
-const name = person.fullName;
-function main() {
+export const person = new Person("John", "Doe");
+export const name = person.fullName;
+export function main() {
   person.fullName = "Jane Smith";
 }
 //# sourceMappingURL=./index.js.map

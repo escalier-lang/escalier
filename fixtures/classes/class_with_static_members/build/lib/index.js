@@ -1,4 +1,4 @@
-class MyMath {
+export class MyMath {
   constructor() {
   }
   static pi = 3.141592;
@@ -8,6 +8,6 @@ class MyMath {
     return a + b;
   }
 }
-const m = new MyMath();
-const result = MyMath.add(5, 3);
+export const m = new MyMath();
+export const result = MyMath.add(5, 3);
 //# sourceMappingURL=./index.js.map

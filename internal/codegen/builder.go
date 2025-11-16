@@ -15,6 +15,7 @@ type Builder struct {
 	tempId       int
 	depGraph     *dep_graph.DepGraph
 	hasExtractor bool
+	isModule     bool
 }
 
 func (b *Builder) NewTempId() string {
@@ -330,6 +331,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 }
 
 func (b *Builder) BuildScript(mod *ast.Script) *Module {
+	b.isModule = false
 	var stmts []Stmt
 	for _, s := range mod.Stmts {
 		stmts = slices.Concat(stmts, b.buildStmt(s))
@@ -346,6 +348,7 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
+	b.isModule = true
 
 	var stmts []Stmt
 
@@ -538,7 +541,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, d.Export(), d.Kind, nsName)
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, b.isModule, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
@@ -556,7 +559,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			Body:       slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
 			TypeAnn:    nil,
 			declare:    decl.Declare(),
-			export:     decl.Export(),
+			export:     b.isModule,
 			async:      d.Async,
 			span:       nil,
 			source:     decl,
@@ -678,7 +681,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				source: d.Name,
 			},
 			Body:    classElems,
-			export:  d.Export(),
+			export:  b.isModule,
 			declare: d.Declare(),
 			span:    nil,
 			source:  d,
@@ -712,7 +715,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				},
 			},
 			declare: false,
-			export:  d.Export(),
+			export:  b.isModule,
 			span:    nil,
 			source:  d,
 		}

@@ -161,8 +161,6 @@ func build(stdout io.Writer, stderr io.Writer, files []string) {
 
 	output := compiler.CompilePackage(sources)
 
-	fmt.Fprintf(os.Stderr, "Ouptput: %+v\n", output)
-
 	printErrors(stderr, output, idToSource)
 
 	for moduleName, moduleOutput := range output.Modules {

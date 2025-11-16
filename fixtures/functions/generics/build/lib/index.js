@@ -1,15 +1,15 @@
-function identity(temp1) {
+export function identity(temp1) {
   const value = temp1;
   return value;
 }
-const fst = function (temp2, temp3) {
+export const fst = function (temp2, temp3) {
   const a = temp2;
   const b = temp3;
   return a;
 };
-const a = 5;
-const b = "hello";
-const x = identity(a);
-const y = identity(b);
-const z = fst(a, a);
+export const a = 5;
+export const b = "hello";
+export const x = identity(a);
+export const y = identity(b);
+export const z = fst(a, a);
 //# sourceMappingURL=./index.js.map

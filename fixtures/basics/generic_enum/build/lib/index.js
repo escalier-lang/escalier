@@ -1,5 +1,5 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-const MyOption = {};
+export const MyOption = {};
 class MyOption__Some {
   constructor(temp1) {
     const value = temp1;
@@ -29,5 +29,5 @@ if (temp3 instanceof MyOption.Some) {
   const [] = InvokeCustomMatcherOrThrow(MyOption.None, temp3, undefined);
   temp2 = 0;
 }
-const result = temp2;
+export const result = temp2;
 //# sourceMappingURL=./index.js.map

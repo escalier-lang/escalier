@@ -1,4 +1,4 @@
-class Box {
+export class Box {
   constructor(temp3) {
     const value = temp3;
     this.value = value;
@@ -14,7 +14,7 @@ class Box {
     temp2;
   }
 }
-const box = new Box(5);
-const a = box.getValue("default");
-const b = box.getValue(10);
+export const box = new Box(5);
+export const a = box.getValue("default");
+export const b = box.getValue(10);
 //# sourceMappingURL=./index.js.map

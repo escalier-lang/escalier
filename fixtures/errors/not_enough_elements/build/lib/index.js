@@ -1,5 +1,5 @@
-function main() {
-  const [a, b, c] = [1];
+export function main() {
+  export const [a, b, c] = [1];
   console.log(a);
 }
 //# sourceMappingURL=./index.js.map

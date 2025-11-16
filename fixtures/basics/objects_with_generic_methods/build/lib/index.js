@@ -5,7 +5,7 @@ const a = temp5;
 const b = temp6;
 const a = temp7;
 const b = temp8;
-const container = {value: 5, getValue(temp1) {
+export const container = {value: 5, getValue(temp1) {
   let temp2;
   if (this.value != 0) {
     return this.value;
@@ -20,7 +20,7 @@ const container = {value: 5, getValue(temp1) {
 }, addNums2(temp7, temp8) {
   return this.addNums1(a, b);
 }};
-const a = container.getValue("default");
-const b = container.getValue(10);
-const c = container.addNums2("hello", 5);
+export const a = container.getValue("default");
+export const b = container.getValue(10);
+export const c = container.addNums2("hello", 5);
 //# sourceMappingURL=./index.js.map

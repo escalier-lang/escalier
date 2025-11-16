@@ -1,4 +1,4 @@
-class Foo {
+export class Foo {
   constructor() {
     this.value = 5;
   }
@@ -38,9 +38,9 @@ class Foo {
     return Foo.addNums1(a, b);
   }
 }
-const foo = new Foo();
-const a = foo.getValue("default");
-const b = foo.getValue(10);
-const c = foo.addNums2("hello", 5);
-const d = Foo.addNums4("hello", 5);
+export const foo = new Foo();
+export const a = foo.getValue("default");
+export const b = foo.getValue(10);
+export const c = foo.addNums2("hello", 5);
+export const d = Foo.addNums4("hello", 5);
 //# sourceMappingURL=./index.js.map
