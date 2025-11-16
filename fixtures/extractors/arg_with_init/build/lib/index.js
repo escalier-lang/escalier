@@ -13,6 +13,6 @@ export class C {
 }
 export const subject = new C(undefined, 5);
 export const [temp4 = "hello", temp5] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-export const x = "hello" = temp4;
+export const x = temp4;
 export const y = temp5;
 //# sourceMappingURL=./index.js.map

@@ -11,5 +11,5 @@ export class C {
 }
 export const subject = new C("hello");
 export const [temp3 = "world"] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-export const msg = "world" = temp3;
+export const msg = temp3;
 //# sourceMappingURL=./index.js.map

@@ -253,6 +253,12 @@ func (b *Builder) buildPattern(
 				if restPat, ok := arg.(*ast.RestPat); ok {
 					arg = restPat.Pattern
 				}
+				// If the arg is an IdentPat with a default, remove the default since it's
+				// already been applied in the destructuring pattern
+				if identPat, ok := arg.(*ast.IdentPat); ok && identPat.Default != nil {
+					// Create a new IdentPat without the default
+					arg = ast.NewIdentPat(identPat.Name, identPat.TypeAnn, nil, identPat.Span())
+				}
 				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
@@ -1022,12 +1028,11 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
 				params, allParamStmts := b.buildParams(elem.Fn.Params)
-				stmts = slices.Concat(stmts, allParamStmts)
 
 				elems[i] = NewMethodExpr(
 					key,
 					params,
-					b.buildStmts(elem.Fn.Body.Stmts),
+					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
 					elem,
 				)
 			case *ast.GetterExpr:
@@ -1043,11 +1048,10 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)
 				params, allParamStmts := b.buildParams(elem.Fn.Params)
-				stmts = slices.Concat(stmts, allParamStmts)
 				elems[i] = NewSetterExpr(
 					key,
 					params,
-					b.buildStmts(elem.Fn.Body.Stmts),
+					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
 					elem,
 				)
 			case *ast.PropertyExpr:
