@@ -1,8 +1,8 @@
-const foo = "foo";
-const bar = "bar";
-const obj = {[foo]: 42, [bar]() {
+export const foo = "foo";
+export const bar = "bar";
+export const obj = {[foo]: 42, [bar]() {
   return this[foo];
 }};
-const a = obj[foo];
-const b = obj[bar]();
+export const a = obj[foo];
+export const b = obj[bar]();
 //# sourceMappingURL=./index.js.map

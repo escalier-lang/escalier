@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -107,7 +108,8 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		c := checker.NewChecker()
 		inferCtx := checker.Context{
-			Scope:      checker.Prelude(c),
+			// We add a new scope here to avoid polluting the prelude scope.
+			Scope:      checker.Prelude(c).WithNewScope(),
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
@@ -160,6 +162,51 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	return output
 }
 
+// symbolCollector is a visitor that collects top-level library symbols used in the script
+type symbolCollector struct {
+	ast.DefaultVisitor
+	libNS       *type_system.Namespace
+	usedSymbols map[string]bool
+}
+
+func (v *symbolCollector) EnterExpr(e ast.Expr) bool {
+	if ident, ok := e.(*ast.IdentExpr); ok {
+		// Check if this identifier is a top-level symbol in libNS
+		if _, exists := v.libNS.Values[ident.Name]; exists {
+			v.usedSymbols[ident.Name] = true
+		}
+		if _, exists := v.libNS.Namespaces[ident.Name]; exists {
+			v.usedSymbols[ident.Name] = true
+		}
+	}
+	return true
+}
+
+// collectUsedLibSymbols walks the AST to find which top-level symbols from libNS are used
+func collectUsedLibSymbols(script *ast.Script, libNS *type_system.Namespace) []string {
+	if libNS == nil {
+		return nil
+	}
+
+	visitor := &symbolCollector{
+		libNS:       libNS,
+		usedSymbols: make(map[string]bool),
+	}
+
+	// Walk the AST
+	for _, stmt := range script.Stmts {
+		stmt.Accept(visitor)
+	}
+
+	// Convert map to sorted slice
+	result := make([]string, 0, len(visitor.usedSymbols))
+	for symbol := range visitor.usedSymbols {
+		result = append(result, symbol)
+	}
+	sort.Strings(result)
+	return result
+}
+
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOutput {
@@ -184,6 +231,20 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 
 	builder := &codegen.Builder{}
 	jsMod := builder.BuildScript(inMod)
+
+	// Collect used library symbols and add import statement if needed
+	usedSymbols := collectUsedLibSymbols(inMod, libNS)
+	if len(usedSymbols) > 0 {
+		// Create an import declaration for the used symbols
+		importDecl := codegen.NewImportDecl(usedSymbols, "../lib/index.js", nil)
+		importStmt := &codegen.DeclStmt{
+			Decl: importDecl,
+			// span and source are nil, which is fine
+		}
+		// Prepend the import statement to the module
+		jsMod.Stmts = append([]codegen.Stmt{importStmt}, jsMod.Stmts...)
+	}
+
 	var decls []ast.Decl
 	for _, d := range inMod.Stmts {
 		if ds, ok := d.(*ast.DeclStmt); ok {

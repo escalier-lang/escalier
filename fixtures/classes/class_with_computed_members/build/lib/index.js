@@ -1,6 +1,6 @@
-const bar = "bar";
-const baz = "baz";
-class Foo {
+export const bar = "bar";
+export const baz = "baz";
+export class Foo {
   constructor() {
     this[bar] = 42;
   }
@@ -8,7 +8,7 @@ class Foo {
     return this[bar];
   }
 }
-const foo = new Foo();
-const fooBar = foo[bar];
-const fooBaz = foo[baz]();
+export const foo = new Foo();
+export const fooBar = foo[bar];
+export const fooBaz = foo[baz]();
 //# sourceMappingURL=./index.js.map

@@ -1,5 +1,5 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-const num1 = 5;
+export const num1 = 5;
 let temp1;
 let temp2;
 temp2 = num1;
@@ -13,7 +13,7 @@ if (temp2 == 1) {
   temp1 = "other";
 }
 export const literalMatch = temp1;
-let num2 = 42;
+export let num2 = 42;
 let temp3;
 let temp4;
 temp4 = num2;
@@ -65,7 +65,7 @@ if (temp12 != null && "point" in temp12 && temp12.point.length == 2) {
   temp11 = 0;
 }
 export const nestedMatch = temp11;
-const tuple2 = [3, 3];
+export const tuple2 = [3, 3];
 let temp13;
 let temp14;
 temp14 = tuple2;
@@ -77,7 +77,7 @@ if (temp14.length == 2 && a == b) {
   temp13 = "not equal";
 }
 export const guardMatch = temp13;
-const str = "hello";
+export const str = "hello";
 let temp15;
 let temp16;
 temp16 = str;
@@ -91,7 +91,7 @@ if (temp16 == "hi") {
   temp15 = "unknown";
 }
 export const multiCase = temp15;
-const bool = true;
+export const bool = true;
 let temp17;
 let temp18;
 temp18 = bool;
@@ -101,7 +101,7 @@ if (temp18 == true) {
   temp17 = "no";
 }
 export const boolMatch = temp17;
-const num3 = 7;
+export const num3 = 7;
 let temp19;
 let temp20;
 temp20 = num3;
@@ -150,7 +150,7 @@ if (temp26 != null && "value" in temp26 && temp26.value == "string") {
   temp25 = "boolean";
 }
 export const refMatch = temp25;
-class Color {
+export class Color {
   constructor(temp28, temp29, temp30) {
     const r = temp28;
     const g = temp29;
@@ -164,7 +164,7 @@ class Color {
     return [subject.r, subject.g, subject.b];
   }
 }
-class Event {
+export class Event {
   constructor(temp32) {
     const kind = temp32;
     this.kind = kind;
@@ -184,7 +184,7 @@ if (temp34 instanceof Color && temp34 != null && "r" in temp34 && "g" in temp34 
   const {kind = "default"} = temp34;
   temp33 = kind;
 }
-const result1 = temp33;
+export const result1 = temp33;
 let temp35;
 let temp36;
 temp36 = obj;
@@ -199,5 +199,5 @@ if (temp36 instanceof Color) {
   const kind = temp37;
   temp35 = kind;
 }
-const result2 = temp35;
+export const result2 = temp35;
 //# sourceMappingURL=./index.js.map

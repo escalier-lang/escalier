@@ -1,4 +1,4 @@
-const Color = {};
+export const Color = {};
 class Color__RGB {
   constructor(temp1, temp2, temp3) {
     const r = temp1;

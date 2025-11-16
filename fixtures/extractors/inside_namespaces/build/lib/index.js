@@ -1,6 +1,6 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const MyEnum = {};
-class MyEnum__Color {
+export class MyEnum__Color {
   constructor(temp2, temp3, temp4) {
     const r = temp2;
     const g = temp3;
@@ -16,7 +16,7 @@ class MyEnum__Color {
 }
 MyEnum.Color = MyEnum__Color;
 MyEnum.Color = MyEnum__Color;
-class MyEnum__Event {
+export class MyEnum__Event {
   constructor(temp6) {
     const kind = temp6;
     this.kind = kind;
@@ -38,7 +38,7 @@ if (temp8 instanceof MyEnum.Color && temp8 != null && "r" in temp8 && "g" in tem
   const {kind = "default"} = temp8;
   temp7 = kind;
 }
-const result1 = temp7;
+export const result1 = temp7;
 let temp9;
 let temp10;
 temp10 = obj;
@@ -53,5 +53,5 @@ if (temp10 instanceof MyEnum.Color) {
   const kind = temp11;
   temp9 = kind;
 }
-const result2 = temp9;
+export const result2 = temp9;
 //# sourceMappingURL=./index.js.map

@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/bar/bar.esc","../../lib/foo/foo.esc"],"sourcesContent":["type Bar = string\nval foo: foo.Foo = 5\n","type Foo = number\nval bar: bar.Bar = \"hello\"\n"],"names":[],"mappings":";;MACI,AAAA,WAAe;;MCAf,AAAA,WAAe;"}
+{"version":3,"file":"./index.js","sources":["../../lib/bar/bar.esc","../../lib/foo/foo.esc"],"sourcesContent":["type Bar = string\nval foo: foo.Foo = 5\n","type Foo = number\nval bar: bar.Bar = \"hello\"\n"],"names":[],"mappings":";;aACI,AAAA,WAAe;;aCAf,AAAA,WAAe;"}

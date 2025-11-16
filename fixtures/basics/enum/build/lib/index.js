@@ -1,5 +1,5 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-const Color = {};
+export const Color = {};
 class Color__RGB {
   constructor(temp1, temp2, temp3) {
     const r = temp1;
@@ -38,5 +38,5 @@ if (temp6 instanceof Color.RGB) {
   const code = temp7;
   temp5 = code;
 }
-const result = temp5;
+export const result = temp5;
 //# sourceMappingURL=./index.js.map
