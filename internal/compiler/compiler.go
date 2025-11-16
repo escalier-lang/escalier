@@ -2,6 +2,9 @@ package compiler
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -282,4 +285,53 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 			},
 		},
 	}
+}
+
+// Assumes that the current working directory is the root of the package
+func FindSourceFiles() ([]string, error) {
+	// Find all .esc files in the lib directory
+	var files []string
+	_, err := os.Stat("lib")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return nil, err
+		}
+	}
+
+	_, err = os.Stat("bin")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("bin", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return nil, err
+		}
+	}
+
+	return files, nil
 }

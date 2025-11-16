@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
@@ -154,19 +155,45 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Mod
 	return nil
 }
 
-func build(stdout io.Writer, stderr io.Writer, files []string) {
-	fmt.Fprintln(stdout, "building module...")
+func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, "failed to get current working directory:", err)
+		return
+	}
 
-	sources, idToSource := loadSources(stdout, files)
+	for _, pkg := range pkgs {
+		start := time.Now()
+		fmt.Fprint(stdout, "building: ", pkg)
 
-	output := compiler.CompilePackage(sources)
-
-	printErrors(stderr, output, idToSource)
-
-	for moduleName, moduleOutput := range output.Modules {
-		if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
-			fmt.Fprintln(stderr, err.Error())
-			return
+		err := os.Chdir(pkg)
+		if err != nil {
+			fmt.Fprintf(stderr, "failed to change directory to %s: %v\n", pkg, err)
+			continue
 		}
+
+		files, err := compiler.FindSourceFiles()
+		if err != nil {
+			fmt.Fprintf(stderr, "failed to find source files for %s: %v\n", pkg, err)
+			_ = os.Chdir(cwd)
+			continue
+		}
+
+		sources, idToSource := loadSources(stdout, files)
+		output := compiler.CompilePackage(sources)
+
+		printErrors(stderr, output, idToSource)
+
+		for moduleName, moduleOutput := range output.Modules {
+			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
+				fmt.Fprintln(stderr, err.Error())
+				return
+			}
+		}
+
+		duration := time.Since(start)
+		fmt.Fprintf(stdout, " - ok (%s)\n", duration)
+
+		_ = os.Chdir(cwd)
 	}
 }

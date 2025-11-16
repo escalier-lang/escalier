@@ -4,551 +4,285 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildErrorHandling(t *testing.T) {
-	tests := []struct {
-		name           string
-		setupFunc      func(t *testing.T) (string, []string) // returns tmpDir and files
-		expectedStdout []string
-		expectedStderr []string
-	}{
-		{
-			name: "file without .esc extension with valid file",
-			setupFunc: func(t *testing.T) (string, []string) {
-				tmpDir := t.TempDir()
-				err := os.Chdir(tmpDir)
-				require.NoError(t, err)
-
-				// Create a valid .esc file
-				validFile := filepath.Join(tmpDir, "valid.esc")
-				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-				require.NoError(t, err)
-
-				// Create a file with wrong extension
-				invalidFile := filepath.Join(tmpDir, "test.txt")
-				err = os.WriteFile(invalidFile, []byte("some content"), 0644)
-				require.NoError(t, err)
-
-				return tmpDir, []string{validFile, invalidFile}
-			},
-			expectedStdout: []string{"building module...", "file does not have .esc extension"},
-			expectedStderr: []string{},
-		},
-		{
-			name: "non-existent file with valid file",
-			setupFunc: func(t *testing.T) (string, []string) {
-				tmpDir := t.TempDir()
-				err := os.Chdir(tmpDir)
-				require.NoError(t, err)
-
-				// Create a valid .esc file
-				validFile := filepath.Join(tmpDir, "valid.esc")
-				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-				require.NoError(t, err)
-
-				return tmpDir, []string{validFile, filepath.Join(tmpDir, "nonexistent.esc")}
-			},
-			expectedStdout: []string{"building module...", "file does not exist"},
-			expectedStderr: []string{},
-		},
-		{
-			name: "file read permission denied with valid file",
-			setupFunc: func(t *testing.T) (string, []string) {
-				if runtime.GOOS == "windows" {
-					t.Skip("Skipping permission test on Windows")
-				}
-
-				tmpDir := t.TempDir()
-				err := os.Chdir(tmpDir)
-				require.NoError(t, err)
-
-				// Create a valid .esc file
-				validFile := filepath.Join(tmpDir, "valid.esc")
-				err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-				require.NoError(t, err)
-
-				// Create a file and remove read permissions
-				noAccessFile := filepath.Join(tmpDir, "noaccess.esc")
-				err = os.WriteFile(noAccessFile, []byte("some content"), 0644)
-				require.NoError(t, err)
-
-				err = os.Chmod(noAccessFile, 0000) // No permissions
-				require.NoError(t, err)
-
-				// Restore permissions in cleanup
-				t.Cleanup(func() {
-					_ = os.Chmod(noAccessFile, 0644)
-				})
-
-				return tmpDir, []string{validFile, noAccessFile}
-			},
-			expectedStdout: []string{"building module...", "failed to read file content"},
-			expectedStderr: []string{},
-		}, {
-			name: "build directory creation failure",
-			setupFunc: func(t *testing.T) (string, []string) {
-				tmpDir := t.TempDir()
-				err := os.Chdir(tmpDir)
-				require.NoError(t, err)
-
-				err = os.Mkdir("lib", 0755)
-				require.NoError(t, err)
-
-				// Create a valid .esc file
-				filename := filepath.Join("lib", "test.esc")
-				err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-				require.NoError(t, err)
-
-				if runtime.GOOS != "windows" {
-					// Create a file named "build" to prevent directory creation
-					err = os.WriteFile("build", []byte("blocking file"), 0644)
-					require.NoError(t, err)
-				}
-
-				return tmpDir, []string{filename}
-			},
-			expectedStdout: []string{"building module..."},
-			expectedStderr: func() []string {
-				if runtime.GOOS == "windows" {
-					return []string{} // Windows behavior may differ
-				}
-				// The error might be "failed to create build directory" or a JS file creation error
-				// depending on timing and the exact OS behavior
-				return []string{} // We'll check this manually in the test
-			}(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			origDir, err := os.Getwd()
-			require.NoError(t, err)
-			defer func() {
-				_ = os.Chdir(origDir)
-			}()
-
-			tmpDir, files := tt.setupFunc(t)
-
-			stdout := &bytes.Buffer{}
-			stderr := &bytes.Buffer{}
-
-			build(stdout, stderr, files)
-
-			stdoutLines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-			stderrLines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
-
-			// Filter out empty lines
-			var filteredStdout []string
-			for _, line := range stdoutLines {
-				if strings.TrimSpace(line) != "" {
-					filteredStdout = append(filteredStdout, line)
-				}
-			}
-
-			var filteredStderr []string
-			for _, line := range stderrLines {
-				if strings.TrimSpace(line) != "" {
-					filteredStderr = append(filteredStderr, line)
-				}
-			}
-
-			if len(tt.expectedStdout) > 0 {
-				for _, expected := range tt.expectedStdout {
-					found := false
-					for _, actual := range filteredStdout {
-						if strings.Contains(actual, expected) {
-							found = true
-							break
-						}
-					}
-					require.True(t, found, "Expected stdout to contain: %s\nActual stdout: %v", expected, filteredStdout)
-				}
-			}
-
-			if len(tt.expectedStderr) > 0 {
-				for _, expected := range tt.expectedStderr {
-					found := false
-					for _, actual := range filteredStderr {
-						if strings.Contains(actual, expected) {
-							found = true
-							break
-						}
-					}
-					require.True(t, found, "Expected stderr to contain: %s\nActual stderr: %v", expected, filteredStderr)
-				}
-			}
-
-			// Special case for build directory creation failure test
-			if tt.name == "build directory creation failure" && runtime.GOOS != "windows" {
-				// Either we should see a directory creation error or a JS file creation error
-				// depending on the exact timing and OS behavior
-				errorOutput := stderr.String()
-				require.True(t,
-					strings.Contains(errorOutput, "failed to create directory for module") ||
-						strings.Contains(errorOutput, "failed to create .js file"),
-					"Expected directory or JS file creation error, got: %s", errorOutput)
-			}
-
-			// Cleanup
-			_ = os.Chdir(origDir)
-			_ = os.RemoveAll(tmpDir)
-		})
-	}
-}
-
-func TestBuildFileSystemErrors(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
-
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	err = os.Mkdir("lib", 0755)
-	require.NoError(t, err)
-
-	// Create a valid .esc file with minimal content
-	filename := filepath.Join("lib", "test.esc")
-	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
-
-	// Create build directory first to control permissions
-	err = os.Mkdir("build", 0755)
-	require.NoError(t, err)
-
-	if runtime.GOOS != "windows" {
-		// Make build directory read-only to cause subdirectory creation failures
-		err = os.Chmod("build", 0444)
+func TestLoadSource(t *testing.T) {
+	t.Run("valid .esc file", func(t *testing.T) {
+		// Create a temporary .esc file
+		tmpDir := t.TempDir()
+		testFile := filepath.Join(tmpDir, "test.esc")
+		content := "let x = 5;"
+		err := os.WriteFile(testFile, []byte(content), 0644)
 		require.NoError(t, err)
 
-		// Restore permissions in cleanup
-		defer func() {
-			_ = os.Chmod("build", 0755)
-		}()
-	}
+		source, err := loadSource(testFile, 0)
 
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
+		assert.NoError(t, err)
+		assert.Equal(t, 0, source.ID)
+		assert.Equal(t, testFile, source.Path)
+		assert.Equal(t, content, source.Contents)
+	})
 
-	build(stdout, stderr, []string{filename})
+	t.Run("file without .esc extension", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		testFile := filepath.Join(tmpDir, "test.txt")
+		err := os.WriteFile(testFile, []byte("content"), 0644)
+		require.NoError(t, err)
 
-	if runtime.GOOS != "windows" {
-		stderrOutput := stderr.String()
-		// Should fail to create directory or file due to read-only build directory
-		require.True(t,
-			strings.Contains(stderrOutput, "failed to create directory for module") ||
-				strings.Contains(stderrOutput, "failed to create .js file"),
-			"Expected directory or file creation error, got: %s", stderrOutput)
-	}
+		source, err := loadSource(testFile, 0)
+
+		assert.Nil(t, source)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not have .esc extension")
+	})
+
+	t.Run("non-existent file", func(t *testing.T) {
+		source, err := loadSource("/nonexistent/file.esc", 0)
+
+		assert.Nil(t, source)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file does not exist")
+	})
 }
 
-func TestBuildWithValidFile(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
+func TestLoadSources(t *testing.T) {
+	t.Run("multiple valid files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		file1 := filepath.Join(tmpDir, "file1.esc")
+		file2 := filepath.Join(tmpDir, "file2.esc")
 
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+		err := os.WriteFile(file1, []byte("let x = 1;"), 0644)
+		require.NoError(t, err)
+		err = os.WriteFile(file2, []byte("let y = 2;"), 0644)
+		require.NoError(t, err)
 
-	err = os.Mkdir("lib", 0755)
-	require.NoError(t, err)
+		stdout := &bytes.Buffer{}
+		sources, idToSource := loadSources(stdout, []string{file1, file2})
 
-	// Create a valid .esc file
-	filename := filepath.Join("lib", "test.esc")
-	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
+		assert.Len(t, sources, 2)
+		assert.Len(t, idToSource, 2)
+		assert.Equal(t, "let x = 1;", sources[0].Contents)
+		assert.Equal(t, "let y = 2;", sources[1].Contents)
+		assert.Equal(t, sources[0], idToSource[0])
+		assert.Equal(t, sources[1], idToSource[1])
+	})
 
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
+	t.Run("mix of valid and invalid files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		validFile := filepath.Join(tmpDir, "valid.esc")
+		invalidFile := filepath.Join(tmpDir, "invalid.txt")
 
-	build(stdout, stderr, []string{filename})
+		err := os.WriteFile(validFile, []byte("let x = 1;"), 0644)
+		require.NoError(t, err)
+		err = os.WriteFile(invalidFile, []byte("content"), 0644)
+		require.NoError(t, err)
 
-	// Should successfully create output files
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
+		stdout := &bytes.Buffer{}
+		sources, idToSource := loadSources(stdout, []string{validFile, invalidFile})
 
-	// Check that output files are created
-	// Note: The actual module name depends on the compiler output
-	// Just verify that the build directory was created
-	require.DirExists(t, "build")
+		// Should only load the valid file
+		assert.Len(t, sources, 1)
+		assert.Len(t, idToSource, 1)
+		assert.Equal(t, validFile, sources[0].Path)
+		assert.Contains(t, stdout.String(), "does not have .esc extension")
+	})
+
+	t.Run("empty file list", func(t *testing.T) {
+		stdout := &bytes.Buffer{}
+		sources, idToSource := loadSources(stdout, []string{})
+
+		assert.Len(t, sources, 0)
+		assert.Len(t, idToSource, 0)
+	})
 }
 
-func TestBuildMixedValidAndInvalidFiles(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
+// Note: formatTypeError is tested indirectly through printErrors tests
+// since checker.Error types have unexported fields
 
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+func TestWriteOutputFile(t *testing.T) {
+	t.Run("write JavaScript file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Change to temp dir and create build directory
+		oldCwd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() { _ = os.Chdir(oldCwd) }()
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+		err = os.MkdirAll("build", 0755)
+		require.NoError(t, err)
 
-	// Create mix of valid and invalid files
-	validFile := filepath.Join(tmpDir, "valid.esc")
-	err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
+		stderr := &bytes.Buffer{}
+		content := "console.log('hello');"
+		err = writeOutputFile(stderr, "module", ".js", content)
 
-	invalidExtFile := filepath.Join(tmpDir, "invalid.txt")
-	err = os.WriteFile(invalidExtFile, []byte("content"), 0644)
-	require.NoError(t, err)
+		assert.NoError(t, err)
 
-	nonExistentFile := filepath.Join(tmpDir, "nonexistent.esc")
+		// Verify file was created with correct content
+		filePath := filepath.Join("build", "module.js")
+		data, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, content, string(data))
+	})
 
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
+	t.Run("write TypeScript declaration file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldCwd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() { _ = os.Chdir(oldCwd) }()
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+		err = os.MkdirAll("build", 0755)
+		require.NoError(t, err)
 
-	files := []string{validFile, invalidExtFile, nonExistentFile}
-	build(stdout, stderr, files)
+		stderr := &bytes.Buffer{}
+		content := "export declare const x: number;"
+		err = writeOutputFile(stderr, "types", ".d.ts", content)
 
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-	require.Contains(t, stdoutOutput, "file does not have .esc extension")
-	require.Contains(t, stdoutOutput, "file does not exist")
+		assert.NoError(t, err)
 
-	// Build directory may or may not be created depending on compiler output
-	// The important thing is that the function handles mixed valid/invalid files gracefully
+		filePath := filepath.Join("build", "types.d.ts")
+		data, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, content, string(data))
+	})
+
+	t.Run("write to subdirectory module", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldCwd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() { _ = os.Chdir(oldCwd) }()
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+		err = os.MkdirAll(filepath.Join("build", "utils"), 0755)
+		require.NoError(t, err)
+
+		stderr := &bytes.Buffer{}
+		content := "export const helper = () => {};"
+		err = writeOutputFile(stderr, "utils/helper", ".js", content)
+
+		assert.NoError(t, err)
+
+		filePath := filepath.Join("build", "utils", "helper.js")
+		data, err := os.ReadFile(filePath)
+		assert.NoError(t, err)
+		assert.Equal(t, content, string(data))
+	})
 }
 
-// TestBuildOnlyInvalidFiles tests what happens when all input files are invalid
-// Note: This test is designed to work around the fact that the build function
-// passes nil elements to the compiler, which can cause panics. We test with
-// at least one valid file to avoid this issue.
-func TestBuildOnlyInvalidFiles(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
+func TestWriteModuleOutputs(t *testing.T) {
+	t.Run("write all module outputs", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldCwd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() { _ = os.Chdir(oldCwd) }()
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
 
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+		stderr := &bytes.Buffer{}
+		output := compiler.ModuleOutput{
+			JS:        "console.log('test');",
+			DTS:       "export declare const test: string;",
+			SourceMap: `{"version":3,"sources":["test.esc"]}`,
+		}
 
-	// Create files with wrong extensions
-	file1 := filepath.Join(tmpDir, "test1.txt")
-	err = os.WriteFile(file1, []byte("content1"), 0644)
-	require.NoError(t, err)
+		err = writeModuleOutputs(stderr, "test", output)
 
-	file2 := filepath.Join(tmpDir, "test2.js")
-	err = os.WriteFile(file2, []byte("content2"), 0644)
-	require.NoError(t, err)
+		assert.NoError(t, err)
 
-	// Add a non-existent file
-	nonExistent := filepath.Join(tmpDir, "nonexistent.esc")
+		// Check all three files were created
+		jsData, err := os.ReadFile(filepath.Join("build", "test.js"))
+		assert.NoError(t, err)
+		assert.Equal(t, output.JS, string(jsData))
 
-	// Add at least one valid file to prevent nil pointer issues in compiler
-	validFile := filepath.Join(tmpDir, "valid.esc")
-	err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
+		dtsData, err := os.ReadFile(filepath.Join("build", "test.d.ts"))
+		assert.NoError(t, err)
+		assert.Equal(t, output.DTS, string(dtsData))
 
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
+		mapData, err := os.ReadFile(filepath.Join("build", "test.js.map"))
+		assert.NoError(t, err)
+		assert.Equal(t, output.SourceMap, string(mapData))
+	})
 
-	build(stdout, stderr, []string{file1, file2, nonExistent, validFile})
+	t.Run("create nested directory structure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldCwd, err := os.Getwd()
+		require.NoError(t, err)
+		defer func() { _ = os.Chdir(oldCwd) }()
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
 
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-	require.Contains(t, stdoutOutput, "file does not have .esc extension")
-	require.Contains(t, stdoutOutput, "file does not exist")
+		stderr := &bytes.Buffer{}
+		output := compiler.ModuleOutput{
+			JS:        "export const x = 1;",
+			DTS:       "export declare const x: number;",
+			SourceMap: "{}",
+		}
 
-	// Build directory may or may not be created depending on compiler output
-	// The important thing is that errors are reported correctly
+		err = writeModuleOutputs(stderr, "lib/utils/helper", output)
+
+		assert.NoError(t, err)
+
+		// Verify directory was created
+		_, err = os.Stat(filepath.Join("build", "lib", "utils"))
+		assert.NoError(t, err)
+
+		// Verify file exists in nested directory
+		jsData, err := os.ReadFile(filepath.Join("build", "lib", "utils", "helper.js"))
+		assert.NoError(t, err)
+		assert.Equal(t, output.JS, string(jsData))
+	})
 }
 
-// TestBuildFileReadError tests the case where a file exists but can't be read
-func TestBuildFileReadError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping file permission test on Windows")
-	}
+func TestPrintErrors(t *testing.T) {
+	t.Run("print parse errors", func(t *testing.T) {
+		stderr := &bytes.Buffer{}
+		span := ast.Span{
+			Start:    ast.Location{Line: 1, Column: 1},
+			End:      ast.Location{Line: 1, Column: 5},
+			SourceID: 0,
+		}
+		parseErr1 := &parser.Error{
+			Message: "Parse error 1",
+			Span:    span,
+		}
+		parseErr2 := &parser.Error{
+			Message: "Parse error 2",
+			Span:    span,
+		}
+		output := compiler.CompilerOutput{
+			ParseErrors: []*parser.Error{parseErr1, parseErr2},
+			TypeErrors:  []checker.Error{},
+			Modules:     map[string]compiler.ModuleOutput{},
+		}
+		idToSource := make(map[int]*ast.Source)
 
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
+		printErrors(stderr, output, idToSource)
 
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+		result := stderr.String()
+		assert.Contains(t, result, "Parse error 1")
+		assert.Contains(t, result, "Parse error 2")
+	})
 
-	// Create a valid .esc file first
-	validFile := filepath.Join(tmpDir, "valid.esc")
-	err = os.WriteFile(validFile, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
+	t.Run("no errors to print", func(t *testing.T) {
+		stderr := &bytes.Buffer{}
+		output := compiler.CompilerOutput{
+			ParseErrors: []*parser.Error{},
+			TypeErrors:  []checker.Error{},
+			Modules:     map[string]compiler.ModuleOutput{},
+		}
+		idToSource := make(map[int]*ast.Source)
 
-	// Create a .esc file but make it unreadable
-	unreadableFile := filepath.Join(tmpDir, "unreadable.esc")
-	err = os.WriteFile(unreadableFile, []byte("let y = 10;"), 0644)
-	require.NoError(t, err)
+		printErrors(stderr, output, idToSource)
 
-	// Remove all permissions to make it unreadable
-	err = os.Chmod(unreadableFile, 0000)
-	require.NoError(t, err)
-
-	defer func() {
-		_ = os.Chmod(unreadableFile, 0644)
-	}()
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	build(stdout, stderr, []string{validFile, unreadableFile})
-
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-
-	// The unreadable file should cause either "failed to open file" or "failed to read file content"
-	// depending on where the permission check happens
-	require.True(t,
-		strings.Contains(stdoutOutput, "failed to open file") ||
-			strings.Contains(stdoutOutput, "failed to read file content"),
-		"Expected error message for unreadable file, got: %s", stdoutOutput)
-}
-
-// TestBuildErrorSourceNotFound tests the case where source is not found for an error
-func TestBuildErrorSourceNotFound(t *testing.T) {
-	// This is a more complex test that would require mocking the compiler output
-	// to inject errors with invalid source IDs. For now, we'll create a simple test
-	// that ensures the function doesn't panic when source is not found.
-
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
-
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	err = os.Mkdir("lib", 0755)
-	require.NoError(t, err)
-
-	// Create an invalid .esc file that will cause type errors
-	filename := filepath.Join("lib", "invalid.esc")
-	err = os.WriteFile(filename, []byte("let x: invalid_type = 5;"), 0644)
-	require.NoError(t, err)
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	build(stdout, stderr, []string{filename})
-
-	// The build should complete without panicking, even if there are type errors
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-}
-
-func TestBuildFileWriteErrors(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping file write permission test on Windows")
-	}
-
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
-
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	err = os.Mkdir("lib", 0755)
-	require.NoError(t, err)
-
-	// Create a valid .esc file
-	filename := filepath.Join("lib", "test.esc")
-	err = os.WriteFile(filename, []byte("let x = 5;"), 0644)
-	require.NoError(t, err)
-
-	// Create build directory
-	err = os.Mkdir("build", 0755)
-	require.NoError(t, err)
-
-	// First run build to create the output files
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	build(stdout, stderr, []string{filename})
-
-	// Verify build directory was created
-	require.DirExists(t, "build")
-
-	// Find the created JS file (module name depends on compiler output)
-	// For now, we'll just verify the build ran
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-
-	// Note: File write permission tests are complex because os.Create()
-	// truncates and reopens files. The main goal is to ensure the function
-	// handles file operations gracefully without panicking.
-}
-
-func TestBuildEmptyFileList(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
-
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	// Test with empty file list
-	build(stdout, stderr, []string{})
-
-	stdoutOutput := stdout.String()
-	require.Contains(t, stdoutOutput, "building module...")
-
-	// With no valid files, build directory may or may not be created
-	// depending on compiler output for empty sources
-}
-
-func TestBuildCompilerErrors(t *testing.T) {
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		_ = os.Chdir(origDir)
-	}()
-
-	tmpDir := t.TempDir()
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
-
-	err = os.Mkdir("lib", 0755)
-	require.NoError(t, err)
-
-	// Create a .esc file with syntax errors
-	filename := filepath.Join("lib", "syntax_error.esc")
-	err = os.WriteFile(filename, []byte("let x = [unclosed bracket"), 0644)
-	require.NoError(t, err)
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	build(stdout, stderr, []string{filename})
-
-	// Should report parse errors to stderr
-	stderrOutput := stderr.String()
-	require.NotEmpty(t, stderrOutput, "Expected parse errors to be reported to stderr")
-
-	// Build directory may still be created even with errors
-	// depending on compiler output
+		result := stderr.String()
+		assert.Empty(t, result)
+	})
 }

@@ -8,8 +8,6 @@ import (
 
 func main() {
 	buildCmd := flag.NewFlagSet("build", flag.ExitOnError)
-	buildOut := buildCmd.String("out", "", "out")
-
 	formatCmd := flag.NewFlagSet("format", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
@@ -24,9 +22,6 @@ func main() {
 			fmt.Println("failed to parse build command")
 			os.Exit(1)
 		}
-		fmt.Println("subcommand 'build'")
-		fmt.Println("  out:", *buildOut)
-		fmt.Println("  tail:", buildCmd.Args())
 		build(os.Stdout, os.Stderr, buildCmd.Args())
 	case "format":
 		err := formatCmd.Parse(os.Args[2:])

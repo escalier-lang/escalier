@@ -463,7 +463,6 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}
 
 						paramType := methodElem.Fn.Params[0].Type
-						fmt.Fprintf(os.Stderr, "Unifying %s with extractor param type %s\n", paramType.String(), t1.String())
 						errors := c.unify(ctx, t1, paramType)
 
 						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
