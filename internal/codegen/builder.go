@@ -189,6 +189,7 @@ func (b *Builder) buildPattern(
 				tempVar := NewIdentExpr(tempId, "", nil)
 
 				var init Expr
+				var tempVarPat Pat
 				switch arg := arg.(type) {
 				case *ast.IdentPat:
 					if arg.Default != nil {
@@ -197,8 +198,15 @@ func (b *Builder) buildPattern(
 						stmts = slices.Concat(stmts, defStmts)
 						init = defExpr
 					}
+					tempVarPat = NewIdentPat(tempId, init, p)
+				case *ast.RestPat:
+					// For rest patterns, wrap the IdentPat in a RestPat
+					tempVarPat = NewRestPat(NewIdentPat(tempId, nil, p), arg)
+				case *ast.ExtractorPat:
+					tempVarPat = NewIdentPat(tempId, init, p)
+				default:
+					panic("TODO - buildPattern - ExtractorPat - default case")
 				}
-				tempVarPat := NewIdentPat(tempId, init, p)
 
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
@@ -240,6 +248,11 @@ func (b *Builder) buildPattern(
 			for _, pair := range Zip(tempVars, p.Args) {
 				temp := pair.First
 				arg := pair.Second
+				// If the arg is a RestPat, unwrap it since the rest has already been
+				// destructured into the temp variable
+				if restPat, ok := arg.(*ast.RestPat); ok {
+					arg = restPat.Pattern
+				}
 				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)
 				stmts = slices.Concat(stmts, argStmts)
