@@ -10,7 +10,7 @@ export class Person {
   }
   set fullName(temp1) {
     const value = temp1;
-    export const parts = split(value, " ");
+    const parts = split(value, " ");
     this.firstName = parts[0];
     this.lastName = parts[1];
   }

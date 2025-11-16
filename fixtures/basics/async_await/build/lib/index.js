@@ -4,7 +4,7 @@ export async function fetchData(temp1) {
 }
 export async function fetchWithAwait(temp2) {
   const url = temp2;
-  export const data = await fetch(url);
+  const data = await fetch(url);
   return data;
 }
 export async function fetchWithError(temp3) {
@@ -21,8 +21,8 @@ export async function fetchWithError(temp3) {
 export async function fetchMultiple(temp6, temp7) {
   const url1 = temp6;
   const url2 = temp7;
-  export const data1 = await fetch(url1);
-  export const data2 = await fetch(url2);
+  const data1 = await fetch(url1);
+  const data2 = await fetch(url2);
   return data1 + " and " + data2;
 }
 export async function conditionalFetch(temp8, temp9) {
@@ -32,7 +32,7 @@ export async function conditionalFetch(temp8, temp9) {
   if (useCache) {
     return "cached data";
   } else {
-    export const data = await fetch(url);
+    const data = await fetch(url);
     return data;
   }
   temp10;

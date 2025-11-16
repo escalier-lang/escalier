@@ -43,7 +43,7 @@ export const multipleThrows = function (temp9) {
   temp10;
 };
 export const nestedThrows = function () {
-  export const innerFunc = function () {
+  const innerFunc = function () {
     let temp13;
     throw "inner error";
     temp13;

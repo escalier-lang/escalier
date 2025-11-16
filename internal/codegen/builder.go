@@ -16,6 +16,7 @@ type Builder struct {
 	depGraph     *dep_graph.DepGraph
 	hasExtractor bool
 	isModule     bool
+	inBlockScope bool
 }
 
 func (b *Builder) NewTempId() string {
@@ -560,13 +561,22 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
 		// Ignore checks returned by buildPattern
-		_, patStmts := b.buildPattern(d.Pattern, initExpr, b.isModule, d.Kind, nsName)
+		// Only export if we're in module mode AND not inside a block scope
+		export := b.isModule && !b.inBlockScope
+		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
 		}
+
+		// Mark that we're inside a function body
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+		bodyStmts := slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
 		fnDecl := &FuncDecl{
 			Name: &Identifier{
 				Name:   fullyQualifyName(d.Name.Name, nsName),
@@ -575,10 +585,10 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			},
 			TypeParams: nil,
 			Params:     params,
-			Body:       slices.Concat(allParamStmts, b.buildStmts(d.Body.Stmts)),
+			Body:       bodyStmts,
 			TypeAnn:    nil,
 			declare:    decl.Declare(),
-			export:     b.isModule,
+			export:     b.isModule && !prevInBlockScope,
 			async:      d.Async,
 			span:       nil,
 			source:     decl,
@@ -1048,9 +1058,16 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		), stmts
 	case *ast.FuncExpr:
 		params, allParamStmts := b.buildParams(expr.Params)
+
+		// Mark that we're inside a function body
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+		bodyStmts := slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
 		return NewFuncExpr(
 			params,
-			slices.Concat(allParamStmts, b.buildStmts(expr.Body.Stmts)),
+			bodyStmts,
 			expr.Async,
 			expr,
 		), []Stmt{}
@@ -1217,6 +1234,13 @@ func (b *Builder) buildBlockWithTempVar(stmts []ast.Stmt, sourceExpr ast.Expr) (
 func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Expr, sourceExpr ast.Expr) []Stmt {
 	blockStmts := []Stmt{}
 
+	// Mark that we're inside a block scope
+	prevInBlockScope := b.inBlockScope
+	b.inBlockScope = true
+	defer func() {
+		b.inBlockScope = prevInBlockScope
+	}()
+
 	if len(stmts) > 0 {
 		// Build all statements except the last one
 		for _, stmt := range stmts[:len(stmts)-1] {
@@ -1349,7 +1373,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a method body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -1374,7 +1402,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			}
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a getter body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -1397,7 +1429,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
+				// Mark that we're inside a setter body
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
