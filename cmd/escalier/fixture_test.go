@@ -94,47 +94,52 @@ func checkFixture(t *testing.T, fixtureDir string) {
 		require.NoError(t, err)
 	}
 
-	stdout := bytes.NewBuffer(nil)
-	stderr := bytes.NewBuffer(nil)
-
 	// Find all .esc files in the lib directory
 	var files []string
-	err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+	_, err = os.Stat("lib")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("lib", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return
 		}
-
-		// Check if it's a file and ends with .esc
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-			files = append(files, path)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to walk directory:", err)
-		return
 	}
 
-	err = filepath.WalkDir("bin", func(path string, d fs.DirEntry, err error) error {
+	_, err = os.Stat("bin")
+	if !os.IsNotExist(err) {
+		err = filepath.WalkDir("bin", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Check if it's a file and ends with .esc
+			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+				files = append(files, path)
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
+			return
 		}
-
-		// Check if it's a file and ends with .esc
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-			files = append(files, path)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		fmt.Fprintln(stderr, "failed to walk directory:", err)
-		return
 	}
 
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
 	build(stdout, stderr, files)
 	fmt.Println("stderr =", stderr.String())
 

@@ -1,4 +1,4 @@
-import { InvokeCustomMatcherOrThrow } from "escalier/runtime";
+import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const Color = {};
 class Color__RGB {
   constructor(temp1, temp2, temp3) {
