@@ -1,6 +1,0 @@
-{
-    "name": "basics-objects_with_generic_methods",
-    "version": "0.0.1",
-    "type": "module",
-    "main": "build/lib/index.js"
-}

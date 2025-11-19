@@ -1,9 +1,0 @@
-{
-    "name": "packages-bin_and_lib",
-    "version": "0.0.1",
-    "type": "module",
-    "main": "build/lib/index.js",
-    "bin": {
-        "foo": "build/bin/foo.js"
-    }
-}

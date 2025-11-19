@@ -1,6 +1,0 @@
-{
-    "name": "errors-not_enough_elements",
-    "version": "0.0.1",
-    "type": "module",
-    "main": "build/lib/index.js"
-}
