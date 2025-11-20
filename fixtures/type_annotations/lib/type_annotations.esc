@@ -1,0 +1,7 @@
+type Tuple = [string, number, boolean]
+val i: keyof Tuple = 2
+val j: keyof Tuple = 3
+
+type Point = {x: number, y: number}
+val coord1: keyof Point = "y"
+val coord2: keyof Point = "z"

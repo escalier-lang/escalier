@@ -1,0 +1,10 @@
+lib/type_annotations.esc:3:22: 3 cannot be assigned to "length" | 0 | 1 | 2
+
+3:  val j: keyof Tuple = 3
+                         ^
+
+lib/type_annotations.esc:7:27: "z" cannot be assigned to "x" | "y"
+
+7:  val coord2: keyof Point = "z"
+                              ^^^
+

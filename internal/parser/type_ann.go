@@ -327,6 +327,17 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				nameToken.Value,
 				ast.NewSpan(token.Span.Start, nameToken.Span.End, p.lexer.source.ID),
 			)
+		case Keyof: // keyof type
+			p.lexer.consume() // consume 'keyof'
+			typ := p.primaryTypeAnn()
+			if typ == nil {
+				p.reportError(token.Span, "expected type annotation after 'keyof'")
+				return nil
+			}
+			typeAnn = ast.NewKeyOfTypeAnn(
+				typ,
+				ast.NewSpan(token.Span.Start, typ.Span().End, p.lexer.source.ID),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
