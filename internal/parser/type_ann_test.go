@@ -60,7 +60,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			input: "A[B]",
 		},
 		"IndexedTypeWithDot": {
-			input: "A.B",
+			input: "A.B", // parses as a qualified type reference
 		},
 		"QualifiedTypeRef": {
 			input: "Foo.Bar",

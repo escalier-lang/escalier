@@ -816,7 +816,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 	case *TypeOfTypeAnn:
 		panic("PrintTypeAnn: TypeOfTypeAnn not implemented")
 	case *IndexTypeAnn:
-		panic("PrintTypeAnn: IndexTypeAnn not implemented")
+		p.PrintTypeAnn(ta.Target)
+		// TODO: check what the index is, if it's a simple string literal then
+		// print using dot notation instead.
+		p.print("[")
+		p.PrintTypeAnn(ta.Index)
+		p.print("]")
 	case *CondTypeAnn:
 		panic("PrintTypeAnn: CondTypeAnn not implemented")
 	case *InferTypeAnn:
