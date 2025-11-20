@@ -3686,7 +3686,6 @@ func (c *Checker) inferTypeAnn(
 		}
 		t = NewTemplateLitType(provenance, quasis, types)
 	case *ast.IndexTypeAnn:
-		fmt.Fprintf(os.Stderr, "Inferring index type annotation: %+v\n", typeAnn)
 		objectType, objectErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, objectErrors)
 		indexType, indexErrors := c.inferTypeAnn(ctx, typeAnn.Index)
