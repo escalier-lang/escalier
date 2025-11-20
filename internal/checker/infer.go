@@ -1941,6 +1941,8 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		}
 
 		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, QualIdentToString(t.Name))
+		// TODO: Check if the qualifier is a type.  If it is, we can treat this
+		// as a member access type.
 		if typeAlias == nil {
 			v.errors = append(v.errors, &UnknownTypeError{TypeName: QualIdentToString(t.Name), typeRef: t})
 			neverType := NewNeverType(nil)
@@ -2009,6 +2011,25 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// Expand template literal types by generating all possible string combinations
 		// from the cartesian product of the union types in the template
 		return v.expandTemplateLitType(t)
+	case *IndexType:
+		// Expand index types by resolving the indexed property
+		// e.g., {x: number, y: string}["x"] => number
+		expandedTarget, _ := v.checker.expandType(v.ctx, t.Target, 1)
+		expandedIndex, _ := v.checker.expandType(v.ctx, t.Index, 1)
+
+		// Extract span from provenance if available
+		span := ast.Span{}
+		if t.Provenance() != nil {
+			if nodeProv, ok := t.Provenance().(*ast.NodeProvenance); ok {
+				span = nodeProv.Node.Span()
+			}
+		}
+
+		// Use getMemberType to resolve the property access
+		key := IndexKey{Type: expandedIndex, Span: span}
+		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key)
+		v.errors = slices.Concat(v.errors, memberErrors)
+		return memberType
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -3664,6 +3685,12 @@ func (c *Checker) inferTypeAnn(
 			}
 		}
 		t = NewTemplateLitType(provenance, quasis, types)
+	case *ast.IndexTypeAnn:
+		objectType, objectErrors := c.inferTypeAnn(ctx, typeAnn.Target)
+		errors = slices.Concat(errors, objectErrors)
+		indexType, indexErrors := c.inferTypeAnn(ctx, typeAnn.Index)
+		errors = slices.Concat(errors, indexErrors)
+		t = NewIndexType(provenance, objectType, indexType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

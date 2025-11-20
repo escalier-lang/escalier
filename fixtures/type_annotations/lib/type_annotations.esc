@@ -5,6 +5,8 @@ val j: keyof Tuple = 3
 type Point = {x: number, y: number}
 val coord1: keyof Point = "y"
 val coord2: keyof Point = "z"
+val x: Point["x"] = 5
+val y: Point["y"] = 10
 
 class Event(msg: string) {
     msg,
