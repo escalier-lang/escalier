@@ -116,6 +116,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"TemplateLiteralTypeNoParams": {
 			input: "`hello-world`",
 		},
+		"KeyOfType": {
+			input: "keyof T",
+		},
+		"UnionTypeWithKeyOf": {
+			input: "keyof T | U",
+		},
+		"KeyOfObjectType": {
+			input: "keyof {x: string, y: number}",
+		},
 	}
 
 	for name, test := range tests {

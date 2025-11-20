@@ -1805,6 +1805,125 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			return nil // No filtering needed, return nil to let Accept handle it
 		}
 		return NewUnionType(nil, filteredTypes...)
+	case *KeyOfType:
+		// Expand keyof T by extracting the keys from the type T
+		targetType := Prune(t.Type)
+
+		// First, try to expand the target type
+		expandedTarget, _ := v.checker.expandType(v.ctx, targetType, 1)
+		expandedTarget = Prune(expandedTarget)
+
+		switch target := expandedTarget.(type) {
+		case *ObjectType:
+			// Extract all keys from the object type (excluding methods)
+			keys := []Type{}
+			for _, elem := range target.Elems {
+				switch e := elem.(type) {
+				case *PropertyElem:
+					// Add the property key as a literal type
+					switch e.Name.Kind {
+					case StrObjTypeKeyKind:
+						keys = append(keys, NewStrLitType(nil, e.Name.Str))
+					case NumObjTypeKeyKind:
+						keys = append(keys, NewNumLitType(nil, e.Name.Num))
+					case SymObjTypeKeyKind:
+						keys = append(keys, NewUniqueSymbolType(nil, e.Name.Sym))
+					}
+				case *GetterElem:
+					// Add getter names as string literal types
+					switch e.Name.Kind {
+					case StrObjTypeKeyKind:
+						keys = append(keys, NewStrLitType(nil, e.Name.Str))
+					case NumObjTypeKeyKind:
+						keys = append(keys, NewNumLitType(nil, e.Name.Num))
+					case SymObjTypeKeyKind:
+						keys = append(keys, NewUniqueSymbolType(nil, e.Name.Sym))
+					}
+				case *SetterElem:
+					// Add setter names as string literal types
+					switch e.Name.Kind {
+					case StrObjTypeKeyKind:
+						keys = append(keys, NewStrLitType(nil, e.Name.Str))
+					case NumObjTypeKeyKind:
+						keys = append(keys, NewNumLitType(nil, e.Name.Num))
+					case SymObjTypeKeyKind:
+						keys = append(keys, NewUniqueSymbolType(nil, e.Name.Sym))
+					}
+				case *MappedElem:
+					// For mapped types, return the constraint type
+					// e.g., keyof {[K]: T[K] for K in Keys} -> Keys
+					return e.TypeParam.Constraint
+				case *RestSpreadElem:
+					// For rest spread, recursively get keyof the spread type
+					spreadKeys, _ := v.checker.expandType(v.ctx, NewKeyOfType(nil, e.Value), -1)
+					keys = append(keys, spreadKeys)
+				}
+			}
+
+			if len(keys) == 0 {
+				return NewNeverType(nil)
+			}
+			if len(keys) == 1 {
+				return keys[0]
+			}
+			return NewUnionType(nil, keys...)
+		case *UnionType:
+			// Distribute keyof over union types: keyof (A | B) = keyof A | keyof B
+			keyofTypes := make([]Type, len(target.Types))
+			for i, typ := range target.Types {
+				keyofType := NewKeyOfType(nil, typ)
+				expandedKeyof, _ := v.checker.expandType(v.ctx, keyofType, -1)
+				keyofTypes[i] = expandedKeyof
+			}
+			return NewUnionType(nil, keyofTypes...)
+		case *IntersectionType:
+			// For intersection types, get the union of all keys
+			// keyof (A & B) = keyof A | keyof B
+			keyofTypes := make([]Type, len(target.Types))
+			for i, typ := range target.Types {
+				keyofType := NewKeyOfType(nil, typ)
+				expandedKeyof, _ := v.checker.expandType(v.ctx, keyofType, -1)
+				keyofTypes[i] = expandedKeyof
+			}
+			return NewUnionType(nil, keyofTypes...)
+		case *TypeRefType:
+			// Try to expand the type reference and get keyof that
+			expandedRef, _ := v.checker.expandTypeRef(v.ctx, target)
+			if expandedRef != target {
+				keyofType := NewKeyOfType(nil, expandedRef)
+				expandedKeyof, _ := v.checker.expandType(v.ctx, keyofType, -1)
+				return expandedKeyof
+			}
+			// If we can't expand further, return the KeyOfType as-is
+			return nil
+		case *PrimType:
+			// For primitive types, keyof returns never (TypeScript behavior)
+			// because primitives don't have enumerable keys
+			return NewNeverType(nil)
+		case *TupleType:
+			// For tuples, return the numeric indices as literal types plus "length"
+			keys := []Type{NewStrLitType(nil, "length")}
+			for i := range target.Elems {
+				keys = append(keys, NewNumLitType(nil, float64(i)))
+			}
+			return NewUnionType(nil, keys...)
+		case *NeverType:
+			// keyof never = never
+			return NewNeverType(nil)
+		case *AnyType:
+			// keyof any = string | number | symbol
+			return NewUnionType(nil,
+				NewStrPrimType(nil),
+				NewNumPrimType(nil),
+				NewSymPrimType(nil),
+			)
+		case *UnknownType:
+			// keyof unknown = never
+			return NewNeverType(nil)
+		default:
+			// For other types, return the KeyOfType as-is
+			return nil
+		}
 	case *TypeRefType:
 		// TODO: implement once TypeAliases have been marked as recursive.
 		// `expandType` is eager so we can't expand recursive type aliases as it
@@ -3518,6 +3637,10 @@ func (c *Checker) inferTypeAnn(
 		t = NewCondType(provenance, checkType, extendsType, thenType, elseType)
 	case *ast.InferTypeAnn:
 		t = NewInferType(provenance, typeAnn.Name)
+	case *ast.KeyOfTypeAnn:
+		argType, argErrors := c.inferTypeAnn(ctx, typeAnn.Type)
+		errors = slices.Concat(errors, argErrors)
+		t = NewKeyOfType(provenance, argType)
 	case *ast.MutableTypeAnn:
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)

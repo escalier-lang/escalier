@@ -219,11 +219,9 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	inMod, parseErrors := p.ParseScript()
 
 	c := checker.NewChecker()
-	scope := checker.Prelude(c)
+	scope := checker.Prelude(c).WithNewScope()
 	if libNS != nil {
-		scope = &checker.Scope{
-			Namespace: libNS,
-		}
+		scope.Namespace = libNS
 	}
 	inferCtx := checker.Context{
 		Scope:      scope,

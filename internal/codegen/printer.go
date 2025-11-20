@@ -811,7 +811,8 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print(" => ")
 		p.PrintTypeAnn(ta.Return)
 	case *KeyOfTypeAnn:
-		panic("PrintTypeAnn: KeyOfTypeAnn not implemented")
+		p.print("keyof ")
+		p.PrintTypeAnn(ta.Type)
 	case *TypeOfTypeAnn:
 		panic("PrintTypeAnn: TypeOfTypeAnn not implemented")
 	case *IndexTypeAnn:

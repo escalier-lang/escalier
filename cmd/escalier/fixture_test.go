@@ -84,6 +84,12 @@ func checkFixture(t *testing.T, fixtureDir string) {
 	build(stdout, stderr, []string{"."})
 	fmt.Println("stderr =", stderr.String())
 
+	// Write errors to error.txt if there are any
+	if stderr.Len() > 0 {
+		err = os.WriteFile(filepath.Join(tmpDir, "error.txt"), stderr.Bytes(), 0644)
+		require.NoError(t, err, "failed to write error.txt")
+	}
+
 	if os.Getenv("UPDATE_FIXTURES") == "true" {
 		err = os.RemoveAll(filepath.Join(fixtureDir, "build"))
 		if err != nil {
@@ -96,7 +102,50 @@ func checkFixture(t *testing.T, fixtureDir string) {
 			fmt.Fprintln(stderr, "failed to copy build directory:", err)
 			return
 		}
+
+		// Copy error.txt if it exists
+		errorTxtPath := filepath.Join(tmpDir, "error.txt")
+		if _, err := os.Stat(errorTxtPath); err == nil {
+			errorContent, err := os.ReadFile(errorTxtPath)
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to read error.txt:", err)
+				return
+			}
+			err = os.WriteFile(filepath.Join(fixtureDir, "error.txt"), errorContent, 0644)
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to write error.txt to fixture:", err)
+				return
+			}
+		} else {
+			// Remove error.txt from fixture if it exists but there are no errors
+			_ = os.Remove(filepath.Join(fixtureDir, "error.txt"))
+		}
 	} else {
+		// Compare error.txt if it exists
+		errorTxtPath := filepath.Join(tmpDir, "error.txt")
+		expectedErrorTxtPath := filepath.Join(fixtureDir, "error.txt")
+
+		_, errorExists := os.Stat(errorTxtPath)
+		_, expectedErrorExists := os.Stat(expectedErrorTxtPath)
+
+		if errorExists == nil && expectedErrorExists == nil {
+			// Both exist, compare them
+			actualErrorContent, err := os.ReadFile(errorTxtPath)
+			require.NoError(t, err, "failed to read generated error.txt")
+
+			expectedErrorContent, err := os.ReadFile(expectedErrorTxtPath)
+			require.NoError(t, err, "failed to read expected error.txt")
+
+			require.Equal(t, string(expectedErrorContent), string(actualErrorContent), "error.txt contents should match")
+		} else if errorExists == nil && expectedErrorExists != nil {
+			// error.txt was generated but not expected
+			t.Errorf("error.txt was generated but not expected in fixture")
+		} else if errorExists != nil && expectedErrorExists == nil {
+			// error.txt was expected but not generated
+			t.Errorf("error.txt was expected but not generated")
+		}
+		// If neither exists, that's fine - no errors expected or generated
+
 		// Check if all of the files are the same
 		buildDir := filepath.Join(tmpDir, "build")
 		err = filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {

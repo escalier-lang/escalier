@@ -2885,6 +2885,188 @@ func TestExpandType(t *testing.T) {
 		// Should expand to a union of two template literal types
 		assert.Equal(t, result.String(), "`a-${number}` | `b-${number}`")
 	})
+
+	t.Run("KeyOfType - object type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create an object type: {x: string, y: number}
+		objType := NewObjectType(nil, []ObjTypeElem{
+			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+			NewPropertyElem(NewStrKey("y"), NewNumPrimType(nil)),
+		})
+
+		// Create keyof object type
+		keyofType := NewKeyOfType(nil, objType)
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "x" | "y"
+		assert.Equal(t, `"x" | "y"`, result.String())
+	})
+
+	t.Run("KeyOfType - object with methods excluded", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create an object type with properties and methods: {x: string, foo(): void}
+		funcType := NewFuncType(nil, nil, nil, NewUndefinedType(nil), nil)
+		objType := NewObjectType(nil, []ObjTypeElem{
+			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+			NewMethodElem(NewStrKey("foo"), funcType, nil),
+		})
+
+		// Create keyof object type
+		keyofType := NewKeyOfType(nil, objType)
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to only "x" (methods are excluded)
+		assert.Equal(t, `"x"`, result.String())
+	})
+
+	t.Run("KeyOfType - empty object", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create an empty object type: {}
+		objType := NewObjectType(nil, []ObjTypeElem{})
+
+		// Create keyof object type
+		keyofType := NewKeyOfType(nil, objType)
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to never
+		assert.Equal(t, `never`, result.String())
+	})
+
+	t.Run("KeyOfType - union type distributes", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create two object types
+		objType1 := NewObjectType(nil, []ObjTypeElem{
+			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+		})
+		objType2 := NewObjectType(nil, []ObjTypeElem{
+			NewPropertyElem(NewStrKey("y"), NewNumPrimType(nil)),
+		})
+
+		// Create union of objects
+		unionType := NewUnionType(nil, objType1, objType2)
+
+		// Create keyof union
+		keyofType := NewKeyOfType(nil, unionType)
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "x" | "y" (union of keys from both objects)
+		assert.Equal(t, `"x" | "y"`, result.String())
+	})
+
+	t.Run("KeyOfType - primitive type returns never", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// keyof string = never
+		keyofType := NewKeyOfType(nil, NewStrPrimType(nil))
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `never`, result.String())
+	})
+
+	t.Run("KeyOfType - tuple type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create a tuple type: [string, number]
+		tupleType := NewTupleType(nil,
+			NewStrPrimType(nil),
+			NewNumPrimType(nil),
+		)
+
+		// Create keyof tuple
+		keyofType := NewKeyOfType(nil, tupleType)
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		// Should expand to "length" | 0 | 1
+		assert.Equal(t, `"length" | 0 | 1`, result.String())
+	})
+
+	t.Run("KeyOfType - any type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// keyof any = string | number | symbol
+		keyofType := NewKeyOfType(nil, NewAnyType(nil))
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `string | number | symbol`, result.String())
+	})
+
+	t.Run("KeyOfType - never type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// keyof never = never
+		keyofType := NewKeyOfType(nil, NewNeverType(nil))
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `never`, result.String())
+	})
+
+	t.Run("KeyOfType - unknown type", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// keyof unknown = never
+		keyofType := NewKeyOfType(nil, NewUnknownType(nil))
+
+		result, errors := checker.expandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `never`, result.String())
+	})
 }
 
 func TestExtractNamedCaptureGroups(t *testing.T) {

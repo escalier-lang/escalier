@@ -48,6 +48,7 @@ const (
 	Infer
 	Invalid
 	JSXText
+	Keyof
 	LessThan
 	LessThanEqual
 	LessThanSlash // Used for JSX
