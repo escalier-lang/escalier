@@ -4,3 +4,8 @@ declare const j: keyof Tuple;
 declare type Point = {x: number, y: number};
 declare const coord1: keyof Point;
 declare const coord2: keyof Point;
+declare type Event = {msg: string, print(): undefined};
+declare const Event: {new (msg: string): Event};
+declare const event: Event;
+declare const key1: keyof Event;
+declare const key2: keyof Event;

@@ -8,3 +8,8 @@ lib/type_annotations.esc:7:27: "z" cannot be assigned to "x" | "y"
 7:  val coord2: keyof Point = "z"
                               ^^^
 
+lib/type_annotations.esc:17:25: "print" cannot be assigned to "msg"
+
+17: val key2: keyof Event = "print"
+                            ^^^^^^^
+
