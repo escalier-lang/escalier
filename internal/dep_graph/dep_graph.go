@@ -274,6 +274,36 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 			return true
 		}
 		return true // Continue traversing type arguments
+	case *ast.TypeOfTypeAnn:
+		// For typeof expressions, we need to track dependencies on the value binding
+		// For qualified identifiers like shapes.unitCircle.x, we need to find the
+		// base value binding (e.g., shapes or shapes.unitCircle)
+		qualName := ast.QualIdentToString(t.Value)
+
+		// Try progressively shorter qualified names to find the dependency
+		// For "shapes.unitCircle.x", try: "shapes.unitCircle.x", then "shapes.unitCircle", then "shapes"
+		parts := strings.Split(qualName, ".")
+		for i := len(parts); i > 0; i-- {
+			candidateName := strings.Join(parts[:i], ".")
+
+			// Try with current namespace prefix first
+			if v.CurrentNamespace != "" {
+				qualifiedName := v.CurrentNamespace + "." + candidateName
+				if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
+					!v.isLocalValueBinding(candidateName) {
+					v.Dependencies.Insert(declID)
+					break
+				}
+			}
+
+			// Try without namespace prefix
+			if declID, exists := v.ValueBindings.Get(candidateName); exists &&
+				!v.isLocalValueBinding(candidateName) {
+				v.Dependencies.Insert(declID)
+				break
+			}
+		}
+		return true
 	case *ast.ObjectTypeAnn:
 		// Handle object type annotations which may contain computed keys
 		for _, elem := range t.Elems {

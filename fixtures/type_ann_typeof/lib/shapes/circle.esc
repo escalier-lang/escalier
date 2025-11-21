@@ -1,0 +1,3 @@
+type Circle = {center: Point, radius: number}
+
+val unitCircle = {center: {x: 0, y: 0}, radius: 1}
