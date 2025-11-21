@@ -76,6 +76,7 @@ func (*RestSpreadType) isType()   {}
 func (*UnionType) isType()        {}
 func (*IntersectionType) isType() {}
 func (*KeyOfType) isType()        {}
+func (*TypeOfType) isType()       {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
@@ -1412,6 +1413,33 @@ func (t *KeyOfType) Accept(v TypeVisitor) Type {
 // TODO: handle precedence when printing
 func (t *KeyOfType) String() string {
 	return "keyof " + t.Type.String()
+}
+
+type TypeOfType struct {
+	Ident      QualIdent
+	provenance Provenance
+}
+
+func NewTypeOfType(provenance Provenance, ident QualIdent) *TypeOfType {
+	return &TypeOfType{
+		Ident:      ident,
+		provenance: provenance,
+	}
+}
+
+func (t *TypeOfType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*TypeOfType)
+	}
+
+	if visitResult := v.ExitType(t); visitResult != nil {
+		return visitResult
+	}
+	return t
+}
+
+func (t *TypeOfType) String() string {
+	return "typeof " + QualIdentToString(t.Ident)
 }
 
 type IndexType struct {

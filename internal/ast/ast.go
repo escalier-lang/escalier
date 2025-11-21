@@ -31,7 +31,10 @@ func (i *Ident) Accept(v Visitor) {
 	// TODO
 }
 
-type QualIdent interface{ isQualIdent() }
+type QualIdent interface {
+	isQualIdent()
+	Span() Span
+}
 
 func (*Ident) isQualIdent()  {}
 func (*Member) isQualIdent() {}
@@ -52,6 +55,13 @@ func QualIdentToString(qi QualIdent) string {
 type Member struct {
 	Left  QualIdent
 	Right *Ident
+}
+
+func (m *Member) Span() Span {
+	return Span{
+		Start: m.Left.Span().Start,
+		End:   m.Right.Span().End,
+	}
 }
 
 func (i *Ident) Span() Span {

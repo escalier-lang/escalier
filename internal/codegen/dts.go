@@ -582,6 +582,19 @@ func (b *Builder) buildNamespaceDecl(namespace string, stmts []Stmt) Decl {
 	}
 }
 
+func convertQualIdent(tsIdent type_sys.QualIdent) QualIdent {
+	switch id := tsIdent.(type) {
+	case *type_sys.Ident:
+		return NewIdent(id.Name, Span{})
+	case *type_sys.Member:
+		left := convertQualIdent(id.Left)
+		right := NewIdent(id.Right.Name, Span{})
+		return &Member{Left: left, Right: right}
+	default:
+		panic(fmt.Sprintf("Unknown QualIdent type: %T", tsIdent))
+	}
+}
+
 func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 	switch t := type_sys.Prune(t).(type) {
 	case *type_sys.TypeVarType:
@@ -684,6 +697,8 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		return NewIntersectionTypeAnn(types)
 	case *type_sys.KeyOfType:
 		return NewKeyOfTypeAnn(b.buildTypeAnn(t.Type))
+	case *type_sys.TypeOfType:
+		return NewTypeOfTypeAnn(convertQualIdent(t.Ident))
 	case *type_sys.IndexType:
 		return NewIndexTypeAnn(
 			b.buildTypeAnn(t.Target),

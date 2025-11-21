@@ -13,6 +13,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/graphql"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/validator/rules"
@@ -1753,6 +1754,49 @@ func NewTypeExpansionVisitor(checker *Checker, ctx Context, expandTypeRefsCount 
 	}
 }
 
+// resolveTypeOfQualIdent resolves a qualified identifier to its type
+// Handles both simple identifiers (p1) and member access (p1.x)
+func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident QualIdent, prov provenance.Provenance) Type {
+	// Extract span from provenance if available
+	span := ast.Span{}
+	if prov != nil {
+		if nodeProv, ok := prov.(*ast.NodeProvenance); ok {
+			span = nodeProv.Node.Span()
+		}
+	}
+
+	switch id := ident.(type) {
+	case *Ident:
+		// Simple identifier - look it up as a value or namespace
+		if binding := v.ctx.Scope.getValue(id.Name); binding != nil {
+			return binding.Type
+		} else if namespace := v.ctx.Scope.getNamespace(id.Name); namespace != nil {
+			return NewNamespaceType(prov, namespace)
+		} else {
+			v.errors = append(v.errors, &UnknownIdentifierError{
+				Ident: ast.NewIdent(id.Name, span),
+				span:  span,
+			})
+			return NewNeverType(prov)
+		}
+	case *Member:
+		// Member access - recursively resolve the left side, then access the property
+		leftType := v.resolveTypeOfQualIdent(id.Left, prov)
+
+		// Get the property type from the left type
+		propKey := PropertyKey{
+			Name:     id.Right.Name,
+			OptChain: false,
+			Span:     span,
+		}
+		memberType, memberErrors := v.checker.getMemberType(v.ctx, leftType, propKey)
+		v.errors = slices.Concat(v.errors, memberErrors)
+		return memberType
+	default:
+		panic(fmt.Sprintf("Unknown QualIdent type: %T", ident))
+	}
+}
+
 func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 	switch t := t.(type) {
 	case *FuncType:
@@ -2040,6 +2084,11 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key)
 		v.errors = slices.Concat(v.errors, memberErrors)
 		return memberType
+	case *TypeOfType:
+		// Expand typeof by looking up the value and returning its type
+		// Handle both simple identifiers (p1) and member access (p1.x)
+		resultType := v.resolveTypeOfQualIdent(t.Ident, t.Provenance())
+		return resultType
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -3459,6 +3508,19 @@ func (c *Checker) resolveQualifiedNamespace(ctx Context, qualIdent ast.QualIdent
 	}
 }
 
+func convertQualIdent(astIdent ast.QualIdent) QualIdent {
+	switch id := astIdent.(type) {
+	case *ast.Ident:
+		return NewIdent(id.Name)
+	case *ast.Member:
+		left := convertQualIdent(id.Left)
+		right := NewIdent(id.Right.Name)
+		return &Member{Left: left, Right: right}
+	default:
+		panic(fmt.Sprintf("Unknown QualIdent type: %T", astIdent))
+	}
+}
+
 func (c *Checker) inferTypeAnn(
 	ctx Context,
 	typeAnn ast.TypeAnn,
@@ -3701,6 +3763,10 @@ func (c *Checker) inferTypeAnn(
 		indexType, indexErrors := c.inferTypeAnn(ctx, typeAnn.Index)
 		errors = slices.Concat(errors, indexErrors)
 		t = NewIndexType(provenance, objectType, indexType)
+	case *ast.TypeOfTypeAnn:
+		// Convert ast.QualIdent to type_system.QualIdent
+		var ident QualIdent = convertQualIdent(typeAnn.Value)
+		t = NewTypeOfType(provenance, ident)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
