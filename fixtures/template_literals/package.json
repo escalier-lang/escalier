@@ -1,0 +1,8 @@
+{
+    "name": "template_literals",
+    "version": "0.0.1",
+    "type": "module",
+    "bin": {
+        "template_literals": "build/bin/template_literals.js"
+    }
+}
