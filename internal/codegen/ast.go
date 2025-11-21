@@ -120,21 +120,21 @@ type Expr interface {
 	Node
 }
 
-func (*BinaryExpr) isExpr()   {}
-func (*LitExpr) isExpr()      {}
-func (*IdentExpr) isExpr()    {}
-func (*UnaryExpr) isExpr()    {}
-func (*CallExpr) isExpr()     {}
-func (*NewExpr) isExpr()      {}
-func (*FuncExpr) isExpr()     {}
-func (*IndexExpr) isExpr()    {}
-func (*MemberExpr) isExpr()   {}
-func (*ArrayExpr) isExpr()    {}
-func (*ObjectExpr) isExpr()   {}
-func (*MatchExpr) isExpr()    {}
-func (*AwaitExpr) isExpr()              {}
-func (*TypeCastExpr) isExpr()           {}
-func (*TemplateLitExpr) isExpr()        {}
+func (*BinaryExpr) isExpr()            {}
+func (*LitExpr) isExpr()               {}
+func (*IdentExpr) isExpr()             {}
+func (*UnaryExpr) isExpr()             {}
+func (*CallExpr) isExpr()              {}
+func (*NewExpr) isExpr()               {}
+func (*FuncExpr) isExpr()              {}
+func (*IndexExpr) isExpr()             {}
+func (*MemberExpr) isExpr()            {}
+func (*ArrayExpr) isExpr()             {}
+func (*ObjectExpr) isExpr()            {}
+func (*MatchExpr) isExpr()             {}
+func (*AwaitExpr) isExpr()             {}
+func (*TypeCastExpr) isExpr()          {}
+func (*TemplateLitExpr) isExpr()       {}
 func (*TaggedTemplateLitExpr) isExpr() {}
 
 type MemberExpr struct {
