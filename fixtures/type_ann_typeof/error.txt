@@ -1,0 +1,10 @@
+lib/typeof.esc:9:17: 0 cannot be assigned to 5
+
+9:  val p2: P = {x: 0, y: 0} // error, {x: 0, y: 0} is not assignable to {x: 5, y: 10}
+                    ^
+
+lib/typeof.esc:9:23: 0 cannot be assigned to 10
+
+9:  val p2: P = {x: 0, y: 0} // error, {x: 0, y: 0} is not assignable to {x: 5, y: 10}
+                          ^
+

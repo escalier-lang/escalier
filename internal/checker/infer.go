@@ -2040,6 +2040,25 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key)
 		v.errors = slices.Concat(v.errors, memberErrors)
 		return memberType
+	case *TypeOfType:
+		// Expand typeof by looking up the value and returning its type
+		valueName := QualIdentToString(t.Ident)
+		if binding := v.ctx.Scope.getValue(valueName); binding != nil {
+			return binding.Type
+		} else {
+			// Extract span from provenance if available
+			span := ast.Span{}
+			if t.Provenance() != nil {
+				if nodeProv, ok := t.Provenance().(*ast.NodeProvenance); ok {
+					span = nodeProv.Node.Span()
+				}
+			}
+			v.errors = append(v.errors, &UnknownIdentifierError{
+				Ident: ast.NewIdent(valueName, span),
+				span:  span,
+			})
+			return NewNeverType(t.Provenance())
+		}
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -3459,6 +3478,19 @@ func (c *Checker) resolveQualifiedNamespace(ctx Context, qualIdent ast.QualIdent
 	}
 }
 
+func convertQualIdent(astIdent ast.QualIdent) QualIdent {
+	switch id := astIdent.(type) {
+	case *ast.Ident:
+		return NewIdent(id.Name)
+	case *ast.Member:
+		left := convertQualIdent(id.Left)
+		right := NewIdent(id.Right.Name)
+		return &Member{Left: left, Right: right}
+	default:
+		panic(fmt.Sprintf("Unknown QualIdent type: %T", astIdent))
+	}
+}
+
 func (c *Checker) inferTypeAnn(
 	ctx Context,
 	typeAnn ast.TypeAnn,
@@ -3701,6 +3733,10 @@ func (c *Checker) inferTypeAnn(
 		indexType, indexErrors := c.inferTypeAnn(ctx, typeAnn.Index)
 		errors = slices.Concat(errors, indexErrors)
 		t = NewIndexType(provenance, objectType, indexType)
+	case *ast.TypeOfTypeAnn:
+		// Convert ast.QualIdent to type_system.QualIdent
+		var ident QualIdent = convertQualIdent(typeAnn.Value)
+		t = NewTypeOfType(provenance, ident)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

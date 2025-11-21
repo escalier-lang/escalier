@@ -123,6 +123,13 @@ func (t *KeyOfType) Copy() Type {
 	return &result
 }
 
+func (t *TypeOfType) Provenance() Provenance     { return t.provenance }
+func (t *TypeOfType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *TypeOfType) Copy() Type {
+	result := *t // Create a copy of the struct
+	return &result
+}
+
 func (t *IndexType) Provenance() Provenance     { return t.provenance }
 func (t *IndexType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *IndexType) Copy() Type {

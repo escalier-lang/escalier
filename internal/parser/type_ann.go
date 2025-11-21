@@ -338,6 +338,20 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				typ,
 				ast.NewSpan(token.Span.Start, typ.Span().End, p.lexer.source.ID),
 			)
+		case Typeof: // typeof value
+			p.lexer.consume() // consume 'typeof'
+			// Parse the identifier that refers to a value
+			identToken := p.lexer.peek()
+			if identToken.Type != Identifier {
+				p.reportError(token.Span, "expected identifier after 'typeof'")
+				return nil
+			}
+			p.lexer.consume() // consume identifier
+			qualIdent := p.parseQualifiedIdent(identToken)
+			typeAnn = ast.NewTypeOfTypeAnn(
+				qualIdent,
+				ast.NewSpan(token.Span.Start, identToken.Span.End, p.lexer.source.ID),
+			)
 		case OpenBracket: // tuple type
 			p.lexer.consume()
 			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)

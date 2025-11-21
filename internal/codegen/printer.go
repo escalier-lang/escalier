@@ -327,6 +327,19 @@ func (p *Printer) printIdent(id *Identifier) {
 	id.span = &Span{Start: start, End: end}
 }
 
+func (p *Printer) printQualIdent(qi QualIdent) {
+	switch q := qi.(type) {
+	case *Ident:
+		p.print(q.Name)
+	case *Member:
+		p.printQualIdent(*q.Left)
+		p.print(".")
+		p.print(q.Right.Name)
+	default:
+		panic(fmt.Sprintf("printQualIdent: unknown QualIdent type: %T", qi))
+	}
+}
+
 func (p *Printer) printPattern(pat Pat) {
 	start := p.location
 	switch pat := pat.(type) {
@@ -837,7 +850,8 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print("keyof ")
 		p.PrintTypeAnn(ta.Type)
 	case *TypeOfTypeAnn:
-		panic("PrintTypeAnn: TypeOfTypeAnn not implemented")
+		p.print("typeof ")
+		p.printQualIdent(ta.Value)
 	case *IndexTypeAnn:
 		p.PrintTypeAnn(ta.Target)
 		p.print("[")

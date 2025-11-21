@@ -1,0 +1,10 @@
+type Point = {x: number, y: number}
+
+val p1 = {x: 5, y: 10}
+val q1: Point = {x: 5, y: 10}
+
+type P = typeof p1
+type Q = typeof q1
+
+val p2: P = {x: 0, y: 0} // error, {x: 0, y: 0} is not assignable to {x: 5, y: 10}
+val q2: Q = {x: 0, y: 0} // okay

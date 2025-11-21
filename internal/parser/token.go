@@ -86,6 +86,7 @@ const (
 	True
 	Try
 	Type
+	Typeof
 	Undefined
 	Underscore
 	Unknown

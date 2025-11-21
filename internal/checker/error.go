@@ -205,7 +205,10 @@ type UnknownTypeError struct {
 
 func (e UnknownTypeError) Span() ast.Span {
 	node := GetNode(e.typeRef.Provenance())
-	return node.Span()
+	if node != nil {
+		return node.Span()
+	}
+	return ast.Span{}
 }
 func (e UnknownTypeError) Message() string {
 	return "Unknown type: " + e.TypeName
