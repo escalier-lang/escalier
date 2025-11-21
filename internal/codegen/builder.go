@@ -1183,6 +1183,21 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		exprs, stmts := b.buildExprs(expr.Exprs)
 
 		return NewTemplateLitExpr(quasis, exprs, expr), stmts
+	case *ast.TaggedTemplateLitExpr:
+		// Build the tag expression
+		tag, tagStmts := b.buildExpr(expr.Tag, expr)
+
+		// Build the quasi strings
+		quasis := make([]string, len(expr.Quasis))
+		for i, quasi := range expr.Quasis {
+			quasis[i] = quasi.Value
+		}
+
+		// Build the interpolated expressions
+		exprs, exprStmts := b.buildExprs(expr.Exprs)
+		stmts := slices.Concat(tagStmts, exprStmts)
+
+		return NewTaggedTemplateLitExpr(tag, quasis, exprs, expr), stmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:

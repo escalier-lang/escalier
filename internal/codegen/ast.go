@@ -132,9 +132,10 @@ func (*MemberExpr) isExpr()   {}
 func (*ArrayExpr) isExpr()    {}
 func (*ObjectExpr) isExpr()   {}
 func (*MatchExpr) isExpr()    {}
-func (*AwaitExpr) isExpr()       {}
-func (*TypeCastExpr) isExpr()    {}
-func (*TemplateLitExpr) isExpr() {}
+func (*AwaitExpr) isExpr()              {}
+func (*TypeCastExpr) isExpr()           {}
+func (*TemplateLitExpr) isExpr()        {}
+func (*TaggedTemplateLitExpr) isExpr() {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -501,6 +502,21 @@ func NewTemplateLitExpr(quasis []string, exprs []Expr, source ast.Node) *Templat
 func (e *TemplateLitExpr) Span() *Span        { return e.span }
 func (e *TemplateLitExpr) SetSpan(span *Span) { e.span = span }
 func (e *TemplateLitExpr) Source() ast.Node   { return e.source }
+
+type TaggedTemplateLitExpr struct {
+	Tag    Expr
+	Quasis []string
+	Exprs  []Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewTaggedTemplateLitExpr(tag Expr, quasis []string, exprs []Expr, source ast.Node) *TaggedTemplateLitExpr {
+	return &TaggedTemplateLitExpr{Tag: tag, Quasis: quasis, Exprs: exprs, source: source, span: nil}
+}
+func (e *TaggedTemplateLitExpr) Span() *Span        { return e.span }
+func (e *TaggedTemplateLitExpr) SetSpan(span *Span) { e.span = span }
+func (e *TaggedTemplateLitExpr) Source() ast.Node   { return e.source }
 
 //sumtype:decl
 type Decl interface {

@@ -2,3 +2,9 @@ type Point = {x: number, y: number}
 val p: Point = {x: 5, y: 10}
 val msg = `p = (${p.x}, ${p.y})`
 console.log(msg)
+
+declare fn foo(strings: Array<string>, ...values: Array<any>) -> string
+val a = 5
+val b = true
+val c = "hello"
+val output = foo`${a} ${b} ${c}`

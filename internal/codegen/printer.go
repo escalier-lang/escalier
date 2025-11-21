@@ -229,6 +229,18 @@ func (p *Printer) PrintExpr(expr Expr) {
 			}
 		}
 		p.print("`")
+	case *TaggedTemplateLitExpr:
+		p.PrintExpr(e.Tag)
+		p.print("`")
+		for i, quasi := range e.Quasis {
+			p.print(quasi)
+			if i < len(e.Exprs) {
+				p.print("${")
+				p.PrintExpr(e.Exprs[i])
+				p.print("}")
+			}
+		}
+		p.print("`")
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}
