@@ -589,7 +589,7 @@ func convertQualIdent(tsIdent type_sys.QualIdent) QualIdent {
 	case *type_sys.Member:
 		left := convertQualIdent(id.Left)
 		right := NewIdent(id.Right.Name, Span{})
-		return &Member{Left: &left, Right: right}
+		return &Member{Left: left, Right: right}
 	default:
 		panic(fmt.Sprintf("Unknown QualIdent type: %T", tsIdent))
 	}

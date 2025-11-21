@@ -465,7 +465,7 @@ func (*Ident) isQualIdent()  {}
 func (*Member) isQualIdent() {}
 
 type Member struct {
-	Left  *QualIdent
+	Left  QualIdent
 	Right *Ident
 }
 

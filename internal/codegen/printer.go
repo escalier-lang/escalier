@@ -332,7 +332,7 @@ func (p *Printer) printQualIdent(qi QualIdent) {
 	case *Ident:
 		p.print(q.Name)
 	case *Member:
-		p.printQualIdent(*q.Left)
+		p.printQualIdent(q.Left)
 		p.print(".")
 		p.print(q.Right.Name)
 	default:
