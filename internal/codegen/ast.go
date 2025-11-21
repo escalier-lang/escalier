@@ -132,8 +132,9 @@ func (*MemberExpr) isExpr()   {}
 func (*ArrayExpr) isExpr()    {}
 func (*ObjectExpr) isExpr()   {}
 func (*MatchExpr) isExpr()    {}
-func (*AwaitExpr) isExpr()    {}
-func (*TypeCastExpr) isExpr() {}
+func (*AwaitExpr) isExpr()       {}
+func (*TypeCastExpr) isExpr()    {}
+func (*TemplateLitExpr) isExpr() {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -486,6 +487,20 @@ func NewTypeCastExpr(expr Expr, source ast.Node) *TypeCastExpr {
 func (e *TypeCastExpr) Span() *Span        { return e.span }
 func (e *TypeCastExpr) SetSpan(span *Span) { e.span = span }
 func (e *TypeCastExpr) Source() ast.Node   { return e.source }
+
+type TemplateLitExpr struct {
+	Quasis []string
+	Exprs  []Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewTemplateLitExpr(quasis []string, exprs []Expr, source ast.Node) *TemplateLitExpr {
+	return &TemplateLitExpr{Quasis: quasis, Exprs: exprs, source: source, span: nil}
+}
+func (e *TemplateLitExpr) Span() *Span        { return e.span }
+func (e *TemplateLitExpr) SetSpan(span *Span) { e.span = span }
+func (e *TemplateLitExpr) Source() ast.Node   { return e.source }
 
 //sumtype:decl
 type Decl interface {

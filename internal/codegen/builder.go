@@ -1172,6 +1172,17 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		// Return the inner expression directly - the type cast is compile-time only
 		return innerExpr, innerStmts
+	case *ast.TemplateLitExpr:
+		// Build the quasi strings
+		quasis := make([]string, len(expr.Quasis))
+		for i, quasi := range expr.Quasis {
+			quasis[i] = quasi.Value
+		}
+
+		// Build the interpolated expressions
+		exprs, stmts := b.buildExprs(expr.Exprs)
+
+		return NewTemplateLitExpr(quasis, exprs, expr), stmts
 	case *ast.IgnoreExpr:
 		panic("TODO - buildExpr - IgnoreExpr")
 	case *ast.EmptyExpr:

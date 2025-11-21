@@ -218,6 +218,17 @@ func (p *Printer) PrintExpr(expr Expr) {
 		// converted to the inner expression during the build phase, but if it does
 		// appear, just print the inner expression
 		p.PrintExpr(e.Expr)
+	case *TemplateLitExpr:
+		p.print("`")
+		for i, quasi := range e.Quasis {
+			p.print(quasi)
+			if i < len(e.Exprs) {
+				p.print("${")
+				p.PrintExpr(e.Exprs[i])
+				p.print("}")
+			}
+		}
+		p.print("`")
 	default:
 		panic(fmt.Sprintf("PrintExpr: unknown expression type: %T", expr))
 	}

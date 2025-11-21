@@ -330,6 +330,10 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 				s.TraverseExpr(elem.Arg)
 			}
 		}
+	case *TemplateLitExpr:
+		for _, expr := range ek.Exprs {
+			s.TraverseExpr(expr)
+		}
 	case *IdentExpr, *LitExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top
 		// of this function

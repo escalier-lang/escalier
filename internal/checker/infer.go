@@ -1708,6 +1708,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 		// The result type is the target type
 		resultType = targetType
+	case *ast.TemplateLitExpr:
+		// Template literals always produce strings
+		// We need to infer all the interpolated expressions for type checking
+		errors = []Error{}
+		for _, expr := range expr.Exprs {
+			_, exprErrors := c.inferExpr(ctx, expr)
+			errors = slices.Concat(errors, exprErrors)
+		}
+		// Template literals always result in a string type
+		resultType = NewStrPrimType(provenance)
 	default:
 		resultType = NewNeverType(nil)
 		errors = []Error{
