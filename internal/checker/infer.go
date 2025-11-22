@@ -2017,18 +2017,14 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
 
-			isCondType := false
-			if _, ok := Prune(expandedType).(*CondType); ok {
-				isCondType = true
-			}
-
 			// TODO:
 			// Handle case such as:
 			// - type Foo<T> = boolean | T extends string ? T : number
 			// - type Bar<T> = string & T extends string ? T : number
 			// Do not perform distributions if the conditional type is the child
 			// of any other type.
-			if isCondType {
+			switch Prune(expandedType).(type) {
+			case *CondType:
 				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
 				if len(subSetErrors) > 0 {
 					v.errors = slices.Concat(v.errors, subSetErrors)
@@ -2047,7 +2043,105 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 					expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 				}
-			} else {
+			case *ObjectType:
+				// Expand any MappedElem elements in the object type
+				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+				objType := v.checker.substituteTypeParams(typeAlias.Type, substitutions).(*ObjectType)
+
+				// Check if there are any MappedElem elements to expand
+				hasMappedElems := false
+				for _, elem := range objType.Elems {
+					if _, ok := elem.(*MappedElem); ok {
+						hasMappedElems = true
+						break
+					}
+				}
+
+				if hasMappedElems {
+					// Expand mapped elements into concrete properties
+					expandedElems := []ObjTypeElem{}
+					for _, elem := range objType.Elems {
+						if mappedElem, ok := elem.(*MappedElem); ok {
+							// Expand the constraint to get all possible keys
+							expandedConstraint, _ := v.checker.expandType(v.ctx, mappedElem.TypeParam.Constraint, -1)
+
+							// Extract keys from the constraint
+							var keys []Type
+							switch constraint := Prune(expandedConstraint).(type) {
+							case *UnionType:
+								keys = constraint.Types
+							default:
+								keys = []Type{constraint}
+							}
+
+							// For each key in the constraint, create a property
+							for _, keyType := range keys {
+								keyType = Prune(keyType)
+
+								// Create a property element for each key
+								var propKey ObjTypeKey
+								switch kt := keyType.(type) {
+								case *LitType:
+									switch lit := kt.Lit.(type) {
+									case *StrLit:
+										propKey = NewStrKey(lit.Value)
+									case *NumLit:
+										propKey = NewNumKey(lit.Value)
+									}
+								case *UniqueSymbolType:
+									propKey = NewSymKey(kt.Value)
+								default:
+									// Skip non-literal keys
+									continue
+								}
+
+								// Substitute the type parameter with the key type in the value
+								keySubs := map[string]Type{
+									mappedElem.TypeParam.Name: keyType,
+								}
+								propValue := v.checker.substituteTypeParams(mappedElem.Value, keySubs)
+
+								// Create property element
+								propElem := &PropertyElem{
+									Name:     propKey,
+									Value:    propValue,
+									Optional: false,
+									Readonly: false,
+								}
+
+								// Handle optional modifier
+								if mappedElem.Optional != nil {
+									switch *mappedElem.Optional {
+									case MMAdd:
+										propElem.Optional = true
+									case MMRemove:
+										propElem.Optional = false
+									}
+								}
+
+								// Handle readonly modifier
+								if mappedElem.ReadOnly != nil {
+									switch *mappedElem.ReadOnly {
+									case MMAdd:
+										propElem.Readonly = true
+									case MMRemove:
+										propElem.Readonly = false
+									}
+								}
+
+								expandedElems = append(expandedElems, propElem)
+							}
+						} else {
+							// Keep non-mapped elements as-is
+							expandedElems = append(expandedElems, elem)
+						}
+					}
+
+					expandedType = NewObjectType(objType.Provenance(), expandedElems)
+				} else {
+					expandedType = objType
+				}
+			default:
 				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 			}
@@ -2391,74 +2485,7 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 					return elem.Fn.Params[0].Type, errors
 				}
 			case *MappedElem:
-				// For mapped types, check if the property key is in the constraint
-				// and substitute the type parameter to get the value type
-				propKeyType := NewStrLitType(nil, k.Name)
-				constraint := elem.TypeParam.Constraint
-
-				// Check if the property key matches the constraint
-				// The constraint is typically a union of string literals like "a" | "c"
-				canAccess := false
-				constraint = Prune(constraint)
-
-				if unionType, ok := constraint.(*UnionType); ok {
-					// Check if propKeyType is one of the union members
-					for _, member := range unionType.Types {
-						if litType, ok := member.(*LitType); ok {
-							if strLit, ok := litType.Lit.(*StrLit); ok {
-								if strLit.Value == k.Name {
-									canAccess = true
-									break
-								}
-							}
-						}
-					}
-				} else if litType, ok := constraint.(*LitType); ok {
-					// Single literal constraint
-					if strLit, ok := litType.Lit.(*StrLit); ok {
-						if strLit.Value == k.Name {
-							canAccess = true
-						}
-					}
-				}
-				// For other constraint types (e.g., keyof), we don't handle here
-				// The mapped type should be expanded before property access
-
-				if canAccess {
-					// Substitute the type parameter with the property key
-					substitutions := map[string]Type{
-						elem.TypeParam.Name: propKeyType,
-					}
-					propType := c.substituteTypeParams(elem.Value, substitutions)
-
-					// Handle optional modifier
-					if elem.Optional != nil {
-						switch *elem.Optional {
-						case MMAdd:
-							propType = NewUnionType(nil, propType, NewUndefinedType(nil))
-						case MMRemove:
-							// Remove undefined from the type if present
-							if unionType, ok := propType.(*UnionType); ok {
-								newTypes := []Type{}
-								for _, t := range unionType.Types {
-									if litType, ok := t.(*LitType); ok {
-										if _, isUndefined := litType.Lit.(*UndefinedLit); isUndefined {
-											continue
-										}
-									}
-									newTypes = append(newTypes, t)
-								}
-								if len(newTypes) == 1 {
-									propType = newTypes[0]
-								} else if len(newTypes) > 1 {
-									propType = NewUnionType(nil, newTypes...)
-								}
-							}
-						}
-					}
-
-					return propType, errors
-				}
+				panic("MappedElems should have been expanded before property access")
 			case *ConstructorElem:
 			case *CallableElem:
 				continue

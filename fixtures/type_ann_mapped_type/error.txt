@@ -1,4 +1,4 @@
-lib/mapped_type.esc:7:14: Unknown property 'b' in object type {[P in "a" | "c"]: never}
+lib/mapped_type.esc:7:14: Unknown property 'b' in object type {a: number, c: boolean}
 
 7:  val b = obj1.b // error, this field shouldn't exist on obj1
                  ^
