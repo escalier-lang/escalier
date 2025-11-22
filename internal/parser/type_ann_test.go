@@ -92,6 +92,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectType": {
 			input: "{[K]: T[K] for K in Keys<T>}",
 		},
+		"MappedObjectTypeOptionalProperties": {
+			input: "{[P]?: T[P] for P in keyof T}",
+		},
 		"ObjectTypeWithRestSpread": {
 			input: "{x: string, ...T}",
 		},

@@ -2101,6 +2101,10 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 								}
 								propValue := v.checker.substituteTypeParams(mappedElem.Value, keySubs)
 
+								// Expand the property value to resolve any index types such as `T[K]`
+								// This is necessary to get the actual type including | undefined for optional properties
+								propValue, _ = v.checker.expandType(v.ctx, propValue, 1)
+
 								// Create property element
 								propElem := &PropertyElem{
 									Name:     propKey,
@@ -2116,6 +2120,8 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 										propElem.Optional = true
 									case MMRemove:
 										propElem.Optional = false
+										// When removing the optional modifier, also remove undefined from the value type
+										propElem.Value = removeUndefinedFromType(propElem.Value)
 									}
 								}
 
@@ -2187,6 +2193,26 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// Helper function to remove undefined from a union type
+func removeUndefinedFromType(t Type) Type {
+	if unionType, ok := Prune(t).(*UnionType); ok {
+		nonUndefinedTypes := []Type{}
+		for _, typ := range unionType.Types {
+			if litType, ok := Prune(typ).(*LitType); ok {
+				if _, isUndefined := litType.Lit.(*UndefinedLit); isUndefined {
+					continue // Skip undefined
+				}
+			}
+			nonUndefinedTypes = append(nonUndefinedTypes, typ)
+		}
+		if len(nonUndefinedTypes) == 0 {
+			return NewNeverType(nil)
+		}
+		return NewUnionType(nil, nonUndefinedTypes...)
+	}
+	return t
 }
 
 // expandTemplateLitType expands a template literal type by generating all possible

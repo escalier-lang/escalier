@@ -1,5 +1,5 @@
-lib/mapped_type.esc:7:14: Unknown property 'b' in object type {a: number, c: boolean}
+lib/mapped_type.esc:7:15: Unknown property 'b' in object type {a: number, c: boolean}
 
-7:  val b = obj1.b // error, this field shouldn't exist on obj1
-                 ^
+7:  val b1 = obj1.b // error, this field shouldn't exist on obj1
+                  ^
 

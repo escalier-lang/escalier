@@ -1,8 +1,25 @@
-type Pick<T, K: keyof T> = {[P]: T[P] for P in K}
+type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
 
 type Obj = {a: number, b: string, c: boolean}
 
-declare val obj1: Pick<Obj, "a" | "c">
-val a = obj1.a
-val b = obj1.b // error, this field shouldn't exist on obj1
-val c = obj1.c
+declare val obj1: MyPick<Obj, "a" | "c">
+val a1 = obj1.a
+val b1 = obj1.b // error, this field shouldn't exist on obj1
+val c1 = obj1.c
+
+type MyPartial<T> = {[P]?: T[P] for P in keyof T}
+
+type PartialObj = MyPartial<Obj>
+declare val obj2: PartialObj
+val a2 = obj2.a
+val b2 = obj2.b
+val c2 = obj2.c
+
+type MyRequired<T> = {[P]-?: T[P] for P in keyof T}
+
+type RequiredObj = MyRequired<PartialObj>
+declare val obj3: RequiredObj
+val a3 = obj3.a
+val b3 = obj3.b
+val c3 = obj3.c
+

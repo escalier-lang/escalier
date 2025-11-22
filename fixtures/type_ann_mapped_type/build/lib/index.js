@@ -1,4 +1,10 @@
-export const a = obj1.a;
-export const b = obj1.b;
-export const c = obj1.c;
+export const a1 = obj1.a;
+export const b1 = obj1.b;
+export const c1 = obj1.c;
+export const a2 = obj2.a;
+export const b2 = obj2.b;
+export const c2 = obj2.c;
+export const a3 = obj3.a;
+export const b3 = obj3.b;
+export const c3 = obj3.c;
 //# sourceMappingURL=./index.js.map
