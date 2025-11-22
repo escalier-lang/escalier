@@ -2390,6 +2390,75 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn.Params[0].Type, errors
 				}
+			case *MappedElem:
+				// For mapped types, check if the property key is in the constraint
+				// and substitute the type parameter to get the value type
+				propKeyType := NewStrLitType(nil, k.Name)
+				constraint := elem.TypeParam.Constraint
+
+				// Check if the property key matches the constraint
+				// The constraint is typically a union of string literals like "a" | "c"
+				canAccess := false
+				constraint = Prune(constraint)
+
+				if unionType, ok := constraint.(*UnionType); ok {
+					// Check if propKeyType is one of the union members
+					for _, member := range unionType.Types {
+						if litType, ok := member.(*LitType); ok {
+							if strLit, ok := litType.Lit.(*StrLit); ok {
+								if strLit.Value == k.Name {
+									canAccess = true
+									break
+								}
+							}
+						}
+					}
+				} else if litType, ok := constraint.(*LitType); ok {
+					// Single literal constraint
+					if strLit, ok := litType.Lit.(*StrLit); ok {
+						if strLit.Value == k.Name {
+							canAccess = true
+						}
+					}
+				}
+				// For other constraint types (e.g., keyof), we don't handle here
+				// The mapped type should be expanded before property access
+
+				if canAccess {
+					// Substitute the type parameter with the property key
+					substitutions := map[string]Type{
+						elem.TypeParam.Name: propKeyType,
+					}
+					propType := c.substituteTypeParams(elem.Value, substitutions)
+
+					// Handle optional modifier
+					if elem.Optional != nil {
+						switch *elem.Optional {
+						case MMAdd:
+							propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+						case MMRemove:
+							// Remove undefined from the type if present
+							if unionType, ok := propType.(*UnionType); ok {
+								newTypes := []Type{}
+								for _, t := range unionType.Types {
+									if litType, ok := t.(*LitType); ok {
+										if _, isUndefined := litType.Lit.(*UndefinedLit); isUndefined {
+											continue
+										}
+									}
+									newTypes = append(newTypes, t)
+								}
+								if len(newTypes) == 1 {
+									propType = newTypes[0]
+								} else if len(newTypes) > 1 {
+									propType = NewUnionType(nil, newTypes...)
+								}
+							}
+						}
+					}
+
+					return propType, errors
+				}
 			case *ConstructorElem:
 			case *CallableElem:
 				continue
@@ -2419,6 +2488,73 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 					case *MethodElem:
 						if elem.Name == NewStrKey(strLit.Value) {
 							return elem.Fn, errors
+						}
+					case *MappedElem:
+						// For mapped types with index access, check if the key is in constraint
+						propKeyType := NewStrLitType(nil, strLit.Value)
+						constraint := elem.TypeParam.Constraint
+
+						// Check if the property key matches the constraint
+						canAccess := false
+						constraint = Prune(constraint)
+
+						if unionType, ok := constraint.(*UnionType); ok {
+							// Check if propKeyType is one of the union members
+							for _, member := range unionType.Types {
+								if litType, ok := member.(*LitType); ok {
+									if memberStrLit, ok := litType.Lit.(*StrLit); ok {
+										if memberStrLit.Value == strLit.Value {
+											canAccess = true
+											break
+										}
+									}
+								}
+							}
+						} else if litType, ok := constraint.(*LitType); ok {
+							// Single literal constraint
+							if constraintStrLit, ok := litType.Lit.(*StrLit); ok {
+								if constraintStrLit.Value == strLit.Value {
+									canAccess = true
+								}
+							}
+						}
+						// For other constraint types (e.g., keyof), we don't handle here
+						// The mapped type should be expanded before property access
+
+						if canAccess {
+							// Substitute the type parameter with the property key
+							substitutions := map[string]Type{
+								elem.TypeParam.Name: propKeyType,
+							}
+							propType := c.substituteTypeParams(elem.Value, substitutions)
+
+							// Handle optional modifier
+							if elem.Optional != nil {
+								switch *elem.Optional {
+								case MMAdd:
+									propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+								case MMRemove:
+									// Remove undefined from the type if present
+									if unionType, ok := propType.(*UnionType); ok {
+										newTypes := []Type{}
+										for _, t := range unionType.Types {
+											if litType, ok := t.(*LitType); ok {
+												if _, isUndefined := litType.Lit.(*UndefinedLit); isUndefined {
+													continue
+												}
+											}
+											newTypes = append(newTypes, t)
+										}
+										if len(newTypes) == 1 {
+											propType = newTypes[0]
+										} else if len(newTypes) > 1 {
+											propType = NewUnionType(nil, newTypes...)
+										}
+									}
+								}
+							}
+
+							return propType, errors
 						}
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))

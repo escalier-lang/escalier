@@ -1,1 +1,8 @@
 type Pick<T, K: keyof T> = {[P]: T[P] for P in K}
+
+type Obj = {a: number, b: string, c: boolean}
+
+declare val obj1: Pick<Obj, "a" | "c">
+val a = obj1.a
+val b = obj1.b // error, this field shouldn't exist on obj1
+val c = obj1.c
