@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/mapped_type.esc"],"sourcesContent":["type Pick\u003cT, K: keyof T\u003e = {[P]: T[P] for P in K}\n"],"names":[],"mappings":""}

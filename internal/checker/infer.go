@@ -3314,17 +3314,25 @@ func (c *Checker) inferTypeDecl(
 	errors := []Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
+
+	// Create a context that accumulates type parameters as we process them
+	// This allows later type parameters to reference earlier ones in their constraints
+	paramCtx := ctx
+	paramScope := ctx.Scope.WithNewScope()
+
 	for i, typeParam := range decl.TypeParams {
 		var constraintType Type
 		var defaultType Type
 		if typeParam.Constraint != nil {
 			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(ctx, typeParam.Constraint)
+			// Use paramCtx which includes previously defined type parameters
+			constraintType, constraintErrors = c.inferTypeAnn(paramCtx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if typeParam.Default != nil {
 			var defaultErrors []Error
-			defaultType, defaultErrors = c.inferTypeAnn(ctx, typeParam.Default)
+			// Use paramCtx which includes previously defined type parameters
+			defaultType, defaultErrors = c.inferTypeAnn(paramCtx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
 		}
 		typeParams[i] = &TypeParam{
@@ -3332,30 +3340,25 @@ func (c *Checker) inferTypeDecl(
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
-	}
 
-	// Create a new context with type parameters in scope
-	typeCtx := ctx
-	if len(typeParams) > 0 {
-		// Create a new scope that includes the type parameters
-		typeScope := ctx.Scope.WithNewScope()
-
-		// Add type parameters as type aliases to the scope
-		for _, typeParam := range typeParams {
-			typeParamTypeRef := NewTypeRefType(nil, typeParam.Name, nil)
-			typeParamAlias := &TypeAlias{
-				Type:       typeParamTypeRef,
-				TypeParams: []*TypeParam{},
-			}
-			typeScope.setTypeAlias(typeParam.Name, typeParamAlias)
+		// Add this type parameter to the scope for subsequent parameters
+		typeParamTypeRef := NewTypeRefType(nil, typeParam.Name, nil)
+		typeParamAlias := &TypeAlias{
+			Type:       typeParamTypeRef,
+			TypeParams: []*TypeParam{},
 		}
+		paramScope.setTypeAlias(typeParam.Name, typeParamAlias)
 
-		typeCtx = Context{
-			Scope:      typeScope,
+		// Update the context to include this type parameter
+		paramCtx = Context{
+			Scope:      paramScope,
 			IsAsync:    ctx.IsAsync,
 			IsPatMatch: ctx.IsPatMatch,
 		}
 	}
+
+	// Use the context with all type parameters for inferring the type annotation
+	typeCtx := paramCtx
 
 	t, typeErrors := c.inferTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
@@ -3652,7 +3655,85 @@ func (c *Checker) inferTypeAnn(
 					Value:    t,
 				}
 			case *ast.MappedTypeAnn:
-				panic("TODO: handle MappedTypeAnn")
+				// Infer the constraint type for the type parameter
+				var constraintType Type
+				if elem.TypeParam.Constraint != nil {
+					var constraintErrors []Error
+					constraintType, constraintErrors = c.inferTypeAnn(ctx, elem.TypeParam.Constraint)
+					errors = slices.Concat(errors, constraintErrors)
+				} else {
+					constraintType = NewAnyType(nil)
+				}
+
+				typeParam := &IndexParam{
+					Name:       elem.TypeParam.Name,
+					Constraint: constraintType,
+				}
+
+				// Create a new context with the type parameter in scope
+				mappedCtx := ctx
+				if elem.TypeParam.Name != "" {
+					mappedScope := ctx.Scope.WithNewScope()
+
+					// Add the type parameter as a type alias to the scope
+					typeParamTypeRef := NewTypeRefType(nil, elem.TypeParam.Name, nil)
+					typeParamAlias := &TypeAlias{
+						Type:       typeParamTypeRef,
+						TypeParams: []*TypeParam{},
+					}
+					mappedScope.setTypeAlias(elem.TypeParam.Name, typeParamAlias)
+
+					mappedCtx = Context{
+						Scope:      mappedScope,
+						IsAsync:    ctx.IsAsync,
+						IsPatMatch: ctx.IsPatMatch,
+					}
+				}
+
+				// Infer the value type with the type parameter in scope
+				valueType, valueErrors := c.inferTypeAnn(mappedCtx, elem.Value)
+				errors = slices.Concat(errors, valueErrors)
+
+				// Infer the optional name type if present
+				var nameType Type
+				if elem.Name != nil {
+					var nameErrors []Error
+					nameType, nameErrors = c.inferTypeAnn(mappedCtx, elem.Name)
+					errors = slices.Concat(errors, nameErrors)
+				}
+
+				// Convert mapped modifiers
+				var optional *MappedModifier
+				if elem.Optional != nil {
+					switch *elem.Optional {
+					case ast.MMAdd:
+						opt := MMAdd
+						optional = &opt
+					case ast.MMRemove:
+						opt := MMRemove
+						optional = &opt
+					}
+				}
+
+				var readOnly *MappedModifier
+				if elem.ReadOnly != nil {
+					switch *elem.ReadOnly {
+					case ast.MMAdd:
+						ro := MMAdd
+						readOnly = &ro
+					case ast.MMRemove:
+						ro := MMRemove
+						readOnly = &ro
+					}
+				}
+
+				elems[i] = &MappedElem{
+					TypeParam: typeParam,
+					Name:      nameType,
+					Value:     valueType,
+					Optional:  optional,
+					ReadOnly:  readOnly,
+				}
 			case *ast.RestSpreadTypeAnn:
 				panic("TODO: handle RestSpreadTypeAnn")
 			}

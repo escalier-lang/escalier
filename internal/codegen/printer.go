@@ -510,7 +510,7 @@ func (p *Printer) PrintDecl(decl Decl) {
 				}
 				p.print(param.Name)
 				if param.Constraint != nil {
-					p.print(": ")
+					p.print(" extends ")
 					p.PrintTypeAnn(param.Constraint)
 				}
 				if param.Default != nil {
@@ -774,6 +774,30 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.PrintTypeAnn(elem.Value)
 			case *RestSpreadTypeAnn:
 				p.print("...")
+				p.PrintTypeAnn(elem.Value)
+			case *MappedTypeAnn:
+				// Print readonly modifier if present
+				if elem.ReadOnly != nil {
+					if *elem.ReadOnly == MMAdd {
+						p.print("readonly ")
+					} else if *elem.ReadOnly == MMRemove {
+						p.print("-readonly ")
+					}
+				}
+				p.print("[")
+				p.print(elem.TypeParam.Name)
+				p.print(" in ")
+				p.PrintTypeAnn(elem.TypeParam.Constraint)
+				p.print("]")
+				// Print optional modifier if present
+				if elem.Optional != nil {
+					if *elem.Optional == MMAdd {
+						p.print("?")
+					} else if *elem.Optional == MMRemove {
+						p.print("-?")
+					}
+				}
+				p.print(": ")
 				p.PrintTypeAnn(elem.Value)
 			default:
 				panic(fmt.Sprintf("PrintTypeAnn: unknown object type annotation element type: %T", elem))
