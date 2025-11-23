@@ -877,12 +877,12 @@ const (
 
 type MappedElem struct {
 	TypeParam *IndexParam
-	// TODO: rename this so that we can differentiate between this and the
-	// Name() method thats common to all ObjTypeElems.
-	name     Type // optional
-	Value    Type
-	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
-	ReadOnly *MappedModifier
+	Name      Type // optional
+	Value     Type
+	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
+	ReadOnly  *MappedModifier
+	Check     Type // optional - the type to check
+	Extends   Type // optional - the type it should extend
 }
 type IndexParam struct {
 	Name       string
@@ -960,9 +960,9 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 	}
 
 	var newName Type
-	if m.name != nil {
-		newName = m.name.Accept(v)
-		if newName != m.name {
+	if m.Name != nil {
+		newName = m.Name.Accept(v)
+		if newName != m.Name {
 			changed = true
 		}
 	}
@@ -972,6 +972,22 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 		changed = true
 	}
 
+	var newCheck Type
+	if m.Check != nil {
+		newCheck = m.Check.Accept(v)
+		if newCheck != m.Check {
+			changed = true
+		}
+	}
+
+	var newExtends Type
+	if m.Extends != nil {
+		newExtends = m.Extends.Accept(v)
+		if newExtends != m.Extends {
+			changed = true
+		}
+	}
+
 	if changed {
 		newTypeParam := &IndexParam{
 			Name:       m.TypeParam.Name,
@@ -979,10 +995,12 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 		}
 		return &MappedElem{
 			TypeParam: newTypeParam,
-			name:      newName,
+			Name:      newName,
 			Value:     newValue,
 			Optional:  m.Optional,
 			ReadOnly:  m.ReadOnly,
+			Check:     newCheck,
+			Extends:   newExtends,
 		}
 	}
 	return m

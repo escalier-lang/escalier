@@ -207,6 +207,8 @@ type MappedTypeAnn struct {
 	Value    TypeAnn
 	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly *MappedModifier
+	Check    TypeAnn
+	Extends  TypeAnn
 }
 type IndexParamTypeAnn struct {
 	Name       string
@@ -257,7 +259,16 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 				e.Value.Accept(v)
 			case *MappedTypeAnn:
 				e.TypeParam.Constraint.Accept(v)
+				if e.Name != nil {
+					e.Name.Accept(v)
+				}
 				e.Value.Accept(v)
+				if e.Check != nil {
+					e.Check.Accept(v)
+				}
+				if e.Extends != nil {
+					e.Extends.Accept(v)
+				}
 			case *RestSpreadTypeAnn:
 				e.Value.Accept(v)
 			}

@@ -455,6 +455,9 @@ loop:
 func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 	// Syntax:
 	// {[K]: T[K] for K in T}
+	// {[K]?: T[K] for K in T}
+	// {[K]+?: T[K] for K in T}
+	// {[K]-?: T[K] for K in T}
 
 	token := p.lexer.peek()
 	if token.Type == OpenBracket {
@@ -469,6 +472,40 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 		}
 
 		p.expect(CloseBracket, AlwaysConsume)
+
+		// Parse optional modifiers: ?, +?, or -?
+		var optional *ast.MappedModifier
+		token = p.lexer.peek()
+		// nolint: exhaustive
+		switch token.Type {
+		case Question:
+			p.lexer.consume() // consume '?'
+			opt := ast.MMAdd
+			optional = &opt
+		case Plus:
+			savedPos := p.saveState()
+			p.lexer.consume() // consume '+'
+			nextToken := p.lexer.peek()
+			if nextToken.Type == Question {
+				p.lexer.consume() // consume '?'
+				opt := ast.MMAdd
+				optional = &opt
+			} else {
+				p.restoreState(savedPos)
+			}
+		case Minus:
+			savedPos := p.saveState()
+			p.lexer.consume() // consume '-'
+			nextToken := p.lexer.peek()
+			if nextToken.Type == Question {
+				p.lexer.consume() // consume '?'
+				opt := ast.MMRemove
+				optional = &opt
+			} else {
+				p.restoreState(savedPos)
+			}
+		}
+
 		p.expect(Colon, AlwaysConsume)
 
 		value := p.typeAnn()
@@ -487,16 +524,48 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 		p.expect(In, AlwaysConsume)
 		constraint := p.typeAnn()
 
-		// TODO: try to parse a mapped type
+		// Parse optional if clause for filtering
+		var check ast.TypeAnn
+		var extends ast.TypeAnn
+		token = p.lexer.peek()
+		if token.Type == If {
+			p.lexer.consume() // consume 'if'
+			check = p.typeAnn()
+			p.expect(Colon, AlwaysConsume)
+			extends = p.typeAnn()
+		}
+
+		// Check if the name is just a simple identifier matching the type parameter
+		// If so, it's not actually a rename, so set Name to nil
+		var mappedName ast.TypeAnn
+		if typeRefName, ok := name.(*ast.TypeRefTypeAnn); ok {
+			// Check if it's a simple identifier (no qualifiers) matching the key
+			if ident, ok := typeRefName.Name.(*ast.Ident); ok {
+				if ident.Name == key && len(typeRefName.TypeArgs) == 0 {
+					// This is just the type parameter itself, not a rename
+					mappedName = nil
+				} else {
+					mappedName = name
+				}
+			} else {
+				mappedName = name
+			}
+		} else {
+			// Not a simple identifier, so it's a rename
+			mappedName = name
+		}
+
 		return &ast.MappedTypeAnn{
 			TypeParam: &ast.IndexParamTypeAnn{
 				Name:       key,
 				Constraint: constraint,
 			},
-			Name:     nil, // TODO: handle renaming
+			Name:     mappedName,
 			Value:    value,
-			Optional: nil, // TODO: handle optional
+			Optional: optional,
 			ReadOnly: nil, // TODO: handle readonly
+			Check:    check,
+			Extends:  extends,
 		}
 	}
 
@@ -519,10 +588,12 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	}
 
 	mod := ""
-	if token.Type == Get {
+	// nolint: exhaustive
+	switch token.Type {
+	case Get:
 		p.lexer.consume() // consume 'get'
 		mod = "get"
-	} else if token.Type == Set {
+	case Set:
 		p.lexer.consume() // consume 'set'
 		mod = "set"
 	}
@@ -619,17 +690,19 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 			ast.MergeSpans(token.Span, retType.Span()),
 		)
 
-		if mod == "get" {
+		// nolint: exhaustive
+		switch mod {
+		case "get":
 			return &ast.GetterTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,
 			}
-		} else if mod == "set" {
+		case "set":
 			return &ast.SetterTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,
 			}
-		} else {
+		default:
 			return &ast.MethodTypeAnn{
 				Name: objKey,
 				Fn:   fnTypeAnn,

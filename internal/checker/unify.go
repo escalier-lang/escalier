@@ -477,7 +477,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 								for i, typeParam := range typeRef.TypeAlias.TypeParams {
 									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
 								}
-								tuple = c.substituteTypeParams(tuple, substitutions).(*TupleType)
+								tuple = substituteTypeParams[*TupleType](tuple, substitutions)
 							}
 
 							// Find if the args have a rest element
@@ -581,7 +581,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 								for i, typeParam := range typeRef.TypeAlias.TypeParams {
 									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
 								}
-								tuple = c.substituteTypeParams(tuple, substitutions).(*TupleType)
+								tuple = substituteTypeParams[*TupleType](tuple, substitutions)
 							}
 
 							// Find if the args have a rest element

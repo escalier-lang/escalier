@@ -510,7 +510,7 @@ func (p *Printer) PrintDecl(decl Decl) {
 				}
 				p.print(param.Name)
 				if param.Constraint != nil {
-					p.print(": ")
+					p.print(" extends ")
 					p.PrintTypeAnn(param.Constraint)
 				}
 				if param.Default != nil {
@@ -775,6 +775,36 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 			case *RestSpreadTypeAnn:
 				p.print("...")
 				p.PrintTypeAnn(elem.Value)
+			case *MappedTypeAnn:
+				// Print readonly modifier if present
+				if elem.ReadOnly != nil {
+					if *elem.ReadOnly == MMAdd {
+						p.print("readonly ")
+					} else if *elem.ReadOnly == MMRemove {
+						p.print("-readonly ")
+					}
+				}
+				p.print("[")
+				p.print(elem.TypeParam.Name)
+				p.print(" in ")
+				p.PrintTypeAnn(elem.TypeParam.Constraint)
+				// If a Name is provided, use it for key remapping
+				// TypeScript syntax: [K in Keys as NewKey]
+				if elem.Name != nil {
+					p.print(" as ")
+					p.PrintTypeAnn(elem.Name)
+				}
+				p.print("]")
+				// Print optional modifier if present
+				if elem.Optional != nil {
+					if *elem.Optional == MMAdd {
+						p.print("?")
+					} else if *elem.Optional == MMRemove {
+						p.print("-?")
+					}
+				}
+				p.print(": ")
+				p.PrintTypeAnn(elem.Value)
 			default:
 				panic(fmt.Sprintf("PrintTypeAnn: unknown object type annotation element type: %T", elem))
 			}
@@ -799,7 +829,14 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 			p.PrintTypeAnn(elem)
 		}
 	case *IntersectionTypeAnn:
-		panic("PrintTypeAnn: IntersectionTypeAnn not implemented")
+		// TODO: handle precedence of intersection types
+		// e.g. (A & B) | C vs A & (B | C)
+		for i, elem := range ta.Types {
+			if i > 0 {
+				p.print(" & ")
+			}
+			p.PrintTypeAnn(elem)
+		}
 	case *TypeRefTypeAnn:
 		p.print(ta.Name)
 		if len(ta.TypeArgs) > 0 {
@@ -858,7 +895,13 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.PrintTypeAnn(ta.Index)
 		p.print("]")
 	case *CondTypeAnn:
-		panic("PrintTypeAnn: CondTypeAnn not implemented")
+		p.PrintTypeAnn(ta.Check)
+		p.print(" extends ")
+		p.PrintTypeAnn(ta.Extends)
+		p.print(" ? ")
+		p.PrintTypeAnn(ta.Cons)
+		p.print(" : ")
+		p.PrintTypeAnn(ta.Alt)
 	case *InferTypeAnn:
 		panic("PrintTypeAnn: InferTypeAnn not implemented")
 	case *AnyTypeAnn:

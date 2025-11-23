@@ -1,0 +1,75 @@
+type MyPick<T, K: keyof T> = {[P]: T[P] for P in K}
+
+type Obj = {a: number, b: string, c: boolean}
+
+declare val obj1: MyPick<Obj, "a" | "c">
+val a1 = obj1.a
+val b1 = obj1.b // error, this field shouldn't exist on obj1
+val c1 = obj1.c
+
+type MyPartial<T> = {[P]?: T[P] for P in keyof T}
+
+type PartialObj = MyPartial<Obj>
+declare val obj2: PartialObj
+val a2 = obj2.a
+val b2 = obj2.b
+val c2 = obj2.c
+
+type MyRequired<T> = {[P]-?: T[P] for P in keyof T}
+
+type RequiredObj = MyRequired<PartialObj>
+declare val obj3: RequiredObj
+val a3 = obj3.a
+val b3 = obj3.b
+val c3 = obj3.c
+
+type MyRecord<K: keyof any, T> = {[P]: T for P in K}
+declare val record: MyRecord<"email" | "username", string>
+val email1 = record.email
+val username1 = record.username
+
+type MyExclude<T, U> = if T : U { never } else { T }
+type MyExtract<T, U> = if T : U { T } else { never }
+type MyOmit<T, K: keyof any> = MyPick<T, MyExclude<keyof T, K>>
+
+declare val obj4: MyOmit<Obj, "b">
+val a4 = obj4.a
+val b4 = obj4.b // error, this field shouldn't exist on obj4
+val c4 = obj4.c
+
+type SimpleMappedObj = {[P]: string for P in "foo" | "bar"}
+declare val obj5: SimpleMappedObj
+val foo1 = obj5.foo
+val bar1 = obj5.bar
+val {foo, bar} = obj5
+
+type MultiMappedObj = {
+    [P]: string for P in "foo" | "bar",
+    [P]: number for P in "x" | "y",
+    flag: boolean,
+}
+declare val obj6: MultiMappedObj
+val foo2 = obj6.foo
+val bar2 = obj6.bar
+val x = obj6.x
+val y = obj6.y
+val flag = obj6.flag
+
+type AddPrefix<T> = {[`prefix_${K}`]: T[K] for K in keyof T}
+declare val obj7: AddPrefix<Obj>
+val prefixA = obj7.prefix_a
+val prefixB = obj7.prefix_b
+val prefixC = obj7.prefix_c
+
+type OnlyStrings<T> = {[K]: T[K] for K in keyof T if T[K] : string}
+type Person = {
+    id: number,
+    name: string,
+    email: string,
+    active: boolean,
+}
+declare val strPerson: OnlyStrings<Person>
+val id = strPerson.id
+val name = strPerson.name
+val email = strPerson.email
+val active = strPerson.active

@@ -670,6 +670,41 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 			nil,
 		)
 	case *type_sys.ObjectType:
+		// Check if there are multiple MappedElems - if so, we need to create an intersection
+		// because TypeScript only allows one mapped type per object literal
+		mappedElemCount := 0
+		for _, elem := range t.Elems {
+			if _, ok := elem.(*type_sys.MappedElem); ok {
+				mappedElemCount++
+			}
+		}
+
+		// If there are multiple mapped elements, we need to split into an intersection type
+		// because TypeScript only allows one mapped type per object literal
+		if mappedElemCount > 1 {
+			var intersectionTypes []TypeAnn
+			var nonMappedElems []ObjTypeAnnElem
+
+			for _, elem := range t.Elems {
+				if mappedElem, ok := elem.(*type_sys.MappedElem); ok {
+					// Each mapped element gets its own object type in the intersection
+					mappedAnn := b.buildObjTypeAnnElem(mappedElem, t.SymbolKeyMap)
+					intersectionTypes = append(intersectionTypes, NewObjectTypeAnn([]ObjTypeAnnElem{mappedAnn}))
+				} else {
+					// Accumulate non-mapped elements to group them together
+					nonMappedElems = append(nonMappedElems, b.buildObjTypeAnnElem(elem, t.SymbolKeyMap))
+				}
+			}
+
+			// If there are non-mapped elements, add them as a single object type at the end
+			if len(nonMappedElems) > 0 {
+				intersectionTypes = append(intersectionTypes, NewObjectTypeAnn(nonMappedElems))
+			}
+
+			return NewIntersectionTypeAnn(intersectionTypes)
+		}
+
+		// Single mapped element or no mapped elements - use regular object type
 		elems := make([]ObjTypeAnnElem, len(t.Elems))
 		for i, elem := range t.Elems {
 			elems[i] = b.buildObjTypeAnnElem(elem, t.SymbolKeyMap)
@@ -776,9 +811,13 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Name:       elem.TypeParam.Name,
 			Constraint: b.buildTypeAnn(elem.TypeParam.Constraint),
 		}
+		var nameTypeAnn TypeAnn
+		if elem.Name != nil {
+			nameTypeAnn = b.buildTypeAnn(elem.Name)
+		}
 		return &MappedTypeAnn{
 			TypeParam: typeParam,
-			Name:      nil,
+			Name:      nameTypeAnn,
 			Value:     b.buildTypeAnn(elem.Value),
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.ReadOnly),

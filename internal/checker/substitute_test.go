@@ -46,8 +46,6 @@ func TestTypeParamSubstitutionVisitor(t *testing.T) {
 }
 
 func TestSubstituteTypeParams(t *testing.T) {
-	checker := NewChecker()
-
 	t.Run("TypeRefType substitution", func(t *testing.T) {
 		t.Run("substitutes type parameter", func(t *testing.T) {
 			// Create a type reference to "T"
@@ -58,7 +56,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewNumPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(typeRef, substitutions)
+			result := substituteTypeParams(typeRef, substitutions)
 
 			assert.Equal(t, "T", typeRef.String())
 			assert.Equal(t, "number", result.String())
@@ -73,7 +71,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(typeRef, substitutions)
+			result := substituteTypeParams(typeRef, substitutions)
 
 			assert.Equal(t, "Array<T>", typeRef.String())
 			assert.Equal(t, "Array<string>", result.String())
@@ -88,7 +86,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewNumPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(typeRef, substitutions)
+			result := substituteTypeParams(typeRef, substitutions)
 
 			assert.Equal(t, "U", typeRef.String())
 			assert.Equal(t, "U", result.String())
@@ -106,7 +104,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(funcType, substitutions)
+			result := substituteTypeParams(funcType, substitutions)
 
 			assert.Equal(t, "fn (x: T, y: U) -> T", funcType.String())
 			assert.Equal(t, "fn (x: number, y: string) -> number", result.String())
@@ -121,7 +119,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewBoolPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(funcType, substitutions)
+			result := substituteTypeParams(funcType, substitutions)
 
 			assert.Equal(t, "fn () -> T", funcType.String())
 			assert.Equal(t, "fn () -> boolean", result.String())
@@ -135,7 +133,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(funcType, substitutions)
+			result := substituteTypeParams(funcType, substitutions)
 
 			assert.Equal(t, "fn <T>() -> number", funcType.String())
 			assert.Equal(t, "fn <T>() -> number", result.String())
@@ -152,7 +150,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(objType, substitutions)
+			result := substituteTypeParams(objType, substitutions)
 
 			assert.Equal(t, "{x: T, y: number}", objType.String())
 			assert.Equal(t, "{x: string, y: number}", result.String())
@@ -168,7 +166,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": NewBoolPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(objType, substitutions)
+			result := substituteTypeParams(objType, substitutions)
 			assert.Equal(t, "{foo: fn (x: T) -> U}", objType.String())
 			assert.Equal(t, "{foo: fn (x: number) -> boolean}", result.String())
 		})
@@ -185,7 +183,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": NewBoolPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(tupleType, substitutions)
+			result := substituteTypeParams(tupleType, substitutions)
 
 			assert.Equal(t, "[T, number, U]", tupleType.String())
 			assert.Equal(t, "[string, number, boolean]", result.String())
@@ -203,7 +201,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": NewBoolPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(unionType, substitutions)
+			result := substituteTypeParams(unionType, substitutions)
 
 			assert.Equal(t, "T | number | U", unionType.String())
 			assert.Equal(t, "string | number | boolean", result.String())
@@ -221,7 +219,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"U": test_util.ParseTypeAnn("{z: boolean}"),
 			}
 
-			result := checker.substituteTypeParams(intersectionType, substitutions)
+			result := substituteTypeParams(intersectionType, substitutions)
 			assert.Equal(t, "T & {x: number} & U", intersectionType.String())
 			assert.Equal(t, "{y: string} & {x: number} & {z: boolean}", result.String())
 		})
@@ -238,7 +236,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": arrayType,
 			}
 
-			result := checker.substituteTypeParams(restType, substitutions)
+			result := substituteTypeParams(restType, substitutions)
 
 			assert.Equal(t, "...T", restType.String())
 			assert.Equal(t, "...Array<number>", result.String())
@@ -252,7 +250,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(numType, substitutions)
+			result := substituteTypeParams(numType, substitutions)
 			assert.Equal(t, "number", numType.String())
 			assert.Equal(t, "number", result.String())
 		})
@@ -263,7 +261,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewNumPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(strLit, substitutions)
+			result := substituteTypeParams(strLit, substitutions)
 			assert.Equal(t, `"hello"`, strLit.String())
 			assert.Equal(t, `"hello"`, result.String())
 		})
@@ -279,7 +277,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(funcType, substitutions)
+			result := substituteTypeParams(funcType, substitutions)
 
 			assert.Equal(t, "fn (obj: {data: T, count: number}) -> Array<T>", funcType.String())
 			assert.Equal(t, "fn (obj: {data: string, count: number}) -> Array<string>", result.String())
@@ -310,7 +308,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewNumPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(outerFunc, substitutions)
+			result := substituteTypeParams(outerFunc, substitutions)
 
 			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T throws never", outerFunc.String())
 			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T throws never", result.String())
@@ -324,7 +322,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 				"T": NewStrPrimType(nil),
 			}
 
-			result := checker.substituteTypeParams(objType, substitutions)
+			result := substituteTypeParams(objType, substitutions)
 
 			assert.Equal(t, "{foo: T, bar: fn <T>(t: T) -> T}", objType.String())
 			assert.Equal(t, "{foo: string, bar: fn <T>(t: T) -> T}", result.String())
@@ -336,7 +334,7 @@ func TestSubstituteTypeParams(t *testing.T) {
 			typeRef := test_util.ParseTypeAnn("T")
 			substitutions := map[string]Type{}
 
-			result := checker.substituteTypeParams(typeRef, substitutions)
+			result := substituteTypeParams(typeRef, substitutions)
 
 			assert.Equal(t, "T", typeRef.String())
 			assert.Equal(t, "T", result.String())
@@ -404,8 +402,7 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	)
 
 	// Substitute type parameters in the entire object
-	checker := NewChecker()
-	result := checker.substituteTypeParams(objType, substitutions)
+	result := substituteTypeParams(objType, substitutions)
 
 	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter() -> T, set setter(value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
 	assert.Equal(t, "{test?: number, method(x: number) -> string, get getter() -> number, set setter(value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())

@@ -92,6 +92,21 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectType": {
 			input: "{[K]: T[K] for K in Keys<T>}",
 		},
+		"MappedObjectTypeOptionalProperties": {
+			input: "{[P]?: T[P] for P in keyof T}",
+		},
+		"MappedObjectTypeAddOptionalProperties": {
+			input: "{[P]+?: T[P] for P in keyof T}",
+		},
+		"AMappedObjectTypeRemoveOptionalProperties": {
+			input: "{[P]-?: T[P] for P in keyof T}",
+		},
+		"MappedObjectTypePropertyRenaming": {
+			input: "{[`prefix_${K}`]: T[K] for K in keyof T}",
+		},
+		"MappedObjectTypeWithFiltering": {
+			input: "{[K]: T[K] for K in keyof T if T[K] : string}",
+		},
 		"ObjectTypeWithRestSpread": {
 			input: "{x: string, ...T}",
 		},
@@ -142,7 +157,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			typeAnn := parser.typeAnn()
 
 			snaps.MatchSnapshot(t, typeAnn)
-			assert.Equal(t, parser.errors, []*Error{})
+			assert.Equal(t, []*Error{}, parser.errors)
 		})
 	}
 }

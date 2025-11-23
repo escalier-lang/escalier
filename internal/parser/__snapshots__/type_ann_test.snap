@@ -929,6 +929,8 @@
             },
             Optional: (*ast.MappedModifier)(nil),
             ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    nil,
+            Extends:  nil,
         },
     },
     span: ast.Span{
@@ -1964,6 +1966,566 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeOptionalProperties - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name:       "P",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:28},
+                                End:      ast.Location{Line:1, Column:29},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:29},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:22},
+                        End:      ast.Location{Line:1, Column:29},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Name:  nil,
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:9},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:8},
+                        End:      ast.Location{Line:1, Column:9},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "P",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:11},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:11},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: &"add",
+            ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    nil,
+            Extends:  nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:30},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypePropertyRenaming - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name:       "K",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:39},
+                                End:      ast.Location{Line:1, Column:40},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:39},
+                            End:      ast.Location{Line:1, Column:40},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
+                        End:      ast.Location{Line:1, Column:40},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Name: &ast.TemplateLitTypeAnn{
+                Quasis: {
+                    &ast.Quasi{
+                        Value: "prefix_",
+                        Span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:4},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    &ast.Quasi{
+                        Value: "",
+                        Span:  ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                TypeAnns: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "K",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:13},
+                                End:      ast.Location{Line:1, Column:14},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:13},
+                            End:      ast.Location{Line:1, Column:14},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:20},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:19},
+                        End:      ast.Location{Line:1, Column:20},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:21},
+                            End:      ast.Location{Line:1, Column:22},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:21},
+                        End:      ast.Location{Line:1, Column:22},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: (*ast.MappedModifier)(nil),
+            ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    nil,
+            Extends:  nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:41},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeWithFiltering - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name:       "K",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:27},
+                                End:      ast.Location{Line:1, Column:28},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
+                            End:      ast.Location{Line:1, Column:28},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:21},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Name:  nil,
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:7},
+                            End:      ast.Location{Line:1, Column:8},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:8},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:7},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: (*ast.MappedModifier)(nil),
+            ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:33},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:32},
+                        End:      ast.Location{Line:1, Column:33},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:34},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:34},
+                        End:      ast.Location{Line:1, Column:35},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:32},
+                    End:      ast.Location{Line:1, Column:36},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Extends: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:39},
+                    End:      ast.Location{Line:1, Column:45},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:46},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/AMappedObjectTypeRemoveOptionalProperties - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name:       "P",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:29},
+                                End:      ast.Location{Line:1, Column:30},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:30},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Name:  nil,
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "P",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:12},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: &"remove",
+            ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    nil,
+            Extends:  nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:31},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeAddOptionalProperties - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name:       "P",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:29},
+                                End:      ast.Location{Line:1, Column:30},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:30},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            Name:  nil,
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "P",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:12},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: &"add",
+            ReadOnly: (*ast.MappedModifier)(nil),
+            Check:    nil,
+            Extends:  nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:31},
         SourceID: 0,
     },
     inferredType: nil,

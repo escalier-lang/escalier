@@ -274,9 +274,15 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 
 		valueType := typeAnnToType(e.Value)
 
+		var nameType Type
+		if e.Name != nil {
+			nameType = typeAnnToType(e.Name)
+		}
+
 		// Create the MappedElemType directly since the name field is unexported
 		mapped := &MappedElem{
 			TypeParam: typeParam,
+			Name:      nameType,
 			Value:     valueType,
 			Optional:  convertMappedModifier(e.Optional),
 			ReadOnly:  convertMappedModifier(e.ReadOnly),
