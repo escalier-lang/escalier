@@ -2017,18 +2017,14 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
 
-			isCondType := false
-			if _, ok := Prune(expandedType).(*CondType); ok {
-				isCondType = true
-			}
-
 			// TODO:
 			// Handle case such as:
 			// - type Foo<T> = boolean | T extends string ? T : number
 			// - type Bar<T> = string & T extends string ? T : number
 			// Do not perform distributions if the conditional type is the child
 			// of any other type.
-			if isCondType {
+			switch Prune(expandedType).(type) {
+			case *CondType:
 				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
 				if len(subSetErrors) > 0 {
 					v.errors = slices.Concat(v.errors, subSetErrors)
@@ -2047,9 +2043,21 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 					expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
 				}
-			} else {
+			case *ObjectType:
+				// Expand any MappedElem elements in the object type
+				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+				objType := v.checker.substituteTypeParams(typeAlias.Type, substitutions).(*ObjectType)
+				expandedType = v.expandMappedElems(objType)
+			default:
 				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
+			}
+		} else if len(typeAlias.TypeParams) == 0 && len(t.TypeArgs) == 0 {
+			// Expand MappedElems in ObjectTypes even if there are no type params/args
+			// `{[P]: string for P in "foo" | "bar"}` should be expanded to
+			// `{foo: string, bar: string}`
+			if objType, ok := Prune(expandedType).(*ObjectType); ok {
+				expandedType = v.expandMappedElems(objType)
 			}
 		}
 
@@ -2093,6 +2101,130 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// expandMappedElems expands MappedElem elements in an ObjectType into concrete properties
+// For example, {[P in "foo" | "bar"]: string} becomes {foo: string, bar: string}
+func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectType {
+	// Check if there are any MappedElem elements to expand
+	hasMappedElems := false
+	for _, elem := range objType.Elems {
+		if _, ok := elem.(*MappedElem); ok {
+			hasMappedElems = true
+			break
+		}
+	}
+
+	if !hasMappedElems {
+		return objType
+	}
+
+	// Expand mapped elements into concrete properties
+	expandedElems := []ObjTypeElem{}
+	for _, elem := range objType.Elems {
+		if mappedElem, ok := elem.(*MappedElem); ok {
+			// Expand the constraint to get all possible keys
+			expandedConstraint, _ := v.checker.expandType(v.ctx, mappedElem.TypeParam.Constraint, -1)
+
+			// Extract keys from the constraint
+			var keys []Type
+			switch constraint := Prune(expandedConstraint).(type) {
+			case *UnionType:
+				keys = constraint.Types
+			default:
+				keys = []Type{constraint}
+			}
+
+			// For each key in the constraint, create a property
+			for _, keyType := range keys {
+				keyType = Prune(keyType)
+
+				// Create a property element for each key
+				var propKey ObjTypeKey
+				switch kt := keyType.(type) {
+				case *LitType:
+					switch lit := kt.Lit.(type) {
+					case *StrLit:
+						propKey = NewStrKey(lit.Value)
+					case *NumLit:
+						propKey = NewNumKey(lit.Value)
+					}
+				case *UniqueSymbolType:
+					propKey = NewSymKey(kt.Value)
+				default:
+					// Skip non-literal keys
+					continue
+				}
+
+				// Substitute the type parameter with the key type in the value
+				keySubs := map[string]Type{
+					mappedElem.TypeParam.Name: keyType,
+				}
+				propValue := v.checker.substituteTypeParams(mappedElem.Value, keySubs)
+
+				// Expand the property value to resolve any index types such as `T[K]`
+				// This is necessary to get the actual type including | undefined for optional properties
+				propValue, _ = v.checker.expandType(v.ctx, propValue, 1)
+
+				// Create property element
+				propElem := &PropertyElem{
+					Name:     propKey,
+					Value:    propValue,
+					Optional: false,
+					Readonly: false,
+				}
+
+				// Handle optional modifier
+				if mappedElem.Optional != nil {
+					switch *mappedElem.Optional {
+					case MMAdd:
+						propElem.Optional = true
+					case MMRemove:
+						propElem.Optional = false
+						// When removing the optional modifier, also remove undefined from the value type
+						propElem.Value = removeUndefinedFromType(propElem.Value)
+					}
+				}
+
+				// Handle readonly modifier
+				if mappedElem.ReadOnly != nil {
+					switch *mappedElem.ReadOnly {
+					case MMAdd:
+						propElem.Readonly = true
+					case MMRemove:
+						propElem.Readonly = false
+					}
+				}
+
+				expandedElems = append(expandedElems, propElem)
+			}
+		} else {
+			// Keep non-mapped elements as-is
+			expandedElems = append(expandedElems, elem)
+		}
+	}
+
+	return NewObjectType(objType.Provenance(), expandedElems)
+}
+
+// Helper function to remove undefined from a union type
+func removeUndefinedFromType(t Type) Type {
+	if unionType, ok := Prune(t).(*UnionType); ok {
+		nonUndefinedTypes := []Type{}
+		for _, typ := range unionType.Types {
+			if litType, ok := Prune(typ).(*LitType); ok {
+				if _, isUndefined := litType.Lit.(*UndefinedLit); isUndefined {
+					continue // Skip undefined
+				}
+			}
+			nonUndefinedTypes = append(nonUndefinedTypes, typ)
+		}
+		if len(nonUndefinedTypes) == 0 {
+			return NewNeverType(nil)
+		}
+		return NewUnionType(nil, nonUndefinedTypes...)
+	}
+	return t
 }
 
 // expandTemplateLitType expands a template literal type by generating all possible
@@ -2390,6 +2522,8 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 				if elem.Name == NewStrKey(k.Name) {
 					return elem.Fn.Params[0].Type, errors
 				}
+			case *MappedElem:
+				panic("MappedElems should have been expanded before property access")
 			case *ConstructorElem:
 			case *CallableElem:
 				continue
@@ -2420,6 +2554,8 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 						if elem.Name == NewStrKey(strLit.Value) {
 							return elem.Fn, errors
 						}
+					case *MappedElem:
+						panic("MappedElems should have been expanded before property access")
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 					}
@@ -3314,17 +3450,25 @@ func (c *Checker) inferTypeDecl(
 	errors := []Error{}
 
 	typeParams := make([]*TypeParam, len(decl.TypeParams))
+
+	// Create a context that accumulates type parameters as we process them
+	// This allows later type parameters to reference earlier ones in their constraints
+	paramCtx := ctx
+	paramScope := ctx.Scope.WithNewScope()
+
 	for i, typeParam := range decl.TypeParams {
 		var constraintType Type
 		var defaultType Type
 		if typeParam.Constraint != nil {
 			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(ctx, typeParam.Constraint)
+			// Use paramCtx which includes previously defined type parameters
+			constraintType, constraintErrors = c.inferTypeAnn(paramCtx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if typeParam.Default != nil {
 			var defaultErrors []Error
-			defaultType, defaultErrors = c.inferTypeAnn(ctx, typeParam.Default)
+			// Use paramCtx which includes previously defined type parameters
+			defaultType, defaultErrors = c.inferTypeAnn(paramCtx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
 		}
 		typeParams[i] = &TypeParam{
@@ -3332,30 +3476,25 @@ func (c *Checker) inferTypeDecl(
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
-	}
 
-	// Create a new context with type parameters in scope
-	typeCtx := ctx
-	if len(typeParams) > 0 {
-		// Create a new scope that includes the type parameters
-		typeScope := ctx.Scope.WithNewScope()
-
-		// Add type parameters as type aliases to the scope
-		for _, typeParam := range typeParams {
-			typeParamTypeRef := NewTypeRefType(nil, typeParam.Name, nil)
-			typeParamAlias := &TypeAlias{
-				Type:       typeParamTypeRef,
-				TypeParams: []*TypeParam{},
-			}
-			typeScope.setTypeAlias(typeParam.Name, typeParamAlias)
+		// Add this type parameter to the scope for subsequent parameters
+		typeParamTypeRef := NewTypeRefType(nil, typeParam.Name, nil)
+		typeParamAlias := &TypeAlias{
+			Type:       typeParamTypeRef,
+			TypeParams: []*TypeParam{},
 		}
+		paramScope.setTypeAlias(typeParam.Name, typeParamAlias)
 
-		typeCtx = Context{
-			Scope:      typeScope,
+		// Update the context to include this type parameter
+		paramCtx = Context{
+			Scope:      paramScope,
 			IsAsync:    ctx.IsAsync,
 			IsPatMatch: ctx.IsPatMatch,
 		}
 	}
+
+	// Use the context with all type parameters for inferring the type annotation
+	typeCtx := paramCtx
 
 	t, typeErrors := c.inferTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
@@ -3652,7 +3791,85 @@ func (c *Checker) inferTypeAnn(
 					Value:    t,
 				}
 			case *ast.MappedTypeAnn:
-				panic("TODO: handle MappedTypeAnn")
+				// Infer the constraint type for the type parameter
+				var constraintType Type
+				if elem.TypeParam.Constraint != nil {
+					var constraintErrors []Error
+					constraintType, constraintErrors = c.inferTypeAnn(ctx, elem.TypeParam.Constraint)
+					errors = slices.Concat(errors, constraintErrors)
+				} else {
+					constraintType = NewAnyType(nil)
+				}
+
+				typeParam := &IndexParam{
+					Name:       elem.TypeParam.Name,
+					Constraint: constraintType,
+				}
+
+				// Create a new context with the type parameter in scope
+				mappedCtx := ctx
+				if elem.TypeParam.Name != "" {
+					mappedScope := ctx.Scope.WithNewScope()
+
+					// Add the type parameter as a type alias to the scope
+					typeParamTypeRef := NewTypeRefType(nil, elem.TypeParam.Name, nil)
+					typeParamAlias := &TypeAlias{
+						Type:       typeParamTypeRef,
+						TypeParams: []*TypeParam{},
+					}
+					mappedScope.setTypeAlias(elem.TypeParam.Name, typeParamAlias)
+
+					mappedCtx = Context{
+						Scope:      mappedScope,
+						IsAsync:    ctx.IsAsync,
+						IsPatMatch: ctx.IsPatMatch,
+					}
+				}
+
+				// Infer the value type with the type parameter in scope
+				valueType, valueErrors := c.inferTypeAnn(mappedCtx, elem.Value)
+				errors = slices.Concat(errors, valueErrors)
+
+				// Infer the optional name type if present
+				var nameType Type
+				if elem.Name != nil {
+					var nameErrors []Error
+					nameType, nameErrors = c.inferTypeAnn(mappedCtx, elem.Name)
+					errors = slices.Concat(errors, nameErrors)
+				}
+
+				// Convert mapped modifiers
+				var optional *MappedModifier
+				if elem.Optional != nil {
+					switch *elem.Optional {
+					case ast.MMAdd:
+						opt := MMAdd
+						optional = &opt
+					case ast.MMRemove:
+						opt := MMRemove
+						optional = &opt
+					}
+				}
+
+				var readOnly *MappedModifier
+				if elem.ReadOnly != nil {
+					switch *elem.ReadOnly {
+					case ast.MMAdd:
+						ro := MMAdd
+						readOnly = &ro
+					case ast.MMRemove:
+						ro := MMRemove
+						readOnly = &ro
+					}
+				}
+
+				elems[i] = &MappedElem{
+					TypeParam: typeParam,
+					Name:      nameType,
+					Value:     valueType,
+					Optional:  optional,
+					ReadOnly:  readOnly,
+				}
 			case *ast.RestSpreadTypeAnn:
 				panic("TODO: handle RestSpreadTypeAnn")
 			}

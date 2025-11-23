@@ -877,12 +877,10 @@ const (
 
 type MappedElem struct {
 	TypeParam *IndexParam
-	// TODO: rename this so that we can differentiate between this and the
-	// Name() method thats common to all ObjTypeElems.
-	name     Type // optional
-	Value    Type
-	Optional *MappedModifier // TODO: replace with `?`, `!`, or nothing
-	ReadOnly *MappedModifier
+	Name      Type // optional
+	Value     Type
+	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
+	ReadOnly  *MappedModifier
 }
 type IndexParam struct {
 	Name       string
@@ -960,9 +958,9 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 	}
 
 	var newName Type
-	if m.name != nil {
-		newName = m.name.Accept(v)
-		if newName != m.name {
+	if m.Name != nil {
+		newName = m.Name.Accept(v)
+		if newName != m.Name {
 			changed = true
 		}
 	}
@@ -979,7 +977,7 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 		}
 		return &MappedElem{
 			TypeParam: newTypeParam,
-			name:      newName,
+			Name:      newName,
 			Value:     newValue,
 			Optional:  m.Optional,
 			ReadOnly:  m.ReadOnly,
