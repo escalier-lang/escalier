@@ -41,8 +41,7 @@ type SimpleMappedObj = {[P]: string for P in "foo" | "bar"}
 declare val obj5: SimpleMappedObj
 val foo1 = obj5.foo
 val bar1 = obj5.bar
-// TODO: handle destructuring objects whose types contain a MappedElem
-// val {foo, bar} = obj5
+val {foo, bar} = obj5
 
 type MultiMappedObj = {
     [P]: string for P in "foo" | "bar",

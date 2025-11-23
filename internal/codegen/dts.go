@@ -670,6 +670,47 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 			nil,
 		)
 	case *type_sys.ObjectType:
+		// Check if there are multiple MappedElems - if so, we need to create an intersection
+		// because TypeScript only allows one mapped type per object literal
+		mappedElemCount := 0
+		for _, elem := range t.Elems {
+			if _, ok := elem.(*type_sys.MappedElem); ok {
+				mappedElemCount++
+			}
+		}
+
+		// If there are multiple mapped elements, we need to split into an intersection type
+		// because TypeScript only allows one mapped type per object literal
+		if mappedElemCount > 1 {
+			var intersectionTypes []TypeAnn
+			var currentObjectElems []ObjTypeAnnElem
+
+			for _, elem := range t.Elems {
+				if mappedElem, ok := elem.(*type_sys.MappedElem); ok {
+					// If we have accumulated non-mapped elements before this mapped element,
+					// create an object type for them first
+					if len(currentObjectElems) > 0 {
+						intersectionTypes = append(intersectionTypes, NewObjectTypeAnn(currentObjectElems))
+						currentObjectElems = nil
+					}
+					// Add this mapped element to the current accumulation
+					mappedAnn := b.buildObjTypeAnnElem(mappedElem, t.SymbolKeyMap)
+					currentObjectElems = append(currentObjectElems, mappedAnn)
+				} else {
+					// Accumulate non-mapped elements (they'll be grouped with the preceding mapped element)
+					currentObjectElems = append(currentObjectElems, b.buildObjTypeAnnElem(elem, t.SymbolKeyMap))
+				}
+			}
+
+			// If there are remaining elements, create an object type for them
+			if len(currentObjectElems) > 0 {
+				intersectionTypes = append(intersectionTypes, NewObjectTypeAnn(currentObjectElems))
+			}
+
+			return NewIntersectionTypeAnn(intersectionTypes)
+		}
+
+		// Single mapped element or no mapped elements - use regular object type
 		elems := make([]ObjTypeAnnElem, len(t.Elems))
 		for i, elem := range t.Elems {
 			elems[i] = b.buildObjTypeAnnElem(elem, t.SymbolKeyMap)

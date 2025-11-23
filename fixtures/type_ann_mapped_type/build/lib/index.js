@@ -14,6 +14,7 @@ export const b4 = obj4.b;
 export const c4 = obj4.c;
 export const foo1 = obj5.foo;
 export const bar1 = obj5.bar;
+export const {foo, bar} = obj5;
 export const foo2 = obj6.foo;
 export const bar2 = obj6.bar;
 export const x = obj6.x;
