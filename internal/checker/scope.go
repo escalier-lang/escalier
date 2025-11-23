@@ -1,8 +1,6 @@
 package checker
 
 import (
-	"fmt"
-
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -44,7 +42,7 @@ func (s *Scope) getValue(name string) *Binding {
 
 func (s *Scope) setValue(name string, binding *Binding) {
 	if _, ok := s.Namespace.Values[name]; ok {
-		panic(fmt.Sprintf("value with name '%s' already exists", name))
+		panic("value already exists")
 	}
 	s.Namespace.Values[name] = binding
 }

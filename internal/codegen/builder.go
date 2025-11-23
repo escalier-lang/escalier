@@ -1008,10 +1008,10 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		if _, ok := parent.(*ast.CallExpr); !ok {
 			t := expr.InferredType()
 			if _, ok := t.(*type_system.FuncType); ok {
-				// If the object is an ObjectExpr, extract it to a temp variable
-				// to avoid duplicating the object literal in the bind call
+				// If the object is not already an IdentExpr, extract it to a temp variable
+				// to avoid duplicating complex expressions and running side-effects multiple times
 				var bindTargetExpr Expr
-				if _, isObjExpr := objExpr.(*ObjectExpr); isObjExpr {
+				if _, isIdentExpr := objExpr.(*IdentExpr); !isIdentExpr {
 					tempVar, tempDeclStmt := b.createTempVar(expr.Object)
 
 					// Initialize the temp variable with the object expression

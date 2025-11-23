@@ -742,7 +742,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				return []Error{&UnimplementedError{message: "unify types with two rest elems"}}
 			} else if restType1 != nil {
 				usedKeys2 := map[ObjTypeKey]bool{}
-				for key1, value1 := range namedElems1 {
+				for _, key1 := range keys1 {
+					value1 := namedElems1[key1]
 					if value2, ok := namedElems2[key1]; ok {
 						unifyErrors := c.unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
@@ -773,7 +774,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				errors = slices.Concat(errors, unifyErrors)
 			} else if restType2 != nil {
 				usedKeys1 := map[ObjTypeKey]bool{}
-				for key2, value2 := range namedElems2 {
+				for _, key2 := range keys2 {
+					value2 := namedElems2[key2]
 					if value1, ok := namedElems1[key2]; ok {
 						unifyErrors := c.unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
@@ -786,26 +788,25 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 
-				if restType2 != nil {
-					restElems := []ObjTypeElem{}
-					for _, key := range keys1 {
-						if _, ok := usedKeys1[key]; !ok {
-							restElems = append(restElems, &PropertyElem{
-								Name:     key,
-								Optional: false, // TODO
-								Readonly: false, // TODO
-								Value:    namedElems1[key],
-							})
-						}
+				restElems := []ObjTypeElem{}
+				for _, key := range keys1 {
+					if _, ok := usedKeys1[key]; !ok {
+						restElems = append(restElems, &PropertyElem{
+							Name:     key,
+							Optional: false, // TODO
+							Readonly: false, // TODO
+							Value:    namedElems1[key],
+						})
 					}
-
-					objType := NewObjectType(nil, restElems)
-
-					unifyErrors := c.unify(ctx, restType2, objType)
-					errors = slices.Concat(errors, unifyErrors)
 				}
+
+				objType := NewObjectType(nil, restElems)
+
+				unifyErrors := c.unify(ctx, restType2, objType)
+				errors = slices.Concat(errors, unifyErrors)
 			} else {
-				for key2, value2 := range namedElems2 {
+				for _, key2 := range keys2 {
+					value2 := namedElems2[key2]
 					if value1, ok := namedElems1[key2]; ok {
 						unifyErrors := c.unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
