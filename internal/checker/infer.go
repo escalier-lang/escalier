@@ -2139,27 +2139,58 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 			for _, keyType := range keys {
 				keyType = Prune(keyType)
 
-				// Create a property element for each key
-				var propKey ObjTypeKey
-				switch kt := keyType.(type) {
-				case *LitType:
-					switch lit := kt.Lit.(type) {
-					case *StrLit:
-						propKey = NewStrKey(lit.Value)
-					case *NumLit:
-						propKey = NewNumKey(lit.Value)
-					}
-				case *UniqueSymbolType:
-					propKey = NewSymKey(kt.Value)
-				default:
-					// Skip non-literal keys
-					continue
-				}
-
-				// Substitute the type parameter with the key type in the value
+				// Substitute the type parameter with the key type
 				keySubs := map[string]Type{
 					mappedElem.TypeParam.Name: keyType,
 				}
+
+				// Determine the property key
+				var propKey ObjTypeKey
+				if mappedElem.Name != nil {
+					// If a Name is provided, use it to compute the property key
+					// Example: {[`prefix_${K}`]: T[K] for K in keyof T}
+					propKeyType := v.checker.substituteTypeParams(mappedElem.Name, keySubs)
+
+					// Expand the property key to resolve template literals
+					propKeyType, _ = v.checker.expandType(v.ctx, propKeyType, -1)
+					propKeyType = Prune(propKeyType)
+
+					// Convert the expanded key type to an ObjTypeKey
+					switch kt := propKeyType.(type) {
+					case *LitType:
+						switch lit := kt.Lit.(type) {
+						case *StrLit:
+							propKey = NewStrKey(lit.Value)
+						case *NumLit:
+							propKey = NewNumKey(lit.Value)
+						default:
+							// Skip non-string/number keys
+							continue
+						}
+					case *UniqueSymbolType:
+						propKey = NewSymKey(kt.Value)
+					default:
+						// Skip non-literal keys
+						continue
+					}
+				} else {
+					// Otherwise, use the constraint key directly
+					switch kt := keyType.(type) {
+					case *LitType:
+						switch lit := kt.Lit.(type) {
+						case *StrLit:
+							propKey = NewStrKey(lit.Value)
+						case *NumLit:
+							propKey = NewNumKey(lit.Value)
+						}
+					case *UniqueSymbolType:
+						propKey = NewSymKey(kt.Value)
+					default:
+						// Skip non-literal keys
+						continue
+					}
+				}
+
 				propValue := v.checker.substituteTypeParams(mappedElem.Value, keySubs)
 
 				// Expand the property value to resolve any index types such as `T[K]`
@@ -3963,10 +3994,15 @@ func (c *Checker) inferTypeAnn(
 			typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, typeAnn)
 			// Each type in a template literal type must be a subtype of either
 			// string or number.
+			// However, if it's a TypeRefType (type parameter), we skip the check
+			// because it will be validated when the type is actually used/expanded.
 			// TODO: Also check if the value has a .toString() method.
-			unifyErrors := c.unify(ctx, typeAnnType, strOrNumType)
+			if _, isTypeRef := Prune(typeAnnType).(*TypeRefType); !isTypeRef {
+				unifyErrors := c.unify(ctx, typeAnnType, strOrNumType)
+				errors = slices.Concat(errors, unifyErrors)
+			}
 			types[i] = typeAnnType
-			errors = slices.Concat(errors, unifyErrors, typeAnnErrors)
+			errors = slices.Concat(errors, typeAnnErrors)
 		}
 		for i, quasi := range typeAnn.Quasis {
 			quasis[i] = &Quasi{

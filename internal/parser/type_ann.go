@@ -524,12 +524,32 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 		p.expect(In, AlwaysConsume)
 		constraint := p.typeAnn()
 
+		// Check if the name is just a simple identifier matching the type parameter
+		// If so, it's not actually a rename, so set Name to nil
+		var mappedName ast.TypeAnn
+		if typeRefName, ok := name.(*ast.TypeRefTypeAnn); ok {
+			// Check if it's a simple identifier (no qualifiers) matching the key
+			if ident, ok := typeRefName.Name.(*ast.Ident); ok {
+				if ident.Name == key && len(typeRefName.TypeArgs) == 0 {
+					// This is just the type parameter itself, not a rename
+					mappedName = nil
+				} else {
+					mappedName = name
+				}
+			} else {
+				mappedName = name
+			}
+		} else {
+			// Not a simple identifier, so it's a rename
+			mappedName = name
+		}
+
 		return &ast.MappedTypeAnn{
 			TypeParam: &ast.IndexParamTypeAnn{
 				Name:       key,
 				Constraint: constraint,
 			},
-			Name:     nil, // TODO: handle renaming
+			Name:     mappedName,
 			Value:    value,
 			Optional: optional,
 			ReadOnly: nil, // TODO: handle readonly

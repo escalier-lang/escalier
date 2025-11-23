@@ -788,6 +788,12 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.print(elem.TypeParam.Name)
 				p.print(" in ")
 				p.PrintTypeAnn(elem.TypeParam.Constraint)
+				// If a Name is provided, use it for key remapping
+				// TypeScript syntax: [K in Keys as NewKey]
+				if elem.Name != nil {
+					p.print(" as ")
+					p.PrintTypeAnn(elem.Name)
+				}
 				p.print("]")
 				// Print optional modifier if present
 				if elem.Optional != nil {

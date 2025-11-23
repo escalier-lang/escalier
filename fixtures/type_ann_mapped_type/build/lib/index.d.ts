@@ -40,3 +40,8 @@ declare const bar2: string;
 declare const x: number;
 declare const y: number;
 declare const flag: boolean;
+declare type AddPrefix<T> = {[K in keyof T as `prefix_${K}`]: T[K]};
+declare const obj7: AddPrefix<Obj>;
+declare const prefixA: number;
+declare const prefixB: string;
+declare const prefixC: boolean;

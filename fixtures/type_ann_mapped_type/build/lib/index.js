@@ -20,4 +20,7 @@ export const bar2 = obj6.bar;
 export const x = obj6.x;
 export const y = obj6.y;
 export const flag = obj6.flag;
+export const prefixA = obj7.prefix_a;
+export const prefixB = obj7.prefix_b;
+export const prefixC = obj7.prefix_c;
 //# sourceMappingURL=./index.js.map

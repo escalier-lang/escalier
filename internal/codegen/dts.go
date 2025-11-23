@@ -811,9 +811,13 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Name:       elem.TypeParam.Name,
 			Constraint: b.buildTypeAnn(elem.TypeParam.Constraint),
 		}
+		var nameTypeAnn TypeAnn
+		if elem.Name != nil {
+			nameTypeAnn = b.buildTypeAnn(elem.Name)
+		}
 		return &MappedTypeAnn{
 			TypeParam: typeParam,
-			Name:      nil,
+			Name:      nameTypeAnn,
 			Value:     b.buildTypeAnn(elem.Value),
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.ReadOnly),

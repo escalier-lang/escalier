@@ -54,3 +54,9 @@ val bar2 = obj6.bar
 val x = obj6.x
 val y = obj6.y
 val flag = obj6.flag
+
+type AddPrefix<T> = {[`prefix_${K}`]: T[K] for K in keyof T}
+declare val obj7: AddPrefix<Obj>
+val prefixA = obj7.prefix_a
+val prefixB = obj7.prefix_b
+val prefixC = obj7.prefix_c
