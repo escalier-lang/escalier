@@ -36,3 +36,22 @@ declare val obj4: MyOmit<Obj, "b">
 val a4 = obj4.a
 val b4 = obj4.b // error, this field shouldn't exist on obj1
 val c4 = obj4.c
+
+type SimpleMappedObj = {[P]: string for P in "foo" | "bar"}
+declare val obj5: SimpleMappedObj
+val foo1 = obj5.foo
+val bar1 = obj5.bar
+// TODO: handle destructuring objects whose types contain a MappedElem
+// val {foo, bar} = obj5
+
+type MultiMappedObj = {
+    [P]: string for P in "foo" | "bar",
+    [P]: number for P in "x" | "y",
+    flag: boolean,
+}
+declare val obj6: MultiMappedObj
+val foo2 = obj6.foo
+val bar2 = obj6.bar
+val x = obj6.x
+val y = obj6.y
+val flag = obj6.flag
