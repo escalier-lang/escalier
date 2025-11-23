@@ -1008,9 +1008,29 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		if _, ok := parent.(*ast.CallExpr); !ok {
 			t := expr.InferredType()
 			if _, ok := t.(*type_system.FuncType); ok {
+				// If the object is not already an IdentExpr, extract it to a temp variable
+				// to avoid duplicating complex expressions and running side-effects multiple times
+				var bindTargetExpr Expr
+				if _, isIdentExpr := objExpr.(*IdentExpr); isIdentExpr {
+					bindTargetExpr = objExpr
+				} else {
+					tempVar, tempDeclStmt := b.createTempVar(expr.Object)
+
+					// Initialize the temp variable with the object expression
+					tempDecl := tempDeclStmt.(*DeclStmt).Decl.(*VarDecl)
+					tempDecl.Decls[0].Init = objExpr
+					tempDecl.Kind = ValKind
+
+					objStmts = append(objStmts, tempDeclStmt)
+
+					// Update the member expression to use the temp variable
+					member = NewMemberExpr(tempVar, propExpr, expr.OptChain, expr)
+					bindTargetExpr = tempVar
+				}
+
 				bindIdent := NewIdentifier("bind", nil)
 				callee := NewMemberExpr(member, bindIdent, false, expr)
-				call := NewCallExpr(callee, []Expr{objExpr}, false, nil)
+				call := NewCallExpr(callee, []Expr{bindTargetExpr}, false, nil)
 				return call, objStmts
 			}
 		}
