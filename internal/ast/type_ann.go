@@ -266,9 +266,6 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 				if e.Check != nil {
 					e.Check.Accept(v)
 				}
-				if e.Check != nil {
-					e.Check.Accept(v)
-				}
 				if e.Extends != nil {
 					e.Extends.Accept(v)
 				}
