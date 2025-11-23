@@ -8,3 +8,13 @@ lib/mapped_type.esc:37:15: Unknown property 'b' in object type {a: number, c: bo
 37: val b4 = obj4.b // error, this field shouldn't exist on obj1
                   ^
 
+lib/mapped_type.esc:72:20: Unknown property 'id' in object type {name: string, email: string}
+
+72: val id = strPerson.id
+                       ^^
+
+lib/mapped_type.esc:75:24: Unknown property 'active' in object type {name: string, email: string}
+
+75: val active = strPerson.active
+                           ^^^^^^
+

@@ -25,8 +25,8 @@ val c3 = obj3.c
 
 type MyRecord<K: keyof any, T> = {[P]: T for P in K}
 declare val record: MyRecord<"email" | "username", string>
-val email = record.email
-val username = record.username
+val email1 = record.email
+val username1 = record.username
 
 type MyExclude<T, U> = if T : U { never } else { T }
 type MyExtract<T, U> = if T : U { T } else { never }
@@ -60,3 +60,16 @@ declare val obj7: AddPrefix<Obj>
 val prefixA = obj7.prefix_a
 val prefixB = obj7.prefix_b
 val prefixC = obj7.prefix_c
+
+type OnlyStrings<T> = {[K]: T[K] for K in keyof T if T[K] : string}
+type Person = {
+    id: number,
+    name: string,
+    email: string,
+    active: boolean,
+}
+declare val strPerson: OnlyStrings<Person>
+val id = strPerson.id
+val name = strPerson.name
+val email = strPerson.email
+val active = strPerson.active

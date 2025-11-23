@@ -881,6 +881,8 @@ type MappedElem struct {
 	Value     Type
 	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
 	ReadOnly  *MappedModifier
+	Check     Type // optional - the type to check
+	Extends   Type // optional - the type it should extend
 }
 type IndexParam struct {
 	Name       string
@@ -970,6 +972,22 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 		changed = true
 	}
 
+	var newCheck Type
+	if m.Check != nil {
+		newCheck = m.Check.Accept(v)
+		if newCheck != m.Check {
+			changed = true
+		}
+	}
+
+	var newExtends Type
+	if m.Extends != nil {
+		newExtends = m.Extends.Accept(v)
+		if newExtends != m.Extends {
+			changed = true
+		}
+	}
+
 	if changed {
 		newTypeParam := &IndexParam{
 			Name:       m.TypeParam.Name,
@@ -981,6 +999,8 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 			Value:     newValue,
 			Optional:  m.Optional,
 			ReadOnly:  m.ReadOnly,
+			Check:     newCheck,
+			Extends:   newExtends,
 		}
 	}
 	return m

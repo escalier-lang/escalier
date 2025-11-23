@@ -524,6 +524,17 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 		p.expect(In, AlwaysConsume)
 		constraint := p.typeAnn()
 
+		// Parse optional if clause for filtering
+		var check ast.TypeAnn
+		var extends ast.TypeAnn
+		token = p.lexer.peek()
+		if token.Type == If {
+			p.lexer.consume() // consume 'if'
+			check = p.typeAnn()
+			p.expect(Colon, AlwaysConsume)
+			extends = p.typeAnn()
+		}
+
 		// Check if the name is just a simple identifier matching the type parameter
 		// If so, it's not actually a rename, so set Name to nil
 		var mappedName ast.TypeAnn
@@ -553,6 +564,8 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			Value:    value,
 			Optional: optional,
 			ReadOnly: nil, // TODO: handle readonly
+			Check:    check,
+			Extends:  extends,
 		}
 	}
 

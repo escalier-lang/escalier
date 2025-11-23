@@ -2144,6 +2144,24 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 					mappedElem.TypeParam.Name: keyType,
 				}
 
+				// Apply filter if Check and Extends are present
+				if mappedElem.Check != nil && mappedElem.Extends != nil {
+					// Substitute the type parameter in both Check and Extends
+					checkType := v.checker.substituteTypeParams(mappedElem.Check, keySubs)
+					extendsType := v.checker.substituteTypeParams(mappedElem.Extends, keySubs)
+
+					// Expand both types
+					checkType, _ = v.checker.expandType(v.ctx, checkType, -1)
+					extendsType, _ = v.checker.expandType(v.ctx, extendsType, -1)
+
+					// Check if checkType extends extendsType
+					errors := v.checker.unify(v.ctx, checkType, extendsType)
+					if len(errors) > 0 {
+						// Skip this property if it doesn't satisfy the filter
+						continue
+					}
+				}
+
 				// Determine the property key
 				var propKey ObjTypeKey
 				if mappedElem.Name != nil {
@@ -3894,12 +3912,29 @@ func (c *Checker) inferTypeAnn(
 					}
 				}
 
+				// Infer the check and extends types if present (for filtering)
+				var checkType Type
+				if elem.Check != nil {
+					var checkErrors []Error
+					checkType, checkErrors = c.inferTypeAnn(mappedCtx, elem.Check)
+					errors = slices.Concat(errors, checkErrors)
+				}
+
+				var extendsType Type
+				if elem.Extends != nil {
+					var extendsErrors []Error
+					extendsType, extendsErrors = c.inferTypeAnn(mappedCtx, elem.Extends)
+					errors = slices.Concat(errors, extendsErrors)
+				}
+
 				elems[i] = &MappedElem{
 					TypeParam: typeParam,
 					Name:      nameType,
 					Value:     valueType,
 					Optional:  optional,
 					ReadOnly:  readOnly,
+					Check:     checkType,
+					Extends:   extendsType,
 				}
 			case *ast.RestSpreadTypeAnn:
 				panic("TODO: handle RestSpreadTypeAnn")
