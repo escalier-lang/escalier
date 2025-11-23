@@ -1,0 +1,17 @@
+val fix = fn<A, B>(
+    f: fn(f: fn(arg: A) -> B) -> fn(arg: A) -> B
+) {
+    return {
+        recurse(self, arg: A) -> B {
+            return f(self.recurse)(arg)
+        },
+    }.recurse
+}
+
+val fact = fn(cont: fn(n: number) -> number) {
+    return fn(n: number) -> number {
+        return if n <= 0 { 1 } else { n * cont(n - 1) }
+    }
+}
+  
+val result = fix(fact)(10)
