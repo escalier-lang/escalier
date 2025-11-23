@@ -23,3 +23,16 @@ val a3 = obj3.a
 val b3 = obj3.b
 val c3 = obj3.c
 
+type MyRecord<K: keyof any, T> = {[P]: T for P in K}
+declare val record: MyRecord<"email" | "username", string>
+val email = record.email
+val username = record.username
+
+type MyExclude<T, U> = if T : U { never } else { T }
+type MyExtract<T, U> = if T : U { T } else { never }
+type MyOmit<T, K: keyof any> = MyPick<T, MyExclude<keyof T, K>>
+
+declare val obj4: MyOmit<Obj, "b">
+val a4 = obj4.a
+val b4 = obj4.b // error, this field shouldn't exist on obj1
+val c4 = obj4.c

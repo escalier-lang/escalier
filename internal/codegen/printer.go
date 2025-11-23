@@ -882,7 +882,13 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.PrintTypeAnn(ta.Index)
 		p.print("]")
 	case *CondTypeAnn:
-		panic("PrintTypeAnn: CondTypeAnn not implemented")
+		p.PrintTypeAnn(ta.Check)
+		p.print(" extends ")
+		p.PrintTypeAnn(ta.Extends)
+		p.print(" ? ")
+		p.PrintTypeAnn(ta.Cons)
+		p.print(" : ")
+		p.PrintTypeAnn(ta.Alt)
 	case *InferTypeAnn:
 		panic("PrintTypeAnn: InferTypeAnn not implemented")
 	case *AnyTypeAnn:
