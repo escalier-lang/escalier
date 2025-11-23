@@ -34,7 +34,7 @@ type MyOmit<T, K: keyof any> = MyPick<T, MyExclude<keyof T, K>>
 
 declare val obj4: MyOmit<Obj, "b">
 val a4 = obj4.a
-val b4 = obj4.b // error, this field shouldn't exist on obj1
+val b4 = obj4.b // error, this field shouldn't exist on obj4
 val c4 = obj4.c
 
 type SimpleMappedObj = {[P]: string for P in "foo" | "bar"}

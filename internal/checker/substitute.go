@@ -95,13 +95,13 @@ func (v *TypeParamSubstitutionVisitor) isShadowed(name string) bool {
 }
 
 // substituteTypeParams replaces type parameters in a type with their corresponding type arguments
-func (c *Checker) substituteTypeParams(t Type, substitutions map[string]Type) Type {
+func substituteTypeParams[T Type](t T, substitutions map[string]Type) T {
 	if len(substitutions) == 0 {
 		return t
 	}
 
-	t = Prune(t)
+	t = Prune(t).(T)
 	visitor := NewTypeParamSubstitutionVisitor(substitutions)
 	result := t.Accept(visitor)
-	return result
+	return result.(T)
 }

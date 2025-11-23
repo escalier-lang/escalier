@@ -1082,7 +1082,7 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnType = c.substituteTypeParams(fnTypeWithoutParams, substitutions).(*FuncType)
+			fnType = substituteTypeParams[*FuncType](fnTypeWithoutParams, substitutions)
 		}
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -1196,9 +1196,8 @@ func (c *Checker) inferCallExpr(ctx Context, expr *ast.CallExpr) (resultType Typ
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnTypeToUse = c.substituteTypeParams(fnTypeWithoutParams, substitutions).(*FuncType)
+			fnTypeToUse = substituteTypeParams[*FuncType](fnTypeWithoutParams, substitutions)
 		}
-
 		// Use the same logic as for direct function calls
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -1823,11 +1822,11 @@ func (v *TypeExpansionVisitor) EnterType(t Type) Type {
 			t.Provenance(),
 			t.Check,
 			extendsType,
-			v.checker.substituteTypeParams(t.Then, inferSubs),
+			substituteTypeParams(t.Then, inferSubs),
 			// TODO: don't use substitutions for the Then type because the Checks
 			// type didn't have any InferTypes in it, so we don't need to
 			// replace them with fresh type variables.
-			v.checker.substituteTypeParams(t.Else, inferSubs),
+			substituteTypeParams(t.Else, inferSubs),
 		)
 	}
 
@@ -2023,7 +2022,7 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 			// - type Bar<T> = string & T extends string ? T : number
 			// Do not perform distributions if the conditional type is the child
 			// of any other type.
-			switch Prune(expandedType).(type) {
+			switch prunedType := Prune(expandedType).(type) {
 			case *CondType:
 				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
 				if len(subSetErrors) > 0 {
@@ -2035,22 +2034,22 @@ func (v *TypeExpansionVisitor) ExitType(t Type) Type {
 				if len(substitutionSets) > 1 {
 					expandedTypes := make([]Type, len(substitutionSets))
 					for i, substitutionSet := range substitutionSets {
-						expandedTypes[i] = v.checker.substituteTypeParams(typeAlias.Type, substitutionSet)
+						expandedTypes[i] = substituteTypeParams(prunedType, substitutionSet)
 					}
 					// Create a union type of all expanded types
 					expandedType = NewUnionType(nil, expandedTypes...)
 				} else {
 					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-					expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
+					expandedType = substituteTypeParams(prunedType, substitutions)
 				}
 			case *ObjectType:
 				// Expand any MappedElem elements in the object type
 				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-				objType := v.checker.substituteTypeParams(typeAlias.Type, substitutions).(*ObjectType)
+				objType := substituteTypeParams(prunedType, substitutions)
 				expandedType = v.expandMappedElems(objType)
 			default:
 				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-				expandedType = v.checker.substituteTypeParams(typeAlias.Type, substitutions)
+				expandedType = substituteTypeParams(prunedType, substitutions)
 			}
 		} else if len(typeAlias.TypeParams) == 0 && len(t.TypeArgs) == 0 {
 			// Expand MappedElems in ObjectTypes even if there are no type params/args
@@ -2147,8 +2146,8 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 				// Apply filter if Check and Extends are present
 				if mappedElem.Check != nil && mappedElem.Extends != nil {
 					// Substitute the type parameter in both Check and Extends
-					checkType := v.checker.substituteTypeParams(mappedElem.Check, keySubs)
-					extendsType := v.checker.substituteTypeParams(mappedElem.Extends, keySubs)
+					checkType := substituteTypeParams(mappedElem.Check, keySubs)
+					extendsType := substituteTypeParams(mappedElem.Extends, keySubs)
 
 					// Expand both types
 					checkType, _ = v.checker.expandType(v.ctx, checkType, -1)
@@ -2167,7 +2166,7 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 				if mappedElem.Name != nil {
 					// If a Name is provided, use it to compute the property key
 					// Example: {[`prefix_${K}`]: T[K] for K in keyof T}
-					propKeyType := v.checker.substituteTypeParams(mappedElem.Name, keySubs)
+					propKeyType := substituteTypeParams(mappedElem.Name, keySubs)
 
 					// Expand the property key to resolve template literals
 					propKeyType, _ = v.checker.expandType(v.ctx, propKeyType, -1)
@@ -2200,16 +2199,17 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 							propKey = NewStrKey(lit.Value)
 						case *NumLit:
 							propKey = NewNumKey(lit.Value)
+						default:
+							panic("Invalid property key type in mapped element")
 						}
 					case *UniqueSymbolType:
 						propKey = NewSymKey(kt.Value)
 					default:
-						// Skip non-literal keys
-						continue
+						panic("Invalid property key type in mapped element")
 					}
 				}
 
-				propValue := v.checker.substituteTypeParams(mappedElem.Value, keySubs)
+				propValue := substituteTypeParams(mappedElem.Value, keySubs)
 
 				// Expand the property value to resolve any index types such as `T[K]`
 				// This is necessary to get the actual type including | undefined for optional properties
@@ -2539,7 +2539,7 @@ func (c *Checker) expandTypeRef(ctx Context, t *TypeRefType) (Type, []Error) {
 	// Handle type parameter substitution if the type is generic
 	if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
 		substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-		expandedType = c.substituteTypeParams(typeAlias.Type, substitutions)
+		expandedType = substituteTypeParams(typeAlias.Type, substitutions)
 	}
 
 	return expandedType, []Error{}
