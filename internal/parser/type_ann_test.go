@@ -95,6 +95,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectTypeOptionalProperties": {
 			input: "{[P]?: T[P] for P in keyof T}",
 		},
+		"MappedObjectTypeAddOptionalProperties": {
+			input: "{[P]+?: T[P] for P in keyof T}",
+		},
+		"AMappedObjectTypeRemoveOptionalProperties": {
+			input: "{[P]-?: T[P] for P in keyof T}",
+		},
 		"MappedObjectTypePropertyRenaming": {
 			input: "{[`prefix_${K}`]: T[K] for K in keyof T}",
 		},
