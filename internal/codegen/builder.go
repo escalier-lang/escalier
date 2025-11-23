@@ -1011,7 +1011,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				// If the object is not already an IdentExpr, extract it to a temp variable
 				// to avoid duplicating complex expressions and running side-effects multiple times
 				var bindTargetExpr Expr
-				if _, isIdentExpr := objExpr.(*IdentExpr); !isIdentExpr {
+				if _, isIdentExpr := objExpr.(*IdentExpr); isIdentExpr {
+					bindTargetExpr = objExpr
+				} else {
 					tempVar, tempDeclStmt := b.createTempVar(expr.Object)
 
 					// Initialize the temp variable with the object expression
@@ -1024,8 +1026,6 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					// Update the member expression to use the temp variable
 					member = NewMemberExpr(tempVar, propExpr, expr.OptChain, expr)
 					bindTargetExpr = tempVar
-				} else {
-					bindTargetExpr = objExpr
 				}
 
 				bindIdent := NewIdentifier("bind", nil)
