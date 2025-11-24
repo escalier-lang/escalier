@@ -1,4 +1,9 @@
 val obj = {a: true, b: false, c: 0, e: "foo", f: "bar", g: "baz"}
 export val {a, b = 5, c: d, e: f = "hello", ...rest} = obj
+
 val array = [5, 10, "foo", "bar"]
-export val [x, y = true, ...other] = array
+export val [fst, snd = true, ...other] = array
+
+type Point = {x: number, y: number}
+val p: Point = {x: 5, y: 10}
+val {x, y, z} = p

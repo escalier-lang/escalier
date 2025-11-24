@@ -9,6 +9,19 @@ import (
 	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// getSpanFromType extracts the span from a type's provenance if available
+func getSpanFromType(t Type) ast.Span {
+	if t == nil {
+		return DEFAULT_SPAN
+	}
+	if prov := t.Provenance(); prov != nil {
+		if nodeProv, ok := prov.(*ast.NodeProvenance); ok && nodeProv.Node != nil {
+			return nodeProv.Node.Span()
+		}
+	}
+	return DEFAULT_SPAN
+}
+
 // If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
@@ -752,7 +765,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj2,
 							Key:    key1,
+							span:   getSpanFromType(value1),
 						}})
+						// Unify the missing property's type with 'never' so that it gets
+						// properly resolved and doesn't remain as a type variable
+						neverType := NewNeverType(nil)
+						unifyErrors := c.unify(ctx, value1, neverType)
+						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 
@@ -784,7 +803,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj1,
 							Key:    key2,
+							span:   getSpanFromType(value2),
 						}})
+						// Unify the missing property's type with 'never' so that it gets
+						// properly resolved and doesn't remain as a type variable
+						neverType := NewNeverType(nil)
+						unifyErrors := c.unify(ctx, value2, neverType)
+						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 
@@ -814,7 +839,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj1,
 							Key:    key2,
+							span:   getSpanFromType(value2),
 						}})
+						// Unify the missing property's type with 'never' so that it gets
+						// properly resolved and doesn't remain as a type variable
+						neverType := NewNeverType(nil)
+						unifyErrors := c.unify(ctx, value2, neverType)
+						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 			}

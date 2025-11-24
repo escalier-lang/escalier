@@ -1,0 +1,5 @@
+lib/destructuring.esc:9:12: Key not found in object: z in {x: number, y: number}
+
+9:  val {x, y, z} = p
+               ^
+

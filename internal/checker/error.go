@@ -83,10 +83,11 @@ func (e InvalidObjectKeyError) Message() string {
 type KeyNotFoundError struct {
 	Object *ObjectType
 	Key    ObjTypeKey
+	span   ast.Span
 }
 
 func (e KeyNotFoundError) Span() ast.Span {
-	return DEFAULT_SPAN
+	return e.span
 }
 func (e KeyNotFoundError) Message() string {
 	return "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
