@@ -1,0 +1,6 @@
+{
+    "name": "member_access",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

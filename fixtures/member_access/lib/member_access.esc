@@ -1,0 +1,9 @@
+
+type FooBar = 
+  | {kind: "foo", id: number, foo: string}
+  | {kind: "bar", id: number, bar: boolean}
+declare val fb: FooBar
+val kind = fb.kind
+val id = fb.id
+val foo = fb.foo
+val bar = fb.bar

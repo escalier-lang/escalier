@@ -2415,6 +2415,18 @@ type IndexKey struct {
 
 func (ik IndexKey) isAccessKey() {}
 
+// getSpanFromAccessKey extracts the span from an AccessKey
+func getSpanFromAccessKey(key AccessKey) ast.Span {
+	switch k := key.(type) {
+	case PropertyKey:
+		return k.Span
+	case IndexKey:
+		return k.Span
+	default:
+		return DEFAULT_SPAN
+	}
+}
+
 // getMemberType is a unified function for getting types from objects via property access or indexing
 func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type, []Error) {
 	errors := []Error{}
@@ -2462,7 +2474,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
 		if QualIdentToString(t.Name) == "Error" {
 			// Built-in Error type doesn't support property access directly
-			errors = append(errors, &ExpectedObjectError{Type: objType})
+			errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
 			return NewNeverType(nil), errors
 		}
 
@@ -2496,7 +2508,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 			return NewNeverType(nil), errors
 		}
 		// TupleType doesn't support property access
-		errors = append(errors, &ExpectedObjectError{Type: objType})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
 		return NewNeverType(nil), errors
 	case *ObjectType:
 		return c.getObjectAccess(t, key, errors)
@@ -2518,10 +2530,10 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 			}
 		}
 		// NamespaceType doesn't support index access
-		errors = append(errors, &ExpectedObjectError{Type: objType})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
 		return NewNeverType(nil), errors
 	default:
-		errors = append(errors, &ExpectedObjectError{Type: objType})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
 		return NewNeverType(nil), errors
 	}
 }
@@ -2585,7 +2597,7 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 			Property:   k.Name,
 			span:       k.Span,
 		})
-		return NewNeverType(nil), errors
+		return NewUndefinedType(nil), errors
 	case IndexKey:
 		if indexLit, ok := k.Type.(*LitType); ok {
 			if strLit, ok := indexLit.Lit.(*StrLit); ok {
@@ -2615,10 +2627,10 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 			Key:  k.Type,
 			span: k.Span,
 		})
-		return NewNeverType(nil), errors
+		return NewUndefinedType(nil), errors
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType})
-		return NewNeverType(nil), errors
+		return NewUndefinedType(nil), errors
 	}
 }
 
@@ -2651,9 +2663,11 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 	definedElems := c.getDefinedElems(unionType)
 
 	undefinedCount := len(unionType.Types) - len(definedElems)
-	if undefinedCount == 0 {
-		errors = append(errors, &ExpectedObjectError{Type: unionType})
-		return NewNeverType(nil), errors
+
+	// If there are no defined elements (only null/undefined), we can't access properties
+	if len(definedElems) == 0 {
+		errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+		return NewUndefinedType(nil), errors
 	}
 
 	if len(definedElems) == 1 {
@@ -2662,8 +2676,8 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 		}
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
-			errors = append(errors, &ExpectedObjectError{Type: unionType})
-			return NewNeverType(nil), errors
+			errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+			return NewUndefinedType(nil), errors
 		}
 
 		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
@@ -2673,7 +2687,29 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *UnionType, key AccessKe
 	}
 
 	if len(definedElems) > 1 {
-		panic("TODO: handle getting property from union type with multiple defined elements")
+		// Get the member type from each element in the union and combine them
+		memberTypes := []Type{}
+		for _, elem := range definedElems {
+			memberType, memberErrors := c.getMemberType(ctx, elem, key)
+			errors = slices.Concat(errors, memberErrors)
+			memberTypes = append(memberTypes, memberType)
+		}
+
+		// If there are undefined elements and we're accessing without optional chaining,
+		// we need to report an error
+		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
+			errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+		}
+
+		// Create a union of all member types
+		resultType := NewUnionType(nil, memberTypes...)
+
+		// If there are undefined elements, add undefined to the union
+		if undefinedCount > 0 {
+			resultType = NewUnionType(nil, resultType, NewUndefinedType(nil))
+		}
+
+		return resultType, errors
 	}
 
 	return NewNeverType(nil), errors

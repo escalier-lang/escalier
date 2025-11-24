@@ -7,3 +7,4 @@ export val [fst, snd = true, ...other] = array
 type Point = {x: number, y: number}
 val p: Point = {x: 5, y: 10}
 val {x, y, z} = p
+val {x: x1} = p

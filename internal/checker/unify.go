@@ -767,10 +767,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							Key:    key1,
 							span:   getSpanFromType(value1),
 						}})
-						// Unify the missing property's type with 'never' so that it gets
+						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						neverType := NewNeverType(nil)
-						unifyErrors := c.unify(ctx, value1, neverType)
+						undefinedType := NewUndefinedType(nil)
+						unifyErrors := c.unify(ctx, value1, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
@@ -805,10 +805,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							Key:    key2,
 							span:   getSpanFromType(value2),
 						}})
-						// Unify the missing property's type with 'never' so that it gets
+						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						neverType := NewNeverType(nil)
-						unifyErrors := c.unify(ctx, value2, neverType)
+						undefinedType := NewUndefinedType(nil)
+						unifyErrors := c.unify(ctx, value2, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
@@ -841,10 +841,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 							Key:    key2,
 							span:   getSpanFromType(value2),
 						}})
-						// Unify the missing property's type with 'never' so that it gets
+						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						neverType := NewNeverType(nil)
-						unifyErrors := c.unify(ctx, value2, neverType)
+						undefinedType := NewUndefinedType(nil)
+						unifyErrors := c.unify(ctx, value2, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}

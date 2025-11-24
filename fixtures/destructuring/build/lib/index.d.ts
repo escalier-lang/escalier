@@ -12,4 +12,5 @@ declare type Point = {x: number, y: number};
 declare const p: Point;
 declare const x: number;
 declare const y: number;
-declare const z: never;
+declare const z: undefined;
+declare const x1: number;
