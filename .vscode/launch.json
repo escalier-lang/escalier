@@ -11,10 +11,6 @@
       ],
       "outFiles": ["${workspaceFolder}/packages/vscode-escalier/out/**/*.js"],
       "autoAttachChildProcesses": true,
-      "preLaunchTask": {
-        "type": "npm",
-        "script": "compile"
-      }
     }
   ]
 }

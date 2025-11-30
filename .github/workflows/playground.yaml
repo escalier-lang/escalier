@@ -16,7 +16,11 @@ jobs:
         run: go mod download
 
       - name: Build lsp-server
-        run: npm run lsp-server:wasm
+        run: make lsp-server-wasm
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
 
       - name: Install Node.js
         uses: actions/setup-node@v2
@@ -24,11 +28,11 @@ jobs:
           node-version: '22'
 
       - name: Install JS dependencies
-        run: npm install
+        run: pnpm install
 
       - name: Build playground
         working-directory: playground
-        run: npm run build:prod
+        run: pnpm build:prod
 
       - name: Upload Page Artifact
         uses: actions/upload-pages-artifact@v3
