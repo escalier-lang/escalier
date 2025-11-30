@@ -44,8 +44,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// TODO: Unification of mutable types with mutable types should be invariant
 	// | MutableType, MutableType -> ...
-	if mut1, ok := t1.(*MutableType); ok {
-		if mut2, ok := t2.(*MutableType); ok {
+	if mut1, ok := t1.(*MutabilityType); ok {
+		if mut2, ok := t2.(*MutabilityType); ok {
 			// MutableType can be unified with another MutableType
 			// by unifying their underlying types
 			return c.unifyMut(ctx, mut1, mut2)
@@ -55,7 +55,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// immutable references (i.e. the lifetime of any immutable references has
 	// ended).
 	// | _, MutableType -> ...
-	if mut, ok := t2.(*MutableType); ok {
+	if mut, ok := t2.(*MutabilityType); ok {
 		return c.unify(ctx, t1, mut.Type)
 	}
 	// TODO: This should only be allowed if the value being referenced has no
@@ -64,7 +64,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// NOTE: This avoids issues where a mutable reference will modify the value
 	// while the immutable reference is still using it.
 	// | MutableType, _ -> ...
-	if mut, ok := t1.(*MutableType); ok {
+	if mut, ok := t1.(*MutabilityType); ok {
 		return c.unify(ctx, mut.Type, t2)
 	}
 	// | PrimType, PrimType -> ...

@@ -80,7 +80,7 @@ func (*TypeOfType) isType()       {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
-func (*MutableType) isType()      {}
+func (*MutabilityType) isType()   {}
 func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
@@ -1565,20 +1565,32 @@ func NewInferType(provenance Provenance, name string) *InferType {
 	}
 }
 
-type MutableType struct {
+type Mutability string
+
+const (
+	MutabilityMutable   Mutability = "!"
+	MutabilityUncertain Mutability = "?"
+)
+
+type MutabilityType struct {
 	Type       Type
+	Mutability Mutability
 	provenance Provenance
 }
 
-func (t *MutableType) Accept(v TypeVisitor) Type {
+func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
-		t = result.(*MutableType)
+		t = result.(*MutabilityType)
 	}
 
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = NewMutableType(t.provenance, newType)
+		result = &MutabilityType{
+			Type:       newType,
+			Mutability: t.Mutability,
+			provenance: t.provenance,
+		}
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1586,13 +1598,14 @@ func (t *MutableType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *MutableType) String() string {
+func (t *MutabilityType) String() string {
 	return "mut " + t.Type.String()
 }
 
-func NewMutableType(provenance Provenance, t Type) *MutableType {
-	return &MutableType{
+func NewMutableType(provenance Provenance, t Type) *MutabilityType {
+	return &MutabilityType{
 		Type:       t,
+		Mutability: MutabilityMutable,
 		provenance: provenance,
 	}
 }
@@ -1874,7 +1887,7 @@ func Equals(t1 Type, t2 Type) bool {
 			// nolint:exhaustruct
 			IntersectionType{}, KeyOfType{}, IndexType{}, CondType{}, InferType{},
 			// nolint:exhaustruct
-			MutableType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
+			MutabilityType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
 			// nolint:exhaustruct
 			IntrinsicType{}, NamespaceType{}, MappedElem{}, Ident{}, Member{},
 		),

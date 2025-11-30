@@ -2457,7 +2457,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 	}
 
 	switch t := objType.(type) {
-	case *MutableType:
+	case *MutabilityType:
 		// For mutable types, get the access from the inner type
 		return c.getMemberType(ctx, t.Type, key)
 	case *TypeRefType:
@@ -4217,7 +4217,7 @@ func (c *Checker) isMutableType(t Type) bool {
 	t = Prune(t)
 
 	switch t.(type) {
-	case *MutableType:
+	case *MutabilityType:
 		return true
 	default:
 		return false
