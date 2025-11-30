@@ -16,7 +16,11 @@ jobs:
         run: go mod download
 
       - name: Build lsp-server
-        run: pnpm lsp-server:wasm
+        run: make lsp-server-wasm
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
 
       - name: Install Node.js
         uses: actions/setup-node@v2

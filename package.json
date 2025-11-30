@@ -15,8 +15,6 @@
 		"compile": "pnpm lsp-server && tsc -b",
 		"build": "tsc -b",
 		"watch": "tsc -b -w",
-		"lsp-server": "go build -o ./bin/lsp-server ./cmd/lsp-server",
-		"lsp-server:wasm": "GOOS=js GOARCH=wasm go build -o ./bin/lsp-server.wasm ./cmd/lsp-server",
 		"lint": "biome lint .",
 		"format": "biome format .",
 		"check": "biome check .",
