@@ -23,6 +23,7 @@
     "@vitejs/plugin-react": "^5.1.0",
     "globals": "^15.15.0",
     "typescript": "~5.7.2",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "vscode-languageserver-protocol": "3.17.5"
   }
 }

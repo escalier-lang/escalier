@@ -89,6 +89,9 @@ importers:
       vite:
         specifier: ^7.1.12
         version: 7.2.2(@types/node@20.19.24)
+      vscode-languageserver-protocol:
+        specifier: 3.17.5
+        version: 3.17.5
 
 packages:
 
