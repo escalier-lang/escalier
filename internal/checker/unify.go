@@ -875,9 +875,174 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// | UnionType, _ -> ...
 	if union, ok := t1.(*UnionType); ok {
+		// special-case unification of union with object type
+		if obj, ok := t2.(*ObjectType); ok {
+			destructuredFields := make(map[ObjTypeKey]Type)
+			var restType Type
+			for _, elem := range obj.Elems {
+				switch elem := elem.(type) {
+				case *MethodElem:
+					destructuredFields[elem.Name] = elem.Fn
+				case *GetterElem:
+					destructuredFields[elem.Name] = elem.Fn.Return
+				case *SetterElem:
+					destructuredFields[elem.Name] = elem.Fn.Params[0].Type
+				case *PropertyElem:
+					propType := elem.Value
+					if elem.Optional {
+						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+					}
+					destructuredFields[elem.Name] = propType
+				case *RestSpreadElem:
+					restType = elem.Value
+				default: // skip other types of elems
+				}
+			}
+
+			for name, t := range destructuredFields {
+				fmt.Fprintf(os.Stderr, "%s: %s\n", name.String(), t.String())
+			}
+
+			matchingTypes := make(map[ObjTypeKey][]Type)
+			// Track remaining fields for rest spread handling
+			remainingFields := make(map[ObjTypeKey][]Type)
+			remainingFieldsOrder := []ObjTypeKey{} // Track order of keys
+
+			for _, unionType := range union.Types {
+				if unionObj, ok := unionType.(*ObjectType); ok {
+					for name := range destructuredFields {
+						var t Type
+						// Find the type of the field with this name in the union object
+						for _, elem := range unionObj.Elems {
+							switch elem := elem.(type) {
+							case *MethodElem:
+								if elem.Name == name {
+									t = elem.Fn
+								}
+							case *GetterElem:
+								if elem.Name == name {
+									t = elem.Fn.Return
+								}
+							case *SetterElem:
+								if elem.Name == name {
+									t = elem.Fn.Params[0].Type
+								}
+							case *PropertyElem:
+								if elem.Name == name {
+									propType := elem.Value
+									if elem.Optional {
+										propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+									}
+									t = propType
+								}
+							default: // skip other types of elems
+							}
+						}
+						if t != nil {
+							matchingTypes[name] = append(matchingTypes[name], t)
+						}
+					}
+
+					// If restType is specified, collect remaining fields
+					if restType != nil {
+						for _, elem := range unionObj.Elems {
+							switch elem := elem.(type) {
+							case *MethodElem:
+								if _, ok := destructuredFields[elem.Name]; !ok {
+									if _, exists := remainingFields[elem.Name]; !exists {
+										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
+									}
+									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn)
+								}
+							case *GetterElem:
+								if _, ok := destructuredFields[elem.Name]; !ok {
+									if _, exists := remainingFields[elem.Name]; !exists {
+										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
+									}
+									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Return)
+								}
+							case *SetterElem:
+								if _, ok := destructuredFields[elem.Name]; !ok {
+									if _, exists := remainingFields[elem.Name]; !exists {
+										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
+									}
+									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Params[0].Type)
+								}
+							case *PropertyElem:
+								if _, ok := destructuredFields[elem.Name]; !ok {
+									propType := elem.Value
+									if elem.Optional {
+										propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+									}
+									if _, exists := remainingFields[elem.Name]; !exists {
+										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
+									}
+									remainingFields[elem.Name] = append(remainingFields[elem.Name], propType)
+								}
+							default: // skip other types of elems
+							}
+						}
+					}
+				}
+			}
+			errors := []Error{}
+			for name, t := range destructuredFields {
+				// if destructuredFields[name] doesn't exist, unify `undefined` with `t`
+				if _, ok := matchingTypes[name]; !ok {
+					undefined := NewUndefinedType(nil)
+					unifyErrors := c.unify(ctx, undefined, t)
+					errors = slices.Concat(errors, unifyErrors)
+				} else if len(matchingTypes[name]) == len(union.Types) {
+					// Create a union of all matching types and unify with destructured field type
+					unionOfMatchingTypes := NewUnionType(nil, matchingTypes[name]...)
+					fieldType := destructuredFields[name]
+					unifyErrors := c.unify(ctx, unionOfMatchingTypes, fieldType)
+					errors = slices.Concat(errors, unifyErrors)
+				} else {
+					// Create a union of all matching types and `undefined`, then unify with destructured field type
+					unionOfMatchingTypes := NewUnionType(nil, append(matchingTypes[name], NewUndefinedType(nil))...)
+					fieldType := destructuredFields[name]
+					unifyErrors := c.unify(ctx, unionOfMatchingTypes, fieldType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+			}
+
+			// Handle rest spread element if present
+			if restType != nil {
+				restElems := []ObjTypeElem{}
+				for _, name := range remainingFieldsOrder {
+					types := remainingFields[name]
+					// Create a union of all types for this field across union members
+					var fieldType Type
+					if len(types) == 1 {
+						fieldType = types[0]
+					} else if len(types) > 1 {
+						fieldType = NewUnionType(nil, types...)
+					} else {
+						// Field doesn't exist in any union member, use undefined
+						fieldType = NewUndefinedType(nil)
+					}
+
+					restElems = append(restElems, &PropertyElem{
+						Name:     name,
+						Optional: false, // TODO: determine if this should be true
+						Readonly: false, // TODO: determine if this should be true
+						Value:    fieldType,
+					})
+				}
+
+				objType := NewObjectType(nil, restElems)
+				unifyErrors := c.unify(ctx, objType, restType)
+				errors = slices.Concat(errors, unifyErrors)
+			}
+
+			return errors
+		}
+
 		// All types in the union must be compatible with t2
-		for _, unionType := range union.Types {
-			unifyErrors := c.unify(ctx, unionType, t2)
+		for _, t := range union.Types {
+			unifyErrors := c.unify(ctx, t, t2)
+			// TODO: include the individual reasons why unification failed
 			if len(unifyErrors) > 0 {
 				// If any type in the union is not compatible, return error
 				return []Error{&CannotUnifyTypesError{
@@ -892,6 +1057,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	if union, ok := t2.(*UnionType); ok {
 		// Try to unify t1 with any type in the union
 		for _, unionType := range union.Types {
+			fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())
 			// Try unifying - if any unification succeeds, we're good
 			unifyErrors := c.unify(ctx, t1, unionType)
 			if len(unifyErrors) == 0 {
