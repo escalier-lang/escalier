@@ -29,7 +29,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val {x, y, z} = p
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> Point? throws never}",
 				"p":     "Point",
 				"x":     "number",
 				"y":     "number",
@@ -58,7 +58,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.add(Point(1, 2))
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> Point? throws never}",
 				"p":     "Point",
 				"q":     "Point",
 				"len":   "number",
@@ -89,12 +89,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.scale(2).translate(1, -1)
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> Point? throws never}",
 				"p":     "Point",
-				"q":     "mut Point",
+				"q":     "Point!",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, scale(factor: number) -> mut Point throws never, translate(dx: number, dy: number) -> mut Point throws never}",
+				"Point": "{x: number, y: number, scale(factor: number) -> Point! throws never, translate(dx: number, dy: number) -> Point! throws never}",
 			},
 		},
 		"SimpleDeclWithComputedMembers": {
@@ -113,7 +113,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val fooBaz = foo[baz]()
 			`,
 			expectedTypes: map[string]string{
-				"Foo":    "{new fn () -> Foo throws never}",
+				"Foo":    "{new fn () -> Foo? throws never}",
 				"fooBar": "number",
 				"fooBaz": "number",
 			},
@@ -133,7 +133,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val result = Math.add(5, 3)
 			`,
 			expectedTypes: map[string]string{
-				"Math":   "{new fn () -> Math throws never, add(a: number, b: number) -> number throws never}",
+				"Math":   "{new fn () -> Math? throws never, add(a: number, b: number) -> number throws never}",
 				"m":      "Math",
 				"result": "number",
 			},
@@ -159,7 +159,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val len = p.length()
 			`,
 			expectedTypes: map[string]string{
-				"Point":  "{new fn (x: number, y: number) -> Point throws never, origin() -> Point throws never}",
+				"Point":  "{new fn (x: number, y: number) -> Point? throws never, origin() -> Point throws never}",
 				"p":      "Point",
 				"origin": "Point",
 				"len":    "number",
@@ -181,7 +181,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val area = c.area
 			`,
 			expectedTypes: map[string]string{
-				"Circle": "{new fn (radius: number) -> Circle throws never}",
+				"Circle": "{new fn (radius: number) -> Circle? throws never}",
 				"c":      "Circle",
 				"area":   "number",
 			},
@@ -193,7 +193,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Temperature(celsius: number) {
 					celsius,
-					set fahrenheit(self, value: number) {
+					set fahrenheit(mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
 				}
@@ -204,8 +204,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Temperature": "{new fn (celsius: number) -> Temperature throws never}",
-				"temp":        "mut Temperature",
+				"Temperature": "{new fn (celsius: number) -> Temperature? throws never}",
+				"temp":        "Temperature!",
 			},
 			expectedTypeAliases: map[string]string{
 				"Temperature": "{celsius: number, set fahrenheit(value: number) -> undefined throws never}",
@@ -234,8 +234,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Person": "{new fn (firstName: string, lastName: string) -> Person throws never}",
-				"person": "mut Person",
+				"Person": "{new fn (firstName: string, lastName: string) -> Person? throws never}",
+				"person": "Person!",
 				"name":   "string",
 			},
 			expectedTypeAliases: map[string]string{
@@ -254,7 +254,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> Config throws never, get version() -> string throws never}",
+				"Config":  "{new fn () -> Config? throws never, get version() -> string throws never}",
 				"config":  "Config",
 				"version": "string",
 			},
@@ -276,7 +276,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val defaultVal = Counter.defaultValue
 			`,
 			expectedTypes: map[string]string{
-				"Counter":        "{new fn (initialValue: number) -> Counter throws never, totalInstances: number, defaultValue: 100}",
+				"Counter":        "{new fn (initialValue: number) -> Counter? throws never, totalInstances: number, defaultValue: 100}",
 				"counter1":       "Counter",
 				"value1":         "number",
 				"totalInstances": "number",

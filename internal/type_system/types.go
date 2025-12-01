@@ -103,20 +103,22 @@ func Prune(t Type) Type {
 }
 
 type TypeVarType struct {
-	ID         int
-	Instance   Type
-	Constraint Type
-	Default    Type
-	provenance Provenance
+	ID          int
+	Instance    Type
+	Constraint  Type
+	Default     Type
+	FromBinding bool
+	provenance  Provenance
 }
 
 func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
 	return &TypeVarType{
-		ID:         id,
-		Instance:   nil,
-		Constraint: nil,
-		Default:    nil,
-		provenance: provenance,
+		ID:          id,
+		Instance:    nil,
+		Constraint:  nil,
+		Default:     nil,
+		FromBinding: false,
+		provenance:  provenance,
 	}
 }
 
@@ -1599,7 +1601,13 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	return result
 }
 func (t *MutabilityType) String() string {
-	return "mut " + t.Type.String()
+	if t.Mutability == MutabilityUncertain {
+		return t.Type.String() + "?"
+	}
+	if t.Mutability == MutabilityMutable {
+		return t.Type.String() + "!"
+	}
+	return t.Type.String()
 }
 
 func NewMutableType(provenance Provenance, t Type) *MutabilityType {

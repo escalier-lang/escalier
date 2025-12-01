@@ -743,7 +743,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn (value: number) -> Box throws never}",
+				"Box": "{new fn (value: number) -> Box? throws never}",
 				"box": "Box",
 				"a":   "number | string",
 				"b":   "number | 10",
@@ -758,7 +758,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val {value} = box
 			`,
 			expectedTypes: map[string]string{
-				"Box":   "{new fn <T>(value: T) -> Box<T> throws never}",
+				"Box":   "{new fn <T>(value: T) -> Box<T>? throws never}",
 				"box":   "Box<number>",
 				"value": "number",
 			},
@@ -780,7 +780,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn <T>(value: T) -> Box<T> throws never}",
+				"Box": "{new fn <T>(value: T) -> Box<T>? throws never}",
 				"box": "Box<number>",
 				"a":   "number | string",
 				"b":   "number | 10",
@@ -3185,7 +3185,7 @@ func TestMutableTypes(t *testing.T) {
 				val x: mut number = 5
 			`,
 			expectedTypes: map[string]string{
-				"x": "mut number",
+				"x": "number!",
 			},
 		},
 		"SymbolTypeAnnotation": {
@@ -3211,7 +3211,7 @@ func TestMutableTypes(t *testing.T) {
 				val s: mut string = "hello"
 			`,
 			expectedTypes: map[string]string{
-				"s": "mut string",
+				"s": "string!",
 			},
 		},
 		"MutableObjectType": {
@@ -3220,7 +3220,7 @@ func TestMutableTypes(t *testing.T) {
 				val {x, y} = obj
 			`,
 			expectedTypes: map[string]string{
-				"obj": "mut {x: number, y: string}",
+				"obj": "{x: number, y: string}!",
 			},
 		},
 		"MutableArrayType": {
@@ -3228,7 +3228,7 @@ func TestMutableTypes(t *testing.T) {
 				val arr: mut Array<number> = [1, 2, 3]
 			`,
 			expectedTypes: map[string]string{
-				"arr": "mut Array<number>",
+				"arr": "Array<number>!",
 			},
 		},
 		// "NestedMutableType": {

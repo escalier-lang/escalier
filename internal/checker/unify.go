@@ -44,8 +44,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// TODO: Unification of mutable types with mutable types should be invariant
 	// | MutableType, MutableType -> ...
-	if mut1, ok := t1.(*MutabilityType); ok {
-		if mut2, ok := t2.(*MutabilityType); ok {
+	if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityMutable {
+		if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityMutable {
 			// MutableType can be unified with another MutableType
 			// by unifying their underlying types
 			return c.unifyMut(ctx, mut1, mut2)
@@ -55,17 +55,30 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// immutable references (i.e. the lifetime of any immutable references has
 	// ended).
 	// | _, MutableType -> ...
-	if mut, ok := t2.(*MutabilityType); ok {
-		return c.unify(ctx, t1, mut.Type)
+	if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityUncertain {
+		if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityMutable {
+			return c.unify(ctx, mut1.Type, mut2.Type)
+		}
 	}
-	// TODO: This should only be allowed if the value being referenced has no
-	// immutable references (i.e. the lifetime of any immutable references has
-	// ended).
-	// NOTE: This avoids issues where a mutable reference will modify the value
-	// while the immutable reference is still using it.
+	if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityMutable {
+		if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityUncertain {
+			return c.unify(ctx, mut1.Type, mut2.Type)
+		}
+	}
 	// | MutableType, _ -> ...
-	if mut, ok := t1.(*MutabilityType); ok {
-		return c.unify(ctx, mut.Type, t2)
+	if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityMutable {
+		if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityUncertain {
+			return c.unify(ctx, mut1.Type, mut2.Type)
+		}
+		// It's okay to assign mutable types to immutable types
+		return c.unify(ctx, mut1.Type, t2)
+	}
+	if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityUncertain {
+		if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityMutable {
+			return c.unify(ctx, mut1.Type, mut2.Type)
+		}
+		// It's okay to assign mutable types to immutable types
+		return c.unify(ctx, mut1.Type, t2)
 	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
@@ -1367,7 +1380,13 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 				if typeVar1.Constraint != nil {
 					errors = c.unify(ctx, typeVar1.Constraint, t2)
 				}
-				typeVar1.Instance = t2
+				// We need to know if typeVar1 was inferred from a new binding or not
+				if typeVar1.FromBinding {
+					typeVar1.Instance = removeUncertainMutability(t2)
+				} else {
+					typeVar1.Instance = t2
+				}
+				// QUESTION: What should the provenance be if t2 is a MutabilityType?
 				typeVar1.SetProvenance(&TypeProvenance{
 					Type: t2,
 				})
@@ -1394,7 +1413,13 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 				if typeVar2.Constraint != nil {
 					errors = c.unify(ctx, t1, typeVar2.Constraint)
 				}
-				typeVar2.Instance = t1
+				// We need to know if typeVar1 was inferred from a new binding or not
+				if typeVar2.FromBinding {
+					typeVar2.Instance = removeUncertainMutability(t1)
+				} else {
+					typeVar2.Instance = t1
+				}
+				// QUESTION: What should the provenance be if t1 is a MutabilityType?
 				typeVar2.SetProvenance(&TypeProvenance{
 					Type: t1,
 				})
@@ -1427,4 +1452,25 @@ func occursInType(t1, t2 Type) bool {
 	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
 	return visitor.result
+}
+
+type RemoveUncertainMutabilityVisitor struct{}
+
+func (v *RemoveUncertainMutabilityVisitor) EnterType(t Type) Type {
+	// No-op for entry
+	return nil
+}
+
+func (v *RemoveUncertainMutabilityVisitor) ExitType(t Type) Type {
+	// If this is a MutabilityType with uncertain mutability, unwrap it
+	if mut, ok := t.(*MutabilityType); ok && mut.Mutability == MutabilityUncertain {
+		return mut.Type
+	}
+	return nil
+}
+
+func removeUncertainMutability(t Type) Type {
+	visitor := &RemoveUncertainMutabilityVisitor{}
+	result := t.Accept(visitor)
+	return result
 }

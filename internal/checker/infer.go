@@ -270,15 +270,19 @@ func (c *Checker) InferComponent(
 
 					if elem.Static {
 						// Static fields go to the class object type
+						tvar := c.FreshVar(nil)
+						tvar.FromBinding = true
 						staticElems = append(
 							staticElems,
-							NewPropertyElem(*key, c.FreshVar(nil)),
+							NewPropertyElem(*key, tvar),
 						)
 					} else {
 						// Instance fields go to the instance type
+						tvar := c.FreshVar(nil)
+						tvar.FromBinding = true
 						objTypeElems = append(
 							objTypeElems,
-							NewPropertyElem(*key, c.FreshVar(nil)),
+							NewPropertyElem(*key, tvar),
 						)
 					}
 				case *ast.MethodElem:
@@ -406,12 +410,17 @@ func (c *Checker) InferComponent(
 				typeArgs[i] = NewTypeRefType(nil, typeParams[i].Name, nil)
 			}
 
+			retType := &MutabilityType{
+				Type:       NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
+				Mutability: MutabilityUncertain,
+			}
+
 			funcType := NewFuncType(
 				provenance,
 				typeParams,
 				params,
-				NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
-				NewNeverType(nil),
+				retType,
+				NewNeverType(nil), // throws type
 			)
 
 			// Create an object type with a constructor element and static methods/properties
@@ -1439,6 +1448,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 		}
 	case *ast.LiteralExpr:
 		resultType, errors = c.inferLit(expr.Lit)
+		resultType = &MutabilityType{
+			Type:       resultType,
+			Mutability: MutabilityUncertain,
+		}
 	case *ast.TupleExpr:
 		types := make([]Type, len(expr.Elems))
 		errors = []Error{}
@@ -1447,7 +1460,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			types[i] = elemType
 			errors = slices.Concat(errors, elemErrors)
 		}
-		resultType = NewTupleType(provenance, types...)
+
+		resultType = &MutabilityType{
+			Type:       NewTupleType(provenance, types...),
+			Mutability: MutabilityUncertain,
+		}
 	case *ast.ObjectExpr:
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
@@ -1588,7 +1605,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 			i++
 		}
 
-		resultType = selfType
+		resultType = &MutabilityType{
+			Type:       selfType,
+			Mutability: MutabilityUncertain,
+		}
 	case *ast.FuncExpr:
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
@@ -1730,6 +1750,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 
 	// Always set the inferred type on the expression before returning
 	expr.SetInferredType(resultType)
+	resultType.SetProvenance(provenance)
 	return resultType, errors
 }
 
@@ -2486,7 +2507,11 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 		return accessType, errors
 	case *TupleType:
 		if indexKey, ok := key.(IndexKey); ok {
-			if indexLit, ok := indexKey.Type.(*LitType); ok {
+			var keyType Type = indexKey.Type
+			if mut, ok := keyType.(*MutabilityType); ok && mut.Mutability == MutabilityUncertain {
+				keyType = mut.Type
+			}
+			if indexLit, ok := keyType.(*LitType); ok {
 				if numLit, ok := indexLit.Lit.(*NumLit); ok {
 					index := int(numLit.Value)
 					if index < len(t.Elems) {
@@ -2501,6 +2526,7 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 					}
 				}
 			}
+			fmt.Fprintf(os.Stderr, "FOO\n")
 			errors = append(errors, &InvalidObjectKeyError{
 				Key:  indexKey.Type,
 				span: indexKey.Span,
@@ -2599,7 +2625,11 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 		})
 		return NewUndefinedType(nil), errors
 	case IndexKey:
-		if indexLit, ok := k.Type.(*LitType); ok {
+		var keyType Type = k.Type
+		if mut, ok := keyType.(*MutabilityType); ok && mut.Mutability == MutabilityUncertain {
+			keyType = mut.Type
+		}
+		if indexLit, ok := keyType.(*LitType); ok {
 			if strLit, ok := indexLit.Lit.(*StrLit); ok {
 				for _, elem := range objType.Elems {
 					switch elem := elem.(type) {
@@ -2623,8 +2653,10 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 				}
 			}
 		}
+		fmt.Fprintf(os.Stderr, "ObjectType: %s\n", objType.String())
+		fmt.Fprintf(os.Stderr, "IndexKey: %#v\n", keyType)
 		errors = append(errors, &InvalidObjectKeyError{
-			Key:  k.Type,
+			Key:  keyType,
 			span: k.Span,
 		})
 		return NewUndefinedType(nil), errors
@@ -3026,7 +3058,9 @@ func (c *Checker) inferFuncSig(
 
 	var returnType Type
 	if sig.Return == nil {
-		returnType = c.FreshVar(nil)
+		tvar := c.FreshVar(nil)
+		tvar.FromBinding = true
+		returnType = tvar
 	} else {
 		var returnErrors []Error
 		returnType, returnErrors = c.inferTypeAnn(funcCtx, sig.Return)
@@ -3038,7 +3072,9 @@ func (c *Checker) inferFuncSig(
 		// If no throws clause is specified, we use a fresh type variable which
 		// will be unified later if any throw expressions are found in the
 		// function body.
-		throwsType = c.FreshVar(nil)
+		tvar := c.FreshVar(nil)
+		tvar.FromBinding = true
+		throwsType = tvar
 	} else {
 		var throwsErrors []Error
 		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
@@ -3393,6 +3429,7 @@ func (c *Checker) inferPattern(
 				t, errors = c.inferTypeAnn(ctx, p.TypeAnn)
 			} else {
 				tvar := c.FreshVar(provenance)
+				tvar.FromBinding = true
 				if p.Default != nil {
 					defaultType, defaultErrors := c.inferExpr(ctx, p.Default)
 					errors = append(errors, defaultErrors...)
@@ -3440,6 +3477,7 @@ func (c *Checker) inferPattern(
 						errors = append(errors, elemErrors...)
 					} else {
 						tvar := c.FreshVar(&ast.NodeProvenance{Node: elem})
+						tvar.FromBinding = true
 						if elem.Default != nil {
 							defaultType, defaultErrors := c.inferExpr(ctx, elem.Default)
 							errors = append(errors, defaultErrors...)
