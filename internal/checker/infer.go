@@ -2526,7 +2526,6 @@ func (c *Checker) getMemberType(ctx Context, objType Type, key AccessKey) (Type,
 					}
 				}
 			}
-			fmt.Fprintf(os.Stderr, "FOO\n")
 			errors = append(errors, &InvalidObjectKeyError{
 				Key:  indexKey.Type,
 				span: indexKey.Span,
@@ -2653,8 +2652,6 @@ func (c *Checker) getObjectAccess(objType *ObjectType, key AccessKey, errors []E
 				}
 			}
 		}
-		fmt.Fprintf(os.Stderr, "ObjectType: %s\n", objType.String())
-		fmt.Fprintf(os.Stderr, "IndexKey: %#v\n", keyType)
 		errors = append(errors, &InvalidObjectKeyError{
 			Key:  keyType,
 			span: k.Span,

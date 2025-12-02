@@ -1601,13 +1601,14 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	return result
 }
 func (t *MutabilityType) String() string {
-	if t.Mutability == MutabilityUncertain {
+	switch t.Mutability {
+	case MutabilityUncertain:
 		return "mut? " + t.Type.String()
-	}
-	if t.Mutability == MutabilityMutable {
+	case MutabilityMutable:
 		return "mut " + t.Type.String()
+	default:
+		panic(fmt.Sprintf("unexpected mutability value: %q", t.Mutability))
 	}
-	return t.Type.String()
 }
 
 func NewMutableType(provenance Provenance, t Type) *MutabilityType {
