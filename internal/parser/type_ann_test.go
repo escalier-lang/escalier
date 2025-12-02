@@ -74,6 +74,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MutableType": {
 			input: "mut A",
 		},
+		"MutableUnionType": {
+			input: "mut number | string",
+		},
 		"ConditionalType": {
 			input: "if A : B { C } else { D }",
 		},

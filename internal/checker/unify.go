@@ -51,34 +51,26 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			return c.unifyMut(ctx, mut1, mut2)
 		}
 	}
-	// TODO: This should only be allowed if the value being referenced has no
-	// immutable references (i.e. the lifetime of any immutable references has
-	// ended).
-	// | _, MutableType -> ...
-	if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityUncertain {
-		if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityMutable {
-			return c.unify(ctx, mut1.Type, mut2.Type)
-		}
-	}
-	if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityMutable {
-		if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityUncertain {
-			return c.unify(ctx, mut1.Type, mut2.Type)
-		}
-	}
 	// | MutableType, _ -> ...
-	if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityMutable {
-		if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityUncertain {
-			return c.unify(ctx, mut1.Type, mut2.Type)
+	if mut1, ok := t1.(*MutabilityType); ok {
+		// In the case where t2 is also a MutabilityType with opposite mutability
+		// we unify their underlying types.
+		if mut2, ok := t2.(*MutabilityType); ok {
+			if (mut1.Mutability == MutabilityMutable && mut2.Mutability == MutabilityUncertain) ||
+				(mut1.Mutability == MutabilityUncertain && mut2.Mutability == MutabilityMutable) {
+				return c.unify(ctx, mut1.Type, mut2.Type)
+			}
 		}
-		// It's okay to assign mutable types to immutable types
-		return c.unify(ctx, mut1.Type, t2)
-	}
-	if mut1, ok := t1.(*MutabilityType); ok && mut1.Mutability == MutabilityUncertain {
-		if mut2, ok := t2.(*MutabilityType); ok && mut2.Mutability == MutabilityMutable {
-			return c.unify(ctx, mut1.Type, mut2.Type)
+
+		// If t2 is a union or intersection, let their handling code deal with it
+		// This ensures that mut types in unions/intersections are compared properly
+		switch t2.(type) {
+		case *UnionType, *IntersectionType:
+			// Fall through to union/intersection handling below
+		default:
+			// It's okay to assign mutable types to immutable types
+			return c.unify(ctx, mut1.Type, t2)
 		}
-		// It's okay to assign mutable types to immutable types
-		return c.unify(ctx, mut1.Type, t2)
 	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*PrimType); ok {
