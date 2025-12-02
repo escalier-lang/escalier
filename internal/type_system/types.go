@@ -1602,10 +1602,10 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 }
 func (t *MutabilityType) String() string {
 	if t.Mutability == MutabilityUncertain {
-		return t.Type.String() + "?"
+		return "mut? " + t.Type.String()
 	}
 	if t.Mutability == MutabilityMutable {
-		return t.Type.String() + "!"
+		return "mut " + t.Type.String()
 	}
 	return t.Type.String()
 }
