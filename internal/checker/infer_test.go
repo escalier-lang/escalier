@@ -3231,6 +3231,26 @@ func TestMutableTypes(t *testing.T) {
 				"arr": "mut Array<number>",
 			},
 		},
+		"GenericsMaintainingMutability": {
+			input: `
+				fn id<T>(value: T) -> T {
+					return value
+				}
+				type Point = {x: number, y: number}
+				val p1: mut Point = {x: 1, y: 2}
+				val p2 = id(p1)
+				val q1: Point = {x: 3, y: 4}
+				val q2 = id(q1)
+				val r1 = id({x: 5:number, y: 6:number})
+			`,
+			expectedTypes: map[string]string{
+				"p1": "mut Point",
+				"p2": "mut Point",
+				"q1": "Point",
+				"q2": "Point",
+				"r1": "{x: number, y: number}",
+			},
+		},
 		// "NestedMutableType": {
 		// 	input: `
 		// 		val nested: mut mut number = 10
