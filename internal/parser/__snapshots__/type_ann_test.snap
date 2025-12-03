@@ -2531,3 +2531,44 @@
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/MutableUnionTypeWithParens - 1]
+nil
+---
+
+[TestParseTypeAnnNoErrors/MutableUnionType - 1]
+&ast.UnionTypeAnn{
+    Types: {
+        &ast.MutableTypeAnn{
+            Target: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:11},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.StringTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:20},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:5},
+        End:      ast.Location{Line:1, Column:20},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

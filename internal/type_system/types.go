@@ -80,7 +80,7 @@ func (*TypeOfType) isType()       {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
-func (*MutableType) isType()      {}
+func (*MutabilityType) isType()   {}
 func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
@@ -103,20 +103,22 @@ func Prune(t Type) Type {
 }
 
 type TypeVarType struct {
-	ID         int
-	Instance   Type
-	Constraint Type
-	Default    Type
-	provenance Provenance
+	ID          int
+	Instance    Type
+	Constraint  Type
+	Default     Type
+	FromBinding bool
+	provenance  Provenance
 }
 
 func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
 	return &TypeVarType{
-		ID:         id,
-		Instance:   nil,
-		Constraint: nil,
-		Default:    nil,
-		provenance: provenance,
+		ID:          id,
+		Instance:    nil,
+		Constraint:  nil,
+		Default:     nil,
+		FromBinding: false,
+		provenance:  provenance,
 	}
 }
 
@@ -1565,20 +1567,32 @@ func NewInferType(provenance Provenance, name string) *InferType {
 	}
 }
 
-type MutableType struct {
+type Mutability string
+
+const (
+	MutabilityMutable   Mutability = "!"
+	MutabilityUncertain Mutability = "?"
+)
+
+type MutabilityType struct {
 	Type       Type
+	Mutability Mutability
 	provenance Provenance
 }
 
-func (t *MutableType) Accept(v TypeVisitor) Type {
+func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
-		t = result.(*MutableType)
+		t = result.(*MutabilityType)
 	}
 
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = NewMutableType(t.provenance, newType)
+		result = &MutabilityType{
+			Type:       newType,
+			Mutability: t.Mutability,
+			provenance: t.provenance,
+		}
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1586,13 +1600,21 @@ func (t *MutableType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *MutableType) String() string {
-	return "mut " + t.Type.String()
+func (t *MutabilityType) String() string {
+	switch t.Mutability {
+	case MutabilityUncertain:
+		return "mut? " + t.Type.String()
+	case MutabilityMutable:
+		return "mut " + t.Type.String()
+	default:
+		panic(fmt.Sprintf("unexpected mutability value: %q", t.Mutability))
+	}
 }
 
-func NewMutableType(provenance Provenance, t Type) *MutableType {
-	return &MutableType{
+func NewMutableType(provenance Provenance, t Type) *MutabilityType {
+	return &MutabilityType{
 		Type:       t,
+		Mutability: MutabilityMutable,
 		provenance: provenance,
 	}
 }
@@ -1874,7 +1896,7 @@ func Equals(t1 Type, t2 Type) bool {
 			// nolint:exhaustruct
 			IntersectionType{}, KeyOfType{}, IndexType{}, CondType{}, InferType{},
 			// nolint:exhaustruct
-			MutableType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
+			MutabilityType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
 			// nolint:exhaustruct
 			IntrinsicType{}, NamespaceType{}, MappedElem{}, Ident{}, Member{},
 		),
