@@ -766,6 +766,9 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 				p.print(")")
 				// TypeScript doesn't allow setters to have a return type
 			case *PropertyTypeAnn:
+				if elem.Readonly {
+					p.print("readonly ")
+				}
 				p.printObjKey(elem.Name)
 				if elem.Optional {
 					p.print("?")

@@ -1,0 +1,13 @@
+declare const config: {readonly apiUrl: string, timeout: number};
+declare type Point = {readonly x: number, y: number};
+declare const Point: {new (x: number, y: number): Point};
+declare const point: Point;
+declare const immutablePoint: Point;
+declare const apiUrl: string;
+declare const pointX: number;
+declare const immutableX: number;
+declare function updateMutableProperties(): undefined;
+declare function tryUpdateImmutableProperties(): undefined;
+declare type Counter = {readonly value: number, increment(): undefined};
+declare const Counter: {new (value: number): Counter};
+declare const counter: Counter;
