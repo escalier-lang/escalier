@@ -38,6 +38,7 @@ func (e ExpectedArrayError) isError()                       {}
 func (e CyclicDependencyError) isError()                    {}
 func (e UnknownPropertyError) isError()                     {}
 func (e CannotMutateImmutableError) isError()               {}
+func (e CannotMutateReadonlyPropertyError) isError()        {}
 func (e IncorrectParamCountForCustomMatcherError) isError() {}
 func (e ExtractorReturnTypeMismatchError) isError()         {}
 func (e ExtractorMustReturnTupleError) isError()            {}
@@ -54,6 +55,19 @@ func (e CannotMutateImmutableError) Span() ast.Span {
 }
 func (e CannotMutateImmutableError) Message() string {
 	return "Cannot mutate immutable type: " + e.Type.String()
+}
+
+type CannotMutateReadonlyPropertyError struct {
+	Property string
+	Type     Type
+	span     ast.Span
+}
+
+func (e CannotMutateReadonlyPropertyError) Span() ast.Span {
+	return e.span
+}
+func (e CannotMutateReadonlyPropertyError) Message() string {
+	return "Cannot mutate readonly property '" + e.Property + "' on type: " + e.Type.String()
 }
 
 type UnimplementedError struct {

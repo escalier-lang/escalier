@@ -97,6 +97,7 @@ const (
 	Private // <-- add this for 'private' keyword
 	Symbol
 	Unique
+	Readonly
 )
 
 type Token struct {

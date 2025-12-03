@@ -70,6 +70,7 @@ var keywords = map[string]TokenType{
 	"unique":    Unique,
 	"keyof":     Keyof,
 	"typeof":    Typeof,
+	"readonly":  Readonly,
 }
 
 // isRegexContext determines if a '/' should be treated as the start of a regex literal

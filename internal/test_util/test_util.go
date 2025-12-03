@@ -285,7 +285,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 			Name:      nameType,
 			Value:     valueType,
 			Optional:  convertMappedModifier(e.Optional),
-			ReadOnly:  convertMappedModifier(e.ReadOnly),
+			Readonly:  convertMappedModifier(e.ReadOnly),
 		}
 
 		return mapped

@@ -123,11 +123,12 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 	isStatic := false
 	isAsync := false
 	isPrivate := false
+	isReadonly := false
 	isGet := false
 	isSet := false
 	start := token.Span.Start
 
-	// Parse modifiers: static, async, private (order-insensitive)
+	// Parse modifiers: static, async, private, readonly (order-insensitive)
 	for {
 		// nolint: exhaustive
 		switch token.Type {
@@ -139,6 +140,9 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 			p.lexer.consume()
 		case Private:
 			isPrivate = true
+			p.lexer.consume()
+		case Readonly:
+			isReadonly = true
 			p.lexer.consume()
 		case Get:
 			isGet = true
@@ -343,13 +347,14 @@ modifiers_done:
 		// TODO: report an error if `isAsync` is true
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
-			Name:    name,
-			Value:   value,
-			Type:    typeAnn,
-			Default: default_,
-			Static:  isStatic,
-			Private: isPrivate,
-			Span_:   span,
+			Name:     name,
+			Value:    value,
+			Type:     typeAnn,
+			Default:  default_,
+			Static:   isStatic,
+			Private:  isPrivate,
+			Readonly: isReadonly,
+			Span_:    span,
 		}
 	}
 }

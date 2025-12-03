@@ -108,6 +108,20 @@ func TestMutation(t *testing.T) {
 			`,
 			expectErrors: true,
 		},
+		"MutableObjectWithReadonlyPropertyCannotBeMutated": {
+			input: `
+				val obj: mut {readonly x: number, y: string} = {x: 42, y: "hello"}
+				obj.x = 100
+			`,
+			expectErrors: true,
+		},
+		"MutableObjectWithReadonlyPropertyCannotBeMutatedUsingIndexer": {
+			input: `
+				val obj: mut {readonly x: number, y: string} = {x: 42, y: "hello"}
+				obj["x"] = 100
+			`,
+			expectErrors: true,
+		},
 	}
 
 	for name, test := range tests {
@@ -133,6 +147,149 @@ func TestMutation(t *testing.T) {
 				IsPatMatch: false,
 			}
 			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if test.expectErrors {
+				assert.NotEmpty(t, inferErrors, "Expected inference errors for %s", name)
+				// Print the errors to understand what's happening
+				for i, err := range inferErrors {
+					t.Logf("Error[%d]: %s", i, err.Message())
+				}
+			} else {
+				if len(inferErrors) > 0 {
+					// Print the errors to understand what's happening
+					for i, err := range inferErrors {
+						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
+					}
+				}
+				assert.Empty(t, inferErrors, "Expected no inference errors for %s", name)
+			}
+		})
+	}
+}
+
+func TestClassMutation(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectErrors bool
+	}{
+		"ClassInstanceWithReadonlyFieldCannotBeMutated": {
+			input: `
+				class Point(x: number, y: number) {
+					readonly x,
+					y,
+				}
+				fn main() {
+					val p = Point(5, 10)
+					p.x = 100
+				}
+			`,
+			expectErrors: true,
+		},
+		"ClassInstanceWithReadonlyFieldCanBeMutatedOnMutableField": {
+			input: `
+				class Point(x: number, y: number) {
+					readonly x,
+					y,
+				}
+				fn main() {
+					val p: mut Point = Point(5, 10)
+					p.y = 100
+				}
+			`,
+			expectErrors: false,
+		},
+		"ClassInstanceWithReadonlyFieldCannotBeMutatedUsingIndexer": {
+			input: `
+				class Point(x: number, y: number) {
+					readonly x,
+					y,
+				}
+				fn main() {
+					val p = Point(5, 10)
+					p["x"] = 100
+				}
+			`,
+			expectErrors: true,
+		},
+		"MutableClassInstanceWithReadonlyFieldCannotBeMutated": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					readonly y,
+				}
+				fn main() {
+					val p: mut Point = Point(5, 10)
+					p.x = 100
+					p.y = 200
+				}
+			`,
+			expectErrors: true,
+		},
+		"ClassWithAllReadonlyFieldsCannotBeMutated": {
+			input: `
+				class Point(x: number, y: number) {
+					readonly x,
+					readonly y,
+				}
+				fn main() {
+					val p = Point(5, 10)
+					p.x = 100
+					p.y = 200
+				}
+			`,
+			expectErrors: true,
+		},
+		"MutableClassInstanceCanBeMutated": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+				}
+				fn main() {
+					val p: mut Point = Point(5, 10)
+					p.x = 100
+					p.y = 200
+				}
+			`,
+			expectErrors: false,
+		},
+		"ImmutableClassInstanceCannotBeMutated": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+				}
+				fn main() {
+					val p = Point(5, 10)
+					p.x = 100
+				}
+			`,
+			expectErrors: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			if test.expectErrors {
 				assert.NotEmpty(t, inferErrors, "Expected inference errors for %s", name)

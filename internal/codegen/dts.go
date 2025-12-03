@@ -820,7 +820,7 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Name:      nameTypeAnn,
 			Value:     b.buildTypeAnn(elem.Value),
 			Optional:  mapMappedModifier(elem.Optional),
-			ReadOnly:  mapMappedModifier(elem.ReadOnly),
+			ReadOnly:  mapMappedModifier(elem.Readonly),
 		}
 	case *type_sys.RestSpreadElem:
 		return &RestSpreadTypeAnn{
