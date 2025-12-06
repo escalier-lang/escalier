@@ -1,0 +1,4 @@
+
+declare val roObj: mut MyReadonly<Obj>
+val roA = roObj.a
+roObj.a = roA

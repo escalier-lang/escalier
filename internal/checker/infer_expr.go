@@ -33,33 +33,25 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				objType, objErrors := c.inferExpr(ctx, memberExpr.Object)
 				errors = slices.Concat(errors, objErrors)
 
-				// Check if the object type allows mutation
-				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
+				// Check if the property is readonly (this check takes precedence)
+				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
+					// Even if the type is mutable, readonly properties cannot be mutated
 					errors = append(errors, &CannotMutateImmutableError{
 						Type: objType,
 						span: expr.Left.Span(),
 					})
-				}
-
-				// Check if the property is readonly
-				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
-					errors = append(errors, &CannotMutateReadonlyPropertyError{
-						Property: memberExpr.Prop.Name,
-						Type:     objType,
-						span:     expr.Left.Span(),
-					})
+				} else {
+					// Check if the object type allows mutation
+					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
+						errors = append(errors, &CannotMutateImmutableError{
+							Type: objType,
+							span: expr.Left.Span(),
+						})
+					}
 				}
 			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
 				objType, objErrors := c.inferExpr(ctx, indexExpr.Object)
 				errors = slices.Concat(errors, objErrors)
-
-				// Check if the object type allows mutation
-				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
-					errors = append(errors, &CannotMutateImmutableError{
-						Type: objType,
-						span: expr.Left.Span(),
-					})
-				}
 
 				// Check if the property is readonly when using string literal index
 				indexType, indexErrors := c.inferExpr(ctx, indexExpr.Index)
@@ -70,15 +62,29 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					indexType = mutType.Type
 				}
 
+				isReadonly := false
 				if litType, ok := indexType.(*type_system.LitType); ok {
 					if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
 						if c.isPropertyReadonly(ctx, objType, strLit.Value) {
-							errors = append(errors, &CannotMutateReadonlyPropertyError{
-								Property: strLit.Value,
-								Type:     objType,
-								span:     expr.Left.Span(),
-							})
+							isReadonly = true
 						}
+					}
+				}
+
+				// Check if property is readonly (this check takes precedence)
+				if isReadonly {
+					// Even if the type is mutable, readonly properties cannot be mutated
+					errors = append(errors, &CannotMutateImmutableError{
+						Type: objType,
+						span: expr.Left.Span(),
+					})
+				} else {
+					// Check if the object type allows mutation
+					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
+						errors = append(errors, &CannotMutateImmutableError{
+							Type: objType,
+							span: expr.Left.Span(),
+						})
 					}
 				}
 			}
@@ -541,6 +547,15 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 			if propElem, ok := elem.(*type_system.PropertyElem); ok {
 				if propElem.Name == type_system.NewStrKey(propertyName) {
 					return propElem.Readonly
+				}
+			}
+			// Debug: check if we have MappedElems that weren't expanded
+			if _, ok := elem.(*type_system.MappedElem); ok {
+				// MappedElems should have been expanded already, but if not, we need to expand them
+				// Try expanding the object type more aggressively
+				fullyExpanded, _ := c.ExpandType(ctx, t, -1)
+				if fullyExpanded != t {
+					return c.isPropertyReadonly(ctx, fullyExpanded, propertyName)
 				}
 			}
 		}

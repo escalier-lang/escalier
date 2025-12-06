@@ -453,13 +453,59 @@ loop:
 }
 
 func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
-	// Syntax:
-	// {[K]: T[K] for K in T}
-	// {[K]?: T[K] for K in T}
-	// {[K]+?: T[K] for K in T}
-	// {[K]-?: T[K] for K in T}
-
+	// Parse readonly modifiers: readonly, +readonly, or -readonly
+	var readonly *ast.MappedModifier
 	token := p.lexer.peek()
+	// nolint: exhaustive
+	switch token.Type {
+	case Readonly:
+		savedState := p.saveState()
+		p.lexer.consume() // consume 'readonly'
+		nextToken := p.lexer.peek()
+		if nextToken.Type == OpenBracket {
+			ro := ast.MMAdd
+			readonly = &ro
+		} else {
+			p.restoreState(savedState)
+			return nil
+		}
+	case Plus:
+		savedState := p.saveState()
+		p.lexer.consume() // consume '+'
+		nextToken := p.lexer.peek()
+		if nextToken.Type == Readonly {
+			p.lexer.consume() // consume 'readonly'
+			nextNextToken := p.lexer.peek()
+			if nextNextToken.Type == OpenBracket {
+				ro := ast.MMAdd
+				readonly = &ro
+			} else {
+				p.restoreState(savedState)
+				return nil
+			}
+		} else {
+			p.restoreState(savedState)
+		}
+	case Minus:
+		savedState := p.saveState()
+		p.lexer.consume() // consume '-'
+		nextToken := p.lexer.peek()
+		if nextToken.Type == Readonly {
+			p.lexer.consume() // consume 'readonly'
+			nextNextToken := p.lexer.peek()
+			if nextNextToken.Type == OpenBracket {
+				ro := ast.MMRemove
+				readonly = &ro
+			} else {
+				p.restoreState(savedState)
+				return nil
+			}
+		} else {
+			p.restoreState(savedState)
+		}
+	}
+
+	token = p.lexer.peek()
 	if token.Type == OpenBracket {
 		savedState := p.saveState()
 
@@ -563,7 +609,7 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			Name:     mappedName,
 			Value:    value,
 			Optional: optional,
-			ReadOnly: nil, // TODO: handle readonly
+			ReadOnly: readonly,
 			Check:    check,
 			Extends:  extends,
 		}
@@ -590,10 +636,19 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	mod := ""
 	readonly := false
 
-	// Check for 'readonly' modifier first
+	// Check if this might be a mapped type before consuming 'readonly'
+	// Mapped types start with 'readonly [' or '+readonly [' or '-readonly ['
 	if token.Type == Readonly {
-		p.lexer.consume() // consume 'readonly'
-		readonly = true
+		savedState := p.saveState()
+		p.lexer.consume() // tentatively consume 'readonly'
+		nextToken := p.lexer.peek()
+		if nextToken.Type == OpenBracket {
+			// This is a mapped type, restore state and let tryParseMappedType handle it
+			p.restoreState(savedState)
+		} else {
+			// This is a regular readonly property, keep the token consumed
+			readonly = true
+		}
 		token = p.lexer.peek()
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -973,6 +974,19 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"result": "number | 0",
 			},
 		},
+		"ReadonlyType": {
+			input: `
+				type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
+				declare val obj: MyReadonly<{a: number, b: string}>
+				val a = obj.a
+				val b = obj.b
+			`,
+			expectedTypes: map[string]string{
+				"obj": "MyReadonly<{a: number, b: string}>",
+				"a":   "number",
+				"b":   "string",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -1095,6 +1109,30 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				`{id: number} cannot be assigned to UserId`,
 			},
 		},
+		"ReadonlyType": {
+			input: `
+				type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
+				declare val obj: MyReadonly<{a: number, b: string}>
+				fn main() {
+					obj.a = 10  // should error
+				}
+			`,
+			expectedErrors: []string{
+				"Cannot mutate immutable type: MyReadonly<{a: number, b: string}>",
+			},
+		},
+		"ReadonlyMutableType": {
+			input: `
+				type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
+				declare val obj: mut MyReadonly<{a: number, b: string}>
+				fn main() {
+					obj.a = 10  // should error
+				}
+			`,
+			expectedErrors: []string{
+				"Cannot mutate immutable type: mut MyReadonly<{a: number, b: string}>",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -1141,7 +1179,88 @@ func TestCheckModuleWithErrors(t *testing.T) {
 						break
 					}
 				}
+				for _, err := range inferErrors {
+					fmt.Fprintf(os.Stderr, "error message: %s\n", err.Message())
+				}
 				assert.True(t, found, "Expected error message not found: %s", expectedMsg)
+			}
+		})
+	}
+}
+
+func TestCheckScriptWithErrors(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"ReadonlyType": {
+			input: `
+				type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
+				declare val obj: MyReadonly<{a: number, b: string}>
+				obj.a = 10  // should error
+			`,
+			expectedErrors: []string{
+				"Cannot mutate immutable type: MyReadonly<{a: number, b: string}>",
+			},
+		},
+		"ReadonlyMutableType": {
+			input: `
+				type MyReadonly<T> = {readonly [P]: T[P] for P in keyof T}
+				declare val obj: mut MyReadonly<{a: number, b: string}>
+				obj.a = 10  // should error
+			`,
+			expectedErrors: []string{
+				"Cannot mutate immutable type: mut MyReadonly<{a: number, b: string}>",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, errors := p.ParseScript()
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// Verify we got the expected number of errors
+			assert.Len(t, inferErrors, len(test.expectedErrors), "Expected %d errors but got %d", len(test.expectedErrors), len(inferErrors))
+
+			// Verify each expected error message appears in the actual errors
+			for _, expectedMsg := range test.expectedErrors {
+				found := false
+				for _, err := range inferErrors {
+					fmt.Fprintf(os.Stderr, "Got error: %s\n", err.Message())
+					if strings.Contains(err.Message(), expectedMsg) {
+						found = true
+						break
+					}
+				}
+				for _, err := range inferErrors {
+					fmt.Fprintf(os.Stderr, "error message: %s\n", err.Message())
+				}
+				assert.True(t, found, "Expected error message containing: %s", expectedMsg)
 			}
 		})
 	}

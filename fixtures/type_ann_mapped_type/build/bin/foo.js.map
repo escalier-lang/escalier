@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../bin/foo.esc"],"sourcesContent":["\ndeclare val roObj: mut MyReadonly\u003cObj\u003e\nval roA = roObj.a\nroObj.a = roA\n"],"names":[],"mappings":"MCEI,AAAA,MAAM,AAAA,MAAM;AAChB,AAAA,AAAA,MAAM,IAAI"}
