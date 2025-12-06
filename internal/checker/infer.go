@@ -272,17 +272,21 @@ func (c *Checker) InferComponent(
 						// Static fields go to the class object type
 						tvar := c.FreshVar(nil)
 						tvar.FromBinding = true
+						propElem := NewPropertyElem(*key, tvar)
+						propElem.Readonly = elem.Readonly
 						staticElems = append(
 							staticElems,
-							NewPropertyElem(*key, tvar),
+							propElem,
 						)
 					} else {
 						// Instance fields go to the instance type
 						tvar := c.FreshVar(nil)
 						tvar.FromBinding = true
+						propElem := NewPropertyElem(*key, tvar)
+						propElem.Readonly = elem.Readonly
 						objTypeElems = append(
 							objTypeElems,
-							NewPropertyElem(*key, tvar),
+							propElem,
 						)
 					}
 				case *ast.MethodElem:
@@ -1318,6 +1322,15 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 						span: expr.Left.Span(),
 					})
 				}
+
+				// Check if the property is readonly
+				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
+					errors = append(errors, &CannotMutateReadonlyPropertyError{
+						Property: memberExpr.Prop.Name,
+						Type:     objType,
+						span:     expr.Left.Span(),
+					})
+				}
 			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
 				objType, objErrors := c.inferExpr(ctx, indexExpr.Object)
 				errors = slices.Concat(errors, objErrors)
@@ -1328,6 +1341,27 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (Type, []Error) {
 						Type: objType,
 						span: expr.Left.Span(),
 					})
+				}
+
+				// Check if the property is readonly when using string literal index
+				indexType, indexErrors := c.inferExpr(ctx, indexExpr.Index)
+				errors = slices.Concat(errors, indexErrors)
+
+				// Unwrap MutabilityType if present
+				if mutType, ok := indexType.(*MutabilityType); ok {
+					indexType = mutType.Type
+				}
+
+				if litType, ok := indexType.(*LitType); ok {
+					if strLit, ok := litType.Lit.(*StrLit); ok {
+						if c.isPropertyReadonly(ctx, objType, strLit.Value) {
+							errors = append(errors, &CannotMutateReadonlyPropertyError{
+								Property: strLit.Value,
+								Type:     objType,
+								span:     expr.Left.Span(),
+							})
+						}
+					}
 				}
 			}
 
@@ -2257,8 +2291,8 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *ObjectType) *ObjectTyp
 				}
 
 				// Handle readonly modifier
-				if mappedElem.ReadOnly != nil {
-					switch *mappedElem.ReadOnly {
+				if mappedElem.Readonly != nil {
+					switch *mappedElem.Readonly {
 					case MMAdd:
 						propElem.Readonly = true
 					case MMRemove:
@@ -2580,6 +2614,49 @@ func (c *Checker) expandTypeRef(ctx Context, t *TypeRefType) (Type, []Error) {
 	}
 
 	return expandedType, []Error{}
+}
+
+// isPropertyReadonly checks if a specific property in an object type is readonly
+func (c *Checker) isPropertyReadonly(ctx Context, objType Type, propertyName string) bool {
+	objType = Prune(objType)
+
+	// Repeatedly expand objType until it's either an ObjectType or can't be expanded further
+	for {
+		expandedType, _ := c.expandType(ctx, objType, 1)
+
+		// If expansion didn't change the type, we're done expanding
+		if expandedType == objType {
+			break
+		}
+
+		objType = expandedType
+
+		// If we've reached an ObjectType, we can stop expanding
+		if _, ok := objType.(*ObjectType); ok {
+			break
+		}
+	}
+
+	switch t := objType.(type) {
+	case *MutabilityType:
+		// For mutable types, check the inner type
+		return c.isPropertyReadonly(ctx, t.Type, propertyName)
+	case *TypeRefType:
+		// For TypeRefTypes, try to expand the type alias and check recursively
+		expandType, _ := c.expandTypeRef(ctx, t)
+		return c.isPropertyReadonly(ctx, expandType, propertyName)
+	case *ObjectType:
+		// Check if the property exists and is readonly
+		for _, elem := range t.Elems {
+			if propElem, ok := elem.(*PropertyElem); ok {
+				if propElem.Name == NewStrKey(propertyName) {
+					return propElem.Readonly
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // getObjectAccess handles property and index access on ObjectType
@@ -4003,7 +4080,7 @@ func (c *Checker) inferTypeAnn(
 					Name:      nameType,
 					Value:     valueType,
 					Optional:  optional,
-					ReadOnly:  readOnly,
+					Readonly:  readOnly,
 					Check:     checkType,
 					Extends:   extendsType,
 				}

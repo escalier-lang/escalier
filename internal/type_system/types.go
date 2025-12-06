@@ -882,7 +882,7 @@ type MappedElem struct {
 	Name      Type // optional
 	Value     Type
 	Optional  *MappedModifier // TODO: replace with `?`, `!`, or nothing
-	ReadOnly  *MappedModifier
+	Readonly  *MappedModifier
 	Check     Type // optional - the type to check
 	Extends   Type // optional - the type it should extend
 }
@@ -1000,7 +1000,7 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 			Name:      newName,
 			Value:     newValue,
 			Optional:  m.Optional,
-			ReadOnly:  m.ReadOnly,
+			Readonly:  m.Readonly,
 			Check:     newCheck,
 			Extends:   newExtends,
 		}

@@ -2427,11 +2427,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:9},
                     SourceID: 0,
@@ -2474,9 +2475,10 @@ nil
                     },
                     inferredType: nil,
                 },
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:21},
                     SourceID: 0,
@@ -2909,12 +2911,13 @@ nil
                     },
                     inferredType: nil,
                 },
-                Value:   nil,
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Value:    nil,
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:10},
                     SourceID: 0,
@@ -3504,11 +3507,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:1, Column:44},
                     End:      ast.Location{Line:1, Column:54},
                     SourceID: 0,
@@ -3648,12 +3652,13 @@ nil
                     },
                     inferredType: nil,
                 },
-                Value:   nil,
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Value:    nil,
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:10},
                     SourceID: 0,
@@ -3671,12 +3676,13 @@ nil
                     },
                     inferredType: nil,
                 },
-                Value:   nil,
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Value:    nil,
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:11},
                     SourceID: 0,
@@ -5029,11 +5035,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:26},
                     SourceID: 0,
@@ -5083,11 +5090,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:18},
                     SourceID: 0,
@@ -5332,11 +5340,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:33},
                     SourceID: 0,
@@ -5500,11 +5509,12 @@ nil
                     },
                     inferredType: nil,
                 },
-                Type:    nil,
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:33},
                     SourceID: 0,
@@ -5936,10 +5946,11 @@ nil
                     },
                     inferredType: nil,
                 },
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
                     End:      ast.Location{Line:2, Column:30},
                     SourceID: 0,
@@ -6104,10 +6115,11 @@ nil
                     },
                     inferredType: nil,
                 },
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
                     End:      ast.Location{Line:2, Column:30},
                     SourceID: 0,
@@ -6359,10 +6371,11 @@ nil
                     },
                     inferredType: nil,
                 },
-                Default: nil,
-                Static:  false,
-                Private: true,
-                Span_:   ast.Span{
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:8},
                     End:      ast.Location{Line:2, Column:31},
                     SourceID: 0,
@@ -6561,6 +6574,149 @@ nil
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:5, Column:5},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ClassWithProperties - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Params:     {
+        },
+        Body: {
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name:      "id",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:2, Column:25},
+                        End:      ast.Location{Line:2, Column:27},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 1,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:2, Column:29},
+                                End:      ast.Location{Line:2, Column:30},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:29},
+                            End:      ast.Location{Line:2, Column:30},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:31},
+                            End:      ast.Location{Line:2, Column:37},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:29},
+                        End:      ast.Location{Line:2, Column:37},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  true,
+                Readonly: true,
+                Span_:    ast.Span{
+                    Start:    ast.Location{Line:2, Column:8},
+                    End:      ast.Location{Line:2, Column:37},
+                    SourceID: 0,
+                },
+            },
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name:      "message",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:14},
+                        End:      ast.Location{Line:3, Column:21},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Value: &ast.TypeCastExpr{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.StrLit{
+                            Value: "hello",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:3, Column:23},
+                                End:      ast.Location{Line:3, Column:30},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:23},
+                            End:      ast.Location{Line:3, Column:30},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    TypeAnn: &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:31},
+                            End:      ast.Location{Line:3, Column:37},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:23},
+                        End:      ast.Location{Line:3, Column:37},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Type:     nil,
+                Default:  nil,
+                Static:   false,
+                Private:  false,
+                Readonly: true,
+                Span_:    ast.Span{
+                    Start:    ast.Location{Line:3, Column:5},
+                    End:      ast.Location{Line:3, Column:37},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:4, Column:5},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:4, Column:5},
         SourceID: 0,
     },
 }

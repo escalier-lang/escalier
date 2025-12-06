@@ -92,6 +92,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"BasicObjectType": {
 			input: "{a: A, b?: B, [c]: C, [d]?: D}",
 		},
+		"ObjectTypeWithReadonlyProperty": {
+			input: "{id: number, readonly name: string}",
+		},
 		"MappedObjectType": {
 			input: "{[K]: T[K] for K in Keys<T>}",
 		},

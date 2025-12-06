@@ -2572,3 +2572,62 @@ nil
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/ObjectTypeWithReadonlyProperty - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.PropertyTypeAnn{
+            Name: &ast.IdentExpr{
+                Name:      "id",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:4},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        &ast.PropertyTypeAnn{
+            Name: &ast.IdentExpr{
+                Name:      "name",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
+                    End:      ast.Location{Line:1, Column:27},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: true,
+            Value:    &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:29},
+                    End:      ast.Location{Line:1, Column:35},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:36},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

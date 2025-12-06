@@ -15,6 +15,12 @@ func TestParseStmtNoErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
+		"ClassWithProperties": {
+			input: `class Foo {
+			    private readonly id: 1:number,
+				readonly message: "hello":string,
+			}`,
+		},
 		"ClassWithGetter": {
 			input: `class Foo {
 				get value() -> number { return 42 },

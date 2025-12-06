@@ -1,0 +1,41 @@
+// Test readonly properties in object types
+val config: mut {readonly apiUrl: string, timeout: number} = {
+    apiUrl: "https://api.example.com",
+    timeout: 5000,
+}
+
+// Test readonly properties in classes
+class Point(x: number, y: number) {
+    readonly x,
+    y,
+}
+
+// Create instances
+val point: mut Point = Point(10, 20)
+val immutablePoint = Point(5, 15)
+
+// Test that we can read readonly properties
+val apiUrl = config.apiUrl
+val pointX = point.x
+val immutableX = immutablePoint.x
+
+// Test that we can mutate non-readonly properties
+fn updateMutableProperties() {
+    point.y = 25
+}
+
+// Test that we cannot mutate readonly properties
+fn tryUpdateImmutableProperties() {
+    config.apiUrl = "https://foo.example.com"
+    point.x = 0
+}
+
+// Test readonly fields with explicit values
+class Counter(value: number) {
+    readonly value,
+    increment(mut self) {
+        self.value = self.value + 1
+    },
+}
+
+val counter: mut Counter = Counter(0)

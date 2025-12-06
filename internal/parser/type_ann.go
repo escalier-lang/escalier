@@ -588,6 +588,16 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	}
 
 	mod := ""
+	readonly := false
+
+	// Check for 'readonly' modifier first
+	if token.Type == Readonly {
+		p.lexer.consume() // consume 'readonly'
+		readonly = true
+		token = p.lexer.peek()
+	}
+
+	// Then check for 'get' or 'set' modifiers
 	// nolint: exhaustive
 	switch token.Type {
 	case Get:
@@ -617,7 +627,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
-			Readonly: false, // TODO: handle readonly
+			Readonly: readonly,
 			Value:    nil,
 		}
 		return property
@@ -627,7 +637,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
-			Readonly: false, // TODO: handle readonly
+			Readonly: readonly,
 			Value:    nil,
 		}
 		return property
@@ -637,7 +647,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		property := &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: false,
-			Readonly: false, // TODO: handle readonly
+			Readonly: readonly,
 			Value:    nil,
 		}
 
@@ -666,7 +676,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		return &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: true,
-			Readonly: false, // TODO: handle readonly
+			Readonly: readonly,
 			Value:    value,
 		}
 	case OpenParen:
