@@ -1,15 +1,13 @@
 package checker
 
-import (
-	. "github.com/escalier-lang/escalier/internal/type_system"
-)
+import "github.com/escalier-lang/escalier/internal/type_system"
 
-// findNamedGroups extracts the names of any named capture groups from RegexTypes that appear in the given type.
+// FindNamedGroups extracts the names of any named capture groups from RegexTypes that appear in the given type.
 // Named capture groups in regex have the syntax (?P<name>pattern) or (?<name>pattern).
-func (c *Checker) findNamedGroups(t Type) map[string]Type {
+func (c *Checker) FindNamedGroups(t type_system.Type) map[string]type_system.Type {
 	visitor := &NamedCaptureGroupExtractor{
 		checker:     c,
-		namedGroups: make(map[string]Type), // Map capture group names to fresh type vars
+		namedGroups: make(map[string]type_system.Type), // Map capture group names to fresh type vars
 	}
 	t.Accept(visitor)
 
@@ -19,20 +17,20 @@ func (c *Checker) findNamedGroups(t Type) map[string]Type {
 // NamedCaptureGroupExtractor extracts named capture groups from regex literals in types
 type NamedCaptureGroupExtractor struct {
 	checker     *Checker
-	namedGroups map[string]Type
+	namedGroups map[string]type_system.Type
 }
 
-func (v *NamedCaptureGroupExtractor) EnterType(t Type) Type {
+func (v *NamedCaptureGroupExtractor) EnterType(t type_system.Type) type_system.Type {
 	// No-op - just for traversal
 	return nil
 }
 
-func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
-	t = Prune(t)
+func (v *NamedCaptureGroupExtractor) ExitType(t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
 
-	if regexType, ok := t.(*RegexType); ok {
+	if regexType, ok := t.(*type_system.RegexType); ok {
 		// Create a new RegexType with fresh type variables for named capture groups
-		newGroups := make(map[string]Type)
+		newGroups := make(map[string]type_system.Type)
 		for name := range regexType.Groups {
 			if name != "" {
 				freshVar := v.checker.FreshVar(nil)
@@ -42,7 +40,7 @@ func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
 		}
 
 		// Return a new RegexType with the fresh type variables
-		return NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
+		return type_system.NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
 	}
 
 	// For all other types, return nil to let Accept handle the traversal
@@ -51,7 +49,7 @@ func (v *NamedCaptureGroupExtractor) ExitType(t Type) Type {
 
 // replaceRegexGroupTypes replaces the named capture groups in RegexType instances
 // with their corresponding types from the substitutions map.
-func (c *Checker) replaceRegexGroupTypes(t Type, substitutions map[string]Type) Type {
+func (c *Checker) replaceRegexGroupTypes(t type_system.Type, substitutions map[string]type_system.Type) type_system.Type {
 	visitor := &RegexTypeReplacer{
 		substitutions: substitutions,
 	}
@@ -61,21 +59,21 @@ func (c *Checker) replaceRegexGroupTypes(t Type, substitutions map[string]Type) 
 // RegexTypeReplacer substitutes named capture groups in RegexType instances
 // with their corresponding types from the substitutions map
 type RegexTypeReplacer struct {
-	substitutions map[string]Type
+	substitutions map[string]type_system.Type
 }
 
-func (v *RegexTypeReplacer) EnterType(t Type) Type {
+func (v *RegexTypeReplacer) EnterType(t type_system.Type) type_system.Type {
 	// No-op - just for traversal
 	return nil
 }
 
-func (v *RegexTypeReplacer) ExitType(t Type) Type {
-	t = Prune(t)
+func (v *RegexTypeReplacer) ExitType(t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
 
-	if regexType, ok := t.(*RegexType); ok {
+	if regexType, ok := t.(*type_system.RegexType); ok {
 		// Check if any named groups in this regex type have substitutions
 		hasSubstitutions := false
-		newGroups := make(map[string]Type)
+		newGroups := make(map[string]type_system.Type)
 
 		for groupName, groupType := range regexType.Groups {
 			if substitutionType, exists := v.substitutions[groupName]; exists {
@@ -90,7 +88,7 @@ func (v *RegexTypeReplacer) ExitType(t Type) Type {
 
 		// Only create a new RegexType if there were substitutions
 		if hasSubstitutions {
-			return NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
+			return type_system.NewRegexType(regexType.Provenance(), regexType.Regex, newGroups)
 		}
 	}
 

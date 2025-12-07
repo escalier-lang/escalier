@@ -1,53 +1,51 @@
 package checker
 
-import (
-	. "github.com/escalier-lang/escalier/internal/type_system"
-)
+import "github.com/escalier-lang/escalier/internal/type_system"
 
 type Scope struct {
 	Parent    *Scope // optional, parent is nil for the root scope
-	Namespace *Namespace
+	Namespace *type_system.Namespace
 }
 
 func NewScope() *Scope {
 	return &Scope{
 		Parent:    nil,
-		Namespace: NewNamespace(),
+		Namespace: type_system.NewNamespace(),
 	}
 }
 
 func (s *Scope) WithNewScope() *Scope {
 	return &Scope{
 		Parent:    s,
-		Namespace: NewNamespace(),
+		Namespace: type_system.NewNamespace(),
 	}
 }
 
-func (s *Scope) WithNewScopeAndNamespace(ns *Namespace) *Scope {
+func (s *Scope) WithNewScopeAndNamespace(ns *type_system.Namespace) *Scope {
 	return &Scope{
 		Parent:    s,
 		Namespace: ns,
 	}
 }
 
-func (s *Scope) getValue(name string) *Binding {
+func (s *Scope) GetValue(name string) *type_system.Binding {
 	if v, ok := s.Namespace.Values[name]; ok {
 		return v
 	}
 	if s.Parent != nil {
-		return s.Parent.getValue(name)
+		return s.Parent.GetValue(name)
 	}
 	return nil
 }
 
-func (s *Scope) setValue(name string, binding *Binding) {
+func (s *Scope) setValue(name string, binding *type_system.Binding) {
 	if _, ok := s.Namespace.Values[name]; ok {
 		panic("value already exists")
 	}
 	s.Namespace.Values[name] = binding
 }
 
-func (s *Scope) getNamespace(name string) *Namespace {
+func (s *Scope) getNamespace(name string) *type_system.Namespace {
 	if v, ok := s.Namespace.Namespaces[name]; ok {
 		return v
 	}
@@ -57,14 +55,14 @@ func (s *Scope) getNamespace(name string) *Namespace {
 	return nil
 }
 
-func (s *Scope) setNamespace(name string, namespace *Namespace) {
+func (s *Scope) setNamespace(name string, namespace *type_system.Namespace) {
 	if _, ok := s.Namespace.Namespaces[name]; ok {
 		panic("namespace already exists")
 	}
 	s.Namespace.Namespaces[name] = namespace
 }
 
-func (s *Scope) getTypeAlias(name string) *TypeAlias {
+func (s *Scope) getTypeAlias(name string) *type_system.TypeAlias {
 	if v, ok := s.Namespace.Types[name]; ok {
 		return v
 	}
@@ -74,7 +72,7 @@ func (s *Scope) getTypeAlias(name string) *TypeAlias {
 	return nil
 }
 
-func (s *Scope) setTypeAlias(name string, alias *TypeAlias) {
+func (s *Scope) SetTypeAlias(name string, alias *type_system.TypeAlias) {
 	if _, ok := s.Namespace.Types[name]; ok {
 		panic("type alias already exists")
 	}
