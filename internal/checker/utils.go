@@ -175,13 +175,13 @@ func resolveQualifiedValue(ctx Context, qualIdent type_system.QualIdent) *type_s
 		// Simple identifier, use existing scope lookup
 		return ctx.Scope.GetValue(qi.Name)
 	case *type_system.Member:
-		// Qualified identifier like A.B.Type
+		// Qualified identifier like A.B.C
 		// First resolve the left part (A.B)
 		leftNamespace := resolveQualifiedNamespace(ctx, qi.Left)
 		if leftNamespace == nil {
 			return nil
 		}
-		// Then look for the type in the resolved namespace
+		// Then look for the remaining identifier in the resolved namespace
 		if binding, ok := leftNamespace.Values[qi.Right.Name]; ok {
 			return binding
 		}

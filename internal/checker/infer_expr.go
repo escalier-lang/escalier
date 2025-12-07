@@ -34,7 +34,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				errors = slices.Concat(errors, objErrors)
 
 				// Check if the object type allows mutation
-				if _, ok := objType.(*type_system.MutabilityType); !ok {
+				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
 					errors = append(errors, &CannotMutateImmutableError{
 						Type: objType,
 						span: expr.Left.Span(),
@@ -54,7 +54,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				errors = slices.Concat(errors, objErrors)
 
 				// Check if the object type allows mutation
-				if _, ok := objType.(*type_system.MutabilityType); !ok {
+				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
 					errors = append(errors, &CannotMutateImmutableError{
 						Type: objType,
 						span: expr.Left.Span(),
