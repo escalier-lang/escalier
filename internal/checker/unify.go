@@ -6,11 +6,11 @@ import (
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // getSpanFromType extracts the span from a type's provenance if available
-func getSpanFromType(t Type) ast.Span {
+func getSpanFromType(t type_system.Type) ast.Span {
 	if t == nil {
 		return DEFAULT_SPAN
 	}
@@ -22,52 +22,52 @@ func getSpanFromType(t Type) ast.Span {
 	return DEFAULT_SPAN
 }
 
-// If `unify` doesn't return an error it means that `t1` is a subtype of `t2` or
+// If `Unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
-func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
+func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
 	}
 
-	t1 = Prune(t1)
-	t2 = Prune(t2)
+	t1 = type_system.Prune(t1)
+	t2 = type_system.Prune(t2)
 
 	// fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
 
 	// | TypeVarType, _ -> ...
-	if _, ok := t1.(*TypeVarType); ok {
+	if _, ok := t1.(*type_system.TypeVarType); ok {
 		return c.bind(ctx, t1, t2)
 	}
 	// | _, TypeVarType -> ...
-	if _, ok := t2.(*TypeVarType); ok {
+	if _, ok := t2.(*type_system.TypeVarType); ok {
 		return c.bind(ctx, t1, t2)
 	}
 	// | MutableType, MutableType -> ...
-	if mut1, ok := t1.(*MutabilityType); ok {
-		if mut2, ok := t2.(*MutabilityType); ok {
-			if mut1.Mutability == MutabilityMutable && mut2.Mutability == MutabilityMutable {
+	if mut1, ok := t1.(*type_system.MutabilityType); ok {
+		if mut2, ok := t2.(*type_system.MutabilityType); ok {
+			if mut1.Mutability == type_system.MutabilityMutable && mut2.Mutability == type_system.MutabilityMutable {
 				return c.unifyMut(ctx, mut1, mut2)
 			} else {
-				return c.unify(ctx, mut1.Type, mut2.Type)
+				return c.Unify(ctx, mut1.Type, mut2.Type)
 			}
 		}
 	}
 	// | MutableType, _ -> ...
-	if mut1, ok := t1.(*MutabilityType); ok {
+	if mut1, ok := t1.(*type_system.MutabilityType); ok {
 		// If t2 is a union or intersection, let their handling code deal with it
 		// This ensures that mut types in unions/intersections are compared properly
 		switch t2.(type) {
-		case *UnionType, *IntersectionType:
+		case *type_system.UnionType, *type_system.IntersectionType:
 			// Fall through to union/intersection handling below
 		default:
 			// It's okay to assign mutable types to immutable types
-			return c.unify(ctx, mut1.Type, t2)
+			return c.Unify(ctx, mut1.Type, t2)
 		}
 	}
 	// | PrimType, PrimType -> ...
-	if prim1, ok := t1.(*PrimType); ok {
-		if prim2, ok := t2.(*PrimType); ok {
-			if Equals(prim1, prim2) {
+	if prim1, ok := t1.(*type_system.PrimType); ok {
+		if prim2, ok := t2.(*type_system.PrimType); ok {
+			if type_system.Equals(prim1, prim2) {
 				return nil
 			}
 			// Different primitive types cannot be unified
@@ -80,24 +80,24 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	// What's the difference between wildcard and any?
 	// TODO: dedupe these types
 	// | AnyType, _ -> ...
-	if _, ok := t1.(*AnyType); ok {
+	if _, ok := t1.(*type_system.AnyType); ok {
 		return nil
 	}
 	// | _, AnyType -> ...
-	if _, ok := t2.(*AnyType); ok {
+	if _, ok := t2.(*type_system.AnyType); ok {
 		return nil
 	}
 	// | WildcardType, _ -> ...
-	if _, ok := t1.(*WildcardType); ok {
+	if _, ok := t1.(*type_system.WildcardType); ok {
 		return nil
 	}
 	// | _, WildcardType -> ...
-	if _, ok := t2.(*WildcardType); ok {
+	if _, ok := t2.(*type_system.WildcardType); ok {
 		return nil
 	}
 	// | UnknownType, UnknownType -> ...
-	if _, ok := t1.(*UnknownType); ok {
-		if _, ok := t2.(*UnknownType); ok {
+	if _, ok := t1.(*type_system.UnknownType); ok {
+		if _, ok := t2.(*type_system.UnknownType); ok {
 			return nil
 		}
 		// UnknownType cannot be assigned to other types
@@ -107,56 +107,56 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}}
 	}
 	// | _, UnknownType -> ...
-	if _, ok := t2.(*UnknownType); ok {
+	if _, ok := t2.(*type_system.UnknownType); ok {
 		// All types can be assigned to UnknownType
 		return nil
 	}
 	// | NeveType, _ -> ...
-	if _, ok := t1.(*NeverType); ok {
+	if _, ok := t1.(*type_system.NeverType); ok {
 		return nil
 	}
 	// | _, NeverType -> ...
-	if _, ok := t2.(*NeverType); ok {
+	if _, ok := t2.(*type_system.NeverType); ok {
 		return []Error{&CannotUnifyTypesError{
 			T1: t1,
 			T2: t2,
 		}}
 	}
 	// | TupleType, TupleType -> ...
-	if tuple1, ok := t1.(*TupleType); ok {
-		if tuple2, ok := t2.(*TupleType); ok {
+	if tuple1, ok := t1.(*type_system.TupleType); ok {
+		if tuple2, ok := t2.(*type_system.TupleType); ok {
 			// TODO: handle spread
 			errors := []Error{}
 
 			// TODO: Don't allow more than one rest element in tuple1
-			restElem2, ok := tuple2.Elems[len(tuple2.Elems)-1].(*RestSpreadType)
+			restElem2, ok := tuple2.Elems[len(tuple2.Elems)-1].(*type_system.RestSpreadType)
 			if ok {
 				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
 				elems1 := tuple1.Elems[:len(elems2)]
 
 				for elem1, elem2 := range Zip(elems1, elems2) {
-					unifyErrors := c.unify(ctx, elem1, elem2)
+					unifyErrors := c.Unify(ctx, elem1, elem2)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				remainingElems := tuple1.Elems[len(elems2):]
-				tuple := NewTupleType(nil, remainingElems...)
-				unifyErrors := c.unify(ctx, tuple, restElem2.Type)
+				tuple := type_system.NewTupleType(nil, remainingElems...)
+				unifyErrors := c.Unify(ctx, tuple, restElem2.Type)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
 			}
 
-			restElem1, ok := tuple1.Elems[len(tuple1.Elems)-1].(*RestSpreadType)
+			restElem1, ok := tuple1.Elems[len(tuple1.Elems)-1].(*type_system.RestSpreadType)
 			if ok {
 				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
 				elems2 := tuple2.Elems[:len(elems1)]
 
 				for elem1, elem2 := range Zip(elems1, elems2) {
-					unifyErrors := c.unify(ctx, elem1, elem2)
+					unifyErrors := c.Unify(ctx, elem1, elem2)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				remainingElems := tuple2.Elems[len(elems1):]
-				tuple := NewTupleType(nil, remainingElems...)
-				unifyErrors := c.unify(ctx, restElem1.Type, tuple)
+				tuple := type_system.NewTupleType(nil, remainingElems...)
+				unifyErrors := c.Unify(ctx, restElem1.Type, tuple)
 				errors = slices.Concat(errors, unifyErrors)
 				return errors
 			}
@@ -164,7 +164,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			if len(tuple2.Elems) > len(tuple1.Elems) {
 				// Unify the elements that are present in both tuples
 				for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
-					unifyErrors := c.unify(ctx, elem1, elem2)
+					unifyErrors := c.Unify(ctx, elem1, elem2)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 
@@ -176,8 +176,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				// since they are not present in tuple1.
 				for _, elem2 := range extraElems {
 					node := GetNode(elem2.Provenance())
-					undefined := NewUndefinedType(&ast.NodeProvenance{Node: node})
-					unifyErrors := c.unify(ctx, elem2, undefined)
+					undefined := type_system.NewUndefinedType(&ast.NodeProvenance{Node: node})
+					unifyErrors := c.Unify(ctx, elem2, undefined)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 
@@ -194,7 +194,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			}
 
 			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
-				unifyErrors := c.unify(ctx, elem1, elem2)
+				unifyErrors := c.Unify(ctx, elem1, elem2)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
@@ -202,14 +202,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | TupleType, ArrayType -> ...
-	if tuple1, ok := t1.(*TupleType); ok {
-		if array2, ok := t2.(*TypeRefType); ok && QualIdentToString(array2.Name) == "Array" {
+	if tuple1, ok := t1.(*type_system.TupleType); ok {
+		if array2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array2.Name) == "Array" {
 			// A tuple can be unified with an array if all tuple elements
 			// can be unified with the array's element type
 			if len(array2.TypeArgs) == 1 {
 				errors := []Error{}
 				for _, elem := range tuple1.Elems {
-					unifyErrors := c.unify(ctx, elem, array2.TypeArgs[0])
+					unifyErrors := c.Unify(ctx, elem, array2.TypeArgs[0])
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				return errors
@@ -221,14 +221,14 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | ArrayType, TupleType -> ...
-	if array1, ok := t1.(*TypeRefType); ok && QualIdentToString(array1.Name) == "Array" {
-		if tuple2, ok := t2.(*TupleType); ok {
+	if array1, ok := t1.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array1.Name) == "Array" {
+		if tuple2, ok := t2.(*type_system.TupleType); ok {
 			// An array can be unified with a tuple if the array's element type
 			// can be unified with all tuple elements
 			if len(array1.TypeArgs) == 1 {
 				errors := []Error{}
 				for _, elem := range tuple2.Elems {
-					unifyErrors := c.unify(ctx, array1.TypeArgs[0], elem)
+					unifyErrors := c.Unify(ctx, array1.TypeArgs[0], elem)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				return errors
@@ -240,11 +240,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | ArrayType, ArrayType -> ...
-	if array1, ok := t1.(*TypeRefType); ok && QualIdentToString(array1.Name) == "Array" {
-		if array2, ok := t2.(*TypeRefType); ok && QualIdentToString(array2.Name) == "Array" {
+	if array1, ok := t1.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array1.Name) == "Array" {
+		if array2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array2.Name) == "Array" {
 			// Both are Array types, unify their element types
 			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
-				return c.unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
+				return c.Unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
 			}
 			// If either array doesn't have exactly one type argument, they can't be unified
 			return []Error{&CannotUnifyTypesError{
@@ -254,20 +254,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | RestSpreadType, ArrayType -> ...
-	if rest, ok := t1.(*RestSpreadType); ok {
-		if array, ok := t2.(*TypeRefType); ok && QualIdentToString(array.Name) == "Array" {
-			return c.unify(ctx, rest.Type, array)
+	if rest, ok := t1.(*type_system.RestSpreadType); ok {
+		if array, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array.Name) == "Array" {
+			return c.Unify(ctx, rest.Type, array)
 		}
 	}
 	// | FuncType, FuncType -> ...
-	if func1, ok := t1.(*FuncType); ok {
-		if func2, ok := t2.(*FuncType); ok {
+	if func1, ok := t1.(*type_system.FuncType); ok {
+		if func2, ok := t2.(*type_system.FuncType); ok {
 			return c.unifyFuncTypes(ctx, func1, func2)
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias name) -> ...
-	if ref1, ok := t1.(*TypeRefType); ok {
-		if ref2, ok := t2.(*TypeRefType); ok && QualIdentToString(ref1.Name) == QualIdentToString(ref2.Name) {
+	if ref1, ok := t1.(*type_system.TypeRefType); ok {
+		if ref2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(ref1.Name) == type_system.QualIdentToString(ref2.Name) {
 			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
 				// If both type references have no type arguments, we can unify them
 				// directly.
@@ -279,20 +279,20 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 				typeAlias1 := ref1.TypeAlias
 				if typeAlias1 == nil {
-					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, QualIdentToString(ref1.Name))
+					typeAlias1 = c.resolveQualifiedTypeAliasFromString(ctx, type_system.QualIdentToString(ref1.Name))
 					if typeAlias1 == nil {
 						return []Error{&UnknownTypeError{
-							TypeName: QualIdentToString(ref1.Name),
+							TypeName: type_system.QualIdentToString(ref1.Name),
 							typeRef:  ref1,
 						}}
 					}
 				}
 				typeAlias2 := ref2.TypeAlias
 				if typeAlias2 == nil {
-					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, QualIdentToString(ref2.Name))
+					typeAlias2 = c.resolveQualifiedTypeAliasFromString(ctx, type_system.QualIdentToString(ref2.Name))
 					if typeAlias2 == nil {
 						return []Error{&UnknownTypeError{
-							TypeName: QualIdentToString(ref2.Name),
+							TypeName: type_system.QualIdentToString(ref2.Name),
 							typeRef:  ref2,
 						}}
 					}
@@ -309,22 +309,22 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | TypeRefType, TypeRefType (different alias name) -> ...
-	if ref1, ok := t1.(*TypeRefType); ok {
-		if ref2, ok := t2.(*TypeRefType); ok && ref1.Name != ref2.Name {
+	if ref1, ok := t1.(*type_system.TypeRefType); ok {
+		if ref2, ok := t2.(*type_system.TypeRefType); ok && ref1.Name != ref2.Name {
 			// panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
 			// TODO
 		}
 	}
 	// | LitType, PrimType -> ...
-	if lit, ok := t1.(*LitType); ok {
-		if prim, ok := t2.(*PrimType); ok {
-			if _, ok := lit.Lit.(*NumLit); ok && prim.Prim == "number" {
+	if lit, ok := t1.(*type_system.LitType); ok {
+		if prim, ok := t2.(*type_system.PrimType); ok {
+			if _, ok := lit.Lit.(*type_system.NumLit); ok && prim.Prim == "number" {
 				return nil
-			} else if _, ok := lit.Lit.(*StrLit); ok && prim.Prim == "string" {
+			} else if _, ok := lit.Lit.(*type_system.StrLit); ok && prim.Prim == "string" {
 				return nil
-			} else if _, ok := lit.Lit.(*BoolLit); ok && prim.Prim == "boolean" {
+			} else if _, ok := lit.Lit.(*type_system.BoolLit); ok && prim.Prim == "boolean" {
 				return nil
-			} else if _, ok := lit.Lit.(*BigIntLit); ok && prim.Prim == "bigint" {
+			} else if _, ok := lit.Lit.(*type_system.BigIntLit); ok && prim.Prim == "bigint" {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
@@ -335,10 +335,10 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | LitType, LitType -> ...
-	if lit1, ok := t1.(*LitType); ok {
-		if lit2, ok := t2.(*LitType); ok {
-			if l1, ok := lit1.Lit.(*NumLit); ok {
-				if l2, ok := lit2.Lit.(*NumLit); ok {
+	if lit1, ok := t1.(*type_system.LitType); ok {
+		if lit2, ok := t2.(*type_system.LitType); ok {
+			if l1, ok := lit1.Lit.(*type_system.NumLit); ok {
+				if l2, ok := lit2.Lit.(*type_system.NumLit); ok {
 					if l1.Equal(l2) {
 						return nil
 					} else {
@@ -349,8 +349,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 			}
-			if l1, ok := lit1.Lit.(*StrLit); ok {
-				if l2, ok := lit2.Lit.(*StrLit); ok {
+			if l1, ok := lit1.Lit.(*type_system.StrLit); ok {
+				if l2, ok := lit2.Lit.(*type_system.StrLit); ok {
 					if l1.Equal(l2) {
 						return nil
 					} else {
@@ -361,8 +361,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 			}
-			if l1, ok := lit1.Lit.(*BoolLit); ok {
-				if l2, ok := lit2.Lit.(*BoolLit); ok {
+			if l1, ok := lit1.Lit.(*type_system.BoolLit); ok {
+				if l2, ok := lit2.Lit.(*type_system.BoolLit); ok {
 					if l1.Equal(l2) {
 						return nil
 					} else {
@@ -373,13 +373,13 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 			}
-			if _, ok := lit1.Lit.(*UndefinedLit); ok {
-				if _, ok := lit2.Lit.(*UndefinedLit); ok {
+			if _, ok := lit1.Lit.(*type_system.UndefinedLit); ok {
+				if _, ok := lit2.Lit.(*type_system.UndefinedLit); ok {
 					return nil
 				}
 			}
-			if _, ok := lit1.Lit.(*NullLit); ok {
-				if _, ok := lit2.Lit.(*NullLit); ok {
+			if _, ok := lit1.Lit.(*type_system.NullLit); ok {
+				if _, ok := lit2.Lit.(*type_system.NullLit); ok {
 					return nil
 				}
 			}
@@ -390,9 +390,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | RegexType, RegexType -> ...
-	if regex1, ok := t1.(*RegexType); ok {
-		if regex2, ok := t2.(*RegexType); ok {
-			if Equals(regex1, regex2) {
+	if regex1, ok := t1.(*type_system.RegexType); ok {
+		if regex2, ok := t2.(*type_system.RegexType); ok {
+			if type_system.Equals(regex1, regex2) {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
@@ -403,9 +403,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | LitType (string), RegexType -> ...
-	if lit, ok := t1.(*LitType); ok {
-		if regexType, ok := t2.(*RegexType); ok {
-			if strLit, ok := lit.Lit.(*StrLit); ok {
+	if lit, ok := t1.(*type_system.LitType); ok {
+		if regexType, ok := t2.(*type_system.RegexType); ok {
+			if strLit, ok := lit.Lit.(*type_system.StrLit); ok {
 				matches := regexType.Regex.FindStringSubmatch(strLit.Value)
 				if matches != nil {
 					groupNames := regexType.Regex.SubexpNames()
@@ -413,9 +413,9 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 					for i, name := range groupNames {
 						if name != "" {
-							groupErrors := c.unify(
+							groupErrors := c.Unify(
 								ctx,
-								NewStrLitType(nil, matches[i]),
+								type_system.NewStrLitType(nil, matches[i]),
 								// By default this will be a `string` type, but
 								// if the RegexType appears in a CondType's
 								// Extend field, it will be a TypeVarType.
@@ -436,18 +436,18 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | LitType (string), TemplateLitType -> ...
-	if lit, ok := t1.(*LitType); ok {
-		if template, ok := t2.(*TemplateLitType); ok {
-			if strLit, ok := lit.Lit.(*StrLit); ok {
+	if lit, ok := t1.(*type_system.LitType); ok {
+		if template, ok := t2.(*type_system.TemplateLitType); ok {
+			if strLit, ok := lit.Lit.(*type_system.StrLit); ok {
 				panic(fmt.Sprintf("TODO: unify types %#v and %#v", strLit, template))
 				// TODO
 			}
 		}
 	}
 	// | UniqueSymbolType, UniqueSymbolType -> ...
-	if unique1, ok := t1.(*UniqueSymbolType); ok {
-		if unique2, ok := t2.(*UniqueSymbolType); ok {
-			if Equals(unique1, unique2) {
+	if unique1, ok := t1.(*type_system.UniqueSymbolType); ok {
+		if unique2, ok := t2.(*type_system.UniqueSymbolType); ok {
+			if type_system.Equals(unique1, unique2) {
 				return nil
 			} else {
 				return []Error{&CannotUnifyTypesError{
@@ -459,12 +459,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// TODO: dedupe with next case
 	// | _, ExtractorType -> ...
-	if ext, ok := t2.(*ExtractorType); ok {
-		if extObj, ok := ext.Extractor.(*ObjectType); ok {
+	if ext, ok := t2.(*type_system.ExtractorType); ok {
+		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
 			for _, elem := range extObj.Elems {
-				if methodElem, ok := elem.(*MethodElem); ok {
+				if methodElem, ok := elem.(*type_system.MethodElem); ok {
 					// TODO: look up the symbol ID for `Symbol.customMatcher`
-					if methodElem.Name.Kind == SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
 						if len(methodElem.Fn.Params) != 1 {
 							return []Error{&IncorrectParamCountForCustomMatcherError{
 								Method:    methodElem.Fn,
@@ -473,27 +473,27 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}
 
 						paramType := methodElem.Fn.Params[0].Type
-						errors := c.unify(ctx, t1, paramType)
+						errors := c.Unify(ctx, t1, paramType)
 
-						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+						if tuple, ok := methodElem.Fn.Return.(*type_system.TupleType); ok {
 							// If the subject is a type reference, then we need
 							// to substitute any type parameters in the tuple for
 							// the type arguments specified in the subject's type
 							// reference.
 							// TODO: We might have to expand `t1` if the type alias
 							// it's using points to another type alias.
-							if typeRef, ok := t1.(*TypeRefType); ok {
-								substitutions := make(map[string]Type)
+							if typeRef, ok := t1.(*type_system.TypeRefType); ok {
+								substitutions := make(map[string]type_system.Type)
 								for i, typeParam := range typeRef.TypeAlias.TypeParams {
 									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
 								}
-								tuple = substituteTypeParams[*TupleType](tuple, substitutions)
+								tuple = SubstituteTypeParams[*type_system.TupleType](tuple, substitutions)
 							}
 
 							// Find if the args have a rest element
 							var restIndex = -1
 							for i, elem := range ext.Args {
-								if _, isRest := elem.(*RestSpreadType); isRest {
+								if _, isRest := elem.(*type_system.RestSpreadType); isRest {
 									restIndex = i
 									break
 								}
@@ -513,23 +513,23 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 								// Unify fixed elements (before rest)
 								for i := 0; i < restIndex; i++ {
-									argErrors := c.unify(ctx, tuple.Elems[i], ext.Args[i])
+									argErrors := c.Unify(ctx, tuple.Elems[i], ext.Args[i])
 									errors = slices.Concat(errors, argErrors)
 								}
 
 								// Unify rest arguments with rest element type
 								if len(ext.Args) > restIndex {
-									restElem := ext.Args[restIndex].(*RestSpreadType)
-									remainingArgsTupleType := NewTupleType(nil, tuple.Elems[restIndex:]...)
+									restElem := ext.Args[restIndex].(*type_system.RestSpreadType)
+									remainingArgsTupleType := type_system.NewTupleType(nil, tuple.Elems[restIndex:]...)
 
-									restErrors := c.unify(ctx, restElem.Type, remainingArgsTupleType)
+									restErrors := c.Unify(ctx, restElem.Type, remainingArgsTupleType)
 									errors = slices.Concat(errors, restErrors)
 								}
 							} else {
 								// Tuple has no rest element, use strict equality check
 								if len(tuple.Elems) == len(ext.Args) {
 									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
-										argErrors := c.unify(ctx, retElem, argType)
+										argErrors := c.Unify(ctx, retElem, argType)
 										errors = slices.Concat(errors, argErrors)
 									}
 								} else {
@@ -563,12 +563,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 	// TODO: dedupe with previous case
 	// | ExtractorType, _ -> ...
-	if ext, ok := t1.(*ExtractorType); ok {
-		if extObj, ok := ext.Extractor.(*ObjectType); ok {
+	if ext, ok := t1.(*type_system.ExtractorType); ok {
+		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
 			for _, elem := range extObj.Elems {
-				if methodElem, ok := elem.(*MethodElem); ok {
+				if methodElem, ok := elem.(*type_system.MethodElem); ok {
 					// TODO: look up the symbol ID for `Symbol.customMatcher`
-					if methodElem.Name.Kind == SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
 						if len(methodElem.Fn.Params) != 1 {
 							return []Error{&IncorrectParamCountForCustomMatcherError{
 								Method:    methodElem.Fn,
@@ -577,27 +577,27 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}
 
 						paramType := methodElem.Fn.Params[0].Type
-						errors := c.unify(ctx, paramType, t2)
+						errors := c.Unify(ctx, paramType, t2)
 
-						if tuple, ok := methodElem.Fn.Return.(*TupleType); ok {
+						if tuple, ok := methodElem.Fn.Return.(*type_system.TupleType); ok {
 							// If the subject is a type reference, then we need
 							// to substitute any type parameters in the tuple for
 							// the type arguments specified in the subject's type
 							// reference.
 							// TODO: We might have to expand `t2` if the type alias
 							// it's using points to another type alias.
-							if typeRef, ok := t2.(*TypeRefType); ok {
-								substitutions := make(map[string]Type)
+							if typeRef, ok := t2.(*type_system.TypeRefType); ok {
+								substitutions := make(map[string]type_system.Type)
 								for i, typeParam := range typeRef.TypeAlias.TypeParams {
 									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
 								}
-								tuple = substituteTypeParams[*TupleType](tuple, substitutions)
+								tuple = SubstituteTypeParams[*type_system.TupleType](tuple, substitutions)
 							}
 
 							// Find if the args have a rest element
 							var restIndex = -1
 							for i, elem := range ext.Args {
-								if _, isRest := elem.(*RestSpreadType); isRest {
+								if _, isRest := elem.(*type_system.RestSpreadType); isRest {
 									restIndex = i
 									break
 								}
@@ -617,23 +617,23 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 								// Unify fixed elements (before rest)
 								for i := 0; i < restIndex; i++ {
-									argErrors := c.unify(ctx, ext.Args[i], tuple.Elems[i])
+									argErrors := c.Unify(ctx, ext.Args[i], tuple.Elems[i])
 									errors = slices.Concat(errors, argErrors)
 								}
 
 								// Unify rest arguments with rest element type
 								if len(ext.Args) > restIndex {
-									restElem := ext.Args[restIndex].(*RestSpreadType)
-									remainingArgsTupleType := NewTupleType(nil, tuple.Elems[restIndex:]...)
+									restElem := ext.Args[restIndex].(*type_system.RestSpreadType)
+									remainingArgsTupleType := type_system.NewTupleType(nil, tuple.Elems[restIndex:]...)
 
-									restErrors := c.unify(ctx, remainingArgsTupleType, restElem.Type)
+									restErrors := c.Unify(ctx, remainingArgsTupleType, restElem.Type)
 									errors = slices.Concat(errors, restErrors)
 								}
 							} else {
 								// Tuple has no rest element, use strict equality check
 								if len(tuple.Elems) == len(ext.Args) {
 									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
-										argErrors := c.unify(ctx, argType, retElem)
+										argErrors := c.Unify(ctx, argType, retElem)
 										errors = slices.Concat(errors, argErrors)
 									}
 								} else {
@@ -666,8 +666,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}}
 	}
 	// | ObjectType, ObjectType -> ...
-	if obj1, ok := t1.(*ObjectType); ok {
-		if obj2, ok := t2.(*ObjectType); ok {
+	if obj1, ok := t1.(*type_system.ObjectType); ok {
+		if obj2, ok := t2.(*type_system.ObjectType); ok {
 			if obj2.Nominal {
 				// NOTE: We can't do an early return because if one of the object
 				// types was inferred from a pattern, some of its properties may
@@ -691,34 +691,34 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			errors := []Error{}
 
-			namedElems1 := make(map[ObjTypeKey]Type)
-			namedElems2 := make(map[ObjTypeKey]Type)
+			namedElems1 := make(map[type_system.ObjTypeKey]type_system.Type)
+			namedElems2 := make(map[type_system.ObjTypeKey]type_system.Type)
 
-			keys1 := []ObjTypeKey{} // original order of keys in obj1
-			keys2 := []ObjTypeKey{} // original order of keys in obj2
+			keys1 := []type_system.ObjTypeKey{} // original order of keys in obj1
+			keys2 := []type_system.ObjTypeKey{} // original order of keys in obj2
 
-			var restType1 Type
-			var restType2 Type
+			var restType1 type_system.Type
+			var restType2 type_system.Type
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
-				case *MethodElem:
+				case *type_system.MethodElem:
 					namedElems1[elem.Name] = elem.Fn
 					keys1 = append(keys1, elem.Name)
-				case *GetterElem:
+				case *type_system.GetterElem:
 					namedElems1[elem.Name] = elem.Fn.Return
 					keys1 = append(keys1, elem.Name)
-				case *SetterElem:
+				case *type_system.SetterElem:
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
 					keys1 = append(keys1, elem.Name)
-				case *PropertyElem:
+				case *type_system.PropertyElem:
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 					}
 					namedElems1[elem.Name] = propType
 					keys1 = append(keys1, elem.Name)
-				case *RestSpreadElem:
+				case *type_system.RestSpreadElem:
 					restType1 = elem.Value
 				default: // skip other types of elems
 				}
@@ -726,23 +726,23 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 			for _, elem := range obj2.Elems {
 				switch elem := elem.(type) {
-				case *MethodElem:
+				case *type_system.MethodElem:
 					namedElems2[elem.Name] = elem.Fn
 					keys2 = append(keys2, elem.Name)
-				case *GetterElem:
+				case *type_system.GetterElem:
 					namedElems2[elem.Name] = elem.Fn.Return
 					keys2 = append(keys2, elem.Name)
-				case *SetterElem:
+				case *type_system.SetterElem:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
 					keys2 = append(keys2, elem.Name)
-				case *PropertyElem:
+				case *type_system.PropertyElem:
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 					}
 					namedElems2[elem.Name] = propType
 					keys2 = append(keys2, elem.Name)
-				case *RestSpreadElem:
+				case *type_system.RestSpreadElem:
 					restType2 = elem.Value
 				default: // skip other types of elems
 				}
@@ -751,11 +751,11 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			if restType1 != nil && restType2 != nil {
 				return []Error{&UnimplementedError{message: "unify types with two rest elems"}}
 			} else if restType1 != nil {
-				usedKeys2 := map[ObjTypeKey]bool{}
+				usedKeys2 := map[type_system.ObjTypeKey]bool{}
 				for _, key1 := range keys1 {
 					value1 := namedElems1[key1]
 					if value2, ok := namedElems2[key1]; ok {
-						unifyErrors := c.unify(ctx, value1, value2)
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
 						usedKeys2[key1] = true
 					} else {
@@ -766,16 +766,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						undefinedType := NewUndefinedType(nil)
-						unifyErrors := c.unify(ctx, value1, undefinedType)
+						undefinedType := type_system.NewUndefinedType(nil)
+						unifyErrors := c.Unify(ctx, value1, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 
-				restElems := []ObjTypeElem{}
+				restElems := []type_system.ObjTypeElem{}
 				for _, key := range keys2 {
 					if _, ok := usedKeys2[key]; !ok {
-						restElems = append(restElems, &PropertyElem{
+						restElems = append(restElems, &type_system.PropertyElem{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
@@ -784,16 +784,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 
-				objType := NewObjectType(nil, restElems)
+				objType := type_system.NewObjectType(nil, restElems)
 
-				unifyErrors := c.unify(ctx, objType, restType1)
+				unifyErrors := c.Unify(ctx, objType, restType1)
 				errors = slices.Concat(errors, unifyErrors)
 			} else if restType2 != nil {
-				usedKeys1 := map[ObjTypeKey]bool{}
+				usedKeys1 := map[type_system.ObjTypeKey]bool{}
 				for _, key2 := range keys2 {
 					value2 := namedElems2[key2]
 					if value1, ok := namedElems1[key2]; ok {
-						unifyErrors := c.unify(ctx, value1, value2)
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
 						usedKeys1[key2] = true
 					} else {
@@ -804,16 +804,16 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						undefinedType := NewUndefinedType(nil)
-						unifyErrors := c.unify(ctx, value2, undefinedType)
+						undefinedType := type_system.NewUndefinedType(nil)
+						unifyErrors := c.Unify(ctx, value2, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 
-				restElems := []ObjTypeElem{}
+				restElems := []type_system.ObjTypeElem{}
 				for _, key := range keys1 {
 					if _, ok := usedKeys1[key]; !ok {
-						restElems = append(restElems, &PropertyElem{
+						restElems = append(restElems, &type_system.PropertyElem{
 							Name:     key,
 							Optional: false, // TODO
 							Readonly: false, // TODO
@@ -822,15 +822,15 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					}
 				}
 
-				objType := NewObjectType(nil, restElems)
+				objType := type_system.NewObjectType(nil, restElems)
 
-				unifyErrors := c.unify(ctx, restType2, objType)
+				unifyErrors := c.Unify(ctx, restType2, objType)
 				errors = slices.Concat(errors, unifyErrors)
 			} else {
 				for _, key2 := range keys2 {
 					value2 := namedElems2[key2]
 					if value1, ok := namedElems1[key2]; ok {
-						unifyErrors := c.unify(ctx, value1, value2)
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
@@ -840,8 +840,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable
-						undefinedType := NewUndefinedType(nil)
-						unifyErrors := c.unify(ctx, value2, undefinedType)
+						undefinedType := type_system.NewUndefinedType(nil)
+						unifyErrors := c.Unify(ctx, value2, undefinedType)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
@@ -851,46 +851,46 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		}
 	}
 	// | IntersectionType, ObjectType -> ...
-	if intersection, ok := t1.(*IntersectionType); ok {
-		if obj, ok := t2.(*ObjectType); ok {
+	if intersection, ok := t1.(*type_system.IntersectionType); ok {
+		if obj, ok := t2.(*type_system.ObjectType); ok {
 			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection, obj))
 		}
 	}
 	// | ObjectType, UnionType -> ...
 	// if obj, ok := t1.(*ObjectType); ok {
-	// 	if union, ok := t2.(*UnionType); ok {
+	// 	if union, ok := t2.(*type_system.UnionType); ok {
 	// 		panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, union))
 	// 		// TODO
 	// 	}
 	// }
 	// | IntersectionType, IntersectionType -> ...
-	if intersection1, ok := t1.(*IntersectionType); ok {
-		if intersection2, ok := t2.(*IntersectionType); ok {
+	if intersection1, ok := t1.(*type_system.IntersectionType); ok {
+		if intersection2, ok := t2.(*type_system.IntersectionType); ok {
 			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection1, intersection2))
 			// TODO
 		}
 	}
 	// | UnionType, _ -> ...
-	if union, ok := t1.(*UnionType); ok {
+	if union, ok := t1.(*type_system.UnionType); ok {
 		// special-case unification of union with object type
-		if obj, ok := t2.(*ObjectType); ok {
-			destructuredFields := make(map[ObjTypeKey]Type)
-			var restType Type
+		if obj, ok := t2.(*type_system.ObjectType); ok {
+			destructuredFields := make(map[type_system.ObjTypeKey]type_system.Type)
+			var restType type_system.Type
 			for _, elem := range obj.Elems {
 				switch elem := elem.(type) {
-				case *MethodElem:
+				case *type_system.MethodElem:
 					destructuredFields[elem.Name] = elem.Fn
-				case *GetterElem:
+				case *type_system.GetterElem:
 					destructuredFields[elem.Name] = elem.Fn.Return
-				case *SetterElem:
+				case *type_system.SetterElem:
 					destructuredFields[elem.Name] = elem.Fn.Params[0].Type
-				case *PropertyElem:
+				case *type_system.PropertyElem:
 					propType := elem.Value
 					if elem.Optional {
-						propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 					}
 					destructuredFields[elem.Name] = propType
-				case *RestSpreadElem:
+				case *type_system.RestSpreadElem:
 					restType = elem.Value
 				default: // skip other types of elems
 				}
@@ -900,35 +900,35 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 				fmt.Fprintf(os.Stderr, "%s: %s\n", name.String(), t.String())
 			}
 
-			matchingTypes := make(map[ObjTypeKey][]Type)
+			matchingTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
 			// Track remaining fields for rest spread handling
-			remainingFields := make(map[ObjTypeKey][]Type)
-			remainingFieldsOrder := []ObjTypeKey{} // Track order of keys
+			remainingFields := make(map[type_system.ObjTypeKey][]type_system.Type)
+			remainingFieldsOrder := []type_system.ObjTypeKey{} // Track order of keys
 
 			for _, unionType := range union.Types {
-				if unionObj, ok := unionType.(*ObjectType); ok {
+				if unionObj, ok := unionType.(*type_system.ObjectType); ok {
 					for name := range destructuredFields {
-						var t Type
+						var t type_system.Type
 						// Find the type of the field with this name in the union object
 						for _, elem := range unionObj.Elems {
 							switch elem := elem.(type) {
-							case *MethodElem:
+							case *type_system.MethodElem:
 								if elem.Name == name {
 									t = elem.Fn
 								}
-							case *GetterElem:
+							case *type_system.GetterElem:
 								if elem.Name == name {
 									t = elem.Fn.Return
 								}
-							case *SetterElem:
+							case *type_system.SetterElem:
 								if elem.Name == name {
 									t = elem.Fn.Params[0].Type
 								}
-							case *PropertyElem:
+							case *type_system.PropertyElem:
 								if elem.Name == name {
 									propType := elem.Value
 									if elem.Optional {
-										propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 									}
 									t = propType
 								}
@@ -944,32 +944,32 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					if restType != nil {
 						for _, elem := range unionObj.Elems {
 							switch elem := elem.(type) {
-							case *MethodElem:
+							case *type_system.MethodElem:
 								if _, ok := destructuredFields[elem.Name]; !ok {
 									if _, exists := remainingFields[elem.Name]; !exists {
 										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
 									}
 									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn)
 								}
-							case *GetterElem:
+							case *type_system.GetterElem:
 								if _, ok := destructuredFields[elem.Name]; !ok {
 									if _, exists := remainingFields[elem.Name]; !exists {
 										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
 									}
 									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Return)
 								}
-							case *SetterElem:
+							case *type_system.SetterElem:
 								if _, ok := destructuredFields[elem.Name]; !ok {
 									if _, exists := remainingFields[elem.Name]; !exists {
 										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
 									}
 									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Params[0].Type)
 								}
-							case *PropertyElem:
+							case *type_system.PropertyElem:
 								if _, ok := destructuredFields[elem.Name]; !ok {
 									propType := elem.Value
 									if elem.Optional {
-										propType = NewUnionType(nil, propType, NewUndefinedType(nil))
+										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 									}
 									if _, exists := remainingFields[elem.Name]; !exists {
 										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
@@ -986,41 +986,41 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 			for name, t := range destructuredFields {
 				// if destructuredFields[name] doesn't exist, unify `undefined` with `t`
 				if _, ok := matchingTypes[name]; !ok {
-					undefined := NewUndefinedType(nil)
-					unifyErrors := c.unify(ctx, undefined, t)
+					undefined := type_system.NewUndefinedType(nil)
+					unifyErrors := c.Unify(ctx, undefined, t)
 					errors = slices.Concat(errors, unifyErrors)
 				} else if len(matchingTypes[name]) == len(union.Types) {
 					// Create a union of all matching types and unify with destructured field type
-					unionOfMatchingTypes := NewUnionType(nil, matchingTypes[name]...)
+					unionOfMatchingTypes := type_system.NewUnionType(nil, matchingTypes[name]...)
 					fieldType := destructuredFields[name]
-					unifyErrors := c.unify(ctx, unionOfMatchingTypes, fieldType)
+					unifyErrors := c.Unify(ctx, unionOfMatchingTypes, fieldType)
 					errors = slices.Concat(errors, unifyErrors)
 				} else {
 					// Create a union of all matching types and `undefined`, then unify with destructured field type
-					unionOfMatchingTypes := NewUnionType(nil, append(matchingTypes[name], NewUndefinedType(nil))...)
+					unionOfMatchingTypes := type_system.NewUnionType(nil, append(matchingTypes[name], type_system.NewUndefinedType(nil))...)
 					fieldType := destructuredFields[name]
-					unifyErrors := c.unify(ctx, unionOfMatchingTypes, fieldType)
+					unifyErrors := c.Unify(ctx, unionOfMatchingTypes, fieldType)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 			}
 
 			// Handle rest spread element if present
 			if restType != nil {
-				restElems := []ObjTypeElem{}
+				restElems := []type_system.ObjTypeElem{}
 				for _, name := range remainingFieldsOrder {
 					types := remainingFields[name]
 					// Create a union of all types for this field across union members
-					var fieldType Type
+					var fieldType type_system.Type
 					if len(types) == 1 {
 						fieldType = types[0]
 					} else if len(types) > 1 {
-						fieldType = NewUnionType(nil, types...)
+						fieldType = type_system.NewUnionType(nil, types...)
 					} else {
 						// Field doesn't exist in any union member, use undefined
-						fieldType = NewUndefinedType(nil)
+						fieldType = type_system.NewUndefinedType(nil)
 					}
 
-					restElems = append(restElems, &PropertyElem{
+					restElems = append(restElems, &type_system.PropertyElem{
 						Name:     name,
 						Optional: false, // TODO: determine if this should be true
 						Readonly: false, // TODO: determine if this should be true
@@ -1028,8 +1028,8 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 					})
 				}
 
-				objType := NewObjectType(nil, restElems)
-				unifyErrors := c.unify(ctx, objType, restType)
+				objType := type_system.NewObjectType(nil, restElems)
+				unifyErrors := c.Unify(ctx, objType, restType)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
@@ -1038,7 +1038,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 
 		// All types in the union must be compatible with t2
 		for _, t := range union.Types {
-			unifyErrors := c.unify(ctx, t, t2)
+			unifyErrors := c.Unify(ctx, t, t2)
 			// TODO: include the individual reasons why unification failed
 			if len(unifyErrors) > 0 {
 				// If any type in the union is not compatible, return error
@@ -1051,12 +1051,12 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 		return nil
 	}
 	// | _, UnionType -> ...
-	if union, ok := t2.(*UnionType); ok {
+	if union, ok := t2.(*type_system.UnionType); ok {
 		// Try to unify t1 with any type in the union
 		for _, unionType := range union.Types {
 			fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())
 			// Try unifying - if any unification succeeds, we're good
-			unifyErrors := c.unify(ctx, t1, unionType)
+			unifyErrors := c.Unify(ctx, t1, unionType)
 			if len(unifyErrors) == 0 {
 				// Successfully unified with one of the union types
 				return nil
@@ -1070,19 +1070,19 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 	}
 
 	retry := false
-	expandedT1, _ := c.expandType(ctx, t1, 1)
+	expandedT1, _ := c.ExpandType(ctx, t1, 1)
 	if expandedT1 != t1 {
 		t1 = expandedT1
 		retry = true
 	}
-	expandedT2, _ := c.expandType(ctx, t2, 1)
+	expandedT2, _ := c.ExpandType(ctx, t2, 1)
 	if expandedT2 != t2 {
 		t2 = expandedT2
 		retry = true
 	}
 
 	if retry {
-		return c.unify(ctx, t1, t2)
+		return c.Unify(ctx, t1, t2)
 	}
 
 	return []Error{&CannotUnifyTypesError{
@@ -1092,7 +1092,7 @@ func (c *Checker) unify(ctx Context, t1, t2 Type) []Error {
 }
 
 // unifyFuncTypes unifies two function types
-func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
+func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType) []Error {
 	errors := []Error{}
 
 	// For function types to be compatible:
@@ -1122,7 +1122,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 
 	for i, param := range func1.Params {
 		if param.Pattern != nil {
-			if _, isRest := param.Pattern.(*RestPat); isRest {
+			if _, isRest := param.Pattern.(*type_system.RestPat); isRest {
 				func1RestIndex = i
 				break
 			}
@@ -1131,7 +1131,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 
 	for i, param := range func2.Params {
 		if param.Pattern != nil {
-			if _, isRest := param.Pattern.(*RestPat); isRest {
+			if _, isRest := param.Pattern.(*type_system.RestPat); isRest {
 				func2RestIndex = i
 				break
 			}
@@ -1154,7 +1154,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1172,7 +1172,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 		// Unify the rest parameters directly
 		restParam1 := func1.Params[func1RestIndex]
 		restParam2 := func2.Params[func2RestIndex]
-		unifyErrors := c.unify(ctx, restParam2.Type, restParam1.Type)
+		unifyErrors := c.Unify(ctx, restParam2.Type, restParam1.Type)
 		errors = slices.Concat(errors, unifyErrors)
 
 		// Check that both functions don't have parameters after rest (which shouldn't happen)
@@ -1199,7 +1199,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1220,7 +1220,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 
 		if excessParamCount > 0 {
 			// Collect excess parameters from func1
-			excessParamTypes := make([]Type, excessParamCount)
+			excessParamTypes := make([]type_system.Type, excessParamCount)
 			for i := 0; i < excessParamCount; i++ {
 				excessParamTypes[i] = func1.Params[func2RestIndex+i].Type
 			}
@@ -1228,11 +1228,11 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			// Create an Array type from excess parameters
 			// We need to find a type that all excess parameters can unify to
 			// For simplicity, we'll create a union of all excess parameter types
-			elementType := NewUnionType(nil, excessParamTypes...)
+			elementType := type_system.NewUnionType(nil, excessParamTypes...)
 
 			// Create Array<elementType> and unify with rest parameter type
-			arrayType := NewTypeRefType(nil, "Array", nil, elementType)
-			unifyErrors := c.unify(ctx, restParam.Type, arrayType)
+			arrayType := type_system.NewTypeRefType(nil, "Array", nil, elementType)
+			unifyErrors := c.Unify(ctx, restParam.Type, arrayType)
 			errors = slices.Concat(errors, unifyErrors)
 		} else {
 			// No excess parameters, rest parameter should accept empty array
@@ -1263,7 +1263,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 			param1 := func1.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1283,7 +1283,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 
 	// Check return types (covariant)
 	if func1.Return != nil && func2.Return != nil {
-		unifyErrors := c.unify(ctx, func1.Return, func2.Return)
+		unifyErrors := c.Unify(ctx, func1.Return, func2.Return)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if func1.Return == nil && func2.Return != nil {
 		// func1 returns void/undefined, func2 expects a return type
@@ -1298,7 +1298,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 
 	// Check throws types (covariant)
 	if func1.Throws != nil && func2.Throws != nil {
-		unifyErrors := c.unify(ctx, func1.Throws, func2.Throws)
+		unifyErrors := c.Unify(ctx, func1.Throws, func2.Throws)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if func1.Throws != nil && func2.Throws == nil {
 		// func1 can throw but func2 doesn't expect throws - this might be an error
@@ -1313,14 +1313,14 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *FuncType) []Error {
 // TODO: check if t1 is already bound to an instance
 // NOTE: be sure to call Prune on t1 and t2 before calling bind
 // to ensure we are working with the most up-to-date types.
-func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
+func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot bind nil types") // this should never happen
 	}
 
 	errors := []Error{}
 
-	if !Equals(t1, t2) {
+	if !type_system.Equals(t1, t2) {
 		if occursInType(t1, t2) {
 			fmt.Fprintf(os.Stderr, "Recursive unification: cannot bind %s to %s\n", t1.String(), t2.String())
 			return []Error{&RecursiveUnificationError{
@@ -1333,13 +1333,13 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 			// - t1 is a type variable, t2 is a concrete type
 			// - t1 is a concrete type, t2 is a type variable
 
-			if typeVar1, ok := t1.(*TypeVarType); ok {
-				if typeVar2, ok := t2.(*TypeVarType); ok {
+			if typeVar1, ok := t1.(*type_system.TypeVarType); ok {
+				if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
 					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
-						errors = c.unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
+						errors = c.Unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
 					}
 					typeVar1.Instance = t2
-					typeVar1.SetProvenance(&TypeProvenance{
+					typeVar1.SetProvenance(&type_system.TypeProvenance{
 						Type: t2,
 					})
 					return errors
@@ -1351,18 +1351,18 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 				// patterns that have default types such as in:
 				//   let { a = 42 } : { a?: number } = obj;
 				if typeVar1.Default != nil {
-					if union, ok := t2.(*UnionType); ok {
+					if union, ok := t2.(*type_system.UnionType); ok {
 						definedTypes := c.getDefinedElems(union)
 
 						if len(union.Types) > len(definedTypes) {
 							definedTypes = append(definedTypes, typeVar1.Default)
-							t2 = NewUnionType(nil, definedTypes...)
+							t2 = type_system.NewUnionType(nil, definedTypes...)
 						}
 					}
 				}
 
 				if typeVar1.Constraint != nil {
-					errors = c.unify(ctx, typeVar1.Constraint, t2)
+					errors = c.Unify(ctx, typeVar1.Constraint, t2)
 				}
 				// We need to know if typeVar1 was inferred from a new binding or not
 				if typeVar1.FromBinding {
@@ -1370,32 +1370,32 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 				} else {
 					typeVar1.Instance = t2
 				}
-				// QUESTION: What should the provenance be if t2 is a MutabilityType?
-				typeVar1.SetProvenance(&TypeProvenance{
+				// QUESTION: What should the provenance be if t2 is a type_system.MutabilityType?
+				typeVar1.SetProvenance(&type_system.TypeProvenance{
 					Type: t2,
 				})
 				return errors
 			}
 
-			if typeVar2, ok := t2.(*TypeVarType); ok {
+			if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
 				// If t2 is a type variable with a default type, and t1 is a union type,
 				// we remove any `null` or `undefined` types from t1 and add the default type
 				// to the union if it's not already present.  This handles identifiers in
 				// patterns that have default types such as in:
 				//   let { a = 42 } : { a?: number } = obj;
 				if typeVar2.Default != nil {
-					if union, ok := t1.(*UnionType); ok {
+					if union, ok := t1.(*type_system.UnionType); ok {
 						definedTypes := c.getDefinedElems(union)
 
 						if len(union.Types) > len(definedTypes) {
 							definedTypes = append(definedTypes, typeVar2.Default)
-							t1 = NewUnionType(nil, definedTypes...)
+							t1 = type_system.NewUnionType(nil, definedTypes...)
 						}
 					}
 				}
 
 				if typeVar2.Constraint != nil {
-					errors = c.unify(ctx, t1, typeVar2.Constraint)
+					errors = c.Unify(ctx, t1, typeVar2.Constraint)
 				}
 				// We need to know if typeVar2 was inferred from a new binding or not
 				if typeVar2.FromBinding {
@@ -1403,8 +1403,8 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 				} else {
 					typeVar2.Instance = t1
 				}
-				// QUESTION: What should the provenance be if t1 is a MutabilityType?
-				typeVar2.SetProvenance(&TypeProvenance{
+				// QUESTION: What should the provenance be if t1 is a type_system.MutabilityType?
+				typeVar2.SetProvenance(&type_system.TypeProvenance{
 					Type: t1,
 				})
 				return errors
@@ -1417,22 +1417,22 @@ func (c *Checker) bind(ctx Context, t1 Type, t2 Type) []Error {
 
 type OccursInVisitor struct {
 	result bool
-	t1     Type
+	t1     type_system.Type
 }
 
-func (v *OccursInVisitor) EnterType(t Type) Type {
+func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.Type {
 	// No-op for entry
 	return nil
 }
 
-func (v *OccursInVisitor) ExitType(t Type) Type {
-	if Equals(Prune(t), v.t1) {
+func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
+	if type_system.Equals(type_system.Prune(t), v.t1) {
 		v.result = true
 	}
 	return nil
 }
 
-func occursInType(t1, t2 Type) bool {
+func occursInType(t1, t2 type_system.Type) bool {
 	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
 	return visitor.result
@@ -1440,20 +1440,20 @@ func occursInType(t1, t2 Type) bool {
 
 type RemoveUncertainMutabilityVisitor struct{}
 
-func (v *RemoveUncertainMutabilityVisitor) EnterType(t Type) Type {
+func (v *RemoveUncertainMutabilityVisitor) EnterType(t type_system.Type) type_system.Type {
 	// No-op for entry
 	return nil
 }
 
-func (v *RemoveUncertainMutabilityVisitor) ExitType(t Type) Type {
-	// If this is a MutabilityType with uncertain mutability, unwrap it
-	if mut, ok := t.(*MutabilityType); ok && mut.Mutability == MutabilityUncertain {
+func (v *RemoveUncertainMutabilityVisitor) ExitType(t type_system.Type) type_system.Type {
+	// If this is a type_system.MutabilityType with uncertain mutability, unwrap it
+	if mut, ok := t.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
 		return mut.Type
 	}
 	return nil
 }
 
-func removeUncertainMutability(t Type) Type {
+func removeUncertainMutability(t type_system.Type) type_system.Type {
 	visitor := &RemoveUncertainMutabilityVisitor{}
 	result := t.Accept(visitor)
 	return result

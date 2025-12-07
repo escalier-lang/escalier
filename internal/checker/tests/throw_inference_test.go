@@ -1,4 +1,4 @@
-package checker
+package tests
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
-	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -95,12 +96,12 @@ func TestThrowExpressionInference(t *testing.T) {
 			assert.NotNil(t, scope, "Expected scope to be created")
 
 			// Get the function binding
-			binding := scope.getValue("testFunc")
+			binding := scope.GetValue("testFunc")
 			assert.NotNil(t, binding, "Expected testFunc to be defined")
 
 			// Prune the type to resolve any type variables
-			funcType, ok := Prune(binding.Type).(*FuncType)
-			assert.True(t, ok, "Expected testFunc to be a function type, got %T", Prune(binding.Type))
+			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+			assert.True(t, ok, "Expected testFunc to be a function type, got %T", type_system.Prune(binding.Type))
 			assert.NotNil(t, funcType, "Expected function type to be non-nil")
 
 			// Check that the throws type matches expected

@@ -6,7 +6,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
-	. "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 var DEFAULT_SPAN = ast.Span{
@@ -46,7 +45,7 @@ func (e MissingCustomMatcherError) isError()                {}
 func (e InvalidExtractorTypeError) isError()                {}
 
 type CannotMutateImmutableError struct {
-	Type Type
+	Type type_system.Type
 	span ast.Span
 }
 
@@ -59,7 +58,7 @@ func (e CannotMutateImmutableError) Message() string {
 
 type CannotMutateReadonlyPropertyError struct {
 	Property string
-	Type     Type
+	Type     type_system.Type
 	span     ast.Span
 }
 
@@ -83,7 +82,7 @@ func (e UnimplementedError) Message() string {
 }
 
 type InvalidObjectKeyError struct {
-	Key  Type
+	Key  type_system.Type
 	span ast.Span
 }
 
@@ -95,8 +94,8 @@ func (e InvalidObjectKeyError) Message() string {
 }
 
 type KeyNotFoundError struct {
-	Object *ObjectType
-	Key    ObjTypeKey
+	Object *type_system.ObjectType
+	Key    type_system.ObjTypeKey
 	span   ast.Span
 }
 
@@ -121,8 +120,8 @@ func (e OutOfBoundsError) Message() string {
 }
 
 type RecursiveUnificationError struct {
-	Left  Type
-	Right Type
+	Left  type_system.Type
+	Right type_system.Type
 }
 
 func (e RecursiveUnificationError) Span() ast.Span {
@@ -144,8 +143,8 @@ func (e NotEnoughElementsToUnpackError) Message() string {
 }
 
 type CannotUnifyTypesError struct {
-	T1 Type
-	T2 Type
+	T1 type_system.Type
+	T2 type_system.Type
 }
 
 func (e CannotUnifyTypesError) Span() ast.Span {
@@ -165,7 +164,7 @@ func (e CannotUnifyTypesError) Message() string {
 	t1Str := e.T1.String()
 	t2Str := e.T2.String()
 
-	if obj1, ok := e.T1.(*ObjectType); ok {
+	if obj1, ok := e.T1.(*type_system.ObjectType); ok {
 		if obj1.Nominal {
 			prov1 := e.T1.Provenance()
 			if node1, ok := prov1.(*ast.NodeProvenance); ok {
@@ -176,7 +175,7 @@ func (e CannotUnifyTypesError) Message() string {
 		}
 	}
 
-	if obj2, ok := e.T2.(*ObjectType); ok {
+	if obj2, ok := e.T2.(*type_system.ObjectType); ok {
 		if obj2.Nominal {
 			prov2 := e.T2.Provenance()
 			if node2, ok := prov2.(*ast.NodeProvenance); ok {
@@ -215,7 +214,7 @@ func (e UnknownOperatorError) Message() string {
 
 type UnknownTypeError struct {
 	TypeName string
-	typeRef  *TypeRefType
+	typeRef  *type_system.TypeRefType
 }
 
 func (e UnknownTypeError) Span() ast.Span {
@@ -230,7 +229,7 @@ func (e UnknownTypeError) Message() string {
 }
 
 type CalleeIsNotCallableError struct {
-	Type Type
+	Type type_system.Type
 	span ast.Span
 }
 
@@ -243,7 +242,7 @@ func (e CalleeIsNotCallableError) Message() string {
 
 type InvalidNumberOfArgumentsError struct {
 	CallExpr ast.Expr
-	Callee   *FuncType
+	Callee   *type_system.FuncType
 	Args     []ast.Expr
 }
 
@@ -256,7 +255,7 @@ func (e InvalidNumberOfArgumentsError) Message() string {
 }
 
 type ExpectedObjectError struct {
-	Type Type
+	Type type_system.Type
 	span ast.Span
 }
 
@@ -268,7 +267,7 @@ func (e ExpectedObjectError) Message() string {
 }
 
 type ExpectedArrayError struct {
-	Type Type
+	Type type_system.Type
 }
 
 func (e ExpectedArrayError) Span() ast.Span {
@@ -288,7 +287,7 @@ func (e CyclicDependencyError) Message() string {
 }
 
 type UnknownPropertyError struct {
-	ObjectType Type
+	ObjectType type_system.Type
 	Property   string
 	span       ast.Span
 }
@@ -301,7 +300,7 @@ func (e UnknownPropertyError) Message() string {
 }
 
 type IncorrectParamCountForCustomMatcherError struct {
-	Method    *FuncType
+	Method    *type_system.FuncType
 	NumParams int
 }
 
@@ -313,8 +312,8 @@ func (e IncorrectParamCountForCustomMatcherError) Message() string {
 }
 
 type ExtractorReturnTypeMismatchError struct {
-	ExtractorType *ExtractorType
-	ReturnType    Type
+	ExtractorType *type_system.ExtractorType
+	ReturnType    type_system.Type
 	NumArgs       int
 	NumReturns    int
 }
@@ -327,8 +326,8 @@ func (e ExtractorReturnTypeMismatchError) Message() string {
 }
 
 type ExtractorMustReturnTupleError struct {
-	ExtractorType *ExtractorType
-	ReturnType    Type
+	ExtractorType *type_system.ExtractorType
+	ReturnType    type_system.Type
 }
 
 func (e ExtractorMustReturnTupleError) Span() ast.Span {
@@ -339,7 +338,7 @@ func (e ExtractorMustReturnTupleError) Message() string {
 }
 
 type MissingCustomMatcherError struct {
-	ObjectType *ObjectType
+	ObjectType *type_system.ObjectType
 }
 
 func (e MissingCustomMatcherError) Span() ast.Span {
@@ -350,8 +349,8 @@ func (e MissingCustomMatcherError) Message() string {
 }
 
 type InvalidExtractorTypeError struct {
-	ExtractorType *ExtractorType
-	ActualType    Type
+	ExtractorType *type_system.ExtractorType
+	ActualType    type_system.Type
 }
 
 func (e InvalidExtractorTypeError) Span() ast.Span {

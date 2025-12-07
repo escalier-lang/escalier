@@ -1,98 +1,98 @@
 package checker
 
 import (
-	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 func Prelude(c *Checker) *Scope {
 	scope := NewScope()
 
-	binArithType := NewFuncType(
+	binArithType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
-			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewNumPrimType(nil)),
+			type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewNumPrimType(nil)),
 		},
-		NewNumPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewNumPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	binArithBinding := Binding{
+	binArithBinding := type_system.Binding{
 		Source:  nil,
 		Type:    binArithType,
 		Mutable: false,
 	}
 
-	binCompType := NewFuncType(
+	binCompType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewNumPrimType(nil)),
-			NewFuncParam(NewIdentPat("b"), NewNumPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewNumPrimType(nil)),
+			type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewNumPrimType(nil)),
 		},
-		NewBoolPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewBoolPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	binACompBinding := Binding{
+	binACompBinding := type_system.Binding{
 		Source:  nil,
 		Type:    binCompType,
 		Mutable: false,
 	}
 
-	binEqType := NewFuncType(
+	binEqType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewAnyType(nil)),
-			NewFuncParam(NewIdentPat("b"), NewAnyType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewAnyType(nil)),
+			type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewAnyType(nil)),
 		},
-		NewBoolPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewBoolPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	binEqBinding := Binding{
+	binEqBinding := type_system.Binding{
 		Source:  nil,
 		Type:    binEqType,
 		Mutable: false,
 	}
 
-	binLogicType := NewFuncType(
+	binLogicType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
-			NewFuncParam(NewIdentPat("b"), NewBoolPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewBoolPrimType(nil)),
+			type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewBoolPrimType(nil)),
 		},
-		NewBoolPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewBoolPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	binLogicBinding := Binding{
+	binLogicBinding := type_system.Binding{
 		Source:  nil,
 		Type:    binLogicType,
 		Mutable: false,
 	}
 
 	// unaryArithType := &FuncType{
-	// 	Params: []*FuncParam{
-	// 		NewFuncParam(NewIdentPat("a"), NewNumType()),
+	// 	Params: []*type_system.FuncParam{
+	// 		type_system.NewFuncParam(type_system.NewIdentPat("a"), NewNumType()),
 	// 	},
 	// 	Return: NewNumType(),
 	// }
-	// unaryArithBinding := Binding{
+	// unaryArithBinding := type_system.Binding{
 	// 	Source:  nil,
 	// 	Type:    unaryArithType,
 	// 	Mutable: false,
 	// }
 
-	unaryLogicType := NewFuncType(
+	unaryLogicType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewBoolPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewBoolPrimType(nil)),
 		},
-		NewBoolPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewBoolPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	unaryLogicBinding := Binding{
+	unaryLogicBinding := type_system.Binding{
 		Source:  nil,
 		Type:    unaryLogicType,
 		Mutable: false,
@@ -114,7 +114,7 @@ func Prelude(c *Checker) *Scope {
 	scope.Namespace.Values["||"] = &binLogicBinding
 
 	// TODO: uncomment after adding support for calling overloaded functions
-	// scope.Namespace.Values["-"] = Binding{
+	// scope.Namespace.Values["-"] = type_system.Binding{
 	// 	Source:  nil,
 	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
 	// 	Mutable: false,
@@ -122,104 +122,104 @@ func Prelude(c *Checker) *Scope {
 
 	scope.Namespace.Values["!"] = &unaryLogicBinding
 
-	var objElems []ObjTypeElem
+	var objElems []type_system.ObjTypeElem
 
-	objElems = append(objElems, &MethodElem{
-		Name: NewStrKey("log"),
-		Fn: NewFuncType(
+	objElems = append(objElems, &type_system.MethodElem{
+		Name: type_system.NewStrKey("log"),
+		Fn: type_system.NewFuncType(
 			nil,
 			nil,
-			[]*FuncParam{
-				NewFuncParam(NewIdentPat("msg"), NewStrPrimType(nil)),
+			[]*type_system.FuncParam{
+				type_system.NewFuncParam(type_system.NewIdentPat("msg"), type_system.NewStrPrimType(nil)),
 			},
-			NewUndefinedType(nil),
-			NewNeverType(nil),
+			type_system.NewUndefinedType(nil),
+			type_system.NewNeverType(nil),
 		),
 		MutSelf: nil,
 	})
 
-	scope.Namespace.Values["console"] = &Binding{
+	scope.Namespace.Values["console"] = &type_system.Binding{
 		Source:  nil,
-		Type:    NewObjectType(nil, objElems),
+		Type:    type_system.NewObjectType(nil, objElems),
 		Mutable: false,
 	}
 
 	// Promise type with a simple then property to distinguish it from empty object
-	promiseTypeParams := []*TypeParam{
-		NewTypeParam("T"),
-		NewTypeParamWithDefault("E", NewNeverType(nil)),
+	promiseTypeParams := []*type_system.TypeParam{
+		type_system.NewTypeParam("T"),
+		type_system.NewTypeParamWithDefault("E", type_system.NewNeverType(nil)),
 	}
 
-	promiseElems := []ObjTypeElem{
-		&PropertyElem{
-			Name:     NewStrKey("then"),
-			Value:    NewStrPrimType(nil), // Simplified for now
+	promiseElems := []type_system.ObjTypeElem{
+		&type_system.PropertyElem{
+			Name:     type_system.NewStrKey("then"),
+			Value:    type_system.NewStrPrimType(nil), // Simplified for now
 			Optional: false,
 			Readonly: true,
 		},
 	}
 
-	scope.setTypeAlias("Promise", &TypeAlias{
-		Type:       NewNominalObjectType(nil, promiseElems),
+	scope.SetTypeAlias("Promise", &type_system.TypeAlias{
+		Type:       type_system.NewNominalObjectType(nil, promiseElems),
 		TypeParams: promiseTypeParams,
 	})
 
 	// Error type with message property
-	errorElems := []ObjTypeElem{
-		&PropertyElem{
-			Name:     NewStrKey("message"),
-			Value:    NewStrPrimType(nil),
+	errorElems := []type_system.ObjTypeElem{
+		&type_system.PropertyElem{
+			Name:     type_system.NewStrKey("message"),
+			Value:    type_system.NewStrPrimType(nil),
 			Optional: false,
 			Readonly: true,
 		},
 	}
-	scope.setTypeAlias("Error", &TypeAlias{
-		Type:       NewNominalObjectType(nil, errorElems),
-		TypeParams: []*TypeParam{},
+	scope.SetTypeAlias("Error", &type_system.TypeAlias{
+		Type:       type_system.NewNominalObjectType(nil, errorElems),
+		TypeParams: []*type_system.TypeParam{},
 	})
 
 	// Error constructor function
-	errorConstructorType := NewFuncType(
+	errorConstructorType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("message"), NewStrPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("message"), type_system.NewStrPrimType(nil)),
 		},
-		NewTypeRefType(nil, "Error", nil),
-		NewNeverType(nil),
+		type_system.NewTypeRefType(nil, "Error", nil),
+		type_system.NewNeverType(nil),
 	)
-	errorConstructorBinding := Binding{
+	errorConstructorBinding := type_system.Binding{
 		Source:  nil,
 		Type:    errorConstructorType,
 		Mutable: false,
 	}
 	scope.Namespace.Values["Error"] = &errorConstructorBinding
 
-	length := &PropertyElem{
-		Name:     NewStrKey("length"),
-		Value:    NewNumPrimType(nil),
+	length := &type_system.PropertyElem{
+		Name:     type_system.NewStrKey("length"),
+		Value:    type_system.NewNumPrimType(nil),
 		Optional: false,
 		Readonly: true,
 	}
-	arrayType := NewNominalObjectType(nil, []ObjTypeElem{length})
-	typeParam := NewTypeParam("T")
-	scope.setTypeAlias("Array", &TypeAlias{
+	arrayType := type_system.NewNominalObjectType(nil, []type_system.ObjTypeElem{length})
+	typeParam := type_system.NewTypeParam("T")
+	scope.SetTypeAlias("Array", &type_system.TypeAlias{
 		Type:       arrayType,
-		TypeParams: []*TypeParam{typeParam},
+		TypeParams: []*type_system.TypeParam{typeParam},
 	})
 
 	// String concatenation operator
-	strConcatType := NewFuncType(
+	strConcatType := type_system.NewFuncType(
 		nil,
 		nil,
-		[]*FuncParam{
-			NewFuncParam(NewIdentPat("a"), NewStrPrimType(nil)),
-			NewFuncParam(NewIdentPat("b"), NewStrPrimType(nil)),
+		[]*type_system.FuncParam{
+			type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewStrPrimType(nil)),
+			type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewStrPrimType(nil)),
 		},
-		NewStrPrimType(nil),
-		NewNeverType(nil),
+		type_system.NewStrPrimType(nil),
+		type_system.NewNeverType(nil),
 	)
-	strConcatBinding := Binding{
+	strConcatBinding := type_system.Binding{
 		Source:  nil,
 		Type:    strConcatType,
 		Mutable: false,
@@ -229,28 +229,28 @@ func Prelude(c *Checker) *Scope {
 
 	// Symbol object with iterator and customMatcher unique symbols
 	c.SymbolID++
-	iteratorSymbol := NewUniqueSymbolType(nil, c.SymbolID)
+	iteratorSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
 	c.SymbolID++
-	customMatcherSymbol := NewUniqueSymbolType(nil, c.SymbolID)
+	customMatcherSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
 
-	symbolElems := []ObjTypeElem{
-		&PropertyElem{
-			Name:     NewStrKey("iterator"),
+	symbolElems := []type_system.ObjTypeElem{
+		&type_system.PropertyElem{
+			Name:     type_system.NewStrKey("iterator"),
 			Value:    iteratorSymbol,
 			Optional: false,
 			Readonly: true,
 		},
-		&PropertyElem{
-			Name:     NewStrKey("customMatcher"),
+		&type_system.PropertyElem{
+			Name:     type_system.NewStrKey("customMatcher"),
 			Value:    customMatcherSymbol,
 			Optional: false,
 			Readonly: true,
 		},
 	}
 
-	scope.Namespace.Values["Symbol"] = &Binding{
+	scope.Namespace.Values["Symbol"] = &type_system.Binding{
 		Source:  nil,
-		Type:    NewObjectType(nil, symbolElems),
+		Type:    type_system.NewObjectType(nil, symbolElems),
 		Mutable: false,
 	}
 

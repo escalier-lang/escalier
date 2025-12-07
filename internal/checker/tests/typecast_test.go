@@ -1,4 +1,4 @@
-package checker
+package tests
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
 )

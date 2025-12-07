@@ -1,4 +1,4 @@
-package checker
+package tests
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 )
 
@@ -162,7 +163,7 @@ func TestAsyncFunctionInference(t *testing.T) {
 
 				// Check the function type by looking it up in the result scope
 				if testCase.expectedFn != "" && testCase.functionName != "" {
-					binding := resultScope.getValue(testCase.functionName)
+					binding := resultScope.GetValue(testCase.functionName)
 					assert.NotNil(t, binding, "Function binding should be found in scope")
 					if binding != nil {
 						actualType := binding.Type.String()

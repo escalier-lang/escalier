@@ -1,4 +1,4 @@
-package checker
+package tests
 
 import (
 	"context"
@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
-	. "github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/btree"
 	"github.com/vektah/gqlparser/v2"
@@ -1341,7 +1342,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				binding, exists := scope.Types[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
-				expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
+				expandedTyped, _ := c.ExpandType(inferCtx, binding.Type, 1)
 				actualType := expandedTyped.String()
 
 				if exists {
@@ -1390,8 +1391,8 @@ func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
 
 	binding, exists := scope.Types["AB"]
 
-	expandedTyped, _ := c.expandType(inferCtx, binding.Type, 1)
-	expandedTyped, _ = c.expandType(inferCtx, expandedTyped, 1)
+	expandedTyped, _ := c.ExpandType(inferCtx, binding.Type, 1)
+	expandedTyped, _ = c.ExpandType(inferCtx, expandedTyped, 1)
 	actualType := expandedTyped.String()
 
 	if exists {
@@ -1478,10 +1479,10 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 
 func TestGetDeclCtx(t *testing.T) {
 	// Create a root namespace with nested namespaces
-	rootNS := NewNamespace()
-	fooNS := NewNamespace()
-	barNS := NewNamespace()
-	bazNS := NewNamespace()
+	rootNS := type_system.NewNamespace()
+	fooNS := type_system.NewNamespace()
+	barNS := type_system.NewNamespace()
+	bazNS := type_system.NewNamespace()
 
 	// Set up nested namespace structure: root.foo.bar.baz
 	rootNS.Namespaces["foo"] = fooNS
@@ -1504,7 +1505,7 @@ func TestGetDeclCtx(t *testing.T) {
 		name          string
 		declNamespace string
 		expectedDepth int // how many scopes deep the result should be
-		expectedNS    *Namespace
+		expectedNS    *type_system.Namespace
 	}{
 		{
 			name:          "empty namespace returns root context",
@@ -1542,7 +1543,7 @@ func TestGetDeclCtx(t *testing.T) {
 			depGraph.DeclNamespace[declID] = test.declNamespace
 
 			// Call getDeclCtx
-			resultCtx := getNsCtx(rootCtx, depGraph, declID)
+			resultCtx := GetNamespaceCtx(rootCtx, depGraph, declID)
 
 			// Verify the result context has the expected namespace
 			assert.Equal(t, test.expectedNS, resultCtx.Scope.Namespace)
@@ -1568,7 +1569,7 @@ func TestGetDeclCtx(t *testing.T) {
 
 func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 	// Create a simple context
-	rootNS := NewNamespace()
+	rootNS := type_system.NewNamespace()
 	rootScope := &Scope{
 		Parent:    nil,
 		Namespace: rootNS,
@@ -1587,7 +1588,7 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 	declID := dep_graph.DeclID(999)
 
 	// Call getDeclCtx - should return original context since namespace is empty
-	resultCtx := getNsCtx(rootCtx, depGraph, declID)
+	resultCtx := GetNamespaceCtx(rootCtx, depGraph, declID)
 
 	// Should return the same context since no namespace mapping exists
 	assert.Equal(t, rootCtx.Scope.Namespace, resultCtx.Scope.Namespace)
@@ -1597,11 +1598,11 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 
 func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	// Create a root namespace with deeply nested namespaces
-	rootNS := NewNamespace()
-	fooNS := NewNamespace()
-	barNS := NewNamespace()
-	bazNS := NewNamespace()
-	quxNS := NewNamespace()
+	rootNS := type_system.NewNamespace()
+	fooNS := type_system.NewNamespace()
+	barNS := type_system.NewNamespace()
+	bazNS := type_system.NewNamespace()
+	quxNS := type_system.NewNamespace()
 
 	// Set up nested namespace structure: root.foo.bar.baz.qux
 	rootNS.Namespaces["foo"] = fooNS
@@ -1610,11 +1611,11 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	bazNS.Namespaces["qux"] = quxNS
 
 	// Add some test values to distinguish each namespace
-	rootNS.Values["rootValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
-	fooNS.Values["fooValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
-	barNS.Values["barValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
-	bazNS.Values["bazValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
-	quxNS.Values["quxValue"] = &Binding{Source: nil, Type: NewStrPrimType(nil), Mutable: false}
+	rootNS.Values["rootValue"] = &type_system.Binding{Source: nil, Type: type_system.NewStrPrimType(nil), Mutable: false}
+	fooNS.Values["fooValue"] = &type_system.Binding{Source: nil, Type: type_system.NewStrPrimType(nil), Mutable: false}
+	barNS.Values["barValue"] = &type_system.Binding{Source: nil, Type: type_system.NewStrPrimType(nil), Mutable: false}
+	bazNS.Values["bazValue"] = &type_system.Binding{Source: nil, Type: type_system.NewStrPrimType(nil), Mutable: false}
+	quxNS.Values["quxValue"] = &type_system.Binding{Source: nil, Type: type_system.NewStrPrimType(nil), Mutable: false}
 
 	// Create a root scope and context
 	rootScope := &Scope{
@@ -1634,7 +1635,7 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	depGraph.DeclNamespace[declID] = "foo.bar.baz.qux"
 
 	// Call getDeclCtx
-	resultCtx := getNsCtx(rootCtx, depGraph, declID)
+	resultCtx := GetNamespaceCtx(rootCtx, depGraph, declID)
 
 	// Verify the final context points to the deepest namespace
 	assert.Equal(t, quxNS, resultCtx.Scope.Namespace)
@@ -1642,7 +1643,7 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 
 	// Walk up the scope chain and verify the correct order:
 	// qux -> baz -> bar -> foo -> root
-	expectedNamespaces := []*Namespace{quxNS, bazNS, barNS, fooNS, rootNS}
+	expectedNamespaces := []*type_system.Namespace{quxNS, bazNS, barNS, fooNS, rootNS}
 	expectedValues := []string{"quxValue", "bazValue", "barValue", "fooValue", "rootValue"}
 
 	currentScope := resultCtx.Scope
@@ -1686,7 +1687,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 	tests := []struct {
 		name     string
 		setup    func() (*dep_graph.DepGraph, Context)
-		expected func(*testing.T, *Namespace, []Error)
+		expected func(*testing.T, *type_system.Namespace, []Error)
 	}{
 		{
 			name: "single component with declarations in same namespace",
@@ -1735,7 +1736,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1746,7 +1747,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should process single component without errors")
 
 				// Check that math namespace exists and contains both declarations
@@ -1824,7 +1825,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1835,7 +1836,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should handle multiple independent namespaces")
 
 				// Check that all namespaces exist
@@ -1920,7 +1921,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -1931,7 +1932,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should process dependency chain without errors")
 
 				// Check that all namespaces exist with their declarations
@@ -2000,7 +2001,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -2010,7 +2011,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				return depGraph, inferCtx
-			}, expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			}, expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should handle circular dependencies within same component")
 
 				// Check that math namespace exists and contains both functions
@@ -2074,7 +2075,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -2084,7 +2085,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 				}
 
 				return depGraph, inferCtx
-			}, expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			}, expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should handle circular cross-namespace dependencies")
 
 				// Check that both namespaces exist and contain their declarations
@@ -2164,7 +2165,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -2175,7 +2176,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should handle nested namespace dependencies")
 
 				// Check root namespace contains global
@@ -2254,7 +2255,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -2265,7 +2266,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				assert.Len(t, errors, 0, "Should handle root namespace consuming nested declarations")
 
 				// Check root namespace contains the main function
@@ -2352,7 +2353,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				rootScope := &Scope{
 					Parent:    nil,
-					Namespace: NewNamespace(),
+					Namespace: type_system.NewNamespace(),
 				}
 
 				inferCtx := Context{
@@ -2363,7 +2364,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 				return depGraph, inferCtx
 			},
-			expected: func(t *testing.T, resultNS *Namespace, errors []Error) {
+			expected: func(t *testing.T, resultNS *type_system.Namespace, errors []Error) {
 				// Mixed type and value dependencies may have some issues, but we check what works
 				if len(errors) > 0 {
 					t.Logf("Mixed type/value cross-namespace dependencies produced errors (may be expected): %v", errors)
@@ -2428,34 +2429,34 @@ func TestExpandType(t *testing.T) {
 
 		tests := []struct {
 			name     string
-			input    Type
-			expected Type
+			input    type_system.Type
+			expected type_system.Type
 		}{
 			{
 				name:     "ObjectType",
-				input:    NewObjectType(nil, []ObjTypeElem{}),
-				expected: NewObjectType(nil, []ObjTypeElem{}),
+				input:    type_system.NewObjectType(nil, []type_system.ObjTypeElem{}),
+				expected: type_system.NewObjectType(nil, []type_system.ObjTypeElem{}),
 			},
 			{
 				name:     "LitType - string",
-				input:    NewStrLitType(nil, "hello"),
-				expected: NewStrLitType(nil, "hello"),
+				input:    type_system.NewStrLitType(nil, "hello"),
+				expected: type_system.NewStrLitType(nil, "hello"),
 			},
 			{
 				name:     "LitType - number",
-				input:    NewNumLitType(nil, 42),
-				expected: NewNumLitType(nil, 42),
+				input:    type_system.NewNumLitType(nil, 42),
+				expected: type_system.NewNumLitType(nil, 42),
 			},
 			{
 				name:     "NamespaceType",
-				input:    NewNamespaceType(nil, NewNamespace()),
-				expected: NewNamespaceType(nil, NewNamespace()),
+				input:    type_system.NewNamespaceType(nil, type_system.NewNamespace()),
+				expected: type_system.NewNamespaceType(nil, type_system.NewNamespace()),
 			},
 		}
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				result, errors := checker.expandType(ctx, test.input, 1)
+				result, errors := checker.ExpandType(ctx, test.input, 1)
 				assert.Empty(t, errors)
 				assert.Equal(t, test.expected.String(), result.String())
 			})
@@ -2470,11 +2471,11 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union of base types
-		strLit := NewStrLitType(nil, "hello")
-		numLit := NewNumLitType(nil, 42)
-		unionType := NewUnionType(nil, strLit, numLit)
+		strLit := type_system.NewStrLitType(nil, "hello")
+		numLit := type_system.NewNumLitType(nil, 42)
+		unionType := type_system.NewUnionType(nil, strLit, numLit)
 
-		result, errors := checker.expandType(ctx, unionType, 1)
+		result, errors := checker.ExpandType(ctx, unionType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello" | 42`, result.String())
@@ -2488,9 +2489,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references a non-existent type alias
-		typeRef := NewTypeRefType(nil, "UnknownType", nil)
+		typeRef := type_system.NewTypeRefType(nil, "UnknownType", nil)
 
-		result, errors := checker.expandType(ctx, typeRef, 1)
+		result, errors := checker.ExpandType(ctx, typeRef, 1)
 
 		assert.Len(t, errors, 1)
 		// Check that the error is an UnknownTypeError
@@ -2505,12 +2506,12 @@ func TestExpandType(t *testing.T) {
 
 		// Add a simple type alias: type MyString = "literal"
 		// Using a literal type since expandType doesn't handle PrimType yet
-		literalType := NewStrLitType(nil, "literal")
-		typeAlias := &TypeAlias{
+		literalType := type_system.NewStrLitType(nil, "literal")
+		typeAlias := &type_system.TypeAlias{
 			Type:       literalType,
-			TypeParams: []*TypeParam{},
+			TypeParams: []*type_system.TypeParam{},
 		}
-		scope.setTypeAlias("MyString", typeAlias)
+		scope.SetTypeAlias("MyString", typeAlias)
 
 		ctx := Context{
 			Scope:      scope,
@@ -2519,9 +2520,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references the alias
-		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
+		typeRef := type_system.NewTypeRefType(nil, "MyString", typeAlias)
 
-		result, errors := checker.expandType(ctx, typeRef, 1)
+		result, errors := checker.ExpandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"literal"`, result.String())
@@ -2533,17 +2534,17 @@ func TestExpandType(t *testing.T) {
 
 		// Add a generic type alias: type Identity<T> = T
 		// For simplicity, we'll use a TypeRefType for the inner type
-		typeParam := &TypeParam{
+		typeParam := &type_system.TypeParam{
 			Name:       "T",
 			Constraint: nil,
 			Default:    nil,
 		}
-		innerTypeRef := NewTypeRefType(nil, "T", nil)
-		typeAlias := &TypeAlias{
+		innerTypeRef := type_system.NewTypeRefType(nil, "T", nil)
+		typeAlias := &type_system.TypeAlias{
 			Type:       innerTypeRef,
-			TypeParams: []*TypeParam{typeParam},
+			TypeParams: []*type_system.TypeParam{typeParam},
 		}
-		scope.setTypeAlias("Identity", typeAlias)
+		scope.SetTypeAlias("Identity", typeAlias)
 
 		ctx := Context{
 			Scope:      scope,
@@ -2552,10 +2553,10 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType with type arguments: Identity<"hello">
-		stringLitType := NewStrLitType(nil, "hello")
-		typeRef := NewTypeRefType(nil, "Identity", typeAlias, stringLitType)
+		stringLitType := type_system.NewStrLitType(nil, "hello")
+		typeRef := type_system.NewTypeRefType(nil, "Identity", typeAlias, stringLitType)
 
-		result, errors := checker.expandType(ctx, typeRef, 1)
+		result, errors := checker.ExpandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello"`, result.String())
@@ -2566,19 +2567,19 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add type aliases: type Inner = "inner", type Outer = Inner
-		innerLitType := NewStrLitType(nil, "inner")
-		innerAlias := &TypeAlias{
+		innerLitType := type_system.NewStrLitType(nil, "inner")
+		innerAlias := &type_system.TypeAlias{
 			Type:       innerLitType,
-			TypeParams: []*TypeParam{},
+			TypeParams: []*type_system.TypeParam{},
 		}
-		scope.setTypeAlias("Inner", innerAlias)
+		scope.SetTypeAlias("Inner", innerAlias)
 
-		innerTypeRef := NewTypeRefType(nil, "Inner", innerAlias)
-		outerAlias := &TypeAlias{
+		innerTypeRef := type_system.NewTypeRefType(nil, "Inner", innerAlias)
+		outerAlias := &type_system.TypeAlias{
 			Type:       innerTypeRef,
-			TypeParams: []*TypeParam{},
+			TypeParams: []*type_system.TypeParam{},
 		}
-		scope.setTypeAlias("Outer", outerAlias)
+		scope.SetTypeAlias("Outer", outerAlias)
 
 		ctx := Context{
 			Scope:      scope,
@@ -2587,9 +2588,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType that references the outer alias
-		outerTypeRef := NewTypeRefType(nil, "Outer", outerAlias)
+		outerTypeRef := type_system.NewTypeRefType(nil, "Outer", outerAlias)
 
-		result, errors := checker.expandType(ctx, outerTypeRef, 1)
+		result, errors := checker.ExpandType(ctx, outerTypeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, "Inner", result.String())
@@ -2600,12 +2601,12 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add a type alias: type MyString = "mystring"
-		stringLitType := NewStrLitType(nil, "mystring")
-		typeAlias := &TypeAlias{
+		stringLitType := type_system.NewStrLitType(nil, "mystring")
+		typeAlias := &type_system.TypeAlias{
 			Type:       stringLitType,
-			TypeParams: []*TypeParam{},
+			TypeParams: []*type_system.TypeParam{},
 		}
-		scope.setTypeAlias("MyString", typeAlias)
+		scope.SetTypeAlias("MyString", typeAlias)
 
 		ctx := Context{
 			Scope:      scope,
@@ -2614,11 +2615,11 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union of a literal and a type reference
-		numLit := NewNumLitType(nil, 42)
-		typeRef := NewTypeRefType(nil, "MyString", typeAlias)
-		unionType := NewUnionType(nil, numLit, typeRef)
+		numLit := type_system.NewNumLitType(nil, 42)
+		typeRef := type_system.NewTypeRefType(nil, "MyString", typeAlias)
+		unionType := type_system.NewUnionType(nil, numLit, typeRef)
 
-		result, errors := checker.expandType(ctx, unionType, 1)
+		result, errors := checker.ExpandType(ctx, unionType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, "42 | \"mystring\"", result.String())
@@ -2629,18 +2630,18 @@ func TestExpandType(t *testing.T) {
 		scope := NewScope()
 
 		// Add a generic type alias: type Result<T, E> = T | E
-		typeParamT := &TypeParam{Name: "T", Constraint: nil, Default: nil}
-		typeParamE := &TypeParam{Name: "E", Constraint: nil, Default: nil}
+		typeParamT := &type_system.TypeParam{Name: "T", Constraint: nil, Default: nil}
+		typeParamE := &type_system.TypeParam{Name: "E", Constraint: nil, Default: nil}
 
-		typeRefT := NewTypeRefType(nil, "T", nil)
-		typeRefE := NewTypeRefType(nil, "E", nil)
-		unionType := NewUnionType(nil, typeRefT, typeRefE)
+		typeRefT := type_system.NewTypeRefType(nil, "T", nil)
+		typeRefE := type_system.NewTypeRefType(nil, "E", nil)
+		unionType := type_system.NewUnionType(nil, typeRefT, typeRefE)
 
-		typeAlias := &TypeAlias{
+		typeAlias := &type_system.TypeAlias{
 			Type:       unionType,
-			TypeParams: []*TypeParam{typeParamT, typeParamE},
+			TypeParams: []*type_system.TypeParam{typeParamT, typeParamE},
 		}
-		scope.setTypeAlias("Result", typeAlias)
+		scope.SetTypeAlias("Result", typeAlias)
 
 		ctx := Context{
 			Scope:      scope,
@@ -2649,11 +2650,11 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a TypeRefType with type arguments: Result<"ok", "error">
-		okLitType := NewStrLitType(nil, "ok")
-		errorLitType := NewStrLitType(nil, "error")
-		typeRef := NewTypeRefType(nil, "Result", typeAlias, okLitType, errorLitType)
+		okLitType := type_system.NewStrLitType(nil, "ok")
+		errorLitType := type_system.NewStrLitType(nil, "error")
+		typeRef := type_system.NewTypeRefType(nil, "Result", typeAlias, okLitType, errorLitType)
 
-		result, errors := checker.expandType(ctx, typeRef, 1)
+		result, errors := checker.ExpandType(ctx, typeRef, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, "\"ok\" | \"error\"", result.String())
@@ -2667,13 +2668,13 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a template literal with no interpolations: `hello`
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: "hello"}},
-			[]Type{},
+			[]*type_system.Quasi{{Value: "hello"}},
+			[]type_system.Type{},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello"`, result.String())
@@ -2687,14 +2688,14 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a template literal: `hello-${world}`
-		worldLit := NewStrLitType(nil, "world")
-		templateType := NewTemplateLitType(
+		worldLit := type_system.NewStrLitType(nil, "world")
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: "hello-"}, {Value: ""}},
-			[]Type{worldLit},
+			[]*type_system.Quasi{{Value: "hello-"}, {Value: ""}},
+			[]type_system.Type{worldLit},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello-world"`, result.String())
@@ -2708,18 +2709,18 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create BinDigit = 0 | 1
-		zero := NewNumLitType(nil, 0)
-		one := NewNumLitType(nil, 1)
-		binDigit := NewUnionType(nil, zero, one)
+		zero := type_system.NewNumLitType(nil, 0)
+		one := type_system.NewNumLitType(nil, 1)
+		binDigit := type_system.NewUnionType(nil, zero, one)
 
 		// Create BinPair = `${BinDigit},${BinDigit}`
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: ""}, {Value: ","}, {Value: ""}},
-			[]Type{binDigit, binDigit},
+			[]*type_system.Quasi{{Value: ""}, {Value: ","}, {Value: ""}},
+			[]type_system.Type{binDigit, binDigit},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "0,0" | "0,1" | "1,0" | "1,1"
@@ -2737,26 +2738,26 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create Vert = "top" | "bottom"
-		top := NewStrLitType(nil, "top")
-		bottom := NewStrLitType(nil, "bottom")
-		vert := NewUnionType(nil, top, bottom)
+		top := type_system.NewStrLitType(nil, "top")
+		bottom := type_system.NewStrLitType(nil, "bottom")
+		vert := type_system.NewUnionType(nil, top, bottom)
 
 		// Create Horiz = "left" | "right"
-		left := NewStrLitType(nil, "left")
-		right := NewStrLitType(nil, "right")
-		horiz := NewUnionType(nil, left, right)
+		left := type_system.NewStrLitType(nil, "left")
+		right := type_system.NewStrLitType(nil, "right")
+		horiz := type_system.NewUnionType(nil, left, right)
 
 		// Create margin literal
-		margin := NewStrLitType(nil, "margin")
+		margin := type_system.NewStrLitType(nil, "margin")
 
 		// Create `${Vert}-${Horiz}-${Name}` with Name = "margin"
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: "-"}, {Value: ""}},
-			[]Type{vert, horiz, margin},
+			[]*type_system.Quasi{{Value: ""}, {Value: "-"}, {Value: "-"}, {Value: ""}},
+			[]type_system.Type{vert, horiz, margin},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "top-left-margin" | "top-right-margin" | "bottom-left-margin" | "bottom-right-margin"
@@ -2774,13 +2775,13 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a template literal: `hello world`
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: "hello world"}},
-			[]Type{},
+			[]*type_system.Quasi{{Value: "hello world"}},
+			[]type_system.Type{},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"hello world"`, result.String())
@@ -2794,21 +2795,21 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union: "a" | "b"
-		a := NewStrLitType(nil, "a")
-		b := NewStrLitType(nil, "b")
-		union := NewUnionType(nil, a, b)
+		a := type_system.NewStrLitType(nil, "a")
+		b := type_system.NewStrLitType(nil, "b")
+		union := type_system.NewUnionType(nil, a, b)
 
 		// Create a literal: "c"
-		c := NewStrLitType(nil, "c")
+		c := type_system.NewStrLitType(nil, "c")
 
 		// Create template: `${union}-${c}`
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
-			[]Type{union, c},
+			[]*type_system.Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]type_system.Type{union, c},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "a-c" | "b-c"
@@ -2823,14 +2824,14 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a template with number primitive: `id-${number}`
-		numberType := NewNumPrimType(nil)
-		templateType := NewTemplateLitType(
+		numberType := type_system.NewNumPrimType(nil)
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: "id-"}, {Value: ""}},
-			[]Type{numberType},
+			[]*type_system.Quasi{{Value: "id-"}, {Value: ""}},
+			[]type_system.Type{numberType},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, result.String(), "`id-${number}`")
@@ -2844,14 +2845,14 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a template with string primitive: `prefix-${string}-suffix`
-		stringType := NewStrPrimType(nil)
-		templateType := NewTemplateLitType(
+		stringType := type_system.NewStrPrimType(nil)
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: "prefix-"}, {Value: "-suffix"}},
-			[]Type{stringType},
+			[]*type_system.Quasi{{Value: "prefix-"}, {Value: "-suffix"}},
+			[]type_system.Type{stringType},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, result.String(), "`prefix-${string}-suffix`")
@@ -2865,21 +2866,21 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a union: "a" | "b"
-		a := NewStrLitType(nil, "a")
-		b := NewStrLitType(nil, "b")
-		union := NewUnionType(nil, a, b)
+		a := type_system.NewStrLitType(nil, "a")
+		b := type_system.NewStrLitType(nil, "b")
+		union := type_system.NewUnionType(nil, a, b)
 
 		// Create a number primitive
-		numberType := NewNumPrimType(nil)
+		numberType := type_system.NewNumPrimType(nil)
 
 		// Create template: `${union}-${number}`
-		templateType := NewTemplateLitType(
+		templateType := type_system.NewTemplateLitType(
 			nil,
-			[]*Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
-			[]Type{union, numberType},
+			[]*type_system.Quasi{{Value: ""}, {Value: "-"}, {Value: ""}},
+			[]type_system.Type{union, numberType},
 		)
 
-		result, errors := checker.expandType(ctx, templateType, 1)
+		result, errors := checker.ExpandType(ctx, templateType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to a union of two template literal types
@@ -2894,15 +2895,15 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create an object type: {x: string, y: number}
-		objType := NewObjectType(nil, []ObjTypeElem{
-			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
-			NewPropertyElem(NewStrKey("y"), NewNumPrimType(nil)),
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
+			type_system.NewPropertyElem(type_system.NewStrKey("y"), type_system.NewNumPrimType(nil)),
 		})
 
 		// Create keyof object type
-		keyofType := NewKeyOfType(nil, objType)
+		keyofType := type_system.NewKeyOfType(nil, objType)
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "x" | "y"
@@ -2917,16 +2918,16 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create an object type with properties and methods: {x: string, foo(): void}
-		funcType := NewFuncType(nil, nil, nil, NewUndefinedType(nil), nil)
-		objType := NewObjectType(nil, []ObjTypeElem{
-			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
-			NewMethodElem(NewStrKey("foo"), funcType, nil),
+		funcType := type_system.NewFuncType(nil, nil, nil, type_system.NewUndefinedType(nil), nil)
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
+			type_system.NewMethodElem(type_system.NewStrKey("foo"), funcType, nil),
 		})
 
 		// Create keyof object type
-		keyofType := NewKeyOfType(nil, objType)
+		keyofType := type_system.NewKeyOfType(nil, objType)
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to only "x" (methods are excluded)
@@ -2941,12 +2942,12 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create an empty object type: {}
-		objType := NewObjectType(nil, []ObjTypeElem{})
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{})
 
 		// Create keyof object type
-		keyofType := NewKeyOfType(nil, objType)
+		keyofType := type_system.NewKeyOfType(nil, objType)
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to never
@@ -2961,20 +2962,20 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create two object types
-		objType1 := NewObjectType(nil, []ObjTypeElem{
-			NewPropertyElem(NewStrKey("x"), NewStrPrimType(nil)),
+		objType1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
 		})
-		objType2 := NewObjectType(nil, []ObjTypeElem{
-			NewPropertyElem(NewStrKey("y"), NewNumPrimType(nil)),
+		objType2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("y"), type_system.NewNumPrimType(nil)),
 		})
 
 		// Create union of objects
-		unionType := NewUnionType(nil, objType1, objType2)
+		unionType := type_system.NewUnionType(nil, objType1, objType2)
 
 		// Create keyof union
-		keyofType := NewKeyOfType(nil, unionType)
+		keyofType := type_system.NewKeyOfType(nil, unionType)
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "x" | "y" (union of keys from both objects)
@@ -2989,9 +2990,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// keyof string = never
-		keyofType := NewKeyOfType(nil, NewStrPrimType(nil))
+		keyofType := type_system.NewKeyOfType(nil, type_system.NewStrPrimType(nil))
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `never`, result.String())
@@ -3005,15 +3006,15 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// Create a tuple type: [string, number]
-		tupleType := NewTupleType(nil,
-			NewStrPrimType(nil),
-			NewNumPrimType(nil),
+		tupleType := type_system.NewTupleType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewNumPrimType(nil),
 		)
 
 		// Create keyof tuple
-		keyofType := NewKeyOfType(nil, tupleType)
+		keyofType := type_system.NewKeyOfType(nil, tupleType)
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		// Should expand to "length" | 0 | 1
@@ -3028,9 +3029,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// keyof any = string | number | symbol
-		keyofType := NewKeyOfType(nil, NewAnyType(nil))
+		keyofType := type_system.NewKeyOfType(nil, type_system.NewAnyType(nil))
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `string | number | symbol`, result.String())
@@ -3044,9 +3045,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// keyof never = never
-		keyofType := NewKeyOfType(nil, NewNeverType(nil))
+		keyofType := type_system.NewKeyOfType(nil, type_system.NewNeverType(nil))
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `never`, result.String())
@@ -3060,9 +3061,9 @@ func TestExpandType(t *testing.T) {
 		}
 
 		// keyof unknown = never
-		keyofType := NewKeyOfType(nil, NewUnknownType(nil))
+		keyofType := type_system.NewKeyOfType(nil, type_system.NewUnknownType(nil))
 
-		result, errors := checker.expandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `never`, result.String())
@@ -3107,10 +3108,10 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a regex literal type
-			regexType, _ := NewRegexTypeWithPatternString(nil, tt.pattern)
+			regexType, _ := type_system.NewRegexTypeWithPatternString(nil, tt.pattern)
 
 			// Extract named capture groups
-			result := c.findNamedGroups(regexType)
+			result := c.FindNamedGroups(regexType)
 
 			// Check that the keys match the expected capture group names
 			resultKeys := make([]string, 0, len(result))
@@ -3121,18 +3122,18 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 			// Check that all values are TypeVarType (fresh variables)
 			for name, typeVar := range result {
-				assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
+				assert.IsType(t, type_system.NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 			}
 		})
 	}
 
 	t.Run("nested types", func(t *testing.T) {
 		// Test with a union type containing regex types
-		regexType1, _ := NewRegexTypeWithPatternString(nil, "/(?<first>[a-z]+)/")
-		regexType2, _ := NewRegexTypeWithPatternString(nil, "/(?<second>[0-9]+)/")
-		unionType := NewUnionType(nil, regexType1, regexType2)
+		regexType1, _ := type_system.NewRegexTypeWithPatternString(nil, "/(?<first>[a-z]+)/")
+		regexType2, _ := type_system.NewRegexTypeWithPatternString(nil, "/(?<second>[0-9]+)/")
+		unionType := type_system.NewUnionType(nil, regexType1, regexType2)
 
-		result := c.findNamedGroups(unionType)
+		result := c.FindNamedGroups(unionType)
 		expected := []string{"first", "second"}
 
 		// Check that the keys match the expected capture group names
@@ -3144,21 +3145,21 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 		// Check that all values are TypeVarType (fresh variables)
 		for name, typeVar := range result {
-			assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
+			assert.IsType(t, type_system.NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 		}
 	})
 
 	t.Run("object type with regex property", func(t *testing.T) {
 		// Test with an object type containing a regex type
-		regexType, _ := NewRegexTypeWithPatternString(nil, "/(?<name>[a-z]+)/")
-		objType := NewObjectType(
+		regexType, _ := type_system.NewRegexTypeWithPatternString(nil, "/(?<name>[a-z]+)/")
+		objType := type_system.NewObjectType(
 			nil,
-			[]ObjTypeElem{
-				NewPropertyElem(NewStrKey("pattern"), regexType),
+			[]type_system.ObjTypeElem{
+				type_system.NewPropertyElem(type_system.NewStrKey("pattern"), regexType),
 			},
 		)
 
-		result := c.findNamedGroups(objType)
+		result := c.FindNamedGroups(objType)
 		expected := []string{"name"}
 
 		// Check that the keys match the expected capture group names
@@ -3170,7 +3171,7 @@ func TestExtractNamedCaptureGroups(t *testing.T) {
 
 		// Check that all values are TypeVarType (fresh variables)
 		for name, typeVar := range result {
-			assert.IsType(t, NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
+			assert.IsType(t, type_system.NewTypeVarType(nil, 0), typeVar, "Expected fresh type variable for capture group %s", name)
 		}
 	})
 }
