@@ -19,8 +19,7 @@ func (c *Checker) inferTypeAnn(
 
 	switch typeAnn := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
-		typeName := ast.QualIdentToString(typeAnn.Name)
-		typeAlias := c.resolveQualifiedTypeAlias(ctx, typeAnn.Name)
+		typeAlias := resolveQualifiedTypeAlias(ctx, convertQualIdent(typeAnn.Name))
 		if typeAlias != nil {
 			typeArgs := make([]type_system.Type, len(typeAnn.TypeArgs))
 			for i, typeArg := range typeAnn.TypeArgs {
@@ -29,11 +28,11 @@ func (c *Checker) inferTypeAnn(
 				errors = slices.Concat(errors, typeArgErrors)
 			}
 
-			t = type_system.NewTypeRefType(provenance, typeName, typeAlias, typeArgs...)
+			t = type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), typeAlias, typeArgs...)
 		} else {
 			// TODO: include type args
-			typeRef := type_system.NewTypeRefType(provenance, typeName, nil, nil)
-			errors = append(errors, &UnknownTypeError{TypeName: typeName, typeRef: typeRef})
+			typeRef := type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), nil, nil)
+			errors = append(errors, &UnknownTypeError{TypeName: ast.QualIdentToString(typeAnn.Name), typeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
 		t = type_system.NewNumPrimType(provenance)
