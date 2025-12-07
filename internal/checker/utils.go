@@ -66,6 +66,44 @@ func patToPat(p ast.Pat) type_system.Pat {
 	}
 }
 
+func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.ObjTypeKey, []Error) {
+	switch key := key.(type) {
+	case *ast.IdentExpr:
+		newKey := type_system.NewStrKey(key.Name)
+		return &newKey, nil
+	case *ast.StrLit:
+		newKey := type_system.NewStrKey(key.Value)
+		return &newKey, nil
+	case *ast.NumLit:
+		newKey := type_system.NewNumKey(key.Value)
+		return &newKey, nil
+	case *ast.ComputedKey:
+		// TODO: return the error
+		keyType, _ := c.inferExpr(ctx, key.Expr) // infer the expression for side-effects
+
+		switch t := type_system.Prune(keyType).(type) {
+		case *type_system.LitType:
+			switch lit := t.Lit.(type) {
+			case *type_system.StrLit:
+				newKey := type_system.NewStrKey(lit.Value)
+				return &newKey, nil
+			case *type_system.NumLit:
+				newKey := type_system.NewNumKey(lit.Value)
+				return &newKey, nil
+			default:
+				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
+			}
+		case *type_system.UniqueSymbolType:
+			newKey := type_system.NewSymKey(t.Value)
+			return &newKey, nil
+		default:
+			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
+		}
+	default:
+		panic(fmt.Sprintf("Unknown object key type: %T", key))
+	}
+}
+
 // Helper function to remove undefined from a union type
 func removeUndefinedFromType(t type_system.Type) type_system.Type {
 	if unionType, ok := type_system.Prune(t).(*type_system.UnionType); ok {
@@ -106,4 +144,85 @@ func (c *Checker) getDefinedElems(unionType *type_system.UnionType) []type_syste
 	}
 
 	return definedElems
+}
+
+// resolveQualifiedTypeAlias resolves a qualified type name by traversing namespace hierarchy
+func resolveQualifiedTypeAlias(ctx Context, qualIdent type_system.QualIdent) *type_system.TypeAlias {
+	switch qi := qualIdent.(type) {
+	case *type_system.Ident:
+		// Simple identifier, use existing scope lookup
+		return ctx.Scope.getTypeAlias(qi.Name)
+	case *type_system.Member:
+		// Qualified identifier like A.B.Type
+		// First resolve the left part (A.B)
+		leftNamespace := resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the type in the resolved namespace
+		if typeAlias, ok := leftNamespace.Types[qi.Right.Name]; ok {
+			return typeAlias
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func resolveQualifiedValue(ctx Context, qualIdent type_system.QualIdent) *type_system.Binding {
+	switch qi := qualIdent.(type) {
+	case *type_system.Ident:
+		// Simple identifier, use existing scope lookup
+		return ctx.Scope.GetValue(qi.Name)
+	case *type_system.Member:
+		// Qualified identifier like A.B.C
+		// First resolve the left part (A.B)
+		leftNamespace := resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the remaining identifier in the resolved namespace
+		if binding, ok := leftNamespace.Values[qi.Right.Name]; ok {
+			return binding
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// resolveQualifiedNamespace resolves a qualified identifier to a namespace
+func resolveQualifiedNamespace(ctx Context, qualIdent type_system.QualIdent) *type_system.Namespace {
+	switch qi := qualIdent.(type) {
+	case *type_system.Ident:
+		// Simple identifier, check if it's a namespace
+		return ctx.Scope.getNamespace(qi.Name)
+	case *type_system.Member:
+		// Qualified identifier like A.B
+		// First resolve the left part
+		leftNamespace := resolveQualifiedNamespace(ctx, qi.Left)
+		if leftNamespace == nil {
+			return nil
+		}
+		// Then look for the right part in the resolved namespace
+		if namespace, ok := leftNamespace.Namespaces[qi.Right.Name]; ok {
+			return namespace
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func convertQualIdent(astIdent ast.QualIdent) type_system.QualIdent {
+	switch id := astIdent.(type) {
+	case *ast.Ident:
+		return type_system.NewIdent(id.Name)
+	case *ast.Member:
+		left := convertQualIdent(id.Left)
+		right := type_system.NewIdent(id.Right.Name)
+		return &type_system.Member{Left: left, Right: right}
+	default:
+		panic(fmt.Sprintf("Unknown QualIdent type: %T", astIdent))
+	}
 }

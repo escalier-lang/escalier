@@ -101,7 +101,7 @@ func (c *Checker) inferPattern(
 			}
 			t = type_system.NewObjectType(provenance, elems)
 		case *ast.ExtractorPat:
-			if binding := c.resolveQualifiedValue(ctx, p.Name); binding != nil {
+			if binding := resolveQualifiedValue(ctx, convertQualIdent(p.Name)); binding != nil {
 				args := make([]type_system.Type, len(p.Args))
 				for i, arg := range p.Args {
 					argType, argErrors := inferPatRec(arg)
@@ -115,7 +115,7 @@ func (c *Checker) inferPattern(
 			}
 		case *ast.InstancePat:
 			patType, patBindings, patErrors := c.inferPattern(ctx, p.Object)
-			typeAlias := c.resolveQualifiedTypeAlias(ctx, p.ClassName)
+			typeAlias := resolveQualifiedTypeAlias(ctx, convertQualIdent(p.ClassName))
 
 			for name, binding := range patBindings {
 				bindings[name] = binding

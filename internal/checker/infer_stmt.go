@@ -10,6 +10,28 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
+	switch stmt := stmt.(type) {
+	case *ast.ExprStmt:
+		_, errors := c.inferExpr(ctx, stmt.Expr)
+		return errors
+	case *ast.DeclStmt:
+		return c.inferDecl(ctx, stmt.Decl)
+	case *ast.ReturnStmt:
+		errors := []Error{}
+		if stmt.Expr != nil {
+			// The inferred type is ignored here, but inferExpr still attaches
+			// the inferred type to the expression.  This is used later on this
+			// file, search for `ReturnVisitor` to see how it is used.
+			_, exprErrors := c.inferExpr(ctx, stmt.Expr)
+			errors = exprErrors
+		}
+		return errors
+	default:
+		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
+	}
+}
+
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 	switch decl := decl.(type) {
 	case *ast.FuncDecl:

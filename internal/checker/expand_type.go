@@ -72,7 +72,7 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 		propKey := PropertyKey{
 			Name:     id.Right.Name,
 			OptChain: false,
-			Span:     span,
+			span:     span,
 		}
 		memberType, memberErrors := v.checker.getMemberType(v.ctx, leftType, propKey)
 		v.errors = slices.Concat(v.errors, memberErrors)
@@ -279,7 +279,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			return nil
 		}
 
-		typeAlias := v.checker.resolveQualifiedTypeAliasFromString(v.ctx, type_system.QualIdentToString(t.Name))
+		typeAlias := resolveQualifiedTypeAlias(v.ctx, t.Name)
 		// TODO: Check if the qualifier is a type.  If it is, we can treat this
 		// as a member access type.
 		if typeAlias == nil {
@@ -373,7 +373,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		}
 
 		// Use getMemberType to resolve the property access
-		key := IndexKey{Type: expandedIndex, Span: span}
+		key := IndexKey{Type: expandedIndex, span: span}
 		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key)
 		v.errors = slices.Concat(v.errors, memberErrors)
 		return memberType
@@ -389,7 +389,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 }
 
 // getMemberType is a unified function for getting types from objects via property access or indexing
-func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key AccessKey) (type_system.Type, []Error) {
+func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key MemberAccessKey) (type_system.Type, []Error) {
 	errors := []Error{}
 
 	objType = type_system.Prune(objType)
@@ -435,7 +435,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Acces
 		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
 		if type_system.QualIdentToString(t.Name) == "Error" {
 			// Built-in Error type doesn't support property access directly
-			errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
+			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 			return type_system.NewNeverType(nil), errors
 		}
 
@@ -460,7 +460,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Acces
 						errors = append(errors, &OutOfBoundsError{
 							Index:  index,
 							Length: len(t.Elems),
-							span:   indexKey.Span,
+							span:   indexKey.Span(),
 						})
 						return type_system.NewNeverType(nil), errors
 					}
@@ -468,12 +468,12 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Acces
 			}
 			errors = append(errors, &InvalidObjectKeyError{
 				Key:  indexKey.Type,
-				span: indexKey.Span,
+				span: indexKey.Span(),
 			})
 			return type_system.NewNeverType(nil), errors
 		}
 		// TupleType doesn't support property access
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	case *type_system.ObjectType:
 		return c.getObjectAccess(t, key, errors)
@@ -489,22 +489,22 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Acces
 				errors = append(errors, &UnknownPropertyError{
 					ObjectType: objType,
 					Property:   propKey.Name,
-					span:       propKey.Span,
+					span:       propKey.Span(),
 				})
 				return type_system.NewNeverType(nil), errors
 			}
 		}
 		// NamespaceType doesn't support index access
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	default:
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: getSpanFromAccessKey(key)})
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	}
 }
 
 // getObjectAccess handles property and index access on ObjectType
-func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key AccessKey, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
 	case PropertyKey:
 		for _, elem := range objType.Elems {
@@ -541,7 +541,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key AccessKey
 		errors = append(errors, &UnknownPropertyError{
 			ObjectType: objType,
 			Property:   k.Name,
-			span:       k.Span,
+			span:       k.Span(),
 		})
 		return type_system.NewUndefinedType(nil), errors
 	case IndexKey:
@@ -575,7 +575,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key AccessKey
 		}
 		errors = append(errors, &InvalidObjectKeyError{
 			Key:  keyType,
-			span: k.Span,
+			span: k.Span(),
 		})
 		return type_system.NewUndefinedType(nil), errors
 	default:
@@ -585,7 +585,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key AccessKey
 }
 
 // getUnionAccess handles property and index access on UnionType
-func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key AccessKey, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	propKey, isPropertyKey := key.(PropertyKey)
 
 	definedElems := c.getDefinedElems(unionType)
@@ -594,7 +594,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 	// If there are no defined elements (only null/undefined), we can't access properties
 	if len(definedElems) == 0 {
-		errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+		errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
 		return type_system.NewUndefinedType(nil), errors
 	}
 
@@ -604,7 +604,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		}
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
-			errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+			errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
 			return type_system.NewUndefinedType(nil), errors
 		}
 
@@ -626,7 +626,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		// If there are undefined elements and we're accessing without optional chaining,
 		// we need to report an error
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
-			errors = append(errors, &ExpectedObjectError{Type: unionType, span: getSpanFromAccessKey(key)})
+			errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
 		}
 
 		// Create a union of all member types
@@ -799,7 +799,7 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 
 func (c *Checker) expandTypeRef(ctx Context, t *type_system.TypeRefType) (type_system.Type, []Error) {
 	// Resolve the type alias
-	typeAlias := c.resolveQualifiedTypeAliasFromString(ctx, type_system.QualIdentToString(t.Name))
+	typeAlias := resolveQualifiedTypeAlias(ctx, t.Name)
 	if typeAlias == nil {
 		return type_system.NewNeverType(nil), []Error{&UnknownTypeError{TypeName: type_system.QualIdentToString(t.Name), typeRef: t}}
 	}

@@ -478,7 +478,7 @@ func (c *Checker) InferComponent(
 					key := PropertyKey{
 						Name:     "customMatcher",
 						OptChain: false,
-						Span:     DEFAULT_SPAN,
+						span:     DEFAULT_SPAN,
 					}
 					customMatcher, _ := c.getMemberType(ctx, symbol.Type, key)
 

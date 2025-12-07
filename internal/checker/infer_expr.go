@@ -34,7 +34,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				errors = slices.Concat(errors, objErrors)
 
 				// Check if the object type allows mutation
-				if !c.isMutableType(objType) {
+				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
 					errors = append(errors, &CannotMutateImmutableError{
 						Type: objType,
 						span: expr.Left.Span(),
@@ -54,7 +54,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				errors = slices.Concat(errors, objErrors)
 
 				// Check if the object type allows mutation
-				if !c.isMutableType(objType) {
+				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
 					errors = append(errors, &CannotMutateImmutableError{
 						Type: objType,
 						span: expr.Left.Span(),
@@ -156,7 +156,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		resultType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
-		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, Span: expr.Prop.Span()}
+		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
 		propType, propErrors := c.getMemberType(ctx, objType, key)
 
 		resultType = propType
@@ -176,7 +176,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		errors = slices.Concat(objErrors, indexErrors)
 
-		key := IndexKey{Type: indexType, Span: expr.Index.Span()}
+		key := IndexKey{Type: indexType, span: expr.Index.Span()}
 		accessType, accessErrors := c.getMemberType(ctx, objType, key)
 		resultType = accessType
 		errors = slices.Concat(errors, accessErrors)
@@ -889,5 +889,35 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 	resultType := type_system.NewUnionType(nil, caseTypes...)
 
 	expr.SetInferredType(resultType)
+	return resultType, errors
+}
+
+// inferBlock infers the types of all statements in a block and returns the type
+// of the block. The type of the block is the type of the last statement if it's
+// an expression statement, otherwise it returns the provided default type.
+func (c *Checker) inferBlock(
+	ctx Context,
+	block *ast.Block,
+	defaultType type_system.Type,
+) (type_system.Type, []Error) {
+	errors := []Error{}
+
+	// Process all statements in the block
+	for _, stmt := range block.Stmts {
+		stmtErrors := c.inferStmt(ctx, stmt)
+		errors = slices.Concat(errors, stmtErrors)
+	}
+
+	// The type of the block is the type of the last statement if it's an expression
+	resultType := defaultType
+	if len(block.Stmts) > 0 {
+		lastStmt := block.Stmts[len(block.Stmts)-1]
+		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+			if inferredType := exprStmt.Expr.InferredType(); inferredType != nil {
+				resultType = inferredType
+			}
+		}
+	}
+
 	return resultType, errors
 }
