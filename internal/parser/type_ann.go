@@ -485,6 +485,7 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			}
 		} else {
 			p.restoreState(savedState)
+			return nil
 		}
 	case Minus:
 		savedState := p.saveState()

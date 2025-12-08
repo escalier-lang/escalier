@@ -598,7 +598,7 @@ func (c *Checker) inferCallExpr(
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnType = SubstituteTypeParams[*type_system.FuncType](fnTypeWithoutParams, substitutions)
+			fnType = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
 		}
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -712,7 +712,7 @@ func (c *Checker) inferCallExpr(
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnTypeToUse = SubstituteTypeParams[*type_system.FuncType](fnTypeWithoutParams, substitutions)
+			fnTypeToUse = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
 		}
 		// Use the same logic as for direct function calls
 		// Find if the function has a rest parameter
