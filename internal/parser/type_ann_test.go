@@ -104,8 +104,17 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectTypeAddOptionalProperties": {
 			input: "{[P]+?: T[P] for P in keyof T}",
 		},
-		"AMappedObjectTypeRemoveOptionalProperties": {
+		"MappedObjectTypeRemoveOptionalProperties": {
 			input: "{[P]-?: T[P] for P in keyof T}",
+		},
+		"MappedObjectTypeReadonlyProperties": {
+			input: "{readonly [P]: T[P] for P in keyof T}",
+		},
+		"MappedObjectTypeAddReadonlyProperties": {
+			input: "{+readonly [P]: T[P] for P in keyof T}",
+		},
+		"MappedObjectTypeRemoveReadonlyProperties": {
+			input: "{-readonly [P]: T[P] for P in keyof T}",
 		},
 		"MappedObjectTypePropertyRenaming": {
 			input: "{[`prefix_${K}`]: T[K] for K in keyof T}",

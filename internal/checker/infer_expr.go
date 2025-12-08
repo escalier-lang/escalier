@@ -33,33 +33,26 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				objType, objErrors := c.inferExpr(ctx, memberExpr.Object)
 				errors = slices.Concat(errors, objErrors)
 
-				// Check if the object type allows mutation
-				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
-					errors = append(errors, &CannotMutateImmutableError{
-						Type: objType,
-						span: expr.Left.Span(),
-					})
-				}
-
-				// Check if the property is readonly
+				// Check if the property is readonly (this check takes precedence)
 				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
+					// Even if the type is mutable, readonly properties cannot be mutated
 					errors = append(errors, &CannotMutateReadonlyPropertyError{
-						Property: memberExpr.Prop.Name,
 						Type:     objType,
+						Property: memberExpr.Prop.Name,
 						span:     expr.Left.Span(),
 					})
+				} else {
+					// Check if the object type allows mutation
+					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
+						errors = append(errors, &CannotMutateImmutableError{
+							Type: objType,
+							span: expr.Left.Span(),
+						})
+					}
 				}
 			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
 				objType, objErrors := c.inferExpr(ctx, indexExpr.Object)
 				errors = slices.Concat(errors, objErrors)
-
-				// Check if the object type allows mutation
-				if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
-					errors = append(errors, &CannotMutateImmutableError{
-						Type: objType,
-						span: expr.Left.Span(),
-					})
-				}
 
 				// Check if the property is readonly when using string literal index
 				indexType, indexErrors := c.inferExpr(ctx, indexExpr.Index)
@@ -70,15 +63,30 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					indexType = mutType.Type
 				}
 
+				isReadonly := false
 				if litType, ok := indexType.(*type_system.LitType); ok {
 					if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
 						if c.isPropertyReadonly(ctx, objType, strLit.Value) {
-							errors = append(errors, &CannotMutateReadonlyPropertyError{
-								Property: strLit.Value,
-								Type:     objType,
-								span:     expr.Left.Span(),
-							})
+							isReadonly = true
 						}
+					}
+				}
+
+				// Check if property is readonly (this check takes precedence)
+				if isReadonly {
+					// Even if the type is mutable, readonly properties cannot be mutated
+					errors = append(errors, &CannotMutateReadonlyPropertyError{
+						Type:     objType,
+						Property: indexType.String(),
+						span:     expr.Left.Span(),
+					})
+				} else {
+					// Check if the object type allows mutation
+					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
+						errors = append(errors, &CannotMutateImmutableError{
+							Type: objType,
+							span: expr.Left.Span(),
+						})
 					}
 				}
 			}
@@ -590,7 +598,7 @@ func (c *Checker) inferCallExpr(
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnType = SubstituteTypeParams[*type_system.FuncType](fnTypeWithoutParams, substitutions)
+			fnType = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
 		}
 		// Find if the function has a rest parameter
 		var restIndex = -1
@@ -704,7 +712,7 @@ func (c *Checker) inferCallExpr(
 			}
 
 			// Substitute type refs in the copied function type with fresh type variables
-			fnTypeToUse = SubstituteTypeParams[*type_system.FuncType](fnTypeWithoutParams, substitutions)
+			fnTypeToUse = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
 		}
 		// Use the same logic as for direct function calls
 		// Find if the function has a rest parameter
