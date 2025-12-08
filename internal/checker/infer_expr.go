@@ -36,9 +36,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// Check if the property is readonly (this check takes precedence)
 				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
 					// Even if the type is mutable, readonly properties cannot be mutated
-					errors = append(errors, &CannotMutateImmutableError{
-						Type: objType,
-						span: expr.Left.Span(),
+					errors = append(errors, &CannotMutateReadonlyPropertyError{
+						Type:     objType,
+						Property: memberExpr.Prop.Name,
+						span:     expr.Left.Span(),
 					})
 				} else {
 					// Check if the object type allows mutation
@@ -74,9 +75,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// Check if property is readonly (this check takes precedence)
 				if isReadonly {
 					// Even if the type is mutable, readonly properties cannot be mutated
-					errors = append(errors, &CannotMutateImmutableError{
-						Type: objType,
-						span: expr.Left.Span(),
+					errors = append(errors, &CannotMutateReadonlyPropertyError{
+						Type:     objType,
+						Property: indexType.String(),
+						span:     expr.Left.Span(),
 					})
 				} else {
 					// Check if the object type allows mutation
@@ -547,15 +549,6 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 			if propElem, ok := elem.(*type_system.PropertyElem); ok {
 				if propElem.Name == type_system.NewStrKey(propertyName) {
 					return propElem.Readonly
-				}
-			}
-			// Debug: check if we have MappedElems that weren't expanded
-			if _, ok := elem.(*type_system.MappedElem); ok {
-				// MappedElems should have been expanded already, but if not, we need to expand them
-				// Try expanding the object type more aggressively
-				fullyExpanded, _ := c.ExpandType(ctx, t, -1)
-				if fullyExpanded != t {
-					return c.isPropertyReadonly(ctx, fullyExpanded, propertyName)
 				}
 			}
 		}

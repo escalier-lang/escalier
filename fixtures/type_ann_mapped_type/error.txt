@@ -18,7 +18,7 @@ lib/mapped_type.esc:74:24: Unknown property 'active' in object type {name: strin
 74: val active = strPerson.active
                            ^^^^^^
 
-bin/foo.esc:4:1: Cannot mutate immutable type: mut MyReadonly<Obj>
+bin/foo.esc:4:1: Cannot mutate readonly property 'a' on type: mut MyReadonly<Obj>
 
 4:  roObj.a = roA
     ^^^^^^^

@@ -57,8 +57,8 @@ func (e CannotMutateImmutableError) Message() string {
 }
 
 type CannotMutateReadonlyPropertyError struct {
-	Property string
 	Type     type_system.Type
+	Property string
 	span     ast.Span
 }
 

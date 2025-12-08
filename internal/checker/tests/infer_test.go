@@ -1118,7 +1118,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				}
 			`,
 			expectedErrors: []string{
-				"Cannot mutate immutable type: MyReadonly<{a: number, b: string}>",
+				"Cannot mutate readonly property 'a' on type: MyReadonly<{a: number, b: string}>",
 			},
 		},
 		"ReadonlyMutableType": {
@@ -1130,7 +1130,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				}
 			`,
 			expectedErrors: []string{
-				"Cannot mutate immutable type: mut MyReadonly<{a: number, b: string}>",
+				"Cannot mutate readonly property 'a' on type: mut MyReadonly<{a: number, b: string}>",
 			},
 		},
 	}
@@ -1173,14 +1173,17 @@ func TestCheckModuleWithErrors(t *testing.T) {
 			for _, expectedMsg := range test.expectedErrors {
 				found := false
 				for _, err := range inferErrors {
-					fmt.Fprintf(os.Stderr, "Got error: %s\n", err.Message())
 					if err.Message() == expectedMsg {
 						found = true
 						break
 					}
 				}
-				for _, err := range inferErrors {
-					fmt.Fprintf(os.Stderr, "error message: %s\n", err.Message())
+				if !found {
+					fmt.Fprintf(os.Stderr, "Expected error message containing: %s\n", expectedMsg)
+					fmt.Fprintf(os.Stderr, "Actual error messages:\n")
+					for _, err := range inferErrors {
+						fmt.Fprintf(os.Stderr, "%s\n", err.Message())
+					}
 				}
 				assert.True(t, found, "Expected error message not found: %s", expectedMsg)
 			}
@@ -1200,7 +1203,7 @@ func TestCheckScriptWithErrors(t *testing.T) {
 				obj.a = 10  // should error
 			`,
 			expectedErrors: []string{
-				"Cannot mutate immutable type: MyReadonly<{a: number, b: string}>",
+				"Cannot mutate readonly property 'a' on type: MyReadonly<{a: number, b: string}>",
 			},
 		},
 		"ReadonlyMutableType": {
@@ -1210,7 +1213,7 @@ func TestCheckScriptWithErrors(t *testing.T) {
 				obj.a = 10  // should error
 			`,
 			expectedErrors: []string{
-				"Cannot mutate immutable type: mut MyReadonly<{a: number, b: string}>",
+				"Cannot mutate readonly property 'a' on type: mut MyReadonly<{a: number, b: string}>",
 			},
 		},
 	}
@@ -1251,14 +1254,17 @@ func TestCheckScriptWithErrors(t *testing.T) {
 			for _, expectedMsg := range test.expectedErrors {
 				found := false
 				for _, err := range inferErrors {
-					fmt.Fprintf(os.Stderr, "Got error: %s\n", err.Message())
 					if strings.Contains(err.Message(), expectedMsg) {
 						found = true
 						break
 					}
 				}
-				for _, err := range inferErrors {
-					fmt.Fprintf(os.Stderr, "error message: %s\n", err.Message())
+				if !found {
+					fmt.Fprintf(os.Stderr, "Expected error message containing: %s\n", expectedMsg)
+					fmt.Fprintf(os.Stderr, "Actual error messages:\n")
+					for _, err := range inferErrors {
+						fmt.Fprintf(os.Stderr, "%s\n", err.Message())
+					}
 				}
 				assert.True(t, found, "Expected error message containing: %s", expectedMsg)
 			}
