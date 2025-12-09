@@ -474,6 +474,16 @@ func (lexer *Lexer) restoreState(saved *Lexer) {
 	lexer.lastToken = saved.lastToken
 }
 
+// SaveState creates a snapshot of the current lexer state (exported for use by dts_parser)
+func (lexer *Lexer) SaveState() *Lexer {
+	return lexer.saveState()
+}
+
+// RestoreState restores the lexer to a previously saved state (exported for use by dts_parser)
+func (lexer *Lexer) RestoreState(saved *Lexer) {
+	lexer.restoreState(saved)
+}
+
 func (lexer *Lexer) peek() *Token {
 	savedState := lexer.saveState()
 	token := lexer.next()
