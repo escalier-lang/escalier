@@ -422,18 +422,18 @@ func (p *PrimitiveType) Span() ast.Span { return p.span }
 type PrimitiveKind int
 
 const (
-	PrimAny PrimitiveKind = iota
-	PrimUnknown
-	PrimVoid
-	PrimNull
-	PrimUndefined
-	PrimNever
-	PrimString
-	PrimNumber
-	PrimBoolean
-	PrimBigInt
-	PrimSymbol
-	PrimObject
+	PrimAny       PrimitiveKind = iota // TypeScript 'any' type
+	PrimUnknown                        // TypeScript 'unknown' type
+	PrimVoid                           // TypeScript 'void' type
+	PrimNull                           // TypeScript 'null' type
+	PrimUndefined                      // TypeScript 'undefined' type
+	PrimNever                          // TypeScript 'never' type
+	PrimString                         // TypeScript 'string' type
+	PrimNumber                         // TypeScript 'number' type
+	PrimBoolean                        // TypeScript 'boolean' type
+	PrimBigInt                         // TypeScript 'bigint' type
+	PrimSymbol                         // TypeScript 'symbol' type
+	PrimObject                         // TypeScript 'object' type
 )
 
 // LiteralType represents literal types (string, number, boolean, bigint literals)

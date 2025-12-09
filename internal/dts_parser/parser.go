@@ -2,6 +2,7 @@ package dts_parser
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -210,7 +211,12 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		p.consume()
 		// Parse the numeric value from the string
 		// For now, we'll store it as a string and convert later if needed
-		literal := &NumberLiteral{Value: 0, span: token.Span} // TODO: parse actual value
+		value, err := strconv.ParseFloat(token.Value, 64)
+		if err != nil {
+			p.reportError(token.Span, fmt.Sprintf("Invalid number literal: %s", token.Value))
+			value = 0
+		}
+		literal := &NumberLiteral{Value: value, span: token.Span}
 		return &LiteralType{Literal: literal, span: token.Span}
 
 	case parser.True:
@@ -248,13 +254,15 @@ func (p *DtsParser) parseTypeReference() TypeAnn {
 
 	// Check for type arguments
 	var typeArgs []TypeAnn
+	var closingBracket *parser.Token
 	if p.peek().Type == parser.LessThan {
-		typeArgs = p.parseTypeArguments()
+		typeArgs, closingBracket = p.parseTypeArguments()
 	}
 
 	var span ast.Span
-	if len(typeArgs) > 0 {
-		span = ast.MergeSpans(start, typeArgs[len(typeArgs)-1].Span())
+	if closingBracket != nil {
+		// Include the closing '>' in the span
+		span = ast.MergeSpans(start, closingBracket.Span)
 	} else {
 		span = start
 	}
@@ -291,9 +299,10 @@ func (p *DtsParser) parseQualifiedIdent() QualIdent {
 }
 
 // parseTypeArguments parses type arguments: <T, U, V>
-func (p *DtsParser) parseTypeArguments() []TypeAnn {
+// Returns the type arguments and the closing '>' token (if found)
+func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *parser.Token) {
 	if p.peek().Type != parser.LessThan {
-		return nil
+		return nil, nil
 	}
 	p.consume() // consume '<'
 
@@ -303,7 +312,7 @@ func (p *DtsParser) parseTypeArguments() []TypeAnn {
 	typeArg := p.parseTypeAnn()
 	if typeArg == nil {
 		p.reportError(p.peek().Span, "Expected type argument")
-		return typeArgs
+		return typeArgs, nil
 	}
 	typeArgs = append(typeArgs, typeArg)
 
@@ -319,9 +328,9 @@ func (p *DtsParser) parseTypeArguments() []TypeAnn {
 		typeArgs = append(typeArgs, typeArg)
 	}
 
-	p.expect(parser.GreaterThan)
+	closingBracket := p.expect(parser.GreaterThan)
 
-	return typeArgs
+	return typeArgs, closingBracket
 }
 
 // parseParenthesizedType parses a parenthesized type: (T)
