@@ -579,3 +579,18 @@ func (lexer *Lexer) Lex() []*Token {
 
 	return tokens
 }
+
+// Peek returns the next token without consuming it (exported for dts_parser)
+func (lexer *Lexer) Peek() *Token {
+	return lexer.peek()
+}
+
+// Next advances the lexer and returns the next token (exported for dts_parser)
+func (lexer *Lexer) Next() *Token {
+	return lexer.next()
+}
+
+// Consume advances the lexer to the next token (exported for dts_parser)
+func (lexer *Lexer) Consume() {
+	lexer.consume()
+}
