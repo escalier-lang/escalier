@@ -84,9 +84,13 @@ func (p *DtsParser) reportError(span ast.Span, message string) {
 
 // saveState saves the current parser state for backtracking
 func (p *DtsParser) saveState() *DtsParser {
+	// Create a deep copy of the errors slice to avoid sharing the underlying array
+	errorsCopy := make([]*parser.Error, len(p.errors))
+	copy(errorsCopy, p.errors)
+
 	return &DtsParser{
 		lexer:  p.lexer.SaveState(),
-		errors: p.errors,
+		errors: errorsCopy,
 	}
 }
 
