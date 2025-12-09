@@ -32,6 +32,9 @@ const (
 	Enum
 	Equal
 	EqualEqual
+	Extends
+	Is
+	Asserts
 	Export
 	False
 	FatArrow
@@ -57,6 +60,7 @@ const (
 	Minus
 	Mut
 	Never
+	New
 	NotEqual
 	Null
 	Number
