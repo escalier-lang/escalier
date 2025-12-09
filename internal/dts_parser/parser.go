@@ -251,20 +251,19 @@ func (p *DtsParser) parseTypeReference() TypeAnn {
 	}
 
 	start := name.Span()
+	span := start
 
 	// Check for type arguments
 	var typeArgs []TypeAnn
 	var closingBracket *parser.Token
 	if p.peek().Type == parser.LessThan {
 		typeArgs, closingBracket = p.parseTypeArguments()
-	}
-
-	var span ast.Span
-	if closingBracket != nil {
-		// Include the closing '>' in the span
-		span = ast.MergeSpans(start, closingBracket.Span)
-	} else {
-		span = start
+		if closingBracket != nil {
+			// Include the closing '>' in the span
+			span = ast.MergeSpans(start, closingBracket.Span)
+		} else if len(typeArgs) > 0 {
+			span = ast.MergeSpans(start, typeArgs[len(typeArgs)-1].Span())
+		}
 	}
 
 	return &TypeReference{Name: name, TypeArgs: typeArgs, span: span}
