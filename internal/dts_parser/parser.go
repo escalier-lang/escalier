@@ -406,15 +406,15 @@ func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *parser.Token) {
 func (p *DtsParser) parseParenthesizedOrFunctionType() TypeAnn {
 	// We need to look ahead to determine if this is a function type or parenthesized type
 	// Strategy: Try parsing as function type first, fall back to parenthesized type
-	
+
 	savedState := p.saveState()
-	
+
 	// Try to parse as function type
 	funcType := p.parseFunctionType()
 	if funcType != nil {
 		return funcType
 	}
-	
+
 	// Restore state and parse as parenthesized type
 	p.restoreState(savedState)
 	return p.parseParenthesizedType()
