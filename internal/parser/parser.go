@@ -58,10 +58,14 @@ func NewParser(ctx context.Context, source *ast.Source) *Parser {
 }
 
 func (p *Parser) saveState() *Parser {
+	// Create a deep copy of the errors slice to avoid sharing the underlying array
+	errorsCopy := make([]*Error, len(p.errors))
+	copy(errorsCopy, p.errors)
+
 	return &Parser{
 		ctx:      p.ctx,
 		lexer:    p.lexer.saveState(),
-		errors:   append([]*Error{}, p.errors...),
+		errors:   errorsCopy,
 		exprMode: p.exprMode,
 	}
 }
