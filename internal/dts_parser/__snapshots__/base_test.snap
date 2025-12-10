@@ -1528,7 +1528,7 @@
 
 [TestNegativeLiterals/negative_number - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": nil,
 }
@@ -1536,7 +1536,7 @@ map[string]interface {}{
 
 [TestNegativeLiterals/negative_float - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": nil,
 }
@@ -1544,7 +1544,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/union_with_spaces - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.UnionType{
         Types: {
@@ -1576,7 +1576,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/intersection_with_spaces - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.IntersectionType{
         Types: {
@@ -1624,7 +1624,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/type_args_with_spaces - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
@@ -1656,7 +1656,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/qualified_name_with_spaces_around_dots - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TypeReference{
         Name: &dts_parser.Member{
@@ -1699,7 +1699,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/parens_with_spaces - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.ParenthesizedType{
         Type: &dts_parser.PrimitiveType{
@@ -1721,7 +1721,7 @@ map[string]interface {}{
 
 [TestWhitespaceHandling/newlines_in_union - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.UnionType{
         Types: {
@@ -2279,7 +2279,7 @@ map[string]interface {}{
 
 [TestQualifiedIdentifierBoundaries/two_parts - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TypeReference{
         Name: &dts_parser.Member{
@@ -2312,7 +2312,7 @@ map[string]interface {}{
 
 [TestQualifiedIdentifierBoundaries/ten_parts - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TypeReference{
         Name: &dts_parser.Member{
@@ -2401,8 +2401,8 @@ map[string]interface {}{
 
 [TestQualifiedIdentifierBoundaries/single_identifier_followed_by_dot - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
-        &parser.Error{
+    "errors": []*dts_parser.Error{
+        &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:3},
                 End:      ast.Location{Line:1, Column:3},
@@ -2417,7 +2417,7 @@ map[string]interface {}{
 
 [TestQualifiedIdentifierBoundaries/starts_with_dot - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": nil,
 }

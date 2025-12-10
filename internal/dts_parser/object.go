@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 // ============================================================================
@@ -13,7 +12,7 @@ import (
 
 // parseObjectType parses an object type literal: { prop: Type; method(): void }
 func (p *DtsParser) parseObjectType() TypeAnn {
-	start := p.expect(parser.OpenBrace)
+	start := p.expect(OpenBrace)
 	if start == nil {
 		return nil
 	}
@@ -21,7 +20,7 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 	members := []InterfaceMember{}
 
 	// Parse members
-	for p.peek().Type != parser.CloseBrace && p.peek().Type != parser.EndOfFile {
+	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		member := p.parseInterfaceMember()
 		if member != nil {
 			members = append(members, member)
@@ -31,12 +30,12 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 		}
 
 		// Consume optional separator (comma)
-		if p.peek().Type == parser.Comma {
+		if p.peek().Type == Comma {
 			p.consume()
 		}
 	}
 
-	end := p.expect(parser.CloseBrace)
+	end := p.expect(CloseBrace)
 	if end == nil {
 		// Return what we have even if closing brace is missing
 		span := ast.Span{
@@ -62,7 +61,7 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 
 	// Handle readonly modifier for property signatures
 	readonly := false
-	if token.Type == parser.Readonly {
+	if token.Type == Readonly {
 		readonly = true
 		p.consume()
 		token = p.peek()
@@ -70,15 +69,15 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 
 	// Check for special signatures
 	switch token.Type {
-	case parser.OpenParen:
+	case OpenParen:
 		// Call signature: (params): Type
 		return p.parseCallSignature()
 
-	case parser.New:
+	case New:
 		// Constructor signature: new (params): Type
 		return p.parseConstructSignature()
 
-	case parser.OpenBracket:
+	case OpenBracket:
 		// Could be index signature [key: string]: Type or computed property [expr]: Type
 		// Try index signature first (it's more restrictive)
 		savedState := p.saveState()
@@ -90,7 +89,7 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 		p.restoreState(savedState)
 		return p.parsePropertyOrMethodSignature(readonly)
 
-	case parser.Get:
+	case Get:
 		// Try to parse as getter signature first (get prop(): Type)
 		// If that fails, treat 'get' as a regular property/method name
 		savedState := p.saveState()
@@ -102,7 +101,7 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 		p.restoreState(savedState)
 		return p.parsePropertyOrMethodSignature(readonly)
 
-	case parser.Set:
+	case Set:
 		// Try to parse as setter signature first (set prop(value: Type))
 		// If that fails, treat 'set' as a regular property/method name
 		savedState := p.saveState()
@@ -126,7 +125,7 @@ func (p *DtsParser) parseCallSignature() InterfaceMember {
 
 	// Parse optional type parameters
 	var typeParams []*TypeParam
-	if p.peek().Type == parser.LessThan {
+	if p.peek().Type == LessThan {
 		typeParams = p.parseTypeParams()
 		if len(typeParams) > 0 {
 			startSpan = typeParams[0].Span()
@@ -141,7 +140,7 @@ func (p *DtsParser) parseCallSignature() InterfaceMember {
 
 	// Parse return type
 	var returnType TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume() // consume ':'
 		returnType = p.parseTypeAnn()
 		if returnType == nil {
@@ -172,14 +171,14 @@ func (p *DtsParser) parseCallSignature() InterfaceMember {
 
 // parseConstructSignature parses a constructor signature: new (params): Type
 func (p *DtsParser) parseConstructSignature() InterfaceMember {
-	start := p.expect(parser.New)
+	start := p.expect(New)
 	if start == nil {
 		return nil
 	}
 
 	// Parse optional type parameters
 	var typeParams []*TypeParam
-	if p.peek().Type == parser.LessThan {
+	if p.peek().Type == LessThan {
 		typeParams = p.parseTypeParams()
 	}
 
@@ -191,7 +190,7 @@ func (p *DtsParser) parseConstructSignature() InterfaceMember {
 
 	// Parse return type
 	var returnType TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume() // consume ':'
 		returnType = p.parseTypeAnn()
 		if returnType == nil {
@@ -224,13 +223,13 @@ func (p *DtsParser) parseConstructSignature() InterfaceMember {
 // Returns nil if it doesn't match the pattern: [identifier: Type]: ValueType
 func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	// Must start with '['
-	if p.peek().Type != parser.OpenBracket {
+	if p.peek().Type != OpenBracket {
 		return nil
 	}
 	start := p.consume()
 
 	// Must be followed by an identifier (not an expression)
-	if p.peek().Type != parser.Identifier {
+	if p.peek().Type != Identifier {
 		return nil
 	}
 	keyName := p.parseIdent()
@@ -239,7 +238,7 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	}
 
 	// Must have ':' after identifier (this distinguishes from computed keys)
-	if p.peek().Type != parser.Colon {
+	if p.peek().Type != Colon {
 		return nil
 	}
 	p.consume()
@@ -251,13 +250,13 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	}
 
 	// Must have ']'
-	if p.peek().Type != parser.CloseBracket {
+	if p.peek().Type != CloseBracket {
 		return nil
 	}
 	p.consume()
 
 	// Must have ':' after ']'
-	if p.peek().Type != parser.Colon {
+	if p.peek().Type != Colon {
 		return nil
 	}
 	p.consume()
@@ -288,14 +287,14 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 // Returns nil if it doesn't match the getter pattern: get prop(): Type
 func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 	// Must start with 'get'
-	if p.peek().Type != parser.Get {
+	if p.peek().Type != Get {
 		return nil
 	}
 	start := p.consume()
 
 	// Must be followed by a property key (not '(' or '<')
 	token := p.peek()
-	if token.Type != parser.Identifier && token.Type != parser.StrLit && token.Type != parser.NumLit && token.Type != parser.OpenBracket {
+	if token.Type != Identifier && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 
@@ -305,19 +304,19 @@ func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 	}
 
 	// Must have '()'
-	if p.peek().Type != parser.OpenParen {
+	if p.peek().Type != OpenParen {
 		return nil
 	}
 	p.consume()
 
-	if p.peek().Type != parser.CloseParen {
+	if p.peek().Type != CloseParen {
 		return nil
 	}
 	p.consume()
 
 	// Parse optional return type
 	var returnType TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume()
 		returnType = p.parseTypeAnn()
 	}
@@ -344,14 +343,14 @@ func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 // Returns nil if it doesn't match the setter pattern: set prop(value: Type)
 func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 	// Must start with 'set'
-	if p.peek().Type != parser.Set {
+	if p.peek().Type != Set {
 		return nil
 	}
 	start := p.consume()
 
 	// Must be followed by a property key (not '(' or '<')
 	token := p.peek()
-	if token.Type != parser.Identifier && token.Type != parser.StrLit && token.Type != parser.NumLit && token.Type != parser.OpenBracket {
+	if token.Type != Identifier && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 
@@ -361,7 +360,7 @@ func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 	}
 
 	// Must have '(param)'
-	if p.peek().Type != parser.OpenParen {
+	if p.peek().Type != OpenParen {
 		return nil
 	}
 	p.consume()
@@ -371,7 +370,7 @@ func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 		return nil
 	}
 
-	if p.peek().Type != parser.CloseParen {
+	if p.peek().Type != CloseParen {
 		return nil
 	}
 	closeParen := p.consume()
@@ -403,20 +402,20 @@ func (p *DtsParser) parsePropertyOrMethodSignature(readonly bool) InterfaceMembe
 
 	// Check for optional marker
 	optional := false
-	if p.peek().Type == parser.Question {
+	if p.peek().Type == Question {
 		optional = true
 		p.consume() // consume '?'
 	}
 
 	// Check if this is a method signature (has type parameters or parameter list)
-	if p.peek().Type == parser.LessThan || p.peek().Type == parser.OpenParen {
+	if p.peek().Type == LessThan || p.peek().Type == OpenParen {
 		return p.parseMethodSignatureAfterName(name, optional, startSpan)
 	}
 
 	// Otherwise, it's a property signature
 	// Parse type annotation
 	var typeAnn TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume() // consume ':'
 		typeAnn = p.parseTypeAnn()
 		if typeAnn == nil {
@@ -448,7 +447,7 @@ func (p *DtsParser) parsePropertyOrMethodSignature(readonly bool) InterfaceMembe
 func (p *DtsParser) parseMethodSignatureAfterName(name PropertyKey, optional bool, startSpan ast.Span) InterfaceMember {
 	// Parse optional type parameters
 	var typeParams []*TypeParam
-	if p.peek().Type == parser.LessThan {
+	if p.peek().Type == LessThan {
 		typeParams = p.parseTypeParams()
 	}
 
@@ -460,7 +459,7 @@ func (p *DtsParser) parseMethodSignatureAfterName(name PropertyKey, optional boo
 
 	// Parse return type
 	var returnType TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume() // consume ':'
 		returnType = p.parseTypeAnn()
 		if returnType == nil {
@@ -496,23 +495,23 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 	token := p.peek()
 
 	switch token.Type {
-	case parser.Identifier:
+	case Identifier:
 		return p.parseIdent()
 
 	// Allow 'get' and 'set' as property names (contextual keywords)
-	case parser.Get:
+	case Get:
 		p.consume()
 		return NewIdent("get", token.Span)
 
-	case parser.Set:
+	case Set:
 		p.consume()
 		return NewIdent("set", token.Span)
 
-	case parser.StrLit:
+	case StrLit:
 		p.consume()
 		return &StringLiteral{Value: token.Value, span: token.Span}
 
-	case parser.NumLit:
+	case NumLit:
 		p.consume()
 		// Parse the numeric value
 		value := 0.0
@@ -523,7 +522,7 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 		}
 		return &NumberLiteral{Value: value, span: token.Span}
 
-	case parser.OpenBracket:
+	case OpenBracket:
 		// Computed property key: [expr]
 		return p.parseComputedPropertyKey()
 
@@ -535,7 +534,7 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 
 // parseComputedPropertyKey parses a computed property key: [expr]
 func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
-	start := p.expect(parser.OpenBracket)
+	start := p.expect(OpenBracket)
 	if start == nil {
 		return nil
 	}
@@ -547,7 +546,7 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 		return nil
 	}
 
-	end := p.expect(parser.CloseBracket)
+	end := p.expect(CloseBracket)
 	if end == nil {
 		return nil
 	}
@@ -567,24 +566,24 @@ func (p *DtsParser) skipToNextMember() {
 		token := p.peek()
 
 		// Stop at closing brace or EOF
-		if token.Type == parser.CloseBrace || token.Type == parser.EndOfFile {
+		if token.Type == CloseBrace || token.Type == EndOfFile {
 			break
 		}
 
 		// Stop at comma (member separator)
-		if token.Type == parser.Comma {
+		if token.Type == Comma {
 			p.consume()
 			break
 		}
 
 		// Stop at potential member starts
-		if token.Type == parser.Identifier ||
-			token.Type == parser.Readonly ||
-			token.Type == parser.OpenParen ||
-			token.Type == parser.New ||
-			token.Type == parser.OpenBracket ||
-			token.Type == parser.Get ||
-			token.Type == parser.Set {
+		if token.Type == Identifier ||
+			token.Type == Readonly ||
+			token.Type == OpenParen ||
+			token.Type == New ||
+			token.Type == OpenBracket ||
+			token.Type == Get ||
+			token.Type == Set {
 			break
 		}
 

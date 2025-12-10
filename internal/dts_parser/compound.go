@@ -2,7 +2,6 @@ package dts_parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 // ============================================================================
@@ -18,10 +17,10 @@ func (p *DtsParser) parseTypeAnn() TypeAnn {
 	}
 
 	// Check for union operator
-	if p.peek().Type == parser.Pipe {
+	if p.peek().Type == Pipe {
 		types := []TypeAnn{left}
 
-		for p.peek().Type == parser.Pipe {
+		for p.peek().Type == Pipe {
 			p.consume() // consume '|'
 			right := p.parseIntersectionType()
 			if right == nil {
@@ -46,10 +45,10 @@ func (p *DtsParser) parseIntersectionType() TypeAnn {
 	}
 
 	// Check for intersection operator
-	if p.peek().Type == parser.Ampersand {
+	if p.peek().Type == Ampersand {
 		types := []TypeAnn{left}
 
-		for p.peek().Type == parser.Ampersand {
+		for p.peek().Type == Ampersand {
 			p.consume() // consume '&'
 			right := p.parsePostfixType()
 			if right == nil {
@@ -74,11 +73,11 @@ func (p *DtsParser) parsePostfixType() TypeAnn {
 	}
 
 	// Handle postfix array syntax: T[]
-	for p.peek().Type == parser.OpenBracket {
+	for p.peek().Type == OpenBracket {
 		start := left.Span()
 		p.consume() // consume '['
 
-		closeBracket := p.expect(parser.CloseBracket)
+		closeBracket := p.expect(CloseBracket)
 		if closeBracket == nil {
 			return left // Return what we have even if closing bracket is missing
 		}
@@ -108,8 +107,8 @@ func (p *DtsParser) parseTypeReference() TypeAnn {
 
 	// Check for type arguments
 	var typeArgs []TypeAnn
-	var closingBracket *parser.Token
-	if p.peek().Type == parser.LessThan {
+	var closingBracket *Token
+	if p.peek().Type == LessThan {
 		typeArgs, closingBracket = p.parseTypeArguments()
 		if closingBracket != nil {
 			// Include the closing '>' in the span
@@ -125,7 +124,7 @@ func (p *DtsParser) parseTypeReference() TypeAnn {
 // parseQualifiedIdent parses a qualified identifier (e.g., Foo.Bar.Baz)
 func (p *DtsParser) parseQualifiedIdent() QualIdent {
 	token := p.peek()
-	if token.Type != parser.Identifier {
+	if token.Type != Identifier {
 		return nil
 	}
 	p.consume()
@@ -133,11 +132,11 @@ func (p *DtsParser) parseQualifiedIdent() QualIdent {
 	var result QualIdent = NewIdent(token.Value, token.Span)
 
 	// Check for member access
-	for p.peek().Type == parser.Dot {
+	for p.peek().Type == Dot {
 		p.consume() // consume '.'
 
 		token = p.peek()
-		if token.Type != parser.Identifier {
+		if token.Type != Identifier {
 			p.reportError(token.Span, "Expected identifier after '.'")
 			return nil
 		}
@@ -152,8 +151,8 @@ func (p *DtsParser) parseQualifiedIdent() QualIdent {
 
 // parseTypeArguments parses type arguments: <T, U, V>
 // Returns the type arguments and the closing '>' token (if found)
-func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *parser.Token) {
-	if p.peek().Type != parser.LessThan {
+func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *Token) {
+	if p.peek().Type != LessThan {
 		return nil, nil
 	}
 	p.consume() // consume '<'
@@ -169,7 +168,7 @@ func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *parser.Token) {
 	typeArgs = append(typeArgs, typeArg)
 
 	// Parse remaining type arguments
-	for p.peek().Type == parser.Comma {
+	for p.peek().Type == Comma {
 		p.consume() // consume ','
 
 		typeArg := p.parseTypeAnn()
@@ -180,7 +179,7 @@ func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *parser.Token) {
 		typeArgs = append(typeArgs, typeArg)
 	}
 
-	closingBracket := p.expect(parser.GreaterThan)
+	closingBracket := p.expect(GreaterThan)
 
 	return typeArgs, closingBracket
 }
@@ -205,7 +204,7 @@ func (p *DtsParser) parseParenthesizedOrFunctionType() TypeAnn {
 
 // parseParenthesizedType parses a parenthesized type: (T)
 func (p *DtsParser) parseParenthesizedType() TypeAnn {
-	start := p.expect(parser.OpenParen)
+	start := p.expect(OpenParen)
 	if start == nil {
 		return nil
 	}
@@ -216,7 +215,7 @@ func (p *DtsParser) parseParenthesizedType() TypeAnn {
 		return nil
 	}
 
-	end := p.expect(parser.CloseParen)
+	end := p.expect(CloseParen)
 	if end == nil {
 		return typeAnn // Return what we have even if closing paren is missing
 	}
@@ -232,7 +231,7 @@ func (p *DtsParser) parseParenthesizedType() TypeAnn {
 
 // parseTupleType parses a tuple type: [T1, T2, ...]
 func (p *DtsParser) parseTupleType() TypeAnn {
-	start := p.expect(parser.OpenBracket)
+	start := p.expect(OpenBracket)
 	if start == nil {
 		return nil
 	}
@@ -240,7 +239,7 @@ func (p *DtsParser) parseTupleType() TypeAnn {
 	elements := []TupleElement{}
 
 	// Handle empty tuple
-	if p.peek().Type == parser.CloseBracket {
+	if p.peek().Type == CloseBracket {
 		end := p.consume()
 		span := ast.Span{
 			Start:    start.Span.Start,
@@ -260,11 +259,11 @@ func (p *DtsParser) parseTupleType() TypeAnn {
 	}
 
 	// Parse remaining elements
-	for p.peek().Type == parser.Comma {
+	for p.peek().Type == Comma {
 		p.consume() // consume ','
 
 		// Allow trailing comma
-		if p.peek().Type == parser.CloseBracket {
+		if p.peek().Type == CloseBracket {
 			break
 		}
 
@@ -277,7 +276,7 @@ func (p *DtsParser) parseTupleType() TypeAnn {
 		}
 	}
 
-	end := p.expect(parser.CloseBracket)
+	end := p.expect(CloseBracket)
 	if end == nil {
 		// Return what we have even if closing bracket is missing
 		if len(elements) > 0 {
@@ -305,24 +304,24 @@ func (p *DtsParser) parseTupleElement() *TupleElement {
 	optional := false
 
 	// Check for rest element: ...T
-	if p.peek().Type == parser.DotDotDot {
+	if p.peek().Type == DotDotDot {
 		rest = true
 		p.consume() // consume '...'
 	}
 
 	// Try to parse label: name: type or name?: type
 	// We need to look ahead to distinguish between a label and a plain type
-	if p.peek().Type == parser.Identifier {
+	if p.peek().Type == Identifier {
 		// Look ahead for ':' or '?:'
 		savedState := p.saveState()
 		ident := p.parseIdent()
 
-		if p.peek().Type == parser.Question {
+		if p.peek().Type == Question {
 			// This is a labeled optional element: name?: type
 			optional = true
 			p.consume() // consume '?'
 
-			if p.peek().Type == parser.Colon {
+			if p.peek().Type == Colon {
 				p.consume() // consume ':'
 				name = ident
 				typeAnn = p.parseTypeAnn()
@@ -331,7 +330,7 @@ func (p *DtsParser) parseTupleElement() *TupleElement {
 				p.restoreState(savedState)
 				typeAnn = p.parseTypeAnn()
 			}
-		} else if p.peek().Type == parser.Colon {
+		} else if p.peek().Type == Colon {
 			// This is a labeled element: name: type
 			p.consume() // consume ':'
 			name = ident
@@ -350,7 +349,7 @@ func (p *DtsParser) parseTupleElement() *TupleElement {
 	}
 
 	// Check for optional marker after type (for non-labeled elements)
-	if name == nil && p.peek().Type == parser.Question {
+	if name == nil && p.peek().Type == Question {
 		optional = true
 		p.consume() // consume '?'
 	}
