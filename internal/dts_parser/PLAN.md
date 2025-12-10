@@ -54,7 +54,7 @@ To avoid response length limits and make the implementation more manageable, the
 - **Type parameters**: Generic syntax `<T extends U = Default>`
 - **Type predicates**: `arg is Type` and `asserts` predicates
 
-### Phase 4: Object & Interface Types (parser_objects.go)
+### Phase 4: Object & Interface Types (object.go)
 - **Object type literals**: `{ prop: Type; method(): void }`
 - **Property signatures**: With optional (`?`), readonly modifiers
 - **Method signatures**: Including generic methods

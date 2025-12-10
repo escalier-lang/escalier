@@ -236,6 +236,10 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 	case parser.OpenBracket:
 		return p.parseTupleType()
 
+	// Object type literal
+	case parser.OpenBrace:
+		return p.parseObjectType()
+
 	default:
 		return nil
 	}
