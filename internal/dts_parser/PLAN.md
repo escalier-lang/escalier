@@ -32,14 +32,14 @@ This plan outlines implementing a dedicated parser for TypeScript declaration fi
 
 To avoid response length limits and make the implementation more manageable, the parser should be built incrementally in the following stages:
 
-### Phase 1: Foundation & Basic Types (parser_base.go)
+### Phase 1: Foundation & Basic Types (base.go)
 - **Parser structure**: Create `DtsParser` struct with lexer, error tracking, and state management
 - **Helper functions**: `expect()`, `consume()`, `peek()`, `reportError()`, parsing utilities
 - **Primitive types**: Parse `string`, `number`, `boolean`, `any`, `unknown`, `void`, `null`, `undefined`, `never`, `symbol`, `bigint`, `object`
 - **Literal types**: Parse string, number, boolean, and bigint literals
 - **Basic identifiers**: Parse simple type references and qualified names (e.g., `Foo.Bar`)
 
-### Phase 2: Simple Compound Types (parser_compound.go)
+### Phase 2: Simple Compound Types (compound.go)
 - **Array types**: `T[]` syntax
 - **Tuple types**: `[T1, T2, ...]` with optional/rest elements and labels
 - **Union types**: `T1 | T2 | ...`
@@ -47,7 +47,7 @@ To avoid response length limits and make the implementation more manageable, the
 - **Parenthesized types**: `(T)`
 - **Type references**: With type arguments `Foo<T, U>`
 
-### Phase 3: Function & Constructor Types (parser_functions.go)
+### Phase 3: Function & Constructor Types (func.go)
 - **Function types**: `(params) => ReturnType`
 - **Constructor types**: `new (params) => T`
 - **Parameters**: With optional (`?`), rest (`...`), and type annotations
@@ -63,7 +63,7 @@ To avoid response length limits and make the implementation more manageable, the
 - **Index signatures**: `[key: string]: Type`
 - **Getter/setter signatures**: `get prop(): T`, `set prop(value: T)`
 
-### Phase 5: Advanced Type Operators (parser_advanced.go)
+### Phase 5: Advanced Type Operators (advanced.go)
 - **Indexed access**: `T[K]`
 - **Conditional types**: `T extends U ? X : Y`
 - **Infer types**: `infer T`
@@ -74,7 +74,7 @@ To avoid response length limits and make the implementation more manageable, the
 - **Import types**: `import("module").Type`
 - **Rest/optional types**: `...T`, `T?`
 
-### Phase 6: Declarations (parser_declarations.go)
+### Phase 6: Declarations (decl.go)
 - **Variable declarations**: `declare var/let/const name: Type`
 - **Function declarations**: `declare function name<T>(params): ReturnType`
 - **Type aliases**: `type Name<T> = Type`
@@ -82,14 +82,14 @@ To avoid response length limits and make the implementation more manageable, the
 - **Enum declarations**: `enum Name { ... }` and `const enum`
 - **Class declarations**: `declare class Name<T> { ... }` with members
 
-### Phase 7: Namespaces & Modules (parser_modules.go)
+### Phase 7: Namespaces & Modules (module.go)
 - **Namespace declarations**: `namespace Name { ... }` and `module Name { ... }`
 - **Ambient module declarations**: `declare module "name" { ... }`
 - **Import declarations**: `import { ... } from "module"` with type-only imports
 - **Export declarations**: `export { ... }`, `export * from "module"`, etc.
 - **Export assignments**: `export = Name`, `export as namespace Name`
 
-### Phase 8: Class Members (parser_classes.go)
+### Phase 8: Class Members (classe.go)
 - **Constructor declarations**: With parameter properties
 - **Method declarations**: With modifiers (public, private, protected, static, abstract, async)
 - **Property declarations**: With modifiers (readonly, optional, static)
