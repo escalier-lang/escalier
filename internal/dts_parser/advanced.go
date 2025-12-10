@@ -554,22 +554,3 @@ func (p *DtsParser) parseRestType() TypeAnn {
 		span: span,
 	}
 }
-
-// parseOptionalType parses T? (used in tuples and mapped types)
-func (p *DtsParser) parseOptionalType(baseType TypeAnn) TypeAnn {
-	question := p.expect(Question)
-	if question == nil {
-		return baseType
-	}
-
-	span := ast.Span{
-		Start:    baseType.Span().Start,
-		End:      question.Span.End,
-		SourceID: baseType.Span().SourceID,
-	}
-
-	return &OptionalType{
-		Type: baseType,
-		span: span,
-	}
-}
