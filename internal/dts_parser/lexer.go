@@ -77,84 +77,6 @@ var keywords = map[string]TokenType{
 	"asserts":   Asserts,
 }
 
-// isRegexContext determines if a '/' should be treated as the start of a regex literal
-// Based on the previous token, we can determine the context
-func (lexer *Lexer) isRegexContext() bool {
-	if lexer.lastToken == nil {
-		return true // At the beginning of input, / starts a regex
-	}
-
-	//nolint:exhaustive // We handle the important cases and have a default
-	switch lexer.lastToken.Type {
-	// After these tokens, / starts a regex
-	case OpenParen, OpenBracket, OpenBrace, Comma, Colon, Question,
-		Equal, EqualEqual, NotEqual, LessThan, LessThanEqual,
-		GreaterThan, GreaterThanEqual, Plus, PlusPlus, Minus, Asterisk,
-		Ampersand, AmpersandAmpersand, Pipe, PipePipe, Bang,
-		Return, If, Else, Match, Try, Catch, Throw,
-		Arrow, FatArrow:
-		return true
-	// After these tokens, / is division
-	case Identifier, NumLit, StrLit, RegexLit, True, False, Null, Undefined,
-		CloseParen, CloseBracket, CloseBrace:
-		return false
-	default:
-		return true // Default to regex for safety
-	}
-}
-
-// lexRegex lexes a regex literal starting from the given position
-func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
-	end := start
-
-	contents := lexer.source.Contents
-	n := len(contents)
-	i := startOffset + 1 // Skip the opening '/'
-
-	// Parse the regex pattern
-	for i < n {
-		c := contents[i]
-		if c == '/' {
-			i++ // Include the closing '/'
-			end.Column++
-			break
-		}
-		if c == '\\' && i+1 < n {
-			// Skip escaped character (both the backslash and the next char)
-			i += 2
-			end.Column += 2
-			continue
-		}
-		if c == '\n' {
-			// Regex literals cannot contain unescaped newlines
-			// TODO: report an error
-			break
-		}
-		if c == '\r' {
-			// Also handle Windows line endings
-			break
-		}
-		i++
-		end.Column++
-	}
-
-	// Parse regex flags (if any)
-	for i < n {
-		c := contents[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			i++
-			end.Column++
-		} else {
-			break
-		}
-	}
-
-	endOffset := i
-	value := contents[startOffset:endOffset]
-
-	return NewToken(RegexLit, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-}
-
 func (lexer *Lexer) next() *Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
@@ -238,11 +160,6 @@ func (lexer *Lexer) next() *Token {
 			endOffset = i
 			value := lexer.source.Contents[startOffset:i]
 			token = NewToken(BlockComment, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else if lexer.isRegexContext() {
-			// Lex as regex literal
-			token = lexer.lexRegex(startOffset, start)
-			endOffset = startOffset + len(token.Value)
-			end = token.Span.End
 		} else {
 			token = NewToken(Slash, "/", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
