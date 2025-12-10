@@ -2,7 +2,6 @@ package dts_parser
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 // ============================================================================
@@ -15,12 +14,12 @@ func (p *DtsParser) parseFunctionType() TypeAnn {
 
 	// Parse optional type parameters
 	var typeParams []*TypeParam
-	if p.peek().Type == parser.LessThan {
+	if p.peek().Type == LessThan {
 		typeParams = p.parseTypeParams()
 	}
 
 	// Parse parameter list
-	if p.peek().Type != parser.OpenParen {
+	if p.peek().Type != OpenParen {
 		return nil
 	}
 
@@ -30,7 +29,7 @@ func (p *DtsParser) parseFunctionType() TypeAnn {
 	}
 
 	// Expect '=>'
-	arrow := p.expect(parser.FatArrow)
+	arrow := p.expect(FatArrow)
 	if arrow == nil {
 		return nil
 	}
@@ -59,19 +58,19 @@ func (p *DtsParser) parseFunctionType() TypeAnn {
 
 // parseConstructorType parses a constructor type: new <T>(params) => ReturnType
 func (p *DtsParser) parseConstructorType() TypeAnn {
-	start := p.expect(parser.New)
+	start := p.expect(New)
 	if start == nil {
 		return nil
 	}
 
 	// Parse optional type parameters
 	var typeParams []*TypeParam
-	if p.peek().Type == parser.LessThan {
+	if p.peek().Type == LessThan {
 		typeParams = p.parseTypeParams()
 	}
 
 	// Parse parameter list
-	if p.peek().Type != parser.OpenParen {
+	if p.peek().Type != OpenParen {
 		p.reportError(p.peek().Span, "Expected '(' after 'new'")
 		return nil
 	}
@@ -82,7 +81,7 @@ func (p *DtsParser) parseConstructorType() TypeAnn {
 	}
 
 	// Expect '=>'
-	arrow := p.expect(parser.FatArrow)
+	arrow := p.expect(FatArrow)
 	if arrow == nil {
 		return nil
 	}
@@ -111,7 +110,7 @@ func (p *DtsParser) parseConstructorType() TypeAnn {
 
 // parseTypeParams parses type parameters: <T, U extends V = Default>
 func (p *DtsParser) parseTypeParams() []*TypeParam {
-	if p.peek().Type != parser.LessThan {
+	if p.peek().Type != LessThan {
 		return nil
 	}
 	p.consume() // consume '<'
@@ -127,7 +126,7 @@ func (p *DtsParser) parseTypeParams() []*TypeParam {
 	typeParams = append(typeParams, typeParam)
 
 	// Parse remaining type parameters
-	for p.peek().Type == parser.Comma {
+	for p.peek().Type == Comma {
 		p.consume() // consume ','
 
 		typeParam := p.parseTypeParam()
@@ -138,7 +137,7 @@ func (p *DtsParser) parseTypeParams() []*TypeParam {
 		typeParams = append(typeParams, typeParam)
 	}
 
-	p.expect(parser.GreaterThan)
+	p.expect(GreaterThan)
 
 	return typeParams
 }
@@ -157,7 +156,7 @@ func (p *DtsParser) parseTypeParam() *TypeParam {
 
 	// Parse optional constraint
 	var constraint TypeAnn
-	if p.peek().Type == parser.Extends {
+	if p.peek().Type == Extends {
 		p.consume() // consume 'extends'
 		constraint = p.parseTypeAnn()
 		if constraint == nil {
@@ -169,7 +168,7 @@ func (p *DtsParser) parseTypeParam() *TypeParam {
 
 	// Parse optional default
 	var defaultType TypeAnn
-	if p.peek().Type == parser.Equal {
+	if p.peek().Type == Equal {
 		p.consume() // consume '='
 		defaultType = p.parseTypeAnn()
 		if defaultType == nil {
@@ -195,7 +194,7 @@ func (p *DtsParser) parseTypeParam() *TypeParam {
 
 // parseParams parses a parameter list: (arg1: Type1, arg2?: Type2, ...rest: Type3)
 func (p *DtsParser) parseParams() []*Param {
-	if p.peek().Type != parser.OpenParen {
+	if p.peek().Type != OpenParen {
 		return nil
 	}
 	p.consume() // consume '('
@@ -203,7 +202,7 @@ func (p *DtsParser) parseParams() []*Param {
 	params := []*Param{}
 
 	// Handle empty parameter list
-	if p.peek().Type == parser.CloseParen {
+	if p.peek().Type == CloseParen {
 		p.consume()
 		return params
 	}
@@ -217,11 +216,11 @@ func (p *DtsParser) parseParams() []*Param {
 	}
 
 	// Parse remaining parameters
-	for p.peek().Type == parser.Comma {
+	for p.peek().Type == Comma {
 		p.consume() // consume ','
 
 		// Allow trailing comma
-		if p.peek().Type == parser.CloseParen {
+		if p.peek().Type == CloseParen {
 			break
 		}
 
@@ -234,7 +233,7 @@ func (p *DtsParser) parseParams() []*Param {
 		}
 	}
 
-	p.expect(parser.CloseParen)
+	p.expect(CloseParen)
 
 	return params
 }
@@ -246,7 +245,7 @@ func (p *DtsParser) parseParam() *Param {
 	optional := false
 
 	// Check for rest parameter
-	if p.peek().Type == parser.DotDotDot {
+	if p.peek().Type == DotDotDot {
 		rest = true
 		p.consume() // consume '...'
 	}
@@ -260,14 +259,14 @@ func (p *DtsParser) parseParam() *Param {
 	endSpan := name.Span()
 
 	// Check for optional marker
-	if p.peek().Type == parser.Question {
+	if p.peek().Type == Question {
 		optional = true
 		p.consume() // consume '?'
 	}
 
 	// Parse type annotation
 	var typeAnn TypeAnn
-	if p.peek().Type == parser.Colon {
+	if p.peek().Type == Colon {
 		p.consume() // consume ':'
 		typeAnn = p.parseTypeAnn()
 		if typeAnn == nil {
@@ -296,7 +295,7 @@ func (p *DtsParser) parseParam() *Param {
 func (p *DtsParser) parseReturnType() TypeAnn {
 	// Try to parse as type predicate first
 	// Type predicates look like: "arg is Type" or "asserts arg" or "asserts arg is Type"
-	if p.peek().Type == parser.Identifier || p.peek().Type == parser.Asserts {
+	if p.peek().Type == Identifier || p.peek().Type == Asserts {
 		savedState := p.saveState()
 		predicate := p.tryParseTypePredicate()
 		if predicate != nil {
@@ -315,13 +314,13 @@ func (p *DtsParser) tryParseTypePredicate() TypeAnn {
 	asserts := false
 
 	// Check for 'asserts' keyword
-	if p.peek().Type == parser.Asserts {
+	if p.peek().Type == Asserts {
 		asserts = true
 		p.consume() // consume 'asserts'
 	}
 
 	// Parse parameter name
-	if p.peek().Type != parser.Identifier {
+	if p.peek().Type != Identifier {
 		return nil
 	}
 	paramName := p.parseIdent()
@@ -334,7 +333,7 @@ func (p *DtsParser) tryParseTypePredicate() TypeAnn {
 	// For asserts predicates, 'is Type' is optional
 	// For regular predicates, 'is Type' is required
 	var typeAnn TypeAnn
-	if p.peek().Type == parser.Is {
+	if p.peek().Type == Is {
 		p.consume() // consume 'is'
 		typeAnn = p.parseTypeAnn()
 		if typeAnn == nil {

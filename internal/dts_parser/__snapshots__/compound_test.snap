@@ -1915,7 +1915,7 @@
 
 [TestTupleEdgeCases/trailing_comma - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TupleType{
         Elements: {
@@ -1967,7 +1967,7 @@ map[string]interface {}{
 
 [TestTupleEdgeCases/single_trailing_comma - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TupleType{
         Elements: {
@@ -2001,8 +2001,8 @@ map[string]interface {}{
 
 [TestTupleEdgeCases/multiple_trailing_commas - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
-        &parser.Error{
+    "errors": []*dts_parser.Error{
+        &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:10},
@@ -2010,7 +2010,7 @@ map[string]interface {}{
             },
             Message: "Expected tuple element",
         },
-        &parser.Error{
+        &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:10},
@@ -2051,7 +2051,7 @@ map[string]interface {}{
 
 [TestTupleEdgeCases/spaces - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TupleType{
         Elements: {
@@ -2103,7 +2103,7 @@ map[string]interface {}{
 
 [TestTupleEdgeCases/newlines - 1]
 map[string]interface {}{
-    "errors": []*parser.Error{
+    "errors": []*dts_parser.Error{
     },
     "typeAnn": &dts_parser.TupleType{
         Elements: {
