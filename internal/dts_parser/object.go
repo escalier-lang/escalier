@@ -79,8 +79,16 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 		return p.parseConstructSignature()
 
 	case parser.OpenBracket:
-		// Index signature: [key: string]: Type
-		return p.parseIndexSignature(readonly)
+		// Could be index signature [key: string]: Type or computed property [expr]: Type
+		// Try index signature first (it's more restrictive)
+		savedState := p.saveState()
+		indexSig := p.tryParseIndexSignature(readonly)
+		if indexSig != nil {
+			return indexSig
+		}
+		// Not an index signature, restore and parse as computed property key
+		p.restoreState(savedState)
+		return p.parsePropertyOrMethodSignature(readonly)
 
 	case parser.Get:
 		// Try to parse as getter signature first (get prop(): Type)
@@ -212,46 +220,51 @@ func (p *DtsParser) parseConstructSignature() InterfaceMember {
 	}
 }
 
-// parseIndexSignature parses an index signature: [key: string]: Type
-func (p *DtsParser) parseIndexSignature(readonly bool) InterfaceMember {
-	start := p.expect(parser.OpenBracket)
-	if start == nil {
+// tryParseIndexSignature attempts to parse an index signature without reporting errors
+// Returns nil if it doesn't match the pattern: [identifier: Type]: ValueType
+func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
+	// Must start with '['
+	if p.peek().Type != parser.OpenBracket {
 		return nil
 	}
+	start := p.consume()
 
-	// Parse key name (identifier)
+	// Must be followed by an identifier (not an expression)
+	if p.peek().Type != parser.Identifier {
+		return nil
+	}
 	keyName := p.parseIdent()
 	if keyName == nil {
-		p.reportError(p.peek().Span, "Expected key name in index signature")
 		return nil
 	}
 
-	// Expect ':'
-	if p.expect(parser.Colon) == nil {
+	// Must have ':' after identifier (this distinguishes from computed keys)
+	if p.peek().Type != parser.Colon {
 		return nil
 	}
+	p.consume()
 
-	// Parse key type (must be string, number, or symbol)
+	// Parse key type
 	keyType := p.parseTypeAnn()
 	if keyType == nil {
-		p.reportError(p.peek().Span, "Expected key type in index signature")
 		return nil
 	}
 
-	// Expect ']'
-	if p.expect(parser.CloseBracket) == nil {
+	// Must have ']'
+	if p.peek().Type != parser.CloseBracket {
 		return nil
 	}
+	p.consume()
 
-	// Expect ':'
-	if p.expect(parser.Colon) == nil {
+	// Must have ':' after ']'
+	if p.peek().Type != parser.Colon {
 		return nil
 	}
+	p.consume()
 
 	// Parse value type
 	valueType := p.parseTypeAnn()
 	if valueType == nil {
-		p.reportError(p.peek().Span, "Expected value type in index signature")
 		return nil
 	}
 
@@ -268,107 +281,6 @@ func (p *DtsParser) parseIndexSignature(readonly bool) InterfaceMember {
 		ValueType: valueType,
 		Readonly:  readonly,
 		span:      span,
-	}
-}
-
-// parseGetterSignature parses a getter signature: get prop(): Type
-func (p *DtsParser) parseGetterSignature() InterfaceMember {
-	start := p.expect(parser.Get)
-	if start == nil {
-		return nil
-	}
-
-	// Parse property name
-	name := p.parsePropertyKey()
-	if name == nil {
-		p.reportError(p.peek().Span, "Expected property name after 'get'")
-		return nil
-	}
-
-	// Expect '('
-	if p.expect(parser.OpenParen) == nil {
-		return nil
-	}
-
-	// Expect ')' (getters have no parameters)
-	if p.expect(parser.CloseParen) == nil {
-		return nil
-	}
-
-	// Parse return type
-	var returnType TypeAnn
-	if p.peek().Type == parser.Colon {
-		p.consume() // consume ':'
-		returnType = p.parseTypeAnn()
-		if returnType == nil {
-			p.reportError(p.peek().Span, "Expected return type after ':'")
-		}
-	}
-
-	endSpan := name.Span()
-	if returnType != nil {
-		endSpan = returnType.Span()
-	}
-
-	span := ast.Span{
-		Start:    start.Span.Start,
-		End:      endSpan.End,
-		SourceID: start.Span.SourceID,
-	}
-
-	return &GetterSignature{
-		Name:       name,
-		ReturnType: returnType,
-		span:       span,
-	}
-}
-
-// parseSetterSignature parses a setter signature: set prop(value: Type)
-func (p *DtsParser) parseSetterSignature() InterfaceMember {
-	start := p.expect(parser.Set)
-	if start == nil {
-		return nil
-	}
-
-	// Parse property name
-	name := p.parsePropertyKey()
-	if name == nil {
-		p.reportError(p.peek().Span, "Expected property name after 'set'")
-		return nil
-	}
-
-	// Expect '('
-	if p.expect(parser.OpenParen) == nil {
-		return nil
-	}
-
-	// Parse parameter (setters have exactly one parameter)
-	param := p.parseParam()
-	if param == nil {
-		p.reportError(p.peek().Span, "Expected parameter in setter")
-	}
-
-	// Expect ')'
-	closeParen := p.expect(parser.CloseParen)
-	if closeParen == nil {
-		return nil
-	}
-
-	endSpan := closeParen.Span
-	if param != nil {
-		endSpan = param.Span()
-	}
-
-	span := ast.Span{
-		Start:    start.Span.Start,
-		End:      endSpan.End,
-		SourceID: start.Span.SourceID,
-	}
-
-	return &SetterSignature{
-		Name:  name,
-		Param: param,
-		span:  span,
 	}
 }
 

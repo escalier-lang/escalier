@@ -227,6 +227,13 @@ func TestGetterSetterSignatures(t *testing.T) {
 		{"setter with complex param", "{ set data(v: { name: string, age: number }) }"},
 		{"multiple getters setters", "{ get x(): number, set x(v: number), get y(): string, set y(v: string) }"},
 		{"mixed with properties", "{ name: string, get fullName(): string, set fullName(v: string) }"},
+		// Test that 'get' and 'set' can be used as regular property/method names
+		{"get as property", "{ get: string }"},
+		{"set as property", "{ set: number }"},
+		{"get as method", "{ get(): string }"},
+		{"set as method", "{ set(value: number): void }"},
+		{"get method with params", "{ get(key: string): any }"},
+		{"set method with return", "{ set(key: string, value: any): boolean }"},
 	}
 
 	for _, tt := range tests {
@@ -267,6 +274,47 @@ func TestComplexObjectTypes(t *testing.T) {
 		// TODO: optional methods need special handling for '?' before '(' or '<'
 		// {"optional everything", "{ name?: string, age?: number, getEmail?(): string }"},
 		{"readonly everything", "{ readonly name: string, readonly age: number, readonly [key: string]: any }"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+func TestComputedKeys(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"computed string literal", "{ [\"computed\"]: string }"},
+		{"computed number literal", "{ [42]: number }"},
+		{"computed type reference", "{ [K]: string }"},
+		{"computed union type", "{ [string | number]: any }"},
+		// TODO: Phase 5 features (Advanced Type Operators)
+		// {"computed keyof", "{ [keyof T]: string }"},
+		// {"computed indexed access", "{ [T[K]]: number }"},
+		// {"computed typeof", "{ [typeof x]: string }"},
+		{"multiple computed keys", "{ [K]: string, [P]: number }"},
+		{"computed with regular keys", "{ name: string, [K]: any, age: number }"},
+		{"nested computed", "{ outer: { [K]: string } }"},
 	}
 
 	for _, tt := range tests {
