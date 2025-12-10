@@ -65,30 +65,45 @@ func (p *DtsParser) parseIntersectionType() TypeAnn {
 	return left
 }
 
-// parsePostfixType parses postfix type operators like array types (T[])
+// parsePostfixType parses postfix type operators like array types (T[]) and indexed access (T[K])
 func (p *DtsParser) parsePostfixType() TypeAnn {
 	left := p.parsePrimaryType()
 	if left == nil {
 		return nil
 	}
 
-	// Handle postfix array syntax: T[]
-	for p.peek().Type == OpenBracket {
-		start := left.Span()
-		p.consume() // consume '['
+	// Handle postfix operators: array syntax T[] or indexed access T[K]
+	for {
+		token := p.peek()
 
-		closeBracket := p.expect(CloseBracket)
-		if closeBracket == nil {
-			return left // Return what we have even if closing bracket is missing
+		if token.Type == OpenBracket {
+			// Peek ahead to see if this is an array type T[] or indexed access T[K]
+			savedState := p.saveState()
+			p.consume() // consume '['
+
+			// Check if immediately followed by ]
+			if p.peek().Type == CloseBracket {
+				// This is array type T[]
+				closeBracket := p.consume()
+				span := ast.Span{
+					Start:    left.Span().Start,
+					End:      closeBracket.Span.End,
+					SourceID: left.Span().SourceID,
+				}
+				left = &ArrayType{ElementType: left, span: span}
+			} else {
+				// This is indexed access T[K]
+				p.restoreState(savedState)
+				left = p.parseIndexedAccessType(left)
+			}
+		} else if token.Type == Extends {
+			// Conditional type: T extends U ? X : Y
+			// Only parse as conditional if we're in a context where it makes sense
+			// (not inside parentheses or other constructs that would be ambiguous)
+			left = p.parseConditionalType(left)
+		} else {
+			break
 		}
-
-		span := ast.Span{
-			Start:    start.Start,
-			End:      closeBracket.Span.End,
-			SourceID: start.SourceID,
-		}
-
-		left = &ArrayType{ElementType: left, span: span}
 	}
 
 	return left
