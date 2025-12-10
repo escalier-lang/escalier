@@ -281,86 +281,127 @@ func (p *DtsParser) parseMappedType() TypeAnn {
 }
 
 // parseTemplateLiteralType parses `${T}...` template literal types
+// This function manually scans the content between backticks since the lexer
+// doesn't have full template literal support
 func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
-	start := p.expect(BackTick)
-	if start == nil {
+	startToken := p.expect(BackTick)
+	if startToken == nil {
 		return nil
 	}
 
+	// Get access to the source content to manually parse template contents
+	source := p.lexer.source
+	startOffset := p.lexer.currentOffset
+	contents := source.Contents
+
 	parts := []TemplatePart{}
+	currentOffset := startOffset
+	stringStart := currentOffset
+	currentLocation := p.lexer.currentLocation
 
-	for {
-		token := p.peek()
+	// Scan until we find the closing backtick
+	for currentOffset < len(contents) {
+		ch := contents[currentOffset]
 
-		if token.Type == BackTick {
-			// End of template
-			end := p.consume()
+		if ch == '`' {
+			// Add any pending string part
+			if stringStart < currentOffset {
+				stringValue := contents[stringStart:currentOffset]
+				strSpan := ast.Span{
+					Start:    ast.Location{Line: currentLocation.Line, Column: currentLocation.Column - (currentOffset - stringStart)},
+					End:      currentLocation,
+					SourceID: source.ID,
+				}
+				parts = append(parts, &TemplateString{
+					Value: stringValue,
+					span:  strSpan,
+				})
+			}
+
+			// Advance past the closing backtick
+			currentOffset++
+			currentLocation.Column++
+
+			// Update lexer position
+			p.lexer.currentOffset = currentOffset
+			p.lexer.currentLocation = currentLocation
+
 			span := ast.Span{
-				Start:    start.Span.Start,
-				End:      end.Span.End,
-				SourceID: start.Span.SourceID,
+				Start:    startToken.Span.Start,
+				End:      currentLocation,
+				SourceID: source.ID,
 			}
 			return &TemplateLiteralType{Parts: parts, span: span}
 		}
 
-		if token.Type == StrLit {
-			// Template string part
-			p.consume()
-			parts = append(parts, &TemplateString{
-				Value: token.Value,
-				span:  token.Span,
-			})
-		} else if token.Type == Identifier && token.Value == "$" {
-			// This might be the start of ${...}
-			p.consume()
-			if p.peek().Type == OpenBrace {
-				p.consume() // consume '{'
-
-				typeAnn := p.parseTypeAnn()
-				if typeAnn == nil {
-					p.reportError(p.peek().Span, "Expected type in template placeholder")
-					break
+		if ch == '$' && currentOffset+1 < len(contents) && contents[currentOffset+1] == '{' {
+			// Add any pending string part before the placeholder
+			if stringStart < currentOffset {
+				stringValue := contents[stringStart:currentOffset]
+				strSpan := ast.Span{
+					Start:    ast.Location{Line: currentLocation.Line, Column: currentLocation.Column - (currentOffset - stringStart)},
+					End:      currentLocation,
+					SourceID: source.ID,
 				}
-
-				closeBrace := p.expect(CloseBrace)
-				if closeBrace == nil {
-					break
-				}
-
-				templateTypeSpan := ast.Span{
-					Start:    token.Span.Start,
-					End:      closeBrace.Span.End,
-					SourceID: token.Span.SourceID,
-				}
-
-				parts = append(parts, &TemplateType{
-					Type: typeAnn,
-					span: templateTypeSpan,
-				})
-			} else {
-				// Just a $ character in the string
 				parts = append(parts, &TemplateString{
-					Value: "$",
-					span:  token.Span,
+					Value: stringValue,
+					span:  strSpan,
 				})
 			}
+
+			// Mark the start of ${
+			placeholderStart := currentLocation
+
+			// Skip ${
+			currentOffset += 2
+			currentLocation.Column += 2
+			p.lexer.currentOffset = currentOffset
+			p.lexer.currentLocation = currentLocation
+
+			// Parse the type inside ${}
+			typeAnn := p.parseTypeAnn()
+			if typeAnn == nil {
+				p.reportError(p.peek().Span, "Expected type in template placeholder")
+				return nil
+			}
+
+			// Expect closing }
+			closeBrace := p.expect(CloseBrace)
+			if closeBrace == nil {
+				return nil
+			}
+
+			// Update our tracking variables
+			currentOffset = p.lexer.currentOffset
+			currentLocation = p.lexer.currentLocation
+
+			templateTypeSpan := ast.Span{
+				Start:    placeholderStart,
+				End:      currentLocation,
+				SourceID: source.ID,
+			}
+
+			parts = append(parts, &TemplateType{
+				Type: typeAnn,
+				span: templateTypeSpan,
+			})
+
+			// Start a new string part after the placeholder
+			stringStart = currentOffset
 		} else {
-			// Unexpected token
-			p.reportError(token.Span, "Unexpected token in template literal")
-			break
+			// Regular character
+			currentOffset++
+			if ch == '\n' {
+				currentLocation.Line++
+				currentLocation.Column = 1
+			} else {
+				currentLocation.Column++
+			}
 		}
 	}
 
-	// If we get here without proper closing, return what we have
-	if len(parts) > 0 {
-		span := ast.Span{
-			Start:    start.Span.Start,
-			End:      parts[len(parts)-1].Span().End,
-			SourceID: start.Span.SourceID,
-		}
-		return &TemplateLiteralType{Parts: parts, span: span}
-	}
-
+	// If we reach here, we didn't find a closing backtick
+	p.reportError(startToken.Span, "Unterminated template literal")
 	return nil
 }
 

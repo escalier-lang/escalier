@@ -138,9 +138,9 @@ func TestMappedTypes(t *testing.T) {
 		{"mapped with both modifiers", "{ readonly [K in keyof T]?: T[K] }"},
 		{"mapped with add modifiers", "{ +readonly [K in keyof T]+?: T[K] }"},
 		{"mapped with remove modifiers", "{ -readonly [K in keyof T]-?: T[K] }"},
-		// TODO: These require better string literal union and template literal support
+		// TODO: Requires single-quote string literal support in lexer
 		// {"mapped with union constraint", "{ [K in 'a' | 'b' | 'c']: string }"},
-		// {"mapped with as clause", "{ [K in keyof T as `get${K}`]: T[K] }"},
+		{"mapped with as clause", "{ [K in keyof T as `get${K}`]: T[K] }"},
 		{"mapped with complex value", "{ [K in keyof T]: T[K] extends Function ? K : never }"},
 	}
 
@@ -168,22 +168,18 @@ func TestMappedTypes(t *testing.T) {
 }
 
 func TestTemplateLiteralTypes(t *testing.T) {
-	// TODO: Template literal types require better lexer support for parsing
-	// the contents of template literals. The lexer needs to handle the complex
-	// state machine of template strings with embedded expressions.
 	tests := []struct {
 		name  string
 		input string
 	}{
 		{"empty template", "``"},
-		// TODO: Add more tests once lexer supports template literal parsing
-		// {"template with string", "`hello`"},
-		// {"template with type", "`${T}`"},
-		// {"template with prefix", "`hello ${T}`"},
-		// {"template with suffix", "`${T} world`"},
-		// {"template with multiple parts", "`${A}-${B}`"},
-		// {"template complex", "`Hello, ${First} ${Last}!`"},
-		// {"template with union", "`${T | U}`"},
+		{"template with string", "`hello`"},
+		{"template with type", "`${T}`"},
+		{"template with prefix", "`hello ${T}`"},
+		{"template with suffix", "`${T} world`"},
+		{"template with multiple parts", "`${A}-${B}`"},
+		{"template complex", "`Hello, ${First} ${Last}!`"},
+		{"template with union", "`${T | U}`"},
 	}
 
 	for _, tt := range tests {
@@ -419,11 +415,10 @@ func TestComplexAdvancedTypes(t *testing.T) {
 			"Record-like",
 			"{ [K in keyof T]: U }",
 		},
-		// TODO: Requires template literal support in mapped types
-		// {
-		// 	"Getters mapped type",
-		// 	"{ [K in keyof T as `get${K}`]: () => T[K] }",
-		// },
+		{
+			"Getters mapped type",
+			"{ [K in keyof T as `get${K}`]: () => T[K] }",
+		},
 		{
 			"Complex conditional with multiple infer",
 			"T extends (a: infer A, b: infer B) => infer R ? (A extends string ? R : never) : never",
@@ -432,6 +427,57 @@ func TestComplexAdvancedTypes(t *testing.T) {
 			"Nested mapped and conditional",
 			"{ [K in keyof T]: T[K] extends Array<infer U> ? U : T[K] }",
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+func TestOptionalType(t *testing.T) {
+	// Note: parseOptionalType is a helper function that isn't directly called
+	// by the main parsing path. Tuples handle optional elements inline.
+	// However, we test it here to ensure it works correctly if used.
+	tests := []struct {
+		name  string
+		input string
+	}{
+		// In tuples, optional types are parsed correctly
+		{"optional in tuple", "[string?]"},
+		{"optional at end of tuple", "[string, number?]"},
+		{"multiple optional in tuple", "[string?, number?, boolean?]"},
+		{"labeled optional in tuple", "[x?: string]"},
+		{"labeled optional at end", "[x: string, y?: number]"},
+
+		// Edge cases with complex types
+		{"optional union in tuple", "[(string | number)?]"},
+		{"optional intersection in tuple", "[(string & number)?]"},
+		{"optional array in tuple", "[string[]?]"},
+		{"optional generic in tuple", "[Array<T>?]"},
+		{"optional function in tuple", "[((x: number) => string)?]"},
+		{"optional object in tuple", "[{ a: string }?]"},
+
+		// Nested optional scenarios
+		{"optional tuple in tuple", "[[string, number]?]"},
+		{"multiple complex optional", "[Array<string>?, Map<K, V>?]"},
 	}
 
 	for _, tt := range tests {
