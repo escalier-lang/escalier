@@ -204,8 +204,11 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		literal := &BooleanLiteral{Value: false, span: token.Span}
 		return &LiteralType{Literal: literal, span: token.Span}
 
-	// Type reference (identifier or qualified name)
+	// Type reference (identifier or qualified name), or 'this' type
 	case Identifier:
+		if token.Value == "this" {
+			return p.parseThisType()
+		}
 		return p.parseTypeReference()
 
 	// Parenthesized type or function type
@@ -237,7 +240,40 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 
 	// Object type literal
 	case OpenBrace:
+		// Could be object type or mapped type
+		// Check if it's a mapped type by looking for [K in T] pattern
+		savedState := p.saveState()
+		mappedType := p.parseMappedType()
+		if mappedType != nil {
+			return mappedType
+		}
+		// If not a mapped type, restore and parse as object type
+		p.restoreState(savedState)
 		return p.parseObjectType()
+
+	// Template literal type
+	case BackTick:
+		return p.parseTemplateLiteralType()
+
+	// keyof operator
+	case Keyof:
+		return p.parseKeyOfType()
+
+	// typeof operator
+	case Typeof:
+		return p.parseTypeOfType()
+
+	// import type
+	case Import:
+		return p.parseImportType()
+
+	// infer type (used in conditional types)
+	case Infer:
+		return p.parseInferType()
+
+	// Rest type ...T
+	case DotDotDot:
+		return p.parseRestType()
 
 	default:
 		return nil
