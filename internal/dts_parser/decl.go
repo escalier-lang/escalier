@@ -39,12 +39,33 @@ func (p *DtsParser) parseAmbientDeclaration() Statement {
 	token := p.peek()
 
 	switch token.Type {
-	case Var, Let, Const:
+	case Var, Let:
+		return p.parseVariableDeclaration()
+	case Const:
+		// Check if this is 'const enum'
+		nextToken := p.lexer.SaveState()
+		p.consume() // consume 'const'
+		if p.peek().Type == Enum {
+			p.lexer.RestoreState(nextToken)
+			return p.parseEnumDeclaration()
+		}
+		p.lexer.RestoreState(nextToken)
 		return p.parseVariableDeclaration()
 	case Function:
 		return p.parseFunctionDeclaration()
 	case Class:
 		return p.parseClassDeclaration()
+	case Abstract:
+		// Check if this is 'abstract class'
+		nextToken := p.lexer.SaveState()
+		p.consume() // consume 'abstract'
+		if p.peek().Type == Class {
+			p.lexer.RestoreState(nextToken)
+			return p.parseClassDeclaration()
+		}
+		p.lexer.RestoreState(nextToken)
+		p.reportError(token.Span, "Expected 'class' after 'abstract' in ambient declaration")
+		return nil
 	case Interface:
 		return p.parseInterfaceDeclaration()
 	case Type:

@@ -101,6 +101,10 @@ func TestTypeAliasDeclarations(t *testing.T) {
 		{"mapped type", "type Readonly<T> = { readonly [K in keyof T]: T[K] }"},
 		{"tuple type", "type Point = [number, number]"},
 		{"function type", "type Callback = (data: string) => void"},
+		{"ambient type alias", "declare type Name = string"},
+		{"ambient generic type alias", "declare type Box<T> = { value: T }"},
+		{"ambient union type alias", "declare type StringOrNumber = string | number"},
+		{"ambient conditional type", "declare type NonNullable<T> = T extends null | undefined ? never : T"},
 	}
 
 	for _, tt := range tests {
@@ -171,6 +175,18 @@ func TestInterfaceDeclarations(t *testing.T) {
 			"interface with construct signature",
 			"interface Constructable { new (name: string): Person }",
 		},
+		{
+			"ambient interface",
+			"declare interface Person { name: string; age: number }",
+		},
+		{
+			"ambient generic interface",
+			"declare interface Box<T> { value: T }",
+		},
+		{
+			"ambient interface with extends",
+			"declare interface Employee extends Person { employeeId: number }",
+		},
 	}
 
 	for _, tt := range tests {
@@ -206,6 +222,11 @@ func TestEnumDeclarations(t *testing.T) {
 		{"string enum", `enum Direction { Up = "UP", Down = "DOWN" }`},
 		{"const enum", "const enum Size { Small, Medium, Large }"},
 		{"const enum with values", "const enum HttpStatus { OK = 200, NotFound = 404 }"},
+		{"ambient enum", "declare enum Color { Red, Green, Blue }"},
+		{"ambient enum with values", "declare enum Status { Active = 1, Inactive = 0 }"},
+		{"ambient string enum", `declare enum Direction { Up = "UP", Down = "DOWN" }`},
+		{"ambient const enum", "declare const enum Size { Small, Medium, Large }"},
+		{"ambient const enum with values", "declare const enum HttpStatus { OK = 200, NotFound = 404 }"},
 	}
 
 	for _, tt := range tests {
