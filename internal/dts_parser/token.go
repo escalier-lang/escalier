@@ -112,6 +112,8 @@ const (
 	Function
 	Protected
 	Public
+	From
+	As
 )
 
 type Token struct {

@@ -89,7 +89,7 @@ To avoid response length limits and make the implementation more manageable, the
 - **Export declarations**: `export { ... }`, `export * from "module"`, etc.
 - **Export assignments**: `export = Name`, `export as namespace Name`
 
-### Phase 8: Class Members (classe.go)
+### Phase 8: Class Members (class.go)
 - **Constructor declarations**: With parameter properties
 - **Method declarations**: With modifiers (public, private, protected, static, abstract, async)
 - **Property declarations**: With modifiers (readonly, optional, static)

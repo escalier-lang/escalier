@@ -1079,21 +1079,3 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 		span:       span,
 	}
 }
-
-// ============================================================================
-// Import/Export Declarations (Stub)
-// ============================================================================
-
-// parseImportDeclaration parses import statements (to be implemented in Phase 7)
-func (p *DtsParser) parseImportDeclaration() Statement {
-	// TODO: Implement in Phase 7
-	p.reportError(p.peek().Span, "Import declarations not yet implemented")
-	return nil
-}
-
-// parseExportDeclaration parses export statements (to be implemented in Phase 7)
-func (p *DtsParser) parseExportDeclaration() Statement {
-	// TODO: Implement in Phase 7
-	p.reportError(p.peek().Span, "Export declarations not yet implemented")
-	return nil
-}
