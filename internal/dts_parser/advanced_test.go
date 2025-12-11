@@ -101,6 +101,13 @@ func TestInferTypes(t *testing.T) {
 		{"multiple infer", "T extends (a: infer A, b: infer B) => infer R ? [A, B, R] : never"},
 		{"infer in object", "T extends { a: infer A } ? A : never"},
 		{"nested infer", "T extends Promise<infer U> ? (U extends Array<infer V> ? V : U) : T"},
+		{"infer with string constraint", "T extends Array<infer U extends string> ? U : never"},
+		{"infer with number constraint", "T extends (arg: infer A extends number) => infer R ? R : any"},
+		{"infer with object constraint", "T extends Array<infer U extends { name: string }> ? U : never"},
+		{"infer with union constraint", "T extends Promise<infer U extends string | number> ? U : T"},
+		{"infer with array constraint", "T extends (arg: infer A extends any[]) => infer R ? R : any"},
+		{"multiple infer with constraints", "T extends (a: infer A extends string, b: infer B extends number) => infer R ? [A, B, R] : never"},
+		{"nested infer with constraints", "T extends Promise<infer U extends Array<infer V extends string>> ? V : T"},
 	}
 
 	for _, tt := range tests {

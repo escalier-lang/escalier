@@ -44,28 +44,11 @@ func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 	start := checkType.Span()
 	p.consume() // consume 'extends'
 
-	// Parse the extends type - this should be a union/intersection type, not a full conditional
-	// We need to parse up to but not including the '?' operator
-	extendsType := p.parseIntersectionType()
+	// Parse the extends type
+	extendsType := p.parseTypeAnn()
 	if extendsType == nil {
 		p.reportError(p.peek().Span, "Expected type after 'extends'")
 		return checkType
-	}
-
-	// Check for union after intersection
-	if p.peek().Type == Pipe {
-		types := []TypeAnn{extendsType}
-		for p.peek().Type == Pipe {
-			p.consume() // consume '|'
-			right := p.parseIntersectionType()
-			if right == nil {
-				p.reportError(p.peek().Span, "Expected type after '|'")
-				break
-			}
-			types = append(types, right)
-		}
-		span := ast.MergeSpans(types[0].Span(), types[len(types)-1].Span())
-		extendsType = &UnionType{Types: types, span: span}
 	}
 
 	question := p.expect(Question)
@@ -105,7 +88,7 @@ func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 	}
 }
 
-// parseInferType parses infer T
+// parseInferType parses infer T or infer T extends U
 func (p *DtsParser) parseInferType() TypeAnn {
 	start := p.expect(Infer)
 	if start == nil {
@@ -118,15 +101,29 @@ func (p *DtsParser) parseInferType() TypeAnn {
 		return nil
 	}
 
+	// Check for optional 'extends' constraint
+	var constraint TypeAnn
+	endSpan := name.Span()
+	if p.peek().Type == Extends {
+		p.consume() // consume 'extends'
+		constraint = p.parseTypeAnn()
+		if constraint == nil {
+			p.reportError(p.peek().Span, "Expected type after 'extends'")
+		} else {
+			endSpan = constraint.Span()
+		}
+	}
+
 	span := ast.Span{
 		Start:    start.Span.Start,
-		End:      name.Span().End,
+		End:      endSpan.End,
 		SourceID: start.Span.SourceID,
 	}
 
 	typeParam := &TypeParam{
-		Name: name,
-		span: span,
+		Name:       name,
+		Constraint: constraint,
+		span:       span,
 	}
 
 	return &InferType{

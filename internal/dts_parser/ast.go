@@ -600,7 +600,6 @@ func (i *InferType) Span() ast.Span { return i.span }
 // MappedType represents { [K in T]: U }
 type MappedType struct {
 	TypeParam *TypeParam
-	NameType  TypeAnn // optional, for key remapping
 	ValueType TypeAnn
 	Optional  OptionalModifier
 	Readonly  ReadonlyModifier
