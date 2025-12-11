@@ -8,8 +8,25 @@ import (
 // Phase 2: Simple Compound Types
 // ============================================================================
 
-// parseTypeAnn parses a complete type annotation with unions and intersections
+// parseTypeAnn parses a complete type annotation with unions, intersections, and conditionals
+// Precedence (lowest to highest): conditional > union > intersection > postfix
 func (p *DtsParser) parseTypeAnn() TypeAnn {
+	// Parse union/intersection types first (higher precedence than conditional)
+	left := p.parseUnionType()
+	if left == nil {
+		return nil
+	}
+
+	// Check for conditional type (lowest precedence)
+	if p.peek().Type == Extends {
+		return p.parseConditionalType(left)
+	}
+
+	return left
+}
+
+// parseUnionType parses union types (T | U | ...)
+func (p *DtsParser) parseUnionType() TypeAnn {
 	// Start with intersection types (higher precedence than union)
 	left := p.parseIntersectionType()
 	if left == nil {
@@ -96,11 +113,6 @@ func (p *DtsParser) parsePostfixType() TypeAnn {
 				p.restoreState(savedState)
 				left = p.parseIndexedAccessType(left)
 			}
-		} else if token.Type == Extends {
-			// Conditional type: T extends U ? X : Y
-			// Only parse as conditional if we're in a context where it makes sense
-			// (not inside parentheses or other constructs that would be ambiguous)
-			left = p.parseConditionalType(left)
 		} else {
 			break
 		}

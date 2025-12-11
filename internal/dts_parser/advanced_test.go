@@ -66,6 +66,8 @@ func TestConditionalTypes(t *testing.T) {
 		{"conditional with infer", "T extends Array<infer U> ? U : T"},
 		{"multiple infer", "T extends (arg: infer A) => infer R ? R : never"},
 		{"complex nested", "T extends { a: infer U, b: infer V } ? [U, V] : never"},
+		{"union then conditional", "T | U extends V ? X : Y"},        // Should parse as (T | U) extends V ? X : Y
+		{"intersection then conditional", "T & U extends V ? X : Y"}, // Should parse as (T & U) extends V ? X : Y
 	}
 
 	for _, tt := range tests {
@@ -219,9 +221,11 @@ func TestKeyOfTypes(t *testing.T) {
 	}{
 		{"keyof identifier", "keyof T"},
 		{"keyof object", "keyof { a: string, b: number }"},
-		{"keyof array", "keyof string[]"},
+		{"keyof array", "keyof string[]"},     // Should parse as keyof(string[]), not (keyof string)[]
+		{"keyof nested array", "keyof T[][]"}, // Should parse as keyof(T[][])
 		{"keyof union", "keyof (T | U)"},
-		{"keyof with indexed access", "keyof T[K]"},
+		{"keyof with indexed access", "keyof T[K]"},  // Should parse as keyof(T[K])
+		{"keyof indexed then array", "keyof T[K][]"}, // Should parse as keyof((T[K])[])
 		{"nested keyof", "keyof keyof T"},
 		{"keyof in union", "string | keyof T"},
 		{"keyof qualified name", "keyof Foo.Bar"},

@@ -40,12 +40,15 @@ func (p *DtsParser) parseIndexedAccessType(objectType TypeAnn) TypeAnn {
 
 // parseConditionalType parses T extends U ? X : Y
 // This is called when we've already parsed T and see 'extends'
+// Note: checkType comes from parseUnionType (already parsed with union/intersection)
+// extendsType should also allow unions/intersections but NOT conditionals
 func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 	start := checkType.Span()
 	p.consume() // consume 'extends'
 
-	// Parse the extends type
-	extendsType := p.parseTypeAnn()
+	// Parse the extends type - use parseUnionType to allow unions/intersections
+	// but prevent recursive conditionals
+	extendsType := p.parseUnionType()
 	if extendsType == nil {
 		p.reportError(p.peek().Span, "Expected type after 'extends'")
 		return checkType
@@ -56,6 +59,7 @@ func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 		return checkType
 	}
 
+	// True and false branches can contain full conditional types
 	trueType := p.parseTypeAnn()
 	if trueType == nil {
 		p.reportError(p.peek().Span, "Expected type after '?'")
@@ -294,6 +298,7 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 	parts := []TemplatePart{}
 	currentOffset := startOffset
 	stringStart := currentOffset
+	stringStartLocation := p.lexer.currentLocation // Track location at string start
 	currentLocation := p.lexer.currentLocation
 
 	// Scan until we find the closing backtick
@@ -305,7 +310,7 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 			if stringStart < currentOffset {
 				stringValue := contents[stringStart:currentOffset]
 				strSpan := ast.Span{
-					Start:    ast.Location{Line: currentLocation.Line, Column: currentLocation.Column - (currentOffset - stringStart)},
+					Start:    stringStartLocation,
 					End:      currentLocation,
 					SourceID: source.ID,
 				}
@@ -336,7 +341,7 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 			if stringStart < currentOffset {
 				stringValue := contents[stringStart:currentOffset]
 				strSpan := ast.Span{
-					Start:    ast.Location{Line: currentLocation.Line, Column: currentLocation.Column - (currentOffset - stringStart)},
+					Start:    stringStartLocation,
 					End:      currentLocation,
 					SourceID: source.ID,
 				}
@@ -385,6 +390,7 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 
 			// Start a new string part after the placeholder
 			stringStart = currentOffset
+			stringStartLocation = currentLocation // Update string start location
 		} else {
 			// Regular character
 			currentOffset++
@@ -403,13 +409,15 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 }
 
 // parseKeyOfType parses keyof T
+// Uses parsePostfixType to properly handle array types and indexed access
+// e.g., "keyof T[]" should parse as keyof(T[]), not (keyof T)[]
 func (p *DtsParser) parseKeyOfType() TypeAnn {
 	start := p.expect(Keyof)
 	if start == nil {
 		return nil
 	}
 
-	typeAnn := p.parsePrimaryType()
+	typeAnn := p.parsePostfixType()
 	if typeAnn == nil {
 		p.reportError(p.peek().Span, "Expected type after 'keyof'")
 		return nil
