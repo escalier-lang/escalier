@@ -100,17 +100,6 @@ func (p *DtsParser) restoreState(saved *DtsParser) {
 }
 
 // ============================================================================
-// Statement Parsing (Stub for Phase 1)
-// ============================================================================
-
-// parseStatement parses a top-level statement (to be implemented in later phases)
-func (p *DtsParser) parseStatement() Statement {
-	// For Phase 1, we only need basic structure
-	// Full implementation will come in Phase 6-8
-	return nil
-}
-
-// ============================================================================
 // Identifier Parsing
 // ============================================================================
 

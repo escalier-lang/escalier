@@ -96,12 +96,22 @@ const (
 	Unknown
 	Val
 	Var
-	Class // <-- add this for 'class' keyword
+	Class
 	Yield
-	Private // <-- add this for 'private' keyword
+	Private
 	Symbol
 	Unique
 	Readonly
+	Const
+	Let
+	Interface
+	Abstract
+	Implements
+	Namespace
+	ModuleKeyword
+	Function
+	Protected
+	Public
 )
 
 type Token struct {
