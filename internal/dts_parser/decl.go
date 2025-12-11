@@ -665,9 +665,6 @@ func (p *DtsParser) parseClassModifiers() Modifiers {
 		case Abstract:
 			mods.Abstract = true
 			p.consume()
-		case Async:
-			mods.Async = true
-			p.consume()
 		default:
 			return mods
 		}
