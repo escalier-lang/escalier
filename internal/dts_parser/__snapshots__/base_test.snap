@@ -2958,7 +2958,7 @@ map[string]interface {}{
 
 [TestModuleWithUnexpectedTokens/random_characters - 1]
 map[string]interface {}{
-    "errors": int(6),
+    "errors": int(12),
     "module": &dts_parser.Module{
         Statements: {
         },
@@ -2968,7 +2968,7 @@ map[string]interface {}{
 
 [TestModuleWithUnexpectedTokens/partial_type - 1]
 map[string]interface {}{
-    "errors": int(2),
+    "errors": int(4),
     "module": &dts_parser.Module{
         Statements: {
         },
@@ -2978,7 +2978,7 @@ map[string]interface {}{
 
 [TestModuleWithUnexpectedTokens/mismatched_brackets - 1]
 map[string]interface {}{
-    "errors": int(6),
+    "errors": int(12),
     "module": &dts_parser.Module{
         Statements: {
         },
@@ -2988,7 +2988,7 @@ map[string]interface {}{
 
 [TestModuleWithUnexpectedTokens/number_at_start - 1]
 map[string]interface {}{
-    "errors": int(1),
+    "errors": int(2),
     "module": &dts_parser.Module{
         Statements: {
         },

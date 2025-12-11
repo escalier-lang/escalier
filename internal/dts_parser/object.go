@@ -559,34 +559,3 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 
 	return &ComputedKey{Expr: expr, span: span}
 }
-
-// skipToNextMember skips tokens until we reach a potential member start or closing brace
-func (p *DtsParser) skipToNextMember() {
-	for {
-		token := p.peek()
-
-		// Stop at closing brace or EOF
-		if token.Type == CloseBrace || token.Type == EndOfFile {
-			break
-		}
-
-		// Stop at comma (member separator)
-		if token.Type == Comma {
-			p.consume()
-			break
-		}
-
-		// Stop at potential member starts
-		if token.Type == Identifier ||
-			token.Type == Readonly ||
-			token.Type == OpenParen ||
-			token.Type == New ||
-			token.Type == OpenBracket ||
-			token.Type == Get ||
-			token.Type == Set {
-			break
-		}
-
-		p.consume()
-	}
-}
