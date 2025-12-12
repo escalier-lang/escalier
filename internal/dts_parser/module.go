@@ -378,18 +378,23 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			return nil
 		}
 
-		endSpan := namedExports[len(namedExports)-1].Span()
+		var endSpan ast.Span
+		if len(namedExports) > 0 {
+			endSpan = namedExports[len(namedExports)-1].Span()
+		} else {
+			endSpan = startToken.Span
+		}
 
 		// Check for 'from "module"' (re-export)
 		if p.peek().Type == From {
 			p.consume() // consume 'from'
 
-			fromToken := p.expect(StrLit)
-			if fromToken == nil {
+			moduleSpecifier := p.expect(StrLit)
+			if moduleSpecifier == nil {
 				return nil
 			}
-			from = fromToken.Value
-			endSpan = fromToken.Span
+			from = moduleSpecifier.Value
+			endSpan = moduleSpecifier.Span
 		}
 
 		span := ast.Span{
