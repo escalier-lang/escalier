@@ -85,6 +85,8 @@ var keywords = map[string]TokenType{
 	"implements": Implements,
 	"namespace":  Namespace,
 	"module":     ModuleKeyword,
+	"from":       From,
+	"as":         As,
 }
 
 func (lexer *Lexer) next() *Token {

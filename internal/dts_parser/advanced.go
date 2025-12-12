@@ -195,7 +195,7 @@ func (p *DtsParser) parseMappedType() TypeAnn {
 
 	// Check for 'as' clause for key remapping
 	var asClause TypeAnn
-	if p.peek().Type == Identifier && p.peek().Value == "as" {
+	if p.peek().Type == As {
 		p.consume() // consume 'as'
 		asClause = p.parseTypeAnn()
 		if asClause == nil {
