@@ -213,7 +213,7 @@ func (p *DtsParser) parseFunctionDeclaration() Statement {
 	var returnType TypeAnn
 	if p.peek().Type == Colon {
 		p.consume() // consume ':'
-		returnType = p.parseTypeAnn()
+		returnType = p.parseReturnType()
 		if returnType == nil {
 			p.reportError(p.peek().Span, "Expected return type after ':'")
 		}

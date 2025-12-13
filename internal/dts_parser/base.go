@@ -268,7 +268,55 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 	case DotDotDot:
 		return p.parseRestType()
 
+	// Readonly array type: readonly T[]
+	case Readonly:
+		return p.parseReadonlyArrayType()
+
 	default:
 		return nil
+	}
+}
+
+// parseReadonlyArrayType parses readonly array types: readonly T[]
+// The readonly modifier creates a readonly array with element type T
+// Examples:
+// - readonly string[] -> ArrayType{ElementType: PrimitiveType(string), Readonly: true}
+// - readonly string[][] -> ArrayType{ElementType: PrimitiveType(string), Readonly: true}[] (parsed as postfix on the readonly array)
+func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
+	start := p.expect(Readonly)
+	if start == nil {
+		return nil
+	}
+
+	// Parse just the primary type (no postfix operators yet)
+	elementType := p.parsePrimaryType()
+	if elementType == nil {
+		p.reportError(p.peek().Span, "Expected type after 'readonly'")
+		return nil
+	}
+
+	// Expect at least one array bracket []
+	if p.peek().Type != OpenBracket {
+		p.reportError(p.peek().Span, "Expected '[]' after 'readonly T' to form readonly array type")
+		return nil
+	}
+
+	p.consume() // consume '['
+	if p.peek().Type != CloseBracket {
+		p.reportError(p.peek().Span, "Expected ']' for readonly array type")
+		return nil
+	}
+	closeBracket := p.consume() // consume ']'
+
+	span := ast.Span{
+		Start:    start.Span.Start,
+		End:      closeBracket.Span.End,
+		SourceID: start.Span.SourceID,
+	}
+
+	return &ArrayType{
+		ElementType: elementType,
+		Readonly:    true,
+		span:        span,
 	}
 }

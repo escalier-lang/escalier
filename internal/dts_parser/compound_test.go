@@ -25,6 +25,9 @@ func TestArrayTypes(t *testing.T) {
 		{"array of intersection", "(Foo & Bar)[]"},
 		{"array with type args", "Array<string>[]"},
 		{"qualified name array", "Foo.Bar[]"},
+		{"readonly string array", "readonly string[]"},
+		{"readonly number array", "readonly number[]"},
+		{"readonly nested array", "readonly string[][]"},
 	}
 
 	for _, tt := range tests {

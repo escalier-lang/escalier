@@ -249,7 +249,8 @@
                                         SourceID: 0,
                                     },
                                 },
-                                span: ast.Span{
+                                Readonly: false,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:1, Column:47},
                                     End:      ast.Location{Line:1, Column:52},
                                     SourceID: 0,
@@ -1426,7 +1427,8 @@
                                         SourceID: 0,
                                     },
                                 },
-                                span: ast.Span{
+                                Readonly: false,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:1, Column:34},
                                     End:      ast.Location{Line:1, Column:42},
                                     SourceID: 0,
@@ -4990,7 +4992,8 @@
                                 SourceID: 0,
                             },
                         },
-                        span: ast.Span{
+                        Readonly: false,
+                        span:     ast.Span{
                             Start:    ast.Location{Line:4, Column:33},
                             End:      ast.Location{Line:4, Column:36},
                             SourceID: 0,
@@ -5119,7 +5122,8 @@
                                 SourceID: 0,
                             },
                         },
-                        span: ast.Span{
+                        Readonly: false,
+                        span:     ast.Span{
                             Start:    ast.Location{Line:5, Column:46},
                             End:      ast.Location{Line:5, Column:49},
                             SourceID: 0,

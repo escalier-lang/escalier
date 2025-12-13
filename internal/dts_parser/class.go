@@ -127,11 +127,13 @@ func (p *DtsParser) parsePropertyOrMethodDeclaration(mods Modifiers) ClassMember
 
 // parsePropertyName parses a property name (identifier, string, number, or computed)
 func (p *DtsParser) parsePropertyName() PropertyKey {
-	token := p.peek()
-
+	// Check for identifier first (including keywords used as identifiers)
+	// peekIdent() treats all keywords as valid identifiers in this context
 	if p.lexer.peekIdent() != nil {
 		return p.parseIdent()
 	}
+
+	token := p.peek()
 
 	if token.Type == StrLit {
 		p.consume()
@@ -244,7 +246,7 @@ func (p *DtsParser) parseMethodDeclarationWithName(name PropertyKey, mods Modifi
 	var returnType TypeAnn
 	if p.peek().Type == Colon {
 		p.consume() // consume ':'
-		returnType = p.parseTypeAnn()
+		returnType = p.parseReturnType()
 	}
 
 	endSpan := startSpan

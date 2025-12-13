@@ -79,6 +79,10 @@ func (p *DtsParser) parseInterfaceMember() InterfaceMember {
 
 	// Check for special signatures
 	switch token.Type {
+	case LessThan:
+		// Call signature with type parameters: <T>(params): Type
+		return p.parseCallSignature()
+
 	case OpenParen:
 		// Call signature: (params): Type
 		return p.parseCallSignature()
@@ -152,7 +156,7 @@ func (p *DtsParser) parseCallSignature() InterfaceMember {
 	var returnType TypeAnn
 	if p.peek().Type == Colon {
 		p.consume() // consume ':'
-		returnType = p.parseTypeAnn()
+		returnType = p.parseReturnType()
 		if returnType == nil {
 			p.reportError(p.peek().Span, "Expected return type after ':'")
 		}
@@ -483,7 +487,7 @@ func (p *DtsParser) parseMethodSignatureAfterName(name PropertyKey, optional boo
 	var returnType TypeAnn
 	if p.peek().Type == Colon {
 		p.consume() // consume ':'
-		returnType = p.parseTypeAnn()
+		returnType = p.parseReturnType()
 		if returnType == nil {
 			p.reportError(p.peek().Span, "Expected return type after ':'")
 		}
@@ -528,6 +532,19 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 	case Set:
 		p.consume()
 		return NewIdent("set", token.Span)
+
+	// Allow other keywords to be used as property names
+	// This is common in TypeScript where methods can be named after reserved words
+	// e.g., Promise.catch(), Array.from(), etc.
+	case Catch, Try, Throw, Throws, Return, If, Else, Do, For,
+		New, Function, Var, Let, Const, Class, Extends,
+		Implements, Interface, Private, Protected, Public, Static, Yield, Await, Async,
+		Enum, Export, Import, As, From, Null, True, False,
+		Typeof, In, Namespace, ModuleKeyword, Declare, Type, Readonly,
+		Never, Unknown, Any, Undefined, Symbol, Unique, Abstract, Is, Asserts, Infer, Keyof,
+		Fn, Gen, Mut, Val:
+		p.consume()
+		return NewIdent(token.Value, token.Span)
 
 	case StrLit:
 		p.consume()

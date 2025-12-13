@@ -491,9 +491,10 @@ type TypeReference struct {
 
 func (t *TypeReference) Span() ast.Span { return t.span }
 
-// ArrayType represents T[]
+// ArrayType represents T[] or readonly T[]
 type ArrayType struct {
 	ElementType TypeAnn
+	Readonly    bool
 	span        ast.Span
 }
 

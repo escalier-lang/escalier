@@ -155,8 +155,8 @@ func TestCallAndConstructSignatures(t *testing.T) {
 		{"simple call sig", "{ (x: number): string }"},
 		{"call sig no params", "{ (): void }"},
 		{"call sig multiple params", "{ (x: number, y: string): boolean }"},
-		// TODO: call sig with type params requires checking for '<' before '('
-		// {"call sig with type params", "{ <T>(x: T): T }"},
+		{"call sig with type params", "{ <T>(x: T): T }"},
+		{"call sig with type params and optional", "{ <T>(value?: T): boolean }"},
 		{"multiple call sigs", "{ (x: number): string, (x: string): number }"},
 		{"construct sig", "{ new (x: string): Object }"},
 		{"construct sig with type params", "{ new <T>(x: T): Container<T> }"},
@@ -324,6 +324,43 @@ func TestComputedKeys(t *testing.T) {
 		{"multiple computed keys", "{ [K]: string, [P]: number }"},
 		{"computed with regular keys", "{ name: string, [K]: any, age: number }"},
 		{"nested computed", "{ outer: { [K]: string } }"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+// TestCatchAsMethodName tests that 'catch' keyword can be used as a method name
+// This is needed for Promise<T>.catch() method from lib.es5.d.ts line 1557
+func TestCatchAsMethodName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"catch as method", "{ catch(): void }"},
+		{"catch with params", "{ catch(error: any): void }"},
+		{"catch with type params", "{ catch<T>(error: T): void }"},
+		{"catch optional", "{ catch?(): void }"},
+		{"Promise catch signature", "{ catch<TResult = never>(onrejected?: ((reason: any) => TResult) | undefined | null): Promise<TResult> }"},
 	}
 
 	for _, tt := range tests {
