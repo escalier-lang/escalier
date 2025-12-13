@@ -281,7 +281,7 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 // The readonly modifier creates a readonly array with element type T
 // Examples:
 // - readonly string[] -> ArrayType{ElementType: PrimitiveType(string), Readonly: true}
-// - readonly string[][] -> ArrayType{ElementType: PrimitiveType(string), Readonly: true}[] (parsed as postfix on the readonly array)
+// - readonly string[][] -> outer non-readonly ArrayType containing inner readonly ArrayType{ElementType: PrimitiveType(string), Readonly: true}
 func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
 	start := p.expect(Readonly)
 	if start == nil {
