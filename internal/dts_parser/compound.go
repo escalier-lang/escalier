@@ -11,6 +11,9 @@ import (
 // parseTypeAnn parses a complete type annotation with unions, intersections, and conditionals
 // Precedence (lowest to highest): conditional > union > intersection > postfix
 func (p *DtsParser) parseTypeAnn() TypeAnn {
+	// Skip any leading comments
+	p.skipComments()
+
 	// Parse union/intersection types first (higher precedence than conditional)
 	left := p.parseUnionType()
 	if left == nil {

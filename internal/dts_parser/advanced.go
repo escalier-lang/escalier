@@ -59,6 +59,9 @@ func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 		return checkType
 	}
 
+	// Skip any comments after '?'
+	p.skipComments()
+
 	// True and false branches can contain full conditional types
 	trueType := p.parseTypeAnn()
 	if trueType == nil {
@@ -70,6 +73,9 @@ func (p *DtsParser) parseConditionalType(checkType TypeAnn) TypeAnn {
 	if colon == nil {
 		return checkType
 	}
+
+	// Skip any comments after ':'
+	p.skipComments()
 
 	falseType := p.parseTypeAnn()
 	if falseType == nil {
@@ -142,6 +148,9 @@ func (p *DtsParser) parseMappedType() TypeAnn {
 	if start == nil {
 		return nil
 	}
+
+	// Skip comments after opening brace
+	p.skipComments()
 
 	// Parse optional readonly modifier
 	readonlyMod := ReadonlyNone
@@ -246,7 +255,10 @@ func (p *DtsParser) parseMappedType() TypeAnn {
 		return nil
 	}
 
-	// No need to check for semicolon - TypeScript doesn't require it in mapped types
+	// Consume optional semicolon or comma separator
+	if p.peek().Type == Semicolon || p.peek().Type == Comma {
+		p.consume()
+	}
 
 	end := p.expect(CloseBrace)
 	if end == nil {

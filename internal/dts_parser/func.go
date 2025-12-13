@@ -57,9 +57,9 @@ func (p *DtsParser) parseFunctionType() TypeAnn {
 }
 
 // parseConstructorType parses a constructor type: new <T>(params) => ReturnType
-func (p *DtsParser) parseConstructorType() TypeAnn {
-	start := p.expect(New)
-	if start == nil {
+func (p *DtsParser) parseConstructorType(abstract bool, startSpan ast.Span) TypeAnn {
+	newToken := p.expect(New)
+	if newToken == nil {
 		return nil
 	}
 
@@ -95,12 +95,13 @@ func (p *DtsParser) parseConstructorType() TypeAnn {
 
 	endSpan := returnType.Span()
 	span := ast.Span{
-		Start:    start.Span.Start,
+		Start:    startSpan.Start,
 		End:      endSpan.End,
-		SourceID: start.Span.SourceID,
+		SourceID: startSpan.SourceID,
 	}
 
 	return &ConstructorType{
+		Abstract:   abstract,
 		TypeParams: typeParams,
 		Params:     params,
 		ReturnType: returnType,
