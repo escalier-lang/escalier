@@ -81,6 +81,13 @@ func (p *DtsParser) reportError(span ast.Span, message string) {
 	p.errors = append(p.errors, NewError(span, message))
 }
 
+// skipComments skips over any comment tokens (line comments and block comments)
+func (p *DtsParser) skipComments() {
+	for p.peek().Type == LineComment || p.peek().Type == BlockComment {
+		p.consume()
+	}
+}
+
 // saveState saves the current parser state for backtracking
 func (p *DtsParser) saveState() *DtsParser {
 	// Create a deep copy of the errors slice to avoid sharing the underlying array
@@ -224,8 +231,20 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		return nil
 
 	// Constructor type: new (params) => ReturnType
+	// or Abstract constructor type: abstract new (params) => ReturnType
 	case New:
-		return p.parseConstructorType()
+		return p.parseConstructorType(false, token.Span)
+
+	case Abstract:
+		// Check if this is 'abstract new'
+		savedState := p.saveState()
+		abstractToken := p.consume() // consume 'abstract'
+		if p.peek().Type == New {
+			return p.parseConstructorType(true, abstractToken.Span)
+		}
+		// Not an abstract constructor type, restore state
+		p.restoreState(savedState)
+		return nil
 
 	// Tuple type
 	case OpenBracket:

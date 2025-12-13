@@ -95,6 +95,9 @@ func TestConstructorTypes(t *testing.T) {
 		{"with type params", "new <T>(x: T) => MyClass<T>"},
 		{"with optional param", "new (x?: number) => MyClass"},
 		{"complex", "new <T extends Base>(x: T, y?: string) => Derived<T>"},
+		{"abstract constructor", "abstract new () => Object"},
+		{"abstract with params", "abstract new (...args: any) => any"},
+		{"abstract with type params", "abstract new <T>(...args: any) => T"},
 	}
 
 	for _, tt := range tests {

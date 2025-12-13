@@ -544,8 +544,9 @@ type FunctionType struct {
 
 func (f *FunctionType) Span() ast.Span { return f.span }
 
-// ConstructorType represents new (params) => ReturnType
+// ConstructorType represents new (params) => ReturnType or abstract new (params) => ReturnType
 type ConstructorType struct {
+	Abstract   bool
 	TypeParams []*TypeParam
 	Params     []*Param
 	ReturnType TypeAnn

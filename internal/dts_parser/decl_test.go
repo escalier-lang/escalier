@@ -140,6 +140,8 @@ func TestTypeAliasDeclarations(t *testing.T) {
 		{"generic type alias", "type Box<T> = { value: T }"},
 		{"conditional type", "type NonNullable<T> = T extends null | undefined ? never : T"},
 		{"mapped type", "type Readonly<T> = { readonly [K in keyof T]: T[K] }"},
+		{"mapped type with optional", "type Partial<T> = { [P in keyof T]?: T[P] }"},
+		{"mapped type with trailing semicolon", `type Partial<T> = {[P in keyof T]?: T[P];};`},
 		{"tuple type", "type Point = [number, number]"},
 		{"function type", "type Callback = (data: string) => void"},
 		{"ambient type alias", "declare type Name = string"},
@@ -151,6 +153,7 @@ func TestTypeAliasDeclarations(t *testing.T) {
 		{"generic type alias with semicolon", "type Box<T> = { value: T };"},
 		{"ambient type alias with semicolon", "declare type Name = string;"},
 		{"ambient generic type alias with semicolon", "declare type Box<T> = { value: T };"},
+		{"ConstructorParameters type", "type ConstructorParameters<T extends abstract new (...args: any) => any> = T extends abstract new (...args: infer P) => any ? P : never"},
 	}
 
 	for _, tt := range tests {

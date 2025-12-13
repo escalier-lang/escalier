@@ -104,3 +104,71 @@ func TestCommentsInObjectTypes(t *testing.T) {
 		})
 	}
 }
+
+// Test inline comments in conditional types (regression test for Awaited type)
+func TestInlineCommentsInConditionalTypes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"inline comment after question mark",
+			"type Foo<T> = T extends string ? /* comment */ number : boolean",
+		},
+		{
+			"inline comment after colon",
+			"type Foo<T> = T extends string ? number : /* comment */ boolean",
+		},
+		{
+			"inline comments after both",
+			"type Foo<T> = T extends string ? /* true */ number : /* false */ boolean",
+		},
+		{
+			"line comment after question mark",
+			"type Foo<T> = T extends string ? // comment\n    number : boolean",
+		},
+		{
+			"line comment after colon",
+			"type Foo<T> = T extends string ? number : // comment\n    boolean",
+		},
+		{
+			"simplified Awaited type",
+			"type Awaited<T> = T extends null | undefined ? T : // special case\n    T extends object ? never : // unwrap objects\n    T // fallback",
+		},
+		{
+			"full Awaited-like type",
+			`type Awaited<T> = T extends null | undefined ? T : // special case for null | undefined
+    T extends object & { then(onfulfilled: infer F): any; } ? // await only unwraps object types
+        F extends ((value: infer V) => any) ? // if the argument to then is callable
+            Awaited<V> : // recursively unwrap the value
+        never : // the argument to then was not callable
+    T; // non-object or non-thenable`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", errors)
+			}
+
+			if module == nil {
+				t.Fatal("Expected module to be parsed")
+			}
+
+			if len(module.Statements) != 1 {
+				t.Fatalf("Expected 1 statement, got %d", len(module.Statements))
+			}
+
+			snaps.MatchSnapshot(t, module)
+		})
+	}
+}
