@@ -146,6 +146,11 @@ func TestTypeAliasDeclarations(t *testing.T) {
 		{"ambient generic type alias", "declare type Box<T> = { value: T }"},
 		{"ambient union type alias", "declare type StringOrNumber = string | number"},
 		{"ambient conditional type", "declare type NonNullable<T> = T extends null | undefined ? never : T"},
+		{"simple type alias with semicolon", "type Name = string;"},
+		{"union type alias with semicolon", "type StringOrNumber = string | number;"},
+		{"generic type alias with semicolon", "type Box<T> = { value: T };"},
+		{"ambient type alias with semicolon", "declare type Name = string;"},
+		{"ambient generic type alias with semicolon", "declare type Box<T> = { value: T };"},
 	}
 
 	for _, tt := range tests {
@@ -227,6 +232,26 @@ func TestInterfaceDeclarations(t *testing.T) {
 		{
 			"ambient interface with extends",
 			"declare interface Employee extends Person { employeeId: number }",
+		},
+		{
+			"interface with comma separators",
+			"interface Person { name: string, age: number }",
+		},
+		{
+			"interface with mixed separators",
+			"interface Config { host: string; port: number, ssl?: boolean }",
+		},
+		{
+			"interface with trailing comma",
+			"interface Point { x: number, y: number, }",
+		},
+		{
+			"interface with line comments",
+			"interface Symbol { /** Returns string */ toString(): string; /** Returns value */ valueOf(): symbol }",
+		},
+		{
+			"interface with block comments",
+			"interface Person { /* name field */ name: string; /* age field */ age: number }",
 		},
 	}
 

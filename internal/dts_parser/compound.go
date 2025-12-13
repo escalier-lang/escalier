@@ -150,8 +150,8 @@ func (p *DtsParser) parseTypeReference() TypeAnn {
 
 // parseQualifiedIdent parses a qualified identifier (e.g., Foo.Bar.Baz)
 func (p *DtsParser) parseQualifiedIdent() QualIdent {
-	token := p.peek()
-	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) {
+	token := p.lexer.peekIdent()
+	if token == nil {
 		return nil
 	}
 	p.consume()
@@ -162,9 +162,9 @@ func (p *DtsParser) parseQualifiedIdent() QualIdent {
 	for p.peek().Type == Dot {
 		p.consume() // consume '.'
 
-		token = p.peek()
-		if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) {
-			p.reportError(token.Span, "Expected identifier after '.'")
+		token = p.lexer.peekIdent()
+		if token == nil {
+			p.reportError(p.peek().Span, "Expected identifier after '.'")
 			return nil
 		}
 		p.consume()

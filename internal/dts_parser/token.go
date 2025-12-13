@@ -56,7 +56,6 @@ const (
 	LessThanEqual
 	LessThanSlash // Used for JSX
 	LineComment
-	Match
 	Minus
 	Mut
 	Never
@@ -74,9 +73,6 @@ const (
 	PlusPlus
 	Quasi
 	Question
-	QuestionDot
-	QuestionOpenBracket
-	QuestionOpenParen
 	RegexLit
 	Return
 	Semicolon

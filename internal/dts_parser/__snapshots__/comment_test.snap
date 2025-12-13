@@ -1,0 +1,595 @@
+
+[TestRealWorldSymbolInterface - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareInterface{
+            Name: &dts_parser.Ident{
+                Name: "Symbol",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:11},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            Extends:    nil,
+            Members:    {
+                &dts_parser.MethodSignature{
+                    Name: &dts_parser.Ident{
+                        Name: "toString",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:5},
+                            End:      ast.Location{Line:3, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 6,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:17},
+                            End:      ast.Location{Line:3, Column:23},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:3, Column:5},
+                        End:      ast.Location{Line:3, Column:23},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.MethodSignature{
+                    Name: &dts_parser.Ident{
+                        Name: "valueOf",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:6, Column:5},
+                            End:      ast.Location{Line:6, Column:12},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 10,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:6, Column:16},
+                            End:      ast.Location{Line:6, Column:22},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:6, Column:5},
+                        End:      ast.Location{Line:6, Column:22},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:7, Column:2},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/single_line_comment_before_property - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "prop",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:22},
+                                End:      ast.Location{Line:1, Column:26},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:28},
+                                End:      ast.Location{Line:1, Column:34},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:22},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:36},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:36},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/block_comment_before_property - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "prop",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:25},
+                                End:      ast.Location{Line:1, Column:29},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:31},
+                                End:      ast.Location{Line:1, Column:37},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:25},
+                            End:      ast.Location{Line:1, Column:37},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:39},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:39},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/multiple_comments_before_property - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "prop",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:32},
+                                End:      ast.Location{Line:1, Column:36},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:38},
+                                End:      ast.Location{Line:1, Column:44},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:44},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:46},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:46},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/comments_between_properties - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:14},
+                                End:      ast.Location{Line:1, Column:15},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:17},
+                                End:      ast.Location{Line:1, Column:23},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:14},
+                            End:      ast.Location{Line:1, Column:23},
+                            SourceID: 0,
+                        },
+                    },
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "b",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:39},
+                                End:      ast.Location{Line:1, Column:40},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 7,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:42},
+                                End:      ast.Location{Line:1, Column:48},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:39},
+                            End:      ast.Location{Line:1, Column:48},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:50},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:50},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/comment_after_separator - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:14},
+                                End:      ast.Location{Line:1, Column:15},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:17},
+                                End:      ast.Location{Line:1, Column:23},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:14},
+                            End:      ast.Location{Line:1, Column:23},
+                            SourceID: 0,
+                        },
+                    },
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "b",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:33},
+                                End:      ast.Location{Line:1, Column:34},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 7,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:36},
+                                End:      ast.Location{Line:1, Column:42},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:42},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:44},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:44},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/multi-line_JSDoc_comment - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.PropertySignature{
+                        Name: &dts_parser.Ident{
+                            Name: "prop",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:6, Column:5},
+                                End:      ast.Location{Line:6, Column:9},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:6, Column:11},
+                                End:      ast.Location{Line:6, Column:17},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:6, Column:5},
+                            End:      ast.Location{Line:6, Column:17},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:7, Column:2},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:7, Column:2},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/comments_before_method - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.MethodSignature{
+                        Name: &dts_parser.Ident{
+                            Name: "getValue",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:29},
+                                End:      ast.Location{Line:1, Column:37},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeParams: nil,
+                        Params:     {
+                        },
+                        ReturnType: &dts_parser.PrimitiveType{
+                            Kind: 7,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:41},
+                                End:      ast.Location{Line:1, Column:47},
+                                SourceID: 0,
+                            },
+                        },
+                        Optional: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:47},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:49},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:49},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestCommentsInObjectTypes/comments_before_index_signature - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareTypeAlias{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.ObjectType{
+                Members: {
+                    &dts_parser.IndexSignature{
+                        KeyName: &dts_parser.Ident{
+                            Name: "key",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:29},
+                                End:      ast.Location{Line:1, Column:32},
+                                SourceID: 0,
+                            },
+                        },
+                        KeyType: &dts_parser.PrimitiveType{
+                            Kind: 6,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:34},
+                                End:      ast.Location{Line:1, Column:40},
+                                SourceID: 0,
+                            },
+                        },
+                        ValueType: &dts_parser.PrimitiveType{
+                            Kind: 0,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:43},
+                                End:      ast.Location{Line:1, Column:46},
+                                SourceID: 0,
+                            },
+                        },
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:46},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:48},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:48},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---

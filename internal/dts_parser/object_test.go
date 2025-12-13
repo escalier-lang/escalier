@@ -22,8 +22,7 @@ func TestObjectTypes(t *testing.T) {
 		{"method with params", "{ greet(name: string): void }"},
 		// TODO: method with type params requires more sophisticated lookahead
 		// {"method with type params", "{ map<T>(fn: (x: T) => T): T[] }"},
-		// TODO: optional methods require checking for '?' before type params
-		// {"optional method", "{ getName?(): string }"},
+		{"optional method", "{ getName?(): string }"},
 		{"call signature", "{ (x: number): string }"},
 		{"construct signature", "{ new (x: string): Object }"},
 		{"multiple call signatures", "{ (x: number): string, (x: string): number }"},
@@ -40,6 +39,16 @@ func TestObjectTypes(t *testing.T) {
 		{"nested object", "{ user: { name: string, age: number } }"},
 		{"union in property", "{ value: string | number }"},
 		{"function type property", "{ callback: (x: number) => void }"},
+		{"semicolon separator", "{ name: string; age: number }"},
+		{"mixed separators", "{ name: string; age: number, email: string }"},
+		{"semicolon trailing", "{ name: string; age: number; }"},
+		{"semicolon only", "{ x: number; y: number; z: number }"},
+		{"with line comments", "{ /** comment */ name: string, age: number }"},
+		{"with block comments", "{ /* comment */ name: string; /* another */ age: number }"},
+		{"with doc comments", "{ /** Returns name */ getName(): string; /** Gets age */ getAge(): number }"},
+		{"comment before first member", "{ /** First property */ x: number, y: number }"},
+		{"comment between members", "{ x: number, /** Second property */ y: number }"},
+		{"multiple comments", "{ /** Doc */ /* inline */ name: string }"},
 	}
 
 	for _, tt := range tests {
@@ -336,6 +345,100 @@ func TestComputedKeys(t *testing.T) {
 			}
 
 			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+// TestGetSetAsPropertyNames tests that 'get' and 'set' can be used as regular property names
+// when followed by ( or <, as seen in TypeScript's PropertyDescriptor interface
+func TestGetSetAsPropertyNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"get as regular method", "{ get(): any }"},
+		{"set as regular method", "{ set(v: any): void }"},
+		{"get with type params", "{ get<T>(): T }"},
+		{"set with type params", "{ set<T>(v: T): void }"},
+		{"get and set as methods", "{ get(): any; set(v: any): void }"},
+		{"optional get method", "{ get?(): any }"},
+		{"optional set method", "{ set?(v: any): void }"},
+		{"optional get with type params", "{ get?<T>(): T }"},
+		{"optional set with type params", "{ set?<T>(v: T): void }"},
+		{"optional get and set as methods", "{ get?(): any; set?(v: any): void }"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+// TestMethodWithFromParameter tests the specific case from lib.es5.d.ts line 526
+// where a method has a parameter named "from" which is a reserved keyword in the lexer.
+// The error occurs because "from" is treated as a keyword token rather than being allowed
+// as an identifier in parameter position.
+func TestMethodWithFromParameter(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"lib.es5.d.ts line 526 - substr method",
+			`interface String {
+    substr(from: number, length?: number): string;
+}`,
+		},
+		{
+			"from as simple parameter in object type",
+			`type T = { method(from: number): void }`,
+		},
+		{
+			"from as optional parameter",
+			`type T = { method(from?: string): void }`,
+		},
+		{
+			"from with other parameters",
+			`type T = { slice(from: number, to: number): string }`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if module == nil {
+				t.Fatalf("Failed to parse interface: %s", tt.input)
+			}
+
+			if len(errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", errors)
+			}
+
+			snaps.MatchSnapshot(t, module)
 		})
 	}
 }

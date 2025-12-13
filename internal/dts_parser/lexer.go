@@ -49,7 +49,6 @@ var keywords = map[string]TokenType{
 	"if":         If,
 	"else":       Else,
 	"enum":       Enum,
-	"match":      Match,
 	"try":        Try,
 	"catch":      Catch,
 	"throw":      Throw,
@@ -90,6 +89,52 @@ var keywords = map[string]TokenType{
 	"as":         As,
 }
 
+// skipWhitespace advances past whitespace characters and returns the new offset and location.
+// It handles spaces, tabs, and newlines, updating line and column numbers appropriately.
+func (lexer *Lexer) skipWhitespace(startOffset int, start ast.Location) (int, ast.Location) {
+	contents := lexer.source.Contents
+	for startOffset < len(contents) {
+		codePoint, width := utf8.DecodeRuneInString(contents[startOffset:])
+		if codePoint != ' ' && codePoint != '\n' && codePoint != '\t' {
+			break
+		}
+		startOffset += width
+		if codePoint == '\n' {
+			start.Line++
+			start.Column = 1
+		} else {
+			start.Column++
+		}
+	}
+	return startOffset, start
+}
+
+// scanIdent scans an identifier starting at the given offset and returns the normalized value
+// and the ending offset. Returns empty string and start offset if not a valid identifier.
+func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
+	contents := lexer.source.Contents
+	codePoint, _ := utf8.DecodeRuneInString(contents[startOffset:])
+
+	// Check if it starts with a valid identifier start character
+	if !idIdentStart(codePoint) {
+		return "", startOffset
+	}
+
+	// Scan the full identifier
+	n := len(contents)
+	i := startOffset
+	for i < n {
+		codePoint, width := utf8.DecodeRuneInString(contents[i:])
+		if !isIdentContinue(codePoint) {
+			break
+		}
+		i += width
+	}
+
+	value := string(norm.NFC.Bytes([]byte(contents[startOffset:i])))
+	return value, i
+}
+
 func (lexer *Lexer) next() *Token {
 	startOffset := lexer.currentOffset
 	start := lexer.currentLocation
@@ -98,19 +143,10 @@ func (lexer *Lexer) next() *Token {
 		return NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
 	}
 
-	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
-
 	// Skip over whitespace
-	for codePoint == ' ' || codePoint == '\n' || codePoint == '\t' {
-		startOffset += width
-		if codePoint == '\n' {
-			start.Line++
-			start.Column = 1
-		} else {
-			start.Column++
-		}
-		codePoint, width = utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
-	}
+	startOffset, start = lexer.skipWhitespace(startOffset, start)
+
+	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 
 	endOffset := startOffset + width
 	end := ast.Location{Line: start.Line, Column: start.Column + 1}
@@ -243,21 +279,7 @@ func (lexer *Lexer) next() *Token {
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '?':
-		if strings.HasPrefix(lexer.source.Contents[startOffset:], "?.") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?(") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?[") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else {
-			token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		}
+		token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '!':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
 			endOffset++
@@ -331,20 +353,9 @@ func (lexer *Lexer) next() *Token {
 	default:
 		c := codePoint
 		if idIdentStart(c) {
-			contents := lexer.source.Contents
+			value, endIdent := lexer.scanIdent(startOffset)
+			endOffset = endIdent
 
-			n := len(contents)
-			i := startOffset
-			for i < n {
-				codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[i:])
-				if !isIdentContinue(codePoint) {
-					break
-				}
-				i += width
-			}
-			endOffset = i
-
-			value := string(norm.NFC.Bytes([]byte(contents[startOffset:i])))
 			end.Column = start.Column + utf8.RuneCountInString(value)
 			span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
 
@@ -454,4 +465,45 @@ func (lexer *Lexer) Next() *Token {
 // Consume advances the lexer to the next token (exported for dts_parser)
 func (lexer *Lexer) Consume() {
 	lexer.consume()
+}
+
+// peekIdent peeks at the next token and returns it as an Identifier if it's a valid
+// identifier-like token (including keywords that can be used as identifiers in certain contexts).
+// This is useful in contexts where keywords can be used as property names or parameter names.
+// Returns nil if the next token is not identifier-like.
+// Does not consume the token - caller must call Consume() if they want to advance.
+func (lexer *Lexer) peekIdent() *Token {
+	startOffset := lexer.currentOffset
+	start := lexer.currentLocation
+
+	if startOffset >= len(lexer.source.Contents) {
+		return nil
+	}
+
+	// Skip whitespace
+	startOffset, start = lexer.skipWhitespace(startOffset, start)
+
+	contents := lexer.source.Contents
+	if startOffset >= len(contents) {
+		return nil
+	}
+
+	// Scan identifier
+	value, _ := lexer.scanIdent(startOffset)
+	if value == "" {
+		return nil
+	}
+
+	end := ast.Location{
+		Line:   start.Line,
+		Column: start.Column + utf8.RuneCountInString(value),
+	}
+	span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
+
+	// Don't check keywords map - treat everything as an identifier
+	// This allows reserved words to be used as identifiers in appropriate contexts
+	if value == "_" {
+		return NewToken(Underscore, value, span)
+	}
+	return NewToken(Identifier, value, span)
 }
