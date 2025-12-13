@@ -295,7 +295,7 @@ func (p *DtsParser) parseParam() *Param {
 func (p *DtsParser) parseReturnType() TypeAnn {
 	// Try to parse as type predicate first
 	// Type predicates look like: "arg is Type" or "asserts arg" or "asserts arg is Type"
-	if p.peek().Type == Identifier || p.peek().Type == Asserts {
+	if p.peek().Type == Identifier || isTypeKeywordIdentifier(p.peek().Type) || p.peek().Type == Asserts {
 		savedState := p.saveState()
 		predicate := p.tryParseTypePredicate()
 		if predicate != nil {
@@ -320,7 +320,7 @@ func (p *DtsParser) tryParseTypePredicate() TypeAnn {
 	}
 
 	// Parse parameter name
-	if p.peek().Type != Identifier {
+	if p.peek().Type != Identifier && !isTypeKeywordIdentifier(p.peek().Type) {
 		return nil
 	}
 	paramName := p.parseIdent()

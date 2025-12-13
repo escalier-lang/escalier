@@ -166,6 +166,12 @@ func (p *DtsParser) parseVariableDeclaration() Statement {
 		span.End = typeAnn.Span().End
 	}
 
+	// Consume optional semicolon
+	if p.peek().Type == Semicolon {
+		semiToken := p.consume()
+		span.End = semiToken.Span.End
+	}
+
 	return &DeclareVariable{
 		Name:     name,
 		TypeAnn:  typeAnn,
@@ -224,6 +230,12 @@ func (p *DtsParser) parseFunctionDeclaration() Statement {
 		Start:    startToken.Span.Start,
 		End:      endSpan.End,
 		SourceID: startToken.Span.SourceID,
+	}
+
+	// Consume optional semicolon
+	if p.peek().Type == Semicolon {
+		semiToken := p.consume()
+		span.End = semiToken.Span.End
 	}
 
 	return &DeclareFunction{

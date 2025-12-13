@@ -15,6 +15,7 @@ func (*StringTypeAnn) isTypeAnn()       {}
 func (*BooleanTypeAnn) isTypeAnn()      {}
 func (*SymbolTypeAnn) isTypeAnn()       {}
 func (*UniqueSymbolTypeAnn) isTypeAnn() {}
+func (*BigintTypeAnn) isTypeAnn()       {}
 func (*AnyTypeAnn) isTypeAnn()          {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
@@ -115,6 +116,19 @@ func NewUniqueSymbolTypeAnn(span Span) *UniqueSymbolTypeAnn {
 	return &UniqueSymbolTypeAnn{span: span, inferredType: nil}
 }
 func (t *UniqueSymbolTypeAnn) Accept(v Visitor) {
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
+}
+
+type BigintTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewBigintTypeAnn(span Span) *BigintTypeAnn {
+	return &BigintTypeAnn{span: span, inferredType: nil}
+}
+func (t *BigintTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
 	v.ExitTypeAnn(t)
 }

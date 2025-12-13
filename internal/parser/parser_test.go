@@ -259,3 +259,61 @@ func TestParseEnumErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"FunctionWithStringParam": {
+			input: `fn parseFloat(string: string) -> number { return 0.0 }`,
+		},
+		"FunctionWithNumberParam": {
+			input: `fn formatValue(number: number) -> string { return "" }`,
+		},
+		"FunctionWithBooleanParam": {
+			input: `fn toggle(boolean: boolean) -> boolean { return boolean }`,
+		},
+		"FunctionWithBigintParam": {
+			input: `fn convertToBigint(bigint: string) -> bigint { return 0n }`,
+		},
+		"FunctionWithMultipleTypeKeywordParams": {
+			input: `fn convert(string: string, number: number, boolean: boolean) -> void {}`,
+		},
+		"DeclareFunction": {
+			input: `declare fn parseFloat(string: string) -> number`,
+		},
+		"DeclareWithMultipleTypeKeywordParams": {
+			input: `declare fn parseInt(string: string, radix: number) -> number`,
+		},
+		"ArrowFunctionWithTypeKeywordParam": {
+			input: `val parseFloat = fn(string: string) -> number { return 0.0 }`,
+		},
+		"OptionalTypeKeywordParam": {
+			input: `fn parse(string?: string) -> number { return 0 }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			// Verify no errors occurred
+			assert.Empty(t, errors, "Expected no parsing errors")
+
+			// Snapshot the parsed result
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+		})
+	}
+}

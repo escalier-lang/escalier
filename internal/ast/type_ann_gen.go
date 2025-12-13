@@ -26,6 +26,10 @@ func (node *UniqueSymbolTypeAnn) Span() Span             { return node.span }
 func (node *UniqueSymbolTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *UniqueSymbolTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *BigintTypeAnn) Span() Span             { return node.span }
+func (node *BigintTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *BigintTypeAnn) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *AnyTypeAnn) Span() Span             { return node.span }
 func (node *AnyTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *AnyTypeAnn) SetInferredType(t Type) { node.inferredType = t }

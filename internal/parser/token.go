@@ -102,6 +102,7 @@ const (
 	Symbol
 	Unique
 	Readonly
+	Bigint
 )
 
 type Token struct {

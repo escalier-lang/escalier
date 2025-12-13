@@ -79,6 +79,7 @@ const (
 	QuestionOpenParen
 	RegexLit
 	Return
+	Semicolon
 	Set
 	Slash
 	SlashGreaterThan
@@ -114,6 +115,7 @@ const (
 	Public
 	From
 	As
+	Bigint
 )
 
 type Token struct {

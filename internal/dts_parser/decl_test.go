@@ -44,6 +44,44 @@ func TestVariableDeclarations(t *testing.T) {
 	}
 }
 
+func TestAmbientVariableDeclarations(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"var with semicolon", "declare var foo: string;"},
+		{"let with semicolon", "declare let bar: number;"},
+		{"const with semicolon", "declare const baz: boolean;"},
+		{"var without type with semicolon", "declare var foo;"},
+		{"multiple vars with semicolons", "declare var x: string;\ndeclare var y: number;"},
+		{"var with union type and semicolon", "declare var value: string | number;"},
+		{"var with array type and semicolon", "declare var items: string[];"},
+		{"var with object type and semicolon", "declare var config: { name: string };"},
+		{"var with generic type and semicolon", "declare var map: Map<string, number>;"},
+		{"var with tuple type and semicolon", "declare var tuple: [string, number];"},
+		{"const with readonly and semicolon", "declare const VERSION: string;"},
+		{"var with complex type and semicolon", "declare var handler: (event: Event) => void;"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Logf("Errors: %v", errors)
+			}
+
+			snaps.MatchSnapshot(t, module)
+		})
+	}
+}
+
 // ============================================================================
 // Function Declarations
 // ============================================================================
@@ -63,6 +101,9 @@ func TestFunctionDeclarations(t *testing.T) {
 			"function with constraints",
 			"declare function pick<T, K extends keyof T>(obj: T, key: K): T[K]",
 		},
+		{"simple function with semicolon", "declare function foo(): void;"},
+		{"function with params and semicolon", "declare function add(a: number, b: number): number;"},
+		{"function with type params and semicolon", "declare function identity<T>(value: T): T;"},
 	}
 
 	for _, tt := range tests {
