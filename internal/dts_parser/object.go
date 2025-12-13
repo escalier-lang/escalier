@@ -229,7 +229,7 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	start := p.consume()
 
 	// Must be followed by an identifier (not an expression)
-	if p.peek().Type != Identifier {
+	if p.peek().Type != Identifier && !isTypeKeywordIdentifier(p.peek().Type) {
 		return nil
 	}
 	keyName := p.parseIdent()
@@ -294,7 +294,7 @@ func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 
 	// Must be followed by a property key (not '(' or '<')
 	token := p.peek()
-	if token.Type != Identifier && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
+	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 
@@ -350,7 +350,7 @@ func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 
 	// Must be followed by a property key (not '(' or '<')
 	token := p.peek()
-	if token.Type != Identifier && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
+	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 
@@ -495,7 +495,7 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 	token := p.peek()
 
 	switch token.Type {
-	case Identifier:
+	case Identifier, String, Number, Boolean, Bigint:
 		return p.parseIdent()
 
 	// Allow 'get' and 'set' as property names (contextual keywords)

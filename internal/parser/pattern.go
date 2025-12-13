@@ -12,7 +12,7 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Identifier:
+	case Identifier, String, Number, Boolean, Bigint:
 		// Look ahead to determine if this is an extractor or instance pattern
 		// by checking if the qualified identifier is followed by '(' or '{'
 		savedState := p.lexer.saveState()
@@ -21,7 +21,8 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		// Skip through any dots and identifiers (qualified identifier)
 		for p.lexer.peek().Type == Dot {
 			p.lexer.consume() // consume dot
-			if p.lexer.peek().Type == Identifier {
+			next := p.lexer.peek()
+			if next.Type == Identifier || isTypeKeywordIdentifier(next.Type) {
 				p.lexer.consume() // consume identifier
 			} else {
 				break
@@ -186,7 +187,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Identifier:
+	case Identifier, String, Number, Boolean, Bigint:
 		p.lexer.consume()
 		key := ast.NewIdentifier(token.Value, token.Span)
 		span := token.Span

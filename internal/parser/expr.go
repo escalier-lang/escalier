@@ -222,7 +222,7 @@ loop:
 			}
 			// nolint: exhaustive
 			switch prop.Type {
-			case Identifier, Underscore:
+			case Identifier, Underscore, String, Number, Boolean, Bigint:
 				obj := expr
 				prop := ast.NewIdentifier(prop.Value, prop.Span)
 				expr = ast.NewMember(
@@ -271,7 +271,7 @@ func (p *Parser) objExprKey() ast.ObjKey {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Identifier, Underscore:
+	case Identifier, Underscore, String, Number, Boolean, Bigint:
 		p.lexer.consume()
 		return ast.NewIdent(token.Value, token.Span)
 	case StrLit:
@@ -338,7 +338,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 		case Undefined:
 			p.lexer.consume()
 			expr = ast.NewLitExpr(ast.NewUndefined(token.Span))
-		case Identifier, Underscore:
+		case Identifier, Underscore, String, Number, Boolean, Bigint:
 			p.lexer.consume()
 			expr = ast.NewIdent(token.Value, token.Span)
 		case OpenParen:

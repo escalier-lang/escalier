@@ -2081,7 +2081,7 @@ map[string]interface {}{
                 End:      ast.Location{Line:1, Column:15},
                 SourceID: 0,
             },
-            Message: "Expected 107 but got 23",
+            Message: "Expected 108 but got 23",
         },
         &dts_parser.Error{
             Span: ast.Span{
@@ -2108,7 +2108,7 @@ map[string]interface {}{
                 End:      ast.Location{Line:1, Column:16},
                 SourceID: 0,
             },
-            Message: "Expected 107 but got 39",
+            Message: "Expected 108 but got 39",
         },
         &dts_parser.Error{
             Span: ast.Span{
@@ -2202,7 +2202,7 @@ map[string]interface {}{
                 End:      ast.Location{Line:1, Column:13},
                 SourceID: 0,
             },
-            Message: "Expected 108 but got 39",
+            Message: "Expected 109 but got 39",
         },
         &dts_parser.Error{
             Span: ast.Span{

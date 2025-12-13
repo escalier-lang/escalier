@@ -34,6 +34,11 @@ func deriveNamespaceFromPath(path string) string {
 	return namespace
 }
 
+// isTypeKeywordIdentifier checks if a token is a type keyword that can be used as an identifier
+func isTypeKeywordIdentifier(tokenType TokenType) bool {
+	return tokenType == String || tokenType == Number || tokenType == Boolean || tokenType == Bigint
+}
+
 type Parser struct {
 	ctx      context.Context
 	lexer    *Lexer

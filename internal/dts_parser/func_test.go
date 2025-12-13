@@ -190,3 +190,42 @@ func TestParenthesizedVsFunctionType(t *testing.T) {
 		})
 	}
 }
+
+func TestTypeKeywordsAsIdentifiers(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"string param", "(string: string) => number"},
+		{"number param", "(number: number) => string"},
+		{"boolean param", "(boolean: boolean) => void"},
+		{"bigint param", "(bigint: bigint) => string"},
+		{"multiple type keywords", "(string: string, number: number, boolean: boolean) => void"},
+		{"mixed with regular", "(value: string, number: number) => boolean"},
+		{"type predicate with type keyword", "(string: any) => string is string"},
+		{"asserts with type keyword", "(number: any) => asserts number"},
+		{"asserts with type and keyword", "(boolean: any) => asserts boolean is boolean"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}

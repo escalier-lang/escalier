@@ -178,6 +178,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Boolean:
 			p.lexer.consume()
 			typeAnn = ast.NewBooleanTypeAnn(token.Span)
+		case Bigint:
+			p.lexer.consume()
+			typeAnn = ast.NewBigintTypeAnn(token.Span)
 		case Symbol:
 			p.lexer.consume()
 			typeAnn = ast.NewSymbolTypeAnn(token.Span)
@@ -822,8 +825,8 @@ func (p *Parser) parseQualifiedIdent(firstToken *Token) ast.QualIdent {
 		p.lexer.consume() // consume the dot
 		nextToken := p.lexer.peek()
 
-		// If the next token is not an identifier, restore state and break
-		if nextToken.Type != Identifier {
+		// If the next token is not an identifier or type keyword, restore state and break
+		if nextToken.Type != Identifier && !isTypeKeywordIdentifier(nextToken.Type) {
 			p.lexer.restoreState(savedState)
 			break
 		}
