@@ -209,7 +209,7 @@ func TestTypeKeywordsAsIdentifiers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-source := &ast.Source{
+			source := &ast.Source{
 				Path:     "test.d.ts",
 				Contents: tt.input,
 				ID:       0,
