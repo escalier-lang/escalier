@@ -390,3 +390,55 @@ func TestGetSetAsPropertyNames(t *testing.T) {
 		})
 	}
 }
+
+// TestMethodWithFromParameter tests the specific case from lib.es5.d.ts line 526
+// where a method has a parameter named "from" which is a reserved keyword in the lexer.
+// The error occurs because "from" is treated as a keyword token rather than being allowed
+// as an identifier in parameter position.
+func TestMethodWithFromParameter(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"lib.es5.d.ts line 526 - substr method",
+			`interface String {
+    substr(from: number, length?: number): string;
+}`,
+		},
+		{
+			"from as simple parameter in object type",
+			`type T = { method(from: number): void }`,
+		},
+		{
+			"from as optional parameter",
+			`type T = { method(from?: string): void }`,
+		},
+		{
+			"from with other parameters",
+			`type T = { slice(from: number, to: number): string }`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if module == nil {
+				t.Fatalf("Failed to parse interface: %s", tt.input)
+			}
+
+			if len(errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", errors)
+			}
+
+			snaps.MatchSnapshot(t, module)
+		})
+	}
+}

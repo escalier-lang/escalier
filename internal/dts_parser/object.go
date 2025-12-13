@@ -239,7 +239,7 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	start := p.consume()
 
 	// Must be followed by an identifier (not an expression)
-	if p.lexer.LexIdent() == nil {
+	if p.lexer.peekIdent() == nil {
 		return nil
 	}
 	keyName := p.parseIdent()
@@ -309,7 +309,7 @@ func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 	}
 
 	// Must be followed by a property key (not '(' or '<')
-	identToken := p.lexer.LexIdent()
+	identToken := p.lexer.peekIdent()
 	if identToken == nil && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
@@ -371,7 +371,7 @@ func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 	}
 
 	// Must be followed by a property key (not '(' or '<')
-	identToken := p.lexer.LexIdent()
+	identToken := p.lexer.peekIdent()
 	if identToken == nil && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}

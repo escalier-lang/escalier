@@ -2005,81 +2005,103 @@
                         },
                     },
                     Params: {
-                    },
-                    ReturnType: nil,
-                    Modifiers:  dts_parser.Modifiers{},
-                    Optional:   false,
-                    span:       ast.Span{
-                        Start:    ast.Location{Line:1, Column:25},
-                        End:      ast.Location{Line:1, Column:28},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "x",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:40},
-                            End:      ast.Location{Line:1, Column:41},
-                            SourceID: 0,
+                        &dts_parser.Param{
+                            Name: &dts_parser.Ident{
+                                Name: "fn",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:35},
+                                    End:      ast.Location{Line:1, Column:37},
+                                    SourceID: 0,
+                                },
+                            },
+                            Type: &dts_parser.FunctionType{
+                                TypeParams: nil,
+                                Params:     {
+                                    &dts_parser.Param{
+                                        Name: &dts_parser.Ident{
+                                            Name: "x",
+                                            span: ast.Span{
+                                                Start:    ast.Location{Line:1, Column:40},
+                                                End:      ast.Location{Line:1, Column:41},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        Type: &dts_parser.TypeReference{
+                                            Name: &dts_parser.Ident{
+                                                Name: "T",
+                                                span: ast.Span{
+                                                    Start:    ast.Location{Line:1, Column:43},
+                                                    End:      ast.Location{Line:1, Column:44},
+                                                    SourceID: 0,
+                                                },
+                                            },
+                                            TypeArgs: nil,
+                                            span:     ast.Span{
+                                                Start:    ast.Location{Line:1, Column:43},
+                                                End:      ast.Location{Line:1, Column:44},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        Optional: false,
+                                        Rest:     false,
+                                        span:     ast.Span{
+                                            Start:    ast.Location{Line:1, Column:40},
+                                            End:      ast.Location{Line:1, Column:44},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                },
+                                ReturnType: &dts_parser.TypeReference{
+                                    Name: &dts_parser.Ident{
+                                        Name: "U",
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:1, Column:49},
+                                            End:      ast.Location{Line:1, Column:50},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    TypeArgs: nil,
+                                    span:     ast.Span{
+                                        Start:    ast.Location{Line:1, Column:49},
+                                        End:      ast.Location{Line:1, Column:50},
+                                        SourceID: 0,
+                                    },
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:39},
+                                    End:      ast.Location{Line:1, Column:50},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Rest:     false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:35},
+                                End:      ast.Location{Line:1, Column:50},
+                                SourceID: 0,
+                            },
                         },
                     },
-                    TypeAnn: &dts_parser.TypeReference{
+                    ReturnType: &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
-                            Name: "T",
+                            Name: "U",
                             span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:43},
-                                End:      ast.Location{Line:1, Column:44},
+                                Start:    ast.Location{Line:1, Column:53},
+                                End:      ast.Location{Line:1, Column:54},
                                 SourceID: 0,
                             },
                         },
                         TypeArgs: nil,
                         span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:43},
-                            End:      ast.Location{Line:1, Column:44},
-                            SourceID: 0,
-                        },
-                    },
-                    Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:40},
-                        End:      ast.Location{Line:1, Column:44},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "U",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:49},
-                            End:      ast.Location{Line:1, Column:50},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeAnn:   nil,
-                    Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:49},
-                        End:      ast.Location{Line:1, Column:50},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "U",
-                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:53},
                             End:      ast.Location{Line:1, Column:54},
                             SourceID: 0,
                         },
                     },
-                    TypeAnn:   nil,
                     Modifiers: dts_parser.Modifiers{},
                     Optional:  false,
                     span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:53},
+                        Start:    ast.Location{Line:1, Column:25},
                         End:      ast.Location{Line:1, Column:54},
                         SourceID: 0,
                     },
@@ -2415,45 +2437,6 @@
 [TestMethodDeclarations/method_with_computed_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
-            Name: &dts_parser.Ident{
-                Name: "ComputedMethod",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:15},
-                    End:      ast.Location{Line:1, Column:29},
-                    SourceID: 0,
-                },
-            },
-            TypeParams: nil,
-            Extends:    nil,
-            Implements: nil,
-            Members:    {
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "iterator",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:40},
-                            End:      ast.Location{Line:1, Column:48},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeAnn:   nil,
-                    Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:40},
-                        End:      ast.Location{Line:1, Column:48},
-                        SourceID: 0,
-                    },
-                },
-            },
-            Abstract: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:9},
-                End:      ast.Location{Line:1, Column:68},
-                SourceID: 0,
-            },
-        },
     },
 }
 ---
@@ -4913,82 +4896,111 @@
                         },
                     },
                     Params: {
-                    },
-                    ReturnType: nil,
-                    Modifiers:  dts_parser.Modifiers{},
-                    Optional:   false,
-                    span:       ast.Span{
-                        Start:    ast.Location{Line:4, Column:5},
-                        End:      ast.Location{Line:4, Column:8},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "x",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:20},
-                            End:      ast.Location{Line:4, Column:21},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeAnn: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "T",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:4, Column:23},
-                                End:      ast.Location{Line:4, Column:24},
+                        &dts_parser.Param{
+                            Name: &dts_parser.Ident{
+                                Name: "fn",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:15},
+                                    End:      ast.Location{Line:4, Column:17},
+                                    SourceID: 0,
+                                },
+                            },
+                            Type: &dts_parser.FunctionType{
+                                TypeParams: nil,
+                                Params:     {
+                                    &dts_parser.Param{
+                                        Name: &dts_parser.Ident{
+                                            Name: "x",
+                                            span: ast.Span{
+                                                Start:    ast.Location{Line:4, Column:20},
+                                                End:      ast.Location{Line:4, Column:21},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        Type: &dts_parser.TypeReference{
+                                            Name: &dts_parser.Ident{
+                                                Name: "T",
+                                                span: ast.Span{
+                                                    Start:    ast.Location{Line:4, Column:23},
+                                                    End:      ast.Location{Line:4, Column:24},
+                                                    SourceID: 0,
+                                                },
+                                            },
+                                            TypeArgs: nil,
+                                            span:     ast.Span{
+                                                Start:    ast.Location{Line:4, Column:23},
+                                                End:      ast.Location{Line:4, Column:24},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        Optional: false,
+                                        Rest:     false,
+                                        span:     ast.Span{
+                                            Start:    ast.Location{Line:4, Column:20},
+                                            End:      ast.Location{Line:4, Column:24},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                },
+                                ReturnType: &dts_parser.TypeReference{
+                                    Name: &dts_parser.Ident{
+                                        Name: "U",
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:4, Column:29},
+                                            End:      ast.Location{Line:4, Column:30},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    TypeArgs: nil,
+                                    span:     ast.Span{
+                                        Start:    ast.Location{Line:4, Column:29},
+                                        End:      ast.Location{Line:4, Column:30},
+                                        SourceID: 0,
+                                    },
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:19},
+                                    End:      ast.Location{Line:4, Column:30},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Rest:     false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:4, Column:15},
+                                End:      ast.Location{Line:4, Column:30},
                                 SourceID: 0,
                             },
                         },
-                        TypeArgs: nil,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:4, Column:23},
-                            End:      ast.Location{Line:4, Column:24},
-                            SourceID: 0,
+                    },
+                    ReturnType: &dts_parser.ArrayType{
+                        ElementType: &dts_parser.TypeReference{
+                            Name: &dts_parser.Ident{
+                                Name: "U",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:33},
+                                    End:      ast.Location{Line:4, Column:34},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: nil,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:4, Column:33},
+                                End:      ast.Location{Line:4, Column:34},
+                                SourceID: 0,
+                            },
                         },
-                    },
-                    Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:4, Column:20},
-                        End:      ast.Location{Line:4, Column:24},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "U",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:4, Column:29},
-                            End:      ast.Location{Line:4, Column:30},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeAnn:   nil,
-                    Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:4, Column:29},
-                        End:      ast.Location{Line:4, Column:30},
-                        SourceID: 0,
-                    },
-                },
-                &dts_parser.PropertyDecl{
-                    Name: &dts_parser.Ident{
-                        Name: "U",
                         span: ast.Span{
                             Start:    ast.Location{Line:4, Column:33},
-                            End:      ast.Location{Line:4, Column:34},
+                            End:      ast.Location{Line:4, Column:36},
                             SourceID: 0,
                         },
                     },
-                    TypeAnn:   nil,
                     Modifiers: dts_parser.Modifiers{},
                     Optional:  false,
                     span:      ast.Span{
-                        Start:    ast.Location{Line:4, Column:33},
-                        End:      ast.Location{Line:4, Column:34},
+                        Start:    ast.Location{Line:4, Column:5},
+                        End:      ast.Location{Line:4, Column:36},
                         SourceID: 0,
                     },
                 },

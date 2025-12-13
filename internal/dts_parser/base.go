@@ -105,7 +105,7 @@ func (p *DtsParser) restoreState(saved *DtsParser) {
 
 // parseIdent parses a simple identifier
 func (p *DtsParser) parseIdent() *Ident {
-	token := p.lexer.LexIdent()
+	token := p.lexer.peekIdent()
 	if token == nil {
 		p.reportError(p.peek().Span, "Expected identifier")
 		return nil

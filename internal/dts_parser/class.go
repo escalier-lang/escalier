@@ -129,7 +129,7 @@ func (p *DtsParser) parsePropertyOrMethodDeclaration(mods Modifiers) ClassMember
 func (p *DtsParser) parsePropertyName() PropertyKey {
 	token := p.peek()
 
-	if p.lexer.LexIdent() != nil {
+	if p.lexer.peekIdent() != nil {
 		return p.parseIdent()
 	}
 

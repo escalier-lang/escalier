@@ -295,7 +295,7 @@ func (p *DtsParser) parseParam() *Param {
 func (p *DtsParser) parseReturnType() TypeAnn {
 	// Try to parse as type predicate first
 	// Type predicates look like: "arg is Type" or "asserts arg" or "asserts arg is Type"
-	if p.lexer.LexIdent() != nil || p.peek().Type == Asserts {
+	if p.lexer.peekIdent() != nil || p.peek().Type == Asserts {
 		savedState := p.saveState()
 		predicate := p.tryParseTypePredicate()
 		if predicate != nil {
@@ -320,7 +320,7 @@ func (p *DtsParser) tryParseTypePredicate() TypeAnn {
 	}
 
 	// Parse parameter name
-	if p.lexer.LexIdent() == nil {
+	if p.lexer.peekIdent() == nil {
 		return nil
 	}
 	paramName := p.parseIdent()
