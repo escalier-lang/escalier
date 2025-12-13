@@ -288,6 +288,12 @@ func (p *DtsParser) parseTypeAliasDeclaration() Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
+	// Consume optional semicolon
+	if p.peek().Type == Semicolon {
+		semiToken := p.consume()
+		span.End = semiToken.Span.End
+	}
+
 	return &DeclareTypeAlias{
 		Name:       name,
 		TypeParams: typeParams,
@@ -347,6 +353,16 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 
 	members := []InterfaceMember{}
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		// Skip comments before member
+		for p.peek().Type == LineComment || p.peek().Type == BlockComment {
+			p.consume()
+		}
+
+		// Check again after skipping comments
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
+			break
+		}
+
 		member := p.parseInterfaceMember()
 		if member != nil {
 			members = append(members, member)
@@ -356,7 +372,7 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 		}
 
 		// Consume optional separator (semicolon or comma)
-		if p.peek().Type == Comma {
+		if p.peek().Type == Comma || p.peek().Type == Semicolon {
 			p.consume()
 		}
 	}

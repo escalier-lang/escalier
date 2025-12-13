@@ -21,6 +21,16 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 
 	// Parse members
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		// Skip comments before member
+		for p.peek().Type == LineComment || p.peek().Type == BlockComment {
+			p.consume()
+		}
+
+		// Check again after skipping comments
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
+			break
+		}
+
 		member := p.parseInterfaceMember()
 		if member != nil {
 			members = append(members, member)
@@ -29,8 +39,8 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 			p.skipToNextMember()
 		}
 
-		// Consume optional separator (comma)
-		if p.peek().Type == Comma {
+		// Consume optional separator (comma or semicolon)
+		if p.peek().Type == Comma || p.peek().Type == Semicolon {
 			p.consume()
 		}
 	}
@@ -229,7 +239,7 @@ func (p *DtsParser) tryParseIndexSignature(readonly bool) InterfaceMember {
 	start := p.consume()
 
 	// Must be followed by an identifier (not an expression)
-	if p.peek().Type != Identifier && !isTypeKeywordIdentifier(p.peek().Type) {
+	if p.lexer.LexIdent() == nil {
 		return nil
 	}
 	keyName := p.parseIdent()
@@ -292,9 +302,15 @@ func (p *DtsParser) tryParseGetterSignature() InterfaceMember {
 	}
 	start := p.consume()
 
-	// Must be followed by a property key (not '(' or '<')
+	// If followed by ?, (, or <, then 'get' is a property name, not an accessor
 	token := p.peek()
-	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
+	if token.Type == Question || token.Type == OpenParen || token.Type == LessThan {
+		return nil
+	}
+
+	// Must be followed by a property key (not '(' or '<')
+	identToken := p.lexer.LexIdent()
+	if identToken == nil && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 
@@ -348,9 +364,15 @@ func (p *DtsParser) tryParseSetterSignature() InterfaceMember {
 	}
 	start := p.consume()
 
-	// Must be followed by a property key (not '(' or '<')
+	// If followed by ?, (, or <, then 'set' is a property name, not an accessor
 	token := p.peek()
-	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
+	if token.Type == Question || token.Type == OpenParen || token.Type == LessThan {
+		return nil
+	}
+
+	// Must be followed by a property key (not '(' or '<')
+	identToken := p.lexer.LexIdent()
+	if identToken == nil && token.Type != StrLit && token.Type != NumLit && token.Type != OpenBracket {
 		return nil
 	}
 

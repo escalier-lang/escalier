@@ -103,19 +103,14 @@ func (p *DtsParser) restoreState(saved *DtsParser) {
 // Identifier Parsing
 // ============================================================================
 
-// isTypeKeywordIdentifier checks if a token is a type keyword that can be used as an identifier
-func isTypeKeywordIdentifier(tokenType TokenType) bool {
-	return tokenType == String || tokenType == Number || tokenType == Boolean || tokenType == Bigint
-}
-
 // parseIdent parses a simple identifier
 func (p *DtsParser) parseIdent() *Ident {
-	token := p.peek()
-	if token.Type != Identifier && !isTypeKeywordIdentifier(token.Type) {
-		p.reportError(token.Span, "Expected identifier")
+	token := p.lexer.LexIdent()
+	if token == nil {
+		p.reportError(p.peek().Span, "Expected identifier")
 		return nil
 	}
-	p.consume()
+	p.consume() // Consume the token
 	return NewIdent(token.Value, token.Span)
 }
 

@@ -1496,7 +1496,7 @@
                     },
                     TypeAnn:   nil,
                     Modifiers: dts_parser.Modifiers{},
-                    Optional:  false,
+                    Optional:  true,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:32},

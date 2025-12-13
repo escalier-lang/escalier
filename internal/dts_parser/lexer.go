@@ -49,7 +49,6 @@ var keywords = map[string]TokenType{
 	"if":         If,
 	"else":       Else,
 	"enum":       Enum,
-	"match":      Match,
 	"try":        Try,
 	"catch":      Catch,
 	"throw":      Throw,
@@ -243,21 +242,7 @@ func (lexer *Lexer) next() *Token {
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '?':
-		if strings.HasPrefix(lexer.source.Contents[startOffset:], "?.") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?(") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else if strings.HasPrefix(lexer.source.Contents[startOffset:], "?[") {
-			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		} else {
-			token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
-		}
+		token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '!':
 		if strings.HasPrefix(lexer.source.Contents[startOffset:], "!=") {
 			endOffset++
@@ -454,4 +439,28 @@ func (lexer *Lexer) Next() *Token {
 // Consume advances the lexer to the next token (exported for dts_parser)
 func (lexer *Lexer) Consume() {
 	lexer.consume()
+}
+
+// LexIdent peeks at the next token and returns it as an Identifier if it's either
+// an identifier or a type keyword (string, number, boolean, bigint). This is useful
+// in contexts where these keywords can be used as property names or identifiers.
+// Returns nil if the next token is not an identifier or type keyword.
+// Does not consume the token - caller must call Consume() if they want to advance.
+func (lexer *Lexer) LexIdent() *Token {
+	savedState := lexer.saveState()
+	token := lexer.next()
+	lexer.restoreState(savedState) // Always restore state since we're just peeking
+
+	// If it's a type keyword token, convert it to an identifier
+	if token.Type == String || token.Type == Number || token.Type == Boolean || token.Type == Bigint {
+		return NewToken(Identifier, token.Value, token.Span)
+	}
+
+	// If it's an identifier, return it as-is
+	if token.Type == Identifier {
+		return token
+	}
+
+	// Otherwise return nil
+	return nil
 }
