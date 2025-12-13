@@ -107,7 +107,7 @@ func (p *DtsParser) parsePostfixType() TypeAnn {
 					End:      closeBracket.Span.End,
 					SourceID: left.Span().SourceID,
 				}
-				left = &ArrayType{ElementType: left, span: span}
+				left = &ArrayType{ElementType: left, Readonly: false, span: span}
 			} else {
 				// This is indexed access T[K]
 				p.restoreState(savedState)

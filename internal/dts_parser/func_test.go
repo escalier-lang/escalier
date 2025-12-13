@@ -130,6 +130,8 @@ func TestTypePredicates(t *testing.T) {
 		{"asserts only", "(x: any) => asserts x"},
 		{"asserts with type", "(x: any) => asserts x is string"},
 		{"complex type", "(value: unknown) => value is string | number"},
+		{"this is predicate", "(x: any) => this is string"},
+		{"this is readonly array", "<S extends T>(predicate: (value: T) => value is S) => this is readonly S[]"},
 	}
 
 	for _, tt := range tests {
@@ -144,6 +146,49 @@ func TestTypePredicates(t *testing.T) {
 
 			if typeAnn == nil {
 				t.Fatalf("Failed to parse type: %s", tt.input)
+			}
+
+			if len(parser.errors) > 0 {
+				t.Fatalf("Unexpected errors: %v", parser.errors)
+			}
+
+			snaps.MatchSnapshot(t, typeAnn)
+		})
+	}
+}
+
+func TestMethodSignatureWithTypePredicate(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"lib.es5.d.ts line 1242 - every method",
+			"{ every<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): this is readonly S[] }",
+		},
+		{
+			"simple method with type predicate",
+			"{ isString(x: any): x is string }",
+		},
+		{
+			"method with this predicate",
+			"{ check(): this is NonNullable<this> }",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			// Parse as type annotation (will be an object type)
+			typeAnn := parser.ParseTypeAnn()
+
+			if typeAnn == nil {
+				t.Fatalf("Failed to parse object type: %s", tt.input)
 			}
 
 			if len(parser.errors) > 0 {

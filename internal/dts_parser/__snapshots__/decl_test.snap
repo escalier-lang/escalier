@@ -267,7 +267,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:20},
                     End:      ast.Location{Line:1, Column:28},
                     SourceID: 0,
@@ -598,7 +599,8 @@
                                 SourceID: 0,
                             },
                         },
-                        span: ast.Span{
+                        Readonly: false,
+                        span:     ast.Span{
                             Start:    ast.Location{Line:1, Column:34},
                             End:      ast.Location{Line:1, Column:42},
                             SourceID: 0,
@@ -5664,7 +5666,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:20},
                     End:      ast.Location{Line:1, Column:28},
                     SourceID: 0,

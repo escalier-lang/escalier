@@ -1361,7 +1361,8 @@
                                 SourceID: 0,
                             },
                         },
-                        span: ast.Span{
+                        Readonly: false,
+                        span:     ast.Span{
                             Start:    ast.Location{Line:1, Column:33},
                             End:      ast.Location{Line:1, Column:36},
                             SourceID: 0,
@@ -1393,7 +1394,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:39},
                     End:      ast.Location{Line:1, Column:42},
                     SourceID: 0,
@@ -3800,7 +3802,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:10},
                     End:      ast.Location{Line:1, Column:40},
                     SourceID: 0,
@@ -6880,6 +6883,629 @@
                 SourceID: 0,
             },
         },
+    },
+}
+---
+
+[TestCallAndConstructSignatures/call_sig_with_type_params - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.CallSignature{
+            TypeParams: {
+                &dts_parser.TypeParam{
+                    Name: &dts_parser.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:4},
+                            End:      ast.Location{Line:1, Column:5},
+                            SourceID: 0,
+                        },
+                    },
+                    Constraint: nil,
+                    Default:    nil,
+                    span:       ast.Span{
+                        Start:    ast.Location{Line:1, Column:4},
+                        End:      ast.Location{Line:1, Column:5},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Params: {
+                &dts_parser.Param{
+                    Name: &dts_parser.Ident{
+                        Name: "x",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:7},
+                            End:      ast.Location{Line:1, Column:8},
+                            SourceID: 0,
+                        },
+                    },
+                    Type: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:10},
+                                End:      ast.Location{Line:1, Column:11},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:11},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: false,
+                    Rest:     false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:11},
+                        SourceID: 0,
+                    },
+                },
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:14},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:15},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:17},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCallAndConstructSignatures/call_sig_with_type_params_and_optional - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.CallSignature{
+            TypeParams: {
+                &dts_parser.TypeParam{
+                    Name: &dts_parser.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:4},
+                            End:      ast.Location{Line:1, Column:5},
+                            SourceID: 0,
+                        },
+                    },
+                    Constraint: nil,
+                    Default:    nil,
+                    span:       ast.Span{
+                        Start:    ast.Location{Line:1, Column:4},
+                        End:      ast.Location{Line:1, Column:5},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Params: {
+                &dts_parser.Param{
+                    Name: &dts_parser.Ident{
+                        Name: "value",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:7},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 0,
+                        },
+                    },
+                    Type: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:15},
+                                End:      ast.Location{Line:1, Column:16},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: true,
+                    Rest:     false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:16},
+                        SourceID: 0,
+                    },
+                },
+            },
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 8,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:28},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCatchAsMethodName/catch_as_method - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.MethodSignature{
+            Name: &dts_parser.Ident{
+                Name: "catch",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            Params:     {
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:12},
+                        End:      ast.Location{Line:1, Column:16},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCatchAsMethodName/catch_with_params - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.MethodSignature{
+            Name: &dts_parser.Ident{
+                Name: "catch",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            Params:     {
+                &dts_parser.Param{
+                    Name: &dts_parser.Ident{
+                        Name: "error",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:14},
+                            SourceID: 0,
+                        },
+                    },
+                    Type: &dts_parser.PrimitiveType{
+                        Kind: 0,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:16},
+                            End:      ast.Location{Line:1, Column:19},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: false,
+                    Rest:     false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:19},
+                        SourceID: 0,
+                    },
+                },
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:22},
+                        End:      ast.Location{Line:1, Column:26},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:28},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCatchAsMethodName/catch_with_type_params - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.MethodSignature{
+            Name: &dts_parser.Ident{
+                Name: "catch",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: {
+                &dts_parser.TypeParam{
+                    Name: &dts_parser.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    Constraint: nil,
+                    Default:    nil,
+                    span:       ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:10},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Params: {
+                &dts_parser.Param{
+                    Name: &dts_parser.Ident{
+                        Name: "error",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:12},
+                            End:      ast.Location{Line:1, Column:17},
+                            SourceID: 0,
+                        },
+                    },
+                    Type: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "T",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:19},
+                                End:      ast.Location{Line:1, Column:20},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:20},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: false,
+                    Rest:     false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:12},
+                        End:      ast.Location{Line:1, Column:20},
+                        SourceID: 0,
+                    },
+                },
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:27},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
+                    End:      ast.Location{Line:1, Column:27},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:27},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:29},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCatchAsMethodName/catch_optional - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.MethodSignature{
+            Name: &dts_parser.Ident{
+                Name: "catch",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            Params:     {
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:17},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+            },
+            Optional: true,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:19},
+        SourceID: 0,
+    },
+}
+---
+
+[TestCatchAsMethodName/Promise_catch_signature - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.MethodSignature{
+            Name: &dts_parser.Ident{
+                Name: "catch",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: {
+                &dts_parser.TypeParam{
+                    Name: &dts_parser.Ident{
+                        Name: "TResult",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:9},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 0,
+                        },
+                    },
+                    Constraint: nil,
+                    Default:    &dts_parser.PrimitiveType{
+                        Kind: 5,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:24},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:9},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Params: {
+                &dts_parser.Param{
+                    Name: &dts_parser.Ident{
+                        Name: "onrejected",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:36},
+                            SourceID: 0,
+                        },
+                    },
+                    Type: &dts_parser.UnionType{
+                        Types: {
+                            &dts_parser.ParenthesizedType{
+                                Type: &dts_parser.FunctionType{
+                                    TypeParams: nil,
+                                    Params:     {
+                                        &dts_parser.Param{
+                                            Name: &dts_parser.Ident{
+                                                Name: "reason",
+                                                span: ast.Span{
+                                                    Start:    ast.Location{Line:1, Column:41},
+                                                    End:      ast.Location{Line:1, Column:47},
+                                                    SourceID: 0,
+                                                },
+                                            },
+                                            Type: &dts_parser.PrimitiveType{
+                                                Kind: 0,
+                                                span: ast.Span{
+                                                    Start:    ast.Location{Line:1, Column:49},
+                                                    End:      ast.Location{Line:1, Column:52},
+                                                    SourceID: 0,
+                                                },
+                                            },
+                                            Optional: false,
+                                            Rest:     false,
+                                            span:     ast.Span{
+                                                Start:    ast.Location{Line:1, Column:41},
+                                                End:      ast.Location{Line:1, Column:52},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                    },
+                                    ReturnType: &dts_parser.TypeReference{
+                                        Name: &dts_parser.Ident{
+                                            Name: "TResult",
+                                            span: ast.Span{
+                                                Start:    ast.Location{Line:1, Column:57},
+                                                End:      ast.Location{Line:1, Column:64},
+                                                SourceID: 0,
+                                            },
+                                        },
+                                        TypeArgs: nil,
+                                        span:     ast.Span{
+                                            Start:    ast.Location{Line:1, Column:57},
+                                            End:      ast.Location{Line:1, Column:64},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:40},
+                                        End:      ast.Location{Line:1, Column:64},
+                                        SourceID: 0,
+                                    },
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:39},
+                                    End:      ast.Location{Line:1, Column:65},
+                                    SourceID: 0,
+                                },
+                            },
+                            &dts_parser.PrimitiveType{
+                                Kind: 4,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:68},
+                                    End:      ast.Location{Line:1, Column:77},
+                                    SourceID: 0,
+                                },
+                            },
+                            &dts_parser.PrimitiveType{
+                                Kind: 3,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:80},
+                                    End:      ast.Location{Line:1, Column:84},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:39},
+                            End:      ast.Location{Line:1, Column:84},
+                            SourceID: 0,
+                        },
+                    },
+                    Optional: true,
+                    Rest:     false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:84},
+                        SourceID: 0,
+                    },
+                },
+            },
+            ReturnType: &dts_parser.TypeReference{
+                Name: &dts_parser.Ident{
+                    Name: "Promise",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:87},
+                        End:      ast.Location{Line:1, Column:94},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "TResult",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:95},
+                                End:      ast.Location{Line:1, Column:102},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:95},
+                            End:      ast.Location{Line:1, Column:102},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:87},
+                    End:      ast.Location{Line:1, Column:103},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:103},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:105},
+        SourceID: 0,
     },
 }
 ---

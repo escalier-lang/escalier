@@ -9,7 +9,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:9},
         SourceID: 0,
@@ -27,7 +28,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:9},
         SourceID: 0,
@@ -46,13 +48,15 @@
                 SourceID: 0,
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:9},
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:11},
         SourceID: 0,
@@ -72,19 +76,22 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:9},
                 SourceID: 0,
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:11},
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:13},
         SourceID: 0,
@@ -110,7 +117,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:6},
         SourceID: 0,
@@ -152,7 +160,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
@@ -210,7 +219,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:14},
         SourceID: 0,
@@ -245,7 +255,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:16},
         SourceID: 0,
@@ -281,7 +292,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:10},
         SourceID: 0,
@@ -965,7 +977,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:10},
                     SourceID: 0,
@@ -990,7 +1003,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:12},
                     End:      ast.Location{Line:1, Column:20},
                     SourceID: 0,
@@ -1060,7 +1074,8 @@
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:19},
         SourceID: 0,
@@ -1292,7 +1307,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:13},
                     End:      ast.Location{Line:1, Column:21},
                     SourceID: 0,
@@ -1329,7 +1345,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:5},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
@@ -1402,7 +1419,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:21},
                     End:      ast.Location{Line:1, Column:30},
                     SourceID: 0,
@@ -1481,7 +1499,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:13},
                     End:      ast.Location{Line:1, Column:33},
                     SourceID: 0,
@@ -1803,7 +1822,8 @@
                         SourceID: 0,
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:22},
                     End:      ast.Location{Line:1, Column:30},
                     SourceID: 0,
@@ -2165,7 +2185,8 @@ map[string]interface {}{
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:9},
                 SourceID: 0,
@@ -2180,7 +2201,8 @@ map[string]interface {}{
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:12},
                 End:      ast.Location{Line:1, Column:20},
                 SourceID: 0,
@@ -2299,7 +2321,8 @@ map[string]interface {}{
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:6},
                 SourceID: 0,
@@ -2322,7 +2345,8 @@ map[string]interface {}{
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:14},
                 SourceID: 0,
@@ -2371,7 +2395,8 @@ map[string]interface {}{
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
@@ -2547,7 +2572,8 @@ map[string]interface {}{
                                 SourceID: 0,
                             },
                         },
-                        span: ast.Span{
+                        Readonly: false,
+                        span:     ast.Span{
                             Start:    ast.Location{Line:1, Column:28},
                             End:      ast.Location{Line:1, Column:33},
                             SourceID: 0,
@@ -2620,7 +2646,8 @@ map[string]interface {}{
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:11},
         SourceID: 0,
@@ -2656,7 +2683,8 @@ map[string]interface {}{
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            Readonly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:13},
                 End:      ast.Location{Line:1, Column:21},
                 SourceID: 0,
@@ -2746,7 +2774,8 @@ map[string]interface {}{
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:9},
         SourceID: 0,
@@ -2772,7 +2801,8 @@ map[string]interface {}{
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:6},
         SourceID: 0,
@@ -2791,13 +2821,15 @@ map[string]interface {}{
                 SourceID: 0,
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:9},
             SourceID: 0,
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:11},
         SourceID: 0,
@@ -2842,6 +2874,71 @@ map[string]interface {}{
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:3},
+        SourceID: 0,
+    },
+}
+---
+
+[TestArrayTypes/readonly_string_array - 1]
+&dts_parser.ArrayType{
+    ElementType: &dts_parser.PrimitiveType{
+        Kind: 6,
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:10},
+            End:      ast.Location{Line:1, Column:16},
+            SourceID: 0,
+        },
+    },
+    Readonly: true,
+    span:     ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
+        SourceID: 0,
+    },
+}
+---
+
+[TestArrayTypes/readonly_number_array - 1]
+&dts_parser.ArrayType{
+    ElementType: &dts_parser.PrimitiveType{
+        Kind: 7,
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:10},
+            End:      ast.Location{Line:1, Column:16},
+            SourceID: 0,
+        },
+    },
+    Readonly: true,
+    span:     ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
+        SourceID: 0,
+    },
+}
+---
+
+[TestArrayTypes/readonly_nested_array - 1]
+&dts_parser.ArrayType{
+    ElementType: &dts_parser.ArrayType{
+        ElementType: &dts_parser.PrimitiveType{
+            Kind: 6,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+        Readonly: true,
+        span:     ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:18},
+            SourceID: 0,
+        },
+    },
+    Readonly: false,
+    span:     ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
     },
 }
