@@ -208,6 +208,32 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		literal := &BooleanLiteral{Value: false, span: token.Span}
 		return &LiteralType{Literal: literal, span: token.Span}
 
+	// Negative number literal: -123
+	case Minus:
+		minusToken := p.consume() // consume '-'
+		numToken := p.peek()
+		if numToken.Type != NumLit {
+			p.reportError(numToken.Span, "Expected number after '-'")
+			return nil
+		}
+		p.consume() // consume number
+
+		// Parse the numeric value and negate it
+		value, err := strconv.ParseFloat(numToken.Value, 64)
+		if err != nil {
+			p.reportError(numToken.Span, fmt.Sprintf("Invalid number literal: %s", numToken.Value))
+			value = 0
+		}
+		value = -value
+
+		span := ast.Span{
+			Start:    minusToken.Span.Start,
+			End:      numToken.Span.End,
+			SourceID: minusToken.Span.SourceID,
+		}
+		literal := &NumberLiteral{Value: value, span: span}
+		return &LiteralType{Literal: literal, span: span}
+
 	// Type reference (identifier or qualified name), or 'this' type
 	case Identifier:
 		if token.Value == "this" {

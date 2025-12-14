@@ -440,6 +440,10 @@ func TestNamespaceDeclarations(t *testing.T) {
 			"namespace with multiple var declarations",
 			"declare namespace Intl { var Collator: CollatorConstructor; var NumberFormat: NumberFormatConstructor }",
 		},
+		{
+			"namespace with comments before declarations",
+			"declare namespace CSS { /** [MDN Reference](https://example.com) */ var highlights: HighlightRegistry; /** Another comment */ function Hz(value: number): CSSUnitValue; }",
+		},
 	}
 
 	for _, tt := range tests {

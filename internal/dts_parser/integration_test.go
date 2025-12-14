@@ -15,47 +15,65 @@ func TestParseTypeScriptLibDts(t *testing.T) {
 		t.Skip("Could not find repository root:", err)
 	}
 
-	libDtsPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-
-	// Check if the file exists
-	if _, err := os.Stat(libDtsPath); os.IsNotExist(err) {
-		t.Skip("TypeScript lib.es5.d.ts not found at:", libDtsPath)
+	testCases := []struct {
+		name     string
+		filename string
+	}{
+		{
+			name:     "lib.es5.d.ts",
+			filename: "lib.es5.d.ts",
+		},
+		{
+			name:     "lib.dom.d.ts",
+			filename: "lib.dom.d.ts",
+		},
 	}
 
-	// Read the file
-	contents, err := os.ReadFile(libDtsPath)
-	if err != nil {
-		t.Fatalf("Failed to read lib.es5.d.ts: %v", err)
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			libDtsPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", tc.filename)
 
-	source := &ast.Source{
-		Path:     libDtsPath,
-		Contents: string(contents),
-		ID:       0,
-	}
+			// Check if the file exists
+			if _, err := os.Stat(libDtsPath); os.IsNotExist(err) {
+				t.Skipf("TypeScript %s not found at: %s", tc.filename, libDtsPath)
+			}
 
-	parser := NewDtsParser(source)
-	module, errors := parser.ParseModule()
+			// Read the file
+			contents, err := os.ReadFile(libDtsPath)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tc.filename, err)
+			}
 
-	// Log statistics
-	t.Logf("Parsed lib.es5.d.ts: %d bytes", len(contents))
-	t.Logf("Parse errors: %d", len(errors))
+			source := &ast.Source{
+				Path:     libDtsPath,
+				Contents: string(contents),
+				ID:       0,
+			}
 
-	if len(errors) > 0 {
-		// Log first 10 errors for debugging
-		maxErrors := 10
-		if len(errors) < maxErrors {
-			maxErrors = len(errors)
-		}
-		t.Errorf("Expected no parse errors, but got %d errors. First %d:", len(errors), maxErrors)
-		for i := 0; i < maxErrors; i++ {
-			t.Errorf("  %v", errors[i])
-		}
-		t.FailNow()
-	}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
 
-	if module != nil {
-		t.Logf("Parsed %d top-level statements", len(module.Statements))
+			// Log statistics
+			t.Logf("Parsed %s: %d bytes", tc.filename, len(contents))
+			t.Logf("Parse errors: %d", len(errors))
+
+			if len(errors) > 0 {
+				// Log first 10 errors for debugging
+				maxErrors := 10
+				if len(errors) < maxErrors {
+					maxErrors = len(errors)
+				}
+				t.Errorf("Expected no parse errors, but got %d errors. First %d:", len(errors), maxErrors)
+				for i := 0; i < maxErrors; i++ {
+					t.Errorf("  %v", errors[i])
+				}
+				t.FailNow()
+			}
+
+			if module != nil {
+				t.Logf("Parsed %d top-level statements", len(module.Statements))
+			}
+		})
 	}
 }
 

@@ -55,6 +55,10 @@ func TestLiteralTypes(t *testing.T) {
 		{"number literal", "42"},
 		{"boolean true", "true"},
 		{"boolean false", "false"},
+		{"negative number literal", "-1"},
+		{"negative decimal", "-3.14"},
+		{"hex literal", "0xFF"},
+		{"negative hex", "-0xFF"},
 	}
 
 	for _, tt := range tests {

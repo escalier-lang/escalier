@@ -710,6 +710,14 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 
 	statements := []Statement{}
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		// Skip comments before parsing statements
+		p.skipComments()
+
+		// Check again after skipping comments
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
+			break
+		}
+
 		stmt := p.parseStatement()
 		if stmt != nil {
 			statements = append(statements, stmt)
