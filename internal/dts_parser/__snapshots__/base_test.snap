@@ -3063,16 +3063,16 @@ map[string]interface {}{
 [TestLiteralTypes/hex_literal - 1]
 &dts_parser.LiteralType{
     Literal: &dts_parser.NumberLiteral{
-        Value: 0,
+        Value: 255,
         span:  ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
             SourceID: 0,
         },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:2},
+        End:      ast.Location{Line:1, Column:5},
         SourceID: 0,
     },
 }
@@ -3081,16 +3081,16 @@ map[string]interface {}{
 [TestLiteralTypes/negative_hex - 1]
 &dts_parser.LiteralType{
     Literal: &dts_parser.NumberLiteral{
-        Value: -0,
+        Value: -255,
         span:  ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:3},
+            End:      ast.Location{Line:1, Column:6},
             SourceID: 0,
         },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:3},
+        End:      ast.Location{Line:1, Column:6},
         SourceID: 0,
     },
 }

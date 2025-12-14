@@ -3,6 +3,7 @@ package dts_parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
@@ -188,9 +189,8 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 
 	case NumLit:
 		p.consume()
-		// Parse the numeric value from the string
-		// For now, we'll store it as a string and convert later if needed
-		value, err := strconv.ParseFloat(token.Value, 64)
+		// Parse the numeric value from the string (handles both decimal and hex)
+		value, err := parseNumberValue(token.Value)
 		if err != nil {
 			p.reportError(token.Span, fmt.Sprintf("Invalid number literal: %s", token.Value))
 			value = 0
@@ -218,8 +218,8 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		}
 		p.consume() // consume number
 
-		// Parse the numeric value and negate it
-		value, err := strconv.ParseFloat(numToken.Value, 64)
+		// Parse the numeric value and negate it (handles both decimal and hex)
+		value, err := parseNumberValue(numToken.Value)
 		if err != nil {
 			p.reportError(numToken.Span, fmt.Sprintf("Invalid number literal: %s", numToken.Value))
 			value = 0
@@ -368,4 +368,19 @@ func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
 		Readonly:    true,
 		span:        span,
 	}
+}
+
+// parseNumberValue parses a number literal string, handling both decimal and hexadecimal formats
+func parseNumberValue(s string) (float64, error) {
+	// Check if it's a hex literal
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		// Parse as hex integer
+		val, err := strconv.ParseInt(s[2:], 16, 64)
+		if err != nil {
+			return 0, err
+		}
+		return float64(val), nil
+	}
+	// Parse as decimal float
+	return strconv.ParseFloat(s, 64)
 }
