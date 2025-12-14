@@ -376,7 +376,7 @@ func TestClassDeclarations(t *testing.T) {
 		},
 		{
 			"abstract class",
-			"abstract class Animal { abstract makeSound(): void; move(): void }",
+			"declare abstract class Animal { abstract makeSound(): void; move(): void }",
 		},
 		{
 			"class with getters and setters",
@@ -432,6 +432,18 @@ func TestNamespaceDeclarations(t *testing.T) {
 			"ambient module",
 			`declare module "my-library" { export function doSomething(): void }`,
 		},
+		{
+			"namespace with var declarations",
+			"declare namespace Intl { var Collator: CollatorConstructor }",
+		},
+		{
+			"namespace with multiple var declarations",
+			"declare namespace Intl { var Collator: CollatorConstructor; var NumberFormat: NumberFormatConstructor }",
+		},
+		{
+			"namespace with comments before declarations",
+			"declare namespace CSS { /** [MDN Reference](https://example.com) */ var highlights: HighlightRegistry; /** Another comment */ function Hz(value: number): CSSUnitValue; }",
+		},
 	}
 
 	for _, tt := range tests {
@@ -449,6 +461,118 @@ func TestNamespaceDeclarations(t *testing.T) {
 			}
 
 			snaps.MatchSnapshot(t, module)
+		})
+	}
+}
+
+// TestAmbientNamespaceVariableDeclarations tests that variable declarations
+// without 'declare' keyword are allowed inside ambient namespace declarations.
+// This is required to properly parse TypeScript lib.es5.d.ts which contains
+// constructs like:
+//
+//	declare namespace Intl {
+//	  var Collator: CollatorConstructor;
+//	}
+func TestAmbientNamespaceVariableDeclarations(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"var in declare namespace",
+			"declare namespace Intl { var Collator: CollatorConstructor; }",
+		},
+		{
+			"let in declare namespace",
+			"declare namespace Test { let value: string; }",
+		},
+		{
+			"const in declare namespace",
+			"declare namespace Test { const PI: number; }",
+		},
+		{
+			"multiple vars in declare namespace",
+			"declare namespace Intl { var Collator: CollatorConstructor; var NumberFormat: NumberFormatConstructor; }",
+		},
+		{
+			"function in declare namespace",
+			"declare namespace Test { function foo(): void; }",
+		},
+		{
+			"class in declare namespace",
+			"declare namespace Test { class MyClass { } }",
+		},
+		{
+			"export var in declare namespace",
+			"declare namespace Test { export var x: number; }",
+		},
+		{
+			"export function in declare namespace",
+			"declare namespace Test { export function foo(): void; }",
+		},
+		{
+			"nested namespace with var",
+			"declare namespace Outer { namespace Inner { var x: number; } }",
+		},
+		{
+			"var in declare module",
+			`declare module "my-module" { var x: number; }`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Errorf("Unexpected errors: %v", errors)
+			}
+
+			snaps.MatchSnapshot(t, module)
+		})
+	}
+}
+
+// TestTopLevelVariableRequiresDeclare tests that variable declarations
+// at the top level (not inside a namespace) still require the 'declare' keyword
+func TestTopLevelVariableRequiresDeclare(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"top-level var without declare",
+			"var x: number;",
+		},
+		{
+			"top-level let without declare",
+			"let y: string;",
+		},
+		{
+			"top-level const without declare",
+			"const z: boolean;",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			_, errors := parser.ParseModule()
+
+			if len(errors) == 0 {
+				t.Error("Expected parse errors for top-level variable without 'declare', but got none")
+			}
 		})
 	}
 }

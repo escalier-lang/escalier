@@ -3879,8 +3879,8 @@
             Name: &dts_parser.Ident{
                 Name: "Animal",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:22},
+                    Start:    ast.Location{Line:1, Column:24},
+                    End:      ast.Location{Line:1, Column:30},
                     SourceID: 0,
                 },
             },
@@ -3892,8 +3892,8 @@
                     Name: &dts_parser.Ident{
                         Name: "makeSound",
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:34},
-                            End:      ast.Location{Line:1, Column:43},
+                            Start:    ast.Location{Line:1, Column:42},
+                            End:      ast.Location{Line:1, Column:51},
                             SourceID: 0,
                         },
                     },
@@ -3904,23 +3904,23 @@
                         Name: &dts_parser.Ident{
                             Name: "void",
                             span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:47},
-                                End:      ast.Location{Line:1, Column:51},
+                                Start:    ast.Location{Line:1, Column:55},
+                                End:      ast.Location{Line:1, Column:59},
                                 SourceID: 0,
                             },
                         },
                         TypeArgs: nil,
                         span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:47},
-                            End:      ast.Location{Line:1, Column:51},
+                            Start:    ast.Location{Line:1, Column:55},
+                            End:      ast.Location{Line:1, Column:59},
                             SourceID: 0,
                         },
                     },
                     Modifiers: dts_parser.Modifiers{Public:false, Private:false, Protected:false, Static:false, Readonly:false, Abstract:true, Async:false, Declare:false},
                     Optional:  false,
                     span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:34},
-                        End:      ast.Location{Line:1, Column:51},
+                        Start:    ast.Location{Line:1, Column:42},
+                        End:      ast.Location{Line:1, Column:59},
                         SourceID: 0,
                     },
                 },
@@ -3928,8 +3928,8 @@
                     Name: &dts_parser.Ident{
                         Name: "move",
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:53},
-                            End:      ast.Location{Line:1, Column:57},
+                            Start:    ast.Location{Line:1, Column:61},
+                            End:      ast.Location{Line:1, Column:65},
                             SourceID: 0,
                         },
                     },
@@ -3940,31 +3940,31 @@
                         Name: &dts_parser.Ident{
                             Name: "void",
                             span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:61},
-                                End:      ast.Location{Line:1, Column:65},
+                                Start:    ast.Location{Line:1, Column:69},
+                                End:      ast.Location{Line:1, Column:73},
                                 SourceID: 0,
                             },
                         },
                         TypeArgs: nil,
                         span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:61},
-                            End:      ast.Location{Line:1, Column:65},
+                            Start:    ast.Location{Line:1, Column:69},
+                            End:      ast.Location{Line:1, Column:73},
                             SourceID: 0,
                         },
                     },
                     Modifiers: dts_parser.Modifiers{},
                     Optional:  false,
                     span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:53},
-                        End:      ast.Location{Line:1, Column:65},
+                        Start:    ast.Location{Line:1, Column:61},
+                        End:      ast.Location{Line:1, Column:73},
                         SourceID: 0,
                     },
                 },
             },
             Abstract: true,
             span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:67},
+                Start:    ast.Location{Line:1, Column:18},
+                End:      ast.Location{Line:1, Column:75},
                 SourceID: 0,
             },
         },
@@ -4138,6 +4138,52 @@
                 },
             },
             Statements: {
+                &dts_parser.ExportDecl{
+                    Declaration: &dts_parser.DeclareFunction{
+                        Name: &dts_parser.Ident{
+                            Name: "foo",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:41},
+                                End:      ast.Location{Line:1, Column:44},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeParams: nil,
+                        Params:     {
+                        },
+                        ReturnType: &dts_parser.TypeReference{
+                            Name: &dts_parser.Ident{
+                                Name: "void",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:48},
+                                    End:      ast.Location{Line:1, Column:52},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: nil,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:48},
+                                End:      ast.Location{Line:1, Column:52},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:52},
+                            SourceID: 0,
+                        },
+                    },
+                    NamedExports:  nil,
+                    From:          "",
+                    ExportDefault: false,
+                    ExportAll:     false,
+                    TypeOnly:      false,
+                    span:          ast.Span{
+                        Start:    ast.Location{Line:1, Column:25},
+                        End:      ast.Location{Line:1, Column:52},
+                        SourceID: 0,
+                    },
+                },
             },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
@@ -4172,6 +4218,42 @@
                         },
                     },
                     Statements: {
+                        &dts_parser.ExportDecl{
+                            Declaration: &dts_parser.DeclareVariable{
+                                Name: &dts_parser.Ident{
+                                    Name: "x",
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:50},
+                                        End:      ast.Location{Line:1, Column:51},
+                                        SourceID: 0,
+                                    },
+                                },
+                                TypeAnn: &dts_parser.PrimitiveType{
+                                    Kind: 7,
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:53},
+                                        End:      ast.Location{Line:1, Column:59},
+                                        SourceID: 0,
+                                    },
+                                },
+                                Readonly: true,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:1, Column:44},
+                                    End:      ast.Location{Line:1, Column:59},
+                                    SourceID: 0,
+                                },
+                            },
+                            NamedExports:  nil,
+                            From:          "",
+                            ExportDefault: false,
+                            ExportAll:     false,
+                            TypeOnly:      false,
+                            span:          ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:19},
@@ -4276,6 +4358,52 @@
         &dts_parser.DeclareModule{
             Name:       "my-library",
             Statements: {
+                &dts_parser.ExportDecl{
+                    Declaration: &dts_parser.DeclareFunction{
+                        Name: &dts_parser.Ident{
+                            Name: "doSomething",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:47},
+                                End:      ast.Location{Line:1, Column:58},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeParams: nil,
+                        Params:     {
+                        },
+                        ReturnType: &dts_parser.TypeReference{
+                            Name: &dts_parser.Ident{
+                                Name: "void",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:62},
+                                    End:      ast.Location{Line:1, Column:66},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: nil,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:62},
+                                End:      ast.Location{Line:1, Column:66},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:38},
+                            End:      ast.Location{Line:1, Column:66},
+                            SourceID: 0,
+                        },
+                    },
+                    NamedExports:  nil,
+                    From:          "",
+                    ExportDefault: false,
+                    ExportAll:     false,
+                    TypeOnly:      false,
+                    span:          ast.Span{
+                        Start:    ast.Location{Line:1, Column:31},
+                        End:      ast.Location{Line:1, Column:66},
+                        SourceID: 0,
+                    },
+                },
             },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
@@ -4559,6 +4687,42 @@
                 },
             },
             Statements: {
+                &dts_parser.ExportDecl{
+                    Declaration: &dts_parser.DeclareVariable{
+                        Name: &dts_parser.Ident{
+                            Name: "PI",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:8, Column:32},
+                                End:      ast.Location{Line:8, Column:34},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 7,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:8, Column:36},
+                                End:      ast.Location{Line:8, Column:42},
+                                SourceID: 0,
+                            },
+                        },
+                        Readonly: true,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:8, Column:26},
+                            End:      ast.Location{Line:8, Column:42},
+                            SourceID: 0,
+                        },
+                    },
+                    NamedExports:  nil,
+                    From:          "",
+                    ExportDefault: false,
+                    ExportAll:     false,
+                    TypeOnly:      false,
+                    span:          ast.Span{
+                        Start:    ast.Location{Line:8, Column:19},
+                        End:      ast.Location{Line:8, Column:42},
+                        SourceID: 0,
+                    },
+                },
             },
             span: ast.Span{
                 Start:    ast.Location{Line:8, Column:1},
@@ -7321,6 +7485,844 @@
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:136},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestNamespaceDeclarations/namespace_with_var_declarations - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Intl",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "Collator",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "CollatorConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:40},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:59},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:59},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:61},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestNamespaceDeclarations/namespace_with_multiple_var_declarations - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Intl",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "Collator",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "CollatorConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:40},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:59},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:60},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "NumberFormat",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:65},
+                            End:      ast.Location{Line:1, Column:77},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "NumberFormatConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:79},
+                                End:      ast.Location{Line:1, Column:102},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:79},
+                            End:      ast.Location{Line:1, Column:102},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:61},
+                        End:      ast.Location{Line:1, Column:102},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:104},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/var_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Intl",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "Collator",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "CollatorConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:40},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:59},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:60},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:62},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/let_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "value",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 6,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:37},
+                            End:      ast.Location{Line:1, Column:43},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:44},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:46},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/const_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "PI",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 7,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:36},
+                            End:      ast.Location{Line:1, Column:42},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: true,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:43},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:45},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/multiple_vars_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Intl",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "Collator",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "CollatorConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:40},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:59},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:60},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "NumberFormat",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:65},
+                            End:      ast.Location{Line:1, Column:77},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "NumberFormatConstructor",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:79},
+                                End:      ast.Location{Line:1, Column:102},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:79},
+                            End:      ast.Location{Line:1, Column:102},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:61},
+                        End:      ast.Location{Line:1, Column:103},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:105},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/function_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareFunction{
+                    Name: &dts_parser.Ident{
+                        Name: "foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:35},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "void",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:42},
+                                End:      ast.Location{Line:1, Column:46},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:42},
+                            End:      ast.Location{Line:1, Column:46},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:47},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:49},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/class_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareClass{
+                    Name: &dts_parser.Ident{
+                        Name: "MyClass",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:39},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Implements: nil,
+                    Members:    {
+                    },
+                    Abstract: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:43},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:45},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/export_var_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.ExportDecl{
+                    Declaration: &dts_parser.DeclareVariable{
+                        Name: &dts_parser.Ident{
+                            Name: "x",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:38},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeAnn: &dts_parser.PrimitiveType{
+                            Kind: 7,
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:40},
+                                End:      ast.Location{Line:1, Column:46},
+                                SourceID: 0,
+                            },
+                        },
+                        Readonly: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:47},
+                            SourceID: 0,
+                        },
+                    },
+                    NamedExports:  nil,
+                    From:          "",
+                    ExportDefault: false,
+                    ExportAll:     false,
+                    TypeOnly:      false,
+                    span:          ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:47},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:49},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/export_function_in_declare_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Test",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:23},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.ExportDecl{
+                    Declaration: &dts_parser.DeclareFunction{
+                        Name: &dts_parser.Ident{
+                            Name: "foo",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:42},
+                                End:      ast.Location{Line:1, Column:45},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeParams: nil,
+                        Params:     {
+                        },
+                        ReturnType: &dts_parser.TypeReference{
+                            Name: &dts_parser.Ident{
+                                Name: "void",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:49},
+                                    End:      ast.Location{Line:1, Column:53},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: nil,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:49},
+                                End:      ast.Location{Line:1, Column:53},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:54},
+                            SourceID: 0,
+                        },
+                    },
+                    NamedExports:  nil,
+                    From:          "",
+                    ExportDefault: false,
+                    ExportAll:     false,
+                    TypeOnly:      false,
+                    span:          ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:54},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:56},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/nested_namespace_with_var - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "Outer",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareNamespace{
+                    Name: &dts_parser.Ident{
+                        Name: "Inner",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:37},
+                            End:      ast.Location{Line:1, Column:42},
+                            SourceID: 0,
+                        },
+                    },
+                    Statements: {
+                        &dts_parser.DeclareVariable{
+                            Name: &dts_parser.Ident{
+                                Name: "x",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:49},
+                                    End:      ast.Location{Line:1, Column:50},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 7,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:52},
+                                    End:      ast.Location{Line:1, Column:58},
+                                    SourceID: 0,
+                                },
+                            },
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:45},
+                                End:      ast.Location{Line:1, Column:59},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:27},
+                        End:      ast.Location{Line:1, Column:61},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:63},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestAmbientNamespaceVariableDeclarations/var_in_declare_module - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareModule{
+            Name:       "my-module",
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "x",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:34},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 7,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:37},
+                            End:      ast.Location{Line:1, Column:43},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:30},
+                        End:      ast.Location{Line:1, Column:44},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:46},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestNamespaceDeclarations/namespace_with_comments_before_declarations - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.DeclareNamespace{
+            Name: &dts_parser.Ident{
+                Name: "CSS",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:22},
+                    SourceID: 0,
+                },
+            },
+            Statements: {
+                &dts_parser.DeclareVariable{
+                    Name: &dts_parser.Ident{
+                        Name: "highlights",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:70},
+                            End:      ast.Location{Line:1, Column:80},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "HighlightRegistry",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:82},
+                                End:      ast.Location{Line:1, Column:99},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:82},
+                            End:      ast.Location{Line:1, Column:99},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:66},
+                        End:      ast.Location{Line:1, Column:100},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.DeclareFunction{
+                    Name: &dts_parser.Ident{
+                        Name: "Hz",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:130},
+                            End:      ast.Location{Line:1, Column:132},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                        &dts_parser.Param{
+                            Name: &dts_parser.Ident{
+                                Name: "value",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:133},
+                                    End:      ast.Location{Line:1, Column:138},
+                                    SourceID: 0,
+                                },
+                            },
+                            Type: &dts_parser.PrimitiveType{
+                                Kind: 7,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:140},
+                                    End:      ast.Location{Line:1, Column:146},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Rest:     false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:133},
+                                End:      ast.Location{Line:1, Column:146},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    ReturnType: &dts_parser.TypeReference{
+                        Name: &dts_parser.Ident{
+                            Name: "CSSUnitValue",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:149},
+                                End:      ast.Location{Line:1, Column:161},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:149},
+                            End:      ast.Location{Line:1, Column:161},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:121},
+                        End:      ast.Location{Line:1, Column:162},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:164},
                 SourceID: 0,
             },
         },

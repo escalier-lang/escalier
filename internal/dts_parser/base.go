@@ -3,21 +3,24 @@ package dts_parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
 // DtsParser parses TypeScript .d.ts declaration files
 type DtsParser struct {
-	lexer  *Lexer
-	errors []*Error
+	lexer            *Lexer
+	errors           []*Error
+	inAmbientContext bool // true when inside a declare namespace or declare module
 }
 
 // NewDtsParser creates a new parser for TypeScript declaration files
 func NewDtsParser(source *ast.Source) *DtsParser {
 	return &DtsParser{
-		lexer:  NewLexer(source),
-		errors: []*Error{},
+		lexer:            NewLexer(source),
+		errors:           []*Error{},
+		inAmbientContext: false,
 	}
 }
 
@@ -95,8 +98,9 @@ func (p *DtsParser) saveState() *DtsParser {
 	copy(errorsCopy, p.errors)
 
 	return &DtsParser{
-		lexer:  p.lexer.SaveState(),
-		errors: errorsCopy,
+		lexer:            p.lexer.SaveState(),
+		errors:           errorsCopy,
+		inAmbientContext: p.inAmbientContext,
 	}
 }
 
@@ -104,6 +108,7 @@ func (p *DtsParser) saveState() *DtsParser {
 func (p *DtsParser) restoreState(saved *DtsParser) {
 	p.lexer.RestoreState(saved.lexer)
 	p.errors = saved.errors
+	p.inAmbientContext = saved.inAmbientContext
 }
 
 // ============================================================================
@@ -184,9 +189,8 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 
 	case NumLit:
 		p.consume()
-		// Parse the numeric value from the string
-		// For now, we'll store it as a string and convert later if needed
-		value, err := strconv.ParseFloat(token.Value, 64)
+		// Parse the numeric value from the string (handles both decimal and hex)
+		value, err := parseNumberValue(token.Value)
 		if err != nil {
 			p.reportError(token.Span, fmt.Sprintf("Invalid number literal: %s", token.Value))
 			value = 0
@@ -203,6 +207,32 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		p.consume()
 		literal := &BooleanLiteral{Value: false, span: token.Span}
 		return &LiteralType{Literal: literal, span: token.Span}
+
+	// Negative number literal: -123
+	case Minus:
+		minusToken := p.consume() // consume '-'
+		numToken := p.peek()
+		if numToken.Type != NumLit {
+			p.reportError(numToken.Span, "Expected number after '-'")
+			return nil
+		}
+		p.consume() // consume number
+
+		// Parse the numeric value and negate it (handles both decimal and hex)
+		value, err := parseNumberValue(numToken.Value)
+		if err != nil {
+			p.reportError(numToken.Span, fmt.Sprintf("Invalid number literal: %s", numToken.Value))
+			value = 0
+		}
+		value = -value
+
+		span := ast.Span{
+			Start:    minusToken.Span.Start,
+			End:      numToken.Span.End,
+			SourceID: minusToken.Span.SourceID,
+		}
+		literal := &NumberLiteral{Value: value, span: span}
+		return &LiteralType{Literal: literal, span: span}
 
 	// Type reference (identifier or qualified name), or 'this' type
 	case Identifier:
@@ -338,4 +368,19 @@ func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
 		Readonly:    true,
 		span:        span,
 	}
+}
+
+// parseNumberValue parses a number literal string, handling both decimal and hexadecimal formats
+func parseNumberValue(s string) (float64, error) {
+	// Check if it's a hex literal
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		// Parse as hex integer
+		val, err := strconv.ParseInt(s[2:], 16, 64)
+		if err != nil {
+			return 0, err
+		}
+		return float64(val), nil
+	}
+	// Parse as decimal float
+	return strconv.ParseFloat(s, 64)
 }

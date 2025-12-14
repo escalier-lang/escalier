@@ -15,51 +15,66 @@ func TestParseTypeScriptLibDts(t *testing.T) {
 		t.Skip("Could not find repository root:", err)
 	}
 
-	libDtsPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-
-	// Check if the file exists
-	if _, err := os.Stat(libDtsPath); os.IsNotExist(err) {
-		t.Skip("TypeScript lib.es5.d.ts not found at:", libDtsPath)
+	testCases := []struct {
+		name     string
+		filename string
+	}{
+		{
+			name:     "lib.es5.d.ts",
+			filename: "lib.es5.d.ts",
+		},
+		{
+			name:     "lib.dom.d.ts",
+			filename: "lib.dom.d.ts",
+		},
 	}
 
-	// Read the file
-	contents, err := os.ReadFile(libDtsPath)
-	if err != nil {
-		t.Fatalf("Failed to read lib.es5.d.ts: %v", err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			libDtsPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", tc.filename)
+
+			// Check if the file exists
+			if _, err := os.Stat(libDtsPath); os.IsNotExist(err) {
+				t.Skipf("TypeScript %s not found at: %s", tc.filename, libDtsPath)
+			}
+
+			// Read the file
+			contents, err := os.ReadFile(libDtsPath)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", tc.filename, err)
+			}
+
+			source := &ast.Source{
+				Path:     libDtsPath,
+				Contents: string(contents),
+				ID:       0,
+			}
+
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			// Log statistics
+			t.Logf("Parsed %s: %d bytes", tc.filename, len(contents))
+			t.Logf("Parse errors: %d", len(errors))
+
+			if len(errors) > 0 {
+				// Log first 10 errors for debugging
+				maxErrors := 10
+				if len(errors) < maxErrors {
+					maxErrors = len(errors)
+				}
+				t.Errorf("Expected no parse errors, but got %d errors. First %d:", len(errors), maxErrors)
+				for i := 0; i < maxErrors; i++ {
+					t.Errorf("  %v", errors[i])
+				}
+				t.FailNow()
+			}
+
+			if module != nil {
+				t.Logf("Parsed %d top-level statements", len(module.Statements))
+			}
+		})
 	}
-
-	source := &ast.Source{
-		Path:     libDtsPath,
-		Contents: string(contents),
-		ID:       0,
-	}
-
-	parser := NewDtsParser(source)
-	module, errors := parser.ParseModule()
-
-	// Log statistics
-	t.Logf("Parsed lib.es5.d.ts: %d bytes", len(contents))
-	t.Logf("Parse errors: %d", len(errors))
-
-	if len(errors) > 0 {
-		// Log first 10 errors for debugging
-		maxErrors := 10
-		if len(errors) < maxErrors {
-			maxErrors = len(errors)
-		}
-		t.Logf("First %d errors:", maxErrors)
-		for i := 0; i < maxErrors; i++ {
-			t.Logf("  %v", errors[i])
-		}
-	}
-
-	if module != nil {
-		t.Logf("Parsed %d top-level statements", len(module.Statements))
-	}
-
-	// We don't fail the test on parse errors since lib.es5.d.ts may contain
-	// advanced TypeScript features not yet supported by the parser.
-	// This test is mainly to ensure the parser doesn't crash or hang.
 }
 
 // findRepoRoot walks up the directory tree to find the repository root

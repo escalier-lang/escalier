@@ -320,35 +320,64 @@ func (lexer *Lexer) next() *Token {
 		if codePoint == '.' {
 			isDecimal = true
 			i++
-		} else {
-			i++
-		}
-
-		for i < n {
-			c := contents[i]
-			if c == '.' && !isDecimal {
-				isDecimal = true
-				i++
-				continue
-			}
-			if c < '0' || c > '9' {
-				break
-			}
-			i++
-		}
-
-		endOffset = i
-		if isDecimal && i == startOffset+1 {
-			if strings.HasPrefix(contents[startOffset:], "...") {
-				endOffset += 2
-				end.Column += 2
-				token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			// Check if it's a dot, '...' or a decimal number starting with '.'
+			if i >= n || contents[i] < '0' || contents[i] > '9' {
+				// It's a dot or '...'
+				endOffset = i
+				if strings.HasPrefix(contents[startOffset:], "...") {
+					endOffset += 2
+					end.Column += 2
+					token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+				} else {
+					token = NewToken(Dot, ".", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+				}
 			} else {
-				token = NewToken(Dot, ".", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+				// It's a decimal number starting with '.'
+				for i < n {
+					c := contents[i]
+					if c < '0' || c > '9' {
+						break
+					}
+					i++
+				}
+				endOffset = i
+				end.Column = start.Column + (i - startOffset)
+				token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 			}
 		} else {
-			end.Column = start.Column + (i - startOffset)
-			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			// Check for hex literal (0x or 0X)
+			if codePoint == '0' && i+1 < n && (contents[i+1] == 'x' || contents[i+1] == 'X') {
+				i += 2 // skip '0x' or '0X'
+				// Scan hex digits
+				for i < n {
+					c := contents[i]
+					if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+						break
+					}
+					i++
+				}
+				endOffset = i
+				end.Column = start.Column + (i - startOffset)
+				token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			} else {
+				// Regular decimal/integer number
+				i++
+				for i < n {
+					c := contents[i]
+					if c == '.' && !isDecimal {
+						isDecimal = true
+						i++
+						continue
+					}
+					if c < '0' || c > '9' {
+						break
+					}
+					i++
+				}
+				endOffset = i
+				end.Column = start.Column + (i - startOffset)
+				token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			}
 		}
 	default:
 		c := codePoint

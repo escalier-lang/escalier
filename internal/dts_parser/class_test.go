@@ -194,7 +194,7 @@ func TestMethodDeclarations(t *testing.T) {
 		},
 		{
 			"abstract method",
-			"abstract class Abstract { abstract render(): void }",
+			"declare abstract class Abstract { abstract render(): void }",
 		},
 		{
 			"async method",
@@ -210,7 +210,7 @@ func TestMethodDeclarations(t *testing.T) {
 		},
 		{
 			"static abstract method",
-			"abstract class StaticAbstract { static abstract create(): any }",
+			"declare abstract class StaticAbstract { static abstract create(): any }",
 		},
 		{
 			"public static method",
@@ -400,7 +400,7 @@ func TestCombinedModifiers(t *testing.T) {
 		},
 		{
 			"public abstract method",
-			"abstract class Abstract { public abstract render(): void }",
+			"declare abstract class Abstract { public abstract render(): void }",
 		},
 		{
 			"protected static property",
@@ -459,7 +459,7 @@ func TestComplexClasses(t *testing.T) {
 		},
 		{
 			"abstract class with abstract and concrete members",
-			`abstract class Shape {
+			`declare abstract class Shape {
 				abstract area(): number
 				abstract perimeter(): number
 				protected x: number

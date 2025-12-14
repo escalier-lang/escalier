@@ -1530,7 +1530,21 @@
 map[string]interface {}{
     "errors": []*dts_parser.Error{
     },
-    "typeAnn": nil,
+    "typeAnn": &dts_parser.LiteralType{
+        Literal: &dts_parser.NumberLiteral{
+            Value: -42,
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:4},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 0,
+        },
+    },
 }
 ---
 
@@ -1538,7 +1552,21 @@ map[string]interface {}{
 map[string]interface {}{
     "errors": []*dts_parser.Error{
     },
-    "typeAnn": nil,
+    "typeAnn": &dts_parser.LiteralType{
+        Literal: &dts_parser.NumberLiteral{
+            Value: -3.14,
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+    },
 }
 ---
 
@@ -2992,6 +3020,78 @@ map[string]interface {}{
     "module": &dts_parser.Module{
         Statements: {
         },
+    },
+}
+---
+
+[TestLiteralTypes/negative_number_literal - 1]
+&dts_parser.LiteralType{
+    Literal: &dts_parser.NumberLiteral{
+        Value: -1,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:3},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:3},
+        SourceID: 0,
+    },
+}
+---
+
+[TestLiteralTypes/negative_decimal - 1]
+&dts_parser.LiteralType{
+    Literal: &dts_parser.NumberLiteral{
+        Value: -3.14,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestLiteralTypes/hex_literal - 1]
+&dts_parser.LiteralType{
+    Literal: &dts_parser.NumberLiteral{
+        Value: 255,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:5},
+        SourceID: 0,
+    },
+}
+---
+
+[TestLiteralTypes/negative_hex - 1]
+&dts_parser.LiteralType{
+    Literal: &dts_parser.NumberLiteral{
+        Value: -255,
+        span:  ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
     },
 }
 ---
