@@ -142,13 +142,6 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		return nil
 	case Namespace, ModuleKeyword:
 		return p.parseNamespaceDeclaration()
-	case Export:
-		// Allow export declarations inside ambient namespaces
-		if p.inAmbientContext {
-			return p.parseExportDeclaration()
-		}
-		p.reportError(token.Span, "Export declarations require 'declare' keyword at top level")
-		return nil
 	default:
 		p.reportError(token.Span, "Expected interface, type, enum, or namespace declaration")
 		return nil
