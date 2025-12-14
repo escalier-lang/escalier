@@ -376,7 +376,7 @@ func TestClassDeclarations(t *testing.T) {
 		},
 		{
 			"abstract class",
-			"abstract class Animal { abstract makeSound(): void; move(): void }",
+			"declare abstract class Animal { abstract makeSound(): void; move(): void }",
 		},
 		{
 			"class with getters and setters",

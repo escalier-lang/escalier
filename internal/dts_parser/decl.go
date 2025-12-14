@@ -130,12 +130,17 @@ func (p *DtsParser) parseTopLevelDeclaration() Statement {
 		p.reportError(token.Span, "Class declarations require 'declare' keyword at top level")
 		return nil
 	case Abstract:
-		// 'abstract class' is allowed at top level without 'declare'
+		// Check if this is 'abstract class'
 		nextToken := p.lexer.SaveState()
 		p.consume() // consume 'abstract'
 		if p.peek().Type == Class {
 			p.lexer.RestoreState(nextToken)
-			return p.parseClassDeclaration()
+			// Allow abstract class declarations inside ambient namespaces
+			if p.inAmbientContext {
+				return p.parseClassDeclaration()
+			}
+			p.reportError(token.Span, "Abstract class declarations require 'declare' keyword at top level")
+			return nil
 		}
 		p.lexer.RestoreState(nextToken)
 		p.reportError(token.Span, "Expected 'class' after 'abstract'")
