@@ -9,15 +9,17 @@ import (
 
 // DtsParser parses TypeScript .d.ts declaration files
 type DtsParser struct {
-	lexer  *Lexer
-	errors []*Error
+	lexer            *Lexer
+	errors           []*Error
+	inAmbientContext bool // true when inside a declare namespace or declare module
 }
 
 // NewDtsParser creates a new parser for TypeScript declaration files
 func NewDtsParser(source *ast.Source) *DtsParser {
 	return &DtsParser{
-		lexer:  NewLexer(source),
-		errors: []*Error{},
+		lexer:            NewLexer(source),
+		errors:           []*Error{},
+		inAmbientContext: false,
 	}
 }
 
@@ -95,8 +97,9 @@ func (p *DtsParser) saveState() *DtsParser {
 	copy(errorsCopy, p.errors)
 
 	return &DtsParser{
-		lexer:  p.lexer.SaveState(),
-		errors: errorsCopy,
+		lexer:            p.lexer.SaveState(),
+		errors:           errorsCopy,
+		inAmbientContext: p.inAmbientContext,
 	}
 }
 
@@ -104,6 +107,7 @@ func (p *DtsParser) saveState() *DtsParser {
 func (p *DtsParser) restoreState(saved *DtsParser) {
 	p.lexer.RestoreState(saved.lexer)
 	p.errors = saved.errors
+	p.inAmbientContext = saved.inAmbientContext
 }
 
 // ============================================================================

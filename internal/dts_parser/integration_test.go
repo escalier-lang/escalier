@@ -47,19 +47,16 @@ func TestParseTypeScriptLibDts(t *testing.T) {
 		if len(errors) < maxErrors {
 			maxErrors = len(errors)
 		}
-		t.Logf("First %d errors:", maxErrors)
+		t.Errorf("Expected no parse errors, but got %d errors. First %d:", len(errors), maxErrors)
 		for i := 0; i < maxErrors; i++ {
-			t.Logf("  %v", errors[i])
+			t.Errorf("  %v", errors[i])
 		}
+		t.FailNow()
 	}
 
 	if module != nil {
 		t.Logf("Parsed %d top-level statements", len(module.Statements))
 	}
-
-	// We don't fail the test on parse errors since lib.es5.d.ts may contain
-	// advanced TypeScript features not yet supported by the parser.
-	// This test is mainly to ensure the parser doesn't crash or hang.
 }
 
 // findRepoRoot walks up the directory tree to find the repository root
