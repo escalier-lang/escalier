@@ -3843,3 +3843,971 @@
     inferredType: nil,
 }
 ---
+
+[TestConvertMethodDecl/simple_method - 1]
+&ast.MethodElem{
+    Name: &ast.IdentExpr{
+        Name:      "foo",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:25},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "x",
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.StringTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:38},
+                    End:      ast.Location{Line:1, Column:44},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    MutSelf: (*bool)(nil),
+    Static:  false,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertMethodDecl/static_method - 1]
+&ast.MethodElem{
+    Name: &ast.IdentExpr{
+        Name:      "create",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:35},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:39},
+                        End:      ast.Location{Line:1, Column:43},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:39},
+                    End:      ast.Location{Line:1, Column:43},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:43},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    MutSelf: (*bool)(nil),
+    Static:  true,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:29},
+        End:      ast.Location{Line:1, Column:43},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertMethodDecl/private_method - 1]
+&ast.MethodElem{
+    Name: &ast.IdentExpr{
+        Name:      "helper",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:30},
+            End:      ast.Location{Line:1, Column:36},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "void",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:40},
+                        End:      ast.Location{Line:1, Column:44},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:40},
+                    End:      ast.Location{Line:1, Column:44},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:30},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    MutSelf: (*bool)(nil),
+    Static:  false,
+    Private: true,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:30},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertMethodDecl/async_method - 1]
+&ast.MethodElem{
+    Name: &ast.IdentExpr{
+        Name:      "fetchData",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:28},
+            End:      ast.Location{Line:1, Column:37},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+            },
+            Params: {
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Promise",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:41},
+                        End:      ast.Location{Line:1, Column:48},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "void",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:49},
+                                End:      ast.Location{Line:1, Column:53},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:49},
+                            End:      ast.Location{Line:1, Column:53},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:41},
+                    End:      ast.Location{Line:1, Column:54},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  true,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:28},
+            End:      ast.Location{Line:1, Column:54},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    MutSelf: (*bool)(nil),
+    Static:  false,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:28},
+        End:      ast.Location{Line:1, Column:54},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertMethodDecl/method_with_type_parameters - 1]
+&ast.MethodElem{
+    Name: &ast.IdentExpr{
+        Name:      "map",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:25},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: {
+                &ast.TypeParam{
+                    Name:       "T",
+                    Constraint: nil,
+                    Default:    nil,
+                },
+            },
+            Params: {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "fn",
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:40},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.FuncTypeAnn{
+                        TypeParams: {
+                        },
+                        Params: {
+                        },
+                        Return: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:39},
+                                    End:      ast.Location{Line:1, Column:40},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:39},
+                                End:      ast.Location{Line:1, Column:40},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:40},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:43},
+                        End:      ast.Location{Line:1, Column:44},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:43},
+                    End:      ast.Location{Line:1, Column:44},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    MutSelf: (*bool)(nil),
+    Static:  false,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/simple_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "count",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:27},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.NumberTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:35},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   false,
+    Private:  false,
+    Readonly: false,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:35},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/readonly_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "id",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:31},
+            End:      ast.Location{Line:1, Column:33},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.StringTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:35},
+            End:      ast.Location{Line:1, Column:41},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   false,
+    Private:  false,
+    Readonly: true,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:31},
+        End:      ast.Location{Line:1, Column:41},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/static_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "version",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:36},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.StringTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:38},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   true,
+    Private:  false,
+    Readonly: false,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:29},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/private_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "secret",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:30},
+            End:      ast.Location{Line:1, Column:36},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.StringTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:38},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   false,
+    Private:  true,
+    Readonly: false,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:30},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/optional_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "description",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:33},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.StringTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:36},
+            End:      ast.Location{Line:1, Column:42},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   false,
+    Private:  false,
+    Readonly: false,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:42},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertPropertyDecl/static_readonly_property - 1]
+&ast.FieldElem{
+    Name: &ast.IdentExpr{
+        Name:      "MAX_SIZE",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:38},
+            End:      ast.Location{Line:1, Column:46},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Value: nil,
+    Type:  &ast.NumberTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:48},
+            End:      ast.Location{Line:1, Column:54},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Default:  nil,
+    Static:   true,
+    Private:  false,
+    Readonly: true,
+    Span_:    ast.Span{
+        Start:    ast.Location{Line:1, Column:38},
+        End:      ast.Location{Line:1, Column:54},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertGetterDecl/simple_getter - 1]
+&ast.GetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "value",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:26},
+            End:      ast.Location{Line:1, Column:31},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+            },
+            Return: &ast.NumberTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:35},
+                    End:      ast.Location{Line:1, Column:41},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:41},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  false,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:41},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertGetterDecl/static_getter - 1]
+&ast.GetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "instance",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:33},
+            End:      ast.Location{Line:1, Column:41},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "MyClass",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:45},
+                        End:      ast.Location{Line:1, Column:52},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:45},
+                    End:      ast.Location{Line:1, Column:52},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:52},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  true,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:29},
+        End:      ast.Location{Line:1, Column:52},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertGetterDecl/private_getter - 1]
+&ast.GetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "internalState",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:34},
+            End:      ast.Location{Line:1, Column:47},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+            },
+            Return: &ast.AnyTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:51},
+                    End:      ast.Location{Line:1, Column:54},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:30},
+            End:      ast.Location{Line:1, Column:54},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  false,
+    Private: true,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:30},
+        End:      ast.Location{Line:1, Column:54},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertSetterDecl/simple_setter - 1]
+&ast.SetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "value",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:26},
+            End:      ast.Location{Line:1, Column:31},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "v",
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:41},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:35},
+                            End:      ast.Location{Line:1, Column:41},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:22},
+                        End:      ast.Location{Line:1, Column:41},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:41},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:22},
+            End:      ast.Location{Line:1, Column:41},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  false,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:22},
+        End:      ast.Location{Line:1, Column:41},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertSetterDecl/static_setter - 1]
+&ast.SetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "config",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:33},
+            End:      ast.Location{Line:1, Column:39},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "cfg",
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:51},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "object",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:45},
+                                End:      ast.Location{Line:1, Column:51},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:45},
+                            End:      ast.Location{Line:1, Column:51},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:51},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:29},
+                    End:      ast.Location{Line:1, Column:51},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:29},
+            End:      ast.Location{Line:1, Column:51},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  true,
+    Private: false,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:29},
+        End:      ast.Location{Line:1, Column:51},
+        SourceID: 0,
+    },
+}
+---
+
+[TestConvertSetterDecl/private_setter - 1]
+&ast.SetterElem{
+    Name: &ast.IdentExpr{
+        Name:      "data",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:34},
+            End:      ast.Location{Line:1, Column:38},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Fn: &ast.FuncExpr{
+        FuncSig: ast.FuncSig{
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "d",
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:39},
+                            End:      ast.Location{Line:1, Column:45},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.AnyTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:42},
+                            End:      ast.Location{Line:1, Column:45},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:30},
+                        End:      ast.Location{Line:1, Column:45},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:30},
+                    End:      ast.Location{Line:1, Column:45},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: (*ast.Block)(nil),
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:30},
+            End:      ast.Location{Line:1, Column:45},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Static:  false,
+    Private: true,
+    Span_:   ast.Span{
+        Start:    ast.Location{Line:1, Column:30},
+        End:      ast.Location{Line:1, Column:45},
+        SourceID: 0,
+    },
+}
+---

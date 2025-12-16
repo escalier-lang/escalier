@@ -258,12 +258,12 @@ Create conversion function for each statement type:
 func convertStatement(stmt dts_parser.Statement) (ast.Decl, error)
 
 // Specific converters
-func convertDeclareVariable(dv *dts_parser.DeclareVariable) (*ast.VarDecl, error)
-func convertDeclareFunction(df *dts_parser.DeclareFunction) (*ast.FuncDecl, error)
-func convertDeclareTypeAlias(dt *dts_parser.DeclareTypeAlias) (*ast.TypeDecl, error)
-func convertDeclareEnum(de *dts_parser.DeclareEnum) (ast.Decl, error) // Return type TBD
-func convertDeclareClass(dc *dts_parser.DeclareClass) (*ast.ClassDecl, error)
-func convertDeclareInterface(di *dts_parser.DeclareInterface) (ast.Decl, error)
+func convertVarDecl(dv *dts_parser.VarDecl) (*ast.VarDecl, error)
+func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error)
+func convertTypeDecl(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error)
+func convertEnumDecl(de *dts_parser.EnumDecl) (ast.Decl, error) // Return type TBD
+func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error)
+func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error)
 ```
 
 ### Step 3: Class Member Conversion

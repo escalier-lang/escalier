@@ -456,3 +456,288 @@ func TestConvertTypeAnn(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertMethodDecl(t *testing.T) {
+	tests := []struct {
+		name       string
+		classInput string
+		methodIdx  int
+	}{
+		{
+			name:       "simple method",
+			classInput: "declare class Test { foo(x: number): string }",
+			methodIdx:  0,
+		},
+		{
+			name:       "static method",
+			classInput: "declare class Test { static create(): void }",
+			methodIdx:  0,
+		},
+		{
+			name:       "private method",
+			classInput: "declare class Test { private helper(): void }",
+			methodIdx:  0,
+		},
+		{
+			name:       "async method",
+			classInput: "declare class Test { async fetchData(): Promise<void> }",
+			methodIdx:  0,
+		},
+		{
+			name:       "method with type parameters",
+			classInput: "declare class Test { map<T>(fn: () => T): T }",
+			methodIdx:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.classInput,
+				ID:       0,
+			}
+			parser := dts_parser.NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			if len(module.Statements) == 0 {
+				t.Fatal("No statements parsed")
+			}
+
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			if !ok {
+				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+			}
+
+			if tt.methodIdx >= len(classDecl.Members) {
+				t.Fatalf("Method index %d out of range (have %d members)", tt.methodIdx, len(classDecl.Members))
+			}
+
+			methodDecl, ok := classDecl.Members[tt.methodIdx].(*dts_parser.MethodDecl)
+			if !ok {
+				t.Fatalf("Expected MethodDecl at index %d, got %T", tt.methodIdx, classDecl.Members[tt.methodIdx])
+			}
+
+			result, err := convertMethodDecl(methodDecl)
+			if err != nil {
+				t.Fatalf("convertMethodDecl failed: %v", err)
+			}
+
+			snaps.MatchSnapshot(t, result)
+		})
+	}
+}
+
+func TestConvertPropertyDecl(t *testing.T) {
+	tests := []struct {
+		name       string
+		classInput string
+		propIdx    int
+	}{
+		{
+			name:       "simple property",
+			classInput: "declare class Test { count: number }",
+			propIdx:    0,
+		},
+		{
+			name:       "readonly property",
+			classInput: "declare class Test { readonly id: string }",
+			propIdx:    0,
+		},
+		{
+			name:       "static property",
+			classInput: "declare class Test { static version: string }",
+			propIdx:    0,
+		},
+		{
+			name:       "private property",
+			classInput: "declare class Test { private secret: string }",
+			propIdx:    0,
+		},
+		{
+			name:       "optional property",
+			classInput: "declare class Test { description?: string }",
+			propIdx:    0,
+		},
+		{
+			name:       "static readonly property",
+			classInput: "declare class Test { static readonly MAX_SIZE: number }",
+			propIdx:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.classInput,
+				ID:       0,
+			}
+			parser := dts_parser.NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			if len(module.Statements) == 0 {
+				t.Fatal("No statements parsed")
+			}
+
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			if !ok {
+				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+			}
+
+			if tt.propIdx >= len(classDecl.Members) {
+				t.Fatalf("Property index %d out of range (have %d members)", tt.propIdx, len(classDecl.Members))
+			}
+
+			propDecl, ok := classDecl.Members[tt.propIdx].(*dts_parser.PropertyDecl)
+			if !ok {
+				t.Fatalf("Expected PropertyDecl at index %d, got %T", tt.propIdx, classDecl.Members[tt.propIdx])
+			}
+
+			result, err := convertPropertyDecl(propDecl)
+			if err != nil {
+				t.Fatalf("convertPropertyDecl failed: %v", err)
+			}
+
+			snaps.MatchSnapshot(t, result)
+		})
+	}
+}
+
+func TestConvertGetterDecl(t *testing.T) {
+	tests := []struct {
+		name       string
+		classInput string
+		getterIdx  int
+	}{
+		{
+			name:       "simple getter",
+			classInput: "declare class Test { get value(): number }",
+			getterIdx:  0,
+		},
+		{
+			name:       "static getter",
+			classInput: "declare class Test { static get instance(): MyClass }",
+			getterIdx:  0,
+		},
+		{
+			name:       "private getter",
+			classInput: "declare class Test { private get internalState(): any }",
+			getterIdx:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.classInput,
+				ID:       0,
+			}
+			parser := dts_parser.NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			if len(module.Statements) == 0 {
+				t.Fatal("No statements parsed")
+			}
+
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			if !ok {
+				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+			}
+
+			if tt.getterIdx >= len(classDecl.Members) {
+				t.Fatalf("Getter index %d out of range (have %d members)", tt.getterIdx, len(classDecl.Members))
+			}
+
+			getterDecl, ok := classDecl.Members[tt.getterIdx].(*dts_parser.GetterDecl)
+			if !ok {
+				t.Fatalf("Expected GetterDecl at index %d, got %T", tt.getterIdx, classDecl.Members[tt.getterIdx])
+			}
+
+			result, err := convertGetterDecl(getterDecl)
+			if err != nil {
+				t.Fatalf("convertGetterDecl failed: %v", err)
+			}
+
+			snaps.MatchSnapshot(t, result)
+		})
+	}
+}
+
+func TestConvertSetterDecl(t *testing.T) {
+	tests := []struct {
+		name       string
+		classInput string
+		setterIdx  int
+	}{
+		{
+			name:       "simple setter",
+			classInput: "declare class Test { set value(v: number) }",
+			setterIdx:  0,
+		},
+		{
+			name:       "static setter",
+			classInput: "declare class Test { static set config(cfg: object) }",
+			setterIdx:  0,
+		},
+		{
+			name:       "private setter",
+			classInput: "declare class Test { private set data(d: any) }",
+			setterIdx:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.classInput,
+				ID:       0,
+			}
+			parser := dts_parser.NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			if len(module.Statements) == 0 {
+				t.Fatal("No statements parsed")
+			}
+
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			if !ok {
+				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+			}
+
+			if tt.setterIdx >= len(classDecl.Members) {
+				t.Fatalf("Setter index %d out of range (have %d members)", tt.setterIdx, len(classDecl.Members))
+			}
+
+			setterDecl, ok := classDecl.Members[tt.setterIdx].(*dts_parser.SetterDecl)
+			if !ok {
+				t.Fatalf("Expected SetterDecl at index %d, got %T", tt.setterIdx, classDecl.Members[tt.setterIdx])
+			}
+
+			result, err := convertSetterDecl(setterDecl)
+			if err != nil {
+				t.Fatalf("convertSetterDecl failed: %v", err)
+			}
+
+			snaps.MatchSnapshot(t, result)
+		})
+	}
+}
