@@ -9,6 +9,9 @@ import (
 
 // convertSpan converts a dts_parser span to an ast span.
 // Since both use ast.Span, this is a simple identity function.
+// TODO: Update AST nodes to make the span field optional and add a `provenance`
+// field so that we can link converted nodes back to their original source in a
+// .d.ts files.
 func convertSpan(span ast.Span) ast.Span {
 	return span
 }
