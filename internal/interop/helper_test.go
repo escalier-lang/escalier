@@ -410,6 +410,9 @@ func TestConvertTypeAnn(t *testing.T) {
 		// Type predicates
 		{"type predicate", "x is string"},
 
+		// This type
+		{"this type", "this"},
+
 		// Rest and optional
 		{"rest type in tuple", "[...string[]]"},
 		{"optional type in tuple", "[string?]"},
@@ -439,10 +442,14 @@ func TestConvertTypeAnn(t *testing.T) {
 			}
 
 			// Convert to Escalier AST
-			escalierTypeAnn := convertTypeAnn(dtsTypeAnn)
+			escalierTypeAnn, err := convertTypeAnn(dtsTypeAnn)
+
+			if err != nil {
+				t.Fatalf("Failed to convert type annotation: %s, error: %v", tt.input, err)
+			}
 
 			if escalierTypeAnn == nil {
-				t.Fatalf("Failed to convert type annotation: %s", tt.input)
+				t.Fatalf("Failed to convert type annotation (nil result): %s", tt.input)
 			}
 
 			snaps.MatchSnapshot(t, escalierTypeAnn)
