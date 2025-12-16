@@ -12,17 +12,17 @@ import (
 func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 	switch s := stmt.(type) {
 	case *dts_parser.VarDecl:
-		return convertDeclareVariable(s)
+		return convertVarDecl(s)
 	case *dts_parser.FuncDecl:
-		return convertDeclareFunction(s)
+		return convertFuncDecl(s)
 	case *dts_parser.TypeDecl:
-		return convertDeclareTypeAlias(s)
+		return convertTypeDecl(s)
 	case *dts_parser.EnumDecl:
-		return convertDeclareEnum(s)
+		return convertEnumDecl(s)
 	case *dts_parser.ClassDecl:
-		return convertDeclareClass(s)
+		return convertClassDecl(s)
 	case *dts_parser.InterfaceDecl:
-		return convertDeclareInterface(s)
+		return convertInterfaceDecl(s)
 	case *dts_parser.ImportDecl, *dts_parser.ExportDecl:
 		// Skip imports and exports for now
 		return nil, nil
@@ -37,8 +37,8 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 	}
 }
 
-// convertDeclareVariable converts a dts_parser.DeclareVariable to an ast.VarDecl.
-func convertDeclareVariable(dv *dts_parser.VarDecl) (*ast.VarDecl, error) {
+// convertVarDecl converts a dts_parser.DeclareVariable to an ast.VarDecl.
+func convertVarDecl(dv *dts_parser.VarDecl) (*ast.VarDecl, error) {
 	// Convert the identifier to a pattern
 	pattern := ast.NewIdentPat(dv.Name.Name, nil, nil, convertSpan(dv.Name.Span()))
 
@@ -69,8 +69,8 @@ func convertDeclareVariable(dv *dts_parser.VarDecl) (*ast.VarDecl, error) {
 	), nil
 }
 
-// convertDeclareFunction converts a dts_parser.DeclareFunction to an ast.FuncDecl.
-func convertDeclareFunction(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
+// convertFuncDecl converts a dts_parser.DeclareFunction to an ast.FuncDecl.
+func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(df.TypeParams)
 	if err != nil {
@@ -106,8 +106,8 @@ func convertDeclareFunction(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 	), nil
 }
 
-// convertDeclareTypeAlias converts a dts_parser.DeclareTypeAlias to an ast.TypeDecl.
-func convertDeclareTypeAlias(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error) {
+// convertTypeDecl converts a dts_parser.DeclareTypeAlias to an ast.TypeDecl.
+func convertTypeDecl(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(dt.TypeParams)
 	if err != nil {
@@ -130,11 +130,11 @@ func convertDeclareTypeAlias(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error) {
 	), nil
 }
 
-// convertDeclareEnum converts a dts_parser.DeclareEnum to an ast.Decl.
+// convertEnumDecl converts a dts_parser.DeclareEnum to an ast.Decl.
 // TypeScript enums are different from Escalier enums - TS enums are value-level
 // constructs with numeric/string values, while Escalier enums are algebraic data types.
 // For now, we convert TS enums to type aliases with union of literal types.
-func convertDeclareEnum(de *dts_parser.EnumDecl) (ast.Decl, error) {
+func convertEnumDecl(de *dts_parser.EnumDecl) (ast.Decl, error) {
 	// TODO: For now, return an error indicating this is not yet implemented.
 	// Future implementation could:
 	// 1. Convert to union of literal types
@@ -143,8 +143,8 @@ func convertDeclareEnum(de *dts_parser.EnumDecl) (ast.Decl, error) {
 	return nil, fmt.Errorf("TypeScript enum conversion not yet implemented: %s", de.Name.Name)
 }
 
-// convertDeclareClass converts a dts_parser.DeclareClass to an ast.ClassDecl.
-func convertDeclareClass(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
+// convertClassDecl converts a dts_parser.DeclareClass to an ast.ClassDecl.
+func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(dc.TypeParams)
 	if err != nil {
@@ -217,10 +217,10 @@ func convertDeclareClass(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	), nil
 }
 
-// convertDeclareInterface converts a dts_parser.DeclareInterface to an ast.Decl.
+// convertInterfaceDecl converts a dts_parser.DeclareInterface to an ast.Decl.
 // Escalier doesn't have first-class interfaces, so we convert them to type aliases
 // with object types.
-func convertDeclareInterface(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
+func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(di.TypeParams)
 	if err != nil {

@@ -186,7 +186,7 @@ func TestConvertDeclareVariable(t *testing.T) {
 				t.Fatalf("expected DeclareVariable, got %T", stmt)
 			}
 
-			result, err := convertDeclareVariable(dv)
+			result, err := convertVarDecl(dv)
 
 			if tt.wantError {
 				if err == nil {
@@ -272,7 +272,7 @@ func TestConvertDeclareFunction(t *testing.T) {
 				t.Fatalf("expected DeclareFunction, got %T", stmt)
 			}
 
-			result, err := convertDeclareFunction(df)
+			result, err := convertFuncDecl(df)
 
 			if tt.wantError {
 				if err == nil {
@@ -339,7 +339,7 @@ func TestConvertDeclareTypeAlias(t *testing.T) {
 				t.Fatalf("expected DeclareTypeAlias, got %T", stmt)
 			}
 
-			result, err := convertDeclareTypeAlias(dt)
+			result, err := convertTypeDecl(dt)
 
 			if tt.wantError {
 				if err == nil {
@@ -384,7 +384,7 @@ func TestConvertDeclareEnum(t *testing.T) {
 				t.Fatalf("expected DeclareEnum, got %T", stmt)
 			}
 
-			result, err := convertDeclareEnum(de)
+			result, err := convertEnumDecl(de)
 
 			if tt.wantError {
 				if err == nil {
@@ -496,7 +496,7 @@ func TestConvertDeclareClass(t *testing.T) {
 				t.Fatalf("expected DeclareClass, got %T", stmt)
 			}
 
-			result, err := convertDeclareClass(dc)
+			result, err := convertClassDecl(dc)
 
 			if tt.wantError {
 				if err == nil {
@@ -639,7 +639,7 @@ func TestConvertDeclareInterface(t *testing.T) {
 				t.Fatalf("expected DeclareInterface, got %T", stmt)
 			}
 
-			result, err := convertDeclareInterface(di)
+			result, err := convertInterfaceDecl(di)
 
 			if tt.wantError {
 				if err == nil {
