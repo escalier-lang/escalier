@@ -2,7 +2,7 @@
 [TestRealWorldSymbolInterface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Symbol",
                 span: ast.Span{
@@ -82,7 +82,7 @@
 [TestCommentsInObjectTypes/single_line_comment_before_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -139,7 +139,7 @@
 [TestCommentsInObjectTypes/block_comment_before_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -196,7 +196,7 @@
 [TestCommentsInObjectTypes/multiple_comments_before_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -253,7 +253,7 @@
 [TestCommentsInObjectTypes/comments_between_properties - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -335,7 +335,7 @@
 [TestCommentsInObjectTypes/comment_after_separator - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -417,7 +417,7 @@
 [TestCommentsInObjectTypes/multi-line_JSDoc_comment - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -474,7 +474,7 @@
 [TestCommentsInObjectTypes/comments_before_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -533,7 +533,7 @@
 [TestCommentsInObjectTypes/comments_before_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -597,7 +597,7 @@
 [TestInlineCommentsInConditionalTypes/inline_comment_after_question_mark - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -685,7 +685,7 @@
 [TestInlineCommentsInConditionalTypes/inline_comment_after_colon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -773,7 +773,7 @@
 [TestInlineCommentsInConditionalTypes/inline_comments_after_both - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -861,7 +861,7 @@
 [TestInlineCommentsInConditionalTypes/line_comment_after_question_mark - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -949,7 +949,7 @@
 [TestInlineCommentsInConditionalTypes/line_comment_after_colon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Foo",
                 span: ast.Span{
@@ -1037,7 +1037,7 @@
 [TestInlineCommentsInConditionalTypes/simplified_Awaited_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Awaited",
                 span: ast.Span{
@@ -1205,7 +1205,7 @@
 [TestInlineCommentsInConditionalTypes/full_Awaited-like_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Awaited",
                 span: ast.Span{

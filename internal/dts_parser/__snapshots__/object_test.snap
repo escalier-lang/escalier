@@ -6494,7 +6494,7 @@
 [TestMethodWithFromParameter/lib.es5.d.ts_line_526_-_substr_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "String",
                 span: ast.Span{
@@ -6597,7 +6597,7 @@
 [TestMethodWithFromParameter/from_as_simple_parameter_in_object_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "T",
                 span: ast.Span{
@@ -6689,7 +6689,7 @@
 [TestMethodWithFromParameter/from_as_optional_parameter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "T",
                 span: ast.Span{
@@ -6781,7 +6781,7 @@
 [TestMethodWithFromParameter/from_with_other_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "T",
                 span: ast.Span{

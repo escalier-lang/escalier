@@ -2,7 +2,7 @@
 [TestConstructorDeclarations/simple_constructor - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Point",
                 span: ast.Span{
@@ -90,7 +90,7 @@
 [TestConstructorDeclarations/constructor_with_no_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Empty",
                 span: ast.Span{
@@ -128,7 +128,7 @@
 [TestConstructorDeclarations/constructor_with_optional_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -216,7 +216,7 @@
 [TestConstructorDeclarations/constructor_with_rest_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Variadic",
                 span: ast.Span{
@@ -287,7 +287,7 @@
 [TestConstructorDeclarations/public_constructor - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "PublicCtor",
                 span: ast.Span{
@@ -350,7 +350,7 @@
 [TestConstructorDeclarations/protected_constructor - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "ProtectedCtor",
                 span: ast.Span{
@@ -388,7 +388,7 @@
 [TestConstructorDeclarations/private_constructor - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "PrivateCtor",
                 span: ast.Span{
@@ -426,7 +426,7 @@
 [TestPropertyDeclarations/simple_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -479,7 +479,7 @@
 [TestPropertyDeclarations/optional_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -532,7 +532,7 @@
 [TestPropertyDeclarations/readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Immutable",
                 span: ast.Span{
@@ -585,7 +585,7 @@
 [TestPropertyDeclarations/static_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Utils",
                 span: ast.Span{
@@ -638,7 +638,7 @@
 [TestPropertyDeclarations/public_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Public",
                 span: ast.Span{
@@ -691,7 +691,7 @@
 [TestPropertyDeclarations/private_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -744,7 +744,7 @@
 [TestPropertyDeclarations/protected_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -797,7 +797,7 @@
 [TestPropertyDeclarations/static_readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Constants",
                 span: ast.Span{
@@ -850,7 +850,7 @@
 [TestPropertyDeclarations/public_readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Readonly",
                 span: ast.Span{
@@ -903,7 +903,7 @@
 [TestPropertyDeclarations/property_with_no_type_annotation - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Untyped",
                 span: ast.Span{
@@ -949,7 +949,7 @@
 [TestPropertyDeclarations/property_with_string_literal_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "StringKey",
                 span: ast.Span{
@@ -1002,7 +1002,7 @@
 [TestPropertyDeclarations/property_with_number_literal_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "NumberKey",
                 span: ast.Span{
@@ -1055,7 +1055,7 @@
 [TestPropertyDeclarations/property_with_computed_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Computed",
                 span: ast.Span{
@@ -1101,7 +1101,7 @@
 [TestMethodDeclarations/simple_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Calculator",
                 span: ast.Span{
@@ -1207,7 +1207,7 @@
 [TestMethodDeclarations/method_with_no_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Logger",
                 span: ast.Span{
@@ -1271,7 +1271,7 @@
 [TestMethodDeclarations/method_with_optional_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Printer",
                 span: ast.Span{
@@ -1385,7 +1385,7 @@
 [TestMethodDeclarations/method_with_rest_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Sum",
                 span: ast.Span{
@@ -1474,7 +1474,7 @@
 [TestMethodDeclarations/optional_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Optional",
                 span: ast.Span{
@@ -1538,7 +1538,7 @@
 [TestMethodDeclarations/static_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Utils",
                 span: ast.Span{
@@ -1627,7 +1627,7 @@
 [TestMethodDeclarations/public_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Public",
                 span: ast.Span{
@@ -1691,7 +1691,7 @@
 [TestMethodDeclarations/private_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -1747,7 +1747,7 @@
 [TestMethodDeclarations/protected_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -1811,7 +1811,7 @@
 [TestMethodDeclarations/abstract_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Abstract",
                 span: ast.Span{
@@ -1875,7 +1875,7 @@
 [TestMethodDeclarations/async_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Async",
                 span: ast.Span{
@@ -1948,7 +1948,7 @@
 [TestMethodDeclarations/method_with_type_parameters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Generic",
                 span: ast.Span{
@@ -2123,7 +2123,7 @@
 [TestMethodDeclarations/method_with_type_parameters_and_constraints - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Constrained",
                 span: ast.Span{
@@ -2253,7 +2253,7 @@
 [TestMethodDeclarations/static_abstract_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "StaticAbstract",
                 span: ast.Span{
@@ -2309,7 +2309,7 @@
 [TestMethodDeclarations/public_static_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "PublicStatic",
                 span: ast.Span{
@@ -2365,7 +2365,7 @@
 [TestMethodDeclarations/method_with_no_return_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "NoReturn",
                 span: ast.Span{
@@ -2446,7 +2446,7 @@
 [TestGetterAndSetterDeclarations/simple_getter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -2498,7 +2498,7 @@
 [TestGetterAndSetterDeclarations/simple_setter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -2567,7 +2567,7 @@
 [TestGetterAndSetterDeclarations/getter_and_setter_pair - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -2660,7 +2660,7 @@
 [TestGetterAndSetterDeclarations/static_getter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -2720,7 +2720,7 @@
 [TestGetterAndSetterDeclarations/static_setter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -2797,7 +2797,7 @@
 [TestGetterAndSetterDeclarations/public_getter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Public",
                 span: ast.Span{
@@ -2849,7 +2849,7 @@
 [TestGetterAndSetterDeclarations/private_getter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -2901,7 +2901,7 @@
 [TestGetterAndSetterDeclarations/protected_getter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -2953,7 +2953,7 @@
 [TestGetterAndSetterDeclarations/public_setter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Public",
                 span: ast.Span{
@@ -3022,7 +3022,7 @@
 [TestGetterAndSetterDeclarations/private_setter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -3091,7 +3091,7 @@
 [TestGetterAndSetterDeclarations/protected_setter - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -3160,7 +3160,7 @@
 [TestGetterAndSetterDeclarations/getter_with_no_return_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "NoType",
                 span: ast.Span{
@@ -3205,7 +3205,7 @@
 [TestGetterAndSetterDeclarations/getter_with_computed_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Computed",
                 span: ast.Span{
@@ -3282,7 +3282,7 @@
 [TestGetterAndSetterDeclarations/setter_with_computed_name - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Computed",
                 span: ast.Span{
@@ -3376,7 +3376,7 @@
 [TestClassIndexSignatures/string_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Dictionary",
                 span: ast.Span{
@@ -3436,7 +3436,7 @@
 [TestClassIndexSignatures/number_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Array",
                 span: ast.Span{
@@ -3496,7 +3496,7 @@
 [TestClassIndexSignatures/readonly_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "ReadonlyDict",
                 span: ast.Span{
@@ -3556,7 +3556,7 @@
 [TestClassIndexSignatures/symbol_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "SymbolMap",
                 span: ast.Span{
@@ -3624,7 +3624,7 @@
 [TestCombinedModifiers/public_static_readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Constants",
                 span: ast.Span{
@@ -3677,7 +3677,7 @@
 [TestCombinedModifiers/private_static_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -3741,7 +3741,7 @@
 [TestCombinedModifiers/protected_readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -3794,7 +3794,7 @@
 [TestCombinedModifiers/public_abstract_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Abstract",
                 span: ast.Span{
@@ -3858,7 +3858,7 @@
 [TestCombinedModifiers/protected_static_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Protected",
                 span: ast.Span{
@@ -3911,7 +3911,7 @@
 [TestCombinedModifiers/public_async_method - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Async",
                 span: ast.Span{
@@ -3992,7 +3992,7 @@
 [TestCombinedModifiers/private_readonly_property - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Private",
                 span: ast.Span{
@@ -4045,7 +4045,7 @@
 [TestComplexClasses/class_with_multiple_member_types - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -4377,7 +4377,7 @@
 [TestComplexClasses/abstract_class_with_abstract_and_concrete_members - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Shape",
                 span: ast.Span{
@@ -4691,7 +4691,7 @@
 [TestComplexClasses/class_with_generic_methods - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Container",
                 span: ast.Span{
@@ -5152,7 +5152,7 @@
 [TestComplexClasses/class_with_all_modifier_combinations - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "AllModifiers",
                 span: ast.Span{
