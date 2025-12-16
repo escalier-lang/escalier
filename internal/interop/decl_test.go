@@ -37,37 +37,37 @@ func TestConvertStatement(t *testing.T) {
 		wantNil   bool
 	}{
 		{
-			name:      "DeclareVariable",
+			name:      "VarDecl",
 			input:     "declare var x: number",
 			wantError: false,
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareFunction",
+			name:      "FuncDecl",
 			input:     "declare function foo(): void",
 			wantError: false,
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareTypeAlias",
+			name:      "TypeDecl",
 			input:     "type MyType = string",
 			wantError: false,
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareEnum",
+			name:      "EnumDecl",
 			input:     "enum Color { Red, Green, Blue }",
 			wantError: true, // Enums not yet implemented
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareClass",
+			name:      "ClassDecl",
 			input:     "declare class MyClass {}",
 			wantError: false,
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareInterface",
+			name:      "InterfaceDecl",
 			input:     "interface MyInterface {}",
 			wantError: false,
 			wantNil:   false,
@@ -81,7 +81,7 @@ func TestConvertStatement(t *testing.T) {
 			wantNil:   false,
 		},
 		{
-			name:      "DeclareNamespace - should error",
+			name:      "NamespaceDecl - should error",
 			input:     "declare namespace NS {}",
 			wantError: true,
 			wantNil:   false,
@@ -118,7 +118,7 @@ func TestConvertStatement(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareVariable(t *testing.T) {
+func TestConvertVarDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -210,7 +210,7 @@ func TestConvertDeclareVariable(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareFunction(t *testing.T) {
+func TestConvertFuncDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -296,7 +296,7 @@ func TestConvertDeclareFunction(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareTypeAlias(t *testing.T) {
+func TestConvertTypeDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -363,7 +363,7 @@ func TestConvertDeclareTypeAlias(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareEnum(t *testing.T) {
+func TestConvertEnumDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -403,7 +403,7 @@ func TestConvertDeclareEnum(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareClass(t *testing.T) {
+func TestConvertClassDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -520,7 +520,7 @@ func TestConvertDeclareClass(t *testing.T) {
 	}
 }
 
-func TestConvertDeclareInterface(t *testing.T) {
+func TestConvertInterfaceDecl(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
