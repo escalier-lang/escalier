@@ -533,7 +533,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareVariable{
+            Declaration: &dts_parser.VarDecl{
                 Name: &dts_parser.Ident{
                     Name: "x",
                     span: ast.Span{
@@ -576,7 +576,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareFunction{
+            Declaration: &dts_parser.FuncDecl{
                 Name: &dts_parser.Ident{
                     Name: "foo",
                     span: ast.Span{
@@ -629,7 +629,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareTypeAlias{
+            Declaration: &dts_parser.TypeDecl{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
                     span: ast.Span{
@@ -672,7 +672,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareInterface{
+            Declaration: &dts_parser.InterfaceDecl{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
                     span: ast.Span{
@@ -735,7 +735,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareClass{
+            Declaration: &dts_parser.ClassDecl{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
                     span: ast.Span{
@@ -775,7 +775,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareEnum{
+            Declaration: &dts_parser.EnumDecl{
                 Name: &dts_parser.Ident{
                     Name: "Color",
                     span: ast.Span{
@@ -860,7 +860,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareNamespace{
+            Declaration: &dts_parser.NamespaceDecl{
                 Name: &dts_parser.Ident{
                     Name: "Utils",
                     span: ast.Span{
@@ -1293,7 +1293,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareInterface{
+            Declaration: &dts_parser.InterfaceDecl{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
                     span: ast.Span{
@@ -1331,7 +1331,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareTypeAlias{
+            Declaration: &dts_parser.TypeDecl{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
                     span: ast.Span{
@@ -1707,7 +1707,7 @@
             },
         },
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareInterface{
+            Declaration: &dts_parser.InterfaceDecl{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
                     span: ast.Span{
@@ -1968,7 +1968,7 @@
 &dts_parser.Module{
     Statements: {
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareInterface{
+            Declaration: &dts_parser.InterfaceDecl{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
                     span: ast.Span{
@@ -2036,7 +2036,7 @@
             },
         },
         &dts_parser.ExportDecl{
-            Declaration: &dts_parser.DeclareClass{
+            Declaration: &dts_parser.ClassDecl{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
                     span: ast.Span{

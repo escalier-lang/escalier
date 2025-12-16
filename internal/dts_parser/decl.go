@@ -204,7 +204,7 @@ func (p *DtsParser) parseVariableDeclaration() Statement {
 		span.End = semiToken.Span.End
 	}
 
-	return &DeclareVariable{
+	return &VarDecl{
 		Name:     name,
 		TypeAnn:  typeAnn,
 		Readonly: readonly,
@@ -270,7 +270,7 @@ func (p *DtsParser) parseFunctionDeclaration() Statement {
 		span.End = semiToken.Span.End
 	}
 
-	return &DeclareFunction{
+	return &FuncDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Params:     params,
@@ -326,7 +326,7 @@ func (p *DtsParser) parseTypeAliasDeclaration() Statement {
 		span.End = semiToken.Span.End
 	}
 
-	return &DeclareTypeAlias{
+	return &TypeDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		TypeAnn:    typeAnn,
@@ -420,7 +420,7 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
-	return &DeclareInterface{
+	return &InterfaceDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
@@ -507,7 +507,7 @@ func (p *DtsParser) parseEnumDeclaration() Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
-	return &DeclareEnum{
+	return &EnumDecl{
 		Name:    name,
 		Members: members,
 		Const:   isConst,
@@ -662,7 +662,7 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
-	return &DeclareClass{
+	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
@@ -746,7 +746,7 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
-	return &DeclareNamespace{
+	return &NamespaceDecl{
 		Name:       name,
 		Statements: statements,
 		span:       span,
@@ -795,7 +795,7 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
-	return &DeclareModule{
+	return &ModuleDecl{
 		Name:       nameToken.Value,
 		Statements: statements,
 		span:       span,

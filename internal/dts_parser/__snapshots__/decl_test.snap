@@ -2,7 +2,7 @@
 [TestVariableDeclarations/var_declaration - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "x",
                 span: ast.Span{
@@ -33,7 +33,7 @@
 [TestVariableDeclarations/let_declaration - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "y",
                 span: ast.Span{
@@ -64,7 +64,7 @@
 [TestVariableDeclarations/const_declaration - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "z",
                 span: ast.Span{
@@ -95,7 +95,7 @@
 [TestVariableDeclarations/var_without_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "x",
                 span: ast.Span{
@@ -119,7 +119,7 @@
 [TestVariableDeclarations/complex_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "config",
                 span: ast.Span{
@@ -201,7 +201,7 @@
 [TestVariableDeclarations/union_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "value",
                 span: ast.Span{
@@ -249,7 +249,7 @@
 [TestVariableDeclarations/array_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "items",
                 span: ast.Span{
@@ -288,7 +288,7 @@
 [TestFunctionDeclarations/simple_function - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "foo",
                 span: ast.Span{
@@ -329,7 +329,7 @@
 [TestFunctionDeclarations/function_with_params - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "add",
                 span: ast.Span{
@@ -412,7 +412,7 @@
 [TestFunctionDeclarations/function_with_type_params - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "identity",
                 span: ast.Span{
@@ -504,7 +504,7 @@
 [TestFunctionDeclarations/function_with_optional_param - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "greet",
                 span: ast.Span{
@@ -570,7 +570,7 @@
 [TestFunctionDeclarations/function_with_rest_params - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "sum",
                 span: ast.Span{
@@ -636,7 +636,7 @@
 [TestFunctionDeclarations/function_with_complex_return - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "getData",
                 span: ast.Span{
@@ -720,7 +720,7 @@
 [TestFunctionDeclarations/function_with_constraints - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "pick",
                 span: ast.Span{
@@ -907,7 +907,7 @@
 [TestTypeAliasDeclarations/simple_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Name",
                 span: ast.Span{
@@ -938,7 +938,7 @@
 [TestTypeAliasDeclarations/union_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "StringOrNumber",
                 span: ast.Span{
@@ -986,7 +986,7 @@
 [TestTypeAliasDeclarations/intersection_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Combined",
                 span: ast.Span{
@@ -1050,7 +1050,7 @@
 [TestTypeAliasDeclarations/generic_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -1133,7 +1133,7 @@
 [TestTypeAliasDeclarations/conditional_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "NonNullable",
                 span: ast.Span{
@@ -1246,7 +1246,7 @@
 [TestTypeAliasDeclarations/mapped_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Readonly",
                 span: ast.Span{
@@ -1375,7 +1375,7 @@
 [TestTypeAliasDeclarations/tuple_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Point",
                 span: ast.Span{
@@ -1443,7 +1443,7 @@
 [TestTypeAliasDeclarations/function_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Callback",
                 span: ast.Span{
@@ -1517,7 +1517,7 @@
 [TestInterfaceDeclarations/simple_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -1593,7 +1593,7 @@
 [TestInterfaceDeclarations/interface_with_methods - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Calculator",
                 span: ast.Span{
@@ -1773,7 +1773,7 @@
 [TestInterfaceDeclarations/generic_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -1885,7 +1885,7 @@
 [TestInterfaceDeclarations/interface_with_extends - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Employee",
                 span: ast.Span{
@@ -1953,7 +1953,7 @@
 [TestInterfaceDeclarations/interface_with_multiple_extends - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Manager",
                 span: ast.Span{
@@ -2037,7 +2037,7 @@
 [TestInterfaceDeclarations/interface_with_optional_properties - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -2113,7 +2113,7 @@
 [TestInterfaceDeclarations/interface_with_readonly - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Point",
                 span: ast.Span{
@@ -2189,7 +2189,7 @@
 [TestInterfaceDeclarations/interface_with_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Dictionary",
                 span: ast.Span{
@@ -2247,7 +2247,7 @@
 [TestInterfaceDeclarations/interface_with_call_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Callable",
                 span: ast.Span{
@@ -2316,7 +2316,7 @@
 [TestInterfaceDeclarations/interface_with_construct_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Constructable",
                 span: ast.Span{
@@ -2393,7 +2393,7 @@
 [TestEnumDeclarations/simple_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Color",
                 span: ast.Span{
@@ -2466,7 +2466,7 @@
 [TestEnumDeclarations/enum_with_values - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Status",
                 span: ast.Span{
@@ -2537,7 +2537,7 @@
 [TestEnumDeclarations/string_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Direction",
                 span: ast.Span{
@@ -2608,7 +2608,7 @@
 [TestEnumDeclarations/const_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Size",
                 span: ast.Span{
@@ -2681,7 +2681,7 @@
 [TestEnumDeclarations/const_enum_with_values - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "HttpStatus",
                 span: ast.Span{
@@ -2752,7 +2752,7 @@
 [TestClassDeclarations/simple_class - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -2830,7 +2830,7 @@
 [TestClassDeclarations/class_with_constructor - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Point",
                 span: ast.Span{
@@ -2918,7 +2918,7 @@
 [TestClassDeclarations/class_with_methods - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Calculator",
                 span: ast.Span{
@@ -3102,7 +3102,7 @@
 [TestClassDeclarations/generic_class - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -3217,7 +3217,7 @@
 [TestClassDeclarations/class_with_extends - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Employee",
                 span: ast.Span{
@@ -3285,7 +3285,7 @@
 [TestClassDeclarations/class_with_implements - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "MyClass",
                 span: ast.Span{
@@ -3371,7 +3371,7 @@
 [TestClassDeclarations/class_with_static_members - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Utils",
                 span: ast.Span{
@@ -3485,7 +3485,7 @@
 [TestClassDeclarations/class_with_private_members - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Secret",
                 span: ast.Span{
@@ -3566,7 +3566,7 @@
 [TestClassDeclarations/class_with_protected_members - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Base",
                 span: ast.Span{
@@ -3655,7 +3655,7 @@
 [TestClassDeclarations/class_with_public_members - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Public",
                 span: ast.Span{
@@ -3744,7 +3744,7 @@
 [TestClassDeclarations/class_with_readonly - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Immutable",
                 span: ast.Span{
@@ -3797,7 +3797,7 @@
 [TestClassDeclarations/class_with_optional_properties - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -3875,7 +3875,7 @@
 [TestClassDeclarations/abstract_class - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Animal",
                 span: ast.Span{
@@ -3975,7 +3975,7 @@
 [TestClassDeclarations/class_with_getters_and_setters - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -4068,7 +4068,7 @@
 [TestClassDeclarations/class_with_index_signature - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "Dictionary",
                 span: ast.Span{
@@ -4128,7 +4128,7 @@
 [TestNamespaceDeclarations/simple_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "MyNamespace",
                 span: ast.Span{
@@ -4139,7 +4139,7 @@
             },
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareFunction{
+                    Declaration: &dts_parser.FuncDecl{
                         Name: &dts_parser.Ident{
                             Name: "foo",
                             span: ast.Span{
@@ -4198,7 +4198,7 @@
 [TestNamespaceDeclarations/nested_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Outer",
                 span: ast.Span{
@@ -4208,7 +4208,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareNamespace{
+                &dts_parser.NamespaceDecl{
                     Name: &dts_parser.Ident{
                         Name: "Inner",
                         span: ast.Span{
@@ -4219,7 +4219,7 @@
                     },
                     Statements: {
                         &dts_parser.ExportDecl{
-                            Declaration: &dts_parser.DeclareVariable{
+                            Declaration: &dts_parser.VarDecl{
                                 Name: &dts_parser.Ident{
                                     Name: "x",
                                     span: ast.Span{
@@ -4275,7 +4275,7 @@
 [TestNamespaceDeclarations/module_keyword - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "MyModule",
                 span: ast.Span{
@@ -4286,7 +4286,7 @@
             },
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareInterface{
+                    Declaration: &dts_parser.InterfaceDecl{
                         Name: &dts_parser.Ident{
                             Name: "Person",
                             span: ast.Span{
@@ -4355,11 +4355,11 @@
 [TestNamespaceDeclarations/ambient_module - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareModule{
+        &dts_parser.ModuleDecl{
             Name:       "my-library",
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareFunction{
+                    Declaration: &dts_parser.FuncDecl{
                         Name: &dts_parser.Ident{
                             Name: "doSomething",
                             span: ast.Span{
@@ -4418,7 +4418,7 @@
 [TestMultipleDeclarations - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "version",
                 span: ast.Span{
@@ -4442,7 +4442,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "init",
                 span: ast.Span{
@@ -4476,7 +4476,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -4526,7 +4526,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -4570,7 +4570,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Color",
                 span: ast.Span{
@@ -4620,7 +4620,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareClass{
+        &dts_parser.ClassDecl{
             Name: &dts_parser.Ident{
                 Name: "App",
                 span: ast.Span{
@@ -4677,7 +4677,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Utils",
                 span: ast.Span{
@@ -4688,7 +4688,7 @@
             },
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareVariable{
+                    Declaration: &dts_parser.VarDecl{
                         Name: &dts_parser.Ident{
                             Name: "PI",
                             span: ast.Span{
@@ -4737,7 +4737,7 @@
 [TestTypeAliasDeclarations/ambient_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Name",
                 span: ast.Span{
@@ -4768,7 +4768,7 @@
 [TestTypeAliasDeclarations/ambient_generic_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -4851,7 +4851,7 @@
 [TestTypeAliasDeclarations/ambient_union_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "StringOrNumber",
                 span: ast.Span{
@@ -4899,7 +4899,7 @@
 [TestTypeAliasDeclarations/ambient_conditional_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "NonNullable",
                 span: ast.Span{
@@ -5012,7 +5012,7 @@
 [TestInterfaceDeclarations/ambient_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -5088,7 +5088,7 @@
 [TestInterfaceDeclarations/ambient_generic_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -5165,7 +5165,7 @@
 [TestInterfaceDeclarations/ambient_interface_with_extends - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Employee",
                 span: ast.Span{
@@ -5233,7 +5233,7 @@
 [TestEnumDeclarations/ambient_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Color",
                 span: ast.Span{
@@ -5306,7 +5306,7 @@
 [TestEnumDeclarations/ambient_enum_with_values - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Status",
                 span: ast.Span{
@@ -5377,7 +5377,7 @@
 [TestEnumDeclarations/ambient_string_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Direction",
                 span: ast.Span{
@@ -5448,7 +5448,7 @@
 [TestEnumDeclarations/ambient_const_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "Size",
                 span: ast.Span{
@@ -5521,7 +5521,7 @@
 [TestEnumDeclarations/ambient_const_enum_with_values - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareEnum{
+        &dts_parser.EnumDecl{
             Name: &dts_parser.Ident{
                 Name: "HttpStatus",
                 span: ast.Span{
@@ -5592,7 +5592,7 @@
 [TestAmbientVariableDeclarations/var_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "foo",
                 span: ast.Span{
@@ -5623,7 +5623,7 @@
 [TestAmbientVariableDeclarations/let_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "bar",
                 span: ast.Span{
@@ -5654,7 +5654,7 @@
 [TestAmbientVariableDeclarations/const_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "baz",
                 span: ast.Span{
@@ -5685,7 +5685,7 @@
 [TestAmbientVariableDeclarations/var_without_type_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "foo",
                 span: ast.Span{
@@ -5709,7 +5709,7 @@
 [TestAmbientVariableDeclarations/multiple_vars_with_semicolons - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "x",
                 span: ast.Span{
@@ -5733,7 +5733,7 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "y",
                 span: ast.Span{
@@ -5764,7 +5764,7 @@
 [TestAmbientVariableDeclarations/var_with_union_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "value",
                 span: ast.Span{
@@ -5812,7 +5812,7 @@
 [TestAmbientVariableDeclarations/var_with_array_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "items",
                 span: ast.Span{
@@ -5851,7 +5851,7 @@
 [TestAmbientVariableDeclarations/var_with_object_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "config",
                 span: ast.Span{
@@ -5908,7 +5908,7 @@
 [TestAmbientVariableDeclarations/var_with_generic_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "map",
                 span: ast.Span{
@@ -5964,7 +5964,7 @@
 [TestAmbientVariableDeclarations/var_with_tuple_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "tuple",
                 span: ast.Span{
@@ -6032,7 +6032,7 @@
 [TestAmbientVariableDeclarations/const_with_readonly_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "VERSION",
                 span: ast.Span{
@@ -6063,7 +6063,7 @@
 [TestAmbientVariableDeclarations/var_with_complex_type_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareVariable{
+        &dts_parser.VarDecl{
             Name: &dts_parser.Ident{
                 Name: "handler",
                 span: ast.Span{
@@ -6145,7 +6145,7 @@
 [TestFunctionDeclarations/simple_function_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "foo",
                 span: ast.Span{
@@ -6186,7 +6186,7 @@
 [TestFunctionDeclarations/function_with_params_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "add",
                 span: ast.Span{
@@ -6269,7 +6269,7 @@
 [TestFunctionDeclarations/function_with_type_params_and_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareFunction{
+        &dts_parser.FuncDecl{
             Name: &dts_parser.Ident{
                 Name: "identity",
                 span: ast.Span{
@@ -6361,7 +6361,7 @@
 [TestInterfaceDeclarations/interface_with_comma_separators - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -6437,7 +6437,7 @@
 [TestInterfaceDeclarations/interface_with_mixed_separators - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Config",
                 span: ast.Span{
@@ -6538,7 +6538,7 @@
 [TestInterfaceDeclarations/interface_with_trailing_comma - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Point",
                 span: ast.Span{
@@ -6614,7 +6614,7 @@
 [TestInterfaceDeclarations/interface_with_line_comments - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Symbol",
                 span: ast.Span{
@@ -6694,7 +6694,7 @@
 [TestInterfaceDeclarations/interface_with_block_comments - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareInterface{
+        &dts_parser.InterfaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Person",
                 span: ast.Span{
@@ -6770,7 +6770,7 @@
 [TestTypeAliasDeclarations/simple_type_alias_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Name",
                 span: ast.Span{
@@ -6801,7 +6801,7 @@
 [TestTypeAliasDeclarations/union_type_alias_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "StringOrNumber",
                 span: ast.Span{
@@ -6849,7 +6849,7 @@
 [TestTypeAliasDeclarations/generic_type_alias_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -6932,7 +6932,7 @@
 [TestTypeAliasDeclarations/ambient_type_alias_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Name",
                 span: ast.Span{
@@ -6963,7 +6963,7 @@
 [TestTypeAliasDeclarations/ambient_generic_type_alias_with_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Box",
                 span: ast.Span{
@@ -7046,7 +7046,7 @@
 [TestTypeAliasDeclarations/mapped_type_with_optional - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Partial",
                 span: ast.Span{
@@ -7175,7 +7175,7 @@
 [TestTypeAliasDeclarations/mapped_type_with_trailing_semicolon - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "Partial",
                 span: ast.Span{
@@ -7304,7 +7304,7 @@
 [TestTypeAliasDeclarations/ConstructorParameters_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareTypeAlias{
+        &dts_parser.TypeDecl{
             Name: &dts_parser.Ident{
                 Name: "ConstructorParameters",
                 span: ast.Span{
@@ -7495,7 +7495,7 @@
 [TestNamespaceDeclarations/namespace_with_var_declarations - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Intl",
                 span: ast.Span{
@@ -7505,7 +7505,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "Collator",
                         span: ast.Span{
@@ -7551,7 +7551,7 @@
 [TestNamespaceDeclarations/namespace_with_multiple_var_declarations - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Intl",
                 span: ast.Span{
@@ -7561,7 +7561,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "Collator",
                         span: ast.Span{
@@ -7593,7 +7593,7 @@
                         SourceID: 0,
                     },
                 },
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "NumberFormat",
                         span: ast.Span{
@@ -7639,7 +7639,7 @@
 [TestAmbientNamespaceVariableDeclarations/var_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Intl",
                 span: ast.Span{
@@ -7649,7 +7649,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "Collator",
                         span: ast.Span{
@@ -7695,7 +7695,7 @@
 [TestAmbientNamespaceVariableDeclarations/let_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -7705,7 +7705,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "value",
                         span: ast.Span{
@@ -7743,7 +7743,7 @@
 [TestAmbientNamespaceVariableDeclarations/const_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -7753,7 +7753,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "PI",
                         span: ast.Span{
@@ -7791,7 +7791,7 @@
 [TestAmbientNamespaceVariableDeclarations/multiple_vars_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Intl",
                 span: ast.Span{
@@ -7801,7 +7801,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "Collator",
                         span: ast.Span{
@@ -7833,7 +7833,7 @@
                         SourceID: 0,
                     },
                 },
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "NumberFormat",
                         span: ast.Span{
@@ -7879,7 +7879,7 @@
 [TestAmbientNamespaceVariableDeclarations/function_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -7889,7 +7889,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareFunction{
+                &dts_parser.FuncDecl{
                     Name: &dts_parser.Ident{
                         Name: "foo",
                         span: ast.Span{
@@ -7937,7 +7937,7 @@
 [TestAmbientNamespaceVariableDeclarations/class_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -7947,7 +7947,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareClass{
+                &dts_parser.ClassDecl{
                     Name: &dts_parser.Ident{
                         Name: "MyClass",
                         span: ast.Span{
@@ -7982,7 +7982,7 @@
 [TestAmbientNamespaceVariableDeclarations/export_var_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -7993,7 +7993,7 @@
             },
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareVariable{
+                    Declaration: &dts_parser.VarDecl{
                         Name: &dts_parser.Ident{
                             Name: "x",
                             span: ast.Span{
@@ -8042,7 +8042,7 @@
 [TestAmbientNamespaceVariableDeclarations/export_function_in_declare_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Test",
                 span: ast.Span{
@@ -8053,7 +8053,7 @@
             },
             Statements: {
                 &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.DeclareFunction{
+                    Declaration: &dts_parser.FuncDecl{
                         Name: &dts_parser.Ident{
                             Name: "foo",
                             span: ast.Span{
@@ -8112,7 +8112,7 @@
 [TestAmbientNamespaceVariableDeclarations/nested_namespace_with_var - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "Outer",
                 span: ast.Span{
@@ -8122,7 +8122,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareNamespace{
+                &dts_parser.NamespaceDecl{
                     Name: &dts_parser.Ident{
                         Name: "Inner",
                         span: ast.Span{
@@ -8132,7 +8132,7 @@
                         },
                     },
                     Statements: {
-                        &dts_parser.DeclareVariable{
+                        &dts_parser.VarDecl{
                             Name: &dts_parser.Ident{
                                 Name: "x",
                                 span: ast.Span{
@@ -8177,10 +8177,10 @@
 [TestAmbientNamespaceVariableDeclarations/var_in_declare_module - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareModule{
+        &dts_parser.ModuleDecl{
             Name:       "my-module",
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "x",
                         span: ast.Span{
@@ -8218,7 +8218,7 @@
 [TestNamespaceDeclarations/namespace_with_comments_before_declarations - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.DeclareNamespace{
+        &dts_parser.NamespaceDecl{
             Name: &dts_parser.Ident{
                 Name: "CSS",
                 span: ast.Span{
@@ -8228,7 +8228,7 @@
                 },
             },
             Statements: {
-                &dts_parser.DeclareVariable{
+                &dts_parser.VarDecl{
                     Name: &dts_parser.Ident{
                         Name: "highlights",
                         span: ast.Span{
@@ -8260,7 +8260,7 @@
                         SourceID: 0,
                     },
                 },
-                &dts_parser.DeclareFunction{
+                &dts_parser.FuncDecl{
                     Name: &dts_parser.Ident{
                         Name: "Hz",
                         span: ast.Span{

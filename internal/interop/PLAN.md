@@ -232,16 +232,22 @@ func convertIdent(id *dts_parser.Ident) *ast.Ident
 func convertQualIdent(qi dts_parser.QualIdent) ast.QualIdent
 
 // convertTypeParam converts dts_parser.TypeParam to ast.TypeParam
-func convertTypeParam(tp *dts_parser.TypeParam) *ast.TypeParam
+func convertTypeParam(tp *dts_parser.TypeParam) (*ast.TypeParam, error)
 
 // convertParam converts dts_parser.Param to ast.Param
-func convertParam(p *dts_parser.Param) *ast.Param
+func convertParam(p *dts_parser.Param) (*ast.Param, error)
 
 // convertTypeAnn converts dts_parser.TypeAnn to ast.TypeAnn
-func convertTypeAnn(ta dts_parser.TypeAnn) ast.TypeAnn
+func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error)
 
 // convertModifiers extracts modifier flags
 func convertModifiers(m dts_parser.Modifiers) (static, private, readonly bool)
+
+// convertPropertyKey converts dts_parser.PropertyKey to ast.ObjKey
+func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error)
+
+// convertInterfaceMember converts dts_parser.InterfaceMember to ast.ObjTypeAnnElem
+func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnElem, error)
 ```
 
 ### Step 2: Statement to Decl Conversion
@@ -249,28 +255,28 @@ Create conversion function for each statement type:
 ```go
 // convertStatement attempts to convert a Statement to a Decl
 // Returns nil for statements that can't be represented as Decl (like imports)
-func convertStatement(stmt dts_parser.Statement) ast.Decl
+func convertStatement(stmt dts_parser.Statement) (ast.Decl, error)
 
 // Specific converters
-func convertDeclareVariable(dv *dts_parser.DeclareVariable) *ast.VarDecl
-func convertDeclareFunction(df *dts_parser.DeclareFunction) *ast.FuncDecl
-func convertDeclareTypeAlias(dt *dts_parser.DeclareTypeAlias) *ast.TypeDecl
-func convertDeclareEnum(de *dts_parser.DeclareEnum) ast.Decl // Return type TBD
-func convertDeclareClass(dc *dts_parser.DeclareClass) *ast.ClassDecl
-func convertDeclareInterface(di *dts_parser.DeclareInterface) ast.Decl
+func convertDeclareVariable(dv *dts_parser.DeclareVariable) (*ast.VarDecl, error)
+func convertDeclareFunction(df *dts_parser.DeclareFunction) (*ast.FuncDecl, error)
+func convertDeclareTypeAlias(dt *dts_parser.DeclareTypeAlias) (*ast.TypeDecl, error)
+func convertDeclareEnum(de *dts_parser.DeclareEnum) (ast.Decl, error) // Return type TBD
+func convertDeclareClass(dc *dts_parser.DeclareClass) (*ast.ClassDecl, error)
+func convertDeclareInterface(di *dts_parser.DeclareInterface) (ast.Decl, error)
 ```
 
 ### Step 3: Class Member Conversion
 ```go
 // convertClassMember converts dts_parser.ClassMember to ast.ClassElem
-func convertClassMember(cm dts_parser.ClassMember) ast.ClassElem
+func convertClassMember(cm dts_parser.ClassMember) (ast.ClassElem, error)
 
 // Specific converters
-func convertMethodDecl(md *dts_parser.MethodDecl) *ast.MethodElem
-func convertPropertyDecl(pd *dts_parser.PropertyDecl) *ast.FieldElem
-func convertGetterDecl(gd *dts_parser.GetterDecl) *ast.GetterElem
-func convertSetterDecl(sd *dts_parser.SetterDecl) *ast.SetterElem
-func convertConstructorDecl(cd *dts_parser.ConstructorDecl) ast.ClassElem // TBD
+func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error)
+func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error)
+func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error)
+func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error)
+func convertConstructorDecl(cd *dts_parser.ConstructorDecl) (ast.ClassElem, error) // TBD
 ```
 
 ### Step 4: Namespace Processing
@@ -280,20 +286,20 @@ func processNamespace(
     name string,
     stmts []dts_parser.Statement,
     namespaces *btree.Map[string, *ast.Namespace],
-)
+) error
 
 // mergeNamespace merges declarations into an existing namespace or creates new
 func mergeNamespace(
     name string,
     decls []ast.Decl,
     namespaces *btree.Map[string, *ast.Namespace],
-)
+) error
 ```
 
 ### Step 5: Main Conversion Function
 ```go
 // ConvertModule converts dts_parser.Module to ast.Module
-func ConvertModule(dtsModule *dts_parser.Module) *ast.Module {
+func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
     var namespaces btree.Map[string, *ast.Namespace]
     
     // Process each statement
@@ -301,7 +307,9 @@ func ConvertModule(dtsModule *dts_parser.Module) *ast.Module {
         switch s := stmt.(type) {
         case *dts_parser.DeclareNamespace:
             // Process namespace recursively
-            processNamespace(s.Name.Name, s.Statements, &namespaces)
+            if err := processNamespace(s.Name.Name, s.Statements, &namespaces); err != nil {
+                return nil, fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
+            }
         case *dts_parser.DeclareModule:
             // Handle module declarations
             // TBD: namespace or special handling
@@ -311,14 +319,19 @@ func ConvertModule(dtsModule *dts_parser.Module) *ast.Module {
             // Unwrap and process the inner declaration
         default:
             // Convert to Decl and add to root namespace
-            decl := convertStatement(s)
+            decl, err := convertStatement(s)
+            if err != nil {
+                return nil, fmt.Errorf("converting statement: %w", err)
+            }
             if decl != nil {
-                mergeNamespace("", []ast.Decl{decl}, &namespaces)
+                if err := mergeNamespace("", []ast.Decl{decl}, &namespaces); err != nil {
+                    return nil, fmt.Errorf("merging to root namespace: %w", err)
+                }
             }
         }
     }
     
-    return &ast.Module{Namespaces: namespaces}
+    return &ast.Module{Namespaces: namespaces}, nil
 }
 ```
 
@@ -352,9 +365,10 @@ func ConvertModule(dtsModule *dts_parser.Module) *ast.Module {
 9. **Root Namespace Name**: Empty string or "global"?
    - Recommend: Empty string "" for consistency
 
-10. **Error Handling**: What to do with unsupported constructs?
-    - Log warnings? Return errors? Skip silently?
-    - Recommend: Return errors with detailed messages
+10. **Error Handling**: All conversion functions now return errors
+    - Unsupported constructs return descriptive errors using fmt.Errorf
+    - Errors are wrapped with context using %w for proper error chains
+    - Callers can handle errors appropriately (fail fast, collect, log, etc.)
 
 ## Testing Strategy
 

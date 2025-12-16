@@ -57,32 +57,32 @@ type Statement interface {
 	Node
 }
 
-func (*DeclareVariable) isStatement()  {}
-func (*DeclareFunction) isStatement()  {}
-func (*DeclareClass) isStatement()     {}
-func (*DeclareInterface) isStatement() {}
-func (*DeclareTypeAlias) isStatement() {}
-func (*DeclareEnum) isStatement()      {}
-func (*DeclareNamespace) isStatement() {}
-func (*DeclareModule) isStatement()    {}
-func (*ExportDecl) isStatement()       {}
-func (*ImportDecl) isStatement()       {}
-func (*AmbientDecl) isStatement()      {}
+func (*VarDecl) isStatement()       {}
+func (*FuncDecl) isStatement()      {}
+func (*ClassDecl) isStatement()     {}
+func (*InterfaceDecl) isStatement() {}
+func (*TypeDecl) isStatement()      {}
+func (*EnumDecl) isStatement()      {}
+func (*NamespaceDecl) isStatement() {}
+func (*ModuleDecl) isStatement()    {}
+func (*ExportDecl) isStatement()    {}
+func (*ImportDecl) isStatement()    {}
+func (*AmbientDecl) isStatement()   {}
 
 // ============================================================================
 // Declarations
 // ============================================================================
 
-type DeclareVariable struct {
+type VarDecl struct {
 	Name     *Ident
 	TypeAnn  TypeAnn
 	Readonly bool // for const declarations
 	span     ast.Span
 }
 
-func (d *DeclareVariable) Span() ast.Span { return d.span }
+func (d *VarDecl) Span() ast.Span { return d.span }
 
-type DeclareFunction struct {
+type FuncDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Params     []*Param
@@ -90,9 +90,9 @@ type DeclareFunction struct {
 	span       ast.Span
 }
 
-func (d *DeclareFunction) Span() ast.Span { return d.span }
+func (d *FuncDecl) Span() ast.Span { return d.span }
 
-type DeclareClass struct {
+type ClassDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Extends    TypeAnn // optional
@@ -102,9 +102,9 @@ type DeclareClass struct {
 	span       ast.Span
 }
 
-func (d *DeclareClass) Span() ast.Span { return d.span }
+func (d *ClassDecl) Span() ast.Span { return d.span }
 
-type DeclareInterface struct {
+type InterfaceDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Extends    []TypeAnn
@@ -112,25 +112,25 @@ type DeclareInterface struct {
 	span       ast.Span
 }
 
-func (d *DeclareInterface) Span() ast.Span { return d.span }
+func (d *InterfaceDecl) Span() ast.Span { return d.span }
 
-type DeclareTypeAlias struct {
+type TypeDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
 	span       ast.Span
 }
 
-func (d *DeclareTypeAlias) Span() ast.Span { return d.span }
+func (d *TypeDecl) Span() ast.Span { return d.span }
 
-type DeclareEnum struct {
+type EnumDecl struct {
 	Name    *Ident
 	Members []*EnumMember
 	Const   bool
 	span    ast.Span
 }
 
-func (d *DeclareEnum) Span() ast.Span { return d.span }
+func (d *EnumDecl) Span() ast.Span { return d.span }
 
 type EnumMember struct {
 	Name  *Ident
@@ -140,21 +140,21 @@ type EnumMember struct {
 
 func (e *EnumMember) Span() ast.Span { return e.span }
 
-type DeclareNamespace struct {
+type NamespaceDecl struct {
 	Name       *Ident
 	Statements []Statement
 	span       ast.Span
 }
 
-func (d *DeclareNamespace) Span() ast.Span { return d.span }
+func (d *NamespaceDecl) Span() ast.Span { return d.span }
 
-type DeclareModule struct {
+type ModuleDecl struct {
 	Name       string // module name as string literal
 	Statements []Statement
 	span       ast.Span
 }
 
-func (d *DeclareModule) Span() ast.Span { return d.span }
+func (d *ModuleDecl) Span() ast.Span { return d.span }
 
 type AmbientDecl struct {
 	Declaration Statement

@@ -7,6 +7,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 )
 
+// convertSpan converts a dts_parser span to an ast span.
+// Since both use ast.Span, this is a simple identity function.
+func convertSpan(span ast.Span) ast.Span {
+	return span
+}
+
 func convertIdent(id *dts_parser.Ident) *ast.Ident {
 	return ast.NewIdentifier(id.Name, id.Span())
 }
@@ -549,4 +555,174 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 	default:
 		return nil, fmt.Errorf("convertTypeAnn: unknown type annotation %T", ta)
 	}
+}
+
+// convertTypeParams converts a slice of dts_parser.TypeParam to a slice of ast.TypeParam.
+func convertTypeParams(typeParams []*dts_parser.TypeParam) ([]*ast.TypeParam, error) {
+	result := make([]*ast.TypeParam, len(typeParams))
+	for i, tp := range typeParams {
+		var err error
+		result[i], err = convertTypeParam(tp)
+		if err != nil {
+			return nil, fmt.Errorf("converting type parameter %d: %w", i, err)
+		}
+	}
+	return result, nil
+}
+
+// convertParams converts a slice of dts_parser.Param to a slice of ast.Param.
+func convertParams(params []*dts_parser.Param) ([]*ast.Param, error) {
+	result := make([]*ast.Param, len(params))
+	for i, p := range params {
+		var err error
+		result[i], err = convertParam(p)
+		if err != nil {
+			return nil, fmt.Errorf("converting parameter %d: %w", i, err)
+		}
+	}
+	return result, nil
+}
+
+// convertModifiers extracts modifier flags from dts_parser.Modifiers.
+func convertModifiers(m dts_parser.Modifiers) (static, private, readonly bool) {
+	return m.Static, m.Private, m.Readonly
+}
+
+// convertMethodDecl converts a dts_parser.MethodDecl to an ast.MethodElem.
+func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
+	// Convert type parameters
+	typeParams, err := convertTypeParams(md.TypeParams)
+	if err != nil {
+		return nil, fmt.Errorf("converting method type parameters: %w", err)
+	}
+
+	// Convert parameters
+	params, err := convertParams(md.Params)
+	if err != nil {
+		return nil, fmt.Errorf("converting method parameters: %w", err)
+	}
+
+	// Convert return type
+	var returnType ast.TypeAnn
+	if md.ReturnType != nil {
+		returnType, err = convertTypeAnn(md.ReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("converting method return type: %w", err)
+		}
+	}
+
+	// Convert property key to object key
+	name, err := convertPropertyKey(md.Name)
+	if err != nil {
+		return nil, fmt.Errorf("converting method name: %w", err)
+	}
+
+	// Extract modifiers
+	static, private, _ := convertModifiers(md.Modifiers)
+
+	// Create a function expression for the method
+	funcExpr := ast.NewFuncExpr(typeParams, params, returnType, nil, md.Modifiers.Async, nil, md.Span())
+
+	return &ast.MethodElem{
+		Name:    name,
+		Fn:      funcExpr,
+		MutSelf: nil, // Not determined from .d.ts
+		Static:  static,
+		Private: private,
+		Span_:   md.Span(),
+	}, nil
+}
+
+// convertPropertyDecl converts a dts_parser.PropertyDecl to an ast.FieldElem.
+func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error) {
+	// Convert property key to object key
+	name, err := convertPropertyKey(pd.Name)
+	if err != nil {
+		return nil, fmt.Errorf("converting property name: %w", err)
+	}
+
+	// Convert type annotation
+	var typeAnn ast.TypeAnn
+	if pd.TypeAnn != nil {
+		typeAnn, err = convertTypeAnn(pd.TypeAnn)
+		if err != nil {
+			return nil, fmt.Errorf("converting property type: %w", err)
+		}
+	}
+
+	// Extract modifiers
+	static, private, readonly := convertModifiers(pd.Modifiers)
+
+	return &ast.FieldElem{
+		Name:     name,
+		Value:    nil, // No value in declarations
+		Type:     typeAnn,
+		Default:  nil, // No default in declarations
+		Static:   static,
+		Private:  private,
+		Readonly: readonly,
+		Span_:    pd.Span(),
+	}, nil
+}
+
+// convertGetterDecl converts a dts_parser.GetterDecl to an ast.GetterElem.
+func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error) {
+	// Convert property key to object key
+	name, err := convertPropertyKey(gd.Name)
+	if err != nil {
+		return nil, fmt.Errorf("converting getter name: %w", err)
+	}
+
+	// Convert return type
+	var returnType ast.TypeAnn
+	if gd.ReturnType != nil {
+		returnType, err = convertTypeAnn(gd.ReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("converting getter return type: %w", err)
+		}
+	}
+
+	// Extract modifiers
+	static, private, _ := convertModifiers(gd.Modifiers)
+
+	// Create a function expression for the getter (no params, returns the type)
+	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{}, returnType, nil, false, nil, gd.Span())
+
+	return &ast.GetterElem{
+		Name:    name,
+		Fn:      funcExpr,
+		Static:  static,
+		Private: private,
+		Span_:   gd.Span(),
+	}, nil
+}
+
+// convertSetterDecl converts a dts_parser.SetterDecl to an ast.SetterElem.
+func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
+	// Convert property key to object key
+	name, err := convertPropertyKey(sd.Name)
+	if err != nil {
+		return nil, fmt.Errorf("converting setter name: %w", err)
+	}
+
+	// Convert parameter
+	param, err := convertParam(sd.Param)
+	if err != nil {
+		return nil, fmt.Errorf("converting setter parameter: %w", err)
+	}
+
+	// Extract modifiers
+	static, private, _ := convertModifiers(sd.Modifiers)
+
+	// Create a function expression for the setter (one param, returns undefined)
+	returnType := ast.NewLitTypeAnn(ast.NewUndefined(sd.Span()), sd.Span())
+	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{param}, returnType, nil, false, nil, sd.Span())
+
+	return &ast.SetterElem{
+		Name:    name,
+		Fn:      funcExpr,
+		Static:  static,
+		Private: private,
+		Span_:   sd.Span(),
+	}, nil
 }
