@@ -586,11 +586,6 @@ func convertParams(params []*dts_parser.Param) ([]*ast.Param, error) {
 	return result, nil
 }
 
-// convertModifiers extracts modifier flags from dts_parser.Modifiers.
-func convertModifiers(m dts_parser.Modifiers) (static, private, readonly bool) {
-	return m.Static, m.Private, m.Readonly
-}
-
 // convertMethodDecl converts a dts_parser.MethodDecl to an ast.MethodElem.
 func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 	// Convert type parameters
@@ -620,9 +615,6 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 		return nil, fmt.Errorf("converting method name: %w", err)
 	}
 
-	// Extract modifiers
-	static, private, _ := convertModifiers(md.Modifiers)
-
 	// Create a function expression for the method
 	funcExpr := ast.NewFuncExpr(typeParams, params, returnType, nil, md.Modifiers.Async, nil, md.Span())
 
@@ -630,8 +622,8 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 		Name:    name,
 		Fn:      funcExpr,
 		MutSelf: nil, // Not determined from .d.ts
-		Static:  static,
-		Private: private,
+		Static:  md.Modifiers.Static,
+		Private: md.Modifiers.Private,
 		Span_:   md.Span(),
 	}, nil
 }
@@ -653,17 +645,14 @@ func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error) {
 		}
 	}
 
-	// Extract modifiers
-	static, private, readonly := convertModifiers(pd.Modifiers)
-
 	return &ast.FieldElem{
 		Name:     name,
 		Value:    nil, // No value in declarations
 		Type:     typeAnn,
 		Default:  nil, // No default in declarations
-		Static:   static,
-		Private:  private,
-		Readonly: readonly,
+		Static:   pd.Modifiers.Static,
+		Private:  pd.Modifiers.Private,
+		Readonly: pd.Modifiers.Readonly,
 		Span_:    pd.Span(),
 	}, nil
 }
@@ -685,17 +674,14 @@ func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error) {
 		}
 	}
 
-	// Extract modifiers
-	static, private, _ := convertModifiers(gd.Modifiers)
-
 	// Create a function expression for the getter (no params, returns the type)
 	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{}, returnType, nil, false, nil, gd.Span())
 
 	return &ast.GetterElem{
 		Name:    name,
 		Fn:      funcExpr,
-		Static:  static,
-		Private: private,
+		Static:  gd.Modifiers.Static,
+		Private: gd.Modifiers.Private,
 		Span_:   gd.Span(),
 	}, nil
 }
@@ -714,9 +700,6 @@ func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
 		return nil, fmt.Errorf("converting setter parameter: %w", err)
 	}
 
-	// Extract modifiers
-	static, private, _ := convertModifiers(sd.Modifiers)
-
 	// Create a function expression for the setter (one param, returns undefined)
 	returnType := ast.NewLitTypeAnn(ast.NewUndefined(sd.Span()), sd.Span())
 	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{param}, returnType, nil, false, nil, sd.Span())
@@ -724,8 +707,8 @@ func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
 	return &ast.SetterElem{
 		Name:    name,
 		Fn:      funcExpr,
-		Static:  static,
-		Private: private,
+		Static:  sd.Modifiers.Static,
+		Private: sd.Modifiers.Private,
 		Span_:   sd.Span(),
 	}, nil
 }
