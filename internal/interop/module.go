@@ -34,17 +34,9 @@ func processNamespace(
 			}
 
 		case *dts_parser.ModuleDecl:
-			// Treat module declarations as namespaces
-			// Use the module name as the namespace name
-			moduleName := s.Name
-			if name != "" {
-				// If we're already in a namespace, this is a nested module
-				moduleName = name + "." + s.Name
-			}
-
-			if err := processNamespace(moduleName, s.Statements, namespaces); err != nil {
-				return fmt.Errorf("processing module %s: %w", s.Name, err)
-			}
+			// Module declarations (e.g., declare module "foo") are not supported
+			// since Escalier doesn't support importing other packages yet
+			return fmt.Errorf("module declarations are not supported: %s", s.Name)
 
 		case *dts_parser.ImportDecl, *dts_parser.ExportDecl:
 			// Skip imports and exports for now
@@ -67,15 +59,8 @@ func processNamespace(
 				}
 
 			case *dts_parser.ModuleDecl:
-				// For module declarations inside ambient declarations
-				moduleName := inner.Name
-				if name != "" {
-					moduleName = name + "." + inner.Name
-				}
-
-				if err := processNamespace(moduleName, inner.Statements, namespaces); err != nil {
-					return fmt.Errorf("processing ambient module %s: %w", inner.Name, err)
-				}
+				// Module declarations are not supported
+				return fmt.Errorf("module declarations are not supported: %s", inner.Name)
 
 			default:
 				// Convert the ambient declaration like any other statement
@@ -102,9 +87,7 @@ func processNamespace(
 
 	// Merge the declarations into the namespace
 	if len(decls) > 0 {
-		if err := mergeNamespace(name, decls, namespaces); err != nil {
-			return fmt.Errorf("merging declarations into namespace %s: %w", name, err)
-		}
+		mergeNamespace(name, decls, namespaces)
 	}
 
 	return nil
@@ -116,7 +99,7 @@ func mergeNamespace(
 	name string,
 	decls []ast.Decl,
 	namespaces *btree.Map[string, *ast.Namespace],
-) error {
+) {
 	// Get the existing namespace if it exists
 	existing, exists := namespaces.Get(name)
 
@@ -130,8 +113,6 @@ func mergeNamespace(
 		}
 		namespaces.Set(name, namespace)
 	}
-
-	return nil
 }
 
 // ConvertModule converts dts_parser.Module to ast.Module.

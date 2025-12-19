@@ -1,6 +1,7 @@
 package interop
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -310,23 +311,18 @@ declare module "my-module" {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	_, err := ConvertModule(dtsModule)
 
-	if err != nil {
-		t.Fatalf("ConvertModule returned error: %v", err)
+	// Module declarations should error since Escalier doesn't support importing packages
+	if err == nil {
+		t.Fatalf("Expected error for module declaration, got none")
 	}
 
-	// Check that the module is treated as a namespace
-	moduleName := "my-module"
-	moduleNS, moduleExists := astModule.Namespaces.Get(moduleName)
-	if !moduleExists {
-		t.Fatalf("Module namespace %s not found", moduleName)
+	// Check that the error message mentions module declarations
+	expectedMsg := "module declarations are not supported"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain %q, got: %v", expectedMsg, err)
 	}
-	if len(moduleNS.Decls) != 2 {
-		t.Errorf("Expected 2 declarations in module namespace, got %d", len(moduleNS.Decls))
-	}
-
-	snaps.MatchSnapshot(t, astModule)
 }
 
 func TestConvertModule_DeeplyNestedNamespaces(t *testing.T) {
