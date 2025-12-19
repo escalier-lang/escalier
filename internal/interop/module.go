@@ -8,6 +8,16 @@ import (
 	"github.com/tidwall/btree"
 )
 
+// qualifiedName constructs a qualified namespace name by appending a child name to a parent name.
+// If parent is empty (root namespace), returns just the child name.
+// Otherwise, returns "parent.child".
+func qualifiedName(parent, child string) string {
+	if parent == "" {
+		return child
+	}
+	return parent + "." + child
+}
+
 // processNamespace recursively processes a namespace and adds declarations to the btree map.
 // The name parameter is the qualified namespace name (e.g., "Foo.Bar.Baz" for nested namespaces).
 // For the root/global namespace, use an empty string "".
@@ -21,14 +31,8 @@ func processNamespace(
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *dts_parser.NamespaceDecl:
-			// For nested namespaces, create a qualified name
-			nestedName := name
-			if nestedName != "" {
-				nestedName += "."
-			}
-			nestedName += s.Name.Name
-
 			// Process the nested namespace recursively
+			nestedName := qualifiedName(name, s.Name.Name)
 			if err := processNamespace(nestedName, s.Statements, namespaces); err != nil {
 				return fmt.Errorf("processing nested namespace %s: %w", s.Name.Name, err)
 			}
@@ -47,13 +51,8 @@ func processNamespace(
 			// Unwrap and process the inner declaration
 			switch inner := s.Declaration.(type) {
 			case *dts_parser.NamespaceDecl:
-				// For nested namespaces inside ambient declarations
-				nestedName := name
-				if nestedName != "" {
-					nestedName += "."
-				}
-				nestedName += inner.Name.Name
-
+				// Process nested namespace inside ambient declaration
+				nestedName := qualifiedName(name, inner.Name.Name)
 				if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
 					return fmt.Errorf("processing ambient namespace %s: %w", inner.Name.Name, err)
 				}
