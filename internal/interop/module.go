@@ -1,0 +1,148 @@
+package interop
+
+import (
+	"fmt"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/tidwall/btree"
+)
+
+// processNamespace recursively processes a namespace and adds declarations to the btree map.
+// The name parameter is the qualified namespace name (e.g., "Foo.Bar.Baz" for nested namespaces).
+// For the root/global namespace, use an empty string "".
+func processNamespace(
+	name string,
+	stmts []dts_parser.Statement,
+	namespaces *btree.Map[string, *ast.Namespace],
+) error {
+	var decls []ast.Decl
+
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *dts_parser.NamespaceDecl:
+			// For nested namespaces, create a qualified name
+			nestedName := name
+			if nestedName != "" {
+				nestedName += "."
+			}
+			nestedName += s.Name.Name
+
+			// Process the nested namespace recursively
+			if err := processNamespace(nestedName, s.Statements, namespaces); err != nil {
+				return fmt.Errorf("processing nested namespace %s: %w", s.Name.Name, err)
+			}
+
+		case *dts_parser.ModuleDecl:
+			// Treat module declarations as namespaces
+			// Use the module name as the namespace name
+			moduleName := s.Name
+			if name != "" {
+				// If we're already in a namespace, this is a nested module
+				moduleName = name + "." + s.Name
+			}
+
+			if err := processNamespace(moduleName, s.Statements, namespaces); err != nil {
+				return fmt.Errorf("processing module %s: %w", s.Name, err)
+			}
+
+		case *dts_parser.ImportDecl, *dts_parser.ExportDecl:
+			// Skip imports and exports for now
+			// TODO: handle exports to set export flag on declarations
+			continue
+
+		case *dts_parser.AmbientDecl:
+			// Unwrap and process the inner declaration
+			switch inner := s.Declaration.(type) {
+			case *dts_parser.NamespaceDecl:
+				// For nested namespaces inside ambient declarations
+				nestedName := name
+				if nestedName != "" {
+					nestedName += "."
+				}
+				nestedName += inner.Name.Name
+
+				if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
+					return fmt.Errorf("processing ambient namespace %s: %w", inner.Name.Name, err)
+				}
+
+			case *dts_parser.ModuleDecl:
+				// For module declarations inside ambient declarations
+				moduleName := inner.Name
+				if name != "" {
+					moduleName = name + "." + inner.Name
+				}
+
+				if err := processNamespace(moduleName, inner.Statements, namespaces); err != nil {
+					return fmt.Errorf("processing ambient module %s: %w", inner.Name, err)
+				}
+
+			default:
+				// Convert the ambient declaration like any other statement
+				decl, err := convertStatement(inner)
+				if err != nil {
+					return fmt.Errorf("converting ambient declaration: %w", err)
+				}
+				if decl != nil {
+					decls = append(decls, decl)
+				}
+			}
+
+		default:
+			// Convert regular declarations
+			decl, err := convertStatement(s)
+			if err != nil {
+				return fmt.Errorf("converting statement: %w", err)
+			}
+			if decl != nil {
+				decls = append(decls, decl)
+			}
+		}
+	}
+
+	// Merge the declarations into the namespace
+	if len(decls) > 0 {
+		if err := mergeNamespace(name, decls, namespaces); err != nil {
+			return fmt.Errorf("merging declarations into namespace %s: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
+// mergeNamespace merges declarations into an existing namespace or creates a new one.
+// The name parameter is the qualified namespace name (empty string for root/global namespace).
+func mergeNamespace(
+	name string,
+	decls []ast.Decl,
+	namespaces *btree.Map[string, *ast.Namespace],
+) error {
+	// Get the existing namespace if it exists
+	existing, exists := namespaces.Get(name)
+
+	if exists {
+		// Merge the new declarations with existing ones
+		existing.Decls = append(existing.Decls, decls...)
+	} else {
+		// Create a new namespace
+		namespace := &ast.Namespace{
+			Decls: decls,
+		}
+		namespaces.Set(name, namespace)
+	}
+
+	return nil
+}
+
+// ConvertModule converts dts_parser.Module to ast.Module.
+func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
+	var namespaces btree.Map[string, *ast.Namespace]
+
+	// Process all statements, organizing them into namespaces
+	// Use empty string "" as the root/global namespace name
+	if err := processNamespace("", dtsModule.Statements, &namespaces); err != nil {
+		return nil, fmt.Errorf("converting module: %w", err)
+	}
+
+	return &ast.Module{Namespaces: namespaces}, nil
+}
