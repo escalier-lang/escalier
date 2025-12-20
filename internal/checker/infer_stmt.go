@@ -301,7 +301,12 @@ func (c *Checker) inferInterface(
 	existingAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
 	if existingAlias != nil {
 		// If it exists, merge the elements
-		if existingObjType, ok := existingAlias.Type.(*type_system.ObjectType); ok {
+		prunedExisting := type_system.Prune(existingAlias.Type)
+		if existingObjType, ok := prunedExisting.(*type_system.ObjectType); ok && existingObjType.Interface {
+			// Validate that duplicate properties have compatible types
+			mergeErrors := c.validateInterfaceMerge(ctx, existingObjType, objType, decl)
+			errors = slices.Concat(errors, mergeErrors)
+
 			// Merge the elements from the new interface into the existing one
 			mergedElems := append(existingObjType.Elems, objType.Elems...)
 			objType.Elems = mergedElems

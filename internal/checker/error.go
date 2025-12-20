@@ -23,6 +23,7 @@ type Error interface {
 func (e UnimplementedError) isError()                       {}
 func (e InvalidObjectKeyError) isError()                    {}
 func (e KeyNotFoundError) isError()                         {}
+func (e InterfaceMergeError) isError()                      {}
 func (e OutOfBoundsError) isError()                         {}
 func (e RecursiveUnificationError) isError()                {}
 func (e NotEnoughElementsToUnpackError) isError()           {}
@@ -104,6 +105,23 @@ func (e KeyNotFoundError) Span() ast.Span {
 }
 func (e KeyNotFoundError) Message() string {
 	return "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
+}
+
+type InterfaceMergeError struct {
+	InterfaceName string
+	PropertyName  string
+	ExistingType  type_system.Type
+	NewType       type_system.Type
+	span          ast.Span
+}
+
+func (e InterfaceMergeError) Span() ast.Span {
+	return e.span
+}
+func (e InterfaceMergeError) Message() string {
+	return "Interface '" + e.InterfaceName + "' cannot be merged: property '" + e.PropertyName +
+		"' has incompatible types. Existing type: " + e.ExistingType.String() +
+		", new type: " + e.NewType.String()
 }
 
 type OutOfBoundsError struct {

@@ -672,6 +672,7 @@ func (c *Checker) InferComponent(
 			if existingObjType, ok := prunedType.(*type_system.ObjectType); ok && existingObjType.Interface {
 				// Merge with existing interface
 				if newObjType, ok := interfaceAlias.Type.(*type_system.ObjectType); ok {
+					// Note: validation is done in inferInterface, no need to duplicate it here
 					// Merge the elements
 					existingObjType.Elems = append(existingObjType.Elems, newObjType.Elems...)
 					// Keep the Interface flag true
@@ -942,6 +943,73 @@ func (c *Checker) InferComponent(
 						}
 					}
 				}
+			}
+		}
+	}
+
+	return errors
+}
+
+// validateInterfaceMerge checks that when merging interface declarations,
+// properties with the same name have compatible (identical) types as required by TypeScript.
+func (c *Checker) validateInterfaceMerge(
+	ctx Context,
+	existingInterface *type_system.ObjectType,
+	newInterface *type_system.ObjectType,
+	decl *ast.InterfaceDecl,
+) []Error {
+	errors := []Error{}
+
+	// Build a map of property names to their types from the existing interface
+	existingProps := make(map[type_system.ObjTypeKey]type_system.Type)
+	for _, elem := range existingInterface.Elems {
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			existingProps[elem.Name] = elem.Value
+		case *type_system.MethodElem:
+			existingProps[elem.Name] = elem.Fn
+		case *type_system.GetterElem:
+			existingProps[elem.Name] = elem.Fn.Return
+		case *type_system.SetterElem:
+			existingProps[elem.Name] = elem.Fn.Params[0].Type
+		}
+	}
+
+	// Check each property in the new interface against the existing interface
+	for _, elem := range newInterface.Elems {
+		var name type_system.ObjTypeKey
+		var newType type_system.Type
+
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			name = elem.Name
+			newType = elem.Value
+		case *type_system.MethodElem:
+			name = elem.Name
+			newType = elem.Fn
+		case *type_system.GetterElem:
+			name = elem.Name
+			newType = elem.Fn.Return
+		case *type_system.SetterElem:
+			name = elem.Name
+			newType = elem.Fn.Params[0].Type
+		default:
+			continue
+		}
+
+		// If a property with this name already exists, check type compatibility
+		if existingType, exists := existingProps[name]; exists {
+			// Properties with the same name must have identical types
+			unifyErrors := c.Unify(ctx, newType, existingType)
+			if len(unifyErrors) > 0 {
+				// Add a more specific error for interface merging
+				errors = append(errors, &InterfaceMergeError{
+					InterfaceName: decl.Name.Name,
+					PropertyName:  name.String(),
+					ExistingType:  existingType,
+					NewType:       newType,
+					span:          decl.Name.Span(),
+				})
 			}
 		}
 	}
