@@ -1,6 +1,10 @@
 package checker
 
-import "github.com/escalier-lang/escalier/internal/type_system"
+import (
+	"fmt"
+
+	"github.com/escalier-lang/escalier/internal/type_system"
+)
 
 type Scope struct {
 	Parent    *Scope // optional, parent is nil for the root scope
@@ -74,7 +78,7 @@ func (s *Scope) getTypeAlias(name string) *type_system.TypeAlias {
 
 func (s *Scope) SetTypeAlias(name string, alias *type_system.TypeAlias) {
 	if _, ok := s.Namespace.Types[name]; ok {
-		panic("type alias already exists")
+		panic(fmt.Sprintf("type alias already exists: %s", name))
 	}
 	s.Namespace.Types[name] = alias
 }
