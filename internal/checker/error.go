@@ -24,6 +24,7 @@ func (e UnimplementedError) isError()                       {}
 func (e InvalidObjectKeyError) isError()                    {}
 func (e KeyNotFoundError) isError()                         {}
 func (e InterfaceMergeError) isError()                      {}
+func (e TypeParamMismatchError) isError()                   {}
 func (e OutOfBoundsError) isError()                         {}
 func (e RecursiveUnificationError) isError()                {}
 func (e NotEnoughElementsToUnpackError) isError()           {}
@@ -122,6 +123,21 @@ func (e InterfaceMergeError) Message() string {
 	return "Interface '" + e.InterfaceName + "' cannot be merged: property '" + e.PropertyName +
 		"' has incompatible types. Existing type: " + e.ExistingType.String() +
 		", new type: " + e.NewType.String()
+}
+
+type TypeParamMismatchError struct {
+	InterfaceName string
+	ExistingCount int
+	NewCount      int
+	message       string
+	span          ast.Span
+}
+
+func (e TypeParamMismatchError) Span() ast.Span {
+	return e.span
+}
+func (e TypeParamMismatchError) Message() string {
+	return e.message
 }
 
 type OutOfBoundsError struct {

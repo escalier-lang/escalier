@@ -599,6 +599,7 @@ func (c *Checker) InferComponent(
 				nsCtx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
 			}
 			// If it already exists, we'll merge during the definition phase
+			// Type parameter validation happens in inferInterface
 		}
 	}
 

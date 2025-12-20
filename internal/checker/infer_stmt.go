@@ -300,6 +300,16 @@ func (c *Checker) inferInterface(
 	// Check if an interface with this name already exists
 	existingAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
 	if existingAlias != nil {
+		// Validate that type parameters match
+		validateErrors := c.validateTypeParams(
+			ctx,
+			existingAlias.TypeParams,
+			typeParams,
+			decl.Name.Name,
+			decl.Name.Span(),
+		)
+		errors = slices.Concat(errors, validateErrors)
+
 		// If it exists, merge the elements
 		prunedExisting := type_system.Prune(existingAlias.Type)
 		if existingObjType, ok := prunedExisting.(*type_system.ObjectType); ok && existingObjType.Interface {

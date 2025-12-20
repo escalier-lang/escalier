@@ -3934,6 +3934,51 @@ func TestInterfaceMergingErrors(t *testing.T) {
 			expectedErrorCount: 1,
 			expectedErrorType:  &InterfaceMergeError{},
 		},
+		"MismatchedTypeParameterCount": {
+			input: `
+				interface Box<T> {
+					value: T,
+				}
+
+				interface Box<T, U> {
+					extra: U,
+				}
+
+				declare val box: Box<number>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"MismatchedTypeParameterNames": {
+			input: `
+				interface Container<T> {
+					value: T,
+				}
+
+				interface Container<U> {
+					extra: U,
+				}
+
+				declare val container: Container<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"NoTypeParamsVsTypeParams": {
+			input: `
+				interface Simple {
+					value: number,
+				}
+
+				interface Simple<T> {
+					extra: T,
+				}
+
+				declare val simple: Simple
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
 	}
 
 	for name, test := range tests {
@@ -4237,6 +4282,66 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 			`,
 			expectedErrorCount: 1,
 			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MismatchedTypeParameterCountInModule": {
+			input: `
+				export interface Box<T> {
+					value: T,
+				}
+
+				export interface Box<T, U> {
+					extra: U,
+				}
+
+				declare val box: Box<number>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"MismatchedTypeParameterNamesInModule": {
+			input: `
+				export interface Container<T> {
+					value: T,
+				}
+
+				export interface Container<U> {
+					extra: U,
+				}
+
+				declare val container: Container<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"NoTypeParamsVsTypeParamsInModule": {
+			input: `
+				export interface Simple {
+					value: number,
+				}
+
+				export interface Simple<T> {
+					extra: T,
+				}
+
+				declare val simple: Simple
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"TypeParamsVsNoTypeParamsInModule": {
+			input: `
+				export interface Generic<T> {
+					value: T,
+				}
+
+				export interface Generic {
+					extra: number,
+				}
+
+				declare val generic: Generic<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
 		},
 	}
 

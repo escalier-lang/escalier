@@ -226,3 +226,80 @@ func convertQualIdent(astIdent ast.QualIdent) type_system.QualIdent {
 		panic(fmt.Sprintf("Unknown QualIdent type: %T", astIdent))
 	}
 }
+
+func (c *Checker) validateTypeParams(
+	ctx Context,
+	existingParams []*type_system.TypeParam,
+	newParams []*type_system.TypeParam,
+	interfaceName string,
+	span ast.Span,
+) []Error {
+	errors := []Error{}
+
+	// Check if the number of type parameters match
+	if len(existingParams) != len(newParams) {
+		errors = append(errors, &TypeParamMismatchError{
+			InterfaceName: interfaceName,
+			ExistingCount: len(existingParams),
+			NewCount:      len(newParams),
+			message:       fmt.Sprintf("Interface '%s' has %d type parameter(s) but was previously declared with %d type parameter(s)", interfaceName, len(newParams), len(existingParams)),
+			span:          span,
+		})
+		return errors
+	}
+
+	// Check each type parameter
+	for i := range existingParams {
+		existing := existingParams[i]
+		new := newParams[i]
+
+		// Check if names match
+		if existing.Name != new.Name {
+			errors = append(errors, &TypeParamMismatchError{
+				InterfaceName: interfaceName,
+				message:       fmt.Sprintf("Type parameter at position %d has name '%s' but was previously declared with name '%s'", i, new.Name, existing.Name),
+				span:          span,
+			})
+		}
+
+		// Check if constraints match
+		if (existing.Constraint == nil) != (new.Constraint == nil) {
+			errors = append(errors, &TypeParamMismatchError{
+				InterfaceName: interfaceName,
+				message:       fmt.Sprintf("Type parameter '%s' constraint mismatch in interface '%s'", new.Name, interfaceName),
+				span:          span,
+			})
+		} else if existing.Constraint != nil && new.Constraint != nil {
+			// Both have constraints, check if they're compatible
+			unifyErrors := c.Unify(ctx, existing.Constraint, new.Constraint)
+			if len(unifyErrors) > 0 {
+				errors = append(errors, &TypeParamMismatchError{
+					InterfaceName: interfaceName,
+					message:       fmt.Sprintf("Type parameter '%s' has incompatible constraint in interface '%s'", new.Name, interfaceName),
+					span:          span,
+				})
+			}
+		}
+
+		// Check if defaults match
+		if (existing.Default == nil) != (new.Default == nil) {
+			errors = append(errors, &TypeParamMismatchError{
+				InterfaceName: interfaceName,
+				message:       fmt.Sprintf("Type parameter '%s' default mismatch in interface '%s'", new.Name, interfaceName),
+				span:          span,
+			})
+		} else if existing.Default != nil && new.Default != nil {
+			// Both have defaults, check if they're compatible
+			unifyErrors := c.Unify(ctx, existing.Default, new.Default)
+			if len(unifyErrors) > 0 {
+				errors = append(errors, &TypeParamMismatchError{
+					InterfaceName: interfaceName,
+					message:       fmt.Sprintf("Type parameter '%s' has incompatible default in interface '%s'", new.Name, interfaceName),
+					span:          span,
+				})
+			}
+		}
+	}
+
+	return errors
+}
