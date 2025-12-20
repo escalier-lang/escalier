@@ -49,6 +49,7 @@ const (
 	Import
 	In
 	Infer
+	Interface
 	Invalid
 	JSXText
 	Keyof

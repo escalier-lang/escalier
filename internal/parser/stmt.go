@@ -64,7 +64,7 @@ func (p *Parser) stmt() ast.Stmt {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Async, Fn, Var, Val, Type, Enum, Declare, Export, Class:
+	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class:
 		decl := p.Decl()
 		if decl == nil {
 			return nil

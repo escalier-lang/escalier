@@ -56,6 +56,12 @@ func (p *Parser) Decl() ast.Decl {
 			return nil
 		}
 		return p.typeDecl(start, export, declare)
+	case Interface:
+		if async {
+			p.reportError(token.Span, "async can only be used with functions")
+			return nil
+		}
+		return p.interfaceDecl(start, export, declare)
 	case Enum:
 		if async {
 			p.reportError(token.Span, "async can only be used with functions")
@@ -515,6 +521,33 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, span)
+	return decl
+}
+
+func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) ast.Decl {
+	token := p.lexer.peek()
+	if token.Type != Identifier {
+		p.reportError(token.Span, "Expected identifier")
+		return nil
+	}
+	p.lexer.consume()
+	ident := ast.NewIdentifier(token.Value, token.Span)
+
+	// Parse optional type parameters
+	typeParams := p.maybeTypeParams()
+
+	// Parse the object type body (interface body)
+	typeAnn := p.typeAnn()
+
+	if typeAnn == nil {
+		return nil
+	}
+
+	// End position is the end of the type annotation
+	end := typeAnn.Span().End
+
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	decl := ast.NewInterfaceDecl(ident, typeParams, typeAnn, export, declare, span)
 	return decl
 }
 
