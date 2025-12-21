@@ -60,6 +60,28 @@ func GetNamespaceCtx(
 	return nsCtx
 }
 
+// inferTypeParams infers type parameters from AST type parameters by creating
+// fresh type variables for constraints and defaults.
+func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, typeParam := range astTypeParams {
+		var constraintType type_system.Type
+		var defaultType type_system.Type
+		if typeParam.Constraint != nil {
+			constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
+		}
+		if typeParam.Default != nil {
+			defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
+		}
+		typeParams[i] = &type_system.TypeParam{
+			Name:       typeParam.Name,
+			Constraint: constraintType,
+			Default:    defaultType,
+		}
+	}
+	return typeParams
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
@@ -123,22 +145,7 @@ func (c *Checker) InferComponent(
 			// things like:
 			// type Point = {x: number, y: number}
 			// val p: Point = {x: 1, y: 2}
-			typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-			for i, typeParam := range decl.TypeParams {
-				var constraintType type_system.Type
-				var defaultType type_system.Type
-				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
-				}
-				if typeParam.Default != nil {
-					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
-				}
-				typeParams[i] = &type_system.TypeParam{
-					Name:       typeParam.Name,
-					Constraint: constraintType,
-					Default:    defaultType,
-				}
-			}
+			typeParams := c.inferTypeParams(decl.TypeParams)
 
 			typeAlias := &type_system.TypeAlias{
 				Type:       c.FreshVar(&ast.NodeProvenance{Node: decl}),
@@ -149,22 +156,7 @@ func (c *Checker) InferComponent(
 		case *ast.ClassDecl:
 			instanceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
-			typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-			for i, typeParam := range decl.TypeParams {
-				var constraintType type_system.Type
-				var defaultType type_system.Type
-				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
-				}
-				if typeParam.Default != nil {
-					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
-				}
-				typeParams[i] = &type_system.TypeParam{
-					Name:       typeParam.Name,
-					Constraint: constraintType,
-					Default:    defaultType,
-				}
-			}
+			typeParams := c.inferTypeParams(decl.TypeParams)
 
 			typeAlias := &type_system.TypeAlias{
 				Type:       instanceType,
@@ -395,22 +387,7 @@ func (c *Checker) InferComponent(
 
 			enumType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
-			typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-			for i, typeParam := range decl.TypeParams {
-				var constraintType type_system.Type
-				var defaultType type_system.Type
-				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
-				}
-				if typeParam.Default != nil {
-					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
-				}
-				typeParams[i] = &type_system.TypeParam{
-					Name:       typeParam.Name,
-					Constraint: constraintType,
-					Default:    defaultType,
-				}
-			}
+			typeParams := c.inferTypeParams(decl.TypeParams)
 
 			declCtx := nsCtx.WithNewScope()
 			declCtxMap[declID] = declCtx
@@ -567,22 +544,7 @@ func (c *Checker) InferComponent(
 			nsCtx.Scope.SetTypeAlias(decl.Name.Name, enumTypeAlias)
 		case *ast.InterfaceDecl:
 			// Similar to TypeDecl, but we need to handle interface merging
-			typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-			for i, typeParam := range decl.TypeParams {
-				var constraintType type_system.Type
-				var defaultType type_system.Type
-				if typeParam.Constraint != nil {
-					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
-				}
-				if typeParam.Default != nil {
-					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
-				}
-				typeParams[i] = &type_system.TypeParam{
-					Name:       typeParam.Name,
-					Constraint: constraintType,
-					Default:    defaultType,
-				}
-			}
+			typeParams := c.inferTypeParams(decl.TypeParams)
 
 			// Check if an interface with this name already exists
 			existingAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
