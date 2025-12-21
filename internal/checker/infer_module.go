@@ -418,16 +418,25 @@ func (c *Checker) InferComponent(
 			nsCtx.Scope.setValue(decl.Name.Name, ctor)
 			declMethodCtxs[i] = methodCtxs
 		case *ast.EnumDecl:
-			// TODO: refactor this so that the definition phase is separate
-
-			// We need a new namespace
+			// Create a new namespace for the enum
 			ns := type_system.NewNamespace()
 			nsCtx.Scope.setNamespace(decl.Name.Name, ns)
 
+			// Create a fresh type variable for the enum
 			enumType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
+			// Infer type parameters
 			typeParams := c.inferTypeParams(decl.TypeParams)
 
+			// Create a type alias with placeholder type
+			typeAlias := &type_system.TypeAlias{
+				Type:       enumType,
+				TypeParams: typeParams,
+			}
+
+			nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
+
+			// Create a context for inferring enum variants
 			declCtx := nsCtx.WithNewScope()
 			declCtxMap[declID] = declCtx
 
@@ -443,11 +452,123 @@ func (c *Checker) InferComponent(
 					TypeParams: []*type_system.TypeParam{},
 				})
 			}
+		case *ast.InterfaceDecl:
+			// Similar to TypeDecl, but we need to handle interface merging
+			typeParams := c.inferTypeParams(decl.TypeParams)
 
-			typeAlias := &type_system.TypeAlias{
-				Type:       enumType,
-				TypeParams: typeParams,
+			// Check if an interface with this name already exists
+			existingAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			if existingAlias == nil {
+				// First declaration - create a fresh type variable for the interface
+				interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
+
+				typeAlias := &type_system.TypeAlias{
+					Type:       interfaceType,
+					TypeParams: typeParams,
+				}
+
+				// Directly set in the namespace to allow interface merging
+				nsCtx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
 			}
+			// If it already exists, we'll merge during the definition phase
+			// Type parameter validation happens in inferInterface
+		}
+	}
+
+	// Infer definitions
+	for i, declID := range component {
+		nsCtx := GetNamespaceCtx(ctx, depGraph, declID)
+		decl, _ := depGraph.GetDecl(declID)
+
+		if decl == nil {
+			continue
+		}
+
+		// Skip declarations that use the `declare` keyword, since they are
+		// already fully typed and don't have a body or initializer to infer.
+		if decl.Declare() {
+			continue
+		}
+
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			// We reuse the binding that was previous created for the function
+			// declaration, so that we can unify the signature with the body's
+			// inferred type.
+			funcBinding := nsCtx.Scope.GetValue(decl.Name.Name)
+			paramBindings := paramBindingsForDecl[declID]
+			funcType := funcBinding.Type.(*type_system.FuncType)
+
+			declCtx := declCtxMap[declID]
+
+			if decl.Body != nil {
+				inferErrors := c.inferFuncBodyWithFuncSigType(
+					declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+				errors = slices.Concat(errors, inferErrors)
+			}
+
+		case *ast.VarDecl:
+			// TODO: if there's a type annotation, unify the initializer with it
+			if decl.Init != nil {
+				initType, initErrors := c.inferExpr(nsCtx, decl.Init)
+				errors = slices.Concat(errors, initErrors)
+				if decl.TypeAnn != nil {
+					taType := decl.TypeAnn.InferredType()
+					unifyErrors := c.Unify(ctx, initType, taType)
+					errors = slices.Concat(errors, unifyErrors)
+				} else {
+					patType := decl.InferredType
+					unifyErrors := c.Unify(ctx, initType, patType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+			}
+		case *ast.TypeDecl:
+			typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
+			errors = slices.Concat(errors, declErrors)
+
+			// Unify the type alias' inferred type with its placeholder type
+			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Unify the type parameters
+			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, typeAlias.TypeParams)
+			errors = slices.Concat(errors, typeParamErrors)
+		case *ast.InterfaceDecl:
+			interfaceAlias, declErrors := c.inferInterface(nsCtx, decl)
+			errors = slices.Concat(errors, declErrors)
+
+			// Get the existing type alias (which might be a fresh var or a previous interface)
+			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			prunedType := type_system.Prune(existingTypeAlias.Type)
+
+			// Check if the pruned type is already an ObjectType (from a previous interface)
+			if existingObjType, ok := prunedType.(*type_system.ObjectType); ok && existingObjType.Interface {
+				// Merge with existing interface
+				if newObjType, ok := interfaceAlias.Type.(*type_system.ObjectType); ok {
+					// Note: validation is done in inferInterface, no need to duplicate it here
+					// Merge the elements
+					existingObjType.Elems = append(existingObjType.Elems, newObjType.Elems...)
+					// Keep the Interface flag true
+					existingObjType.Interface = true
+					// The merged type is already in the scope via the binding, no need to update
+					continue
+				}
+			}
+
+			// First interface declaration or unification needed
+			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, interfaceAlias.Type)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// Unify the type parameters
+			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, interfaceAlias.TypeParams)
+			errors = slices.Concat(errors, typeParamErrors)
+		case *ast.EnumDecl:
+			// Get the namespace and type alias created in the placeholder phase
+			ns := nsCtx.Scope.getNamespace(decl.Name.Name)
+			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			typeParams := typeAlias.TypeParams
+			declCtx := declCtxMap[declID]
 
 			typeArgs := make([]type_system.Type, len(typeParams))
 			for i := range typeParams {
@@ -459,12 +580,6 @@ func (c *Checker) InferComponent(
 			for i, elem := range decl.Elems {
 				switch elem := elem.(type) {
 				case *ast.EnumVariant:
-					// TODO: build an instance type, e.g. given the enum variant
-					// Some(value: T)
-					// we want to build a type that looks like:
-					// { [Symbol.customMatcher](subject: C) -> [T] }
-					// Where `C` is the instance type of the enum variant
-
 					instanceType := type_system.NewNominalObjectType(
 						&ast.NodeProvenance{Node: elem}, []type_system.ObjTypeElem{})
 					instanceTypeAlias := &type_system.TypeAlias{
@@ -573,124 +688,15 @@ func (c *Checker) InferComponent(
 				}
 			}
 
+			// Build the union type and unify with the placeholder
 			enumUnionType := type_system.NewUnionType(
 				&ast.NodeProvenance{Node: decl}, variantTypes...)
-			enumTypeAlias := &type_system.TypeAlias{
-				Type:       enumUnionType,
-				TypeParams: typeParams,
-			}
 
-			nsCtx.Scope.SetTypeAlias(decl.Name.Name, enumTypeAlias)
-		case *ast.InterfaceDecl:
-			// Similar to TypeDecl, but we need to handle interface merging
-			typeParams := c.inferTypeParams(decl.TypeParams)
-
-			// Check if an interface with this name already exists
-			existingAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
-			if existingAlias == nil {
-				// First declaration - create a fresh type variable for the interface
-				interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
-
-				typeAlias := &type_system.TypeAlias{
-					Type:       interfaceType,
-					TypeParams: typeParams,
-				}
-
-				// Directly set in the namespace to allow interface merging
-				nsCtx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
-			}
-			// If it already exists, we'll merge during the definition phase
-			// Type parameter validation happens in inferInterface
-		}
-	}
-
-	// Infer definitions
-	for i, declID := range component {
-		nsCtx := GetNamespaceCtx(ctx, depGraph, declID)
-		decl, _ := depGraph.GetDecl(declID)
-
-		if decl == nil {
-			continue
-		}
-
-		// Skip declarations that use the `declare` keyword, since they are
-		// already fully typed and don't have a body or initializer to infer.
-		if decl.Declare() {
-			continue
-		}
-
-		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			// We reuse the binding that was previous created for the function
-			// declaration, so that we can unify the signature with the body's
-			// inferred type.
-			funcBinding := nsCtx.Scope.GetValue(decl.Name.Name)
-			paramBindings := paramBindingsForDecl[declID]
-			funcType := funcBinding.Type.(*type_system.FuncType)
-
-			declCtx := declCtxMap[declID]
-
-			if decl.Body != nil {
-				inferErrors := c.inferFuncBodyWithFuncSigType(
-					declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
-				errors = slices.Concat(errors, inferErrors)
-			}
-
-		case *ast.VarDecl:
-			// TODO: if there's a type annotation, unify the initializer with it
-			if decl.Init != nil {
-				initType, initErrors := c.inferExpr(nsCtx, decl.Init)
-				errors = slices.Concat(errors, initErrors)
-				if decl.TypeAnn != nil {
-					taType := decl.TypeAnn.InferredType()
-					unifyErrors := c.Unify(ctx, initType, taType)
-					errors = slices.Concat(errors, unifyErrors)
-				} else {
-					patType := decl.InferredType
-					unifyErrors := c.Unify(ctx, initType, patType)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-			}
-		case *ast.TypeDecl:
-			typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
-			errors = slices.Concat(errors, declErrors)
-
-			// Unified the type alias' inferred type with its placeholder type
-			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
-			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
+			unifyErrors := c.Unify(nsCtx, typeAlias.Type, enumUnionType)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Unify the type parameters
-			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, typeAlias.TypeParams)
-			errors = slices.Concat(errors, typeParamErrors)
-		case *ast.InterfaceDecl:
-			interfaceAlias, declErrors := c.inferInterface(nsCtx, decl)
-			errors = slices.Concat(errors, declErrors)
-
-			// Get the existing type alias (which might be a fresh var or a previous interface)
-			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
-			prunedType := type_system.Prune(existingTypeAlias.Type)
-
-			// Check if the pruned type is already an ObjectType (from a previous interface)
-			if existingObjType, ok := prunedType.(*type_system.ObjectType); ok && existingObjType.Interface {
-				// Merge with existing interface
-				if newObjType, ok := interfaceAlias.Type.(*type_system.ObjectType); ok {
-					// Note: validation is done in inferInterface, no need to duplicate it here
-					// Merge the elements
-					existingObjType.Elems = append(existingObjType.Elems, newObjType.Elems...)
-					// Keep the Interface flag true
-					existingObjType.Interface = true
-					// The merged type is already in the scope via the binding, no need to update
-					continue
-				}
-			}
-
-			// First interface declaration or unification needed
-			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, interfaceAlias.Type)
-			errors = slices.Concat(errors, unifyErrors)
-
-			// Unify the type parameters
-			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, interfaceAlias.TypeParams)
+			typeParamErrors := c.unifyTypeParams(nsCtx, typeAlias.TypeParams, typeParams)
 			errors = slices.Concat(errors, typeParamErrors)
 		case *ast.ClassDecl:
 			methodCtxs := declMethodCtxs[i]
