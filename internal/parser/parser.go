@@ -85,7 +85,27 @@ func (p *Parser) restoreState(saved *Parser) {
 // script = stmt* <eof>
 func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	stmts, _ := p.stmts(EndOfFile)
-	return &ast.Script{Stmts: *stmts}, p.errors
+
+	// Calculate the span for the script
+	var span ast.Span
+	if len(*stmts) > 0 {
+		firstStmt := (*stmts)[0]
+		lastStmt := (*stmts)[len(*stmts)-1]
+		span = ast.Span{
+			Start:    firstStmt.Span().Start,
+			End:      lastStmt.Span().End,
+			SourceID: firstStmt.Span().SourceID,
+		}
+	} else {
+		// Empty script - use a zero span with the current source ID
+		span = ast.Span{
+			Start:    ast.Location{Line: 0, Column: 0},
+			End:      ast.Location{Line: 0, Column: 0},
+			SourceID: p.lexer.source.ID,
+		}
+	}
+
+	return ast.NewScript(*stmts, span), p.errors
 }
 
 func (p *Parser) decls() []ast.Decl {
@@ -123,11 +143,9 @@ func (p *Parser) decls() []ast.Decl {
 
 func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
 	var namespaces btree.Map[string, *ast.Namespace]
-	mod := &ast.Module{
-		Namespaces: namespaces,
-	}
 
 	allErrors := []*Error{}
+	var firstDecl, lastDecl ast.Decl
 
 	for _, source := range sources {
 		if source == nil {
@@ -137,8 +155,8 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		// Determine the namespace based on the source path
 		nsName := deriveNamespaceFromPath(source.Path)
 
-		if _, exists := mod.Namespaces.Get(nsName); !exists {
-			mod.Namespaces.Set(nsName, &ast.Namespace{
+		if _, exists := namespaces.Get(nsName); !exists {
+			namespaces.Set(nsName, &ast.Namespace{
 				Decls: []ast.Decl{},
 			})
 		}
@@ -146,12 +164,37 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
 
-		ns, _ := mod.Namespaces.Get(nsName)
+		// Track first and last declarations for span calculation
+		if len(decls) > 0 {
+			if firstDecl == nil {
+				firstDecl = decls[0]
+			}
+			lastDecl = decls[len(decls)-1]
+		}
+
+		ns, _ := namespaces.Get(nsName)
 		ns.Decls = append(ns.Decls, decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}
 
-	return mod, allErrors
+	// Calculate the span for the module
+	var span ast.Span
+	if firstDecl != nil && lastDecl != nil {
+		span = ast.Span{
+			Start:    firstDecl.Span().Start,
+			End:      lastDecl.Span().End,
+			SourceID: firstDecl.Span().SourceID,
+		}
+	} else {
+		// Empty module - use a zero span
+		span = ast.Span{
+			Start:    ast.Location{Line: 0, Column: 0},
+			End:      ast.Location{Line: 0, Column: 0},
+			SourceID: 0,
+		}
+	}
+
+	return ast.NewModule(namespaces, span), allErrors
 }
 
 // ParseTypeAnn parses a type annotation string and returns the resulting ast.TypeAnn.

@@ -129,6 +129,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -234,6 +235,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -333,6 +335,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -477,6 +480,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -576,6 +580,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -668,6 +673,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -795,6 +801,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -855,6 +862,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
@@ -915,6 +923,7 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    span: ast.Span{},
 }
 ---
 
