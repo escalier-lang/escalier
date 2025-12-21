@@ -117,7 +117,7 @@ func TestConvertModule_LibES5(t *testing.T) {
 		}
 		t.Logf("First %d infer errors:", maxErrors)
 		for i := 0; i < maxErrors; i++ {
-			t.Logf("  %v", inferErrors[i])
+			t.Logf("  %v at %v", inferErrors[i].Message(), inferErrors[i].Span())
 		}
 	}
 

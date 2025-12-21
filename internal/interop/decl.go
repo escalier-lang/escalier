@@ -217,9 +217,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	), nil
 }
 
-// convertInterfaceDecl converts a dts_parser.InterfaceDecl to an ast.Decl.
-// Escalier doesn't have first-class interfaces, so we convert them to type aliases
-// with object types.
+// convertInterfaceDecl converts a dts_parser.InterfaceDecl to an ast.InterfaceDecl.
 func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(di.TypeParams)
@@ -245,7 +243,7 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	// TODO: Handle Extends
 	// This would require creating an intersection type with the extended interfaces
 
-	return ast.NewTypeDecl(
+	return ast.NewInterfaceDecl(
 		ast.NewIdentifier(di.Name.Name, convertSpan(di.Name.Span())),
 		typeParams,
 		objType,

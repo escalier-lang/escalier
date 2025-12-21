@@ -532,16 +532,16 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			input:     "interface Empty {}",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
-				typeDecl, ok := decl.(*ast.TypeDecl)
+				interfaceDecl, ok := decl.(*ast.InterfaceDecl)
 				if !ok {
-					t.Fatalf("expected TypeDecl, got %T", decl)
+					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				if typeDecl.Name.Name != "Empty" {
-					t.Errorf("expected name 'Empty', got %q", typeDecl.Name.Name)
+				if interfaceDecl.Name.Name != "Empty" {
+					t.Errorf("expected name 'Empty', got %q", interfaceDecl.Name.Name)
 				}
-				objType, ok := typeDecl.TypeAnn.(*ast.ObjectTypeAnn)
-				if !ok {
-					t.Errorf("expected ObjectTypeAnn, got %T", typeDecl.TypeAnn)
+				objType := interfaceDecl.TypeAnn
+				if objType == nil {
+					t.Errorf("expected ObjectTypeAnn, got nil")
 				}
 				if objType != nil && len(objType.Elems) != 0 {
 					t.Errorf("expected 0 elements, got %d", len(objType.Elems))
@@ -553,13 +553,13 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			input:     "interface Named { readonly name: string }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
-				typeDecl, ok := decl.(*ast.TypeDecl)
+				interfaceDecl, ok := decl.(*ast.InterfaceDecl)
 				if !ok {
-					t.Fatalf("expected TypeDecl, got %T", decl)
+					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				objType, ok := typeDecl.TypeAnn.(*ast.ObjectTypeAnn)
-				if !ok {
-					t.Fatalf("expected ObjectTypeAnn, got %T", typeDecl.TypeAnn)
+				objType := interfaceDecl.TypeAnn
+				if objType == nil {
+					t.Fatalf("expected ObjectTypeAnn, got nil")
 				}
 				if len(objType.Elems) != 1 {
 					t.Errorf("expected 1 element, got %d", len(objType.Elems))
@@ -571,13 +571,13 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			input:     "interface Callable { call(): void }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
-				typeDecl, ok := decl.(*ast.TypeDecl)
+				interfaceDecl, ok := decl.(*ast.InterfaceDecl)
 				if !ok {
-					t.Fatalf("expected TypeDecl, got %T", decl)
+					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				objType, ok := typeDecl.TypeAnn.(*ast.ObjectTypeAnn)
-				if !ok {
-					t.Fatalf("expected ObjectTypeAnn, got %T", typeDecl.TypeAnn)
+				objType := interfaceDecl.TypeAnn
+				if objType == nil {
+					t.Fatalf("expected ObjectTypeAnn, got nil")
 				}
 				if len(objType.Elems) != 1 {
 					t.Errorf("expected 1 element, got %d", len(objType.Elems))
@@ -593,13 +593,13 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			input:     "interface Function { (): any }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
-				typeDecl, ok := decl.(*ast.TypeDecl)
+				interfaceDecl, ok := decl.(*ast.InterfaceDecl)
 				if !ok {
-					t.Fatalf("expected TypeDecl, got %T", decl)
+					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				objType, ok := typeDecl.TypeAnn.(*ast.ObjectTypeAnn)
-				if !ok {
-					t.Fatalf("expected ObjectTypeAnn, got %T", typeDecl.TypeAnn)
+				objType := interfaceDecl.TypeAnn
+				if objType == nil {
+					t.Fatalf("expected ObjectTypeAnn, got nil")
 				}
 				if len(objType.Elems) != 1 {
 					t.Errorf("expected 1 element, got %d", len(objType.Elems))
@@ -615,13 +615,13 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			input:     "interface Dictionary { [key: string]: any }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
-				typeDecl, ok := decl.(*ast.TypeDecl)
+				interfaceDecl, ok := decl.(*ast.InterfaceDecl)
 				if !ok {
-					t.Fatalf("expected TypeDecl, got %T", decl)
+					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				objType, ok := typeDecl.TypeAnn.(*ast.ObjectTypeAnn)
-				if !ok {
-					t.Fatalf("expected ObjectTypeAnn, got %T", typeDecl.TypeAnn)
+				objType := interfaceDecl.TypeAnn
+				if objType == nil {
+					t.Fatalf("expected ObjectTypeAnn, got nil")
 				}
 				// Index signatures return nil from convertInterfaceMember, so should be skipped
 				if len(objType.Elems) != 0 {

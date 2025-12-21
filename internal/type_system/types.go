@@ -174,7 +174,7 @@ func NewTypeRefTypeFromQualIdent(provenance Provenance, name QualIdent, typeAlia
 		Name:       name,
 		TypeArgs:   typeArgs,
 		TypeAlias:  typeAlias,
-		provenance: nil,
+		provenance: provenance,
 	}
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
