@@ -47,6 +47,56 @@ func (c *Checker) inferFuncParams(
 	return params, bindings, errors
 }
 
+// inferFuncTypeParams infers type parameters for functions and function expressions.
+// Unlike inferTypeParams, this version:
+// - Uses inferTypeAnn instead of FreshVar for constraints and defaults
+// - Sets provenance on constraint and default types
+// - Adds the type parameters to the function context scope
+// Returns the list of type parameters and any errors encountered.
+func (c *Checker) inferFuncTypeParams(
+	ctx Context,
+	funcCtx Context,
+	astTypeParams []*ast.TypeParam,
+) ([]*type_system.TypeParam, []Error) {
+	errors := []Error{}
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+
+	for i, tp := range astTypeParams {
+		var defaultType type_system.Type
+		var constraintType type_system.Type
+		if tp.Default != nil {
+			var defaultErrors []Error
+			defaultType, defaultErrors = c.inferTypeAnn(ctx, tp.Default)
+			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
+			errors = slices.Concat(errors, defaultErrors)
+		}
+		if tp.Constraint != nil {
+			var constraintErrors []Error
+			constraintType, constraintErrors = c.inferTypeAnn(ctx, tp.Constraint)
+			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.Constraint})
+			errors = slices.Concat(errors, constraintErrors)
+		}
+		typeParam := &type_system.TypeParam{
+			Name:       tp.Name,
+			Constraint: constraintType,
+			Default:    defaultType,
+		}
+		typeParams[i] = typeParam
+
+		var t type_system.Type = type_system.NewUnknownType(nil)
+		if typeParam.Constraint != nil {
+			t = typeParam.Constraint
+		}
+		funcCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
+			Type:       t,
+			TypeParams: []*type_system.TypeParam{},
+		})
+		fmt.Fprintf(os.Stderr, "Added type param %s to scope with type %s\n", typeParam.Name, t.String())
+	}
+
+	return typeParams, errors
+}
+
 // NOTE: A new context should be created before calling this function in order
 // to contain any type parameters in scope.
 // Returns:
@@ -67,39 +117,8 @@ func (c *Checker) inferFuncSig(
 	funcCtx := ctx.WithNewScope()
 
 	// Handle generic functions by creating type parameters
-	typeParams := []*type_system.TypeParam{}
-	for _, tp := range sig.TypeParams {
-		var defaultType type_system.Type
-		var constraintType type_system.Type
-		if tp.Default != nil {
-			var defaultErrors []Error
-			defaultType, defaultErrors = c.inferTypeAnn(ctx, tp.Default)
-			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
-			errors = slices.Concat(errors, defaultErrors)
-		}
-		if tp.Constraint != nil {
-			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(ctx, tp.Constraint)
-			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.Constraint})
-			errors = slices.Concat(errors, constraintErrors)
-		}
-		typeParam := &type_system.TypeParam{
-			Name:       tp.Name,
-			Constraint: constraintType,
-			Default:    defaultType,
-		}
-		typeParams = append(typeParams, typeParam)
-
-		var t type_system.Type = type_system.NewUnknownType(nil)
-		if typeParam.Constraint != nil {
-			t = typeParam.Constraint
-		}
-		funcCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
-			Type:       t,
-			TypeParams: []*type_system.TypeParam{},
-		})
-		fmt.Fprintf(os.Stderr, "Added type param %s to scope with type %s\n", typeParam.Name, t.String())
-	}
+	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, sig.TypeParams)
+	errors = slices.Concat(errors, typeParamErrors)
 
 	params, bindings, paramErrors := c.inferFuncParams(funcCtx, sig.Params)
 	errors = slices.Concat(errors, paramErrors)
