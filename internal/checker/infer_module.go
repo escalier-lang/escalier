@@ -526,7 +526,7 @@ func (c *Checker) InferComponent(
 			typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
 			errors = slices.Concat(errors, declErrors)
 
-			// Unified the type alias' inferred type with its placeholder type
+			// Unify the type alias' inferred type with its placeholder type
 			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
 			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
@@ -694,6 +694,10 @@ func (c *Checker) InferComponent(
 
 			unifyErrors := c.Unify(nsCtx, typeAlias.Type, enumUnionType)
 			errors = slices.Concat(errors, unifyErrors)
+
+			// Unify the type parameters
+			typeParamErrors := c.unifyTypeParams(nsCtx, typeAlias.TypeParams, typeParams)
+			errors = slices.Concat(errors, typeParamErrors)
 		case *ast.ClassDecl:
 			methodCtxs := declMethodCtxs[i]
 			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
