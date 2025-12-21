@@ -62,6 +62,17 @@ func GetNamespaceCtx(
 
 // inferTypeParams infers type parameters from AST type parameters by creating
 // fresh type variables for constraints and defaults.
+//
+// This helper is intended for module-level type declarations such as TypeDecl,
+// ClassDecl, EnumDecl, and InterfaceDecl. It only mirrors the AST type parameter
+// list into a corresponding slice of *type_system.TypeParam by allocating fresh
+// type variables for any constraint and default types.
+//
+// Note that this function:
+//   - does NOT add the inferred type parameters to any scope,
+//   - does NOT perform any constraint checking or error reporting, and
+//   - is NOT a replacement for inferFuncTypeParams, which is responsible for
+//     function-level generic parameter handling and associated diagnostics.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
 	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
 	for i, typeParam := range astTypeParams {
@@ -80,6 +91,34 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		}
 	}
 	return typeParams
+}
+
+// unifyTypeParams unifies the placeholder type parameters (with FreshVar constraints/defaults)
+// with the fully inferred type parameters (with resolved constraint/default types).
+func (c *Checker) unifyTypeParams(
+	ctx Context,
+	existingTypeParams []*type_system.TypeParam,
+	inferredTypeParams []*type_system.TypeParam,
+) []Error {
+	errors := []Error{}
+
+	for i, existingTypeParam := range existingTypeParams {
+		if i >= len(inferredTypeParams) {
+			break // Safety check in case of mismatched lengths
+		}
+		inferredTypeParam := inferredTypeParams[i]
+
+		if existingTypeParam.Constraint != nil && inferredTypeParam.Constraint != nil {
+			constraintErrors := c.Unify(ctx, existingTypeParam.Constraint, inferredTypeParam.Constraint)
+			errors = slices.Concat(errors, constraintErrors)
+		}
+		if existingTypeParam.Default != nil && inferredTypeParam.Default != nil {
+			defaultErrors := c.Unify(ctx, existingTypeParam.Default, inferredTypeParam.Default)
+			errors = slices.Concat(errors, defaultErrors)
+		}
+	}
+
+	return errors
 }
 
 func (c *Checker) InferComponent(
@@ -379,7 +418,7 @@ func (c *Checker) InferComponent(
 			nsCtx.Scope.setValue(decl.Name.Name, ctor)
 			declMethodCtxs[i] = methodCtxs
 		case *ast.EnumDecl:
-			// I think we can infer the whole thing at once here.
+			// TODO: refactor this so that the definition phase is separate
 
 			// We need a new namespace
 			ns := type_system.NewNamespace()
@@ -616,13 +655,14 @@ func (c *Checker) InferComponent(
 			typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
 			errors = slices.Concat(errors, declErrors)
 
-			// TODO:
-			// - unify the Default and Constraint types for each type param
-
 			// Unified the type alias' inferred type with its placeholder type
 			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
 			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
+
+			// Unify the type parameters
+			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, typeAlias.TypeParams)
+			errors = slices.Concat(errors, typeParamErrors)
 		case *ast.InterfaceDecl:
 			interfaceAlias, declErrors := c.inferInterface(nsCtx, decl)
 			errors = slices.Concat(errors, declErrors)
@@ -648,6 +688,10 @@ func (c *Checker) InferComponent(
 			// First interface declaration or unification needed
 			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, interfaceAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
+
+			// Unify the type parameters
+			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, interfaceAlias.TypeParams)
+			errors = slices.Concat(errors, typeParamErrors)
 		case *ast.ClassDecl:
 			methodCtxs := declMethodCtxs[i]
 			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)

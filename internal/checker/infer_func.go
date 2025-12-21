@@ -50,7 +50,7 @@ func (c *Checker) inferFuncParams(
 // inferFuncTypeParams infers type parameters for functions and function expressions.
 // Unlike inferTypeParams, this version:
 // - Uses inferTypeAnn instead of FreshVar for constraints and defaults
-// - Sets provenance on the inferred types
+// - Sets provenance on constraint and default types
 // - Adds the type parameters to the function context scope
 // Returns the list of type parameters and any errors encountered.
 func (c *Checker) inferFuncTypeParams(
