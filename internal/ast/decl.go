@@ -195,14 +195,14 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 type InterfaceDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
-	TypeAnn    TypeAnn
+	TypeAnn    *ObjectTypeAnn
 	export     bool
 	declare    bool
 	span       Span
 	provenance provenance.Provenance
 }
 
-func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *InterfaceDecl {
+func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
 	return &InterfaceDecl{
 		Name:       name,
 		TypeParams: typeParams,

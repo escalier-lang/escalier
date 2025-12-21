@@ -537,17 +537,22 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	typeParams := p.maybeTypeParams()
 
 	// Parse the object type body (interface body)
-	typeAnn := p.typeAnn()
+	token = p.lexer.peek()
+	if token.Type != OpenBrace {
+		p.reportError(token.Span, "Expected '{' to start interface body")
+		return nil
+	}
+	p.lexer.consume() // consume '{'
+	elems := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	objType := ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 
-	if typeAnn == nil {
+	if objType == nil {
 		return nil
 	}
 
-	// End position is the end of the type annotation
-	end := typeAnn.Span().End
-
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
-	decl := ast.NewInterfaceDecl(ident, typeParams, typeAnn, export, declare, span)
+	decl := ast.NewInterfaceDecl(ident, typeParams, objType, export, declare, span)
 	return decl
 }
 

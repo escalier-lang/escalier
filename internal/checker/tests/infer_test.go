@@ -3795,11 +3795,13 @@ func TestInterfaceMerging(t *testing.T) {
 
 				val id = user.id
 				val name = user.name
+				val email = user.email
 			`,
 			expectedTypes: map[string]string{
-				"user": "User",
-				"id":   "number",
-				"name": "string",
+				"user":  "User",
+				"id":    "number",
+				"name":  "string",
+				"email": "string | undefined",
 			},
 		},
 	}

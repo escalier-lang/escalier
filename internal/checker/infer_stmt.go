@@ -281,18 +281,8 @@ func (c *Checker) inferInterface(
 	// Use the context with all type parameters for inferring the type annotation
 	typeCtx := paramCtx
 
-	t, typeErrors := c.inferTypeAnn(typeCtx, decl.TypeAnn)
+	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
-
-	// The type annotation should be an ObjectTypeAnn, which infers to an ObjectType
-	objType, ok := t.(*type_system.ObjectType)
-	if !ok {
-		// If it's not an ObjectType, we can't merge it, so just return it as-is
-		return &type_system.TypeAlias{
-			Type:       t,
-			TypeParams: typeParams,
-		}, errors
-	}
 
 	// Mark the ObjectType as an interface
 	objType.Interface = true
@@ -311,8 +301,8 @@ func (c *Checker) inferInterface(
 		errors = slices.Concat(errors, validateErrors)
 
 		// If it exists, merge the elements
-		prunedExisting := type_system.Prune(existingAlias.Type)
-		if existingObjType, ok := prunedExisting.(*type_system.ObjectType); ok && existingObjType.Interface {
+		if existingObjType, ok := type_system.Prune(existingAlias.Type).(*type_system.ObjectType); ok &&
+			existingObjType.Interface {
 			// Validate that duplicate properties have compatible types
 			mergeErrors := c.validateInterfaceMerge(ctx, existingObjType, objType, decl)
 			errors = slices.Concat(errors, mergeErrors)

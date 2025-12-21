@@ -79,168 +79,9 @@ func (c *Checker) inferTypeAnn(
 		}
 		t = type_system.NewTupleType(provenance, elems...)
 	case *ast.ObjectTypeAnn:
-		elems := make([]type_system.ObjTypeElem, len(typeAnn.Elems))
-		for i, elem := range typeAnn.Elems {
-			switch elem := elem.(type) {
-			case *ast.CallableTypeAnn:
-				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
-				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &type_system.CallableElem{Fn: fn}
-			case *ast.ConstructorTypeAnn:
-				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
-				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &type_system.ConstructorElem{Fn: fn}
-			case *ast.MethodTypeAnn:
-				// TODO: handle `self` and `mut self` parameters
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key == nil {
-					continue
-				}
-				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
-				errors = slices.Concat(errors, fnErrors)
-				elems[i] = type_system.NewMethodElem(*key, fn, nil)
-			case *ast.GetterTypeAnn:
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key == nil {
-					continue
-				}
-				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
-				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &type_system.GetterElem{Name: *key, Fn: fn}
-			case *ast.SetterTypeAnn:
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key == nil {
-					continue
-				}
-				fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
-				errors = slices.Concat(errors, fnErrors)
-				elems[i] = &type_system.SetterElem{Name: *key, Fn: fn}
-			case *ast.PropertyTypeAnn:
-				var t type_system.Type
-				if elem.Value != nil {
-					typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
-					errors = slices.Concat(errors, typeAnnErrors)
-					t = typeAnnType
-				} else {
-					t = type_system.NewUndefinedType(nil)
-				}
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key == nil {
-					continue
-				}
-				elems[i] = &type_system.PropertyElem{
-					Name:     *key,
-					Optional: elem.Optional,
-					Readonly: elem.Readonly,
-					Value:    t,
-				}
-			case *ast.MappedTypeAnn:
-				// Infer the constraint type for the type parameter
-				var constraintType type_system.Type
-				if elem.TypeParam.Constraint != nil {
-					var constraintErrors []Error
-					constraintType, constraintErrors = c.inferTypeAnn(ctx, elem.TypeParam.Constraint)
-					errors = slices.Concat(errors, constraintErrors)
-				} else {
-					constraintType = type_system.NewAnyType(nil)
-				}
-
-				typeParam := &type_system.IndexParam{
-					Name:       elem.TypeParam.Name,
-					Constraint: constraintType,
-				}
-
-				// Create a new context with the type parameter in scope
-				mappedCtx := ctx
-				if elem.TypeParam.Name != "" {
-					mappedScope := ctx.Scope.WithNewScope()
-
-					// Add the type parameter as a type alias to the scope
-					typeParamTypeRef := type_system.NewTypeRefType(nil, elem.TypeParam.Name, nil)
-					typeParamAlias := &type_system.TypeAlias{
-						Type:       typeParamTypeRef,
-						TypeParams: []*type_system.TypeParam{},
-					}
-					mappedScope.SetTypeAlias(elem.TypeParam.Name, typeParamAlias)
-
-					mappedCtx = Context{
-						Scope:      mappedScope,
-						IsAsync:    ctx.IsAsync,
-						IsPatMatch: ctx.IsPatMatch,
-					}
-				}
-
-				// Infer the value type with the type parameter in scope
-				valueType, valueErrors := c.inferTypeAnn(mappedCtx, elem.Value)
-				errors = slices.Concat(errors, valueErrors)
-
-				// Infer the optional name type if present
-				var nameType type_system.Type
-				if elem.Name != nil {
-					var nameErrors []Error
-					nameType, nameErrors = c.inferTypeAnn(mappedCtx, elem.Name)
-					errors = slices.Concat(errors, nameErrors)
-				}
-
-				// Convert mapped modifiers
-				var optional *type_system.MappedModifier
-				if elem.Optional != nil {
-					switch *elem.Optional {
-					case ast.MMAdd:
-						opt := type_system.MMAdd
-						optional = &opt
-					case ast.MMRemove:
-						opt := type_system.MMRemove
-						optional = &opt
-					}
-				}
-
-				var readOnly *type_system.MappedModifier
-				if elem.ReadOnly != nil {
-					switch *elem.ReadOnly {
-					case ast.MMAdd:
-						ro := type_system.MMAdd
-						readOnly = &ro
-					case ast.MMRemove:
-						ro := type_system.MMRemove
-						readOnly = &ro
-					}
-				}
-
-				// Infer the check and extends types if present (for filtering)
-				var checkType type_system.Type
-				if elem.Check != nil {
-					var checkErrors []Error
-					checkType, checkErrors = c.inferTypeAnn(mappedCtx, elem.Check)
-					errors = slices.Concat(errors, checkErrors)
-				}
-
-				var extendsType type_system.Type
-				if elem.Extends != nil {
-					var extendsErrors []Error
-					extendsType, extendsErrors = c.inferTypeAnn(mappedCtx, elem.Extends)
-					errors = slices.Concat(errors, extendsErrors)
-				}
-
-				elems[i] = &type_system.MappedElem{
-					TypeParam: typeParam,
-					Name:      nameType,
-					Value:     valueType,
-					Optional:  optional,
-					Readonly:  readOnly,
-					Check:     checkType,
-					Extends:   extendsType,
-				}
-			case *ast.RestSpreadTypeAnn:
-				panic("TODO: handle RestSpreadTypeAnn")
-			}
-		}
-
-		t = type_system.NewObjectType(provenance, elems)
+		objType, objErrors := c.inferObjectTypeAnn(ctx, typeAnn)
+		t = objType
+		errors = slices.Concat(errors, objErrors)
 	case *ast.UnionTypeAnn:
 		types := make([]type_system.Type, len(typeAnn.Types))
 		for i, unionType := range typeAnn.Types {
@@ -406,4 +247,175 @@ func (c *Checker) inferFuncTypeAnn(
 	}
 
 	return &funcType, errors
+}
+
+func (c *Checker) inferObjectTypeAnn(
+	ctx Context,
+	typeAnn *ast.ObjectTypeAnn,
+) (*type_system.ObjectType, []Error) {
+	errors := []Error{}
+	provenance := &ast.NodeProvenance{Node: typeAnn}
+
+	elems := make([]type_system.ObjTypeElem, len(typeAnn.Elems))
+	for i, elem := range typeAnn.Elems {
+		switch elem := elem.(type) {
+		case *ast.CallableTypeAnn:
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			errors = slices.Concat(errors, fnErrors)
+			elems[i] = &type_system.CallableElem{Fn: fn}
+		case *ast.ConstructorTypeAnn:
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			errors = slices.Concat(errors, fnErrors)
+			elems[i] = &type_system.ConstructorElem{Fn: fn}
+		case *ast.MethodTypeAnn:
+			// TODO: handle `self` and `mut self` parameters
+			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+			errors = slices.Concat(errors, keyErrors)
+			if key == nil {
+				continue
+			}
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			errors = slices.Concat(errors, fnErrors)
+			elems[i] = type_system.NewMethodElem(*key, fn, nil)
+		case *ast.GetterTypeAnn:
+			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+			errors = slices.Concat(errors, keyErrors)
+			if key == nil {
+				continue
+			}
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			errors = slices.Concat(errors, fnErrors)
+			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn}
+		case *ast.SetterTypeAnn:
+			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+			errors = slices.Concat(errors, keyErrors)
+			if key == nil {
+				continue
+			}
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			errors = slices.Concat(errors, fnErrors)
+			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn}
+		case *ast.PropertyTypeAnn:
+			var t type_system.Type
+			if elem.Value != nil {
+				typeAnnType, typeAnnErrors := c.inferTypeAnn(ctx, elem.Value)
+				errors = slices.Concat(errors, typeAnnErrors)
+				t = typeAnnType
+			} else {
+				t = type_system.NewUndefinedType(nil)
+			}
+			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
+			errors = slices.Concat(errors, keyErrors)
+			if key == nil {
+				continue
+			}
+			elems[i] = &type_system.PropertyElem{
+				Name:     *key,
+				Optional: elem.Optional,
+				Readonly: elem.Readonly,
+				Value:    t,
+			}
+		case *ast.MappedTypeAnn:
+			// Infer the constraint type for the type parameter
+			var constraintType type_system.Type
+			if elem.TypeParam.Constraint != nil {
+				var constraintErrors []Error
+				constraintType, constraintErrors = c.inferTypeAnn(ctx, elem.TypeParam.Constraint)
+				errors = slices.Concat(errors, constraintErrors)
+			} else {
+				constraintType = type_system.NewAnyType(nil)
+			}
+
+			typeParam := &type_system.IndexParam{
+				Name:       elem.TypeParam.Name,
+				Constraint: constraintType,
+			}
+
+			// Create a new context with the type parameter in scope
+			mappedCtx := ctx
+			if elem.TypeParam.Name != "" {
+				mappedScope := ctx.Scope.WithNewScope()
+
+				// Add the type parameter as a type alias to the scope
+				typeParamTypeRef := type_system.NewTypeRefType(nil, elem.TypeParam.Name, nil)
+				typeParamAlias := &type_system.TypeAlias{
+					Type:       typeParamTypeRef,
+					TypeParams: []*type_system.TypeParam{},
+				}
+				mappedScope.SetTypeAlias(elem.TypeParam.Name, typeParamAlias)
+
+				mappedCtx = Context{
+					Scope:      mappedScope,
+					IsAsync:    ctx.IsAsync,
+					IsPatMatch: ctx.IsPatMatch,
+				}
+			}
+
+			// Infer the value type with the type parameter in scope
+			valueType, valueErrors := c.inferTypeAnn(mappedCtx, elem.Value)
+			errors = slices.Concat(errors, valueErrors)
+
+			// Infer the optional name type if present
+			var nameType type_system.Type
+			if elem.Name != nil {
+				var nameErrors []Error
+				nameType, nameErrors = c.inferTypeAnn(mappedCtx, elem.Name)
+				errors = slices.Concat(errors, nameErrors)
+			}
+
+			// Convert mapped modifiers
+			var optional *type_system.MappedModifier
+			if elem.Optional != nil {
+				switch *elem.Optional {
+				case ast.MMAdd:
+					opt := type_system.MMAdd
+					optional = &opt
+				case ast.MMRemove:
+					opt := type_system.MMRemove
+					optional = &opt
+				}
+			}
+
+			var readOnly *type_system.MappedModifier
+			if elem.ReadOnly != nil {
+				switch *elem.ReadOnly {
+				case ast.MMAdd:
+					ro := type_system.MMAdd
+					readOnly = &ro
+				case ast.MMRemove:
+					ro := type_system.MMRemove
+					readOnly = &ro
+				}
+			}
+
+			// Infer the check and extends types if present (for filtering)
+			var checkType type_system.Type
+			if elem.Check != nil {
+				var checkErrors []Error
+				checkType, checkErrors = c.inferTypeAnn(mappedCtx, elem.Check)
+				errors = slices.Concat(errors, checkErrors)
+			}
+
+			var extendsType type_system.Type
+			if elem.Extends != nil {
+				var extendsErrors []Error
+				extendsType, extendsErrors = c.inferTypeAnn(mappedCtx, elem.Extends)
+				errors = slices.Concat(errors, extendsErrors)
+			}
+
+			elems[i] = &type_system.MappedElem{
+				TypeParam: typeParam,
+				Name:      nameType,
+				Value:     valueType,
+				Optional:  optional,
+				Readonly:  readOnly,
+				Check:     checkType,
+				Extends:   extendsType,
+			}
+		case *ast.RestSpreadTypeAnn:
+			panic("TODO: handle RestSpreadTypeAnn")
+		}
+	}
+
+	return type_system.NewObjectType(provenance, elems), errors
 }
