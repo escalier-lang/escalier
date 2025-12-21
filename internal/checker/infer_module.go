@@ -418,16 +418,25 @@ func (c *Checker) InferComponent(
 			nsCtx.Scope.setValue(decl.Name.Name, ctor)
 			declMethodCtxs[i] = methodCtxs
 		case *ast.EnumDecl:
-			// TODO: refactor this so that the definition phase is separate
-
-			// We need a new namespace
+			// Create a new namespace for the enum
 			ns := type_system.NewNamespace()
 			nsCtx.Scope.setNamespace(decl.Name.Name, ns)
 
+			// Create a fresh type variable for the enum
 			enumType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
+			// Infer type parameters
 			typeParams := c.inferTypeParams(decl.TypeParams)
 
+			// Create a type alias with placeholder type
+			typeAlias := &type_system.TypeAlias{
+				Type:       enumType,
+				TypeParams: typeParams,
+			}
+
+			nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
+
+			// Create a context for inferring enum variants
 			declCtx := nsCtx.WithNewScope()
 			declCtxMap[declID] = declCtx
 
@@ -443,144 +452,6 @@ func (c *Checker) InferComponent(
 					TypeParams: []*type_system.TypeParam{},
 				})
 			}
-
-			typeAlias := &type_system.TypeAlias{
-				Type:       enumType,
-				TypeParams: typeParams,
-			}
-
-			typeArgs := make([]type_system.Type, len(typeParams))
-			for i := range typeParams {
-				typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
-			}
-
-			variantTypes := make([]type_system.Type, len(decl.Elems))
-
-			for i, elem := range decl.Elems {
-				switch elem := elem.(type) {
-				case *ast.EnumVariant:
-					// TODO: build an instance type, e.g. given the enum variant
-					// Some(value: T)
-					// we want to build a type that looks like:
-					// { [Symbol.customMatcher](subject: C) -> [T] }
-					// Where `C` is the instance type of the enum variant
-
-					instanceType := type_system.NewNominalObjectType(
-						&ast.NodeProvenance{Node: elem}, []type_system.ObjTypeElem{})
-					instanceTypeAlias := &type_system.TypeAlias{
-						Type:       instanceType,
-						TypeParams: typeParams,
-					}
-					ns.Types[elem.Name.Name] = instanceTypeAlias
-
-					params, _, paramErrors := c.inferFuncParams(declCtx, elem.Params)
-					errors = slices.Concat(errors, paramErrors)
-
-					// Build the constructor function type
-					// If the enum has type parameters, the constructor should be generic
-					funcType := type_system.NewFuncType(
-						&ast.NodeProvenance{Node: elem},
-						typeParams,
-						params,
-						type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
-						type_system.NewNeverType(nil),
-					)
-					constructorElem := &type_system.ConstructorElem{Fn: funcType}
-
-					classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
-
-					// Build [Symbol.customMatcher](subject: C) -> [T] method
-					symbol := ctx.Scope.GetValue("Symbol")
-					key := PropertyKey{
-						Name:     "customMatcher",
-						OptChain: false,
-						span:     DEFAULT_SPAN,
-					}
-					customMatcher, _ := c.getMemberType(ctx, symbol.Type, key)
-
-					// Create the SymbolKeyMap for the object type
-					symbolKeyMap := make(map[int]any)
-
-					switch customMatcher := type_system.Prune(customMatcher).(type) {
-					case *type_system.UniqueSymbolType:
-						self := false
-						subjectPat := &type_system.IdentPat{Name: "subject"}
-						// The subject type should include type arguments if the enum is generic
-						subjectType := type_system.NewTypeRefType(
-							nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
-						paramTypes := make([]type_system.Type, len(elem.Params))
-						for i, param := range elem.Params {
-							t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
-							paramTypes[i] = t
-						}
-						returnType := type_system.NewTupleType(nil, paramTypes...)
-
-						methodElem := &type_system.MethodElem{
-							Name: type_system.ObjTypeKey{
-								Kind: type_system.SymObjTypeKeyKind,
-								Sym:  customMatcher.Value,
-							},
-							Fn: type_system.NewFuncType(
-								nil,
-								typeParams,
-								[]*type_system.FuncParam{{
-									Pattern: subjectPat,
-									Type:    subjectType,
-								}},
-								returnType,
-								type_system.NewNeverType(nil),
-							),
-							MutSelf: &self,
-						}
-						classObjTypeElems = append(classObjTypeElems, methodElem)
-
-						// Store the Symbol.customMatcher expression in the SymbolKeyMap
-						symbolMemberExpr := ast.NewMember(
-							ast.NewIdent("Symbol", DEFAULT_SPAN),
-							ast.NewIdentifier("customMatcher", DEFAULT_SPAN),
-							false,
-							DEFAULT_SPAN,
-						)
-						symbolKeyMap[customMatcher.Value] = symbolMemberExpr
-					default:
-						panic("Symbol.customMatcher is not a unique symbol")
-					}
-
-					provenance := &ast.NodeProvenance{Node: elem}
-					classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
-					classObjType.SymbolKeyMap = symbolKeyMap
-
-					ctor := &type_system.Binding{
-						Source:  provenance,
-						Type:    classObjType,
-						Mutable: false,
-					}
-
-					ns.Values[elem.Name.Name] = ctor
-
-					variantName := &type_system.Member{
-						Left:  type_system.NewIdent(decl.Name.Name),
-						Right: type_system.NewIdent(elem.Name.Name),
-					}
-
-					variantTypes[i] = &type_system.TypeRefType{
-						Name:      variantName,
-						TypeArgs:  typeArgs,
-						TypeAlias: instanceTypeAlias,
-					}
-				case *ast.EnumSpread:
-					panic("TODO: infer enum spreads")
-				}
-			}
-
-			enumUnionType := type_system.NewUnionType(
-				&ast.NodeProvenance{Node: decl}, variantTypes...)
-			enumTypeAlias := &type_system.TypeAlias{
-				Type:       enumUnionType,
-				TypeParams: typeParams,
-			}
-
-			nsCtx.Scope.SetTypeAlias(decl.Name.Name, enumTypeAlias)
 		case *ast.InterfaceDecl:
 			// Similar to TypeDecl, but we need to handle interface merging
 			typeParams := c.inferTypeParams(decl.TypeParams)
@@ -692,6 +563,137 @@ func (c *Checker) InferComponent(
 			// Unify the type parameters
 			typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, interfaceAlias.TypeParams)
 			errors = slices.Concat(errors, typeParamErrors)
+		case *ast.EnumDecl:
+			// Get the namespace and type alias created in the placeholder phase
+			ns := nsCtx.Scope.getNamespace(decl.Name.Name)
+			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			typeParams := typeAlias.TypeParams
+			declCtx := declCtxMap[declID]
+
+			typeArgs := make([]type_system.Type, len(typeParams))
+			for i := range typeParams {
+				typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
+			}
+
+			variantTypes := make([]type_system.Type, len(decl.Elems))
+
+			for i, elem := range decl.Elems {
+				switch elem := elem.(type) {
+				case *ast.EnumVariant:
+					instanceType := type_system.NewNominalObjectType(
+						&ast.NodeProvenance{Node: elem}, []type_system.ObjTypeElem{})
+					instanceTypeAlias := &type_system.TypeAlias{
+						Type:       instanceType,
+						TypeParams: typeParams,
+					}
+					ns.Types[elem.Name.Name] = instanceTypeAlias
+
+					params, _, paramErrors := c.inferFuncParams(declCtx, elem.Params)
+					errors = slices.Concat(errors, paramErrors)
+
+					// Build the constructor function type
+					// If the enum has type parameters, the constructor should be generic
+					funcType := type_system.NewFuncType(
+						&ast.NodeProvenance{Node: elem},
+						typeParams,
+						params,
+						type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
+						type_system.NewNeverType(nil),
+					)
+					constructorElem := &type_system.ConstructorElem{Fn: funcType}
+
+					classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+
+					// Build [Symbol.customMatcher](subject: C) -> [T] method
+					symbol := ctx.Scope.GetValue("Symbol")
+					key := PropertyKey{
+						Name:     "customMatcher",
+						OptChain: false,
+						span:     DEFAULT_SPAN,
+					}
+					customMatcher, _ := c.getMemberType(ctx, symbol.Type, key)
+
+					// Create the SymbolKeyMap for the object type
+					symbolKeyMap := make(map[int]any)
+
+					switch customMatcher := type_system.Prune(customMatcher).(type) {
+					case *type_system.UniqueSymbolType:
+						self := false
+						subjectPat := &type_system.IdentPat{Name: "subject"}
+						// The subject type should include type arguments if the enum is generic
+						subjectType := type_system.NewTypeRefType(
+							nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
+						paramTypes := make([]type_system.Type, len(elem.Params))
+						for i, param := range elem.Params {
+							t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
+							paramTypes[i] = t
+						}
+						returnType := type_system.NewTupleType(nil, paramTypes...)
+
+						methodElem := &type_system.MethodElem{
+							Name: type_system.ObjTypeKey{
+								Kind: type_system.SymObjTypeKeyKind,
+								Sym:  customMatcher.Value,
+							},
+							Fn: type_system.NewFuncType(
+								nil,
+								typeParams,
+								[]*type_system.FuncParam{{
+									Pattern: subjectPat,
+									Type:    subjectType,
+								}},
+								returnType,
+								type_system.NewNeverType(nil),
+							),
+							MutSelf: &self,
+						}
+						classObjTypeElems = append(classObjTypeElems, methodElem)
+
+						// Store the Symbol.customMatcher expression in the SymbolKeyMap
+						symbolMemberExpr := ast.NewMember(
+							ast.NewIdent("Symbol", DEFAULT_SPAN),
+							ast.NewIdentifier("customMatcher", DEFAULT_SPAN),
+							false,
+							DEFAULT_SPAN,
+						)
+						symbolKeyMap[customMatcher.Value] = symbolMemberExpr
+					default:
+						panic("Symbol.customMatcher is not a unique symbol")
+					}
+
+					provenance := &ast.NodeProvenance{Node: elem}
+					classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
+					classObjType.SymbolKeyMap = symbolKeyMap
+
+					ctor := &type_system.Binding{
+						Source:  provenance,
+						Type:    classObjType,
+						Mutable: false,
+					}
+
+					ns.Values[elem.Name.Name] = ctor
+
+					variantName := &type_system.Member{
+						Left:  type_system.NewIdent(decl.Name.Name),
+						Right: type_system.NewIdent(elem.Name.Name),
+					}
+
+					variantTypes[i] = &type_system.TypeRefType{
+						Name:      variantName,
+						TypeArgs:  typeArgs,
+						TypeAlias: instanceTypeAlias,
+					}
+				case *ast.EnumSpread:
+					panic("TODO: infer enum spreads")
+				}
+			}
+
+			// Build the union type and unify with the placeholder
+			enumUnionType := type_system.NewUnionType(
+				&ast.NodeProvenance{Node: decl}, variantTypes...)
+
+			unifyErrors := c.Unify(nsCtx, typeAlias.Type, enumUnionType)
+			errors = slices.Concat(errors, unifyErrors)
 		case *ast.ClassDecl:
 			methodCtxs := declMethodCtxs[i]
 			typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
