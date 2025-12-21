@@ -565,6 +565,41 @@ func (c *Checker) InferComponent(
 			}
 
 			nsCtx.Scope.SetTypeAlias(decl.Name.Name, enumTypeAlias)
+		case *ast.InterfaceDecl:
+			// Similar to TypeDecl, but we need to handle interface merging
+			typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
+			for i, typeParam := range decl.TypeParams {
+				var constraintType type_system.Type
+				var defaultType type_system.Type
+				if typeParam.Constraint != nil {
+					constraintType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Constraint})
+				}
+				if typeParam.Default != nil {
+					defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
+				}
+				typeParams[i] = &type_system.TypeParam{
+					Name:       typeParam.Name,
+					Constraint: constraintType,
+					Default:    defaultType,
+				}
+			}
+
+			// Check if an interface with this name already exists
+			existingAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			if existingAlias == nil {
+				// First declaration - create a fresh type variable for the interface
+				interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
+
+				typeAlias := &type_system.TypeAlias{
+					Type:       interfaceType,
+					TypeParams: typeParams,
+				}
+
+				// Directly set in the namespace to allow interface merging
+				nsCtx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
+			}
+			// If it already exists, we'll merge during the definition phase
+			// Type parameter validation happens in inferInterface
 		}
 	}
 
@@ -625,6 +660,31 @@ func (c *Checker) InferComponent(
 			// Unified the type alias' inferred type with its placeholder type
 			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
 			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
+			errors = slices.Concat(errors, unifyErrors)
+		case *ast.InterfaceDecl:
+			interfaceAlias, declErrors := c.inferInterface(nsCtx, decl)
+			errors = slices.Concat(errors, declErrors)
+
+			// Get the existing type alias (which might be a fresh var or a previous interface)
+			existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+			prunedType := type_system.Prune(existingTypeAlias.Type)
+
+			// Check if the pruned type is already an ObjectType (from a previous interface)
+			if existingObjType, ok := prunedType.(*type_system.ObjectType); ok && existingObjType.Interface {
+				// Merge with existing interface
+				if newObjType, ok := interfaceAlias.Type.(*type_system.ObjectType); ok {
+					// Note: validation is done in inferInterface, no need to duplicate it here
+					// Merge the elements
+					existingObjType.Elems = append(existingObjType.Elems, newObjType.Elems...)
+					// Keep the Interface flag true
+					existingObjType.Interface = true
+					// The merged type is already in the scope via the binding, no need to update
+					continue
+				}
+			}
+
+			// First interface declaration or unification needed
+			unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, interfaceAlias.Type)
 			errors = slices.Concat(errors, unifyErrors)
 		case *ast.ClassDecl:
 			methodCtxs := declMethodCtxs[i]
@@ -884,6 +944,73 @@ func (c *Checker) InferComponent(
 						}
 					}
 				}
+			}
+		}
+	}
+
+	return errors
+}
+
+// validateInterfaceMerge checks that when merging interface declarations,
+// properties with the same name have compatible (identical) types as required by TypeScript.
+func (c *Checker) validateInterfaceMerge(
+	ctx Context,
+	existingInterface *type_system.ObjectType,
+	newInterface *type_system.ObjectType,
+	decl *ast.InterfaceDecl,
+) []Error {
+	errors := []Error{}
+
+	// Build a map of property names to their types from the existing interface
+	existingProps := make(map[type_system.ObjTypeKey]type_system.Type)
+	for _, elem := range existingInterface.Elems {
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			existingProps[elem.Name] = elem.Value
+		case *type_system.MethodElem:
+			existingProps[elem.Name] = elem.Fn
+		case *type_system.GetterElem:
+			existingProps[elem.Name] = elem.Fn.Return
+		case *type_system.SetterElem:
+			existingProps[elem.Name] = elem.Fn.Params[0].Type
+		}
+	}
+
+	// Check each property in the new interface against the existing interface
+	for _, elem := range newInterface.Elems {
+		var name type_system.ObjTypeKey
+		var newType type_system.Type
+
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			name = elem.Name
+			newType = elem.Value
+		case *type_system.MethodElem:
+			name = elem.Name
+			newType = elem.Fn
+		case *type_system.GetterElem:
+			name = elem.Name
+			newType = elem.Fn.Return
+		case *type_system.SetterElem:
+			name = elem.Name
+			newType = elem.Fn.Params[0].Type
+		default:
+			continue
+		}
+
+		// If a property with this name already exists, check type compatibility
+		if existingType, exists := existingProps[name]; exists {
+			// Properties with the same name must have identical types
+			unifyErrors := c.Unify(ctx, newType, existingType)
+			if len(unifyErrors) > 0 {
+				// Add a more specific error for interface merging
+				errors = append(errors, &InterfaceMergeError{
+					InterfaceName: decl.Name.Name,
+					PropertyName:  name.String(),
+					ExistingType:  existingType,
+					NewType:       newType,
+					span:          decl.Name.Span(),
+				})
 			}
 		}
 	}

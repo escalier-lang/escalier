@@ -3701,3 +3701,689 @@ func TestMatchExprInference(t *testing.T) {
 		})
 	}
 }
+
+func TestInterfaceMerging(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"SimpleMerge": {
+			input: `
+				interface Person {
+					name: string,
+					age: number,
+				}
+
+				interface Person {
+					email: string,
+				}
+
+				declare val person: Person
+
+				val name = person.name
+				val age = person.age
+				val email = person.email
+			`,
+			expectedTypes: map[string]string{
+				"person": "Person",
+				"name":   "string",
+				"age":    "number",
+				"email":  "string",
+			},
+		},
+		"MultipleMerges": {
+			input: `
+				interface Animal {
+					name: string,
+				}
+
+				interface Animal {
+					age: number,
+				}
+
+				interface Animal {
+					species: string,
+				}
+
+				declare val animal: Animal
+
+				val name = animal.name
+				val age = animal.age
+				val species = animal.species
+			`,
+			expectedTypes: map[string]string{
+				"animal":  "Animal",
+				"name":    "string",
+				"age":     "number",
+				"species": "string",
+			},
+		},
+		"MergeWithMethods": {
+			input: `
+				interface Calculator {
+					add: fn (x: number, y: number) -> number,
+				}
+
+				interface Calculator {
+					subtract: fn (x: number, y: number) -> number,
+				}
+
+				declare val calc: Calculator
+
+				val sum = calc.add(5, 3)
+				val diff = calc.subtract(10, 4)
+			`,
+			expectedTypes: map[string]string{
+				"calc": "Calculator",
+				"sum":  "number",
+				"diff": "number",
+			},
+		},
+		"MergeWithOptionalProperties": {
+			input: `
+				interface User {
+					id: number,
+					name: string,
+				}
+
+				interface User {
+					email?: string,
+					phone?: string,
+				}
+
+				declare val user: User
+
+				val id = user.id
+				val name = user.name
+				val email = user.email
+			`,
+			expectedTypes: map[string]string{
+				"user":  "User",
+				"id":    "number",
+				"name":  "string",
+				"email": "string | undefined",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, errors := p.ParseScript()
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("ParseError[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			scope, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("InferError[%d]: %#v\n", i, err)
+				}
+			}
+
+			assert.Empty(t, inferErrors, "Expected no inference errors")
+
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Namespace.Values {
+				assert.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+		})
+	}
+}
+
+func TestInterfaceMergingErrors(t *testing.T) {
+	tests := map[string]struct {
+		input              string
+		expectedErrorCount int
+		expectedErrorType  interface{}
+	}{
+		"IncompatiblePropertyTypes": {
+			input: `
+				interface Person {
+					name: string,
+					age: number,
+				}
+
+				interface Person {
+					name: number,
+				}
+
+				declare val person: Person
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MultipleIncompatibleProperties": {
+			input: `
+				interface Product {
+					id: number,
+					name: string,
+					price: number,
+				}
+
+				interface Product {
+					id: string,
+					price: string,
+				}
+
+				declare val product: Product
+			`,
+			expectedErrorCount: 2,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"IncompatibleMethodSignatures": {
+			input: `
+				interface Calculator {
+					add: fn (x: number, y: number) -> number,
+				}
+
+				interface Calculator {
+					add: fn (x: string, y: string) -> string,
+				}
+
+				declare val calc: Calculator
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"ThreeMergesWithConflict": {
+			input: `
+				interface Animal {
+					name: string,
+				}
+
+				interface Animal {
+					age: number,
+				}
+
+				interface Animal {
+					name: number,
+				}
+
+				declare val animal: Animal
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MismatchedTypeParameterCount": {
+			input: `
+				interface Box<T> {
+					value: T,
+				}
+
+				interface Box<T, U> {
+					extra: U,
+				}
+
+				declare val box: Box<number>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"MismatchedTypeParameterNames": {
+			input: `
+				interface Container<T> {
+					value: T,
+				}
+
+				interface Container<U> {
+					extra: U,
+				}
+
+				declare val container: Container<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"NoTypeParamsVsTypeParams": {
+			input: `
+				interface Simple {
+					value: number,
+				}
+
+				interface Simple<T> {
+					extra: T,
+				}
+
+				declare val simple: Simple
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, errors := p.ParseScript()
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("ParseError[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// Verify we got the expected number of errors
+			assert.Len(t, inferErrors, test.expectedErrorCount, "Expected %d errors, got %d", test.expectedErrorCount, len(inferErrors))
+
+			// Verify all errors are of the expected type
+			for i, err := range inferErrors {
+				assert.IsType(t, test.expectedErrorType, err, "Error %d should be of type InterfaceMergeError", i)
+				// Print the error message for debugging
+				fmt.Printf("Error[%d]: %s\n", i, err.Message())
+			}
+		})
+	}
+}
+
+func TestInterfaceMergingModule(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"SimpleMergeExported": {
+			input: `
+				export interface Person {
+					name: string,
+					age: number,
+				}
+
+				export interface Person {
+					email: string,
+				}
+
+				declare val person: Person
+
+				export val name = person.name
+				export val age = person.age
+				export val email = person.email
+			`,
+			expectedTypes: map[string]string{
+				"person": "Person",
+				"name":   "string",
+				"age":    "number",
+				"email":  "string",
+			},
+		},
+		"MultipleMergesExported": {
+			input: `
+				export interface Animal {
+					name: string,
+				}
+
+				export interface Animal {
+					age: number,
+				}
+
+				export interface Animal {
+					species: string,
+				}
+
+				declare val animal: Animal
+
+				export val name = animal.name
+				export val age = animal.age
+				export val species = animal.species
+			`,
+			expectedTypes: map[string]string{
+				"animal":  "Animal",
+				"name":    "string",
+				"age":     "number",
+				"species": "string",
+			},
+		},
+		"MergeWithMethodsExported": {
+			input: `
+				export interface Calculator {
+					add: fn (x: number, y: number) -> number,
+				}
+
+				export interface Calculator {
+					subtract: fn (x: number, y: number) -> number,
+				}
+
+				declare val calc: Calculator
+
+				export val sum = calc.add(5, 3)
+				export val diff = calc.subtract(10, 4)
+			`,
+			expectedTypes: map[string]string{
+				"calc": "Calculator",
+				"sum":  "number",
+				"diff": "number",
+			},
+		},
+		"MixedExportedAndNonExported": {
+			input: `
+				interface Point {
+					x: number,
+				}
+
+				export interface Point {
+					y: number,
+				}
+
+				declare val point: Point
+
+				export val x = point.x
+				export val y = point.y
+			`,
+			expectedTypes: map[string]string{
+				"point": "Point",
+				"x":     "number",
+				"y":     "number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("ParseError[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			scope, inferErrors := c.InferModule(inferCtx, module)
+
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("InferError[%d]: %#v\n", i, err)
+				}
+			}
+
+			assert.Empty(t, inferErrors, "Expected no inference errors")
+
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Values {
+				assert.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+		})
+	}
+}
+
+func TestInterfaceMergingModuleErrors(t *testing.T) {
+	tests := map[string]struct {
+		input              string
+		expectedErrorCount int
+		expectedErrorType  interface{}
+	}{
+		"ExportedIncompatiblePropertyTypes": {
+			input: `
+				export interface Person {
+					name: string,
+					age: number,
+				}
+
+				export interface Person {
+					name: number,
+				}
+
+				declare val person: Person
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MultipleIncompatiblePropertiesExported": {
+			input: `
+				export interface Product {
+					id: number,
+					name: string,
+					price: number,
+				}
+
+				export interface Product {
+					id: string,
+					price: string,
+				}
+
+				declare val product: Product
+			`,
+			expectedErrorCount: 2,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"IncompatibleMethodSignaturesExported": {
+			input: `
+				export interface Calculator {
+					add: fn (x: number, y: number) -> number,
+				}
+
+				export interface Calculator {
+					add: fn (x: string, y: string) -> string,
+				}
+
+				declare val calc: Calculator
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MixedExportedAndNonExportedWithConflict": {
+			input: `
+				interface Point {
+					x: number,
+				}
+
+				export interface Point {
+					x: string,
+				}
+
+				declare val point: Point
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"ThreeMergesWithConflictInModule": {
+			input: `
+				export interface Animal {
+					name: string,
+				}
+
+				export interface Animal {
+					age: number,
+				}
+
+				export interface Animal {
+					name: number,
+				}
+
+				declare val animal: Animal
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"ConflictWithOptionalProperty": {
+			input: `
+				export interface User {
+					id: number,
+					name?: string,
+				}
+
+				export interface User {
+					name: number,
+				}
+
+				declare val user: User
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &InterfaceMergeError{},
+		},
+		"MismatchedTypeParameterCountInModule": {
+			input: `
+				export interface Box<T> {
+					value: T,
+				}
+
+				export interface Box<T, U> {
+					extra: U,
+				}
+
+				declare val box: Box<number>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"MismatchedTypeParameterNamesInModule": {
+			input: `
+				export interface Container<T> {
+					value: T,
+				}
+
+				export interface Container<U> {
+					extra: U,
+				}
+
+				declare val container: Container<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"NoTypeParamsVsTypeParamsInModule": {
+			input: `
+				export interface Simple {
+					value: number,
+				}
+
+				export interface Simple<T> {
+					extra: T,
+				}
+
+				declare val simple: Simple
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+		"TypeParamsVsNoTypeParamsInModule": {
+			input: `
+				export interface Generic<T> {
+					value: T,
+				}
+
+				export interface Generic {
+					extra: number,
+				}
+
+				declare val generic: Generic<string>
+			`,
+			expectedErrorCount: 1,
+			expectedErrorType:  &TypeParamMismatchError{},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("ParseError[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferModule(inferCtx, module)
+
+			// Verify we got the expected number of errors
+			assert.Len(t, inferErrors, test.expectedErrorCount, "Expected %d errors, got %d", test.expectedErrorCount, len(inferErrors))
+
+			// Verify all errors are of the expected type
+			for i, err := range inferErrors {
+				assert.IsType(t, test.expectedErrorType, err, "Error %d should be of type InterfaceMergeError", i)
+				// Print the error message for debugging
+				fmt.Printf("Error[%d]: %s\n", i, err.Message())
+			}
+		})
+	}
+}

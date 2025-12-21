@@ -48,6 +48,12 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		typeAlias, errors := c.inferTypeDecl(ctx, decl)
 		ctx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
 		return errors
+	case *ast.InterfaceDecl:
+		typeAlias, errors := c.inferInterface(ctx, decl)
+		// For interfaces, we directly set the type alias in the namespace
+		// because interface merging is handled in inferInterface
+		ctx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
+		return errors
 	case *ast.ClassDecl:
 		panic("TODO: infer class declaration")
 	default:
@@ -216,6 +222,106 @@ func (c *Checker) inferTypeDecl(
 
 	typeAlias := type_system.TypeAlias{
 		Type:       t,
+		TypeParams: typeParams,
+	}
+
+	return &typeAlias, errors
+}
+
+func (c *Checker) inferInterface(
+	ctx Context,
+	decl *ast.InterfaceDecl,
+) (*type_system.TypeAlias, []Error) {
+	errors := []Error{}
+
+	typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
+
+	// Create a context that accumulates type parameters as we process them
+	// This allows later type parameters to reference earlier ones in their constraints
+	paramCtx := ctx
+	paramScope := ctx.Scope.WithNewScope()
+
+	for i, typeParam := range decl.TypeParams {
+		var constraintType type_system.Type
+		var defaultType type_system.Type
+		if typeParam.Constraint != nil {
+			var constraintErrors []Error
+			// Use paramCtx which includes previously defined type parameters
+			constraintType, constraintErrors = c.inferTypeAnn(paramCtx, typeParam.Constraint)
+			errors = slices.Concat(errors, constraintErrors)
+		}
+		if typeParam.Default != nil {
+			var defaultErrors []Error
+			// Use paramCtx which includes previously defined type parameters
+			defaultType, defaultErrors = c.inferTypeAnn(paramCtx, typeParam.Default)
+			errors = slices.Concat(errors, defaultErrors)
+		}
+		typeParams[i] = &type_system.TypeParam{
+			Name:       typeParam.Name,
+			Constraint: constraintType,
+			Default:    defaultType,
+		}
+
+		// Add this type parameter to the scope for subsequent parameters
+		typeParamTypeRef := type_system.NewTypeRefType(nil, typeParam.Name, nil)
+		typeParamAlias := &type_system.TypeAlias{
+			Type:       typeParamTypeRef,
+			TypeParams: []*type_system.TypeParam{},
+		}
+		paramScope.SetTypeAlias(typeParam.Name, typeParamAlias)
+
+		// Update the context to include this type parameter
+		paramCtx = Context{
+			Scope:      paramScope,
+			IsAsync:    ctx.IsAsync,
+			IsPatMatch: ctx.IsPatMatch,
+		}
+	}
+
+	// Use the context with all type parameters for inferring the type annotation
+	typeCtx := paramCtx
+
+	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
+	errors = slices.Concat(errors, typeErrors)
+
+	// Mark the ObjectType as an interface
+	objType.Interface = true
+
+	// Check if an interface with this name already exists
+	existingAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
+	if existingAlias != nil {
+		// Validate that type parameters match
+		validateErrors := c.validateTypeParams(
+			ctx,
+			existingAlias.TypeParams,
+			typeParams,
+			decl.Name.Name,
+			decl.Name.Span(),
+		)
+		errors = slices.Concat(errors, validateErrors)
+
+		// If it exists, merge the elements
+		if existingObjType, ok := type_system.Prune(existingAlias.Type).(*type_system.ObjectType); ok &&
+			existingObjType.Interface {
+			// Validate that duplicate properties have compatible types
+			mergeErrors := c.validateInterfaceMerge(ctx, existingObjType, objType, decl)
+			errors = slices.Concat(errors, mergeErrors)
+
+			// Merge the elements from the new interface into the existing one
+			mergedElems := append(existingObjType.Elems, objType.Elems...)
+			objType.Elems = mergedElems
+			objType.ID = existingObjType.ID
+			// Preserve other flags
+			objType.Exact = existingObjType.Exact
+			objType.Immutable = existingObjType.Immutable
+			objType.Mutable = existingObjType.Mutable
+			objType.Nominal = existingObjType.Nominal
+			objType.Interface = true // Ensure interface flag is set
+		}
+	}
+
+	typeAlias := type_system.TypeAlias{
+		Type:       objType,
 		TypeParams: typeParams,
 	}
 

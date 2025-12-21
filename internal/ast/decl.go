@@ -17,10 +17,11 @@ type Decl interface {
 	Node
 }
 
-func (*VarDecl) isDecl()  {}
-func (*FuncDecl) isDecl() {}
-func (*TypeDecl) isDecl() {}
-func (*EnumDecl) isDecl() {}
+func (*VarDecl) isDecl()       {}
+func (*FuncDecl) isDecl()      {}
+func (*TypeDecl) isDecl()      {}
+func (*InterfaceDecl) isDecl() {}
+func (*EnumDecl) isDecl()      {}
 
 type VariableKind int
 
@@ -188,6 +189,44 @@ func (d *TypeDecl) Provenance() provenance.Provenance {
 	return d.provenance
 }
 func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
+	d.provenance = p
+}
+
+type InterfaceDecl struct {
+	Name       *Ident
+	TypeParams []*TypeParam
+	TypeAnn    *ObjectTypeAnn
+	export     bool
+	declare    bool
+	span       Span
+	provenance provenance.Provenance
+}
+
+func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
+	return &InterfaceDecl{
+		Name:       name,
+		TypeParams: typeParams,
+		TypeAnn:    typeAnn,
+		export:     export,
+		declare:    declare,
+		span:       span,
+		provenance: nil,
+	}
+}
+func (d *InterfaceDecl) Export() bool  { return d.export }
+func (d *InterfaceDecl) Declare() bool { return d.declare }
+func (d *InterfaceDecl) Span() Span    { return d.span }
+func (d *InterfaceDecl) Accept(v Visitor) {
+	// TODO: visit type params
+	if v.EnterDecl(d) {
+		d.TypeAnn.Accept(v)
+	}
+	v.ExitDecl(d)
+}
+func (d *InterfaceDecl) Provenance() provenance.Provenance {
+	return d.provenance
+}
+func (d *InterfaceDecl) SetProvenance(p provenance.Provenance) {
 	d.provenance = p
 }
 

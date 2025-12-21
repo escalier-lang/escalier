@@ -229,6 +229,21 @@ func TestParseStmtNoErrors(t *testing.T) {
 				| Bar
 				| Baz`,
 		},
+		"InterfaceDecl": {
+			input: "interface Point { x: number, y: number }",
+		},
+		"InterfaceDeclWithTypeParams": {
+			input: "interface Box<T> { value: T }",
+		},
+		"InterfaceDeclWithMultipleTypeParams": {
+			input: "interface Pair<T, U> { first: T, second: U }",
+		},
+		"InterfaceDeclExport": {
+			input: "export interface Person { name: string, age: number }",
+		},
+		"InterfaceDeclDeclare": {
+			input: "declare interface Global { version: string }",
+		},
 	}
 
 	for name, test := range tests {
