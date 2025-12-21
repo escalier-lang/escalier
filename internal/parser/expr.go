@@ -90,6 +90,10 @@ loop:
 			nextOp = ast.GreaterThan
 		case GreaterThanEqual:
 			nextOp = ast.GreaterThanEqual
+		case AmpersandAmpersand:
+			nextOp = ast.LogicalAnd
+		case PipePipe:
+			nextOp = ast.LogicalOr
 		case LineComment, BlockComment:
 			p.lexer.consume()
 			continue
@@ -159,6 +163,8 @@ loop:
 			result.Push(TokenAndOp{Token: token, Op: ast.UnaryPlus})
 		case Minus:
 			result.Push(TokenAndOp{Token: token, Op: ast.UnaryMinus})
+		case Bang:
+			result.Push(TokenAndOp{Token: token, Op: ast.LogicalNot})
 		default:
 			break loop
 		}
@@ -816,6 +822,72 @@ func (p *Parser) ifElse() ast.Expr {
 	p.lexer.consume() // consume 'if'
 
 	token := p.lexer.peek()
+
+	// Check for 'if let' syntax
+	if token.Type == Let {
+		p.lexer.consume() // consume 'let'
+
+		// Parse the pattern
+		pattern := p.pattern(false, false)
+		if pattern == nil {
+			p.reportError(token.Span, "Expected a pattern after 'let'")
+			return nil
+		}
+
+		// Expect '='
+		eqToken := p.lexer.peek()
+		if eqToken.Type != Equal {
+			p.reportError(eqToken.Span, "Expected '=' after pattern in if-let")
+			return nil
+		}
+		p.lexer.consume() // consume '='
+
+		// Parse the target expression
+		target := p.expr()
+		if target == nil {
+			p.reportError(eqToken.Span, "Expected an expression after '=' in if-let")
+			return nil
+		}
+
+		// Parse the consequent block
+		body := p.block()
+
+		// Check for else clause
+		token = p.lexer.peek()
+		var alt *ast.BlockOrExpr
+		if token.Type == Else {
+			p.lexer.consume() // consume 'else'
+			token = p.lexer.peek()
+			// nolint: exhaustive
+			switch token.Type {
+			case If:
+				ifElseResult := p.ifElse()
+				if ifElseResult == nil {
+					p.reportError(token.Span, "Expected a valid expression after 'if'")
+				} else {
+					alt = &ast.BlockOrExpr{Expr: ifElseResult, Block: nil}
+				}
+			case OpenBrace:
+				block := p.block()
+				alt = &ast.BlockOrExpr{Expr: nil, Block: &block}
+			default:
+				p.reportError(token.Span, "Expected an if or an opening brace after 'else'")
+			}
+		}
+
+		end := body.Span.End
+		if alt != nil {
+			if alt.Block != nil {
+				end = alt.Block.Span.End
+			} else if alt.Expr != nil {
+				end = alt.Expr.Span().End
+			}
+		}
+
+		return ast.NewIfLet(pattern, target, body, alt, ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID})
+	}
+
+	// Regular if-else (not if-let)
 	var cond ast.Expr
 	if token.Type == OpenBrace {
 		p.reportError(token.Span, "Expected a condition")

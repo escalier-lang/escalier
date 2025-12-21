@@ -265,12 +265,27 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				return nil
 			}
 
+			// Parse optional throws clause
+			var throwsType ast.TypeAnn
+			if p.lexer.peek().Type == Throws {
+				p.lexer.consume() // consume 'throws'
+				throwsType = p.typeAnn()
+				if throwsType == nil {
+					p.reportError(p.lexer.peek().Span, "expected type annotation after 'throws'")
+				}
+			}
+
+			endSpan := retType.Span()
+			if throwsType != nil {
+				endSpan = throwsType.Span()
+			}
+
 			typeAnn = ast.NewFuncTypeAnn(
 				typeParams,
 				funcParams,
 				retType,
-				nil, // TODO: support throws clause
-				ast.NewSpan(token.Span.Start, retType.Span().End, p.lexer.source.ID),
+				throwsType,
+				ast.NewSpan(token.Span.Start, endSpan.End, p.lexer.source.ID),
 			)
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
@@ -377,6 +392,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			} else {
 				typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 			}
+		case OpenParen: // parenthesized type annotation
+			p.lexer.consume() // consume '('
+			typeAnn = p.typeAnn()
+			if typeAnn == nil {
+				p.reportError(token.Span, "expected type annotation inside parentheses")
+				return nil
+			}
+			p.expect(CloseParen, AlwaysConsume)
+			// Just return the inner type annotation - parentheses are for grouping only
 		case BackTick: // template literal type
 			typeAnn = p.templateLitTypeAnn(token)
 		default:

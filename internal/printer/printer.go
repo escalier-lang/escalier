@@ -404,7 +404,7 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 func (p *Printer) printCallExpr(expr *ast.CallExpr) {
 	if expr.OptChain {
 		p.printExpr(expr.Callee)
-		p.writeString("?.(")
+		p.writeString("?(")
 	} else {
 		p.printExpr(expr.Callee)
 		p.writeString("(")
@@ -422,7 +422,7 @@ func (p *Printer) printCallExpr(expr *ast.CallExpr) {
 func (p *Printer) printIndexExpr(expr *ast.IndexExpr) {
 	p.printExpr(expr.Object)
 	if expr.OptChain {
-		p.writeString("?.[")
+		p.writeString("?[")
 	} else {
 		p.writeString("[")
 	}
@@ -714,8 +714,20 @@ func (p *Printer) printTaggedTemplateLitExpr(expr *ast.TaggedTemplateLitExpr) {
 
 func (p *Printer) printTypeCastExpr(expr *ast.TypeCastExpr) {
 	p.printExpr(expr.Expr)
-	p.writeString(" as ")
+	p.writeString(":")
+	// Wrap union/intersection types in parentheses for clarity
+	needsParens := false
+	switch expr.TypeAnn.(type) {
+	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
+		needsParens = true
+	}
+	if needsParens {
+		p.writeString("(")
+	}
 	p.printTypeAnn(expr.TypeAnn)
+	if needsParens {
+		p.writeString(")")
+	}
 }
 
 func (p *Printer) printFuncExpr(expr *ast.FuncExpr) {
@@ -916,13 +928,15 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 		p.printTypeAnn(t.Index)
 		p.writeString("]")
 	case *ast.CondTypeAnn:
+		p.writeString("if ")
 		p.printTypeAnn(t.Check)
-		p.writeString(" extends ")
-		p.printTypeAnn(t.Extends)
-		p.writeString(" ? ")
-		p.printTypeAnn(t.Then)
 		p.writeString(" : ")
+		p.printTypeAnn(t.Extends)
+		p.writeString(" { ")
+		p.printTypeAnn(t.Then)
+		p.writeString(" } else { ")
 		p.printTypeAnn(t.Else)
+		p.writeString(" }")
 	case *ast.InferTypeAnn:
 		p.writeString("infer ")
 		p.writeString(t.Name)
@@ -996,7 +1010,30 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.printFuncTypeAnn(e.Fn)
 	case *ast.MethodTypeAnn:
 		p.printObjKey(e.Name)
-		p.printFuncTypeAnn(e.Fn)
+		if len(e.Fn.TypeParams) > 0 {
+			p.printTypeParams(e.Fn.TypeParams)
+		}
+		p.writeString("(")
+		for i, param := range e.Fn.Params {
+			p.printPattern(param.Pattern)
+			if param.Optional {
+				p.writeString("?")
+			}
+			if param.TypeAnn != nil {
+				p.writeString(": ")
+				p.printTypeAnn(param.TypeAnn)
+			}
+			if i < len(e.Fn.Params)-1 {
+				p.writeString(", ")
+			}
+		}
+		p.writeString(")")
+		p.writeString(" -> ")
+		p.printTypeAnn(e.Fn.Return)
+		if e.Fn.Throws != nil {
+			p.writeString(" throws ")
+			p.printTypeAnn(e.Fn.Throws)
+		}
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
@@ -1014,6 +1051,9 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 			}
 		}
 		p.writeString(")")
+		// Setters require -> void in Escalier syntax
+		p.writeString(" -> ")
+		p.printTypeAnn(e.Fn.Return)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {
 			p.writeString("readonly ")
@@ -1025,20 +1065,45 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.writeString(": ")
 		p.printTypeAnn(e.Value)
 	case *ast.MappedTypeAnn:
+		// Print readonly modifier if present
+		if e.ReadOnly != nil {
+			if *e.ReadOnly == ast.MMAdd {
+				p.writeString("readonly ")
+			} else if *e.ReadOnly == ast.MMRemove {
+				p.writeString("-readonly ")
+			}
+		}
+		// Print [name]
 		p.writeString("[")
-		p.writeString(e.TypeParam.Name)
-		p.writeString(" in ")
-		p.printTypeAnn(e.TypeParam.Constraint)
+		if e.Name != nil {
+			p.printTypeAnn(e.Name)
+		} else {
+			p.writeString(e.TypeParam.Name)
+		}
 		p.writeString("]")
+		// Print optional modifier
 		if e.Optional != nil {
 			if *e.Optional == ast.MMAdd {
-				p.writeString("?")
+				p.writeString("+?")
 			} else if *e.Optional == ast.MMRemove {
 				p.writeString("-?")
 			}
 		}
+		// Print : value
 		p.writeString(": ")
 		p.printTypeAnn(e.Value)
+		// Print for K in constraint
+		p.writeString(" for ")
+		p.writeString(e.TypeParam.Name)
+		p.writeString(" in ")
+		p.printTypeAnn(e.TypeParam.Constraint)
+		// Print if clause if present
+		if e.Check != nil && e.Extends != nil {
+			p.writeString(" if ")
+			p.printTypeAnn(e.Check)
+			p.writeString(" : ")
+			p.printTypeAnn(e.Extends)
+		}
 	case *ast.RestSpreadTypeAnn:
 		p.writeString("...")
 		p.printTypeAnn(e.Value)
@@ -1093,7 +1158,7 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 		p.printTypeParams(typ.TypeParams)
 	}
 
-	p.writeString("(")
+	p.writeString("fn (")
 	for i, param := range typ.Params {
 		p.printPattern(param.Pattern)
 		if param.Optional {
@@ -1109,7 +1174,7 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	}
 	p.writeString(")")
 
-	p.writeString(" => ")
+	p.writeString(" -> ")
 	p.printTypeAnn(typ.Return)
 
 	if typ.Throws != nil {
@@ -1167,9 +1232,7 @@ func (p *Printer) printLiteral(lit ast.Lit) {
 	case *ast.StrLit:
 		p.writeString(strconv.Quote(l.Value))
 	case *ast.RegexLit:
-		p.writeString("/")
 		p.writeString(l.Value)
-		p.writeString("/")
 	case *ast.BigIntLit:
 		p.writeString(l.Value.String())
 		p.writeString("n")

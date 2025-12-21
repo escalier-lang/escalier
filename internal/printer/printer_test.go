@@ -552,6 +552,558 @@ val sum = x + y`
 	}
 }
 
+func TestPrintMoreLiterals(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"regex", `/test/g`, `/test/g`},
+		// {"bigint", "123n", "123n"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintIfLet(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"simple if let",
+			`if let Some(x) = opt { x }`,
+			"if let Some(x) = opt {\n    x\n}",
+		},
+		{
+			"if let with else",
+			`if let Some(x) = opt { x } else { 0 }`,
+			"if let Some(x) = opt {\n    x\n} else {\n    0\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintAssignExpr(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple assignment", "x = 5", "x = 5"},
+		{"member assignment", "obj.prop = 10", "obj.prop = 10"},
+		{"index assignment", "arr[0] = 1", "arr[0] = 1"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintTryCatch(t *testing.T) {
+	input := `try {
+		doSomething()
+	} catch {
+		Error(msg) => handleError(msg)
+	}`
+
+	expr := parseExpr(t, input)
+	opts := DefaultOptions()
+	result, err := Print(expr, opts)
+	if err != nil {
+		t.Fatalf("Print error: %v", err)
+	}
+
+	if !strings.Contains(result, "try") {
+		t.Error("Expected output to contain 'try'")
+	}
+	if !strings.Contains(result, "catch") {
+		t.Error("Expected output to contain 'catch'")
+	}
+}
+
+func TestPrintDoExpr(t *testing.T) {
+	input := `do {
+		val x = 5
+		x + 1
+	}`
+	expected := "do {\n    val x = 5\n    x + 1\n}"
+
+	expr := parseExpr(t, input)
+	opts := DefaultOptions()
+	result, err := Print(expr, opts)
+	if err != nil {
+		t.Fatalf("Print error: %v", err)
+	}
+
+	if result != expected {
+		t.Errorf("Expected:\n%s\nGot:\n%s", expected, result)
+	}
+}
+
+func TestPrintAwaitExpr(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple await", "await promise", "await promise"},
+		{"await call", "await fetchData()", "await fetchData()"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintThrowExpr(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"throw string", `throw "error"`, `throw "error"`},
+		{"throw object", "throw Error(msg)", "throw Error(msg)"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintTemplateLiterals(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple template", "`hello`", "`hello`"},
+		{"template with expr", "`Hello ${name}`", "`Hello ${name}`"},
+		{"multiple exprs", "`${x} + ${y} = ${x + y}`", "`${x} + ${y} = ${x + y}`"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintTaggedTemplateLiterals(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple tagged template", "html`<div>test</div>`", "html`<div>test</div>`"},
+		{"tagged with expr", "sql`SELECT * FROM ${table}`", "sql`SELECT * FROM ${table}`"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintTypeCast(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple cast", "x:number", "x:number"},
+		{"complex cast", "result:(string | number)", "result:(string | number)"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintPatterns(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"object pattern in val", "val {x, y} = point"},
+		{"tuple pattern", "val [a, b] = tuple"},
+		{"rest pattern", "val [first, ...rest] = arr"},
+		// TODO: parse wildcard patterns
+		// {"wildcard pattern", "val _ = ignored"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+			result, err := Print(decl, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			// Round-trip test
+			decl2 := parseDecl(t, result)
+			result2, err := Print(decl2, opts)
+			if err != nil {
+				t.Fatalf("Second print error: %v", err)
+			}
+			if result != result2 {
+				t.Errorf("Round-trip failed:\nFirst:\n%s\nSecond:\n%s", result, result2)
+			}
+		})
+	}
+}
+
+func TestPrintInterfaceDecl(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"simple interface",
+			`interface Shape {
+				area: fn () -> number
+			}`,
+			"interface Shape {\n    area: fn () -> number\n}",
+		},
+		{
+			"exported interface",
+			`export interface Point {
+				x: number,
+				y: number
+			}`,
+			"export interface Point {\n    x: number,\n    y: number\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+			result, err := Print(decl, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
+			}
+			// Round-trip test
+			decl2 := parseDecl(t, result)
+			result2, err := Print(decl2, opts)
+			if err != nil {
+				t.Fatalf("Second print error: %v", err)
+			}
+			if result != result2 {
+				t.Errorf("Round-trip failed:\nFirst:\n%s\nSecond:\n%s", result, result2)
+			}
+		})
+	}
+}
+
+func TestPrintAsyncFunction(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"async function decl",
+			`async fn fetchData() -> Promise<string> {
+				return await fetch()
+			}`,
+		},
+		{
+			"async function expr",
+			`val f = async fn () {
+				return await promise
+			}`,
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var node ast.Node
+			if strings.HasPrefix(tt.input, "async fn") {
+				node = parseDecl(t, tt.input)
+			} else {
+				node = parseDecl(t, tt.input)
+			}
+
+			result, err := Print(node, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+
+			if !strings.Contains(result, "async") {
+				t.Error("Expected output to contain 'async'")
+			}
+		})
+	}
+}
+
+func TestPrintFunctionWithThrows(t *testing.T) {
+	input := `fn divide(a: number, b: number) -> number throws string {
+		if b == 0 {
+			throw "Division by zero"
+		}
+		return a / b
+	}`
+
+	decl := parseDecl(t, input)
+	opts := DefaultOptions()
+	result, err := Print(decl, opts)
+	if err != nil {
+		t.Fatalf("Print error: %v", err)
+	}
+
+	if !strings.Contains(result, "throws") {
+		t.Error("Expected output to contain 'throws'")
+	}
+}
+
+func TestPrintObjectMethods(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"getter",
+			`val obj = {
+				get value() { return 42 }
+			}`,
+		},
+		{
+			"setter",
+			`val obj = {
+				set value(v: number) { this.v = v }
+			}`,
+		},
+		{
+			"method",
+			`val obj = {
+				greet(name: string) -> string { return "Hello" }
+			}`,
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+			result, err := Print(decl, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+
+			// Verify key elements are present
+			if tt.name == "getter" && !strings.Contains(result, "get") {
+				t.Error("Expected output to contain 'get'")
+			}
+			if tt.name == "setter" && !strings.Contains(result, "set") {
+				t.Error("Expected output to contain 'set'")
+			}
+		})
+	}
+}
+
+func TestPrintComplexTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"function type", "fn (x: number) -> number", "fn (x: number) -> number"},
+		{"keyof type", "keyof T", "keyof T"},
+		{"typeof type", "typeof x", "typeof x"},
+		{"indexed access", "T[K]", "T[K]"},
+		{"intersection type", "A & B", "A & B"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintMatchWithGuard(t *testing.T) {
+	input := `match x {
+		n if n > 0 => "positive",
+		0 => "zero",
+		_ => "negative"
+	}`
+
+	expr := parseExpr(t, input)
+	opts := DefaultOptions()
+	result, err := Print(expr, opts)
+	if err != nil {
+		t.Fatalf("Print error: %v", err)
+	}
+
+	if !strings.Contains(result, "if") {
+		t.Error("Expected output to contain guard 'if'")
+	}
+}
+
+func TestPrintLogicalOperators(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"logical and", "a && b", "a && b"},
+		{"logical or", "a || b", "a || b"},
+		{"logical not", "!x", "!x"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintObjectSpread(t *testing.T) {
+	input := `{x: 1, ...rest, y: 2}`
+	expected := "{\n    x: 1,\n    ...rest,\n    y: 2\n}"
+
+	expr := parseExpr(t, input)
+	opts := DefaultOptions()
+	result, err := Print(expr, opts)
+	if err != nil {
+		t.Fatalf("Print error: %v", err)
+	}
+
+	if result != expected {
+		t.Errorf("Expected:\n%s\nGot:\n%s", expected, result)
+	}
+}
+
+func TestPrintOptionalChaining(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"optional call", "obj?.method()", "obj?.method()"},
+		{"optional index", "arr?[0]", "arr?[0]"},
+		{"optional property", "obj?.prop", "obj?.prop"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestPrintRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -588,3 +1140,200 @@ func TestPrintRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestPrintAllTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Primitive types
+		{"number type", "number", "number"},
+		{"string type", "string", "string"},
+		{"boolean type", "boolean", "boolean"},
+		{"symbol type", "symbol", "symbol"},
+		{"unique symbol", "unique symbol", "unique symbol"},
+		{"bigint type", "bigint", "bigint"},
+		{"any type", "any", "any"},
+		{"unknown type", "unknown", "unknown"},
+		{"never type", "never", "never"},
+
+		// Literal types
+		{"string literal", `"hello"`, `"hello"`},
+		{"number literal", "42", "42"},
+		{"boolean literal true", "true", "true"},
+		{"boolean literal false", "false", "false"},
+		{"null literal", "null", "null"},
+
+		// Composite types
+		{"union type", "string | number", "string | number"},
+		{"intersection type", "A & B & C", "A & B & C"},
+		{"tuple type", "[string, number, boolean]", "[string, number, boolean]"},
+		{"object type", "{x: number, y: string}", "{\n    x: number,\n    y: string\n}"},
+
+		// Advanced types
+		{"keyof type", "keyof T", "keyof T"},
+		{"typeof type", "typeof x", "typeof x"},
+		{"indexed access", "T[K]", "T[K]"},
+		// TODO: parse wildcard types
+		// {"wildcard type", "_", "_"},
+		{"mutable type", "mut string", "mut string"},
+
+		// Conditional types
+		{"conditional type", "if T : string { number } else { boolean }", "if T : string { number } else { boolean }"},
+		{"infer type", "infer R", "infer R"},
+
+		// Template literal types
+		{"template literal type", "`hello-${string}`", "`hello-${string}`"},
+
+		// Function types
+		{"function type", "fn (x: number) -> string", "fn (x: number) -> string"},
+		{"function with throws", "fn (x: number) -> string throws Error", "fn (x: number) -> string throws Error"},
+
+		// Type references
+		{"simple type ref", "Array<number>", "Array<number>"},
+		{"qualified type ref", "MyNamespace.MyType", "MyNamespace.MyType"},
+
+		// Import types (TODO)
+		// {"import type", `import("./module")`, `import("./module")`},
+		// {"import with qualifier", `import("./module").MyType`, `import("./module").MyType`},
+		// {"import with type args", `import("./module").MyType<string>`, `import("./module").MyType<string>`},
+
+		// Rest/spread types (TODO)
+		// {"rest spread type", "...string[]", "...string[]"},
+
+		// Intrinsic type
+		{"intrinsic type", "intrinsic", "intrinsic"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestPrintObjectTypeElements(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"property",
+			"{x: number}",
+			"{\n    x: number\n}",
+		},
+		{
+			"readonly property",
+			"{readonly x: number}",
+			"{\n    readonly x: number\n}",
+		},
+		{
+			"optional property",
+			"{x?: number}",
+			"{\n    x?: number\n}",
+		},
+		{
+			"method",
+			"{greet(name: string) -> string}",
+			"{\n    greet(name: string) -> string\n}",
+		},
+		{
+			"getter",
+			"{get value() -> number}",
+			"{\n    get value(): number\n}",
+		},
+		{
+			"setter",
+			"{set value(v: number) -> void}",
+			"{\n    set value(v: number) -> void\n}",
+		},
+		// {
+		// 	"callable",
+		// 	"{(x: number) -> string}",
+		// 	"{\n    fn (x: number) -> string\n}",
+		// },
+		// {
+		// 	"constructor",
+		// 	"{new(x: number) -> MyClass}",
+		// 	"{\n    new (x: number) -> MyClass\n}",
+		// },
+		{
+			"mapped type",
+			"{[K]: T[K] for K in keyof T}",
+			"{\n    [K]: T[K] for K in keyof T\n}",
+		},
+		{
+			"mapped type with optional add",
+			"{[K]+?: T[K] for K in keyof T}",
+			"{\n    [K]+?: T[K] for K in keyof T\n}",
+		},
+		{
+			"rest spread",
+			"{...BaseType}",
+			"{\n    ...BaseType\n}",
+		},
+		{
+			"multiple elements",
+			"{x: number, readonly y: string, greet(name: string) -> void}",
+			"{\n    x: number,\n    readonly y: string,\n    greet(name: string) -> void\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TODO: Add support MatchTypeAnn in the parser
+// func TestPrintMatchTypeAnn(t *testing.T) {
+// 	tests := []struct {
+// 		name     string
+// 		input    string
+// 		expected string
+// 	}{
+// 		{
+// 			"simple match type",
+// 			"match T { string => number, _ => boolean }",
+// 			"match T {\n    string => number,\n    _ => boolean\n}",
+// 		},
+// 		{
+// 			"complex match type",
+// 			"match T { Array<infer U> => U, _ => never }",
+// 			"match T {\n    Array<infer U> => U,\n    _ => never\n}",
+// 		},
+// 	}
+
+// 	opts := DefaultOptions()
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			typeAnn := parseTypeAnn(t, tt.input)
+// 			result, err := Print(typeAnn, opts)
+// 			if err != nil {
+// 				t.Fatalf("Print error: %v", err)
+// 			}
+// 			if result != tt.expected {
+// 				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+// 			}
+// 		})
+// 	}
+// }
