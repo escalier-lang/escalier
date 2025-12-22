@@ -72,10 +72,44 @@ func (i *Ident) Span() Span {
 type Namespace struct {
 	Decls []Decl
 }
+
 type Module struct {
 	Namespaces btree.Map[string, *Namespace]
 }
 
+func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
+	return &Module{
+		Namespaces: namespaces,
+	}
+}
+
+func (m *Module) Accept(v Visitor) {
+	m.Namespaces.Scan(func(key string, ns *Namespace) bool {
+		for _, decl := range ns.Decls {
+			decl.Accept(v)
+		}
+		return true
+	})
+}
+
 type Script struct {
 	Stmts []Stmt
+	span  Span
+}
+
+func NewScript(stmts []Stmt, span Span) *Script {
+	return &Script{
+		Stmts: stmts,
+		span:  span,
+	}
+}
+
+func (s *Script) Span() Span {
+	return s.span
+}
+
+func (s *Script) Accept(v Visitor) {
+	for _, stmt := range s.Stmts {
+		stmt.Accept(v)
+	}
 }

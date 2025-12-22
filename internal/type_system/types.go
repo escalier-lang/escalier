@@ -1030,7 +1030,9 @@ type ObjectType struct {
 	// Maps symbols used as keys to the ast.Expr that was used as the computed
 	// key.
 	SymbolKeyMap map[int]any
-	provenance   Provenance
+	// TODO: support multiple provenance entries for different elements so that
+	// we can work back from an element to the interface decl that defined it.
+	provenance Provenance
 }
 
 var idCounter int = 0
