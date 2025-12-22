@@ -9,17 +9,35 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// Precedence table for binary operators (from parser)
+var precedence = map[ast.BinaryOp]int{
+	ast.Times:             12,
+	ast.Divide:            12,
+	ast.Modulo:            12,
+	ast.Plus:              11,
+	ast.Minus:             11,
+	ast.Concatenation:     11,
+	ast.Assign:            10,
+	ast.LessThan:          9,
+	ast.LessThanEqual:     9,
+	ast.GreaterThan:       9,
+	ast.GreaterThanEqual:  9,
+	ast.Equal:             8,
+	ast.NotEqual:          8,
+	ast.LogicalAnd:        4,
+	ast.LogicalOr:         3,
+	ast.NullishCoalescing: 3,
+}
+
 // Options contains configuration for the printer
 type Options struct {
-	Indent        string // e.g., "  " or "\t"
-	MaxLineLength int    // Maximum line length before breaking
+	Indent string // e.g., "  " or "\t"
 }
 
 // DefaultOptions returns default printer options
 func DefaultOptions() Options {
 	return Options{
-		Indent:        "    ", // 4 spaces
-		MaxLineLength: 80,
+		Indent: "    ", // 4 spaces
 	}
 }
 
@@ -48,10 +66,18 @@ func NewPrinter(writer io.Writer, opts Options) *Printer {
 func (p *Printer) writeString(s string) {
 	if p.needIndent && len(s) > 0 && s[0] != '\n' {
 		indent := strings.Repeat(p.opts.Indent, p.indentLevel)
-		io.WriteString(p.writer, indent)
+		_, err := io.WriteString(p.writer, indent)
+		if err != nil {
+			panic(fmt.Sprintf("Printer write error: %v", err))
+		}
 		p.needIndent = false
 	}
-	io.WriteString(p.writer, s)
+
+	_, err := io.WriteString(p.writer, s)
+	if err != nil {
+		panic(fmt.Sprintf("Printer write error: %v", err))
+	}
+
 	if len(s) > 0 {
 		p.lastChar = s[len(s)-1]
 	}
@@ -358,7 +384,7 @@ func (p *Printer) printExpr(expr ast.Expr) {
 }
 
 func (p *Printer) printBinaryExpr(expr *ast.BinaryExpr) {
-	needsParens := p.needsParens(expr.Left)
+	needsParens := p.needsParens(expr, expr.Left)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -371,7 +397,7 @@ func (p *Printer) printBinaryExpr(expr *ast.BinaryExpr) {
 	p.writeString(string(expr.Op))
 	p.space()
 
-	needsParens = p.needsParens(expr.Right)
+	needsParens = p.needsParens(expr, expr.Right)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -391,7 +417,7 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 		p.writeString("!")
 	}
 
-	needsParens := p.needsParens(expr.Arg)
+	needsParens := p.needsParens(expr, expr.Arg)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -670,7 +696,7 @@ func (p *Printer) printDoExpr(expr *ast.DoExpr) {
 
 func (p *Printer) printAwaitExpr(expr *ast.AwaitExpr) {
 	p.writeString("await ")
-	needsParens := p.needsParens(expr.Arg)
+	needsParens := p.needsParens(expr, expr.Arg)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -1292,10 +1318,63 @@ func (p *Printer) printObjKey(key ast.ObjKey) {
 	}
 }
 
-func (p *Printer) needsParens(expr ast.Expr) bool {
-	switch expr.(type) {
-	case *ast.BinaryExpr, *ast.UnaryExpr, *ast.IfElseExpr, *ast.MatchExpr, *ast.AssignExpr:
+func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
+	// Check if child needs parens based on its relationship to parent
+	switch childExpr := child.(type) {
+	case *ast.BinaryExpr:
+		// If parent is also a binary expression, compare precedence
+		if parentBinary, ok := parent.(*ast.BinaryExpr); ok {
+			parentPrec := precedence[parentBinary.Op]
+			childPrec := precedence[childExpr.Op]
+			
+			// Need parens if child has lower precedence than parent
+			if childPrec < parentPrec {
+				return true
+			}
+			
+			// For equal precedence, check associativity and position
+			if childPrec == parentPrec {
+				// If child is on the right side
+				if parentBinary.Right == child {
+					// For non-associative operators (-, /), always need parens on right
+					// e.g., a - (b - c) != a - b - c
+					if parentBinary.Op == ast.Minus || parentBinary.Op == ast.Divide {
+						return true
+					}
+					// For different operators at same precedence, need parens
+					// e.g., a + (b - c) vs a + b - c (though parser may handle this)
+					if parentBinary.Op != childExpr.Op {
+						return true
+					}
+					// For same associative operator (like +), parens on right are optional
+					// but if they're in the AST, we should preserve them for clarity
+					// However, a + (b + c) is equivalent to a + b + c
+					// The parser already groups them, so if they're separate nodes, keep separate
+				}
+				// If child is on the left side with same precedence, generally no parens needed
+				// because of left-associativity: (a + b) + c == a + b + c
+			}
+			
+			return false
+		}
+		// If parent is unary, binary expressions need parens
+		if _, ok := parent.(*ast.UnaryExpr); ok {
+			return true
+		}
+		// Otherwise no parens needed
+		return false
+		
+	case *ast.UnaryExpr:
+		// Unary expressions need parens if parent is also unary
+		if _, ok := parent.(*ast.UnaryExpr); ok {
+			return true
+		}
+		return false
+		
+	case *ast.IfElseExpr, *ast.MatchExpr, *ast.AssignExpr:
+		// These always need parens when used as operands
 		return true
+		
 	default:
 		return false
 	}

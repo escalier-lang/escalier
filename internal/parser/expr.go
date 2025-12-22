@@ -8,7 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-var precedence = map[ast.BinaryOp]int{
+var Precedence = map[ast.BinaryOp]int{
 	ast.Times:             12,
 	ast.Divide:            12,
 	ast.Modulo:            12,
@@ -110,7 +110,7 @@ loop:
 		p.lexer.consume()
 
 		if !ops.IsEmpty() {
-			if precedence[ops.Peek()] >= precedence[nextOp] {
+			if Precedence[ops.Peek()] >= Precedence[nextOp] {
 				// get the last operator and remove it from the list
 				op := ops.Pop()
 				right := values.Pop()

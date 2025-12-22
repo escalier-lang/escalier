@@ -199,6 +199,81 @@ func TestPrintObjects(t *testing.T) {
 	}
 }
 
+func TestPrintPrecedenceAndParentheses(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Multiplication has higher precedence than addition
+		{"addition in multiplication", "a * (b + c)", "a * (b + c)"},
+		{"multiplication in addition", "a + b * c", "a + b * c"},
+
+		// Division has higher precedence than subtraction
+		{"subtraction in division", "a / (b - c)", "a / (b - c)"},
+		{"division in subtraction", "a - b / c", "a - b / c"},
+
+		// Same precedence - left associativity
+		{"addition then subtraction", "a + b - c", "a + b - c"},
+		{"subtraction then addition", "a - b + c", "a - b + c"},
+
+		// Same precedence - right associativity requires parens
+		{"right associative subtraction", "a - (b - c)", "a - (b - c)"},
+		{"right associative division", "a / (b / c)", "a / (b / c)"},
+
+		// Multiple levels of precedence
+		// Parser creates: a + (b * c - d) structure
+		{"complex expression 1", "a + b * c - d", "a + (b * c - d)"},
+		{"complex expression 2", "(a + b) * (c - d)", "(a + b) * (c - d)"},
+		{"complex expression 3", "a * b + c * d", "a * b + c * d"},
+
+		// Comparison operators
+		{"comparison with addition", "a + b < c + d", "a + b < c + d"},
+		// a < (b + c) and a < b + c parse the same way - + has higher precedence
+		// So printer outputs minimal form without unnecessary parens
+		{"addition in comparison right", "a < (b + c)", "a < b + c"},
+		{"comparison then addition", "a < b + c", "a < b + c"},
+
+		// Logical operators have lower precedence
+		{"logical and with comparison", "a < b && c > d", "a < b && c > d"},
+		// a && (b < c) and a && b < c parse the same - < has higher precedence
+		{"comparison in logical and right", "a && (b < c)", "a && b < c"},
+		{"logical and then comparison", "a && b < c", "a && b < c"},
+
+		// Mixed precedence levels
+		{"multiplication, addition, comparison", "a * b + c < d", "a * b + c < d"},
+		// (a * b + c) < d and a * b + c < d parse the same - * and + have higher precedence than <
+		{"grouped multiplication and addition", "(a * b + c) < d", "a * b + c < d"},
+
+		// Unary operators
+		{"unary with binary", "-(a + b)", "-(a + b)"},
+		{"unary with multiplication", "-a * b", "-a * b"},
+
+		// Concatenation operator
+		{"concatenation with addition", `"a" ++ "b" + "c"`, `"a" ++ "b" + "c"`},
+
+		// Additional edge cases to ensure correctness
+		// a + (b + c) and a + b + c parse the same for associative operators
+		{"nested same precedence", "a + (b + c)", "a + b + c"},
+		{"multiplication chains", "a * b * c", "a * b * c"},
+		{"division chains", "a / b / c", "a / b / c"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestPrintFunctionExpressions(t *testing.T) {
 	tests := []struct {
 		name     string
