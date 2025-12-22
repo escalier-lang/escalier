@@ -592,12 +592,7 @@ func (p *Printer) printIfElseExpr(expr *ast.IfElseExpr) {
 		if expr.Alt.Block != nil {
 			p.printBlock(expr.Alt.Block)
 		} else if expr.Alt.Expr != nil {
-			// Check if it's another if expression for "else if"
-			if _, ok := expr.Alt.Expr.(*ast.IfElseExpr); ok {
-				p.printExpr(expr.Alt.Expr)
-			} else {
-				p.printExpr(expr.Alt.Expr)
-			}
+			p.printExpr(expr.Alt.Expr)
 		}
 	}
 }
@@ -1326,12 +1321,12 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 		if parentBinary, ok := parent.(*ast.BinaryExpr); ok {
 			parentPrec := precedence[parentBinary.Op]
 			childPrec := precedence[childExpr.Op]
-			
+
 			// Need parens if child has lower precedence than parent
 			if childPrec < parentPrec {
 				return true
 			}
-			
+
 			// For equal precedence, check associativity and position
 			if childPrec == parentPrec {
 				// If child is on the right side
@@ -1354,7 +1349,7 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 				// If child is on the left side with same precedence, generally no parens needed
 				// because of left-associativity: (a + b) + c == a + b + c
 			}
-			
+
 			return false
 		}
 		// If parent is unary, binary expressions need parens
@@ -1363,18 +1358,18 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 		}
 		// Otherwise no parens needed
 		return false
-		
+
 	case *ast.UnaryExpr:
 		// Unary expressions need parens if parent is also unary
 		if _, ok := parent.(*ast.UnaryExpr); ok {
 			return true
 		}
 		return false
-		
+
 	case *ast.IfElseExpr, *ast.MatchExpr, *ast.AssignExpr:
 		// These always need parens when used as operands
 		return true
-		
+
 	default:
 		return false
 	}
@@ -1396,10 +1391,6 @@ func Print(node ast.Node, opts Options) (string, error) {
 	switch n := node.(type) {
 	case *ast.Script:
 		if err := printer.PrintScript(n); err != nil {
-			return "", err
-		}
-	case *ast.Module:
-		if err := printer.PrintModule(n); err != nil {
 			return "", err
 		}
 	case ast.Expr:
@@ -1426,8 +1417,6 @@ func PrintToWriter(node ast.Node, writer io.Writer, opts Options) error {
 	switch n := node.(type) {
 	case *ast.Script:
 		return printer.PrintScript(n)
-	case *ast.Module:
-		return printer.PrintModule(n)
 	case ast.Expr:
 		printer.printExpr(n)
 		return nil

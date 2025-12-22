@@ -864,9 +864,20 @@ func TestPrintTemplateLiterals(t *testing.T) {
 		input    string
 		expected string
 	}{
+		{"empty template", "``", "``"},
 		{"simple template", "`hello`", "`hello`"},
+		{"template with spaces", "`hello world`", "`hello world`"},
 		{"template with expr", "`Hello ${name}`", "`Hello ${name}`"},
+		{"template with expr at start", "`${greeting} world`", "`${greeting} world`"},
+		{"template with expr at end", "`Hello ${name}`", "`Hello ${name}`"},
 		{"multiple exprs", "`${x} + ${y} = ${x + y}`", "`${x} + ${y} = ${x + y}`"},
+		{"template with complex expr", "`Result: ${a + b * c}`", "`Result: ${a + b * c}`"},
+		{"template with nested call", "`Value is ${getValue()}`", "`Value is ${getValue()}`"},
+		{"template with member access", "`User: ${user.name}`", "`User: ${user.name}`"},
+		{"template with special chars", "`Line 1\nLine 2`", "`Line 1\nLine 2`"},
+		{"template with quotes", "`It's a \"test\"`", "`It's a \"test\"`"},
+		{"template only expr", "`${value}`", "`${value}`"},
+		{"template with multiple adjacent exprs", "`${first}${second}`", "`${first}${second}`"},
 	}
 
 	opts := DefaultOptions()
@@ -892,6 +903,13 @@ func TestPrintTaggedTemplateLiterals(t *testing.T) {
 	}{
 		{"simple tagged template", "html`<div>test</div>`", "html`<div>test</div>`"},
 		{"tagged with expr", "sql`SELECT * FROM ${table}`", "sql`SELECT * FROM ${table}`"},
+		{"tagged empty template", "tag``", "tag``"},
+		{"tagged template with multiple exprs", "css`width: ${w}px; height: ${h}px;`", "css`width: ${w}px; height: ${h}px;`"},
+		{"tagged template complex tag", "myObj.tag`value`", "myObj.tag`value`"},
+		{"tagged template with nested expr", "fmt`${x + y}`", "fmt`${x + y}`"},
+		{"tagged template with member access expr", "format`User ${user.name} logged in`", "format`User ${user.name} logged in`"},
+		{"tagged template with call expr", "log`Result: ${calculate()}`", "log`Result: ${calculate()}`"},
+		{"tagged template multiline", "html`<div>\n  ${content}\n</div>`", "html`<div>\n  ${content}\n</div>`"},
 	}
 
 	opts := DefaultOptions()

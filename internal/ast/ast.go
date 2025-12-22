@@ -75,18 +75,12 @@ type Namespace struct {
 
 type Module struct {
 	Namespaces btree.Map[string, *Namespace]
-	span       Span
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace], span Span) *Module {
 	return &Module{
 		Namespaces: namespaces,
-		span:       span,
 	}
-}
-
-func (m *Module) Span() Span {
-	return m.span
 }
 
 func (m *Module) Accept(v Visitor) {
