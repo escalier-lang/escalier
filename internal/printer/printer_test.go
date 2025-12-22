@@ -712,24 +712,80 @@ func TestPrintAssignExpr(t *testing.T) {
 }
 
 func TestPrintTryCatch(t *testing.T) {
-	input := `try {
-		doSomething()
-	} catch {
-		Error(msg) => handleError(msg)
-	}`
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"try without catch",
+			`try { doSomething() }`,
+			"try {\n    doSomething()\n}",
+		},
+		{
+			"try with single catch pattern",
+			`try {
+				doSomething()
+			} catch {
+				Error(msg) => handleError(msg)
+			}`,
+			"try {\n    doSomething()\n} catch {\n    Error(msg) => handleError(msg)\n}",
+		},
+		{
+			"try with multiple catch patterns",
+			`try {
+				riskyOperation()
+			} catch {
+				Error(msg) => logError(msg),
+				_ => handleUnknown()
+			}`,
+			"try {\n    riskyOperation()\n} catch {\n    Error(msg) => logError(msg),\n    _ => handleUnknown()\n}",
+		},
+		{
+			"try catch with guard",
+			`try {
+				doSomething()
+			} catch {
+				Error(msg) if msg != "" => handleError(msg)
+			}`,
+			"try {\n    doSomething()\n} catch {\n    Error(msg) if msg != \"\" => handleError(msg)\n}",
+		},
+		{
+			"try catch with block body",
+			`try {
+				doSomething()
+			} catch {
+				Error(msg) => {
+					logError(msg)
+					return null
+				}
+			}`,
+			"try {\n    doSomething()\n} catch {\n    Error(msg) => {\n        logError(msg)\n        return null\n    }\n}",
+		},
+		{
+			"try with multiple statements",
+			`try {
+				val x = getValue()
+				processValue(x)
+			} catch {
+				_ => null
+			}`,
+			"try {\n    val x = getValue()\n    processValue(x)\n} catch {\n    _ => null\n}",
+		},
+	}
 
-	expr := parseExpr(t, input)
 	opts := DefaultOptions()
-	result, err := Print(expr, opts)
-	if err != nil {
-		t.Fatalf("Print error: %v", err)
-	}
-
-	if !strings.Contains(result, "try") {
-		t.Error("Expected output to contain 'try'")
-	}
-	if !strings.Contains(result, "catch") {
-		t.Error("Expected output to contain 'catch'")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
 	}
 }
 
