@@ -77,7 +77,7 @@ type Module struct {
 	Namespaces btree.Map[string, *Namespace]
 }
 
-func NewModule(namespaces btree.Map[string, *Namespace], span Span) *Module {
+func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
 	return &Module{
 		Namespaces: namespaces,
 	}

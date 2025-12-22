@@ -145,7 +145,6 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 	var namespaces btree.Map[string, *ast.Namespace]
 
 	allErrors := []*Error{}
-	var firstDecl, lastDecl ast.Decl
 
 	for _, source := range sources {
 		if source == nil {
@@ -164,37 +163,12 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		parser := NewParser(ctx, source)
 		decls := parser.decls()
 
-		// Track first and last declarations for span calculation
-		if len(decls) > 0 {
-			if firstDecl == nil {
-				firstDecl = decls[0]
-			}
-			lastDecl = decls[len(decls)-1]
-		}
-
 		ns, _ := namespaces.Get(nsName)
 		ns.Decls = append(ns.Decls, decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}
 
-	// Calculate the span for the module
-	var span ast.Span
-	if firstDecl != nil && lastDecl != nil {
-		span = ast.Span{
-			Start:    firstDecl.Span().Start,
-			End:      lastDecl.Span().End,
-			SourceID: firstDecl.Span().SourceID,
-		}
-	} else {
-		// Empty module - use a zero span
-		span = ast.Span{
-			Start:    ast.Location{Line: 0, Column: 0},
-			End:      ast.Location{Line: 0, Column: 0},
-			SourceID: 0,
-		}
-	}
-
-	return ast.NewModule(namespaces, span), allErrors
+	return ast.NewModule(namespaces), allErrors
 }
 
 // ParseTypeAnn parses a type annotation string and returns the resulting ast.TypeAnn.

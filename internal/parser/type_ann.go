@@ -265,6 +265,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				return nil
 			}
 
+			endSpan := retType.Span()
+
 			// Parse optional throws clause
 			var throwsType ast.TypeAnn
 			if p.lexer.peek().Type == Throws {
@@ -272,12 +274,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				throwsType = p.typeAnn()
 				if throwsType == nil {
 					p.reportError(p.lexer.peek().Span, "expected type annotation after 'throws'")
+				} else {
+					endSpan = throwsType.Span()
 				}
-			}
-
-			endSpan := retType.Span()
-			if throwsType != nil {
-				endSpan = throwsType.Span()
 			}
 
 			typeAnn = ast.NewFuncTypeAnn(

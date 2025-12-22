@@ -7,27 +7,8 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 )
-
-// Precedence table for binary operators (from parser)
-var precedence = map[ast.BinaryOp]int{
-	ast.Times:             12,
-	ast.Divide:            12,
-	ast.Modulo:            12,
-	ast.Plus:              11,
-	ast.Minus:             11,
-	ast.Concatenation:     11,
-	ast.Assign:            10,
-	ast.LessThan:          9,
-	ast.LessThanEqual:     9,
-	ast.GreaterThan:       9,
-	ast.GreaterThanEqual:  9,
-	ast.Equal:             8,
-	ast.NotEqual:          8,
-	ast.LogicalAnd:        4,
-	ast.LogicalOr:         3,
-	ast.NullishCoalescing: 3,
-}
 
 // Options contains configuration for the printer
 type Options struct {
@@ -1319,8 +1300,8 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 	case *ast.BinaryExpr:
 		// If parent is also a binary expression, compare precedence
 		if parentBinary, ok := parent.(*ast.BinaryExpr); ok {
-			parentPrec := precedence[parentBinary.Op]
-			childPrec := precedence[childExpr.Op]
+			parentPrec := parser.Precedence[parentBinary.Op]
+			childPrec := parser.Precedence[childExpr.Op]
 
 			// Need parens if child has lower precedence than parent
 			if childPrec < parentPrec {
