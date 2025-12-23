@@ -40,6 +40,8 @@ func (c *Checker) inferTypeAnn(
 		t = type_system.NewStrPrimType(provenance)
 	case *ast.BooleanTypeAnn:
 		t = type_system.NewBoolPrimType(provenance)
+	case *ast.BigintTypeAnn:
+		t = type_system.NewBigIntPrimType(provenance)
 	case *ast.SymbolTypeAnn:
 		t = type_system.NewSymPrimType(provenance)
 	case *ast.UniqueSymbolTypeAnn:
@@ -222,9 +224,17 @@ func (c *Checker) inferFuncTypeAnn(
 	funcTypeAnn *ast.FuncTypeAnn,
 ) (*type_system.FuncType, []Error) {
 	errors := []Error{}
+
+	// Create a new context with type parameters in scope
+	funcCtx := ctx.WithNewScope()
+
+	// Handle generic functions by creating type parameters
+	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, funcTypeAnn.TypeParams)
+	errors = slices.Concat(errors, typeParamErrors)
+
 	params := make([]*type_system.FuncParam, len(funcTypeAnn.Params))
 	for i, param := range funcTypeAnn.Params {
-		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
+		patType, patBindings, patErrors := c.inferPattern(funcCtx, param.Pattern)
 		errors = slices.Concat(errors, patErrors)
 
 		// TODO: make type annoations required on parameters in function type
@@ -234,13 +244,13 @@ func (c *Checker) inferFuncTypeAnn(
 			typeAnn = c.FreshVar(nil)
 		} else {
 			var typeAnnErrors []Error
-			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
+			typeAnn, typeAnnErrors = c.inferTypeAnn(funcCtx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
 		}
 
-		c.Unify(ctx, patType, typeAnn)
+		c.Unify(funcCtx, patType, typeAnn)
 
-		maps.Copy(ctx.Scope.Namespace.Values, patBindings)
+		maps.Copy(funcCtx.Scope.Namespace.Values, patBindings)
 
 		params[i] = &type_system.FuncParam{
 			Pattern:  patToPat(param.Pattern),
@@ -248,14 +258,14 @@ func (c *Checker) inferFuncTypeAnn(
 			Optional: param.Optional,
 		}
 	}
-	returnType, returnErrors := c.inferTypeAnn(ctx, funcTypeAnn.Return)
+	returnType, returnErrors := c.inferTypeAnn(funcCtx, funcTypeAnn.Return)
 	errors = slices.Concat(errors, returnErrors)
 
 	funcType := type_system.FuncType{
 		Params:     params,
 		Return:     returnType,
 		Throws:     type_system.NewNeverType(nil),
-		TypeParams: []*type_system.TypeParam{},
+		TypeParams: typeParams,
 	}
 
 	return &funcType, errors

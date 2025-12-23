@@ -1047,6 +1047,39 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"red": "Color",
 			},
 		},
+		"GenericMethodInClass": {
+			input: `
+				class Foo {
+					bar<T>(self, value: T) -> T {
+						return value
+					}
+				}
+				declare val foo: Foo
+				val a = foo.bar(5)
+				val b = foo.bar("hello")
+			`,
+			expectedTypes: map[string]string{
+				"Foo": "{new fn () -> mut? Foo throws never}",
+				"foo": "Foo",
+				"a":   "5",
+				"b":   "\"hello\"",
+			},
+		},
+		"GenericMethodInInterface": {
+			input: `
+				interface Foo {
+					bar<T>(value: T) -> T,
+				}
+				declare val foo: Foo
+				val a = foo.bar(5)
+				val b = foo.bar("hello")
+			`,
+			expectedTypes: map[string]string{
+				"foo": "Foo",
+				"a":   "5",
+				"b":   "\"hello\"",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
