@@ -8,7 +8,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
-	"github.com/escalier-lang/escalier/internal/printer"
 )
 
 func TestConvertModule_LibES5(t *testing.T) {
@@ -111,22 +110,16 @@ func TestConvertModule_LibES5(t *testing.T) {
 
 	t.Logf("Infer errors: %d", len(inferErrors))
 	if len(inferErrors) > 0 {
-		// Log first 10 infer errors for debugging
-		maxErrors := 10
-		if len(inferErrors) < maxErrors {
-			maxErrors = len(inferErrors)
-		}
-		t.Logf("First %d infer errors:", maxErrors)
-		for i := 0; i < maxErrors; i++ {
+		for i := 0; i < len(inferErrors); i++ {
 			t.Logf("  %v at %v", inferErrors[i].Message(), inferErrors[i].Span())
-			if e, ok := inferErrors[i].(*checker.UnknownTypeError); ok {
-				node := checker.GetNode(e.TypeRef.Provenance())
-				if node != nil {
-					str, _ := printer.Print(node, printer.DefaultOptions())
-					t.Logf("    node: %s", str)
-					t.Logf("    node: %#v", node)
-				}
-			}
+			// if e, ok := inferErrors[i].(*checker.UnknownTypeError); ok {
+			// 	node := checker.GetNode(e.TypeRef.Provenance())
+			// 	if node != nil {
+			// 		str, _ := printer.Print(node, printer.DefaultOptions())
+			// 		t.Logf("    node: %s", str)
+			// 		t.Logf("    node: %#v", node)
+			// 	}
+			// }
 		}
 	}
 

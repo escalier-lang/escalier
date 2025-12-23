@@ -700,6 +700,10 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	if objKey == nil {
 		return nil
 	}
+
+	// Parse optional type parameters for the method
+	typeParams := p.maybeTypeParams()
+
 	token = p.lexer.peek()
 
 	// nolint: exhaustive
@@ -776,7 +780,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		}
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
-			nil, // TODO: support type parameters on methods
+			typeParams,
 			params,
 			retType,
 			nil, // TODO: support throws clause
