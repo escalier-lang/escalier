@@ -779,6 +779,194 @@ func TestFindDeclDependencies(t *testing.T) {
 			expectedDeps:  []DepBinding{}, // someUnknown.module.func is not in validBindings
 			declType:      "var",
 		},
+		"FuncDecl_ReturnTypeAnnotation": {
+			declCode:      `declare fn foo() -> MyType throws never`,
+			validBindings: []DepBinding{{Name: "MyType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "MyType", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_ReturnTypeWithUnion": {
+			declCode:      `declare fn foo() -> string | MyInterface throws never`,
+			validBindings: []DepBinding{{Name: "MyInterface", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "MyInterface", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_ParameterTypeAnnotation": {
+			declCode:      `declare fn foo(x: MyType, y: number) -> string throws never`,
+			validBindings: []DepBinding{{Name: "MyType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "MyType", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_MultipleParameterTypes": {
+			declCode:      `declare fn foo(a: TypeA, b: TypeB, c: TypeC) -> string throws never`,
+			validBindings: []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_ThrowsTypeAnnotation": {
+			declCode:      `declare fn foo(x: string) -> number throws MyError`,
+			validBindings: []DepBinding{{Name: "MyError", Kind: DepKindType}, {Name: "OtherError", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "MyError", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_AllTypeAnnotations": {
+			declCode:      `declare fn foo(x: InputType) -> OutputType throws ErrorType`,
+			validBindings: []DepBinding{{Name: "InputType", Kind: DepKindType}, {Name: "OutputType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "InputType", Kind: DepKindType}, {Name: "OutputType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_ComplexParameterTypes": {
+			declCode:      `declare fn foo(obj: {a: TypeA, b: TypeB}) -> TypeC throws never`,
+			validBindings: []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"FuncDecl_ParameterWithUnionType": {
+			declCode:      `declare fn foo(x: string | MyInterface) -> number throws never`,
+			validBindings: []DepBinding{{Name: "MyInterface", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "MyInterface", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"InterfaceDecl_MethodWithParameterType": {
+			declCode: `interface MyInterface {
+				foo(x: ParamType) -> number,
+			}`,
+			validBindings: []DepBinding{{Name: "ParamType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "ParamType", Kind: DepKindType}},
+			declType:      "interface",
+		},
+		"InterfaceDecl_MethodWithReturnType": {
+			declCode: `interface MyInterface {
+				foo(x: string) -> ReturnType,
+			}`,
+			validBindings: []DepBinding{{Name: "ReturnType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "ReturnType", Kind: DepKindType}},
+			declType:      "interface",
+		},
+		"InterfaceDecl_MethodWithMultipleTypes": {
+			declCode: `interface MyInterface {
+				bar(baz: string | TypeA, qux: TypeB) -> TypeC,
+			}`,
+			validBindings: []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}},
+			declType:      "interface",
+		},
+		"InterfaceDecl_MultipleMethodsWithTypes": {
+			declCode: `interface MyInterface {
+				foo(x: TypeA) -> TypeB,
+				bar(y: TypeC) -> TypeD,
+			}`,
+			validBindings: []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}, {Name: "TypeD", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "TypeA", Kind: DepKindType}, {Name: "TypeB", Kind: DepKindType}, {Name: "TypeC", Kind: DepKindType}, {Name: "TypeD", Kind: DepKindType}},
+			declType:      "interface",
+		},
+		"InterfaceDecl_MethodsAndProperties": {
+			declCode: `interface MyInterface {
+				prop: PropType,
+				method(arg: ArgType) -> RetType,
+			}`,
+			validBindings: []DepBinding{{Name: "PropType", Kind: DepKindType}, {Name: "ArgType", Kind: DepKindType}, {Name: "RetType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "PropType", Kind: DepKindType}, {Name: "ArgType", Kind: DepKindType}, {Name: "RetType", Kind: DepKindType}},
+			declType:      "interface",
+		},
+		"FuncDecl_WithBodyAndTypeAnnotations": {
+			declCode: `fn foo(x: InputType) -> OutputType throws never {
+				return x
+			}`,
+			validBindings: []DepBinding{{Name: "InputType", Kind: DepKindType}, {Name: "OutputType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "InputType", Kind: DepKindType}, {Name: "OutputType", Kind: DepKindType}},
+			declType:      "func",
+		},
+		"EnumDecl_SimpleVariantWithType": {
+			declCode: `enum Color {
+				RGB(r: number, g: number, b: number),
+			}`,
+			validBindings: []DepBinding{{Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{},
+			declType:      "enum",
+		},
+		"EnumDecl_VariantWithCustomType": {
+			declCode: `enum Result {
+				Ok(value: SuccessType),
+				Err(error: ErrorType),
+			}`,
+			validBindings: []DepBinding{{Name: "SuccessType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}, {Name: "UnusedType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "SuccessType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_MultipleVariantsWithTypes": {
+			declCode: `enum Message {
+				Text(content: StringType),
+				Image(url: UrlType, alt: AltType),
+				Video(src: VideoType),
+			}`,
+			validBindings: []DepBinding{{Name: "StringType", Kind: DepKindType}, {Name: "UrlType", Kind: DepKindType}, {Name: "AltType", Kind: DepKindType}, {Name: "VideoType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "StringType", Kind: DepKindType}, {Name: "UrlType", Kind: DepKindType}, {Name: "AltType", Kind: DepKindType}, {Name: "VideoType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_VariantWithComplexType": {
+			declCode: `enum Option {
+				Some(value: {data: DataType, meta: MetaType}),
+				None(),
+			}`,
+			validBindings: []DepBinding{{Name: "DataType", Kind: DepKindType}, {Name: "MetaType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "DataType", Kind: DepKindType}, {Name: "MetaType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_VariantWithUnionType": {
+			declCode: `enum Response {
+				Success(data: string | DataType),
+				Failure(error: ErrorType),
+			}`,
+			validBindings: []DepBinding{{Name: "DataType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "DataType", Kind: DepKindType}, {Name: "ErrorType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_VariantWithArrayType": {
+			declCode: `enum List {
+				Items(values: Array<ItemType>),
+				Empty(),
+			}`,
+			validBindings: []DepBinding{{Name: "ItemType", Kind: DepKindType}, {Name: "OtherType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "ItemType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_VariantWithTupleType": {
+			declCode: `enum Coordinate {
+				Point2D(coords: [TypeX, TypeY]),
+				Point3D(coords: [TypeX, TypeY, TypeZ]),
+			}`,
+			validBindings: []DepBinding{{Name: "TypeX", Kind: DepKindType}, {Name: "TypeY", Kind: DepKindType}, {Name: "TypeZ", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "TypeX", Kind: DepKindType}, {Name: "TypeY", Kind: DepKindType}, {Name: "TypeZ", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_MultipleParametersPerVariant": {
+			declCode: `enum Event {
+				Click(x: CoordType, y: CoordType, button: ButtonType),
+				KeyPress(key: KeyType, modifiers: ModifierType),
+			}`,
+			validBindings: []DepBinding{{Name: "CoordType", Kind: DepKindType}, {Name: "ButtonType", Kind: DepKindType}, {Name: "KeyType", Kind: DepKindType}, {Name: "ModifierType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "CoordType", Kind: DepKindType}, {Name: "ButtonType", Kind: DepKindType}, {Name: "KeyType", Kind: DepKindType}, {Name: "ModifierType", Kind: DepKindType}},
+			declType:      "enum",
+		},
+		"EnumDecl_NoTypeParameters": {
+			declCode: `enum SimpleEnum {
+				VariantA(),
+				VariantB(),
+			}`,
+			validBindings: []DepBinding{{Name: "SomeType", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{},
+			declType:      "enum",
+		},
+		"EnumDecl_QualifiedTypeDependencies": {
+			declCode: `enum Status {
+				Active(user: models.User),
+				Inactive(reason: errors.ErrorCode),
+			}`,
+			validBindings: []DepBinding{{Name: "models.User", Kind: DepKindType}, {Name: "errors.ErrorCode", Kind: DepKindType}},
+			expectedDeps:  []DepBinding{{Name: "models.User", Kind: DepKindType}, {Name: "errors.ErrorCode", Kind: DepKindType}},
+			declType:      "enum",
+		},
 	}
 
 	for name, test := range tests {
@@ -793,6 +981,10 @@ func TestFindDeclDependencies(t *testing.T) {
 			case "func":
 				moduleCode = test.declCode
 			case "type":
+				moduleCode = test.declCode
+			case "interface":
+				moduleCode = test.declCode
+			case "enum":
 				moduleCode = test.declCode
 			}
 

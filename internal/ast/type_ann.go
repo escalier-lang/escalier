@@ -393,6 +393,9 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		for _, param := range t.Params {
 			param.Pattern.Accept(v)
+			if param.TypeAnn != nil {
+				param.TypeAnn.Accept(v)
+			}
 		}
 		t.Return.Accept(v)
 		if t.Throws != nil {
