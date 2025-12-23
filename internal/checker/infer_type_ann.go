@@ -32,7 +32,7 @@ func (c *Checker) inferTypeAnn(
 		} else {
 			// TODO: include type args
 			typeRef := type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), nil, nil)
-			errors = append(errors, &UnknownTypeError{TypeName: ast.QualIdentToString(typeAnn.Name), typeRef: typeRef})
+			errors = append(errors, &UnknownTypeError{TypeName: ast.QualIdentToString(typeAnn.Name), TypeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
 		t = type_system.NewNumPrimType(provenance)
@@ -90,6 +90,14 @@ func (c *Checker) inferTypeAnn(
 			errors = slices.Concat(errors, unionElemErrors)
 		}
 		t = type_system.NewUnionType(nil, types...)
+	case *ast.IntersectionTypeAnn:
+		types := make([]type_system.Type, len(typeAnn.Types))
+		for i, intersectionType := range typeAnn.Types {
+			intersectionElemType, intersectionElemErrors := c.inferTypeAnn(ctx, intersectionType)
+			types[i] = intersectionElemType
+			errors = slices.Concat(errors, intersectionElemErrors)
+		}
+		t = type_system.NewIntersectionType(nil, types...)
 	case *ast.FuncTypeAnn:
 		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn)
 		t = funcType
@@ -195,6 +203,10 @@ func (c *Checker) inferTypeAnn(
 		// Convert ast.QualIdent to type_system.QualIdent
 		var ident type_system.QualIdent = convertQualIdent(typeAnn.Value)
 		t = type_system.NewTypeOfType(provenance, ident)
+	case *ast.RestSpreadTypeAnn:
+		argType, argErrors := c.inferTypeAnn(ctx, typeAnn.Value)
+		errors = slices.Concat(errors, argErrors)
+		t = type_system.NewRestSpreadType(provenance, argType)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

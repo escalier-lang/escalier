@@ -484,10 +484,15 @@ func (c *Checker) InferComponent(
 			continue
 		}
 
-		// Skip declarations that use the `declare` keyword, since they are
+		// Skip FuncDecl and VarDecl that use the `declare` keyword, since they are
 		// already fully typed and don't have a body or initializer to infer.
-		if decl.Declare() {
-			continue
+		// However, TypeDecl, InterfaceDecl, and EnumDecl still need their types
+		// to be inferred and unified with their placeholders.
+		switch decl.(type) {
+		case *ast.FuncDecl, *ast.VarDecl:
+			if decl.Declare() {
+				continue
+			}
 		}
 
 		switch decl := decl.(type) {

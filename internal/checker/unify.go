@@ -283,7 +283,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 					if typeAlias1 == nil {
 						return []Error{&UnknownTypeError{
 							TypeName: type_system.QualIdentToString(ref1.Name),
-							typeRef:  ref1,
+							TypeRef:  ref1,
 						}}
 					}
 				}
@@ -293,7 +293,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 					if typeAlias2 == nil {
 						return []Error{&UnknownTypeError{
 							TypeName: type_system.QualIdentToString(ref2.Name),
-							typeRef:  ref2,
+							TypeRef:  ref2,
 						}}
 					}
 				}
