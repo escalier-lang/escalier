@@ -987,6 +987,66 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":   "string",
 			},
 		},
+		"OutOfOrderTypeAlias": {
+			input: `
+				val x: MyType = {a: 5, b: "hello"}
+				type MyType = {a: number, b: string}
+			`,
+			expectedTypes: map[string]string{
+				"x": "MyType",
+			},
+		},
+		"OutOfOrderInterface": {
+			input: `
+				val x: MyInterface = {a: 5, b: "hello"}
+				interface MyInterface {
+					a: number,
+					b: string,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"x": "MyInterface",
+			},
+		},
+		"OutOfOrderInterfaceInUnionInFunction": {
+			input: `
+				declare fn foo() -> string | MyInterface throws never
+				interface MyInterface {
+					a: number,
+					b: string,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> string | MyInterface throws never",
+			},
+		},
+		"OutOfOrderInterfaceInUnionInMethod": {
+			input: `
+				interface Foo {
+					bar(baz: string | MyInterface) -> undefined,
+				}
+				interface MyInterface {
+					a: number,
+					b: string,
+				}
+				declare val foo: Foo
+			`,
+			expectedTypes: map[string]string{
+				"foo": "Foo",
+			},
+		},
+		"OutOfOrderEnum": {
+			input: `
+				val red: Color = Color.RGB(255, 0, 0)
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+			`,
+			expectedTypes: map[string]string{
+				"red": "Color",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

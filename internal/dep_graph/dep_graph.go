@@ -86,6 +86,25 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 			v.TypeBindings.Set(name, declID)
 			v.ValueBindings.Set(name, declID)
 		}
+	case *ast.InterfaceDecl:
+		// Interface declarations introduce a type binding
+		if d.Name != nil && d.Name.Name != "" {
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.TypeBindings.Set(name, declID)
+		}
+	case *ast.EnumDecl:
+		// Enum declarations introduce both a type binding and a value binding (for the variants)
+		if d.Name != nil && d.Name.Name != "" {
+			name := d.Name.Name
+			if v.currentNSName != "" {
+				name = v.currentNSName + "." + name // Fully qualify with namespace
+			}
+			v.TypeBindings.Set(name, declID)
+			v.ValueBindings.Set(name, declID)
+		}
 	}
 	return false // Don't traverse into the declaration's body
 }
@@ -166,6 +185,17 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 				// Type declarations introduce a binding with the type name
 				if decl.Name != nil && decl.Name.Name != "" {
 					currentScope.TypeBindings.Add(decl.Name.Name)
+				}
+			case *ast.InterfaceDecl:
+				// Interface declarations introduce a binding with the interface name
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+				}
+			case *ast.EnumDecl:
+				// Enum declarations introduce both a type binding and value binding
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+					currentScope.ValueBindings.Add(decl.Name.Name)
 				}
 			}
 		}
@@ -424,6 +454,20 @@ func FindDeclDependencies(
 			d.Init.Accept(visitor)
 		}
 	case *ast.FuncDecl:
+		// Visit parameter type annotations (if any)
+		for _, param := range d.Params {
+			if param.TypeAnn != nil {
+				param.TypeAnn.Accept(visitor)
+			}
+		}
+		// Visit return type annotation (if any)
+		if d.Return != nil {
+			d.Return.Accept(visitor)
+		}
+		// Visit throws type annotation (if any)
+		if d.Throws != nil {
+			d.Throws.Accept(visitor)
+		}
 		// For function declarations, create a scope for parameters and visit the body
 		if d.Body != nil {
 			visitor.pushScope()
@@ -444,6 +488,38 @@ func FindDeclDependencies(
 	case *ast.TypeDecl:
 		// For type declarations, visit the type annotation
 		d.TypeAnn.Accept(visitor)
+	case *ast.InterfaceDecl:
+		// For interface declarations, visit the type annotation
+		d.TypeAnn.Accept(visitor)
+	case *ast.EnumDecl:
+		// For enum declarations, visit enum elements for dependencies
+		for _, elem := range d.Elems {
+			if spread, ok := elem.(*ast.EnumSpread); ok {
+				// EnumSpread references another enum, add it as a dependency
+				if spread.Arg != nil {
+					enumName := spread.Arg.Name
+					// Try with current namespace prefix first
+					if currentNamespace != "" {
+						qualifiedName := currentNamespace + "." + enumName
+						if declID, exists := depGraph.TypeBindings.Get(qualifiedName); exists {
+							visitor.Dependencies.Insert(declID)
+							continue
+						}
+					}
+					// Try without namespace prefix
+					if declID, exists := depGraph.TypeBindings.Get(enumName); exists {
+						visitor.Dependencies.Insert(declID)
+					}
+				}
+			} else if variant, ok := elem.(*ast.EnumVariant); ok {
+				// Visit variant parameters to find type dependencies
+				for _, param := range variant.Params {
+					if param.TypeAnn != nil {
+						param.TypeAnn.Accept(visitor)
+					}
+				}
+			}
+		}
 	}
 
 	return visitor.Dependencies
