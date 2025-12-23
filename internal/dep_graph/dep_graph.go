@@ -181,6 +181,22 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 				if decl.Name != nil && decl.Name.Name != "" {
 					currentScope.ValueBindings.Add(decl.Name.Name)
 				}
+			case *ast.TypeDecl:
+				// Type declarations introduce a binding with the type name
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+				}
+			case *ast.InterfaceDecl:
+				// Interface declarations introduce a binding with the interface name
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+				}
+			case *ast.EnumDecl:
+				// Enum declarations introduce both a type binding and value binding
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+					currentScope.ValueBindings.Add(decl.Name.Name)
+				}
 			}
 		}
 		return true
