@@ -248,11 +248,11 @@ func (e UnknownOperatorError) Message() string {
 
 type UnknownTypeError struct {
 	TypeName string
-	typeRef  *type_system.TypeRefType
+	TypeRef  *type_system.TypeRefType
 }
 
 func (e UnknownTypeError) Span() ast.Span {
-	node := GetNode(e.typeRef.Provenance())
+	node := GetNode(e.TypeRef.Provenance())
 	if node != nil {
 		return node.Span()
 	}

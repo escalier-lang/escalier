@@ -32,7 +32,7 @@ func (c *Checker) inferTypeAnn(
 		} else {
 			// TODO: include type args
 			typeRef := type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), nil, nil)
-			errors = append(errors, &UnknownTypeError{TypeName: ast.QualIdentToString(typeAnn.Name), typeRef: typeRef})
+			errors = append(errors, &UnknownTypeError{TypeName: ast.QualIdentToString(typeAnn.Name), TypeRef: typeRef})
 		}
 	case *ast.NumberTypeAnn:
 		t = type_system.NewNumPrimType(provenance)

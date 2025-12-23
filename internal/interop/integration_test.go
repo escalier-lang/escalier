@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 )
 
 func TestConvertModule_LibES5(t *testing.T) {
@@ -118,6 +119,14 @@ func TestConvertModule_LibES5(t *testing.T) {
 		t.Logf("First %d infer errors:", maxErrors)
 		for i := 0; i < maxErrors; i++ {
 			t.Logf("  %v at %v", inferErrors[i].Message(), inferErrors[i].Span())
+			if e, ok := inferErrors[i].(*checker.UnknownTypeError); ok {
+				node := checker.GetNode(e.TypeRef.Provenance())
+				if node != nil {
+					str, _ := printer.Print(node, printer.DefaultOptions())
+					t.Logf("    node: %s", str)
+					t.Logf("    node: %#v", node)
+				}
+			}
 		}
 	}
 
