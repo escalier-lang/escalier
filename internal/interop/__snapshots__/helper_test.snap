@@ -99,16 +99,8 @@
 ---
 
 [TestConvertTypeAnn/primitive_object - 1]
-&ast.TypeRefTypeAnn{
-    Name: &ast.Ident{
-        Name: "object",
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
-    },
-    TypeArgs: {
+&ast.ObjectTypeAnn{
+    Elems: {
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
@@ -4600,16 +4592,8 @@
                         inferredType: nil,
                     },
                     Optional: false,
-                    TypeAnn:  &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "object",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:45},
-                                End:      ast.Location{Line:1, Column:51},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: {
+                    TypeAnn:  &ast.ObjectTypeAnn{
+                        Elems: {
                         },
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:45},
