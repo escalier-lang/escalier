@@ -434,6 +434,7 @@ const (
 	PrimBigInt                         // TypeScript 'bigint' type
 	PrimSymbol                         // TypeScript 'symbol' type
 	PrimObject                         // TypeScript 'object' type
+	PrimIntrinsic                      // TypeScript intrinsic types, e.g. Uppercase<T>, etc.
 )
 
 // LiteralType represents literal types (string, number, boolean, bigint literals)

@@ -185,6 +185,14 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		p.consume()
 		return &PrimitiveType{Kind: PrimVoid, span: token.Span}
 
+	case Object:
+		p.consume()
+		return &PrimitiveType{Kind: PrimObject, span: token.Span}
+
+	case Intrinsic:
+		p.consume()
+		return &PrimitiveType{Kind: PrimIntrinsic, span: token.Span}
+
 	// Literal types
 	case StrLit:
 		p.consume()

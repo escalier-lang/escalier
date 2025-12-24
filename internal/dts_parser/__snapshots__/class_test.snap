@@ -1554,17 +1554,9 @@
                             },
                         },
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "object",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:50},
-                                End:      ast.Location{Line:1, Column:56},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 11,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:50},
                             End:      ast.Location{Line:1, Column:56},
                             SourceID: 0,
@@ -2097,17 +2089,9 @@
                                     SourceID: 0,
                                 },
                             },
-                            Constraint: &dts_parser.TypeReference{
-                                Name: &dts_parser.Ident{
-                                    Name: "object",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:47},
-                                        End:      ast.Location{Line:1, Column:53},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeArgs: nil,
-                                span:     ast.Span{
+                            Constraint: &dts_parser.PrimitiveType{
+                                Kind: 11,
+                                span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:47},
                                     End:      ast.Location{Line:1, Column:53},
                                     SourceID: 0,
@@ -3528,17 +3512,9 @@
                             SourceID: 0,
                         },
                     },
-                    ValueType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "object",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:42},
-                                End:      ast.Location{Line:1, Column:48},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ValueType: &dts_parser.PrimitiveType{
+                        Kind: 11,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:42},
                             End:      ast.Location{Line:1, Column:48},
                             SourceID: 0,
@@ -5168,17 +5144,9 @@
                             SourceID: 0,
                         },
                     },
-                    TypeAnn: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "object",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:6, Column:21},
-                                End:      ast.Location{Line:6, Column:27},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 11,
+                        span: ast.Span{
                             Start:    ast.Location{Line:6, Column:21},
                             End:      ast.Location{Line:6, Column:27},
                             SourceID: 0,

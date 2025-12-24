@@ -113,6 +113,8 @@ const (
 	As
 	Bigint
 	Void
+	Object
+	Intrinsic
 )
 
 type Token struct {

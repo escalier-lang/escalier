@@ -56,6 +56,8 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		return errors
 	case *ast.ClassDecl:
 		panic("TODO: infer class declaration")
+	case *ast.EnumDecl:
+		panic("TODO: infer enum declaration")
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}
@@ -238,8 +240,15 @@ func (c *Checker) inferInterface(
 
 	// Create a context that accumulates type parameters as we process them
 	// This allows later type parameters to reference earlier ones in their constraints
-	paramCtx := ctx
-	paramScope := ctx.Scope.WithNewScope()
+	typeCtx := ctx.WithNewScope()
+
+	typeArgs := make([]type_system.Type, len(decl.TypeParams))
+	for i, typeParam := range decl.TypeParams {
+		typeArgs[i] = type_system.NewTypeRefType(nil, typeParam.Name, nil)
+	}
+	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...)
+	selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
+	typeCtx.Scope.SetTypeAlias("Self", &selfTypeAlias)
 
 	for i, typeParam := range decl.TypeParams {
 		var constraintType type_system.Type
@@ -247,13 +256,13 @@ func (c *Checker) inferInterface(
 		if typeParam.Constraint != nil {
 			var constraintErrors []Error
 			// Use paramCtx which includes previously defined type parameters
-			constraintType, constraintErrors = c.inferTypeAnn(paramCtx, typeParam.Constraint)
+			constraintType, constraintErrors = c.inferTypeAnn(typeCtx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if typeParam.Default != nil {
 			var defaultErrors []Error
 			// Use paramCtx which includes previously defined type parameters
-			defaultType, defaultErrors = c.inferTypeAnn(paramCtx, typeParam.Default)
+			defaultType, defaultErrors = c.inferTypeAnn(typeCtx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
 		}
 		typeParams[i] = &type_system.TypeParam{
@@ -268,18 +277,8 @@ func (c *Checker) inferInterface(
 			Type:       typeParamTypeRef,
 			TypeParams: []*type_system.TypeParam{},
 		}
-		paramScope.SetTypeAlias(typeParam.Name, typeParamAlias)
-
-		// Update the context to include this type parameter
-		paramCtx = Context{
-			Scope:      paramScope,
-			IsAsync:    ctx.IsAsync,
-			IsPatMatch: ctx.IsPatMatch,
-		}
+		typeCtx.Scope.SetTypeAlias(typeParam.Name, typeParamAlias)
 	}
-
-	// Use the context with all type parameters for inferring the type annotation
-	typeCtx := paramCtx
 
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)

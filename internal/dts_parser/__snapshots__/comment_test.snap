@@ -1140,17 +1140,9 @@
                             SourceID: 0,
                         },
                     },
-                    ExtendsType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "object",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:2, Column:15},
-                                End:      ast.Location{Line:2, Column:21},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ExtendsType: &dts_parser.PrimitiveType{
+                        Kind: 11,
+                        span: ast.Span{
                             Start:    ast.Location{Line:2, Column:15},
                             End:      ast.Location{Line:2, Column:21},
                             SourceID: 0,
@@ -1310,17 +1302,9 @@
                     },
                     ExtendsType: &dts_parser.IntersectionType{
                         Types: {
-                            &dts_parser.TypeReference{
-                                Name: &dts_parser.Ident{
-                                    Name: "object",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:2, Column:15},
-                                        End:      ast.Location{Line:2, Column:21},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeArgs: nil,
-                                span:     ast.Span{
+                            &dts_parser.PrimitiveType{
+                                Kind: 11,
+                                span: ast.Span{
                                     Start:    ast.Location{Line:2, Column:15},
                                     End:      ast.Location{Line:2, Column:21},
                                     SourceID: 0,
