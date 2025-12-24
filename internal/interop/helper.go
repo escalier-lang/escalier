@@ -241,9 +241,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		case dts_parser.PrimUnknown:
 			return ast.NewUnknownTypeAnn(span), nil
 		case dts_parser.PrimVoid:
-			// TODO(#227): Add support for `void` type to Escalier's type system.
-			// For now, map void to undefined as a temporary workaround.
-			return ast.NewLitTypeAnn(ast.NewUndefined(span), span), nil
+			return ast.NewVoidTypeAnn(span), nil
 		case dts_parser.PrimNull:
 			return ast.NewLitTypeAnn(ast.NewNull(span), span), nil
 		case dts_parser.PrimUndefined:

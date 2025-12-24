@@ -19,6 +19,7 @@ func (*BigintTypeAnn) isTypeAnn()       {}
 func (*AnyTypeAnn) isTypeAnn()          {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
+func (*VoidTypeAnn) isTypeAnn()         {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
 func (*TupleTypeAnn) isTypeAnn()        {}
 func (*UnionTypeAnn) isTypeAnn()        {}
@@ -168,6 +169,19 @@ func NewNeverTypeAnn(span Span) *NeverTypeAnn {
 	return &NeverTypeAnn{span: span, inferredType: nil}
 }
 func (t *NeverTypeAnn) Accept(v Visitor) {
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
+}
+
+type VoidTypeAnn struct {
+	span         Span
+	inferredType Type
+}
+
+func NewVoidTypeAnn(span Span) *VoidTypeAnn {
+	return &VoidTypeAnn{span: span, inferredType: nil}
+}
+func (t *VoidTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
 	v.ExitTypeAnn(t)
 }

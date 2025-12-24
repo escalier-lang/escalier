@@ -4727,17 +4727,7 @@ nil
                                 },
                             },
                             TypeArgs: {
-                                &ast.TypeRefTypeAnn{
-                                    Name: &ast.Ident{
-                                        Name: "void",
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:4, Column:35},
-                                            End:      ast.Location{Line:4, Column:39},
-                                            SourceID: 0,
-                                        },
-                                    },
-                                    TypeArgs: {
-                                    },
+                                &ast.VoidTypeAnn{
                                     span: ast.Span{
                                         Start:    ast.Location{Line:4, Column:35},
                                         End:      ast.Location{Line:4, Column:39},

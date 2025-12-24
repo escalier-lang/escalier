@@ -5466,17 +5466,7 @@
                     },
                 },
             },
-            Return: &ast.TypeRefTypeAnn{
-                Name: &ast.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:65},
-                        End:      ast.Location{Line:1, Column:69},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: {
-                },
+            Return: &ast.VoidTypeAnn{
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:65},
                     End:      ast.Location{Line:1, Column:69},

@@ -122,6 +122,35 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 			T2: t2,
 		}}
 	}
+	// | VoidType, VoidType -> ...
+	if _, ok := t1.(*type_system.VoidType); ok {
+		if _, ok := t2.(*type_system.VoidType); ok {
+			return nil
+		}
+		// void can be assigned to undefined literal
+		if lit2, ok := t2.(*type_system.LitType); ok {
+			if _, ok := lit2.Lit.(*type_system.UndefinedLit); ok {
+				return nil
+			}
+		}
+		return []Error{&CannotUnifyTypesError{
+			T1: t1,
+			T2: t2,
+		}}
+	}
+	// | _, VoidType -> ...
+	if _, ok := t2.(*type_system.VoidType); ok {
+		// undefined literal can be assigned to void
+		if lit1, ok := t1.(*type_system.LitType); ok {
+			if _, ok := lit1.Lit.(*type_system.UndefinedLit); ok {
+				return nil
+			}
+		}
+		return []Error{&CannotUnifyTypesError{
+			T1: t1,
+			T2: t2,
+		}}
+	}
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
 		if tuple2, ok := t2.(*type_system.TupleType); ok {

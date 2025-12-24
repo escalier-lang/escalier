@@ -112,6 +112,7 @@ const (
 	From
 	As
 	Bigint
+	Void
 )
 
 type Token struct {
