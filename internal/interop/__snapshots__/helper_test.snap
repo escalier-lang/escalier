@@ -22,17 +22,7 @@
 ---
 
 [TestConvertTypeAnn/primitive_void - 1]
-&ast.TypeRefTypeAnn{
-    Name: &ast.Ident{
-        Name: "void",
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-    },
-    TypeArgs: {
-    },
+&ast.VoidTypeAnn{
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:5},
@@ -1031,17 +1021,7 @@
     },
     Params: {
     },
-    Return: &ast.TypeRefTypeAnn{
-        Name: &ast.Ident{
-            Name: "void",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:7},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
-        },
-        TypeArgs: {
-        },
+    Return: &ast.VoidTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:7},
             End:      ast.Location{Line:1, Column:11},
@@ -1201,17 +1181,7 @@
             },
         },
     },
-    Return: &ast.TypeRefTypeAnn{
-        Name: &ast.Ident{
-            Name: "void",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:17},
-                End:      ast.Location{Line:1, Column:21},
-                SourceID: 0,
-            },
-        },
-        TypeArgs: {
-        },
+    Return: &ast.VoidTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:17},
             End:      ast.Location{Line:1, Column:21},
@@ -1275,17 +1245,7 @@
             },
         },
     },
-    Return: &ast.TypeRefTypeAnn{
-        Name: &ast.Ident{
-            Name: "void",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:24},
-                End:      ast.Location{Line:1, Column:28},
-                SourceID: 0,
-            },
-        },
-        TypeArgs: {
-        },
+    Return: &ast.VoidTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:24},
             End:      ast.Location{Line:1, Column:28},
@@ -3345,17 +3305,7 @@
             },
         },
     },
-    Return: &ast.TypeRefTypeAnn{
-        Name: &ast.Ident{
-            Name: "void",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:53},
-                End:      ast.Location{Line:1, Column:57},
-                SourceID: 0,
-            },
-        },
-        TypeArgs: {
-        },
+    Return: &ast.VoidTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:53},
             End:      ast.Location{Line:1, Column:57},
@@ -3934,17 +3884,7 @@
             },
             Params: {
             },
-            Return: &ast.TypeRefTypeAnn{
-                Name: &ast.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:39},
-                        End:      ast.Location{Line:1, Column:43},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: {
-                },
+            Return: &ast.VoidTypeAnn{
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:39},
                     End:      ast.Location{Line:1, Column:43},
@@ -3993,17 +3933,7 @@
             },
             Params: {
             },
-            Return: &ast.TypeRefTypeAnn{
-                Name: &ast.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:40},
-                        End:      ast.Location{Line:1, Column:44},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: {
-                },
+            Return: &ast.VoidTypeAnn{
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:40},
                     End:      ast.Location{Line:1, Column:44},
@@ -4062,17 +3992,7 @@
                     },
                 },
                 TypeArgs: {
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:49},
-                                End:      ast.Location{Line:1, Column:53},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: {
-                        },
+                    &ast.VoidTypeAnn{
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:49},
                             End:      ast.Location{Line:1, Column:53},

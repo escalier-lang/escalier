@@ -87,6 +87,7 @@ var keywords = map[string]TokenType{
 	"module":     ModuleKeyword,
 	"from":       From,
 	"as":         As,
+	"void":       Void,
 }
 
 // skipWhitespace advances past whitespace characters and returns the new offset and location.

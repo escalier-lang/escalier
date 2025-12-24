@@ -2910,3 +2910,14 @@ nil
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/VoidTypeAnn - 1]
+&ast.VoidTypeAnn{
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:5},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

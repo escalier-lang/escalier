@@ -56,17 +56,7 @@
                                     },
                                     Params: {
                                     },
-                                    Return: &ast.TypeRefTypeAnn{
-                                        Name: &ast.Ident{
-                                            Name: "void",
-                                            span: ast.Span{
-                                                Start:    ast.Location{Line:3, Column:25},
-                                                End:      ast.Location{Line:3, Column:29},
-                                                SourceID: 0,
-                                            },
-                                        },
-                                        TypeArgs: {
-                                        },
+                                    Return: &ast.VoidTypeAnn{
                                         span: ast.Span{
                                             Start:    ast.Location{Line:3, Column:25},
                                             End:      ast.Location{Line:3, Column:29},
@@ -189,17 +179,7 @@
                                     },
                                     Params: {
                                     },
-                                    Return: &ast.TypeRefTypeAnn{
-                                        Name: &ast.Ident{
-                                            Name: "void",
-                                            span: ast.Span{
-                                                Start:    ast.Location{Line:4, Column:19},
-                                                End:      ast.Location{Line:4, Column:23},
-                                                SourceID: 0,
-                                            },
-                                        },
-                                        TypeArgs: {
-                                        },
+                                    Return: &ast.VoidTypeAnn{
                                         span: ast.Span{
                                             Start:    ast.Location{Line:4, Column:19},
                                             End:      ast.Location{Line:4, Column:23},
@@ -393,17 +373,7 @@
                                     },
                                     Params: {
                                     },
-                                    Return: &ast.TypeRefTypeAnn{
-                                        Name: &ast.Ident{
-                                            Name: "void",
-                                            span: ast.Span{
-                                                Start:    ast.Location{Line:8, Column:32},
-                                                End:      ast.Location{Line:8, Column:36},
-                                                SourceID: 0,
-                                            },
-                                        },
-                                        TypeArgs: {
-                                        },
+                                    Return: &ast.VoidTypeAnn{
                                         span: ast.Span{
                                             Start:    ast.Location{Line:8, Column:32},
                                             End:      ast.Location{Line:8, Column:36},
@@ -728,17 +698,7 @@
                                     },
                                     Params: {
                                     },
-                                    Return: &ast.TypeRefTypeAnn{
-                                        Name: &ast.Ident{
-                                            Name: "void",
-                                            span: ast.Span{
-                                                Start:    ast.Location{Line:3, Column:25},
-                                                End:      ast.Location{Line:3, Column:29},
-                                                SourceID: 0,
-                                            },
-                                        },
-                                        TypeArgs: {
-                                        },
+                                    Return: &ast.VoidTypeAnn{
                                         span: ast.Span{
                                             Start:    ast.Location{Line:3, Column:25},
                                             End:      ast.Location{Line:3, Column:29},

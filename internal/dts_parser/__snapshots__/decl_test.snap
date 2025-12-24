@@ -300,17 +300,9 @@
             TypeParams: nil,
             Params:     {
             },
-            ReturnType: &dts_parser.TypeReference{
-                Name: &dts_parser.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:25},
-                        End:      ast.Location{Line:1, Column:29},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: nil,
-                span:     ast.Span{
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 2,
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:25},
                     End:      ast.Location{Line:1, Column:29},
                     SourceID: 0,
@@ -541,17 +533,9 @@
                     },
                 },
             },
-            ReturnType: &dts_parser.TypeReference{
-                Name: &dts_parser.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:40},
-                        End:      ast.Location{Line:1, Column:44},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: nil,
-                span:     ast.Span{
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 2,
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:40},
                     End:      ast.Location{Line:1, Column:44},
                     SourceID: 0,
@@ -1482,17 +1466,9 @@
                         },
                     },
                 },
-                ReturnType: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "void",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:35},
-                            End:      ast.Location{Line:1, Column:39},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                ReturnType: &dts_parser.PrimitiveType{
+                    Kind: 2,
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:35},
                         End:      ast.Location{Line:1, Column:39},
                         SourceID: 0,
@@ -3446,17 +3422,9 @@
                             },
                         },
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:72},
-                                End:      ast.Location{Line:1, Column:76},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:72},
                             End:      ast.Location{Line:1, Column:76},
                             SourceID: 0,
@@ -3616,17 +3584,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:62},
-                                End:      ast.Location{Line:1, Column:66},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:62},
                             End:      ast.Location{Line:1, Column:66},
                             SourceID: 0,
@@ -3705,17 +3665,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:61},
-                                End:      ast.Location{Line:1, Column:65},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:61},
                             End:      ast.Location{Line:1, Column:65},
                             SourceID: 0,
@@ -3900,17 +3852,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:55},
-                                End:      ast.Location{Line:1, Column:59},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:55},
                             End:      ast.Location{Line:1, Column:59},
                             SourceID: 0,
@@ -3936,17 +3880,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:69},
-                                End:      ast.Location{Line:1, Column:73},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:69},
                             End:      ast.Location{Line:1, Column:73},
                             SourceID: 0,
@@ -4151,17 +4087,9 @@
                         TypeParams: nil,
                         Params:     {
                         },
-                        ReturnType: &dts_parser.TypeReference{
-                            Name: &dts_parser.Ident{
-                                Name: "void",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:48},
-                                    End:      ast.Location{Line:1, Column:52},
-                                    SourceID: 0,
-                                },
-                            },
-                            TypeArgs: nil,
-                            span:     ast.Span{
+                        ReturnType: &dts_parser.PrimitiveType{
+                            Kind: 2,
+                            span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:48},
                                 End:      ast.Location{Line:1, Column:52},
                                 SourceID: 0,
@@ -4371,17 +4299,9 @@
                         TypeParams: nil,
                         Params:     {
                         },
-                        ReturnType: &dts_parser.TypeReference{
-                            Name: &dts_parser.Ident{
-                                Name: "void",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:62},
-                                    End:      ast.Location{Line:1, Column:66},
-                                    SourceID: 0,
-                                },
-                            },
-                            TypeArgs: nil,
-                            span:     ast.Span{
+                        ReturnType: &dts_parser.PrimitiveType{
+                            Kind: 2,
+                            span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:62},
                                 End:      ast.Location{Line:1, Column:66},
                                 SourceID: 0,
@@ -4454,17 +4374,9 @@
             TypeParams: nil,
             Params:     {
             },
-            ReturnType: &dts_parser.TypeReference{
-                Name: &dts_parser.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:3, Column:26},
-                        End:      ast.Location{Line:3, Column:30},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: nil,
-                span:     ast.Span{
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 2,
+                span: ast.Span{
                     Start:    ast.Location{Line:3, Column:26},
                     End:      ast.Location{Line:3, Column:30},
                     SourceID: 0,
@@ -4645,17 +4557,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:7, Column:28},
-                                End:      ast.Location{Line:7, Column:32},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:7, Column:28},
                             End:      ast.Location{Line:7, Column:32},
                             SourceID: 0,
@@ -6109,17 +6013,9 @@
                         },
                     },
                 },
-                ReturnType: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "void",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:40},
-                            End:      ast.Location{Line:1, Column:44},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                ReturnType: &dts_parser.PrimitiveType{
+                    Kind: 2,
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:40},
                         End:      ast.Location{Line:1, Column:44},
                         SourceID: 0,
@@ -6157,17 +6053,9 @@
             TypeParams: nil,
             Params:     {
             },
-            ReturnType: &dts_parser.TypeReference{
-                Name: &dts_parser.Ident{
-                    Name: "void",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:25},
-                        End:      ast.Location{Line:1, Column:29},
-                        SourceID: 0,
-                    },
-                },
-                TypeArgs: nil,
-                span:     ast.Span{
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 2,
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:25},
                     End:      ast.Location{Line:1, Column:29},
                     SourceID: 0,
@@ -7901,17 +7789,9 @@
                     TypeParams: nil,
                     Params:     {
                     },
-                    ReturnType: &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "void",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:42},
-                                End:      ast.Location{Line:1, Column:46},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:42},
                             End:      ast.Location{Line:1, Column:46},
                             SourceID: 0,
@@ -8065,17 +7945,9 @@
                         TypeParams: nil,
                         Params:     {
                         },
-                        ReturnType: &dts_parser.TypeReference{
-                            Name: &dts_parser.Ident{
-                                Name: "void",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:49},
-                                    End:      ast.Location{Line:1, Column:53},
-                                    SourceID: 0,
-                                },
-                            },
-                            TypeArgs: nil,
-                            span:     ast.Span{
+                        ReturnType: &dts_parser.PrimitiveType{
+                            Kind: 2,
+                            span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:49},
                                 End:      ast.Location{Line:1, Column:53},
                                 SourceID: 0,

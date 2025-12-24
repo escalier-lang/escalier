@@ -634,6 +634,8 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		return NewUnknownTypeAnn(nil)
 	case *type_sys.NeverType:
 		return NewNeverTypeAnn(nil)
+	case *type_sys.VoidType:
+		return NewVoidTypeAnn(nil)
 	case *type_sys.GlobalThisType:
 		panic("TODO: implement GlobalThisType")
 	case *type_sys.FuncType:

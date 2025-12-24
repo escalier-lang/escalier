@@ -53,6 +53,8 @@ func (c *Checker) inferTypeAnn(
 		t = type_system.NewUnknownType(provenance)
 	case *ast.NeverTypeAnn:
 		t = type_system.NewNeverType(provenance)
+	case *ast.VoidTypeAnn:
+		t = type_system.NewVoidType(provenance)
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:

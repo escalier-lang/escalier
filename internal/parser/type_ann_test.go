@@ -29,6 +29,9 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"UnknownTypeAnn": {
 			input: "unknown",
 		},
+		"VoidTypeAnn": {
+			input: "void",
+		},
 		"NumberLiteralTypeAnn": {
 			input: "5",
 		},

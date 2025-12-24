@@ -31,6 +31,8 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		return NewUnknownType(provenance)
 	case *ast.NeverTypeAnn:
 		return NewNeverType(provenance)
+	case *ast.VoidTypeAnn:
+		return NewVoidType(provenance)
 	case *ast.TypeRefTypeAnn:
 		name := ast.QualIdentToString(ta.Name)
 		typeArgs := make([]Type, len(ta.TypeArgs))

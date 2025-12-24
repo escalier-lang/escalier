@@ -1165,17 +1165,9 @@
         },
     },
     TypeArgs: {
-        &dts_parser.TypeReference{
-            Name: &dts_parser.Ident{
-                Name: "void",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:9},
-                    End:      ast.Location{Line:1, Column:13},
-                    SourceID: 0,
-                },
-            },
-            TypeArgs: nil,
-            span:     ast.Span{
+        &dts_parser.PrimitiveType{
+            Kind: 2,
+            span: ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:13},
                 SourceID: 0,

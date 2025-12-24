@@ -67,6 +67,7 @@ func (*LitType) isType()          {}
 func (*UniqueSymbolType) isType() {}
 func (*UnknownType) isType()      {}
 func (*NeverType) isType()        {}
+func (*VoidType) isType()         {}
 func (*AnyType) isType()          {}
 func (*GlobalThisType) isType()   {}
 func (*FuncType) isType()         {}
@@ -471,6 +472,25 @@ func (t *NeverType) Accept(v TypeVisitor) Type {
 func NewNeverType(provenance Provenance) *NeverType { return &NeverType{provenance: provenance} }
 func (t *NeverType) String() string {
 	return "never"
+}
+
+type VoidType struct {
+	provenance Provenance
+}
+
+func (t *VoidType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*VoidType)
+	}
+	if result := v.ExitType(t); result != nil {
+		return result
+	}
+	return t
+}
+
+func NewVoidType(provenance Provenance) *VoidType { return &VoidType{provenance: provenance} }
+func (t *VoidType) String() string {
+	return "void"
 }
 
 type AnyType struct {

@@ -65,6 +65,7 @@ var keywords = map[string]TokenType{
 	"any":       Any,
 	"never":     Never,
 	"unknown":   Unknown,
+	"void":      Void,
 	"mut":       Mut,
 	"for":       For,
 	"in":        In,

@@ -542,7 +542,7 @@ func (p *DtsParser) parsePropertyKey() PropertyKey {
 		Enum, Export, Import, As, From, Null, True, False,
 		Typeof, In, Namespace, ModuleKeyword, Declare, Type, Readonly,
 		Never, Unknown, Any, Undefined, Symbol, Unique, Abstract, Is, Asserts, Infer, Keyof,
-		Fn, Gen, Mut, Val:
+		Fn, Gen, Mut, Val, Void:
 		p.consume()
 		return NewIdent(token.Value, token.Span)
 

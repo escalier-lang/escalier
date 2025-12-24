@@ -469,7 +469,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn (msg: t3) -> undefined throws never",
+				"log": "fn (msg: t3) -> void throws never",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -543,6 +543,18 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			}`,
 			expectedTypes: map[string]string{
 				"testFunc": "fn (input: string) -> string throws Error | string",
+			},
+		},
+		"FuncDeclRetVoid": {
+			input: `fn foo() -> void {}`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> void throws never",
+			},
+		},
+		"FuncDeclNoReturn": {
+			input: `fn foo() {}`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> void throws never",
 			},
 		},
 		// "FuncRecursion": {

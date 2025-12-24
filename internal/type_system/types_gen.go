@@ -60,6 +60,13 @@ func (t *NeverType) Copy() Type {
 	return &result
 }
 
+func (t *VoidType) Provenance() Provenance     { return t.provenance }
+func (t *VoidType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *VoidType) Copy() Type {
+	result := *t // Create a copy of the struct
+	return &result
+}
+
 func (t *AnyType) Provenance() Provenance     { return t.provenance }
 func (t *AnyType) SetProvenance(p Provenance) { t.provenance = p }
 func (t *AnyType) Copy() Type {

@@ -293,7 +293,7 @@ func (c *Checker) inferFuncBody(
 	} else if len(returnTypes) > 1 {
 		returnType = type_system.NewUnionType(nil, returnTypes...)
 	} else {
-		returnType = type_system.NewUndefinedType(nil)
+		returnType = type_system.NewVoidType(nil)
 	}
 
 	throwType := type_system.NewUnionType(nil, throwTypes...)

@@ -20,6 +20,7 @@ func (*NullTypeAnn) isTypeAnn()         {}
 func (*UndefinedTypeAnn) isTypeAnn()    {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
+func (*VoidTypeAnn) isTypeAnn()         {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
 func (*TupleTypeAnn) isTypeAnn()        {}
 func (*UnionTypeAnn) isTypeAnn()        {}
@@ -155,6 +156,18 @@ func NewNeverTypeAnn(span *Span) *NeverTypeAnn {
 func (t *NeverTypeAnn) Span() *Span        { return t.span }
 func (t *NeverTypeAnn) SetSpan(span *Span) { t.span = span }
 func (t *NeverTypeAnn) Source() ast.Node   { return t.source }
+
+type VoidTypeAnn struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewVoidTypeAnn(span *Span) *VoidTypeAnn {
+	return &VoidTypeAnn{span: nil, source: nil}
+}
+func (t *VoidTypeAnn) Span() *Span        { return t.span }
+func (t *VoidTypeAnn) SetSpan(span *Span) { t.span = span }
+func (t *VoidTypeAnn) Source() ast.Node   { return t.source }
 
 type ObjTypeAnnElem interface{ isObjTypeAnnElem() }
 
