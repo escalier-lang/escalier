@@ -246,6 +246,19 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	// TODO: Handle Extends
 	// This would require creating an intersection type with the extended interfaces
 
+	if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
+		errorTypeParam := ast.NewTypeParam(
+			"E",
+			nil,
+			ast.NewAnyTypeAnn(ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)),
+		)
+		typeParams = append(typeParams, &errorTypeParam)
+		visitor := &PromiseVisitor{
+			ast.DefaultVisitor{},
+		}
+		objType.Accept(visitor)
+	}
+
 	return ast.NewInterfaceDecl(
 		ast.NewIdentifier(di.Name.Name, convertSpan(di.Name.Span())),
 		typeParams,
@@ -254,4 +267,23 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 		true,  // declare is always true for .d.ts files
 		convertSpan(di.Span()),
 	), nil
+}
+
+type PromiseVisitor struct {
+	ast.DefaultVisitor
+}
+
+func (v *PromiseVisitor) ExitTypeAnn(ta ast.TypeAnn) {
+	if typeRef, ok := ta.(*ast.TypeRefTypeAnn); ok {
+		if ident, ok := typeRef.Name.(*ast.Ident); ok && (ident.Name == "Promise" || ident.Name == "PromiseLike") {
+			// Add the error type parameter "E" with "any" as the default
+			eIdent := ast.NewIdentifier("E", ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0))
+			errorTypeParam := ast.NewRefTypeAnn(
+				eIdent,
+				nil,
+				ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0),
+			)
+			typeRef.TypeArgs = append(typeRef.TypeArgs, errorTypeParam)
+		}
+	}
 }
