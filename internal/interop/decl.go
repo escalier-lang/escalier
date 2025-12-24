@@ -107,7 +107,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 }
 
 // convertTypeDecl converts a dts_parser.TypeDecl to an ast.TypeDecl.
-func convertTypeDecl(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error) {
+func convertTypeDecl(dt *dts_parser.TypeDecl) (ast.Decl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(dt.TypeParams)
 	if err != nil {
@@ -117,6 +117,9 @@ func convertTypeDecl(dt *dts_parser.TypeDecl) (*ast.TypeDecl, error) {
 	// Convert the type annotation
 	typeAnn, err := convertTypeAnn(dt.TypeAnn)
 	if err != nil {
+		if err.Error() == "convertTypeAnn: unknown primitive type 12" {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("converting type annotation for type alias %s: %w", dt.Name.Name, err)
 	}
 

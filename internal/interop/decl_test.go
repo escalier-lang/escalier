@@ -357,7 +357,7 @@ func TestConvertTypeDecl(t *testing.T) {
 			}
 
 			if tt.checkFunc != nil {
-				tt.checkFunc(t, result)
+				tt.checkFunc(t, result.(*ast.TypeDecl))
 			}
 		})
 	}
