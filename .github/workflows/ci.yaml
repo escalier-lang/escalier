@@ -21,8 +21,15 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install dependencies
+      - name: Install Go dependencies
         run: go mod download
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      
+      - name: Install JavaScript dependencies
+        run: pnpm install
 
       - name: Run tests
         run: go test ./... -coverprofile=coverage.out -coverpkg=./...
