@@ -1,9 +1,7 @@
 package checker
 
 import (
-	"fmt"
 	"maps"
-	"os"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -91,7 +89,6 @@ func (c *Checker) inferFuncTypeParams(
 			Type:       t,
 			TypeParams: []*type_system.TypeParam{},
 		})
-		fmt.Fprintf(os.Stderr, "Added type param %s to scope with type %s\n", typeParam.Name, t.String())
 	}
 
 	return typeParams, errors
