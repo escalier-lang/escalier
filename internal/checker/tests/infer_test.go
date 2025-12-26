@@ -330,7 +330,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{value: number, increment(amount: number) -> Self throws never}",
+				"obj": "{value: number, increment(mut self, amount: number) -> Self throws never}",
 			},
 		},
 		"ObjectWithGetterSetter": {
@@ -347,7 +347,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{_value: number, get value() -> number throws never, set value(value: number) -> undefined throws never}",
+				"obj": "{_value: number, get value(self) -> number throws never, set value(mut self, value: number) -> undefined throws never}",
 			},
 		},
 		"ObjectWithComputedKeys": {
@@ -365,7 +365,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = obj[bar]()
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{foo: number, bar() -> number throws never}",
+				"obj": "{foo: number, bar(self) -> number throws never}",
 				"a":   "number",
 				"b":   "number",
 			},
@@ -735,7 +735,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = container.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"container": "{value: number, getValue<T>(default: T) -> number | T throws never}",
+				"container": "{value: number, getValue<T>(self, default: T) -> number | T throws never}",
 				"a":         "number | string",
 				"b":         "number | 10",
 			},
@@ -942,8 +942,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			expectedTypes: map[string]string{
-				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol2(subject: RGB) -> [number, number, number] throws never}",
-				"hex":  "{new fn (code: string) -> Color throws never, symbol2(subject: Hex) -> [string] throws never}",
+				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol2(self, subject: RGB) -> [number, number, number] throws never}",
+				"hex":  "{new fn (code: string) -> Color throws never, symbol2(self, subject: Hex) -> [string] throws never}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -981,8 +981,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "Option<number>",
-				"some":   "{new fn <T>(value: T) -> Option<T> throws never, symbol2<T>(subject: Some<T>) -> [T] throws never}",
-				"none":   "{new fn <T>() -> Option<T> throws never, symbol2<T>(subject: None<T>) -> [] throws never}",
+				"some":   "{new fn <T>(value: T) -> Option<T> throws never, symbol2<T>(self, subject: Some<T>) -> [T] throws never}",
+				"none":   "{new fn <T>() -> Option<T> throws never, symbol2<T>(self, subject: None<T>) -> [] throws never}",
 				"result": "number | 0",
 			},
 		},
