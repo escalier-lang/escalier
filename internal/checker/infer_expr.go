@@ -573,238 +573,156 @@ func (c *Checker) inferCallExpr(
 		argTypes[i] = argType
 	}
 
+	// Expand calleeType if it's a TypeRefType
+	if typeRefType, ok := calleeType.(*type_system.TypeRefType); ok {
+		expandType, expandErrors := c.ExpandType(ctx, typeRefType, 1)
+		errors = slices.Concat(errors, expandErrors)
+		calleeType = expandType
+	}
+
 	// Check if calleeType is a FuncType
 	if fnType, ok := calleeType.(*type_system.FuncType); ok {
-		// Handle generic functions by replacing type refs with fresh type variables
-		if len(fnType.TypeParams) > 0 {
-			// Create a copy of the function type without type params
-			fnTypeWithoutParams := type_system.NewFuncType(
-				&type_system.TypeProvenance{Type: fnType},
-				nil,
-				fnType.Params,
-				fnType.Return,
-				fnType.Throws,
-			)
-
-			// Create fresh type variables for each type parameter
-			substitutions := make(map[string]type_system.Type)
-			for _, typeParam := range fnType.TypeParams {
-				// TODO: handle defaults
-				t := c.FreshVar(nil)
-				if typeParam.Constraint != nil {
-					t.Constraint = typeParam.Constraint
-				}
-				substitutions[typeParam.Name] = t
-			}
-
-			// Substitute type refs in the copied function type with fresh type variables
-			fnType = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
-		}
-		// Find if the function has a rest parameter
-		var restIndex = -1
-		for i, param := range fnType.Params {
-			if param.Pattern != nil {
-				if _, isRest := param.Pattern.(*type_system.RestPat); isRest {
-					restIndex = i
-					break
-				}
-			}
-		}
-
-		if restIndex != -1 {
-			// Function has rest parameters
-			// Must have at least as many args as required parameters (before rest)
-			if len(expr.Args) < restIndex {
-				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-					CallExpr: expr,
-					Callee:   fnType,
-					Args:     expr.Args,
-				}}
-			}
-
-			// Unify fixed parameters (before rest)
-			for i := 0; i < restIndex; i++ {
-				argType := argTypes[i]
-				paramType := fnType.Params[i].Type
-				paramErrors := c.Unify(ctx, argType, paramType)
-				errors = slices.Concat(errors, paramErrors)
-			}
-
-			// Unify rest arguments with rest parameter type
-			if len(expr.Args) > restIndex {
-				restParam := fnType.Params[restIndex]
-				// Rest parameter should be Array<T>, extract T
-				if arrayType, ok := restParam.Type.(*type_system.TypeRefType); ok && type_system.QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
-					elementType := arrayType.TypeArgs[0]
-					// Unify each excess argument with the element type
-					for i := restIndex; i < len(expr.Args); i++ {
-						argType := argTypes[i]
-						paramErrors := c.Unify(ctx, argType, elementType)
-						errors = slices.Concat(errors, paramErrors)
-					}
-				} else {
-					// Rest parameter is not Array<T>, this is an error
-					return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-						CallExpr: expr,
-						Callee:   fnType,
-						Args:     expr.Args,
-					}}
-				}
-			}
-
-			returnType := fnType.Return.Copy()
-			returnType.SetProvenance(provneance)
-			return returnType, errors
-		} else {
-			// Function has no rest parameters, use strict equality check
-			if len(fnType.Params) != len(expr.Args) {
-				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-					CallExpr: expr,
-					Callee:   fnType,
-					Args:     expr.Args,
-				}}
-			} else {
-				for argType, param := range Zip(argTypes, fnType.Params) {
-					paramType := param.Type
-					paramErrors := c.Unify(ctx, argType, paramType)
-					errors = slices.Concat(errors, paramErrors)
-				}
-
-				returnType := fnType.Return.Copy()
-				returnType.SetProvenance(provneance)
-				return returnType, errors
-			}
-		}
+		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
 	} else if objType, ok := calleeType.(*type_system.ObjectType); ok {
 		// Check if ObjectType has a constructor or callable element
-		var fnTypeToUse *type_system.FuncType = nil
+		var fnType *type_system.FuncType = nil
 
 		for _, elem := range objType.Elems {
 			if constructorElem, ok := elem.(*type_system.ConstructorElem); ok {
-				fnTypeToUse = constructorElem.Fn
+				fnType = constructorElem.Fn
 				break
 			} else if callableElem, ok := elem.(*type_system.CallableElem); ok {
-				fnTypeToUse = callableElem.Fn
+				fnType = callableElem.Fn
 				break
 			}
 		}
 
-		if fnTypeToUse == nil {
+		if fnType == nil {
 			return type_system.NewNeverType(provneance), []Error{
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 
-		// Handle generic functions by replacing type refs with fresh type variables
-		if len(fnTypeToUse.TypeParams) > 0 {
-			// Create a copy of the function type without type params
-			fnTypeWithoutParams := type_system.NewFuncType(
-				&type_system.TypeProvenance{Type: fnTypeToUse},
-				nil,
-				fnTypeToUse.Params,
-				fnTypeToUse.Return,
-				fnTypeToUse.Throws,
-			)
-
-			// Create fresh type variables for each type parameter
-			substitutions := make(map[string]type_system.Type)
-			for _, typeParam := range fnTypeToUse.TypeParams {
-				substitutions[typeParam.Name] = c.FreshVar(nil)
-			}
-
-			// Substitute type refs in the copied function type with fresh type variables
-			fnTypeToUse = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
-		}
-		// Use the same logic as for direct function calls
-		// Find if the function has a rest parameter
-		var restIndex = -1
-		for i, param := range fnTypeToUse.Params {
-			if param.Pattern != nil {
-				if _, isRest := param.Pattern.(*type_system.RestPat); isRest {
-					restIndex = i
-					break
-				}
-			}
-		}
-
-		if restIndex != -1 {
-			// Function has rest parameters
-			// Must have at least as many args as required parameters (before rest)
-			if len(expr.Args) < restIndex {
-				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-					CallExpr: expr,
-					Callee:   fnTypeToUse,
-					Args:     expr.Args,
-				}}
-			}
-
-			// Unify fixed parameters (before rest)
-			for i := 0; i < restIndex; i++ {
-				argType := argTypes[i]
-				paramType := fnTypeToUse.Params[i].Type
-				paramErrors := c.Unify(ctx, argType, paramType)
-				errors = slices.Concat(errors, paramErrors)
-			}
-
-			// Unify rest arguments with rest parameter type
-			if len(expr.Args) > restIndex {
-				restParam := fnTypeToUse.Params[restIndex]
-				// Rest parameter should be Array<T>, extract T
-				if arrayType, ok := restParam.Type.(*type_system.TypeRefType); ok && type_system.QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
-					elementType := arrayType.TypeArgs[0]
-					// Unify each excess argument with the element type
-					for i := restIndex; i < len(expr.Args); i++ {
-						argType := argTypes[i]
-						paramErrors := c.Unify(ctx, argType, elementType)
-						errors = slices.Concat(errors, paramErrors)
-					}
-				} else {
-					// Rest parameter is not Array<T>, this is an error
-					return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-						CallExpr: expr,
-						Callee:   fnTypeToUse,
-						Args:     expr.Args,
-					}}
-				}
-			}
-
-			returnType := fnTypeToUse.Return.Copy()
-			returnType.SetProvenance(provneance)
-			return returnType, errors
-		} else {
-			// Function has no rest parameters, use strict equality check
-			if len(fnTypeToUse.Params) != len(expr.Args) {
-				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
-					CallExpr: expr,
-					Callee:   fnTypeToUse,
-					Args:     expr.Args,
-				}}
-			} else {
-				for argType, param := range Zip(argTypes, fnTypeToUse.Params) {
-					paramType := param.Type
-					paramErrors := c.Unify(ctx, argType, paramType)
-					errors = slices.Concat(errors, paramErrors)
-				}
-
-				returnType := fnTypeToUse.Return.Copy()
-				returnType.SetProvenance(provneance)
-				return returnType, errors
-			}
-		}
+		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
 	} else {
 		return type_system.NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 	}
 }
 
+func (c *Checker) handleFuncCall(
+	ctx Context,
+	fnType *type_system.FuncType,
+	expr *ast.CallExpr,
+	argTypes []type_system.Type,
+	provneance *ast.NodeProvenance,
+	errors []Error,
+) (type_system.Type, []Error) {
+	// Handle generic functions by replacing type refs with fresh type variables
+	if len(fnType.TypeParams) > 0 {
+		// Create a copy of the function type without type params
+		fnTypeWithoutParams := type_system.NewFuncType(
+			&type_system.TypeProvenance{Type: fnType},
+			nil,
+			fnType.Params,
+			fnType.Return,
+			fnType.Throws,
+		)
+
+		// Create fresh type variables for each type parameter
+		substitutions := make(map[string]type_system.Type)
+		for _, typeParam := range fnType.TypeParams {
+			t := c.FreshVar(nil)
+			if typeParam.Constraint != nil {
+				t.Constraint = typeParam.Constraint
+			}
+			substitutions[typeParam.Name] = t
+		}
+
+		// Substitute type refs in the copied function type with fresh type variables
+		fnType = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
+	}
+
+	// Find if the function has a rest parameter
+	var restIndex = -1
+	for i, param := range fnType.Params {
+		if param.Pattern != nil {
+			if _, isRest := param.Pattern.(*type_system.RestPat); isRest {
+				restIndex = i
+				break
+			}
+		}
+	}
+
+	if restIndex != -1 {
+		// Function has rest parameters
+		if len(expr.Args) < restIndex {
+			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+				CallExpr: expr,
+				Callee:   fnType,
+				Args:     expr.Args,
+			}}
+		}
+
+		// Unify fixed parameters (before rest)
+		for i := 0; i < restIndex; i++ {
+			argType := argTypes[i]
+			paramType := fnType.Params[i].Type
+			paramErrors := c.Unify(ctx, argType, paramType)
+			errors = slices.Concat(errors, paramErrors)
+		}
+
+		// Unify rest arguments with rest parameter type
+		if len(expr.Args) > restIndex {
+			restParam := fnType.Params[restIndex]
+			if arrayType, ok := restParam.Type.(*type_system.TypeRefType); ok && type_system.QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
+				elementType := arrayType.TypeArgs[0]
+				for i := restIndex; i < len(expr.Args); i++ {
+					argType := argTypes[i]
+					paramErrors := c.Unify(ctx, argType, elementType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+			} else {
+				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+					CallExpr: expr,
+					Callee:   fnType,
+					Args:     expr.Args,
+				}}
+			}
+		}
+
+		returnType := fnType.Return.Copy()
+		returnType.SetProvenance(provneance)
+		return returnType, errors
+	} else {
+		// No rest parameters
+		if len(fnType.Params) != len(expr.Args) {
+			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+				CallExpr: expr,
+				Callee:   fnType,
+				Args:     expr.Args,
+			}}
+		}
+		for argType, param := range Zip(argTypes, fnType.Params) {
+			paramType := param.Type
+			paramErrors := c.Unify(ctx, argType, paramType)
+			errors = slices.Concat(errors, paramErrors)
+		}
+		returnType := fnType.Return.Copy()
+		returnType.SetProvenance(provneance)
+		return returnType, errors
+	}
+}
 func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (type_system.Type, []Error) {
+	// Infer the condition and ensure it's a boolean
 	condType, condErrors := c.inferExpr(ctx, expr.Cond)
 	unifyErrors := c.Unify(ctx, condType, type_system.NewBoolPrimType(nil))
 	errors := slices.Concat(condErrors, unifyErrors)
 
-	// Infer the consequent block
+	// Infer the consequent block (the "then" branch)
 	consType, consErrors := c.inferBlock(ctx, &expr.Cons, type_system.NewNeverType(nil))
 	errors = slices.Concat(errors, consErrors)
 
+	// Infer the alternative (the "else" branch) if present
 	var altType type_system.Type = type_system.NewNeverType(nil)
 	if expr.Alt != nil {
 		alt := expr.Alt
@@ -821,10 +739,10 @@ func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (type_system.Ty
 		}
 	}
 
-	t := type_system.NewUnionType(nil, consType, altType)
-	expr.SetInferredType(t)
-
-	return t, errors
+	// The overall type of the if/else is the union of the branches
+	result := type_system.NewUnionType(nil, consType, altType)
+	expr.SetInferredType(result)
+	return result, errors
 }
 
 func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (type_system.Type, []Error) {
