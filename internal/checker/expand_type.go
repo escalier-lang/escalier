@@ -573,6 +573,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
+		fmt.Println("expand_type.go: InvalidObjectKeyError")
 		errors = append(errors, &InvalidObjectKeyError{
 			Key:  keyType,
 			span: k.Span(),

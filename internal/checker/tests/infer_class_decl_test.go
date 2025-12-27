@@ -124,22 +124,22 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		},
 		"ClassWithStaticMethod": {
 			input: `
-				class Math() {
+				class MyMath() {
 					static add(a: number, b: number) {
 						return a + b
 					},
 				}
 
-				val m = Math()
-				val result = Math.add(5, 3)
+				val m = MyMath()
+				val result = MyMath.add(5, 3)
 			`,
 			expectedTypes: map[string]string{
-				"Math":   "{new fn () -> mut? Math throws never, add(a: number, b: number) -> number throws never}",
-				"m":      "Math",
+				"MyMath": "{new fn () -> mut? MyMath throws never, add(a: number, b: number) -> number throws never}",
+				"m":      "MyMath",
 				"result": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Math": "{}",
+				"MyMath": "{}",
 			},
 		},
 		"ClassWithStaticAndInstanceMethods": {
@@ -344,6 +344,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
 				}
 				assert.Equal(t, inferErrors, []*Error{})

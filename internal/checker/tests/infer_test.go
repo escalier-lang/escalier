@@ -825,7 +825,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					static [Symbol.customMatcher](subject: Foo) -> [number, string] {
 						return [subject.a, subject.b]
 					}
-				}	
+				}
 				val foo = Foo(5, "hello")
 				val Foo(a, b) = foo
 			`,
@@ -843,7 +843,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					static [Symbol.customMatcher](subject: Foo) -> [number, string, boolean] {
 						return [subject.a, subject.b, subject.c]
 					}
-				}	
+				}
 				val foo = Foo(5, "hello", true)
 				val Foo(a, ...rest) = foo
 			`,
@@ -860,7 +860,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					static [Symbol.customMatcher](subject: Foo) -> [number, string | undefined] {
 						return [subject.a, subject.b]
 					}
-				}	
+				}
 				val foo = Foo(5, "hello")
 				val Foo(a, b = "world") = foo
 			`,
@@ -1127,6 +1127,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
 				}
 				assert.Equal(t, inferErrors, []*Error{})
 			}

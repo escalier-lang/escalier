@@ -12,6 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// findRepoRoot walks up the directory tree to find the repository root
+func findRepoRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		// Check if go.mod exists in current directory
+		goModPath := filepath.Join(dir, "go.mod")
+		_, err := os.Lstat(goModPath)
+		if err == nil {
+			return dir, nil
+		}
+
+		// Move up one directory
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached the root without finding go.mod
+			return "", os.ErrNotExist
+		}
+		dir = parent
+	}
+}
+
 func copyDir(src string, dst string) error {
 	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -54,11 +79,32 @@ func copyDir(src string, dst string) error {
 }
 
 // TODO: Update this to work with changes to `build` in build.go
-func checkFixture(t *testing.T, fixtureDir string) {
+func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	tmpDir := t.TempDir()
 
 	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)
 	require.NoError(t, err)
+
+	// Create a symlink named "node_modules" in the temporary directory that
+	// points to the repository's node_modules folder.
+	nodeModulesTarget := filepath.Join(repoRoot, "node_modules")
+	fmt.Printf("nodeModulesTarget = %s\n", nodeModulesTarget)
+	nodeModulesLink := filepath.Join(tmpDir, "node_modules")
+	err = os.Symlink(nodeModulesTarget, nodeModulesLink)
+	if err != nil && !os.IsExist(err) {
+		require.NoError(t, err, "failed to create node_modules symlink")
+	}
+
+	// Create a symlink for go.mod in the temporary directory that points
+	// to the repository's go.mod file.
+	// This is necessary because the prelude looks for the go.mod file to
+	// determine the root of the repository.
+	goModTarget := filepath.Join(repoRoot, "go.mod")
+	goModLink := filepath.Join(tmpDir, "go.mod")
+	err = os.Symlink(goModTarget, goModLink)
+	if err != nil && !os.IsExist(err) {
+		require.NoError(t, err, "failed to create go.mod symlink")
+	}
 
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
@@ -188,6 +234,9 @@ func checkFixture(t *testing.T, fixtureDir string) {
 }
 
 func TestBuildFixtureTests(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err, "failed to find repository root")
+
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
 	defer func() {
@@ -203,7 +252,7 @@ func TestBuildFixtureTests(t *testing.T) {
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name(), func(t *testing.T) {
 			fixtureDir := filepath.Join(rootDir, "fixtures", fixture.Name())
-			checkFixture(t, fixtureDir)
+			checkFixture(t, repoRoot, fixtureDir)
 		})
 	}
 }

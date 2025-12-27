@@ -97,6 +97,8 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 			newKey := type_system.NewSymKey(t.Value)
 			return &newKey, nil
 		default:
+			fmt.Printf("t = %#v\n", t)
+			fmt.Printf("t.provenance = %#v\n", t.Provenance())
 			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
 		}
 	default:
