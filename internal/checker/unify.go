@@ -331,10 +331,22 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 				// situations where two different type aliases have the same
 				// name but different definitions.
 				// return c.unify(ctx, typeAlias1.Type, typeAlias2.Type)
-			} // TODO: handle type args
-			// We need to replace type type params in the type alias's type
-			// with the type args from the type reference.
-			panic(fmt.Sprintf("TODO: unify types %s and %s", ref1.String(), ref2.String()))
+			} else {
+				// Both references have the same alias name and may have type arguments.
+				// Unify each corresponding type argument pairwise.
+				if len(ref1.TypeArgs) != len(ref2.TypeArgs) {
+					return []Error{&CannotUnifyTypesError{
+						T1: ref1,
+						T2: ref2,
+					}}
+				}
+				errors := []Error{}
+				for i := 0; i < len(ref1.TypeArgs); i++ {
+					argErrors := c.Unify(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i])
+					errors = slices.Concat(errors, argErrors)
+				}
+				return errors
+			}
 		}
 	}
 	// | TypeRefType, TypeRefType (different alias name) -> ...

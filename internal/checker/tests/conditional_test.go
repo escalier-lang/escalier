@@ -217,9 +217,9 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 	}{
 		"UtilityTypeExclude": {
 			input: `
-				type Exclude<T, U> = if T : U { never } else { T }
-				type Result1 = Exclude<string | number | boolean, string>
-				type Result2 = Exclude<"a" | "b" | "c", "a">
+				type MyExclude<T, U> = if T : U { never } else { T }
+				type Result1 = MyExclude<string | number | boolean, string>
+				type Result2 = MyExclude<"a" | "b" | "c", "a">
 			`,
 			expectedTypes: map[string]string{
 				"Result1": "number | boolean",
@@ -228,9 +228,9 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 		},
 		"UtilityTypeExtract": {
 			input: `
-				type Extract<T, U> = if T : U { T } else { never }
-				type Result1 = Extract<string | number | boolean, string | number>
-				type Result2 = Extract<"a" | "b" | "c", "a" | "b">
+				type MyExtract<T, U> = if T : U { T } else { never }
+				type Result1 = MyExtract<string | number | boolean, string | number>
+				type Result2 = MyExtract<"a" | "b" | "c", "a" | "b">
 			`,
 			expectedTypes: map[string]string{
 				"Result1": "string | number",
@@ -239,9 +239,9 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 		},
 		"UtilityTypeNonNullable": {
 			input: `
-				type NonNullable<T> = if T : null { never } else if T : undefined { never } else { T }
-				type Result1 = NonNullable<string | null | undefined>
-				type Result2 = NonNullable<number | null>
+				type MyNonNullable<T> = if T : null { never } else if T : undefined { never } else { T }
+				type Result1 = MyNonNullable<string | null | undefined>
+				type Result2 = MyNonNullable<number | null>
 			`,
 			expectedTypes: map[string]string{
 				"Result1": "string",
@@ -265,11 +265,11 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 		// },
 		"UtilityTypeReturnType": {
 			input: `
-				type ReturnType<T> = if T : fn(...args: Array<any>) -> infer R { R } else { never }
+				type MyReturnType<T> = if T : fn(...args: Array<any>) -> infer R { R } else { never }
 				type Func1 = fn(x: string) -> number
 				type Func2 = fn() -> Array<boolean>
-				type Result1 = ReturnType<Func1>
-				type Result2 = ReturnType<Func2>
+				type Result1 = MyReturnType<Func1>
+				type Result2 = MyReturnType<Func2>
 			`,
 			expectedTypes: map[string]string{
 				"Result1": "number",
@@ -278,10 +278,10 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 		},
 		"NestedDistributiveConditionals": {
 			input: `
-				type DeepArray<T> = if T : any { 
+				type DeepArray<T> = if T : any {
 					if T : Array<infer U> { Array<Array<U>> } else { Array<Array<T>> }
-				} else { 
-					never 
+				} else {
+					never
 				}
 				type Result1 = DeepArray<string>
 				type Result2 = DeepArray<Array<number>>

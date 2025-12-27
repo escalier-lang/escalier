@@ -573,16 +573,36 @@ func (c *Checker) inferCallExpr(
 		argTypes[i] = argType
 	}
 
-	// Expand calleeType if it's a TypeRefType
-	if typeRefType, ok := calleeType.(*type_system.TypeRefType); ok {
-		expandType, expandErrors := c.ExpandType(ctx, typeRefType, 1)
-		errors = slices.Concat(errors, expandErrors)
-		calleeType = expandType
-	}
-
 	// Check if calleeType is a FuncType
 	if fnType, ok := calleeType.(*type_system.FuncType); ok {
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
+	} else if typeRefType, ok := calleeType.(*type_system.TypeRefType); ok {
+		name := type_system.QualIdentToString(typeRefType.Name)
+		typeAlias := ctx.Scope.getTypeAlias(name)
+
+		if objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType); ok {
+			// Check if ObjectType has a constructor or callable element
+			var fnType *type_system.FuncType = nil
+
+			for _, elem := range objType.Elems {
+				if constructorElem, ok := elem.(*type_system.ConstructorElem); ok {
+					fnType = constructorElem.Fn
+					break
+				} else if callableElem, ok := elem.(*type_system.CallableElem); ok {
+					fnType = callableElem.Fn
+					break
+				}
+			}
+
+			if fnType == nil {
+				return type_system.NewNeverType(provneance), []Error{
+					&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+			}
+
+			return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
+		} else {
+			panic("TODO: try expanding the type alias using ExpandType")
+		}
 	} else if objType, ok := calleeType.(*type_system.ObjectType); ok {
 		// Check if ObjectType has a constructor or callable element
 		var fnType *type_system.FuncType = nil

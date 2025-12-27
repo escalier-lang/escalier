@@ -283,8 +283,8 @@ func (c *Checker) inferInterface(
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
 
-	// Mark the ObjectType as an interface
 	objType.Interface = true
+	objType.Nominal = true
 
 	// Check if an interface with this name already exists
 	existingAlias := ctx.Scope.getTypeAlias(decl.Name.Name)

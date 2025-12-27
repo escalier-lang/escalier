@@ -1,4 +1,4 @@
-lib/index.esc:29:5: Cannot mutate readonly property 'apiUrl' on type: mut {apiUrl: string, timeout: number}
+lib/index.esc:29:5: Cannot mutate readonly property 'apiUrl' on type: mut {readonly apiUrl: string, timeout: number}
 
 29:     config.apiUrl = "https://foo.example.com"
         ^^^^^^^^^^^^^
