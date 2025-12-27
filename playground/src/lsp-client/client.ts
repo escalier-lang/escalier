@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs';
 
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
@@ -77,12 +77,12 @@ export class Client {
             }
         });
 
-        const enosys = () => {
-            const err = new Error('not implemented');
-            // @ts-ignore
-            err.code = 'ENOSYS';
-            return err;
-        };
+        // const enosys = () => {
+        //     const err = new Error('not implemented');
+        //     // @ts-ignore
+        //     err.code = 'ENOSYS';
+        //     return err;
+        // };
 
         globalThis.fs = {
             constants: {
@@ -165,14 +165,26 @@ export class Client {
             },
             // fchmod(fd, mode, callback) {callback(enosys())},
             // fchown(fd, uid, gid, callback) {callback(enosys())},
-            fstat(fd: number, callback: (err: NodeJS.ErrnoException | null, stats: fs.Stats) => void) {
+            fstat(
+                fd: number,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    stats: fs.Stats,
+                ) => void,
+            ) {
                 return fs.fstat(fd, callback);
             },
             // fsync(fd, callback) {callback(null)},
             // ftruncate(fd, length, callback) {callback(enosys())},
             // lchown(path, uid, gid, callback) {callback(enosys())},
             // link(path, link, callback) {callback(enosys())},
-            lstat(path: fs.PathLike, callback: (err: NodeJS.ErrnoException | null, stats: fs.Stats) => void) {
+            lstat(
+                path: fs.PathLike,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    stats: fs.Stats,
+                ) => void,
+            ) {
                 return fs.lstat(path, callback);
             },
             // mkdir(path, perm, callback) {callback(enosys())},
@@ -181,7 +193,10 @@ export class Client {
                 path: fs.PathLike,
                 flags: fs.OpenMode | undefined,
                 mode: fs.Mode | undefined,
-                callback: (err: NodeJS.ErrnoException | null, fd: number) => void,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    fd: number,
+                ) => void,
             ) {
                 return fs.open(path, flags, mode, callback);
             },
@@ -219,7 +234,14 @@ export class Client {
                         callback(error, 0, buffer);
                     }, 0);
                 } else {
-                    return fs.read(fd, buffer, offset, length, position, callback);
+                    return fs.read(
+                        fd,
+                        buffer,
+                        offset,
+                        length,
+                        position,
+                        callback,
+                    );
                 }
             },
             // readSync(...args) {console.log('readFileSync:', args)},
