@@ -75,12 +75,12 @@ export class Client {
             }
         });
 
-        // const enosys = () => {
-        //     const err = new Error('not implemented');
-        //     // @ts-ignore
-        //     err.code = 'ENOSYS';
-        //     return err;
-        // };
+        const enosys = () => {
+            const err = new Error('not implemented');
+            // @ts-ignore
+            err.code = 'ENOSYS';
+            return err;
+        };
 
         globalThis.fs = {
             constants: {
@@ -168,7 +168,7 @@ export class Client {
             // ftruncate(fd, length, callback) {callback(enosys())},
             // lchown(path, uid, gid, callback) {callback(enosys())},
             // link(path, link, callback) {callback(enosys())},
-            // lstat(path, callback) {callback(enosys())},
+            lstat(path, callback) {callback(enosys())},
             // mkdir(path, perm, callback) {callback(enosys())},
             // open(path, flags, mode, callback) {callback(enosys())},
             // read(fd, buffer, offset, length, position, callback) { callback(enosys()); },
