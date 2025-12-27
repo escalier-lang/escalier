@@ -1,3 +1,5 @@
+import fs from 'fs';
+
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 
@@ -163,23 +165,33 @@ export class Client {
             },
             // fchmod(fd, mode, callback) {callback(enosys())},
             // fchown(fd, uid, gid, callback) {callback(enosys())},
-            // fstat(fd, callback) {callback(enosys())},
+            fstat(fd: number, callback: (err: NodeJS.ErrnoException | null, stats: fs.Stats) => void) {
+                return fs.fstat(fd, callback);
+            },
             // fsync(fd, callback) {callback(null)},
             // ftruncate(fd, length, callback) {callback(enosys())},
             // lchown(path, uid, gid, callback) {callback(enosys())},
             // link(path, link, callback) {callback(enosys())},
-            lstat(_path, callback) {
-                callback(enosys());
+            lstat(path: fs.PathLike, callback: (err: NodeJS.ErrnoException | null, stats: fs.Stats) => void) {
+                return fs.lstat(path, callback);
             },
             // mkdir(path, perm, callback) {callback(enosys())},
-            // open(path, flags, mode, callback) {callback(enosys())},
+            // open(path, flags, mode, callback) {callback(enosys()},
+            open(
+                path: fs.PathLike,
+                flags: fs.OpenMode | undefined,
+                mode: fs.Mode | undefined,
+                callback: (err: NodeJS.ErrnoException | null, fd: number) => void,
+            ) {
+                return fs.open(path, flags, mode, callback);
+            },
             // read(fd, buffer, offset, length, position, callback) { callback(enosys()); },
             read: (
                 fd: number,
                 buffer: Uint8Array,
-                _offset: number,
-                _length: number,
-                _position: number | bigint | null,
+                offset: number,
+                length: number,
+                position: number | bigint | null,
                 callback: (
                     err: NodeJS.ErrnoException | null,
                     bytesRead: number,
@@ -207,10 +219,7 @@ export class Client {
                         callback(error, 0, buffer);
                     }, 0);
                 } else {
-                    console.error(
-                        'Attempted to read from unknown file descriptor:',
-                        fd,
-                    );
+                    return fs.read(fd, buffer, offset, length, position, callback);
                 }
             },
             // readSync(...args) {console.log('readFileSync:', args)},
