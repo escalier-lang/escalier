@@ -3,10 +3,12 @@ package checker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/interop"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -32,6 +34,132 @@ func findRepoRoot() (string, error) {
 			return "", os.ErrNotExist
 		}
 		dir = parent
+	}
+}
+
+// the key is the method name
+type Overrides map[string]bool
+
+// the key is the interface name
+var mutabilityOverrides = map[string]Overrides{
+	"String": {
+		"at":                false,
+		"chatAt":            false,
+		"charCodeAt":        false,
+		"codePointAt":       false,
+		"concat":            false,
+		"endsWith":          false,
+		"includes":          false,
+		"indexOf":           false,
+		"lastIndexOf":       false,
+		"localeCompare":     false,
+		"match":             false,
+		"matchAll":          false,
+		"normalize":         false,
+		"padEnd":            false,
+		"padStart":          false,
+		"repeat":            false,
+		"replace":           false,
+		"replaceAll":        false,
+		"search":            false,
+		"slice":             false,
+		"split":             false,
+		"startsWith":        false,
+		"substr":            false,
+		"substring":         false,
+		"toLocaleLowerCase": false,
+		"toLocaleUpperCase": false,
+		"toLowerCase":       false,
+		"toUpperCase":       false,
+		"trim":              false,
+		"trimEnd":           false,
+		"trimStart":         false,
+		"valueOf":           false,
+		// TODO: handle Symbol.iterator as key
+	},
+	"RexExp": {
+		"compile":  true,
+		"exec":     true, // when using global or sticky flags
+		"test":     true, // when using global or sticky flags
+		"toString": false,
+		// TODO: handle Symbol.match, Symbol.replace, Symbol.search, Symbol.split as keys
+	},
+	"Number": {
+		"toExponential":  false,
+		"toFixed":        false,
+		"toLocaleString": false,
+		"toPrecision":    false,
+		"toString":       false,
+		"valueOf":        false,
+	},
+}
+
+func UpdateMethodMutability(namespace *type_system.Namespace) {
+	for name := range namespace.Types {
+		if strings.HasSuffix(name, "Constructor") && name != "ArrayConstructor" {
+			instName := strings.TrimSuffix(name, "Constructor")
+			instTypeAlias := namespace.Types[instName]
+			overrides := mutabilityOverrides[instName]
+
+			if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
+				for _, elem := range it.Elems {
+					if me, ok := elem.(*type_system.MethodElem); ok {
+						mutSelf := true
+						if me.Name.Kind == type_system.StrObjTypeKeyKind {
+							value, exists := overrides[me.Name.Str]
+							if exists {
+								mutSelf = value
+							}
+						}
+						me.MutSelf = &mutSelf
+					}
+				}
+			} else {
+				panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
+			}
+		}
+	}
+}
+
+func UpdateArrayMutability(namespace *type_system.Namespace) {
+	arrayTypeAlias := namespace.Types["Array"]
+	readonlyArrayTypeAlias := namespace.Types["ReadonlyArray"]
+	arrayType := type_system.Prune(arrayTypeAlias.Type).(*type_system.ObjectType)
+	readonlyArrayType := type_system.Prune(readonlyArrayTypeAlias.Type).(*type_system.ObjectType)
+
+	readonlyArrayElems := make(set.Set[type_system.ObjTypeKey])
+	for _, v := range readonlyArrayType.Elems {
+		if me, ok := v.(*type_system.MethodElem); ok {
+			key := type_system.ObjTypeKey{
+				Kind: type_system.StrObjTypeKeyKind,
+				Str:  me.Name.Str,
+				Num:  0,
+				Sym:  0,
+			}
+			readonlyArrayElems.Add(key)
+
+			// All methods on ReadonlyArray are non-mutating
+			mutSelf := false
+			me.MutSelf = &mutSelf
+		}
+	}
+
+	readonlyArrayType.Elems = arrayType.Elems
+	for _, elem := range arrayType.Elems {
+		switch me := elem.(type) {
+		case *type_system.MethodElem:
+			mutSelf := true
+			key := type_system.ObjTypeKey{
+				Kind: type_system.StrObjTypeKeyKind,
+				Str:  me.Name.Str,
+				Num:  0,
+				Sym:  0,
+			}
+			if readonlyArrayElems.Contains(key) {
+				mutSelf = false
+			}
+			me.MutSelf = &mutSelf
+		}
 	}
 }
 
@@ -103,6 +231,9 @@ func Prelude(c *Checker) *Scope {
 	for _, binding := range inferredScope.Values {
 		binding.Type = type_system.Prune(binding.Type)
 	}
+
+	UpdateMethodMutability(inferredScope)
+	UpdateArrayMutability(inferredScope)
 
 	scope.Namespace = inferredScope
 
@@ -242,70 +373,6 @@ func Prelude(c *Checker) *Scope {
 		Type:    type_system.NewObjectType(nil, objElems),
 		Mutable: false,
 	}
-
-	// // Promise type with a simple then property to distinguish it from empty object
-	// promiseTypeParams := []*type_system.TypeParam{
-	// 	type_system.NewTypeParam("T"),
-	// 	type_system.NewTypeParamWithDefault("E", type_system.NewNeverType(nil)),
-	// }
-
-	// promiseElems := []type_system.ObjTypeElem{
-	// 	&type_system.PropertyElem{
-	// 		Name:     type_system.NewStrKey("then"),
-	// 		Value:    type_system.NewStrPrimType(nil), // Simplified for now
-	// 		Optional: false,
-	// 		Readonly: true,
-	// 	},
-	// }
-
-	// scope.SetTypeAlias("Promise", &type_system.TypeAlias{
-	// 	Type:       type_system.NewNominalObjectType(nil, promiseElems),
-	// 	TypeParams: promiseTypeParams,
-	// })
-
-	// // Error type with message property
-	// errorElems := []type_system.ObjTypeElem{
-	// 	&type_system.PropertyElem{
-	// 		Name:     type_system.NewStrKey("message"),
-	// 		Value:    type_system.NewStrPrimType(nil),
-	// 		Optional: false,
-	// 		Readonly: true,
-	// 	},
-	// }
-	// scope.SetTypeAlias("Error", &type_system.TypeAlias{
-	// 	Type:       type_system.NewNominalObjectType(nil, errorElems),
-	// 	TypeParams: []*type_system.TypeParam{},
-	// })
-
-	// // Error constructor function
-	// errorConstructorType := type_system.NewFuncType(
-	// 	nil,
-	// 	nil,
-	// 	[]*type_system.FuncParam{
-	// 		type_system.NewFuncParam(type_system.NewIdentPat("message"), type_system.NewStrPrimType(nil)),
-	// 	},
-	// 	type_system.NewTypeRefType(nil, "Error", nil),
-	// 	type_system.NewNeverType(nil),
-	// )
-	// errorConstructorBinding := type_system.Binding{
-	// 	Source:  nil,
-	// 	Type:    errorConstructorType,
-	// 	Mutable: false,
-	// }
-	// scope.Namespace.Values["Error"] = &errorConstructorBinding
-
-	// length := &type_system.PropertyElem{
-	// 	Name:     type_system.NewStrKey("length"),
-	// 	Value:    type_system.NewNumPrimType(nil),
-	// 	Optional: false,
-	// 	Readonly: true,
-	// }
-	// arrayType := type_system.NewNominalObjectType(nil, []type_system.ObjTypeElem{length})
-	// typeParam := type_system.NewTypeParam("T")
-	// scope.SetTypeAlias("Array", &type_system.TypeAlias{
-	// 	Type:       arrayType,
-	// 	TypeParams: []*type_system.TypeParam{typeParam},
-	// })
 
 	// String concatenation operator
 	strConcatType := type_system.NewFuncType(

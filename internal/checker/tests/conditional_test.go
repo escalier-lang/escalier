@@ -338,16 +338,15 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 				"Result3": "false",
 			},
 		},
-		// TODO: Don't expand `Array<number>` since it's a nominal type
-		// "ConditionalWithUnionDistribution": {
-		// 	input: `
-		// 		type ArrayOrSingle<T> = if T : Array<any> { T } else { Array<T> }
-		// 		type MixedResult = ArrayOrSingle<string | Array<number>>
-		// 	`,
-		// 	expectedTypes: map[string]string{
-		// 		"MixedResult": "Array<string> | Array<number>",
-		// 	},
-		// },
+		"ConditionalWithUnionDistribution": {
+			input: `
+				type ArrayOrSingle<T> = if T : Array<any> { T } else { Array<T> }
+				type MixedResult = ArrayOrSingle<string | Array<number>>
+			`,
+			expectedTypes: map[string]string{
+				"MixedResult": "Array<string> | Array<number>",
+			},
+		},
 	}
 
 	for name, test := range tests {
