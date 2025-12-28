@@ -12,7 +12,7 @@ const buffer = fs.readFileSync(
 );
 
 beforeEach(() => {
-    client = new Client(buffer);
+    client = new Client(buffer, fs);
     client.run();
 });
 

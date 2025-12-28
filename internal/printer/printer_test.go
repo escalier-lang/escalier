@@ -1399,12 +1399,12 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		{
 			"getter",
 			"{get value() -> number}",
-			"{\n    get value(): number\n}",
+			"{\n    get value(self) -> number\n}",
 		},
 		{
 			"setter",
 			"{set value(v: number) -> void}",
-			"{\n    set value(v: number) -> void\n}",
+			"{\n    set value(mut self, v: number) -> void\n}",
 		},
 		// {
 		// 	"callable",

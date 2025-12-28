@@ -1,7 +1,11 @@
+import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 
+import type { FSAPI } from '../fs/fs-api';
+
 import { Deferred } from './deferred';
+
 import './wasm_exec'; // run for side-effects
 
 const Go = globalThis.Go;
@@ -42,7 +46,7 @@ export class Client {
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer) {
+    constructor(wasmBuf: ArrayBuffer, fs: FSAPI) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -163,21 +167,47 @@ export class Client {
             },
             // fchmod(fd, mode, callback) {callback(enosys())},
             // fchown(fd, uid, gid, callback) {callback(enosys())},
-            // fstat(fd, callback) {callback(enosys())},
+            fstat(
+                fd: number,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    stats: Stats,
+                ) => void,
+            ) {
+                return fs.fstat(fd, callback);
+            },
             // fsync(fd, callback) {callback(null)},
             // ftruncate(fd, length, callback) {callback(enosys())},
             // lchown(path, uid, gid, callback) {callback(enosys())},
             // link(path, link, callback) {callback(enosys())},
-            // lstat(path, callback) {callback(enosys())},
+            lstat(
+                path: PathLike,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    stats: Stats,
+                ) => void,
+            ) {
+                return fs.lstat(path, callback);
+            },
             // mkdir(path, perm, callback) {callback(enosys())},
-            // open(path, flags, mode, callback) {callback(enosys())},
-            // read(fd, buffer, offset, length, position, callback) { callback(enosys()); },
+            // open(path, flags, mode, callback) {callback(enosys()},
+            open(
+                path: PathLike,
+                flags: OpenMode | undefined,
+                mode: Mode | undefined,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    fd: number,
+                ) => void,
+            ) {
+                return fs.open(path, flags, mode, callback);
+            },
             read: (
                 fd: number,
                 buffer: Uint8Array,
-                _offset: number,
-                _length: number,
-                _position: number | bigint | null,
+                offset: number,
+                length: number,
+                position: number | bigint | null,
                 callback: (
                     err: NodeJS.ErrnoException | null,
                     bytesRead: number,
@@ -205,9 +235,13 @@ export class Client {
                         callback(error, 0, buffer);
                     }, 0);
                 } else {
-                    console.error(
-                        'Attempted to read from unknown file descriptor:',
+                    return fs.read(
                         fd,
+                        buffer,
+                        offset,
+                        length,
+                        position,
+                        callback,
                     );
                 }
             },

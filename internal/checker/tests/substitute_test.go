@@ -361,9 +361,11 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	}
 
 	methodFunc := test_util.ParseTypeAnn("fn (x: T) -> U")
+	mutSelf := false
 	method := &type_system.MethodElem{
-		Name: type_system.NewStrKey("method"),
-		Fn:   methodFunc.(*type_system.FuncType),
+		Name:    type_system.NewStrKey("method"),
+		Fn:      methodFunc.(*type_system.FuncType),
+		MutSelf: &mutSelf,
 	}
 
 	getterFunc := test_util.ParseTypeAnn("fn () -> T")
@@ -405,6 +407,6 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	// Substitute type parameters in the entire object
 	result := SubstituteTypeParams(objType, substitutions)
 
-	assert.Equal(t, "{test?: T, method(x: T) -> U, get getter() -> T, set setter(value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
-	assert.Equal(t, "{test?: number, method(x: number) -> string, get getter() -> number, set setter(value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
+	assert.Equal(t, "{readonly test?: T, method(self, x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
+	assert.Equal(t, "{readonly test?: number, method(self, x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
 }

@@ -522,7 +522,7 @@ func (p *Printer) printObjExprElem(elem ast.ObjExprElem) {
 	case *ast.GetterExpr:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.writeString("()")
+		p.writeString("(self)")
 		if e.Fn.Return != nil {
 			p.writeString(": ")
 			p.printTypeAnn(e.Fn.Return)
@@ -532,7 +532,7 @@ func (p *Printer) printObjExprElem(elem ast.ObjExprElem) {
 	case *ast.SetterExpr:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
-		p.writeString("(")
+		p.writeString("(mut self,")
 		if len(e.Fn.Params) > 0 {
 			p.printPattern(e.Fn.Params[0].Pattern)
 			if e.Fn.Params[0].TypeAnn != nil {
@@ -1041,12 +1041,12 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.writeString("(): ")
+		p.writeString("(self) -> ")
 		p.printTypeAnn(e.Fn.Return)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
-		p.writeString("(")
+		p.writeString("(mut self, ")
 		if len(e.Fn.Params) > 0 {
 			p.printPattern(e.Fn.Params[0].Pattern)
 			if e.Fn.Params[0].TypeAnn != nil {

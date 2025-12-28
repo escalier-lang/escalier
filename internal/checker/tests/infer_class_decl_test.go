@@ -65,7 +65,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"len":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length() -> number throws never, add(other: Point) -> Point throws never}",
+				"Point": "{x: number, y: number, length(self) -> number throws never, add(self, other: Point) -> Point throws never}",
 			},
 		},
 		"ClassWithFluentMutatingMethods": {
@@ -95,7 +95,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"q":     "mut Point",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, scale(factor: number) -> mut Point throws never, translate(dx: number, dy: number) -> mut Point throws never}",
+				"Point": "{x: number, y: number, scale(mut self, factor: number) -> mut Point throws never, translate(mut self, dx: number, dy: number) -> mut Point throws never}",
 			},
 		},
 		"SimpleDeclWithComputedMembers": {
@@ -119,27 +119,27 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"fooBaz": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Foo": "{bar: number, baz() -> number throws never}",
+				"Foo": "{bar: number, baz(self) -> number throws never}",
 			},
 		},
 		"ClassWithStaticMethod": {
 			input: `
-				class Math() {
+				class MyMath() {
 					static add(a: number, b: number) {
 						return a + b
 					},
 				}
 
-				val m = Math()
-				val result = Math.add(5, 3)
+				val m = MyMath()
+				val result = MyMath.add(5, 3)
 			`,
 			expectedTypes: map[string]string{
-				"Math":   "{new fn () -> mut? Math throws never, add(a: number, b: number) -> number throws never}",
-				"m":      "Math",
+				"MyMath": "{new fn () -> mut? MyMath throws never, add(a: number, b: number) -> number throws never}",
+				"m":      "MyMath",
 				"result": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Math": "{}",
+				"MyMath": "{}",
 			},
 		},
 		"ClassWithStaticAndInstanceMethods": {
@@ -166,7 +166,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"len":    "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length() -> number throws never}",
+				"Point": "{x: number, y: number, length(self) -> number throws never}",
 			},
 		},
 		"ClassWithInstanceGetter": {
@@ -187,7 +187,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"area":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Circle": "{radius: number, get area() -> number throws never}",
+				"Circle": "{radius: number, get area(self) -> number throws never}",
 			},
 		},
 		"ClassWithInstanceSetter": {
@@ -209,7 +209,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"temp":        "mut Temperature",
 			},
 			expectedTypeAliases: map[string]string{
-				"Temperature": "{celsius: number, set fahrenheit(value: number) -> undefined throws never}",
+				"Temperature": "{celsius: number, set fahrenheit(mut self, value: number) -> undefined throws never}",
 			},
 		},
 		"ClassWithGetterAndSetter": {
@@ -240,7 +240,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"name":   "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Person": "{firstName: string, lastName: string, get fullName() -> string throws never, set fullName(value: string) -> undefined throws never}",
+				"Person": "{firstName: string, lastName: string, get fullName(self) -> string throws never, set fullName(mut self, value: string) -> undefined throws never}",
 			},
 		},
 		"ClassWithStaticGetter": {
@@ -255,7 +255,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> mut? Config throws never, get version() -> string throws never}",
+				"Config":  "{new fn () -> mut? Config throws never, get version(self) -> string throws never}",
 				"config":  "Config",
 				"version": "string",
 			},
@@ -344,6 +344,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			scope, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
 				}
 				assert.Equal(t, inferErrors, []*Error{})

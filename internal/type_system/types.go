@@ -944,7 +944,7 @@ func (c *ConstructorElem) Accept(v TypeVisitor) ObjTypeElem {
 func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := m.Fn.Accept(v).(*FuncType)
 	if newFn != m.Fn {
-		return &MethodElem{Name: m.Name, Fn: newFn}
+		return &MethodElem{Name: m.Name, Fn: newFn, MutSelf: m.MutSelf}
 	}
 	return m
 }
@@ -1174,9 +1174,15 @@ func (t *ObjectType) String() string {
 					result += ">"
 				}
 				result += "("
+				if elem.MutSelf != nil {
+					if *elem.MutSelf {
+						result += "mut "
+					}
+					result += "self"
+				}
 				if len(elem.Fn.Params) > 0 {
 					for i, param := range elem.Fn.Params {
-						if i > 0 {
+						if i > 0 || elem.MutSelf != nil {
 							result += ", "
 						}
 						switch param.Pattern.(type) {
@@ -1196,18 +1202,21 @@ func (t *ObjectType) String() string {
 					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *GetterElem:
-				result += "get " + elem.Name.String() + "() -> " + elem.Fn.Return.String()
+				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *SetterElem:
-				result += "set " + elem.Name.String() + "("
+				result += "set " + elem.Name.String() + "(mut self, "
 				result += elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *PropertyElem:
+				if elem.Readonly {
+					result += "readonly "
+				}
 				result += elem.Name.String()
 				if elem.Optional {
 					result += "?"

@@ -17,7 +17,8 @@
             "wasm-client.ts",
             "**/examples/**",
             "**/fixtures/**",
-            "**/dist/**"
+            "**/dist/**",
+            "playground/public/types/**"
         ]
     },
     "formatter": {
