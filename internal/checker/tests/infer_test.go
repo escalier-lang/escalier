@@ -1152,6 +1152,38 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"bStr":  "boolean",
 			},
 		},
+		"MethodsOnTuplesAndArrays": {
+			// TODO: make it so that we can pass a callback with only the first parameters
+			// TODO: make it so that we don't have to specify parameter types on the callback params
+			input: `
+				val array: Array<number> = [1, 2, 3]
+				val arrayTail = array.slice(1)
+				val arrayOutput = array.map(fn (x: number, i: number, values: Array<number>) -> string {
+					return x.toString()
+				})
+				val tuple = [5, "hello", true]
+				val tupleTail = tuple.slice(1)
+			`,
+			expectedTypes: map[string]string{
+				"array":       "Array<number>",
+				"arrayTail":   "Array<number>",
+				"arrayOutput": "Array<string>",
+				"tuple":       "[5, \"hello\", true]",
+				"tupleTail":   "Array<5 | \"hello\" | true>",
+			},
+		},
+		"IndexOnArray": {
+			input: `
+				val array: Array<number> = [10, 20, 30]
+				val first = array[0]
+				val second = array[1]
+			`,
+			expectedTypes: map[string]string{
+				"array":  "Array<number>",
+				"first":  "number",
+				"second": "number",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

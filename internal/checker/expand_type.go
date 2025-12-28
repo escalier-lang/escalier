@@ -432,13 +432,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			return type_system.NewNeverType(nil), errors
 		}
 
-		// For other TypeRefTypes, try to expand the type alias and call getAccessType recursively
-		if type_system.QualIdentToString(t.Name) == "Error" {
-			// Built-in Error type doesn't support property access directly
-			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
-			return type_system.NewNeverType(nil), errors
-		}
-
+		// Try to expand the type alias and call getAccessType recursively
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
 		accessType, accessErrors := c.getMemberType(ctx, expandType, key)
 
