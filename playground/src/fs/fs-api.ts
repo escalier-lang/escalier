@@ -1,4 +1,4 @@
-import type { PathLike, Stats, Mode, OpenMode } from 'node:fs';
+import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 
 export interface FSAPI {
     fstat(

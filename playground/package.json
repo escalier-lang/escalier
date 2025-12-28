@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "APP_ENV=dev vite",
-    "build:dev": "tsc -b && APP_ENV=dev vite build",
-    "build:prod": "tsc -b && APP_ENV=prod vite build",
+    "dev": "node scripts/copy-files.js && APP_ENV=dev vite",
+    "build:dev": "node scripts/copy-files.js && tsc -b && APP_ENV=dev vite build",
+    "build:prod": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

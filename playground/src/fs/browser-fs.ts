@@ -1,10 +1,10 @@
-import type { PathLike, Stats, Mode, OpenMode } from 'node:fs';
+import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 
-import { FSAPI } from './fs-api';
-import type { FSDir, FSNode } from './fs-node';
-import { volumeToDir, type Volume } from './volume';
-import { SimpleStats } from './simple-stats';
 import { ErrnoException } from './errno-exception';
+import type { FSAPI } from './fs-api';
+import type { FSDir, FSNode } from './fs-node';
+import { SimpleStats } from './simple-stats';
+import { type Volume, volumeToDir } from './volume';
 
 export class BrowserFS implements FSAPI {
     fileID: number;
@@ -51,8 +51,8 @@ export class BrowserFS implements FSAPI {
         fd: number,
         callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
     ) {
-        // Validate file descriptor
-        if (!this.openFiles.has(fd)) {
+        const fileData = this.openFiles.get(fd);
+        if (!fileData) {
             callback(
                 new ErrnoException('Bad file descriptor', {
                     code: 'EBADF',
@@ -64,7 +64,6 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        const fileData = this.openFiles.get(fd)!;
         const stats = new SimpleStats(
             fileData.length,
             true,
@@ -204,7 +203,19 @@ export class BrowserFS implements FSAPI {
                 ? this.readPositions.get(fd) || 0
                 : Number(position);
 
-        const fileData = this.openFiles.get(fd)!;
+        const fileData = this.openFiles.get(fd);
+        if (!fileData) {
+            callback(
+                new ErrnoException('File not open', {
+                    code: 'EBADF',
+                    errno: -9,
+                    syscall: 'read',
+                }),
+                0,
+                buffer,
+            );
+            return;
+        }
         const bytesToRead = Math.min(length, fileData.length - readPosition);
 
         if (bytesToRead <= 0) {

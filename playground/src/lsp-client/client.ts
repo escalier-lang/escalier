@@ -1,8 +1,8 @@
+import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
-import type { PathLike, Stats, Mode, OpenMode } from 'node:fs';
 
-import { FSAPI } from '../fs/fs-api';
+import type { FSAPI } from '../fs/fs-api';
 
 import { Deferred } from './deferred';
 

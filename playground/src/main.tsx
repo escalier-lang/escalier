@@ -10,11 +10,11 @@ import { Playground } from './playground';
 
 import './user-worker'; // sets up the monaco editor worker
 
-window.Buffer = Buffer;
-
 async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
-    const libES5Text = await fetch('/lib.es5.d.ts').then((res) => res.bytes());
+    const libES5Text = await fetch('/types/lib.es5.d.ts').then((res) =>
+        res.bytes(),
+    );
 
     const vol: Volume = {
         '/node_modules/typescript/lib/lib.es5.d.ts': libES5Text,

@@ -7,15 +7,15 @@ export class SimpleStats implements Stats {
     private _isDirectory: boolean;
 
     // Additional Stats fields required by Node's Stats interface
-    dev: number = 0;
-    ino: number = 0;
-    mode: number = 0;
-    nlink: number = 1;
-    uid: number = 0;
-    gid: number = 0;
-    rdev: number = 0;
-    blksize: number = 0;
-    blocks: number = 0;
+    dev = 0;
+    ino = 0;
+    mode = 0;
+    nlink = 1;
+    uid = 0;
+    gid = 0;
+    rdev = 0;
+    blksize = 0;
+    blocks = 0;
     atimeMs: number = Date.now();
     mtimeMs: number = Date.now();
     ctimeMs: number = Date.now();
