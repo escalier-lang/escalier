@@ -769,7 +769,11 @@ func (t *FuncType) String() string {
 				// Use inline type annotations for object and tuple patterns
 				result += patternStringWithInlineTypes(param.Pattern, param.Type)
 			default:
-				result += param.Pattern.String() + ": " + param.Type.String()
+				result += param.Pattern.String()
+				if param.Optional {
+					result += "?"
+				}
+				result += ": " + param.Type.String()
 			}
 		}
 	}
@@ -1190,7 +1194,11 @@ func (t *ObjectType) String() string {
 							// Use inline type annotations for object and tuple patterns
 							result += patternStringWithInlineTypes(param.Pattern, param.Type)
 						default:
-							result += param.Pattern.String() + ": " + param.Type.String()
+							result += param.Pattern.String()
+							if param.Optional {
+								result += "?"
+							}
+							result += ": " + param.Type.String()
 						}
 					}
 				}

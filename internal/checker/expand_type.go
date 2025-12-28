@@ -472,9 +472,79 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			})
 			return type_system.NewNeverType(nil), errors
 		}
-		// TupleType doesn't support property access
+		// If a property (method) is accessed on a tuple, delegate to Array<T>
+		if _, ok := key.(PropertyKey); ok {
+			// Compute the union of the tuple element types
+			var elemUnion type_system.Type
+			switch len(t.Elems) {
+			case 0:
+				elemUnion = type_system.NewNeverType(nil)
+			case 1:
+				elemUnion = t.Elems[0]
+			default:
+				elemUnion = type_system.NewUnionType(nil, t.Elems...)
+			}
+			arrayRef := &type_system.TypeRefType{
+				Name:     type_system.NewIdent("Array"),
+				TypeArgs: []type_system.Type{elemUnion},
+			}
+			return c.getMemberType(ctx, arrayRef, key)
+		}
+		// TupleType doesn't support other property access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
+	case *type_system.PrimType:
+		// Delegate method calls on primitive types to their built‑in wrapper types
+		var builtinName string
+		switch t.Prim {
+		case type_system.NumPrim:
+			builtinName = "Number"
+		case type_system.StrPrim:
+			builtinName = "String"
+		case type_system.BoolPrim:
+			builtinName = "Boolean"
+		default:
+			builtinName = ""
+		}
+		if builtinName != "" {
+			if _, ok := key.(PropertyKey); ok {
+				builtinRef := &type_system.TypeRefType{
+					Name:     type_system.NewIdent(builtinName),
+					TypeArgs: []type_system.Type{},
+				}
+				return c.getMemberType(ctx, builtinRef, key)
+			}
+		}
+		// Not a supported primitive method call
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		return type_system.NewNeverType(nil), errors
+
+	case *type_system.LitType:
+		// Delegate literal method calls to the corresponding built‑in wrapper type
+		var builtinName string
+		switch t.Lit.(type) {
+		case *type_system.NumLit:
+			builtinName = "Number"
+		case *type_system.StrLit:
+			builtinName = "String"
+		case *type_system.BoolLit:
+			builtinName = "Boolean"
+		default:
+			builtinName = ""
+		}
+		if builtinName != "" {
+			if _, ok := key.(PropertyKey); ok {
+				builtinRef := &type_system.TypeRefType{
+					Name:     type_system.NewIdent(builtinName),
+					TypeArgs: []type_system.Type{},
+				}
+				return c.getMemberType(ctx, builtinRef, key)
+			}
+		}
+		// Fallback handling for other literals
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		return type_system.NewNeverType(nil), errors
+
 	case *type_system.ObjectType:
 		return c.getObjectAccess(t, key, errors)
 	case *type_system.UnionType:

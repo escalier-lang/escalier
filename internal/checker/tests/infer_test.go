@@ -583,6 +583,18 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"result": "number",
 			},
 		},
+		"FuncAllWithOptionalParams": {
+			input: `
+				declare val greet: fn (name: string, greeting?: string) -> string
+				val message1 = greet("Alice", "Hi")
+				val message2 = greet("Bob")
+			`,
+			expectedTypes: map[string]string{
+				"greet":    "fn (name: string, greeting?: string) -> string throws never",
+				"message1": "string",
+				"message2": "string",
+			},
+		},
 		"FuncCallWithRestArgs": {
 			input: `
 				val add = fn (x: number, y: number, ...rest: Array<number>) {
@@ -1090,6 +1102,54 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"foo": "Foo",
 				"a":   "5",
 				"b":   "\"hello\"",
+			},
+		},
+		"MethodsOnPrimitives": {
+			input: `
+				val s: string = "hello"
+				val upper = s.toUpperCase()
+				val n: number = 42
+				val str = n.toString()
+				val b: boolean = true
+				val bStr = b.valueOf()
+			`,
+			expectedTypes: map[string]string{
+				"s":     "string",
+				"upper": "string",
+				"n":     "number",
+				"str":   "string",
+				"b":     "boolean",
+				"bStr":  "boolean",
+			},
+		},
+		"MethodsOnLiteralTypes": {
+			input: `
+				val s = "hello"
+				val upper = s.toUpperCase()
+				val n = 42
+				val str = n.toString()
+				val b = true
+				val bStr = b.valueOf()
+			`,
+			expectedTypes: map[string]string{
+				"s":     "\"hello\"",
+				"upper": "string",
+				"n":     "42",
+				"str":   "string",
+				"b":     "true",
+				"bStr":  "boolean",
+			},
+		},
+		"MethodsOnLiterals": {
+			input: `
+				val upper = "hello".toUpperCase()
+				val str = (42).toString()
+				val bStr = true.valueOf()
+			`,
+			expectedTypes: map[string]string{
+				"upper": "string",
+				"str":   "string",
+				"bStr":  "boolean",
 			},
 		},
 	}
