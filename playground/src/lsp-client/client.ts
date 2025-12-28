@@ -1,9 +1,11 @@
-import fs from 'node:fs';
-
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
+import type { PathLike, Stats, Mode, OpenMode } from 'node:fs';
+
+import { FSAPI } from '../fs/fs-api';
 
 import { Deferred } from './deferred';
+
 import './wasm_exec'; // run for side-effects
 
 const Go = globalThis.Go;
@@ -44,7 +46,7 @@ export class Client {
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer) {
+    constructor(wasmBuf: ArrayBuffer, fs: FSAPI) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -169,7 +171,7 @@ export class Client {
                 fd: number,
                 callback: (
                     err: NodeJS.ErrnoException | null,
-                    stats: fs.Stats,
+                    stats: Stats,
                 ) => void,
             ) {
                 return fs.fstat(fd, callback);
@@ -179,10 +181,10 @@ export class Client {
             // lchown(path, uid, gid, callback) {callback(enosys())},
             // link(path, link, callback) {callback(enosys())},
             lstat(
-                path: fs.PathLike,
+                path: PathLike,
                 callback: (
                     err: NodeJS.ErrnoException | null,
-                    stats: fs.Stats,
+                    stats: Stats,
                 ) => void,
             ) {
                 return fs.lstat(path, callback);
@@ -190,9 +192,9 @@ export class Client {
             // mkdir(path, perm, callback) {callback(enosys())},
             // open(path, flags, mode, callback) {callback(enosys()},
             open(
-                path: fs.PathLike,
-                flags: fs.OpenMode | undefined,
-                mode: fs.Mode | undefined,
+                path: PathLike,
+                flags: OpenMode | undefined,
+                mode: Mode | undefined,
                 callback: (
                     err: NodeJS.ErrnoException | null,
                     fd: number,
@@ -200,7 +202,6 @@ export class Client {
             ) {
                 return fs.open(path, flags, mode, callback);
             },
-            // read(fd, buffer, offset, length, position, callback) { callback(enosys()); },
             read: (
                 fd: number,
                 buffer: Uint8Array,

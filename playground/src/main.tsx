@@ -2,17 +2,28 @@ import ReactDOM from 'react-dom/client';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import { BrowserFS } from './fs/browser-fs';
+import type { Volume } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
-import './user-worker';
+
+import './user-worker'; // sets up the monaco editor worker
+
+window.Buffer = Buffer;
 
 async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
+    const libES5Text = await fetch('/lib.es5.d.ts').then((res) => res.bytes());
+
+    const vol: Volume = {
+        '/node_modules/typescript/lib/lib.es5.d.ts': libES5Text,
+    };
+    const fs = new BrowserFS(vol);
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
-    const client = new Client(wasmBuffer);
+    const client = new Client(wasmBuffer, fs);
     client.run();
     const initResponse = await client.initialize({
         processId: process.pid,

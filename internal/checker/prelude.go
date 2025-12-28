@@ -1,7 +1,6 @@
 package checker
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,7 +184,6 @@ func Prelude(c *Checker) *Scope {
 	}
 
 	// Read the file
-	fmt.Fprintf(os.Stderr, "Loading prelude from %s\n", libDtsPath)
 	contents, err := os.ReadFile(libDtsPath)
 	if err != nil {
 		panic("failed to read lib.es5.d.ts: " + err.Error())

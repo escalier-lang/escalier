@@ -1,37 +1,37 @@
 {
-	"name": "escalier",
-	"license": "MIT",
-	"version": "0.0.1",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/escalier-lang/escalier"
-	},
-	"categories": [],
-	"keywords": [
-		"multi-root ready"
-	],
-	"scripts": {
-		"vscode:prepublish": "pnpm compile",
-		"compile": "pnpm lsp-server && tsc -b",
-		"build": "tsc -b",
-		"watch": "tsc -b -w",
-		"lint": "biome lint .",
-		"format": "biome format .",
-		"check": "biome check .",
-		"test": "vitest run",
-		"test:ui": "vitest --ui --coverage",
-		"coverage": "vitest run --coverage",
-		"typecheck": "tsc -b"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "1.9.4",
-		"@types/node": "^20",
-		"@vitest/coverage-v8": "^4.0.8",
-		"@vitest/ui": "^4.0.8",
-		"sloc": "^0.3.2",
-		"typescript": "^5.7.2",
-		"vite": "^7.1.12",
-	    "vitest": "^4.0.8"
-	},
-	"packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
+  "name": "escalier",
+  "license": "MIT",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/escalier-lang/escalier"
+  },
+  "categories": [],
+  "keywords": [
+    "multi-root ready"
+  ],
+  "scripts": {
+    "vscode:prepublish": "pnpm compile",
+    "compile": "pnpm lsp-server && tsc -b",
+    "build": "tsc -b",
+    "watch": "tsc -b -w",
+    "lint": "biome lint .",
+    "format": "biome format .",
+    "check": "biome check .",
+    "test": "vitest run",
+    "test:ui": "vitest --ui --coverage",
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^20",
+    "@vitest/coverage-v8": "^4.0.8",
+    "@vitest/ui": "^4.0.8",
+    "sloc": "^0.3.2",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.12",
+    "vitest": "^4.0.8"
+  },
+  "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }
