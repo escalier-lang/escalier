@@ -1,5 +1,0 @@
-lib/pattern_matching.esc:75:24: Invalid number of arguments for function: fn (radix?: number) -> string throws never. Expected: 1, got: 0
-
-75:     n => "number: " ++ n.toString()
-                           ^^^^^^^^^^^^
-
