@@ -7,7 +7,7 @@
         "dev": "node scripts/copy-files.js && APP_ENV=dev vite",
         "build:dev": "node scripts/copy-files.js && tsc -b && APP_ENV=dev vite build",
         "build:prod": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build",
-        "build:prod-ci": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build --base=/math-blocks/",
+        "build:prod-ci": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build --base=/escalier/",
         "lint": "eslint .",
         "preview": "vite preview"
     },
