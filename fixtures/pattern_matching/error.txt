@@ -1,5 +1,0 @@
-lib/pattern_matching.esc:75:24: Callee is not callable: never
-
-75:     n => "number: " ++ n.toString()
-                           ^^^^^^^^^^
-

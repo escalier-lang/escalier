@@ -715,14 +715,25 @@ func (c *Checker) handleFuncCall(
 		return returnType, errors
 	} else {
 		// No rest parameters
-		if len(fnType.Params) != len(expr.Args) {
+		// Compute the number of required (non‑optional) parameters.
+		requiredCount := 0
+		for _, p := range fnType.Params {
+			if !p.Optional {
+				requiredCount++
+			}
+		}
+		// Ensure the argument count respects optional parameters.
+		if len(expr.Args) < requiredCount || len(expr.Args) > len(fnType.Params) {
 			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
 				CallExpr: expr,
 				Callee:   fnType,
 				Args:     expr.Args,
 			}}
 		}
-		for argType, param := range Zip(argTypes, fnType.Params) {
+		// Unify each provided argument with its corresponding parameter.
+		for i, argType := range argTypes {
+			// Since we have already validated the count, i is safe.
+			param := fnType.Params[i]
 			paramType := param.Type
 			paramErrors := c.Unify(ctx, argType, paramType)
 			errors = slices.Concat(errors, paramErrors)

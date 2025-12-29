@@ -92,6 +92,9 @@ var mutabilityOverrides = map[string]Overrides{
 		"toString":       false,
 		"valueOf":        false,
 	},
+	"Boolean": {
+		"valueOf": false,
+	},
 }
 
 func UpdateMethodMutability(namespace *type_system.Namespace) {
