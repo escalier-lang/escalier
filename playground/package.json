@@ -1,30 +1,31 @@
 {
-  "name": "playground",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "node scripts/copy-files.js && APP_ENV=dev vite",
-    "build:dev": "node scripts/copy-files.js && tsc -b && APP_ENV=dev vite build",
-    "build:prod": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "eventemitter3": "^5.0.1",
-    "monaco-editor": "^0.52.2",
-    "monaco-editor-core": "^0.52.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "@vitejs/plugin-react": "^5.1.0",
-    "globals": "^15.15.0",
-    "typescript": "~5.7.2",
-    "vite": "^7.1.12",
-    "vscode-languageserver-protocol": "3.17.5"
-  },
-  "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
+    "name": "playground",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "node scripts/copy-files.js && APP_ENV=dev vite",
+        "build:dev": "node scripts/copy-files.js && tsc -b && APP_ENV=dev vite build",
+        "build:prod": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build",
+        "build:prod-ci": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build --base=/math-blocks/",
+        "lint": "eslint .",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "eventemitter3": "^5.0.1",
+        "monaco-editor": "^0.52.2",
+        "monaco-editor-core": "^0.52.2",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0"
+    },
+    "devDependencies": {
+        "@types/react": "^19.0.10",
+        "@types/react-dom": "^19.0.4",
+        "@vitejs/plugin-react": "^5.1.0",
+        "globals": "^15.15.0",
+        "typescript": "~5.7.2",
+        "vite": "^7.1.12",
+        "vscode-languageserver-protocol": "3.17.5"
+    },
+    "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }

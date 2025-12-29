@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-     
+
       - name: Set up Go
         uses: actions/setup-go@v5
 
@@ -32,19 +32,19 @@ jobs:
 
       - name: Build playground
         working-directory: playground
-        run: pnpm build:prod
+        run: pnpm build:prod-ci
 
       - name: Upload Page Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./playground/dist
-    
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      pages: write      # to deploy to Pages
-      id-token: write   # to verify the deployment originates from an appropriate source
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment originates from an appropriate source
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

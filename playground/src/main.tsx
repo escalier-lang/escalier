@@ -17,7 +17,7 @@ async function main() {
     );
 
     const vol: Volume = {
-        '/node_modules/typescript/lib/lib.es5.d.ts': libES5Text,
+        'node_modules/typescript/lib/lib.es5.d.ts': libES5Text,
     };
     const fs = new BrowserFS(vol);
 
