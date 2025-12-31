@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -930,7 +931,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		return allStmts
 	default:
 		str, _ := printer.Print(d, printer.DefaultOptions())
-		fmt.Printf("d = %s\n", str)
+		fmt.Fprintf(os.Stderr, "d = %s\n", str)
 		panic("TODO - TransformDecl - default case")
 	}
 }

@@ -6,3 +6,8 @@ fs.copyFileSync(
     'node_modules/typescript/lib/lib.es5.d.ts',
     'public/types/lib.es5.d.ts',
 );
+
+fs.copyFileSync(
+    'node_modules/typescript/lib/lib.dom.d.ts',
+    'public/types/lib.dom.d.ts',
+);

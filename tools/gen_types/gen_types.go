@@ -111,5 +111,5 @@ func (t *{{.}}) Copy() Type {
 		log.Fatalf("Error writing file: %v", err)
 	}
 
-	fmt.Printf("Generated WithProvenance methods for %d types\n", len(typeStructs))
+	fmt.Fprintf(os.Stderr, "Generated WithProvenance methods for %d types\n", len(typeStructs))
 }

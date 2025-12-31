@@ -69,7 +69,7 @@ func printErrors(stderr io.Writer, output compiler.CompilerOutput, idToSource ma
 
 	// TODO: sort by err.Location()
 	for _, err := range output.TypeErrors {
-		fmt.Printf("Type Error: %#v\n", err)
+		fmt.Fprintf(os.Stderr, "Type Error: %#v\n", err)
 		source, ok := idToSource[err.Span().SourceID]
 		if !ok {
 			fmt.Fprintln(stderr, "source not found for error")

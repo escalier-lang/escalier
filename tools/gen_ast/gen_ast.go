@@ -25,8 +25,8 @@ func main() {
 	inputPath := os.Args[2]
 	outputPath := strings.Replace(inputPath, ".go", "_gen.go", 1)
 
-	fmt.Printf("inputPath = %s\n", inputPath)
-	fmt.Printf("outputPath = %s\n", outputPath)
+	fmt.Fprintf(os.Stderr, "inputPath = %s\n", inputPath)
+	fmt.Fprintf(os.Stderr, "outputPath = %s\n", outputPath)
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, inputPath, nil, parser.ParseComments)
@@ -94,5 +94,5 @@ func (node *{{.}}) SetInferredType(t Type) { node.inferredType = t }
 		log.Fatalf("Error writing file: %v", err)
 	}
 
-	fmt.Printf("Generated inferredType methods for %d types\n", len(typeStructs))
+	fmt.Fprintf(os.Stderr, "Generated inferredType methods for %d types\n", len(typeStructs))
 }

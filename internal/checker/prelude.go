@@ -396,28 +396,6 @@ func Prelude(c *Checker) *Scope {
 
 	scope.Namespace.Values["!"] = &unaryLogicBinding
 
-	var objElems []type_system.ObjTypeElem
-
-	objElems = append(objElems, &type_system.MethodElem{
-		Name: type_system.NewStrKey("log"),
-		Fn: type_system.NewFuncType(
-			nil,
-			nil,
-			[]*type_system.FuncParam{
-				type_system.NewFuncParam(type_system.NewIdentPat("msg"), type_system.NewStrPrimType(nil)),
-			},
-			type_system.NewUndefinedType(nil),
-			type_system.NewNeverType(nil),
-		),
-		MutSelf: nil,
-	})
-
-	scope.Namespace.Values["console"] = &type_system.Binding{
-		Source:  nil,
-		Type:    type_system.NewObjectType(nil, objElems),
-		Mutable: false,
-	}
-
 	// String concatenation operator
 	strConcatType := type_system.NewFuncType(
 		nil,

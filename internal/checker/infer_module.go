@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -92,12 +93,12 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	if DEBUG {
 		for declID, decl := range depGraph.Decls {
 			deps := depGraph.DeclDeps[declID]
-			fmt.Printf("Decl ID: %d, Decl: %s, Deps: [", declID, getDeclIdentifier(decl))
+			fmt.Fprintf(os.Stderr, "Decl ID: %d, Decl: %s, Deps: [", declID, getDeclIdentifier(decl))
 			for _, depID := range deps.Keys() {
 				depDecl, _ := depGraph.GetDecl(depID)
-				fmt.Printf("%d (%s), ", depID, getDeclIdentifier(depDecl))
+				fmt.Fprintf(os.Stderr, "%d (%s), ", depID, getDeclIdentifier(depDecl))
 			}
-			fmt.Printf("]\n")
+			fmt.Fprintf(os.Stderr, "]\n")
 		}
 	}
 
