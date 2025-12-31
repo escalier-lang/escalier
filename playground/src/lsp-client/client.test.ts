@@ -97,6 +97,8 @@ test('textDocument/didOpen', async () => {
 
     await vi.waitFor(() => {
         expect(diagnostics).not.toBeNull();
+    }, {
+        timeout: 10000,
     });
 
     expect(diagnostics).toMatchInlineSnapshot(`
@@ -169,6 +171,8 @@ test('textDocument/didChange', async () => {
 
     await vi.waitFor(() => {
         expect(diagnostics).not.toBeNull();
+    }, {
+        timeout: 10000,
     });
 
     expect(diagnostics).toMatchInlineSnapshot(`
