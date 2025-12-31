@@ -95,11 +95,14 @@ test('textDocument/didOpen', async () => {
         },
     });
 
-    await vi.waitFor(() => {
-        expect(diagnostics).not.toBeNull();
-    }, {
-        timeout: 10000,
-    });
+    await vi.waitFor(
+        () => {
+            expect(diagnostics).not.toBeNull();
+        },
+        {
+            timeout: 10000,
+        },
+    );
 
     expect(diagnostics).toMatchInlineSnapshot(`
       [
@@ -169,11 +172,14 @@ test('textDocument/didChange', async () => {
         contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
     });
 
-    await vi.waitFor(() => {
-        expect(diagnostics).not.toBeNull();
-    }, {
-        timeout: 10000,
-    });
+    await vi.waitFor(
+        () => {
+            expect(diagnostics).not.toBeNull();
+        },
+        {
+            timeout: 10000,
+        },
+    );
 
     expect(diagnostics).toMatchInlineSnapshot(`
       [
