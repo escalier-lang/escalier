@@ -6,7 +6,7 @@ declare const coord1: keyof Point;
 declare const coord2: keyof Point;
 declare const x: Point["x"];
 declare const y: Point["y"];
-declare type Event = {msg: string, print(): };
+declare type Event = {msg: string, print(): void};
 declare const Event: {new (msg: string): Event};
 declare const event: Event;
 declare const key1: keyof Event;
