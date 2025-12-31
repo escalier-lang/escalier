@@ -341,7 +341,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())

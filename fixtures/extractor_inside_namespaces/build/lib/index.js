@@ -16,7 +16,7 @@ export class MyEnum__Color {
 }
 MyEnum.Color = MyEnum__Color;
 MyEnum.Color = MyEnum__Color;
-export class MyEnum__Event {
+export class MyEnum__MyEvent {
   constructor(temp6) {
     const kind = temp6;
     this.kind = kind;
@@ -26,15 +26,15 @@ export class MyEnum__Event {
     return [subject.kind];
   }
 }
-MyEnum.Event = MyEnum__Event;
-MyEnum.Event = MyEnum__Event;
+MyEnum.MyEvent = MyEnum__MyEvent;
+MyEnum.MyEvent = MyEnum__MyEvent;
 let temp7;
 let temp8;
 temp8 = obj;
 if (temp8 instanceof MyEnum.Color && temp8 != null && "r" in temp8 && "g" in temp8 && "b" in temp8) {
   const {r, g, b: blue = 0} = temp8;
   temp7 = r + g + blue;
-} else if (temp8 instanceof MyEnum.Event && temp8 != null && "kind" in temp8) {
+} else if (temp8 instanceof MyEnum.MyEvent && temp8 != null && "kind" in temp8) {
   const {kind = "default"} = temp8;
   temp7 = kind;
 }
@@ -48,8 +48,8 @@ if (temp10 instanceof MyEnum.Color) {
   const g = temp13;
   const blue = temp14;
   temp9 = r + g + blue;
-} else if (temp10 instanceof MyEnum.Event) {
-  const [temp11 = "default"] = InvokeCustomMatcherOrThrow(MyEnum.Event, temp10, undefined);
+} else if (temp10 instanceof MyEnum.MyEvent) {
+  const [temp11 = "default"] = InvokeCustomMatcherOrThrow(MyEnum.MyEvent, temp10, undefined);
   const kind = temp11;
   temp9 = kind;
 }

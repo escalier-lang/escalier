@@ -364,6 +364,14 @@ func (e *FuncExpr) Accept(v Visitor) {
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
 		}
+		for _, tp := range e.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(v)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(v)
+			}
+		}
 		if e.Return != nil {
 			e.Return.Accept(v)
 		}

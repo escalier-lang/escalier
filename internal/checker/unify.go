@@ -310,6 +310,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 				if typeAlias1 == nil {
 					typeAlias1 = resolveQualifiedTypeAlias(ctx, ref1.Name)
 					if typeAlias1 == nil {
+						fmt.Println("unify.go:313")
 						return []Error{&UnknownTypeError{
 							TypeName: type_system.QualIdentToString(ref1.Name),
 							TypeRef:  ref1,
@@ -320,6 +321,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 				if typeAlias2 == nil {
 					typeAlias2 = resolveQualifiedTypeAlias(ctx, ref2.Name)
 					if typeAlias2 == nil {
+						fmt.Println("unify.go:324")
 						return []Error{&UnknownTypeError{
 							TypeName: type_system.QualIdentToString(ref2.Name),
 							TypeRef:  ref2,

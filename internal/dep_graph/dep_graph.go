@@ -454,6 +454,14 @@ func FindDeclDependencies(
 			d.Init.Accept(visitor)
 		}
 	case *ast.FuncDecl:
+		for _, tp := range d.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(visitor)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(visitor)
+			}
+		}
 		// Visit parameter type annotations (if any)
 		for _, param := range d.Params {
 			if param.TypeAnn != nil {
@@ -487,9 +495,25 @@ func FindDeclDependencies(
 		}
 	case *ast.TypeDecl:
 		// For type declarations, visit the type annotation
+		for _, tp := range d.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(visitor)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(visitor)
+			}
+		}
 		d.TypeAnn.Accept(visitor)
 	case *ast.InterfaceDecl:
 		// For interface declarations, visit the type annotation
+		for _, tp := range d.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(visitor)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(visitor)
+			}
+		}
 		d.TypeAnn.Accept(visitor)
 	case *ast.EnumDecl:
 		// For enum declarations, visit enum elements for dependencies
@@ -520,6 +544,8 @@ func FindDeclDependencies(
 				}
 			}
 		}
+	case *ast.ClassDecl:
+		// panic("TODO: handle ClassDecls in FindDeclDependencies")
 	}
 
 	return visitor.Dependencies

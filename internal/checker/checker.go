@@ -25,17 +25,25 @@ func (c *Checker) FreshVar(provenance provenance.Provenance) *type_system.TypeVa
 	return type_system.NewTypeVarType(provenance, c.TypeVarID)
 }
 
+type Ref[T any] struct {
+	Value T
+}
+
 type Context struct {
-	Scope      *Scope
-	IsAsync    bool
-	IsPatMatch bool
+	Scope                  *Scope
+	IsAsync                bool
+	IsPatMatch             bool
+	AllowUndefinedTypeRefs bool
+	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
 }
 
 func (ctx *Context) WithNewScope() Context {
 	return Context{
-		Scope:      ctx.Scope.WithNewScope(),
-		IsAsync:    ctx.IsAsync,
-		IsPatMatch: ctx.IsPatMatch,
+		Scope:                  ctx.Scope.WithNewScope(),
+		IsAsync:                ctx.IsAsync,
+		IsPatMatch:             ctx.IsPatMatch,
+		AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
+		TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
 	}
 }
 

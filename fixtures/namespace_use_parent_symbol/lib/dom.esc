@@ -1,0 +1,9 @@
+declare val FileReader: {
+    prototype: FileReader,
+    newReader() -> FileReader,
+    readonly EMPTY: 0,
+    readonly LOADING: 1,
+    readonly DONE: 2,
+}
+
+interface FileReader {}

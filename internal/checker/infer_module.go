@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,16 +12,99 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+func getPatternNames(pattern ast.Pat) []string {
+	// Collect all identifiers that are bound by the pattern.
+	// This mirrors the logic of BindingVisitor but returns a slice of names.
+	namesSet := make(map[string]struct{})
+	var collect func(ast.Pat)
+	collect = func(pat ast.Pat) {
+		switch p := pat.(type) {
+		case *ast.IdentPat:
+			namesSet[p.Name] = struct{}{}
+		case *ast.ObjectPat:
+			for _, elem := range p.Elems {
+				switch e := elem.(type) {
+				case *ast.ObjShorthandPat:
+					namesSet[e.Key.Name] = struct{}{}
+				case *ast.ObjKeyValuePat:
+					collect(e.Value)
+				case *ast.ObjRestPat:
+					collect(e.Pattern)
+				}
+			}
+		case *ast.TuplePat:
+			for _, sub := range p.Elems {
+				collect(sub)
+			}
+		case *ast.ExtractorPat:
+			for _, arg := range p.Args {
+				collect(arg)
+			}
+		case *ast.InstancePat:
+			collect(p.Object)
+		case *ast.RestPat:
+			collect(p.Pattern)
+			// WildcardPat, LitPat, etc. do not introduce bindings.
+		}
+	}
+	collect(pattern)
+
+	// Convert set to slice.
+	names := make([]string, 0, len(namesSet))
+	for n := range namesSet {
+		names = append(names, n)
+	}
+	// Ensure deterministic order.
+	// Sorting requires the sort package.
+	// (Import added at top of file.)
+	sort.Strings(names)
+	return names
+}
+
+func getDeclIdentifier(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		return d.Name.Name
+	case *ast.VarDecl:
+		names := getPatternNames(d.Pattern)
+		return strings.Join(names, ",")
+	case *ast.TypeDecl:
+		return d.Name.Name
+	case *ast.InterfaceDecl:
+		return d.Name.Name
+	case *ast.EnumDecl:
+		return d.Name.Name
+	default:
+		return ""
+	}
+}
+
+const DEBUG = false
+
 // A module can contain declarations from mutliple source files.
 // The order of the declarations doesn't matter because we compute the dependency
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
-func (c *Checker) InferModule(ctx Context, m *ast.Module) (*type_system.Namespace, []Error) {
+func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	depGraph := dep_graph.BuildDepGraph(m)
+
+	// print out all of the dependencies in depGraph for debugging
+	if DEBUG {
+		for declID, decl := range depGraph.Decls {
+			deps := depGraph.DeclDeps[declID]
+			fmt.Printf("Decl ID: %d, Decl: %s, Deps: [", declID, getDeclIdentifier(decl))
+			for _, depID := range deps.Keys() {
+				depDecl, _ := depGraph.GetDecl(depID)
+				fmt.Printf("%d (%s), ", depID, getDeclIdentifier(depDecl))
+			}
+			fmt.Printf("]\n")
+		}
+	}
+
 	return c.InferDepGraph(ctx, depGraph)
 }
 
-func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*type_system.Namespace, []Error) {
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Error {
 	components := depGraph.FindStronglyConnectedComponents(0)
 
 	// Define a module scope so that declarations don't leak into the global scope
@@ -33,10 +117,10 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (*typ
 		errors = slices.Concat(errors, declsErrors)
 	}
 
-	return ctx.Scope.Namespace, errors
+	return errors
 }
 
-// GetNamespaceCtx returns a new Context with the namespace set to the namespace of
+// GetNamespaceCtx returns a new Context with its namespace set to the namespace of
 // the declaration with the given declID. If the namespace doesn't exist yet, it
 // creates one.
 func GetNamespaceCtx(
@@ -137,10 +221,10 @@ func (c *Checker) InferComponent(
 
 	declCtxMap := make(map[dep_graph.DeclID]Context)
 	declMethodCtxs := make([][]Context, len(component))
+	typeRefsToUpdate := make(map[dep_graph.DeclID][]*type_system.TypeRefType)
 
 	// Infer placeholders
 	for i, declID := range component {
-		// TODO: rename this to nsCtx instead of nsCtx
 		nsCtx := GetNamespaceCtx(ctx, depGraph, declID)
 		decl, _ := depGraph.GetDecl(declID)
 
@@ -153,11 +237,19 @@ func (c *Checker) InferComponent(
 			// Save the context for inferring the function body later
 			declCtxMap[declID] = funcCtx
 
-			nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
-				Source:  &ast.NodeProvenance{Node: decl},
-				Type:    funcType,
-				Mutable: false,
-			})
+			// Functions can have multiple declarations.  This is to support function
+			// overloading.  We only create a binding for the function if one doesn't
+			// already exist.
+			binding := nsCtx.Scope.GetValue(decl.Name.Name)
+			if binding == nil {
+				nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
+					Source:  &ast.NodeProvenance{Node: decl},
+					Type:    funcType,
+					Mutable: false,
+				})
+			} else {
+				binding.Type = type_system.NewIntersectionType(nil, binding.Type, funcType)
+			}
 		case *ast.VarDecl:
 			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 			errors = slices.Concat(errors, patErrors)
@@ -165,16 +257,26 @@ func (c *Checker) InferComponent(
 			// TODO: handle the situation where both decl.Init and decl.TypeAnn
 			// are nil
 
+			var names []string
+			for name, binding := range bindings {
+				nsCtx.Scope.setValue(name, binding)
+				names = append(names, name)
+			}
+
 			if decl.TypeAnn != nil {
+				nsCtx.AllowUndefinedTypeRefs = true
+				nsCtx.TypeRefsToUpdate = &Ref[[]*type_system.TypeRefType]{Value: []*type_system.TypeRefType{}}
+
 				taType, taErrors := c.inferTypeAnn(nsCtx, decl.TypeAnn)
+
+				nsCtx.AllowUndefinedTypeRefs = false
+				typeRefsToUpdate[declID] = nsCtx.TypeRefsToUpdate.Value
+				nsCtx.TypeRefsToUpdate = &Ref[[]*type_system.TypeRefType]{Value: []*type_system.TypeRefType{}}
+
 				errors = slices.Concat(errors, taErrors)
 
 				unifyErrors := c.Unify(nsCtx, patType, taType)
 				errors = slices.Concat(errors, unifyErrors)
-			}
-
-			for name, binding := range bindings {
-				nsCtx.Scope.setValue(name, binding)
 			}
 
 			// This is used when inferring the definitions below
@@ -488,9 +590,11 @@ func (c *Checker) InferComponent(
 		// already fully typed and don't have a body or initializer to infer.
 		// However, TypeDecl, InterfaceDecl, and EnumDecl still need their types
 		// to be inferred and unified with their placeholders.
-		switch decl.(type) {
-		case *ast.FuncDecl, *ast.VarDecl:
-			if decl.Declare() {
+		if decl.Declare() {
+			switch decl.(type) {
+			case *ast.FuncDecl:
+				continue
+			case *ast.VarDecl:
 				continue
 			}
 		}
@@ -962,6 +1066,14 @@ func (c *Checker) InferComponent(
 					}
 				}
 			}
+		}
+	}
+
+	// Resolve any type references that were deferred during type annotation inference
+	// to allow for recursive definitions between type and variable declarations.
+	for _, refs := range typeRefsToUpdate {
+		for _, ref := range refs {
+			ref.TypeAlias = resolveQualifiedTypeAlias(ctx, ref.Name)
 		}
 	}
 

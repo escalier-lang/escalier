@@ -116,8 +116,8 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		_libNS, typeErrors := c.InferDepGraph(inferCtx, depGraph)
-		libNS = _libNS
+		typeErrors := c.InferDepGraph(inferCtx, depGraph)
+		libNS = inferCtx.Scope.Namespace
 
 		builder := &codegen.Builder{}
 		jsMod := builder.BuildTopLevelDecls(depGraph)

@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,28 +98,44 @@ var mutabilityOverrides = map[string]Overrides{
 	},
 }
 
-func UpdateMethodMutability(namespace *type_system.Namespace) {
+func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 	for name := range namespace.Types {
 		if strings.HasSuffix(name, "Constructor") && name != "ArrayConstructor" {
-			instName := strings.TrimSuffix(name, "Constructor")
-			instTypeAlias := namespace.Types[instName]
-			overrides := mutabilityOverrides[instName]
+			classTypeAlias := namespace.Types[name]
 
-			if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
-				for _, elem := range it.Elems {
-					if me, ok := elem.(*type_system.MethodElem); ok {
-						mutSelf := true
-						if me.Name.Kind == type_system.StrObjTypeKeyKind {
-							value, exists := overrides[me.Name.Str]
-							if exists {
-								mutSelf = value
-							}
+			var instIdent type_system.QualIdent
+			if ct, ok := type_system.Prune(classTypeAlias.Type).(*type_system.ObjectType); ok {
+				for _, elem := range ct.Elems {
+					if ce, ok := elem.(*type_system.ConstructorElem); ok {
+						if rt, ok := type_system.Prune(ce.Fn.Return).(*type_system.TypeRefType); ok {
+							instIdent = rt.Name
 						}
-						me.MutSelf = &mutSelf
 					}
 				}
-			} else {
-				panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
+			}
+
+			instTypeAlias := resolveQualifiedTypeAlias(ctx, instIdent)
+			if ident, ok := instIdent.(*type_system.Ident); ok {
+				instName := ident.Name
+				// TODO: Support qualified identifiers in mutability overrides
+				overrides := mutabilityOverrides[instName]
+
+				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
+					for _, elem := range it.Elems {
+						if me, ok := elem.(*type_system.MethodElem); ok {
+							mutSelf := true
+							if me.Name.Kind == type_system.StrObjTypeKeyKind {
+								value, exists := overrides[me.Name.Str]
+								if exists {
+									mutSelf = value
+								}
+							}
+							me.MutSelf = &mutSelf
+						}
+					}
+				} else {
+					panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
+				}
 			}
 		}
 	}
@@ -166,6 +183,43 @@ func UpdateArrayMutability(namespace *type_system.Namespace) {
 	}
 }
 
+func loadTypeScriptModule(filename string) (*ast.Module, error) {
+	if _, err := os.Lstat(filename); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "DTS file not found: %s\n", filename)
+		return nil, err
+	}
+
+	// Read the file
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading DTS file: %s\n", err.Error())
+		return nil, err
+	}
+
+	source := &ast.Source{
+		Path:     filename,
+		Contents: string(contents),
+		ID:       0,
+	}
+
+	// Parse the module
+	parser := dts_parser.NewDtsParser(source)
+	dtsModule, parseErrors := parser.ParseModule()
+
+	if len(parseErrors) > 0 {
+		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
+		return nil, err
+	}
+
+	astModule, err := interop.ConvertModule(dtsModule)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error converting DTS to AST: %s\n", err.Error())
+		return nil, err
+	}
+
+	return astModule, nil
+}
+
 var preludeScope *Scope
 var symbolIDCounter int
 
@@ -176,56 +230,43 @@ func Prelude(c *Checker) *Scope {
 		return preludeScope.WithNewScope()
 	}
 
-	// Find the repo root by looking for go.mod
 	repoRoot, _ := findRepoRoot()
 
-	libDtsPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-
-	if _, err := os.Lstat(libDtsPath); os.IsNotExist(err) {
-		panic("lib.es5.d.ts not found at " + libDtsPath)
-		// TODO: return the error
-	}
-
-	// Read the file
-	contents, err := os.ReadFile(libDtsPath)
+	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
+	libES5Module, err := loadTypeScriptModule(libES5Path)
 	if err != nil {
-		panic("failed to read lib.es5.d.ts: " + err.Error())
-		// TODO: return the error
+		panic("Failed to load TypeScript lib.es5.d.ts")
 	}
 
-	source := &ast.Source{
-		Path:     libDtsPath,
-		Contents: string(contents),
-		ID:       0,
-	}
-
-	// Parse the module
-	parser := dts_parser.NewDtsParser(source)
-	dtsModule, parseErrors := parser.ParseModule()
-
-	if len(parseErrors) > 0 {
-		// TODO: report errors
-		panic("parse errors in lib.es5.d.ts")
-	}
-
-	astModule, err := interop.ConvertModule(dtsModule)
+	// TODO: Re-enable once function overloads are supported
+	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
+	libDOMModule, err := loadTypeScriptModule(libDOMPath)
 	if err != nil {
-		panic("ConvertModule failed: " + err.Error())
-		// TODO: return error
+		panic("Failed to load TypeScript lib.dom.d.ts")
 	}
 
 	scope := NewScope()
-
 	inferCtx := Context{
 		Scope:      scope,
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	inferredScope, inferErrors := c.InferModule(inferCtx, astModule)
 
+	inferErrors := c.InferModule(inferCtx, libES5Module)
 	if len(inferErrors) > 0 {
-		// TODO: report inference errors
+		panic("Failed to infer types for lib.es5.d.ts")
 	}
+
+	// TODO: Re-enable once function overloads are supported
+	inferErrors = c.InferModule(inferCtx, libDOMModule)
+	if len(inferErrors) > 0 {
+		for _, err := range inferErrors {
+			fmt.Fprintf(os.Stderr, "Inference error: %s\n", err.Message())
+		}
+		panic("Failed to infer types for lib.dom.d.ts")
+	}
+
+	inferredScope := inferCtx.Scope.Namespace
 
 	for _, typeAlias := range inferredScope.Types {
 		typeAlias.Type = type_system.Prune(typeAlias.Type)
@@ -235,7 +276,7 @@ func Prelude(c *Checker) *Scope {
 		binding.Type = type_system.Prune(binding.Type)
 	}
 
-	UpdateMethodMutability(inferredScope)
+	UpdateMethodMutability(inferCtx, inferredScope)
 	UpdateArrayMutability(inferredScope)
 
 	scope.Namespace = inferredScope

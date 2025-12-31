@@ -623,6 +623,25 @@ func (c *Checker) inferCallExpr(
 		}
 
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
+
+	} else if intersectionType, ok := calleeType.(*type_system.IntersectionType); ok {
+		for _, t := range intersectionType.Types {
+			attemptErrors := []Error{}
+			// TODO: Extract the body of `inferCallExpr` into a function that we can
+			// pass the callee and the args to separately.  We need to be able to
+			// expand the callee type if necessary here.  This would allow us to lazily
+			// expand the callee type.
+			if funcType, ok := t.(*type_system.FuncType); ok {
+				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, attemptErrors)
+				if len(callErrors) == 0 {
+					return retType, errors
+				}
+			}
+		}
+
+		return type_system.NewNeverType(provneance), []Error{
+			&UnimplementedError{message: "TODO: create an error for when no overload for a function match the provided args"},
+		}
 	} else {
 		return type_system.NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}

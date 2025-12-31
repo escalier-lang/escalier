@@ -52,21 +52,17 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 		},
 		"AsyncFuncWithAwait": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn fetchData(url: string) {
 					val data = await fetch(url)
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
 		"AwaitOutsideAsyncFunction": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				fn syncFunc() {
 					val data = await fetch("test")
 					return data
@@ -93,8 +89,6 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 		},
 		"AsyncFuncWithAwaitAndThrow": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn fetchData(url: string) {
 					if url == "" {
 						throw "invalid url"
@@ -103,14 +97,12 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, \"invalid url\" | string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, \"invalid url\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
 		"AsyncFuncWithNestedAsync": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn innerFetch(url: string) {
 					throw "inner error"
 					return await fetch(url)
@@ -121,7 +113,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, \"inner error\" | string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, \"inner error\"> throws never",
 			functionName: "outerFetch",
 			expectedErr:  false,
 		},
@@ -217,21 +209,17 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 		},
 		"AsyncFuncWithAwait": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn fetchData(url: string) {
 					val data = await fetch(url)
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
 		"AwaitOutsideAsyncFunction": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				fn syncFunc() {
 					val data = await fetch("test")
 					return data
@@ -258,8 +246,6 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 		},
 		"AsyncFuncWithAwaitAndThrow": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn fetchData(url: string) {
 					if url == "" {
 						throw "invalid url"
@@ -268,14 +254,12 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, \"invalid url\" | string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, \"invalid url\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
 		"AsyncFuncWithNestedAsync": {
 			input: `
-				declare fn fetch(url: string) -> Promise<string, string>
-
 				async fn innerFetch(url: string) {
 					throw "inner error"
 					return await fetch(url)
@@ -286,7 +270,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<string, \"inner error\" | string> throws never",
+			expectedFn:   "fn (url: string) -> Promise<never, \"inner error\"> throws never",
 			functionName: "outerFetch",
 			expectedErr:  false,
 		},
@@ -312,7 +296,8 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 				IsPatMatch: false,
 			}
 
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if testCase.expectedErr {
 				assert.NotEmpty(t, inferErrors, "Should have inference errors")
 				for i, err := range inferErrors {

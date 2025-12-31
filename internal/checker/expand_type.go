@@ -283,6 +283,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		// TODO: Check if the qualifier is a type.  If it is, we can treat this
 		// as a member access type.
 		if typeAlias == nil {
+			fmt.Println("expand_type.go:286")
 			v.errors = append(v.errors, &UnknownTypeError{TypeName: type_system.QualIdentToString(t.Name), TypeRef: t})
 			neverType := type_system.NewNeverType(nil)
 			neverType.SetProvenance(&type_system.TypeProvenance{Type: t})
@@ -865,6 +866,7 @@ func (c *Checker) expandTypeRef(ctx Context, t *type_system.TypeRefType) (type_s
 	// Resolve the type alias
 	typeAlias := resolveQualifiedTypeAlias(ctx, t.Name)
 	if typeAlias == nil {
+		fmt.Println("expand_type.go:869")
 		return type_system.NewNeverType(nil), []Error{&UnknownTypeError{TypeName: type_system.QualIdentToString(t.Name), TypeRef: t}}
 	}
 
