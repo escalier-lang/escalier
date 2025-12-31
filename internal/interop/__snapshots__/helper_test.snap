@@ -1197,11 +1197,19 @@
     },
     Params: {
         &ast.Param{
-            Pattern: &ast.IdentPat{
-                Name:    "args",
-                TypeAnn: nil,
-                Default: nil,
-                span:    ast.Span{
+            Pattern: &ast.RestPat{
+                Pattern: &ast.IdentPat{
+                    Name:    "args",
+                    TypeAnn: nil,
+                    Default: nil,
+                    span:    ast.Span{
+                        Start:    ast.Location{Line:1, Column:2},
+                        End:      ast.Location{Line:1, Column:19},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:19},
                     SourceID: 0,
