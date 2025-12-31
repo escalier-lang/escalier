@@ -1,20 +1,20 @@
-lib/async_await.esc:25:23: Callee is not callable: undefined
+lib/async_await.esc:22:23: Callee is not callable: undefined
 
-25:     val text1 = await data1.text()
+22:     val text1 = await data1.text()
                           ^^^^^^^^^^
 
-lib/async_await.esc:25:17: Unimplemented: await expression expects a Promise type
+lib/async_await.esc:22:17: Unimplemented: await expression expects a Promise type
 
-25:     val text1 = await data1.text()
+22:     val text1 = await data1.text()
                     ^^^^^^^^^^^^^^^^^^
 
-lib/async_await.esc:27:23: Callee is not callable: undefined
+lib/async_await.esc:24:23: Callee is not callable: undefined
 
-27:     val text2 = await data2.text()
+24:     val text2 = await data2.text()
                           ^^^^^^^^^^
 
-lib/async_await.esc:27:17: Unimplemented: await expression expects a Promise type
+lib/async_await.esc:24:17: Unimplemented: await expression expects a Promise type
 
-27:     val text2 = await data2.text()
+24:     val text2 = await data2.text()
                     ^^^^^^^^^^^^^^^^^^
 

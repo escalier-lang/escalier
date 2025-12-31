@@ -3,9 +3,6 @@ export async fn fetchData(url: string) {
     return "data from " ++ url
 }
 
-// Async function with await
-declare fn fetch(url: string) -> Promise<string, Error>
-
 export async fn fetchWithAwait(url: string) -> Promise<string, string> {
     val data = await fetch(url)
     return data
