@@ -25,7 +25,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<\"data\", never> throws never",
+			expectedFn:   "fn (url: string) -> Promise<mut? \"data\", never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -38,7 +38,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<\"data\", \"error\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<mut? \"data\", mut? \"error\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -57,7 +57,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, never> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -83,7 +83,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (flag: boolean) -> Promise<\"data\", \"string error\" | 42> throws never",
+			expectedFn:   "fn (flag: boolean) -> Promise<mut? \"data\", mut? \"string error\" | mut? 42> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -97,7 +97,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, \"invalid url\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, mut? \"invalid url\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -113,7 +113,7 @@ func TestAsyncFunctionInferenceScript(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, \"inner error\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, mut? \"inner error\"> throws never",
 			functionName: "outerFetch",
 			expectedErr:  false,
 		},
@@ -182,7 +182,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<\"data\", never> throws never",
+			expectedFn:   "fn (url: string) -> Promise<mut? \"data\", never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -195,7 +195,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<\"data\", \"error\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<mut? \"data\", mut? \"error\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -214,7 +214,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, never> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, never> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -240,7 +240,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return "data"
 				}
 			`,
-			expectedFn:   "fn (flag: boolean) -> Promise<\"data\", \"string error\" | 42> throws never",
+			expectedFn:   "fn (flag: boolean) -> Promise<mut? \"data\", mut? \"string error\" | mut? 42> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -254,7 +254,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, \"invalid url\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, mut? \"invalid url\"> throws never",
 			functionName: "fetchData",
 			expectedErr:  false,
 		},
@@ -270,7 +270,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 					return data
 				}
 			`,
-			expectedFn:   "fn (url: string) -> Promise<never, \"inner error\"> throws never",
+			expectedFn:   "fn (url: string) -> Promise<Response, mut? \"inner error\"> throws never",
 			functionName: "outerFetch",
 			expectedErr:  false,
 		},

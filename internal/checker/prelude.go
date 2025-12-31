@@ -279,6 +279,9 @@ func Prelude(c *Checker) *Scope {
 	UpdateMethodMutability(inferCtx, inferredScope)
 	UpdateArrayMutability(inferredScope)
 
+	fetchBinding := inferredScope.Values["fetch"]
+	fmt.Fprintf(os.Stderr, "fetch = %s\n", fetchBinding.Type.String())
+
 	scope.Namespace = inferredScope
 
 	binArithType := type_system.NewFuncType(

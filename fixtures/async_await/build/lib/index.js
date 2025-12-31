@@ -22,8 +22,10 @@ export async function fetchMultiple(temp6, temp7) {
   const url1 = temp6;
   const url2 = temp7;
   const data1 = await fetch(url1);
+  const text1 = await data1.text();
   const data2 = await fetch(url2);
-  return data1 + " and " + data2;
+  const text2 = await data2.text();
+  return text1 + " and " + text2;
 }
 export async function conditionalFetch(temp8, temp9) {
   const useCache = temp8;
