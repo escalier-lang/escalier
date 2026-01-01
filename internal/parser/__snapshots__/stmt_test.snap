@@ -2379,6 +2379,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
             &ast.Param{
                 Pattern: &ast.IdentPat{
@@ -2596,6 +2597,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -2629,6 +2631,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
             &ast.Param{
                 Pattern: &ast.IdentPat{
@@ -2706,6 +2709,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -2864,7 +2868,8 @@ nil
                 Default:    nil,
             },
         },
-        Params: {
+        Extends: nil,
+        Params:  {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "value",
@@ -3171,7 +3176,8 @@ nil
                 Default:    nil,
             },
         },
-        Params: {
+        Extends: nil,
+        Params:  {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "value",
@@ -3449,7 +3455,8 @@ nil
                 },
             },
         },
-        Params: {
+        Extends: nil,
+        Params:  {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "data",
@@ -3573,7 +3580,8 @@ nil
                 Default: nil,
             },
         },
-        Params: {
+        Extends: nil,
+        Params:  {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "first",
@@ -3718,6 +3726,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -3870,6 +3879,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4001,6 +4011,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4304,6 +4315,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4430,6 +4442,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4534,6 +4547,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4801,6 +4815,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -4978,6 +4993,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -5283,6 +5299,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -5452,6 +5469,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -5696,6 +5714,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -5804,6 +5823,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -5912,6 +5932,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -6081,6 +6102,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -6337,6 +6359,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {
@@ -6581,6 +6604,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         Params:     {
         },
         Body: {

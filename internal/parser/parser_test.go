@@ -100,7 +100,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 					fn() {
 						var a = x
 						-y
-					}		
+					}
 				]
 			`,
 		},
@@ -314,6 +314,106 @@ func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)
 			}
+		})
+	}
+}
+
+func TestClassDeclarations(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"BasicClass": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+				}
+			`,
+		},
+		"ClassWithExtends": {
+			input: `
+				class Dog extends Animal {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithExtendsAndConstructorParams": {
+			input: `
+				class Dog extends Animal(name: string) {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"GenericClassWithExtends": {
+			input: `
+				class Box<T> extends Container {
+					getValue(self) -> T {
+						return self.value
+					}
+				}
+			`,
+		},
+		"ExportClassWithExtends": {
+			input: `
+				export class Manager extends Employee {
+					manage(self) {
+						return "Managing"
+					}
+				}
+			`,
+		},
+		"DeclareClassWithExtends": {
+			input: `
+				declare class HTMLElement extends Element {
+					click(self),
+				}
+			`,
+		},
+		"GenericClassWithExtendsAndParams": {
+			input: `
+				class SpecialBox<T> extends Box<T>(value: T) {
+					isSpecial: true,
+				}
+			`,
+		},
+		"ClassExtendsQualifiedName": {
+			input: `
+				class CustomButton extends UI.Button {
+					customMethod(self) {
+						return "custom"
+					}
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
 		})
 	}
 }

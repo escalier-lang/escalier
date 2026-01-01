@@ -5,6 +5,7 @@ import "github.com/escalier-lang/escalier/internal/provenance"
 type ClassDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam // generic type parameters
+	Extends    TypeAnn      // optional superclass (can be a simple identifier or a generic type reference)
 	Params     []*Param     // constructor params
 	Body       []ClassElem  // fields, methods, etc.
 	export     bool
@@ -20,10 +21,11 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends TypeAnn, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
+		Extends:    extends,
 		Params:     params,
 		Body:       body,
 		export:     export,
@@ -39,6 +41,9 @@ func (d *ClassDecl) Declare() bool { return d.declare }
 func (d *ClassDecl) Span() Span    { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
+		if d.Extends != nil {
+			d.Extends.Accept(v)
+		}
 		for _, elem := range d.Body {
 			elem.Accept(v)
 		}

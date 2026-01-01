@@ -212,6 +212,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	return ast.NewClassDecl(
 		ast.NewIdentifier(dc.Name.Name, convertSpan(dc.Name.Span())),
 		typeParams,
+		nil, // extends - TODO: parse extends clause from .d.ts files
 		constructorParams,
 		bodyElems,
 		false, // export - will be set by export handling

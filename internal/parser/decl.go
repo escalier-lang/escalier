@@ -84,7 +84,7 @@ func (p *Parser) Decl() ast.Decl {
 	}
 }
 
-// classDecl = 'class' ident '(' param* ')' '{' classElem* '}'
+// classDecl = 'class' ident ('extends' typeAnn)? '(' param* ')' '{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	if token.Type != Identifier {
@@ -97,6 +97,18 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	// Parse optional type parameters for the class
 	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
+
+	// Parse optional extends clause
+	var extends ast.TypeAnn
+	if token.Type == Extends {
+		p.lexer.consume()
+		extends = p.typeAnn()
+		if extends == nil {
+			p.reportError(token.Span, "Expected type annotation after 'extends'")
+			return nil
+		}
+		token = p.lexer.peek()
+	}
 
 	// Parse optional constructor params
 	params := []*ast.Param{}
@@ -119,7 +131,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	return ast.NewClassDecl(name, typeParams, params, body, export, declare, span)
+	return ast.NewClassDecl(name, typeParams, extends, params, body, export, declare, span)
 }
 
 // parseClassElem parses a single class element (field, method, static, etc.)
