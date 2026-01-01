@@ -145,25 +145,12 @@ func (c *Checker) inferFuncSig(
 		errors = slices.Concat(errors, throwsErrors)
 	}
 
-	// For async functions, wrap the return type in a Promise<T, E>
-	var finalReturnType type_system.Type
-	var finalThrowsType type_system.Type
-	if sig.Async {
-		// Async functions will have their return type wrapped as a Promise
-		// after body inference. Here we keep the raw inferred type.
-		finalReturnType = returnType
-		finalThrowsType = throwsType
-	} else {
-		finalReturnType = returnType
-		finalThrowsType = throwsType
-	}
-
 	t := type_system.NewFuncType(
 		&ast.NodeProvenance{Node: node},
 		typeParams,
 		params,
-		finalReturnType,
-		finalThrowsType,
+		returnType,
+		throwsType,
 	)
 
 	return t, funcCtx, bindings, errors

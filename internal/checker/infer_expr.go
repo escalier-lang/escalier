@@ -640,7 +640,7 @@ func (c *Checker) inferCallExpr(
 	} else if intersectionType, ok := calleeType.(*type_system.IntersectionType); ok {
 		for _, t := range intersectionType.Types {
 			attemptErrors := []Error{}
-			// TODO: Extract the body of `inferCallExpr` into a function that we can
+			// TODO(#252): Extract the body of `inferCallExpr` into a function that we can
 			// pass the callee and the args to separately.  We need to be able to
 			// expand the callee type if necessary here.  This would allow us to lazily
 			// expand the callee type.

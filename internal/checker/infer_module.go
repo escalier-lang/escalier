@@ -249,7 +249,12 @@ func (c *Checker) InferComponent(
 					Mutable: false,
 				})
 			} else {
-				binding.Type = type_system.NewIntersectionType(nil, binding.Type, funcType)
+				if it, ok := binding.Type.(*type_system.IntersectionType); ok {
+					// If the function type is already overloaded, update the intersection type.
+					it.Types = append(it.Types, funcType)
+				} else {
+					binding.Type = type_system.NewIntersectionType(nil, binding.Type, funcType)
+				}
 			}
 		case *ast.VarDecl:
 			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
@@ -265,13 +270,25 @@ func (c *Checker) InferComponent(
 			}
 
 			if decl.TypeAnn != nil {
+				// It's possible for a type annotation to contain type refs for a type alias
+				// that hasn't been defined yet.  This can happen when there's a cyclic dependency
+				// between a type alias (or interface) and a variable.  See `FileReader` in
+				// lib.dom.d.ts for an example of this.  Most of the time we require that type
+				// aliases be defined when inferring type annotations.  Setting `AllowUndefinedTypeRefs`
+				// to `true` allows us to disable that check while `TypeRefsToUpdate` used to keep
+				// track of which TypeRefTypes needs to be updated later once the type ref has been
+				// defined.  See `inferTypeAnn` for more details.
 				nsCtx.AllowUndefinedTypeRefs = true
 				nsCtx.TypeRefsToUpdate = &Ref[[]*type_system.TypeRefType]{Value: []*type_system.TypeRefType{}}
 
 				taType, taErrors := c.inferTypeAnn(nsCtx, decl.TypeAnn)
 
+				// We need to be careful to reset `AllowUndefinedTypeRefs` so that we continue
+				// to require type aliases to be defined when inferring TypeRefTypes in other situations.
 				nsCtx.AllowUndefinedTypeRefs = false
 				typeRefsToUpdate[declID] = nsCtx.TypeRefsToUpdate.Value
+				// We need to be careful to reset `TypeRefsToUpdate` so that we aren't accidentally
+				// updating certain TypeRefTypes when we shouldn't be.
 				nsCtx.TypeRefsToUpdate = &Ref[[]*type_system.TypeRefType]{Value: []*type_system.TypeRefType{}}
 
 				errors = slices.Concat(errors, taErrors)

@@ -545,7 +545,7 @@ func FindDeclDependencies(
 			}
 		}
 	case *ast.ClassDecl:
-		// panic("TODO: handle ClassDecls in FindDeclDependencies")
+		// TODO(#258): handle ClassDecls in FindDeclDependencies"
 	}
 
 	return visitor.Dependencies

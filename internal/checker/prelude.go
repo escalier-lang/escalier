@@ -117,7 +117,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 			instTypeAlias := resolveQualifiedTypeAlias(ctx, instIdent)
 			if ident, ok := instIdent.(*type_system.Ident); ok {
 				instName := ident.Name
-				// TODO: Support qualified identifiers in mutability overrides
+				// TODO(#254): Support qualified identifiers in mutability overrides
 				overrides := mutabilityOverrides[instName]
 
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
@@ -224,6 +224,7 @@ var preludeScope *Scope
 var symbolIDCounter int
 
 // We assume that a new Checker instance is being passed in every time Prelude is called.
+// TODO(#256): Report all errors to the caller.
 func Prelude(c *Checker) *Scope {
 	if preludeScope != nil {
 		c.SymbolID = symbolIDCounter
@@ -238,7 +239,6 @@ func Prelude(c *Checker) *Scope {
 		panic("Failed to load TypeScript lib.es5.d.ts")
 	}
 
-	// TODO: Re-enable once function overloads are supported
 	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
 	libDOMModule, err := loadTypeScriptModule(libDOMPath)
 	if err != nil {
@@ -257,7 +257,6 @@ func Prelude(c *Checker) *Scope {
 		panic("Failed to infer types for lib.es5.d.ts")
 	}
 
-	// TODO: Re-enable once function overloads are supported
 	inferErrors = c.InferModule(inferCtx, libDOMModule)
 	if len(inferErrors) > 0 {
 		for _, err := range inferErrors {
@@ -278,9 +277,6 @@ func Prelude(c *Checker) *Scope {
 
 	UpdateMethodMutability(inferCtx, inferredScope)
 	UpdateArrayMutability(inferredScope)
-
-	fetchBinding := inferredScope.Values["fetch"]
-	fmt.Fprintf(os.Stderr, "fetch = %s\n", fetchBinding.Type.String())
 
 	scope.Namespace = inferredScope
 

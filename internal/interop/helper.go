@@ -57,6 +57,7 @@ func convertTypeParam(tp *dts_parser.TypeParam) (*ast.TypeParam, error) {
 	return &typeParam, nil
 }
 
+// TODO(#259): Handle all function param patterns
 func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 	// Convert the parameter name to an IdentPat pattern
 	var pattern ast.Pat = ast.NewIdentPat(p.Name.Name, nil, nil, p.Span())

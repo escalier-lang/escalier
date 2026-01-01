@@ -29,6 +29,9 @@ func (c *Checker) inferTypeAnn(
 			}
 
 			typeRef := type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), typeAlias, typeArgs...)
+			// If the type alias isn't defined yet, add the type ref to `TypeRefsToUpdate`
+			// and update it the type ref later once we know what it is.  See `InferComponent`
+			// for more details.
 			if typeAlias == nil {
 				ctx.TypeRefsToUpdate.Value = append(ctx.TypeRefsToUpdate.Value, typeRef)
 			}

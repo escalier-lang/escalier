@@ -2,9 +2,7 @@ package checker
 
 import (
 	"fmt"
-	"os"
 	"slices"
-	"strings"
 
 	"maps"
 
@@ -44,11 +42,6 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
 		bindings, errors := c.inferVarDecl(ctx, decl)
-		var names []string
-		for name, _ := range bindings {
-			names = append(names, name)
-		}
-		fmt.Fprintf(os.Stderr, "inferring %s\n", strings.Join(names, ", "))
 		maps.Copy(ctx.Scope.Namespace.Values, bindings)
 		return errors
 	case *ast.TypeDecl:
