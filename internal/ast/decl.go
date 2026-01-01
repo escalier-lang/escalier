@@ -217,8 +217,15 @@ func (d *InterfaceDecl) Export() bool  { return d.export }
 func (d *InterfaceDecl) Declare() bool { return d.declare }
 func (d *InterfaceDecl) Span() Span    { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
-	// TODO: visit type params
 	if v.EnterDecl(d) {
+		for _, tp := range d.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(v)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(v)
+			}
+		}
 		d.TypeAnn.Accept(v)
 	}
 	v.ExitDecl(d)

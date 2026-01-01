@@ -2,12 +2,14 @@ package codegen
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -574,6 +576,10 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	}
 
 	switch d := decl.(type) {
+	case *ast.TypeDecl:
+		return []Stmt{}
+	case *ast.InterfaceDecl:
+		return []Stmt{}
 	case *ast.VarDecl:
 		if d.Init == nil {
 			panic("TODO - TransformDecl - VarDecl - Init is nil")
@@ -618,8 +624,6 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			source: decl,
 		}
 		return []Stmt{stmt}
-	case *ast.TypeDecl:
-		return []Stmt{}
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
@@ -926,6 +930,8 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 
 		return allStmts
 	default:
+		str, _ := printer.Print(d, printer.DefaultOptions())
+		fmt.Fprintf(os.Stderr, "d = %s\n", str)
 		panic("TODO - TransformDecl - default case")
 	}
 }

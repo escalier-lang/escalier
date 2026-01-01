@@ -636,6 +636,8 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print("null")
 	case *UndefinedTypeAnn:
 		p.print("undefined")
+	case *VoidTypeAnn:
+		p.print("void")
 	case *UnknownTypeAnn:
 		p.print("unknown")
 	case *NeverTypeAnn:

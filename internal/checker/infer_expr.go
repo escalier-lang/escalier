@@ -404,14 +404,27 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			argType, argErrors := c.inferExpr(ctx, expr.Arg)
 			errors = argErrors
 
-			// If the argument is a Promise<T, E>, the result type is T
-			// and the throws type should be E (stored in expr.Throws for later use)
+			// If the argument is a Promise, unwrap its value type.
+			// Escalier's Promise type may be declared with one or two type arguments:
+			//   Promise<T>               – only a resolved value type
+			//   Promise<T, E>            – value type and error (throws) type
+			// We treat the first argument as the awaited value type.
+			// If a second argument exists, we record it on the AwaitExpr so
+			// the function body can incorporate the possible throws.
+			// If the argument is a Promise, unwrap its value type.
 			if promiseType, ok := argType.(*type_system.TypeRefType); ok && type_system.QualIdentToString(promiseType.Name) == "Promise" {
-				if len(promiseType.TypeArgs) >= 2 {
-					resultType = promiseType.TypeArgs[0]  // T
-					expr.Throws = promiseType.TypeArgs[1] // E (store for throw inference)
+				if len(promiseType.TypeArgs) >= 1 {
+					// Use the first type argument as the awaited value.
+					resultType = promiseType.TypeArgs[0]
 				} else {
+					// No type arguments – fallback to never.
 					resultType = type_system.NewNeverType(nil)
+				}
+				// Record the throws type if present (second type argument of Promise)
+				if len(promiseType.TypeArgs) >= 2 {
+					expr.Throws = promiseType.TypeArgs[1]
+				} else {
+					expr.Throws = type_system.NewNeverType(nil)
 				}
 			} else {
 				// If not a Promise type, this is an error
@@ -623,6 +636,25 @@ func (c *Checker) inferCallExpr(
 		}
 
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
+
+	} else if intersectionType, ok := calleeType.(*type_system.IntersectionType); ok {
+		for _, t := range intersectionType.Types {
+			attemptErrors := []Error{}
+			// TODO(#252): Extract the body of `inferCallExpr` into a function that we can
+			// pass the callee and the args to separately.  We need to be able to
+			// expand the callee type if necessary here.  This would allow us to lazily
+			// expand the callee type.
+			if funcType, ok := t.(*type_system.FuncType); ok {
+				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, attemptErrors)
+				if len(callErrors) == 0 {
+					return retType, errors
+				}
+			}
+		}
+
+		return type_system.NewNeverType(provneance), []Error{
+			&UnimplementedError{message: "TODO: create an error for when no overload for a function match the provided args"},
+		}
 	} else {
 		return type_system.NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}

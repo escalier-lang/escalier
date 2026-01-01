@@ -1333,14 +1333,24 @@ type UnionType struct {
 }
 
 func NewUnionType(provenance Provenance, types ...Type) Type {
-	if len(types) == 0 {
+	// Remove any Never types from the union – they do not affect the
+	// resulting type and can lead to spurious union members (e.g. `never`
+	// appearing alongside other error types). If all members are filtered out,
+	// we fall back to the never type.
+	filtered := []Type{}
+	for _, t := range types {
+		if _, isNever := t.(*NeverType); !isNever {
+			filtered = append(filtered, t)
+		}
+	}
+	if len(filtered) == 0 {
 		return NewNeverType(nil)
 	}
-	if len(types) == 1 {
-		return types[0]
+	if len(filtered) == 1 {
+		return filtered[0]
 	}
 	return &UnionType{
-		Types:      types,
+		Types:      filtered,
 		provenance: provenance,
 	}
 }

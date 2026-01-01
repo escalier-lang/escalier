@@ -3,4 +3,4 @@ declare function addStrs1<A extends string, B extends string>(a: A, b: B): numbe
 declare function addNums2<A extends number, B extends number>(a: A, b: B): number;
 declare const addStrs3: <A extends string, B extends string>(a: A, b: B) => number;
 declare const addNums4: <A extends number, B extends number>(a: A, b: B) => number;
-declare function main(): ;
+declare function main(): void;

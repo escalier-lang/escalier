@@ -6,9 +6,9 @@ class Color(r: number, g: number, b: number) {
         return [subject.r, subject.g, subject.b]
     },
 }
-class Event(kind: string) {
+class MyEvent(kind: string) {
 	kind,
-    static [Symbol.customMatcher](subject: Event) -> [string] {
+    static [Symbol.customMatcher](subject: MyEvent) -> [string] {
         return [subject.kind]
     },
 }

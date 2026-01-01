@@ -609,6 +609,19 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"result2": "number",
 			},
 		},
+		"FuncOverloads": {
+			input: `
+				declare fn format(value: number) -> string throws never
+				declare fn format(value: string) -> string throws never
+				val str1 = format(42)
+				val str2 = format("hello")
+			`,
+			expectedTypes: map[string]string{
+				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"str1":   "string",
+				"str2":   "string",
+			},
+		},
 		"PropertiesOnArrays": {
 			input: `
 				val arr: Array<number> = [1, 2, 3]
@@ -979,22 +992,22 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"GenericEnumWithPatternMatching": {
 			input: `
-				enum Option<T> {
+				enum MyOption<T> {
 					Some(value: T),
 					None(),
 				}
-				declare val option: Option<number>
-				val some = Option.Some
-				val none = Option.None
+				declare val option: MyOption<number>
+				val some = MyOption.Some
+				val none = MyOption.None
 				val result = match option {
-					Option.Some(value) => value,
-					Option.None() => 0,
+					MyOption.Some(value) => value,
+					MyOption.None() => 0,
 				}
 			`,
 			expectedTypes: map[string]string{
-				"option": "Option<number>",
-				"some":   "{new fn <T>(value: T) -> Option<T> throws never, symbol2<T>(self, subject: Some<T>) -> [T] throws never}",
-				"none":   "{new fn <T>() -> Option<T> throws never, symbol2<T>(self, subject: None<T>) -> [] throws never}",
+				"option": "MyOption<number>",
+				"some":   "{new fn <T>(value: T) -> MyOption<T> throws never, symbol2<T>(self, subject: Some<T>) -> [T] throws never}",
+				"none":   "{new fn <T>() -> MyOption<T> throws never, symbol2<T>(self, subject: None<T>) -> [] throws never}",
 				"result": "number | 0",
 			},
 		},
@@ -1184,6 +1197,23 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"second": "number",
 			},
 		},
+		"CyclicDependencyBetweenTypesAndValues": {
+			input: `
+				interface Bar {
+				    state: typeof Foo.EMPTY | typeof Foo.LOADING | typeof Foo.DONE,
+				}
+
+				declare val Foo: {
+					prototype: Bar,
+					readonly EMPTY: 0,
+					readonly LOADING: 1,
+					readonly DONE: 2,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Foo": "{prototype: Bar, readonly EMPTY: 0, readonly LOADING: 1, readonly DONE: 2}",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -1215,7 +1245,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
@@ -1362,7 +1393,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			_, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
 
 			// Verify we got the expected number of errors
 			assert.Len(t, inferErrors, len(test.expectedErrors), "Expected %d errors but got %d", len(test.expectedErrors), len(inferErrors))
@@ -1655,7 +1686,8 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
 			}
@@ -1707,7 +1739,8 @@ func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	scope, inferErrors := c.InferModule(inferCtx, module)
+	inferErrors := c.InferModule(inferCtx, module)
+	scope := inferCtx.Scope.Namespace
 	if len(inferErrors) > 0 {
 		assert.Equal(t, inferErrors, []*Error{})
 	}
@@ -1783,7 +1816,8 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
 			}
@@ -2718,10 +2752,10 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 			// Run InferDepGraph
 			c := NewChecker()
-			resultNS, errors := c.InferDepGraph(ctx, depGraph)
+			errors := c.InferDepGraph(ctx, depGraph)
 
 			// Verify results
-			test.expected(t, resultNS, errors)
+			test.expected(t, ctx.Scope.Namespace, errors)
 		})
 	}
 }
@@ -3611,7 +3645,8 @@ func TestMutableTypes(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("InferError[%d]: %#v\n", i, err)
@@ -3871,7 +3906,8 @@ func TestMatchExprInference(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -4064,7 +4100,7 @@ func TestInterfaceMergingErrors(t *testing.T) {
 	tests := map[string]struct {
 		input              string
 		expectedErrorCount int
-		expectedErrorType  interface{}
+		expectedErrorType  any
 	}{
 		"IncompatiblePropertyTypes": {
 			input: `
@@ -4349,7 +4385,8 @@ func TestInterfaceMergingModule(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			scope, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
 
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -4382,7 +4419,7 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 	tests := map[string]struct {
 		input              string
 		expectedErrorCount int
-		expectedErrorType  interface{}
+		expectedErrorType  any
 	}{
 		"ExportedIncompatiblePropertyTypes": {
 			input: `
@@ -4571,7 +4608,7 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			_, inferErrors := c.InferModule(inferCtx, module)
+			inferErrors := c.InferModule(inferCtx, module)
 
 			// Verify we got the expected number of errors
 			assert.Len(t, inferErrors, test.expectedErrorCount, "Expected %d errors, got %d", test.expectedErrorCount, len(inferErrors))

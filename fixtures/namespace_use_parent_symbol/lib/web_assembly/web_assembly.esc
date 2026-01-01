@@ -1,0 +1,16 @@
+interface GlobalDescriptor<T: ValueType = ValueType> {
+    mutable?: boolean,
+    value: T,
+}
+
+interface ValueTypeMap {
+    anyfunc: Function,
+    externref: any,
+    f32: number,
+    f64: number,
+    i32: number,
+    i64: bigint,
+    v128: never,
+}
+
+type ValueType = keyof ValueTypeMap

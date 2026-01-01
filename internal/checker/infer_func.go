@@ -145,38 +145,12 @@ func (c *Checker) inferFuncSig(
 		errors = slices.Concat(errors, throwsErrors)
 	}
 
-	// For async functions, wrap the return type in a Promise<T, E>
-	var finalReturnType type_system.Type
-	var finalThrowsType type_system.Type
-	if sig.Async {
-		// For async functions, check if the user explicitly specified a Promise return type
-		if promiseType, ok := returnType.(*type_system.TypeRefType); ok && type_system.QualIdentToString(promiseType.Name) == "Promise" {
-			// User explicitly specified Promise<T, E>, use it as-is
-			finalReturnType = returnType
-			finalThrowsType = type_system.NewNeverType(nil) // Async functions don't throw directly
-		} else {
-			// User didn't specify Promise, wrap the return type
-			promiseAlias := ctx.Scope.getTypeAlias("Promise")
-			if promiseAlias != nil {
-				finalReturnType = type_system.NewTypeRefType(nil, "Promise", promiseAlias, returnType, throwsType)
-				finalThrowsType = type_system.NewNeverType(nil) // Async functions don't throw directly
-			} else {
-				// Fallback if Promise type is not available
-				finalReturnType = returnType
-				finalThrowsType = throwsType
-			}
-		}
-	} else {
-		finalReturnType = returnType
-		finalThrowsType = throwsType
-	}
-
 	t := type_system.NewFuncType(
 		&ast.NodeProvenance{Node: node},
 		typeParams,
 		params,
-		finalReturnType,
-		finalThrowsType,
+		returnType,
+		throwsType,
 	)
 
 	return t, funcCtx, bindings, errors
@@ -200,16 +174,19 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	errors = slices.Concat(errors, bodyErrors)
 
 	// For async functions, we need to handle Promise return types differently
+	// For async functions, we construct a Promise<T, E> from the inferred
+	// return and throws types, then unify with the function signature.
 	if isAsync {
-		// For async functions, the funcType.Return is Promise<T, E>
-		// We need to unify the inferred return and throw types with the Promise type args
-		if promiseType, ok := funcSigType.Return.(*type_system.TypeRefType); ok && type_system.QualIdentToString(promiseType.Name) == "Promise" {
-			if len(promiseType.TypeArgs) >= 2 {
-				unifyErrors := c.Unify(ctx, returnType, promiseType.TypeArgs[0])
-				unifyThrowsErrors := c.Unify(ctx, inferredThrowType, promiseType.TypeArgs[1])
-				errors = slices.Concat(errors, unifyErrors, unifyThrowsErrors)
-			}
+		// Create a Promise<T, E> type using the inferred components.
+		promiseAlias := ctx.Scope.getTypeAlias("Promise")
+		if promiseAlias != nil {
+			promiseRef := type_system.NewTypeRefType(nil, "Promise", promiseAlias, returnType, inferredThrowType)
+			// Update the function signature's return type to this Promise.
+			funcSigType.Return = promiseRef
+			// Async functions do not throw directly; set throws to never.
+			funcSigType.Throws = type_system.NewNeverType(nil)
 		}
+		// Now unify the (possibly updated) return type with itself – no additional work needed.
 	} else {
 		// For non-async functions, use the original logic
 		unifyReturnErrors := c.Unify(ctx, returnType, funcSigType.Return)

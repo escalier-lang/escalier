@@ -7,6 +7,6 @@ import (
 
 func format(files []string) {
 	// TODO: finish implementing this
-	fmt.Printf("formatting %v\n", files)
+	fmt.Fprintf(os.Stderr, "formatting %v\n", files)
 	os.Exit(1)
 }

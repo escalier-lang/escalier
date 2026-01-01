@@ -15,9 +15,13 @@ async function main() {
     const libES5Text = await fetch(
         `${import.meta.env.BASE_URL}types/lib.es5.d.ts`,
     ).then((res) => res.bytes());
+    const libDOMText = await fetch(
+        `${import.meta.env.BASE_URL}types/lib.dom.d.ts`,
+    ).then((res) => res.bytes());
 
     const vol: Volume = {
         '/node_modules/typescript/lib/lib.es5.d.ts': libES5Text,
+        '/node_modules/typescript/lib/lib.dom.d.ts': libDOMText,
     };
     const fs = new BrowserFS(vol);
 
