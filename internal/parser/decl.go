@@ -84,7 +84,7 @@ func (p *Parser) Decl() ast.Decl {
 	}
 }
 
-// classDecl = 'class' ident ('extends' typeAnn)? '(' param* ')' '{' classElem* '}'
+// classDecl = 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	if token.Type != Identifier {
@@ -97,6 +97,15 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	// Parse optional type parameters for the class
 	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
+
+	// Parse optional constructor params
+	params := []*ast.Param{}
+	if token.Type == OpenParen {
+		p.lexer.consume()
+		params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		p.expect(CloseParen, AlwaysConsume)
+		token = p.lexer.peek()
+	}
 
 	// Parse optional extends clause
 	var extends *ast.TypeRefTypeAnn
@@ -115,15 +124,16 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 			return nil
 		}
 		token = p.lexer.peek()
-	}
 
-	// Parse optional constructor params
-	params := []*ast.Param{}
-	if token.Type == OpenParen {
-		p.lexer.consume()
-		params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		p.expect(CloseParen, AlwaysConsume)
-		token = p.lexer.peek()
+		// Parse optional super constructor args after extends
+		if token.Type == OpenParen {
+			p.lexer.consume()
+			// For now, we parse and discard the super constructor args
+			// TODO: store these args in the AST if needed for validation or codegen
+			_ = parseDelimSeq(p, CloseParen, Comma, p.expr)
+			p.expect(CloseParen, AlwaysConsume)
+			token = p.lexer.peek()
+		}
 	}
 
 	// Parse class body

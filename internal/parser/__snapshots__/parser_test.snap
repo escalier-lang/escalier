@@ -6154,53 +6154,13 @@
             Name: &ast.Ident{
                 Name: "Box",
                 span: ast.Span{
-                    Start:    ast.Location{Line:2, Column:33},
-                    End:      ast.Location{Line:2, Column:36},
+                    Start:    ast.Location{Line:2, Column:43},
+                    End:      ast.Location{Line:2, Column:46},
                     SourceID: 0,
                 },
             },
             TypeArgs: {
                 &ast.TypeRefTypeAnn{
-                    Name: &ast.Ident{
-                        Name: "T",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:2, Column:37},
-                            End:      ast.Location{Line:2, Column:38},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: {
-                    },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:37},
-                        End:      ast.Location{Line:2, Column:38},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-            },
-            span: ast.Span{
-                Start:    ast.Location{Line:2, Column:33},
-                End:      ast.Location{Line:2, Column:39},
-                SourceID: 0,
-            },
-            inferredType: nil,
-        },
-        Params: {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "value",
-                    TypeAnn: nil,
-                    Default: nil,
-                    span:    ast.Span{
-                        Start:    ast.Location{Line:2, Column:40},
-                        End:      ast.Location{Line:2, Column:45},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Optional: false,
-                TypeAnn:  &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
                         span: ast.Span{
@@ -6214,6 +6174,46 @@
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:47},
                         End:      ast.Location{Line:2, Column:48},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:43},
+                End:      ast.Location{Line:2, Column:49},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Params: {
+            &ast.Param{
+                Pattern: &ast.IdentPat{
+                    Name:    "value",
+                    TypeAnn: nil,
+                    Default: nil,
+                    span:    ast.Span{
+                        Start:    ast.Location{Line:2, Column:25},
+                        End:      ast.Location{Line:2, Column:30},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Optional: false,
+                TypeAnn:  &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:32},
+                            End:      ast.Location{Line:2, Column:33},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:32},
+                        End:      ast.Location{Line:2, Column:33},
                         SourceID: 0,
                     },
                     inferredType: nil,
@@ -6658,16 +6658,16 @@
             Name: &ast.Ident{
                 Name: "Animal",
                 span: ast.Span{
-                    Start:    ast.Location{Line:2, Column:23},
-                    End:      ast.Location{Line:2, Column:29},
+                    Start:    ast.Location{Line:2, Column:38},
+                    End:      ast.Location{Line:2, Column:44},
                     SourceID: 0,
                 },
             },
             TypeArgs: {
             },
             span: ast.Span{
-                Start:    ast.Location{Line:2, Column:23},
-                End:      ast.Location{Line:2, Column:29},
+                Start:    ast.Location{Line:2, Column:38},
+                End:      ast.Location{Line:2, Column:44},
                 SourceID: 0,
             },
             inferredType: nil,
@@ -6679,8 +6679,8 @@
                     TypeAnn: nil,
                     Default: nil,
                     span:    ast.Span{
-                        Start:    ast.Location{Line:2, Column:30},
-                        End:      ast.Location{Line:2, Column:34},
+                        Start:    ast.Location{Line:2, Column:15},
+                        End:      ast.Location{Line:2, Column:19},
                         SourceID: 0,
                     },
                     inferredType: nil,
@@ -6688,8 +6688,8 @@
                 Optional: false,
                 TypeAnn:  &ast.StringTypeAnn{
                     span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:36},
-                        End:      ast.Location{Line:2, Column:42},
+                        Start:    ast.Location{Line:2, Column:21},
+                        End:      ast.Location{Line:2, Column:27},
                         SourceID: 0,
                     },
                     inferredType: nil,

@@ -311,7 +311,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					},
 				}
 
-				class Dog extends Animal(name: string, breed: string) {
+				class Dog(name: string, breed: string) extends Animal {
 					breed,
 					speak(self) -> string {
 						return "Woof!"
@@ -350,7 +350,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					},
 				}
 
-				class Car extends Vehicle(make: string, model: string, doors: number) {
+				class Car(make: string, model: string, doors: number) extends Vehicle {
 					doors,
 					getFullInfo(self) -> string {
 						return self.getInfo() ++ " (" ++ "doors" ++ ")"
@@ -384,7 +384,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					b,
 				}
 
-				class Extended extends Base(a: number, b: string, c: boolean, d: number) {
+				class Extended(a: number, b: string, c: boolean, d: number) extends Base {
 					c,
 					d,
 				}
@@ -415,7 +415,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					color,
 				}
 
-				class Circle extends Shape(color: string, radius: number) {
+				class Circle(color: string, radius: number) extends Shape {
 					radius,
 					get area(self) -> number {
 						return 3.14 * self.radius * self.radius
@@ -444,7 +444,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					size,
 				}
 
-				class Box extends Container(size: number, contents: string) {
+				class Box(size: number, contents: string) extends Container {
 					contents,
 				}
 
@@ -469,11 +469,11 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					id,
 				}
 
-				class Parent extends GrandParent(id: number, name: string) {
+				class Parent(id: number, name: string) extends GrandParent {
 					name,
 				}
 
-				class Child extends Parent(id: number, name: string, age: number) {
+				class Child(id: number, name: string, age: number) extends Parent {
 					age,
 				}
 
@@ -503,7 +503,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					value,
 				}
 
-				class ExtendedCounter extends Counter(value: number, step: number) {
+				class ExtendedCounter(value: number, step: number) extends Counter {
 					step,
 					increment(mut self) {
 						self.value = self.value + self.step
@@ -535,7 +535,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					},
 				}
 
-				class Cat extends Animal(name: string, lives: number) {
+				class Cat(name: string, lives: number) extends Animal {
 					lives,
 					makeSound(self) -> string {
 						return "Meow"

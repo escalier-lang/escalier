@@ -80,7 +80,7 @@ func TestClassDeclDependencies(t *testing.T) {
 				class Base {}
 				type Data = {value: number}
 				type Error = {message: string}
-				class Child extends Base(data: Data) {
+				class Child(data: Data) extends Base {
 					process(self) -> Error {
 						return {message: "error"}
 					}

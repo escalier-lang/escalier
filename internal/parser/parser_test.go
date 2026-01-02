@@ -341,7 +341,7 @@ func TestClassDeclarations(t *testing.T) {
 		},
 		"ClassWithExtendsAndConstructorParams": {
 			input: `
-				class Dog extends Animal(name: string) {
+				class Dog(name: string)  extends Animal{
 					bark(self) {
 						return "Woof!"
 					}
@@ -375,7 +375,7 @@ func TestClassDeclarations(t *testing.T) {
 		},
 		"GenericClassWithExtendsAndParams": {
 			input: `
-				class SpecialBox<T> extends Box<T>(value: T) {
+				class SpecialBox<T>(value: T) extends Box<T> {
 					isSpecial: true,
 				}
 			`,
