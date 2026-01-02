@@ -454,14 +454,26 @@ func FindDeclDependencies(
 			d.Init.Accept(visitor)
 		}
 	case *ast.FuncDecl:
-		for _, tp := range d.TypeParams {
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(visitor)
-			}
-			if tp.Default != nil {
-				tp.Default.Accept(visitor)
+		// Create a scope for type parameters
+		visitor.pushScope()
+
+		// Process type parameters and add them to the scope
+		if len(visitor.LocalScopes) > 0 {
+			currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
+			for _, tp := range d.TypeParams {
+				// Add type parameter to the scope
+				currentScope.TypeBindings.Add(tp.Name)
+
+				// Visit constraint and default after adding to scope
+				if tp.Constraint != nil {
+					tp.Constraint.Accept(visitor)
+				}
+				if tp.Default != nil {
+					tp.Default.Accept(visitor)
+				}
 			}
 		}
+
 		// Visit parameter type annotations (if any)
 		for _, param := range d.Params {
 			if param.TypeAnn != nil {
@@ -476,9 +488,8 @@ func FindDeclDependencies(
 		if d.Throws != nil {
 			d.Throws.Accept(visitor)
 		}
-		// For function declarations, create a scope for parameters and visit the body
+		// Visit the function body using the same scope (don't create a new one)
 		if d.Body != nil {
-			visitor.pushScope()
 			// Add parameters to the function scope
 			if len(visitor.LocalScopes) > 0 {
 				currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
@@ -491,8 +502,10 @@ func FindDeclDependencies(
 			}
 			// Visit the function body (block scope will be handled by EnterBlock/ExitBlock)
 			d.Body.Accept(visitor)
-			visitor.popScope()
 		}
+
+		// Pop the scope created for type parameters
+		visitor.popScope()
 	case *ast.TypeDecl:
 		// For type declarations, visit the type annotation
 		for _, tp := range d.TypeParams {
@@ -514,6 +527,12 @@ func FindDeclDependencies(
 				tp.Default.Accept(visitor)
 			}
 		}
+
+		// Visit extends clause (extended interfaces)
+		for _, ext := range d.Extends {
+			ext.Accept(visitor)
+		}
+
 		d.TypeAnn.Accept(visitor)
 	case *ast.EnumDecl:
 		// For enum declarations, visit enum elements for dependencies
@@ -545,7 +564,56 @@ func FindDeclDependencies(
 			}
 		}
 	case *ast.ClassDecl:
-		// TODO(#258): handle ClassDecls in FindDeclDependencies"
+		// Create a scope for type parameters
+		visitor.pushScope()
+
+		// Process type parameters and add them to the scope
+		if len(visitor.LocalScopes) > 0 {
+			currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
+			for _, tp := range d.TypeParams {
+				// Add type parameter to the scope
+				currentScope.TypeBindings.Add(tp.Name)
+
+				// Visit constraint and default after adding to scope
+				if tp.Constraint != nil {
+					tp.Constraint.Accept(visitor)
+				}
+				if tp.Default != nil {
+					tp.Default.Accept(visitor)
+				}
+			}
+		}
+
+		// Visit extends clause (parent class type)
+		if d.Extends != nil {
+			d.Extends.Accept(visitor)
+		}
+
+		// Visit constructor parameter type annotations
+		for _, param := range d.Params {
+			if param.TypeAnn != nil {
+				param.TypeAnn.Accept(visitor)
+			}
+		}
+
+		// Add constructor parameters to the scope
+		if len(visitor.LocalScopes) > 0 {
+			currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
+			for _, param := range d.Params {
+				bindings := ast.FindBindings(param.Pattern)
+				for binding := range bindings {
+					currentScope.ValueBindings.Add(binding)
+				}
+			}
+		}
+
+		// Visit class body elements (fields, methods, getters, setters)
+		for _, elem := range d.Body {
+			elem.Accept(visitor)
+		}
+
+		// Pop the scope created for type parameters
+		visitor.popScope()
 	}
 
 	return visitor.Dependencies

@@ -100,7 +100,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 					fn() {
 						var a = x
 						-y
-					}		
+					}
 				]
 			`,
 		},
@@ -166,6 +166,64 @@ func TestParseModuleNoErrors(t *testing.T) {
 				export enum Result<T, E> {
 					Ok(value: T),
 					Err(error: E),
+				}
+			`,
+		},
+		"InterfaceWithSingleExtends": {
+			input: `
+				interface Foo extends Bar {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithMultipleExtends": {
+			input: `
+				interface Foo extends Bar, Baz {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithQualifiedExtends": {
+			input: `
+				interface Foo extends Bar.Baz {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithGenericExtends": {
+			input: `
+				interface Foo extends Bar<string> {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithComplexExtends": {
+			input: `
+				interface Foo extends Bar.Baz<string>, Qux {
+					x: number
+				}
+			`,
+		},
+		"GenericInterfaceWithExtends": {
+			input: `
+				interface Foo<T> extends Bar<T> {
+					value: T
+				}
+			`,
+		},
+		"InterfaceWithMultipleGenericExtends": {
+			input: `
+				interface Foo<T, U> extends Bar<T>, Baz<U>, Qux {
+					x: T,
+					y: U
+				}
+			`,
+		},
+		"ExportInterface": {
+			input: `
+				export interface Person {
+					name: string,
+					age: number,
 				}
 			`,
 		},
@@ -314,6 +372,106 @@ func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)
 			}
+		})
+	}
+}
+
+func TestClassDeclarations(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"BasicClass": {
+			input: `
+				class Point(x: number, y: number) {
+					x,
+					y,
+				}
+			`,
+		},
+		"ClassWithExtends": {
+			input: `
+				class Dog extends Animal {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithExtendsAndConstructorParams": {
+			input: `
+				class Dog(name: string)  extends Animal{
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"GenericClassWithExtends": {
+			input: `
+				class Box<T> extends Container {
+					getValue(self) -> T {
+						return self.value
+					}
+				}
+			`,
+		},
+		"ExportClassWithExtends": {
+			input: `
+				export class Manager extends Employee {
+					manage(self) {
+						return "Managing"
+					}
+				}
+			`,
+		},
+		"DeclareClassWithExtends": {
+			input: `
+				declare class HTMLElement extends Element {
+					click(self),
+				}
+			`,
+		},
+		"GenericClassWithExtendsAndParams": {
+			input: `
+				class SpecialBox<T>(value: T) extends Box<T> {
+					isSpecial: true,
+				}
+			`,
+		},
+		"ClassExtendsQualifiedName": {
+			input: `
+				class CustomButton extends UI.Button {
+					customMethod(self) {
+						return "custom"
+					}
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
 		})
 	}
 }

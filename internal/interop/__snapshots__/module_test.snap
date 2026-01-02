@@ -730,6 +730,7 @@
                                 },
                                 TypeParams: {
                                 },
+                                Extends: (*ast.TypeRefTypeAnn)(nil),
                                 Params:  nil,
                                 Body:    nil,
                                 export:  false,

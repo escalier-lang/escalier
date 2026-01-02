@@ -287,6 +287,277 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"Counter": "{value: number}",
 			},
 		},
+		"GenericClass": {
+			input: `
+				class Box<T>(value: T) {
+					value,
+				}
+
+				val box = Box(42:number)
+				val boxValue = box.value
+			`,
+			expectedTypes: map[string]string{
+				"Box":      "{new fn <T>(value: T) -> mut? Box<T> throws never}",
+				"box":      "Box<number>",
+				"boxValue": "number",
+			},
+		},
+		"ClassWithExtends": {
+			input: `
+				class Animal(name: string) {
+					name,
+					speak(self) -> string {
+						return "Animal speaks"
+					},
+				}
+
+				class Dog(name: string, breed: string) extends Animal {
+					breed,
+					speak(self) -> string {
+						return "Woof!"
+					},
+				}
+
+				val animal = Animal("Generic")
+				val dog = Dog("Buddy", "Golden Retriever")
+				val dogName = dog.name
+				val dogBreed = dog.breed
+				val animalSound = animal.speak()
+				val dogSound = dog.speak()
+			`,
+			expectedTypes: map[string]string{
+				"Animal":      "{new fn (name: string) -> mut? Animal throws never}",
+				"Dog":         "{new fn (name: string, breed: string) -> mut? Dog throws never}",
+				"animal":      "Animal",
+				"dog":         "Dog",
+				"dogName":     "string",
+				"dogBreed":    "string",
+				"animalSound": "string",
+				"dogSound":    "string",
+			},
+			expectedTypeAliases: map[string]string{
+				"Animal": "{name: string, speak(self) -> string throws never}",
+				"Dog":    "{breed: string, speak(self) -> string throws never}",
+			},
+		},
+		"ClassWithExtendsAccessingParentMethods": {
+			input: `
+				class Vehicle(make: string, model: string) {
+					make,
+					model,
+					getInfo(self) -> string {
+						return self.make ++ " " ++ self.model
+					},
+				}
+
+				class Car(make: string, model: string, doors: number) extends Vehicle {
+					doors,
+					getFullInfo(self) -> string {
+						return self.getInfo() ++ " (" ++ "doors" ++ ")"
+					},
+				}
+
+				val car = Car("Toyota", "Camry", 4)
+				val info = car.getInfo()
+				val fullInfo = car.getFullInfo()
+				val carMake = car.make
+				val carDoors = car.doors
+			`,
+			expectedTypes: map[string]string{
+				"Vehicle":  "{new fn (make: string, model: string) -> mut? Vehicle throws never}",
+				"Car":      "{new fn (make: string, model: string, doors: number) -> mut? Car throws never}",
+				"car":      "Car",
+				"info":     "string",
+				"fullInfo": "string",
+				"carMake":  "string",
+				"carDoors": "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Vehicle": "{make: string, model: string, getInfo(self) -> string throws never}",
+				"Car":     "{doors: number, getFullInfo(self) -> string throws never}",
+			},
+		},
+		"ClassWithExtendsMultipleFields": {
+			input: `
+				class Base(a: number, b: string) {
+					a,
+					b,
+				}
+
+				class Extended(a: number, b: string, c: boolean, d: number) extends Base {
+					c,
+					d,
+				}
+
+				val ext = Extended(1, "test", true, 42)
+				val extA = ext.a
+				val extB = ext.b
+				val extC = ext.c
+				val extD = ext.d
+			`,
+			expectedTypes: map[string]string{
+				"Base":     "{new fn (a: number, b: string) -> mut? Base throws never}",
+				"Extended": "{new fn (a: number, b: string, c: boolean, d: number) -> mut? Extended throws never}",
+				"ext":      "Extended",
+				"extA":     "number",
+				"extB":     "string",
+				"extC":     "boolean",
+				"extD":     "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Base":     "{a: number, b: string}",
+				"Extended": "{c: boolean, d: number}",
+			},
+		},
+		"ClassWithExtendsAndGetter": {
+			input: `
+				class Shape(color: string) {
+					color,
+				}
+
+				class Circle(color: string, radius: number) extends Shape {
+					radius,
+					get area(self) -> number {
+						return 3.14 * self.radius * self.radius
+					},
+				}
+
+				val circle = Circle("red", 5)
+				val circleColor = circle.color
+				val circleArea = circle.area
+			`,
+			expectedTypes: map[string]string{
+				"Shape":       "{new fn (color: string) -> mut? Shape throws never}",
+				"Circle":      "{new fn (color: string, radius: number) -> mut? Circle throws never}",
+				"circle":      "Circle",
+				"circleColor": "string",
+				"circleArea":  "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"Shape":  "{color: string}",
+				"Circle": "{radius: number, get area(self) -> number throws never}",
+			},
+		},
+		"ClassWithExtendsIndexAccess": {
+			input: `
+				class Container(size: number) {
+					size,
+				}
+
+				class Box(size: number, contents: string) extends Container {
+					contents,
+				}
+
+				val box = Box(10, "items")
+				val boxSize = box["size"]
+				val boxContents = box["contents"]
+			`,
+			expectedTypes: map[string]string{
+				"Box":         "{new fn (size: number, contents: string) -> mut? Box throws never}",
+				"box":         "Box",
+				"boxSize":     "number",
+				"boxContents": "string",
+			},
+			expectedTypeAliases: map[string]string{
+				"Container": "{size: number}",
+				"Box":       "{contents: string}",
+			},
+		},
+		"MultiLevelInheritance": {
+			input: `
+				class GrandParent(id: number) {
+					id,
+				}
+
+				class Parent(id: number, name: string) extends GrandParent {
+					name,
+				}
+
+				class Child(id: number, name: string, age: number) extends Parent {
+					age,
+				}
+
+				val child = Child(1, "Alice", 10)
+				val childId = child.id
+				val childName = child.name
+				val childAge = child.age
+			`,
+			expectedTypes: map[string]string{
+				"GrandParent": "{new fn (id: number) -> mut? GrandParent throws never}",
+				"Parent":      "{new fn (id: number, name: string) -> mut? Parent throws never}",
+				"Child":       "{new fn (id: number, name: string, age: number) -> mut? Child throws never}",
+				"child":       "Child",
+				"childId":     "number",
+				"childName":   "string",
+				"childAge":    "number",
+			},
+			expectedTypeAliases: map[string]string{
+				"GrandParent": "{id: number}",
+				"Parent":      "{name: string}",
+				"Child":       "{age: number}",
+			},
+		},
+		"ClassWithExtendsAndMutatingMethod": {
+			input: `
+				class Counter(value: number) {
+					value,
+				}
+
+				class ExtendedCounter(value: number, step: number) extends Counter {
+					step,
+					increment(mut self) {
+						self.value = self.value + self.step
+						return self
+					},
+				}
+
+				val counter = ExtendedCounter(0, 5)
+				val incremented = counter.increment()
+			`,
+			expectedTypes: map[string]string{
+				"Counter":         "{new fn (value: number) -> mut? Counter throws never}",
+				"ExtendedCounter": "{new fn (value: number, step: number) -> mut? ExtendedCounter throws never}",
+				"counter":         "ExtendedCounter",
+				"incremented":     "mut ExtendedCounter",
+			},
+			expectedTypeAliases: map[string]string{
+				"Counter":         "{value: number}",
+				"ExtendedCounter": "{step: number, increment(mut self) -> mut ExtendedCounter throws never}",
+			},
+		},
+		// TODO: Generic class inheritance requires type parameter substitution when accessing parent members
+		"ClassWithExtendsOverridingMethod": {
+			input: `
+				class Animal(name: string) {
+					name,
+					makeSound(self) -> string {
+						return "Some sound"
+					},
+				}
+
+				class Cat(name: string, lives: number) extends Animal {
+					lives,
+					makeSound(self) -> string {
+						return "Meow"
+					},
+				}
+
+				val cat = Cat("Whiskers", 9)
+				val sound = cat.makeSound()
+				val catName = cat.name
+			`,
+			expectedTypes: map[string]string{
+				"Animal":  "{new fn (name: string) -> mut? Animal throws never}",
+				"Cat":     "{new fn (name: string, lives: number) -> mut? Cat throws never}",
+				"cat":     "Cat",
+				"sound":   "string",
+				"catName": "string",
+			},
+			expectedTypeAliases: map[string]string{
+				"Animal": "{name: string, makeSound(self) -> string throws never}",
+				"Cat":    "{lives: number, makeSound(self) -> string throws never}",
+			},
+		},
 		// TODO: figure out how we want to handle static setters
 		// "ClassWithStaticSetter": {
 		// 	input: `

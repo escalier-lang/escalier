@@ -195,6 +195,7 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 type InterfaceDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
+	Extends    []*TypeRefTypeAnn
 	TypeAnn    *ObjectTypeAnn
 	export     bool
 	declare    bool
@@ -202,10 +203,11 @@ type InterfaceDecl struct {
 	provenance provenance.Provenance
 }
 
-func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
+func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
 	return &InterfaceDecl{
 		Name:       name,
 		TypeParams: typeParams,
+		Extends:    extends,
 		TypeAnn:    typeAnn,
 		export:     export,
 		declare:    declare,
@@ -225,6 +227,9 @@ func (d *InterfaceDecl) Accept(v Visitor) {
 			if tp.Default != nil {
 				tp.Default.Accept(v)
 			}
+		}
+		for _, ext := range d.Extends {
+			ext.Accept(v)
 		}
 		d.TypeAnn.Accept(v)
 	}

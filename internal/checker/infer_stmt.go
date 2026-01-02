@@ -283,6 +283,32 @@ func (c *Checker) inferInterface(
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
 
+	// Infer the Extends clause if present
+	if decl.Extends != nil {
+		extendsTypes := make([]*type_system.TypeRefType, len(decl.Extends))
+		for i, extends := range decl.Extends {
+			extendsType, extendsErrors := c.inferTypeAnn(typeCtx, extends)
+			errors = slices.Concat(errors, extendsErrors)
+
+			if extendsType == nil {
+				continue
+			}
+
+			// The extends type should be a TypeRefType
+			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+				extendsTypes[i] = typeRef
+			} else {
+				// If it's not a TypeRefType, we still set it but wrap it if needed
+				// This handles cases where the type might be pruned or indirect
+				prunedType := type_system.Prune(extendsType)
+				if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
+					extendsTypes[i] = typeRef
+				}
+			}
+		}
+		objType.Extends = extendsTypes
+	}
+
 	objType.Interface = true
 	objType.Nominal = true
 

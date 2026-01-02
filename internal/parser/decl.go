@@ -84,7 +84,7 @@ func (p *Parser) Decl() ast.Decl {
 	}
 }
 
-// classDecl = 'class' ident '(' param* ')' '{' classElem* '}'
+// classDecl = 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	if token.Type != Identifier {
@@ -107,6 +107,35 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		token = p.lexer.peek()
 	}
 
+	// Parse optional extends clause
+	var extends *ast.TypeRefTypeAnn
+	if token.Type == Extends {
+		p.lexer.consume()
+		extendsTypeAnn := p.typeAnn()
+		if extendsTypeAnn == nil {
+			p.reportError(token.Span, "Expected type annotation after 'extends'")
+			return nil
+		}
+		// Ensure the extends clause is a type reference
+		var ok bool
+		extends, ok = extendsTypeAnn.(*ast.TypeRefTypeAnn)
+		if !ok {
+			p.reportError(token.Span, "extends clause must be a type reference")
+			return nil
+		}
+		token = p.lexer.peek()
+
+		// Parse optional super constructor args after extends
+		if token.Type == OpenParen {
+			p.lexer.consume()
+			// For now, we parse and discard the super constructor args
+			// TODO(#262): store these args in the AST if needed for validation or codegen
+			_ = parseDelimSeq(p, CloseParen, Comma, p.expr)
+			p.expect(CloseParen, AlwaysConsume)
+			token = p.lexer.peek()
+		}
+	}
+
 	// Parse class body
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start class body")
@@ -119,7 +148,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	return ast.NewClassDecl(name, typeParams, params, body, export, declare, span)
+	return ast.NewClassDecl(name, typeParams, extends, params, body, export, declare, span)
 }
 
 // parseClassElem parses a single class element (field, method, static, etc.)
@@ -536,6 +565,21 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	// Parse optional type parameters
 	typeParams := p.maybeTypeParams()
 
+	// Parse optional extends clause
+	var extends []*ast.TypeRefTypeAnn
+	token = p.lexer.peek()
+	if token.Type == Extends {
+		p.lexer.consume() // consume 'extends'
+		typeAnns := parseDelimSeq(p, OpenBrace, Comma, p.typeAnn)
+		for _, typeAnn := range typeAnns {
+			typeRefType, ok := typeAnn.(*ast.TypeRefTypeAnn)
+			if !ok {
+				p.reportError(typeAnn.Span(), "extends type for interface isn't a type ref")
+			}
+			extends = append(extends, typeRefType)
+		}
+	}
+
 	// Parse the object type body (interface body)
 	token = p.lexer.peek()
 	if token.Type != OpenBrace {
@@ -552,7 +596,7 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	}
 
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
-	decl := ast.NewInterfaceDecl(ident, typeParams, objType, export, declare, span)
+	decl := ast.NewInterfaceDecl(ident, typeParams, extends, objType, export, declare, span)
 	return decl
 }
 
