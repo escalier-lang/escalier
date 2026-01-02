@@ -1214,6 +1214,127 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"Foo": "{prototype: Bar, readonly EMPTY: 0, readonly LOADING: 1, readonly DONE: 2}",
 			},
 		},
+		"InterfaceWithSingleExtends": {
+			input: `
+				interface Base {
+					x: number,
+				}
+				interface Derived extends Base {
+					y: string,
+				}
+				declare val obj: Derived
+			`,
+			expectedTypes: map[string]string{
+				"obj": "Derived",
+			},
+		},
+		"InterfaceWithMultipleExtends": {
+			input: `
+				interface A {
+					a: number,
+				}
+				interface B {
+					b: string,
+				}
+				interface C extends A, B {
+					c: boolean,
+				}
+				declare val obj: C
+			`,
+			expectedTypes: map[string]string{
+				"obj": "C",
+			},
+		},
+		// "InterfaceWithQualifiedExtends": {
+		// 	input: `
+		// 		declare val Namespace: {
+		// 			Base: interface {
+		// 				x: number,
+		// 			},
+		// 		}
+		// 		interface Derived extends Namespace.Base {
+		// 			y: string,
+		// 		}
+		// 		declare val obj: Derived
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"obj": "Derived",
+		// 	},
+		// },
+		"InterfaceWithGenericExtends": {
+			input: `
+				interface Base<T> {
+					value: T,
+				}
+				interface Derived extends Base<string> {
+					extra: number,
+				}
+				declare val obj: Derived
+			`,
+			expectedTypes: map[string]string{
+				"obj": "Derived",
+			},
+		},
+		"GenericInterfaceWithGenericExtends": {
+			input: `
+				interface Base<T> {
+					value: T,
+				}
+				interface Derived<T> extends Base<T> {
+					extra: number,
+				}
+				declare val obj: Derived<string>
+			`,
+			expectedTypes: map[string]string{
+				"obj": "Derived<string>",
+			},
+		},
+		// "InterfaceWithComplexExtends": {
+		// 	input: `
+		// 		declare val Namespace: {
+		// 			Base: interface {
+		// 				x: number,
+		// 			},
+		// 		}
+		// 		interface Other {
+		// 			y: string,
+		// 		}
+		// 		interface Derived extends Namespace.Base, Other {
+		// 			z: boolean,
+		// 		}
+		// 		declare val obj: Derived
+		// 	`,
+		// 	expectedTypes: map[string]string{
+		// 		"obj": "Derived",
+		// 	},
+		// },
+		"InterfaceExtendsWithMethodInheritance": {
+			input: `
+				interface Base {
+					getValue() -> number,
+				}
+				interface Derived extends Base {
+					setValue(value: number) -> void,
+				}
+				declare val obj: Derived
+				val result = obj.getValue()
+			`,
+			expectedTypes: map[string]string{
+				"obj":    "Derived",
+				"result": "number",
+			},
+		},
+		"ResponseBodyMethods": {
+			input: `
+				declare val res: Response
+				val textMethod = res.text
+				val textPromise = res.text()
+			`,
+			expectedTypes: map[string]string{
+				"textMethod":  "fn () -> Promise<string> throws never",
+				"textPromise": "Promise<string>",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

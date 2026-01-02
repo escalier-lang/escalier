@@ -527,6 +527,12 @@ func FindDeclDependencies(
 				tp.Default.Accept(visitor)
 			}
 		}
+
+		// Visit extends clause (extended interfaces)
+		for _, ext := range d.Extends {
+			ext.Accept(visitor)
+		}
+
 		d.TypeAnn.Accept(visitor)
 	case *ast.EnumDecl:
 		// For enum declarations, visit enum elements for dependencies

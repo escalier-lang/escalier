@@ -6748,6 +6748,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         TypeAnn:    &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
@@ -6821,6 +6822,7 @@ nil
                 Default:    nil,
             },
         },
+        Extends: nil,
         TypeAnn: &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
@@ -6926,6 +6928,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         TypeAnn:    &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
@@ -7017,6 +7020,7 @@ nil
                 Default:    nil,
             },
         },
+        Extends: nil,
         TypeAnn: &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
@@ -7089,6 +7093,7 @@ nil
             },
         },
         TypeParams: nil,
+        Extends:    nil,
         TypeAnn:    &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{

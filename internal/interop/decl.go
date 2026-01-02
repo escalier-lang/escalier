@@ -244,8 +244,19 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	// Create an object type with the converted members
 	objType := ast.NewObjectTypeAnn(objElems, convertSpan(di.Span()))
 
-	// TODO: Handle Extends
-	// This would require creating an intersection type with the extended interfaces
+	// Convert extends clause
+	var extends []*ast.TypeRefTypeAnn
+	for _, extType := range di.Extends {
+		convertedType, err := convertTypeAnn(extType)
+		if err != nil {
+			return nil, fmt.Errorf("converting extends type for interface %s: %w", di.Name.Name, err)
+		}
+		typeRefType, ok := convertedType.(*ast.TypeRefTypeAnn)
+		if !ok {
+			return nil, fmt.Errorf("extends type for interface %s isn't a type ref", di.Name.Name)
+		}
+		extends = append(extends, typeRefType)
+	}
 
 	if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
 		errorTypeParam := ast.NewTypeParam(
@@ -263,6 +274,7 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	return ast.NewInterfaceDecl(
 		ast.NewIdentifier(di.Name.Name, convertSpan(di.Name.Span())),
 		typeParams,
+		extends,
 		objType,
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files

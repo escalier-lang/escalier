@@ -169,6 +169,56 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"InterfaceWithSingleExtends": {
+			input: `
+				interface Foo extends Bar {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithMultipleExtends": {
+			input: `
+				interface Foo extends Bar, Baz {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithQualifiedExtends": {
+			input: `
+				interface Foo extends Bar.Baz {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithGenericExtends": {
+			input: `
+				interface Foo extends Bar<string> {
+					x: number
+				}
+			`,
+		},
+		"InterfaceWithComplexExtends": {
+			input: `
+				interface Foo extends Bar.Baz<string>, Qux {
+					x: number
+				}
+			`,
+		},
+		"GenericInterfaceWithExtends": {
+			input: `
+				interface Foo<T> extends Bar<T> {
+					value: T
+				}
+			`,
+		},
+		"InterfaceWithMultipleGenericExtends": {
+			input: `
+				interface Foo<T, U> extends Bar<T>, Baz<U>, Qux {
+					x: T,
+					y: U
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {
