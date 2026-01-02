@@ -6796,7 +6796,7 @@
             },
         },
         TypeParams: nil,
-        Extends:    nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
         Params:     {
             &ast.Param{
                 Pattern: &ast.IdentPat{

@@ -4,10 +4,10 @@ import "github.com/escalier-lang/escalier/internal/provenance"
 
 type ClassDecl struct {
 	Name       *Ident
-	TypeParams []*TypeParam // generic type parameters
-	Extends    TypeAnn      // optional superclass (can be a simple identifier or a generic type reference)
-	Params     []*Param     // constructor params
-	Body       []ClassElem  // fields, methods, etc.
+	TypeParams []*TypeParam    // generic type parameters
+	Extends    *TypeRefTypeAnn // optional superclass (can be a simple identifier or a generic type reference)
+	Params     []*Param        // constructor params
+	Body       []ClassElem     // fields, methods, etc.
 	export     bool
 	declare    bool
 	span       Span
@@ -21,7 +21,7 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends TypeAnn, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,

@@ -99,12 +99,19 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token = p.lexer.peek()
 
 	// Parse optional extends clause
-	var extends ast.TypeAnn
+	var extends *ast.TypeRefTypeAnn
 	if token.Type == Extends {
 		p.lexer.consume()
-		extends = p.typeAnn()
-		if extends == nil {
+		extendsTypeAnn := p.typeAnn()
+		if extendsTypeAnn == nil {
 			p.reportError(token.Span, "Expected type annotation after 'extends'")
+			return nil
+		}
+		// Ensure the extends clause is a type reference
+		var ok bool
+		extends, ok = extendsTypeAnn.(*ast.TypeRefTypeAnn)
+		if !ok {
+			p.reportError(token.Span, "extends clause must be a type reference")
 			return nil
 		}
 		token = p.lexer.peek()
