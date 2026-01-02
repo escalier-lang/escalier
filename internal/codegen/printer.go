@@ -300,6 +300,174 @@ func (p *Printer) printObjKey(key ObjKey) {
 	key.SetSpan(&Span{Start: start, End: end})
 }
 
+func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
+	switch elem := elem.(type) {
+	case *CallableTypeAnn:
+		p.print("(")
+		for i, param := range elem.Fn.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			if param.TypeAnn != nil {
+				p.print(": ")
+				p.PrintTypeAnn(param.TypeAnn)
+			}
+		}
+		p.print(")")
+		p.print(": ")
+		p.PrintTypeAnn(elem.Fn.Return)
+	case *ConstructorTypeAnn:
+		p.print("new ")
+		// Print type parameters if present
+		if len(elem.Fn.TypeParams) > 0 {
+			p.print("<")
+			for i, tp := range elem.Fn.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(tp.Name)
+				if tp.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(tp.Constraint)
+				}
+				if tp.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(tp.Default)
+				}
+			}
+			p.print(">")
+		}
+		p.print("(")
+		for i, param := range elem.Fn.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			if param.TypeAnn != nil {
+				p.print(": ")
+				p.PrintTypeAnn(param.TypeAnn)
+			}
+		}
+		p.print(")")
+		p.print(": ")
+		p.PrintTypeAnn(elem.Fn.Return)
+	case *MethodTypeAnn:
+		p.printObjKey(elem.Name)
+		// Print type parameters if present
+		if len(elem.Fn.TypeParams) > 0 {
+			p.print("<")
+			for i, tp := range elem.Fn.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(tp.Name)
+				if tp.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(tp.Constraint)
+				}
+				if tp.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(tp.Default)
+				}
+			}
+			p.print(">")
+		}
+		p.print("(")
+		for i, param := range elem.Fn.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			if param.TypeAnn != nil {
+				p.print(": ")
+				p.PrintTypeAnn(param.TypeAnn)
+			}
+		}
+		p.print(")")
+		p.print(": ")
+		p.PrintTypeAnn(elem.Fn.Return)
+	case *GetterTypeAnn:
+		p.print("get ")
+		p.printObjKey(elem.Name)
+		p.print("(")
+		for i, param := range elem.Fn.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			if param.TypeAnn != nil {
+				p.print(": ")
+				p.PrintTypeAnn(param.TypeAnn)
+			}
+		}
+		p.print(")")
+		p.print(": ")
+		p.PrintTypeAnn(elem.Fn.Return)
+	case *SetterTypeAnn:
+		p.print("set ")
+		p.printObjKey(elem.Name)
+		p.print("(")
+		for i, param := range elem.Fn.Params {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.printPattern(param.Pattern)
+			if param.TypeAnn != nil {
+				p.print(": ")
+				p.PrintTypeAnn(param.TypeAnn)
+			}
+		}
+		p.print(")")
+		// TypeScript doesn't allow setters to have a return type
+	case *PropertyTypeAnn:
+		if elem.Readonly {
+			p.print("readonly ")
+		}
+		p.printObjKey(elem.Name)
+		if elem.Optional {
+			p.print("?")
+		}
+		p.print(": ")
+		p.PrintTypeAnn(elem.Value)
+	case *RestSpreadTypeAnn:
+		p.print("...")
+		p.PrintTypeAnn(elem.Value)
+	case *MappedTypeAnn:
+		// Print readonly modifier if present
+		if elem.ReadOnly != nil {
+			if *elem.ReadOnly == MMAdd {
+				p.print("readonly ")
+			} else if *elem.ReadOnly == MMRemove {
+				p.print("-readonly ")
+			}
+		}
+		p.print("[")
+		p.print(elem.TypeParam.Name)
+		p.print(" in ")
+		p.PrintTypeAnn(elem.TypeParam.Constraint)
+		// If a Name is provided, use it for key remapping
+		// TypeScript syntax: [K in Keys as NewKey]
+		if elem.Name != nil {
+			p.print(" as ")
+			p.PrintTypeAnn(elem.Name)
+		}
+		p.print("]")
+		// Print optional modifier if present
+		if elem.Optional != nil {
+			if *elem.Optional == MMAdd {
+				p.print("?")
+			} else if *elem.Optional == MMRemove {
+				p.print("-?")
+			}
+		}
+		p.print(": ")
+		p.PrintTypeAnn(elem.Value)
+	default:
+		panic(fmt.Sprintf("printObjTypeAnnElem: unknown object type annotation element type: %T", elem))
+	}
+}
+
 func (p *Printer) printMethod(name ObjKey, params []*Param, body []Stmt) {
 	p.printObjKey(name)
 	p.print("(")
@@ -527,6 +695,48 @@ func (p *Printer) PrintDecl(decl Decl) {
 		if !d.Interface {
 			p.print(";")
 		}
+	case *InterfaceDecl:
+		p.print("interface ")
+		p.print(d.Name.Name)
+		if len(d.TypeParams) > 0 {
+			p.print("<")
+			for i, param := range d.TypeParams {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(param.Name)
+				if param.Constraint != nil {
+					p.print(" extends ")
+					p.PrintTypeAnn(param.Constraint)
+				}
+				if param.Default != nil {
+					p.print(" = ")
+					p.PrintTypeAnn(param.Default)
+				}
+			}
+			p.print(">")
+		}
+		if len(d.Extends) > 0 {
+			p.print(" extends ")
+			for i, ext := range d.Extends {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.PrintTypeAnn(ext)
+			}
+		}
+		p.print(" {")
+		if len(d.Members) > 0 {
+			p.indent++
+			for _, member := range d.Members {
+				p.NewLine()
+				p.printObjTypeAnnElem(member)
+				p.print(";")
+			}
+			p.indent--
+			p.NewLine()
+		}
+		p.print("}")
 	case *NamespaceDecl:
 		p.print("namespace ")
 		p.print(d.Name.Name)
@@ -632,6 +842,8 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print("symbol")
 	case *UniqueSymbolTypeAnn:
 		p.print("unique symbol")
+	case *BigIntTypeAnn:
+		p.print("bigint")
 	case *NullTypeAnn:
 		p.print("null")
 	case *UndefinedTypeAnn:
@@ -648,171 +860,7 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 			if i > 0 {
 				p.print(", ")
 			}
-			switch elem := elem.(type) {
-			case *CallableTypeAnn:
-				p.print("(")
-				for i, param := range elem.Fn.Params {
-					if i > 0 {
-						p.print(", ")
-					}
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.print(": ")
-						p.PrintTypeAnn(param.TypeAnn)
-					}
-				}
-				p.print(")")
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
-			case *ConstructorTypeAnn:
-				p.print("new ")
-				// Print type parameters if present
-				if len(elem.Fn.TypeParams) > 0 {
-					p.print("<")
-					for i, tp := range elem.Fn.TypeParams {
-						if i > 0 {
-							p.print(", ")
-						}
-						p.print(tp.Name)
-						if tp.Constraint != nil {
-							p.print(" extends ")
-							p.PrintTypeAnn(tp.Constraint)
-						}
-						if tp.Default != nil {
-							p.print(" = ")
-							p.PrintTypeAnn(tp.Default)
-						}
-					}
-					p.print(">")
-				}
-				p.print("(")
-				for i, param := range elem.Fn.Params {
-					if i > 0 {
-						p.print(", ")
-					}
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.print(": ")
-						p.PrintTypeAnn(param.TypeAnn)
-					}
-				}
-				p.print(")")
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
-			case *MethodTypeAnn:
-				p.printObjKey(elem.Name)
-				// Print type parameters if present
-				if len(elem.Fn.TypeParams) > 0 {
-					p.print("<")
-					for i, tp := range elem.Fn.TypeParams {
-						if i > 0 {
-							p.print(", ")
-						}
-						p.print(tp.Name)
-						if tp.Constraint != nil {
-							p.print(" extends ")
-							p.PrintTypeAnn(tp.Constraint)
-						}
-						if tp.Default != nil {
-							p.print(" = ")
-							p.PrintTypeAnn(tp.Default)
-						}
-					}
-					p.print(">")
-				}
-				p.print("(")
-				for i, param := range elem.Fn.Params {
-					if i > 0 {
-						p.print(", ")
-					}
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.print(": ")
-						p.PrintTypeAnn(param.TypeAnn)
-					}
-				}
-				p.print(")")
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
-			case *GetterTypeAnn:
-				p.print("get ")
-				p.printObjKey(elem.Name)
-				p.print("(")
-				for i, param := range elem.Fn.Params {
-					if i > 0 {
-						p.print(", ")
-					}
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.print(": ")
-						p.PrintTypeAnn(param.TypeAnn)
-					}
-				}
-				p.print(")")
-				p.print(": ")
-				p.PrintTypeAnn(elem.Fn.Return)
-			case *SetterTypeAnn:
-				p.print("set ")
-				p.printObjKey(elem.Name)
-				p.print("(")
-				for i, param := range elem.Fn.Params {
-					if i > 0 {
-						p.print(", ")
-					}
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.print(": ")
-						p.PrintTypeAnn(param.TypeAnn)
-					}
-				}
-				p.print(")")
-				// TypeScript doesn't allow setters to have a return type
-			case *PropertyTypeAnn:
-				if elem.Readonly {
-					p.print("readonly ")
-				}
-				p.printObjKey(elem.Name)
-				if elem.Optional {
-					p.print("?")
-				}
-				p.print(": ")
-				p.PrintTypeAnn(elem.Value)
-			case *RestSpreadTypeAnn:
-				p.print("...")
-				p.PrintTypeAnn(elem.Value)
-			case *MappedTypeAnn:
-				// Print readonly modifier if present
-				if elem.ReadOnly != nil {
-					if *elem.ReadOnly == MMAdd {
-						p.print("readonly ")
-					} else if *elem.ReadOnly == MMRemove {
-						p.print("-readonly ")
-					}
-				}
-				p.print("[")
-				p.print(elem.TypeParam.Name)
-				p.print(" in ")
-				p.PrintTypeAnn(elem.TypeParam.Constraint)
-				// If a Name is provided, use it for key remapping
-				// TypeScript syntax: [K in Keys as NewKey]
-				if elem.Name != nil {
-					p.print(" as ")
-					p.PrintTypeAnn(elem.Name)
-				}
-				p.print("]")
-				// Print optional modifier if present
-				if elem.Optional != nil {
-					if *elem.Optional == MMAdd {
-						p.print("?")
-					} else if *elem.Optional == MMRemove {
-						p.print("-?")
-					}
-				}
-				p.print(": ")
-				p.PrintTypeAnn(elem.Value)
-			default:
-				panic(fmt.Sprintf("PrintTypeAnn: unknown object type annotation element type: %T", elem))
-			}
+			p.printObjTypeAnnElem(elem)
 		}
 		p.print("}")
 	case *TupleTypeAnn:

@@ -1,0 +1,52 @@
+// Basic interface
+export interface Person {
+    name: string,
+    age: number,
+}
+
+// Interface with optional properties
+export interface User {
+    id: number,
+    username: string,
+    email?: string,
+}
+
+// Interface with methods
+export interface Calculator {
+    add(a: number, b: number) -> number,
+    subtract(a: number, b: number) -> number,
+}
+
+// Generic interface
+export interface Box<T> {
+    value: T,
+    isEmpty() -> boolean,
+}
+
+// Interface with readonly properties
+export interface Point {
+    readonly x: number,
+    readonly y: number,
+}
+
+// Interface extending another interface
+export interface Employee extends Person {
+    employeeId: number,
+    department: string,
+}
+
+// Interface extending multiple interfaces
+export interface Manager extends Person, Employee {
+    teamSize: number,
+}
+
+// Generic interface with constraints
+export interface Comparable<T : number | string> {
+    compareTo(other: T) -> number,
+}
+
+// Simple generic interface with extends (no type args in extends)
+export interface Container<T> extends Box {
+    size: number,
+    items: T,
+}

@@ -16,6 +16,7 @@ func (*StringTypeAnn) isTypeAnn()       {}
 func (*BooleanTypeAnn) isTypeAnn()      {}
 func (*SymbolTypeAnn) isTypeAnn()       {}
 func (*UniqueSymbolTypeAnn) isTypeAnn() {}
+func (*BigIntTypeAnn) isTypeAnn()       {}
 func (*NullTypeAnn) isTypeAnn()         {}
 func (*UndefinedTypeAnn) isTypeAnn()    {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
@@ -108,6 +109,18 @@ func NewUniqueSymbolTypeAnn(span *Span) *UniqueSymbolTypeAnn {
 func (t *UniqueSymbolTypeAnn) Span() *Span        { return t.span }
 func (t *UniqueSymbolTypeAnn) SetSpan(span *Span) { t.span = span }
 func (t *UniqueSymbolTypeAnn) Source() ast.Node   { return t.source }
+
+type BigIntTypeAnn struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewBigIntTypeAnn(span *Span) *BigIntTypeAnn {
+	return &BigIntTypeAnn{span: nil, source: nil}
+}
+func (t *BigIntTypeAnn) Span() *Span        { return t.span }
+func (t *BigIntTypeAnn) SetSpan(span *Span) { t.span = span }
+func (t *BigIntTypeAnn) Source() ast.Node   { return t.source }
 
 type NullTypeAnn struct {
 	span   *Span

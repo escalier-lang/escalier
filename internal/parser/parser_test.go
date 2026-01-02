@@ -219,6 +219,14 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"ExportInterface": {
+			input: `
+				export interface Person {
+					name: string,
+					age: number,
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {

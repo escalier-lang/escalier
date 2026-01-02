@@ -529,6 +529,7 @@ type Decl interface {
 func (*VarDecl) isDecl()       {}
 func (*FuncDecl) isDecl()      {}
 func (*TypeDecl) isDecl()      {}
+func (*InterfaceDecl) isDecl() {}
 func (*NamespaceDecl) isDecl() {}
 func (*ClassDecl) isDecl()     {}
 func (*ImportDecl) isDecl()    {}
@@ -886,6 +887,23 @@ func (d *TypeDecl) Declare() bool      { return d.declare }
 func (d *TypeDecl) Span() *Span        { return d.span }
 func (d *TypeDecl) SetSpan(span *Span) { d.span = span }
 func (d *TypeDecl) Source() ast.Node   { return d.source }
+
+type InterfaceDecl struct {
+	Name       *Identifier
+	TypeParams []*TypeParam
+	Extends    []TypeAnn
+	Members    []ObjTypeAnnElem
+	export     bool
+	declare    bool
+	span       *Span
+	source     ast.Node
+}
+
+func (d *InterfaceDecl) Export() bool       { return d.export }
+func (d *InterfaceDecl) Declare() bool      { return d.declare }
+func (d *InterfaceDecl) Span() *Span        { return d.span }
+func (d *InterfaceDecl) SetSpan(span *Span) { d.span = span }
+func (d *InterfaceDecl) Source() ast.Node   { return d.source }
 
 type NamespaceDecl struct {
 	Name    *Identifier

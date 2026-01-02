@@ -7845,3 +7845,89 @@
     },
 }
 ---
+
+[TestParseModuleNoErrors/ExportInterface - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Person",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:22},
+                End:      ast.Location{Line:2, Column:28},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.PropertyTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "name",
+                        Namespace: 0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:3, Column:6},
+                            End:      ast.Location{Line:3, Column:10},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    Readonly: false,
+                    Value:    &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:12},
+                            End:      ast.Location{Line:3, Column:18},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                &ast.PropertyTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "age",
+                        Namespace: 0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:4, Column:6},
+                            End:      ast.Location{Line:4, Column:9},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    Readonly: false,
+                    Value:    &ast.NumberTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:4, Column:11},
+                            End:      ast.Location{Line:4, Column:17},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:29},
+                End:      ast.Location{Line:5, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  true,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:5, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:5, Column:6},
+        SourceID: 0,
+    },
+}
+---
