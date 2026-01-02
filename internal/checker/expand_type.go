@@ -607,15 +607,21 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		for _, extendsTypeRef := range objType.Extends {
 			// Resolve TypeRefType through TypeAlias
 			extendsType := type_system.Prune(extendsTypeRef)
+
 			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
 					extendsType = type_system.Prune(typeRef.TypeAlias.Type)
 				}
 			}
+
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
 				// Recursively check the extended type
 				return c.getObjectAccess(extendsObjType, key, errors)
 			}
+
+			// If the extended type cannot be resolved to an ObjectType,
+			// report this instead of silently skipping it.
+			errors = append(errors, &ExpectedObjectError{Type: extendsType})
 		}
 
 		errors = append(errors, &UnknownPropertyError{

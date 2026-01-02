@@ -129,7 +129,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		if token.Type == OpenParen {
 			p.lexer.consume()
 			// For now, we parse and discard the super constructor args
-			// TODO: store these args in the AST if needed for validation or codegen
+			// TODO(#262): store these args in the AST if needed for validation or codegen
 			_ = parseDelimSeq(p, CloseParen, Comma, p.expr)
 			p.expect(CloseParen, AlwaysConsume)
 			token = p.lexer.peek()

@@ -56,7 +56,7 @@ type NumberTypeAnn struct {
 }
 
 func NewNumberTypeAnn(span *Span) *NumberTypeAnn {
-	return &NumberTypeAnn{span: nil, source: nil}
+	return &NumberTypeAnn{span: span, source: nil}
 }
 func (t *NumberTypeAnn) Span() *Span        { return t.span }
 func (t *NumberTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -68,7 +68,7 @@ type StringTypeAnn struct {
 }
 
 func NewStringTypeAnn(span *Span) *StringTypeAnn {
-	return &StringTypeAnn{span: nil, source: nil}
+	return &StringTypeAnn{span: span, source: nil}
 }
 func (t *StringTypeAnn) Span() *Span        { return t.span }
 func (t *StringTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -80,7 +80,7 @@ type BooleanTypeAnn struct {
 }
 
 func NewBooleanTypeAnn(span *Span) *BooleanTypeAnn {
-	return &BooleanTypeAnn{span: nil, source: nil}
+	return &BooleanTypeAnn{span: span, source: nil}
 }
 func (t *BooleanTypeAnn) Span() *Span        { return t.span }
 func (t *BooleanTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -92,7 +92,7 @@ type SymbolTypeAnn struct {
 }
 
 func NewSymbolTypeAnn(span *Span) *SymbolTypeAnn {
-	return &SymbolTypeAnn{span: nil, source: nil}
+	return &SymbolTypeAnn{span: span, source: nil}
 }
 func (t *SymbolTypeAnn) Span() *Span        { return t.span }
 func (t *SymbolTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -104,7 +104,7 @@ type UniqueSymbolTypeAnn struct {
 }
 
 func NewUniqueSymbolTypeAnn(span *Span) *UniqueSymbolTypeAnn {
-	return &UniqueSymbolTypeAnn{span: nil, source: nil}
+	return &UniqueSymbolTypeAnn{span: span, source: nil}
 }
 func (t *UniqueSymbolTypeAnn) Span() *Span        { return t.span }
 func (t *UniqueSymbolTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -116,7 +116,7 @@ type BigIntTypeAnn struct {
 }
 
 func NewBigIntTypeAnn(span *Span) *BigIntTypeAnn {
-	return &BigIntTypeAnn{span: nil, source: nil}
+	return &BigIntTypeAnn{span: span, source: nil}
 }
 func (t *BigIntTypeAnn) Span() *Span        { return t.span }
 func (t *BigIntTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -128,7 +128,7 @@ type NullTypeAnn struct {
 }
 
 func NewNullTypeAnn(span *Span) *NullTypeAnn {
-	return &NullTypeAnn{span: nil, source: nil}
+	return &NullTypeAnn{span: span, source: nil}
 }
 func (t *NullTypeAnn) Span() *Span        { return t.span }
 func (t *NullTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -140,7 +140,7 @@ type UndefinedTypeAnn struct {
 }
 
 func NewUndefinedTypeAnn(span *Span) *UndefinedTypeAnn {
-	return &UndefinedTypeAnn{span: nil, source: nil}
+	return &UndefinedTypeAnn{span: span, source: nil}
 }
 func (t *UndefinedTypeAnn) Span() *Span        { return t.span }
 func (t *UndefinedTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -152,7 +152,7 @@ type UnknownTypeAnn struct {
 }
 
 func NewUnknownTypeAnn(span *Span) *UnknownTypeAnn {
-	return &UnknownTypeAnn{span: nil, source: nil}
+	return &UnknownTypeAnn{span: span, source: nil}
 }
 func (t *UnknownTypeAnn) Span() *Span        { return t.span }
 func (t *UnknownTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -164,7 +164,7 @@ type NeverTypeAnn struct {
 }
 
 func NewNeverTypeAnn(span *Span) *NeverTypeAnn {
-	return &NeverTypeAnn{span: nil, source: nil}
+	return &NeverTypeAnn{span: span, source: nil}
 }
 func (t *NeverTypeAnn) Span() *Span        { return t.span }
 func (t *NeverTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -176,7 +176,7 @@ type VoidTypeAnn struct {
 }
 
 func NewVoidTypeAnn(span *Span) *VoidTypeAnn {
-	return &VoidTypeAnn{span: nil, source: nil}
+	return &VoidTypeAnn{span: span, source: nil}
 }
 func (t *VoidTypeAnn) Span() *Span        { return t.span }
 func (t *VoidTypeAnn) SetSpan(span *Span) { t.span = span }
@@ -417,7 +417,7 @@ type AnyTypeAnn struct {
 }
 
 func NewAnyTypeAnn(span *Span) *AnyTypeAnn {
-	return &AnyTypeAnn{span: nil, source: nil}
+	return &AnyTypeAnn{span: span, source: nil}
 }
 func (t *AnyTypeAnn) Span() *Span        { return t.span }
 func (t *AnyTypeAnn) SetSpan(span *Span) { t.span = span }

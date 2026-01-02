@@ -290,6 +290,10 @@ func (c *Checker) inferInterface(
 			extendsType, extendsErrors := c.inferTypeAnn(typeCtx, extends)
 			errors = slices.Concat(errors, extendsErrors)
 
+			if extendsType == nil {
+				continue
+			}
+
 			// The extends type should be a TypeRefType
 			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
 				extendsTypes[i] = typeRef

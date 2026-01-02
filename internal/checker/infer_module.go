@@ -501,15 +501,17 @@ func (c *Checker) InferComponent(
 				extendsType, extendsErrors := c.inferTypeAnn(declCtx, decl.Extends)
 				errors = slices.Concat(errors, extendsErrors)
 
-				// The extends type should be a TypeRefType
-				if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
-					objType.Extends = []*type_system.TypeRefType{typeRef}
-				} else {
-					// If it's not a TypeRefType, we still set it but wrap it if needed
-					// This handles cases where the type might be pruned or indirect
-					prunedType := type_system.Prune(extendsType)
-					if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
+				if extendsType != nil {
+					// The extends type should be a TypeRefType
+					if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
 						objType.Extends = []*type_system.TypeRefType{typeRef}
+					} else {
+						// If it's not a TypeRefType, we still set it but wrap it if needed
+						// This handles cases where the type might be pruned or indirect
+						prunedType := type_system.Prune(extendsType)
+						if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
+							objType.Extends = []*type_system.TypeRefType{typeRef}
+						}
 					}
 				}
 			}
