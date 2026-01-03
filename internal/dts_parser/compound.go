@@ -38,7 +38,8 @@ func (p *DtsParser) parseUnionType() TypeAnn {
 
 	// Check for union operator
 	if p.peek().Type == Pipe {
-		types := []TypeAnn{left}
+		types := make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 union members
+		types[0] = left
 
 		for p.peek().Type == Pipe {
 			p.consume() // consume '|'
@@ -66,7 +67,8 @@ func (p *DtsParser) parseIntersectionType() TypeAnn {
 
 	// Check for intersection operator
 	if p.peek().Type == Ampersand {
-		types := []TypeAnn{left}
+		types := make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 intersection members
+		types[0] = left
 
 		for p.peek().Type == Ampersand {
 			p.consume() // consume '&'
@@ -187,7 +189,7 @@ func (p *DtsParser) parseTypeArguments() ([]TypeAnn, *Token) {
 	}
 	p.consume() // consume '<'
 
-	typeArgs := []TypeAnn{}
+	typeArgs := make([]TypeAnn, 0, 2) // pre-allocate for common case of 1-2 type arguments
 
 	// Parse first type argument
 	typeArg := p.parseTypeAnn()
@@ -266,7 +268,7 @@ func (p *DtsParser) parseTupleType() TypeAnn {
 		return nil
 	}
 
-	elements := []TupleElement{}
+	elements := make([]TupleElement, 0, 4) // pre-allocate for common case of 2-4 tuple elements
 
 	// Handle empty tuple
 	if p.peek().Type == CloseBracket {

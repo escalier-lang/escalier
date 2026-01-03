@@ -79,6 +79,7 @@ func TestExportDeclarations(t *testing.T) {
 		{"export as namespace", "export as namespace MyLib"},
 		{"type-only export", "export type { Foo }"},
 		{"trailing comma", "export { foo, bar, }"},
+		{"export without any exports", "export { }"},
 	}
 
 	for _, tt := range tests {
@@ -168,7 +169,6 @@ func TestModuleErrorCases(t *testing.T) {
 	}{
 		{"import without from", "import { foo }"},
 		{"import missing braces", "import foo, bar from 'module'"},
-		{"export without name", "export { }"},
 		{"malformed namespace import", "import * foo from 'module'"},
 		{"export = without identifier", "export = "},
 	}

@@ -40,10 +40,11 @@ func isTypeKeywordIdentifier(tokenType TokenType) bool {
 }
 
 type Parser struct {
-	ctx      context.Context
-	lexer    *Lexer
-	errors   []*Error
-	exprMode Stack[ExprMode]
+	ctx         context.Context
+	lexer       *Lexer
+	errors      []*Error
+	errorMarker int // Mark where errors were at save point for backtracking
+	exprMode    Stack[ExprMode]
 }
 
 type ExprMode int
@@ -55,30 +56,31 @@ const (
 
 func NewParser(ctx context.Context, source *ast.Source) *Parser {
 	return &Parser{
-		ctx:      ctx,
-		lexer:    NewLexer(source),
-		errors:   []*Error{},
-		exprMode: Stack[ExprMode]{SingleLineExpr},
+		ctx:         ctx,
+		lexer:       NewLexer(source),
+		errors:      []*Error{},
+		errorMarker: 0,
+		exprMode:    Stack[ExprMode]{SingleLineExpr},
 	}
 }
 
 func (p *Parser) saveState() *Parser {
-	// Create a deep copy of the errors slice to avoid sharing the underlying array
-	errorsCopy := make([]*Error, len(p.errors))
-	copy(errorsCopy, p.errors)
-
+	// Use a marker-based approach instead of copying the entire errors slice
 	return &Parser{
-		ctx:      p.ctx,
-		lexer:    p.lexer.saveState(),
-		errors:   errorsCopy,
-		exprMode: p.exprMode,
+		ctx:         p.ctx,
+		lexer:       p.lexer.saveState(),
+		errors:      p.errors,
+		errorMarker: len(p.errors),
+		exprMode:    p.exprMode,
 	}
 }
 
 func (p *Parser) restoreState(saved *Parser) {
 	p.ctx = saved.ctx
 	p.lexer.restoreState(saved.lexer)
-	p.errors = saved.errors
+	// Truncate errors to the saved marker instead of replacing the slice
+	p.errors = p.errors[:saved.errorMarker]
+	p.errorMarker = saved.errorMarker
 	p.exprMode = saved.exprMode
 }
 

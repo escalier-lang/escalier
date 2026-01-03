@@ -4,7 +4,6 @@ go 1.24.0
 
 require (
 	github.com/gkampitakis/go-snaps v0.5.11
-	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/btree v1.8.0
 	github.com/tliron/glsp v0.2.2

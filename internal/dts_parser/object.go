@@ -17,7 +17,7 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 		return nil
 	}
 
-	members := []InterfaceMember{}
+	members := make([]InterfaceMember, 0, 8) // pre-allocate for typical object/interface size
 
 	// Parse members
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
