@@ -605,7 +605,7 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 		p.consume() // consume 'extends'
 		extends = p.parseTypeAnn()
 		if extends == nil {
-			p.reportError(p.peek().Span, "Expected type after 'extends'")
+			p.reportError(p.peek().Span, "Expected base class type after 'extends'")
 		}
 	}
 

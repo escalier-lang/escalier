@@ -894,7 +894,8 @@ func (t *FuncType) Equals(other Type) bool {
 			if t.Params[i].Optional != other.Params[i].Optional {
 				return false
 			}
-			// Pattern comparison would be complex, skipping for now
+			// We ignore patterns when comparing function types since
+			// they don't affect the type.
 		}
 		// Compare Return and Throws
 		if !equals(t.Return, other.Return) {
