@@ -2978,7 +2978,7 @@ map[string]interface {}{
 
 [TestModuleWithUnexpectedTokens/random_characters - 1]
 map[string]interface {}{
-    "errors": int(12),
+    "errors": int(10),
     "module": &dts_parser.Module{
         Statements: {
         },

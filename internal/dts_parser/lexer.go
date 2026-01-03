@@ -115,7 +115,73 @@ func (lexer *Lexer) skipWhitespace(startOffset int, start ast.Location) (int, as
 // and the ending offset. Returns empty string and start offset if not a valid identifier.
 func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 	contents := lexer.source.Contents
-	codePoint, _ := utf8.DecodeRuneInString(contents[startOffset:])
+	n := len(contents)
+
+	if startOffset >= n {
+		return "", startOffset
+	}
+
+	// Fast path for ASCII identifiers (most common case)
+	firstChar := contents[startOffset]
+	if firstChar <= 127 {
+		// Check ASCII identifier start: a-z, A-Z, _, $
+		if !((firstChar >= 'a' && firstChar <= 'z') ||
+			(firstChar >= 'A' && firstChar <= 'Z') ||
+			firstChar == '_' || firstChar == '$') {
+			return "", startOffset
+		}
+
+		// Scan ASCII identifier continuation: a-z, A-Z, 0-9, _, $
+		i := startOffset + 1
+		for i < n && contents[i] <= 127 {
+			c := contents[i]
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '_' || c == '$') {
+				break
+			}
+			i++
+		}
+
+		// If we scanned to the end or hit ASCII non-identifier char, we're done (no normalization needed)
+		if i >= n || contents[i] <= 127 {
+			return contents[startOffset:i], i
+		}
+
+		// We hit a Unicode character - continue scanning from where we left off
+		needsNormalization := true
+		for i < n {
+			// Fast check for ASCII continuation
+			if contents[i] <= 127 {
+				c := contents[i]
+				if !((c >= 'a' && c <= 'z') ||
+					(c >= 'A' && c <= 'Z') ||
+					(c >= '0' && c <= '9') ||
+					c == '_' || c == '$') {
+					break
+				}
+				i++
+				continue
+			}
+
+			// Unicode path
+			codePoint, width := utf8.DecodeRuneInString(contents[i:])
+			if !isIdentContinue(codePoint) {
+				break
+			}
+			i += width
+		}
+
+		value := contents[startOffset:i]
+		if needsNormalization {
+			value = string(norm.NFC.Bytes([]byte(value)))
+		}
+		return value, i
+	}
+
+	// Slow path for Unicode identifiers starting with Unicode character
+	codePoint, width := utf8.DecodeRuneInString(contents[startOffset:])
 
 	// Check if it starts with a valid identifier start character
 	if !idIdentStart(codePoint) {
@@ -123,18 +189,27 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 	}
 
 	// Scan the full identifier and track if normalization is needed
-	n := len(contents)
-	i := startOffset
-	needsNormalization := false
+	i := startOffset + width
+	needsNormalization := true
 
 	for i < n {
+		// Fast check for ASCII continuation
+		if contents[i] <= 127 {
+			c := contents[i]
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '_' || c == '$') {
+				break
+			}
+			i++
+			continue
+		}
+
+		// Unicode path
 		codePoint, width := utf8.DecodeRuneInString(contents[i:])
 		if !isIdentContinue(codePoint) {
 			break
-		}
-		// Track if we encounter non-ASCII characters that might need normalization
-		if codePoint > 127 {
-			needsNormalization = true
 		}
 		i += width
 	}
@@ -423,8 +498,12 @@ func (lexer *Lexer) next() *Token {
 
 // Based on https://www.unicode.org/reports/tr31/#D1
 func idIdentStart(r rune) bool {
-	return (r == '_' || r == '$' || // '_', '$' are not included in the UAX-31 spec
-		unicode.IsLetter(r) ||
+	// Fast path for common ASCII cases
+	if r <= 127 {
+		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || r == '$'
+	}
+	// Unicode path
+	return (unicode.IsLetter(r) ||
 		unicode.Is(unicode.Nl, r) ||
 		unicode.Is(unicode.Other_ID_Start, r)) &&
 		!unicode.Is(unicode.Pattern_Syntax, r) &&
@@ -433,8 +512,13 @@ func idIdentStart(r rune) bool {
 
 // Based on https://www.unicode.org/reports/tr31/#D1
 func isIdentContinue(r rune) bool {
-	return (r == '_' || r == '$' || // '_', '$' are not included in the UAX-31 spec
-		unicode.IsLetter(r) ||
+	// Fast path for common ASCII cases
+	if r <= 127 {
+		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '$'
+	}
+	// Unicode path
+	return (unicode.IsLetter(r) ||
 		unicode.Is(unicode.Nl, r) ||
 		unicode.Is(unicode.Other_ID_Start, r) ||
 		unicode.Is(unicode.Mn, r) ||
