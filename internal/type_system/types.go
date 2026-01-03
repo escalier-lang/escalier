@@ -11,8 +11,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/provenance"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // QualIdent represents a qualified identifier (e.g., "Foo" or "Foo.Bar.Baz")
@@ -58,6 +56,7 @@ type Type interface {
 	Accept(TypeVisitor) Type
 	String() string
 	Copy() Type // Return a shallow copy of the Type.
+	Equals(Type) bool
 }
 
 func (*TypeVarType) isType()      {}
@@ -138,6 +137,28 @@ func (t *TypeVarType) Accept(v TypeVisitor) Type {
 
 	return t
 }
+func (t *TypeVarType) Equals(other Type) bool {
+	if other, ok := other.(*TypeVarType); ok {
+		if t.ID != other.ID {
+			return false
+		}
+		if t.FromBinding != other.FromBinding {
+			return false
+		}
+		if !equals(t.Instance, other.Instance) {
+			return false
+		}
+		if !equals(t.Constraint, other.Constraint) {
+			return false
+		}
+		if !equals(t.Default, other.Default) {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
 func (t *TypeVarType) String() string {
 	if t.Instance != nil {
 		return Prune(t).String()
@@ -208,6 +229,47 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *TypeRefType) Equals(other Type) bool {
+	if other, ok := other.(*TypeRefType); ok {
+		if !qualIdentEquals(t.Name, other.Name) {
+			return false
+		}
+		if len(t.TypeArgs) != len(other.TypeArgs) {
+			return false
+		}
+		for i := range t.TypeArgs {
+			if !equals(t.TypeArgs[i], other.TypeArgs[i]) {
+				return false
+			}
+		}
+		// TypeAlias comparison
+		if (t.TypeAlias == nil) != (other.TypeAlias == nil) {
+			return false
+		}
+		if t.TypeAlias != nil && other.TypeAlias != nil {
+			if !equals(t.TypeAlias.Type, other.TypeAlias.Type) {
+				return false
+			}
+			if len(t.TypeAlias.TypeParams) != len(other.TypeAlias.TypeParams) {
+				return false
+			}
+			for i := range t.TypeAlias.TypeParams {
+				if t.TypeAlias.TypeParams[i].Name != other.TypeAlias.TypeParams[i].Name {
+					return false
+				}
+				if !equals(t.TypeAlias.TypeParams[i].Constraint, other.TypeAlias.TypeParams[i].Constraint) {
+					return false
+				}
+				if !equals(t.TypeAlias.TypeParams[i].Default, other.TypeAlias.TypeParams[i].Default) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *TypeRefType) String() string {
 	result := QualIdentToString(t.Name)
 	if len(t.TypeArgs) > 0 {
@@ -277,6 +339,13 @@ func (t *PrimType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *PrimType) Equals(other Type) bool {
+	if other, ok := other.(*PrimType); ok {
+		return t.Prim == other.Prim
+	}
+	return false
+}
+
 func (t *PrimType) String() string {
 	switch t.Prim {
 	case BoolPrim:
@@ -337,6 +406,24 @@ func (t *RegexType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *RegexType) Equals(other Type) bool {
+	if other, ok := other.(*RegexType); ok {
+		if !regexEqual(t.Regex, other.Regex) {
+			return false
+		}
+		if len(t.Groups) != len(other.Groups) {
+			return false
+		}
+		for i := range t.Groups {
+			if t.Groups[i] != other.Groups[i] {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *RegexType) String() string {
 	return t.Regex.String()
 }
@@ -392,6 +479,13 @@ func (t *LitType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *LitType) Equals(other Type) bool {
+	if other, ok := other.(*LitType); ok {
+		return t.Lit.Equal(other.Lit)
+	}
+	return false
+}
+
 func (t *LitType) String() string {
 	switch lit := t.Lit.(type) {
 	case *StrLit:
@@ -432,6 +526,13 @@ func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *UniqueSymbolType) Equals(other Type) bool {
+	if other, ok := other.(*UniqueSymbolType); ok {
+		return t.Value == other.Value
+	}
+	return false
+}
+
 func (t *UniqueSymbolType) String() string {
 	return "symbol" + fmt.Sprint(t.Value)
 }
@@ -451,6 +552,11 @@ func (t *UnknownType) Accept(v TypeVisitor) Type {
 }
 
 func NewUnknownType(provenance Provenance) *UnknownType { return &UnknownType{provenance: provenance} }
+func (t *UnknownType) Equals(other Type) bool {
+	_, ok := other.(*UnknownType)
+	return ok
+}
+
 func (t *UnknownType) String() string {
 	return "unknown"
 }
@@ -470,6 +576,11 @@ func (t *NeverType) Accept(v TypeVisitor) Type {
 }
 
 func NewNeverType(provenance Provenance) *NeverType { return &NeverType{provenance: provenance} }
+func (t *NeverType) Equals(other Type) bool {
+	_, ok := other.(*NeverType)
+	return ok
+}
+
 func (t *NeverType) String() string {
 	return "never"
 }
@@ -489,6 +600,11 @@ func (t *VoidType) Accept(v TypeVisitor) Type {
 }
 
 func NewVoidType(provenance Provenance) *VoidType { return &VoidType{provenance: provenance} }
+func (t *VoidType) Equals(other Type) bool {
+	_, ok := other.(*VoidType)
+	return ok
+}
+
 func (t *VoidType) String() string {
 	return "void"
 }
@@ -508,6 +624,11 @@ func (t *AnyType) Accept(v TypeVisitor) Type {
 }
 
 func NewAnyType(provenance Provenance) *AnyType { return &AnyType{provenance: provenance} }
+func (t *AnyType) Equals(other Type) bool {
+	_, ok := other.(*AnyType)
+	return ok
+}
+
 func (t *AnyType) String() string {
 	return "any"
 }
@@ -525,6 +646,11 @@ func (t *GlobalThisType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *GlobalThisType) Equals(other Type) bool {
+	_, ok := other.(*GlobalThisType)
+	return ok
+}
+
 func (t *GlobalThisType) String() string {
 	return "this"
 }
@@ -738,6 +864,48 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 
 	// For other pattern types or when types don't match, fall back to default
 	return pattern.String()
+}
+
+func (t *FuncType) Equals(other Type) bool {
+	if other, ok := other.(*FuncType); ok {
+		// Compare TypeParams
+		if len(t.TypeParams) != len(other.TypeParams) {
+			return false
+		}
+		for i := range t.TypeParams {
+			if t.TypeParams[i].Name != other.TypeParams[i].Name {
+				return false
+			}
+			if !equals(t.TypeParams[i].Constraint, other.TypeParams[i].Constraint) {
+				return false
+			}
+			if !equals(t.TypeParams[i].Default, other.TypeParams[i].Default) {
+				return false
+			}
+		}
+		// Compare Params
+		if len(t.Params) != len(other.Params) {
+			return false
+		}
+		for i := range t.Params {
+			if !equals(t.Params[i].Type, other.Params[i].Type) {
+				return false
+			}
+			if t.Params[i].Optional != other.Params[i].Optional {
+				return false
+			}
+			// Pattern comparison would be complex, skipping for now
+		}
+		// Compare Return and Throws
+		if !equals(t.Return, other.Return) {
+			return false
+		}
+		if !equals(t.Throws, other.Throws) {
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func (t *FuncType) String() string {
@@ -1146,6 +1314,64 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *ObjectType) Equals(other Type) bool {
+	if other, ok := other.(*ObjectType); ok {
+		if t.Exact != other.Exact {
+			return false
+		}
+		if t.Immutable != other.Immutable {
+			return false
+		}
+		if t.Mutable != other.Mutable {
+			return false
+		}
+		if t.Nominal != other.Nominal {
+			return false
+		}
+		if t.Interface != other.Interface {
+			return false
+		}
+		// Compare Extends
+		if len(t.Extends) != len(other.Extends) {
+			return false
+		}
+		for i := range t.Extends {
+			if !equals(t.Extends[i], other.Extends[i]) {
+				return false
+			}
+		}
+		// Compare Implements
+		if len(t.Implements) != len(other.Implements) {
+			return false
+		}
+		for i := range t.Implements {
+			if !equals(t.Implements[i], other.Implements[i]) {
+				return false
+			}
+		}
+		// Compare Elems
+		if len(t.Elems) != len(other.Elems) {
+			return false
+		}
+		for i := range t.Elems {
+			if !objTypeElemEquals(t.Elems[i], other.Elems[i]) {
+				return false
+			}
+		}
+		// Compare SymbolKeyMap
+		if len(t.SymbolKeyMap) != len(other.SymbolKeyMap) {
+			return false
+		}
+		for k, v := range t.SymbolKeyMap {
+			if otherV, ok := other.SymbolKeyMap[k]; !ok || v != otherV {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *ObjectType) String() string {
 	result := "{"
 	if len(t.Elems) > 0 {
@@ -1282,6 +1508,21 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *TupleType) Equals(other Type) bool {
+	if other, ok := other.(*TupleType); ok {
+		if len(t.Elems) != len(other.Elems) {
+			return false
+		}
+		for i := range t.Elems {
+			if !equals(t.Elems[i], other.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *TupleType) String() string {
 	result := "["
 	if len(t.Elems) > 0 {
@@ -1323,6 +1564,13 @@ func (t *RestSpreadType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *RestSpreadType) Equals(other Type) bool {
+	if other, ok := other.(*RestSpreadType); ok {
+		return equals(t.Type, other.Type)
+	}
+	return false
+}
+
 func (t *RestSpreadType) String() string {
 	return "..." + t.Type.String()
 }
@@ -1381,6 +1629,21 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 }
 
 // TODO: handle precedence when printing
+func (t *UnionType) Equals(other Type) bool {
+	if other, ok := other.(*UnionType); ok {
+		if len(t.Types) != len(other.Types) {
+			return false
+		}
+		for i := range t.Types {
+			if !equals(t.Types[i], other.Types[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *UnionType) String() string {
 	result := ""
 	if len(t.Types) > 0 {
@@ -1438,6 +1701,21 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 }
 
 // TODO: handle precedence when printing
+func (t *IntersectionType) Equals(other Type) bool {
+	if other, ok := other.(*IntersectionType); ok {
+		if len(t.Types) != len(other.Types) {
+			return false
+		}
+		for i := range t.Types {
+			if !equals(t.Types[i], other.Types[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *IntersectionType) String() string {
 	result := ""
 	if len(t.Types) > 0 {
@@ -1480,6 +1758,13 @@ func (t *KeyOfType) Accept(v TypeVisitor) Type {
 }
 
 // TODO: handle precedence when printing
+func (t *KeyOfType) Equals(other Type) bool {
+	if other, ok := other.(*KeyOfType); ok {
+		return equals(t.Type, other.Type)
+	}
+	return false
+}
+
 func (t *KeyOfType) String() string {
 	return "keyof " + t.Type.String()
 }
@@ -1505,6 +1790,13 @@ func (t *TypeOfType) Accept(v TypeVisitor) Type {
 		return visitResult
 	}
 	return t
+}
+
+func (t *TypeOfType) Equals(other Type) bool {
+	if other, ok := other.(*TypeOfType); ok {
+		return qualIdentEquals(t.Ident, other.Ident)
+	}
+	return false
 }
 
 func (t *TypeOfType) String() string {
@@ -1541,6 +1833,13 @@ func (t *IndexType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *IndexType) Equals(other Type) bool {
+	if other, ok := other.(*IndexType); ok {
+		return equals(t.Target, other.Target) && equals(t.Index, other.Index)
+	}
+	return false
+}
+
 func (t *IndexType) String() string {
 	return t.Target.String() + "[" + t.Index.String() + "]"
 }
@@ -1587,6 +1886,16 @@ func NewCondType(provenance Provenance, check Type, extends Type, cons Type, alt
 		provenance: provenance,
 	}
 }
+func (t *CondType) Equals(other Type) bool {
+	if other, ok := other.(*CondType); ok {
+		return equals(t.Check, other.Check) &&
+			equals(t.Extends, other.Extends) &&
+			equals(t.Then, other.Then) &&
+			equals(t.Else, other.Else)
+	}
+	return false
+}
+
 func (t *CondType) String() string {
 	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Then.String() + " } else { " + t.Else.String() + " }"
 }
@@ -1605,6 +1914,13 @@ func (t *InferType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *InferType) Equals(other Type) bool {
+	if other, ok := other.(*InferType); ok {
+		return t.Name == other.Name
+	}
+	return false
+}
+
 func (t *InferType) String() string {
 	return "infer " + t.Name
 }
@@ -1649,6 +1965,13 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *MutabilityType) Equals(other Type) bool {
+	if other, ok := other.(*MutabilityType); ok {
+		return t.Mutability == other.Mutability && equals(t.Type, other.Type)
+	}
+	return false
+}
+
 func (t *MutabilityType) String() string {
 	switch t.Mutability {
 	case MutabilityUncertain:
@@ -1686,6 +2009,11 @@ func (t *WildcardType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *WildcardType) Equals(other Type) bool {
+	_, ok := other.(*WildcardType)
+	return ok
+}
+
 func (t *WildcardType) String() string {
 	return "_"
 }
@@ -1729,6 +2057,24 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *ExtractorType) Equals(other Type) bool {
+	if other, ok := other.(*ExtractorType); ok {
+		if !equals(t.Extractor, other.Extractor) {
+			return false
+		}
+		if len(t.Args) != len(other.Args) {
+			return false
+		}
+		for i := range t.Args {
+			if !equals(t.Args[i], other.Args[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *ExtractorType) String() string {
 	result := t.Extractor.String()
 	if len(t.Args) > 0 {
@@ -1786,6 +2132,29 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *TemplateLitType) Equals(other Type) bool {
+	if other, ok := other.(*TemplateLitType); ok {
+		if len(t.Quasis) != len(other.Quasis) {
+			return false
+		}
+		for i := range t.Quasis {
+			if t.Quasis[i].Value != other.Quasis[i].Value {
+				return false
+			}
+		}
+		if len(t.Types) != len(other.Types) {
+			return false
+		}
+		for i := range t.Types {
+			if !equals(t.Types[i], other.Types[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (t *TemplateLitType) String() string {
 	result := "`"
 	for i, quasi := range t.Quasis {
@@ -1813,6 +2182,13 @@ func (t *IntrinsicType) Accept(v TypeVisitor) Type {
 	}
 	return t
 }
+func (t *IntrinsicType) Equals(other Type) bool {
+	if other, ok := other.(*IntrinsicType); ok {
+		return t.Name == other.Name
+	}
+	return false
+}
+
 func (t *IntrinsicType) String() string {
 	return t.Name
 }
@@ -1903,6 +2279,13 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
+func (t *NamespaceType) Equals(other Type) bool {
+	if other, ok := other.(*NamespaceType); ok {
+		return namespaceEquals(t.Namespace, other.Namespace)
+	}
+	return false
+}
+
 func (t *NamespaceType) String() string {
 	var builder strings.Builder
 	builder.WriteString("namespace {")
@@ -1926,6 +2309,8 @@ func (t *NamespaceType) String() string {
 	return builder.String()
 }
 
+// Helper functions for equality comparisons
+
 func regexEqual(x, y *regexp.Regexp) bool {
 	if x == nil || y == nil {
 		return x == y
@@ -1933,22 +2318,150 @@ func regexEqual(x, y *regexp.Regexp) bool {
 	return x.String() == y.String()
 }
 
+func equals(t1, t2 Type) bool {
+	if t1 == nil && t2 == nil {
+		return true
+	}
+	if t1 == nil || t2 == nil {
+		return false
+	}
+	return t1.Equals(t2)
+}
+
+func qualIdentEquals(q1, q2 QualIdent) bool {
+	if q1 == nil && q2 == nil {
+		return true
+	}
+	if q1 == nil || q2 == nil {
+		return false
+	}
+	switch q1 := q1.(type) {
+	case *Ident:
+		if q2, ok := q2.(*Ident); ok {
+			return q1.Name == q2.Name
+		}
+	case *Member:
+		if q2, ok := q2.(*Member); ok {
+			return qualIdentEquals(q1.Left, q2.Left) && q1.Right == q2.Right
+		}
+	}
+	return false
+}
+
+func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
+	switch e1 := e1.(type) {
+	case *CallableElem:
+		if e2, ok := e2.(*CallableElem); ok {
+			return equals(e1.Fn, e2.Fn)
+		}
+	case *ConstructorElem:
+		if e2, ok := e2.(*ConstructorElem); ok {
+			return equals(e1.Fn, e2.Fn)
+		}
+	case *MethodElem:
+		if e2, ok := e2.(*MethodElem); ok {
+			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
+		}
+	case *GetterElem:
+		if e2, ok := e2.(*GetterElem); ok {
+			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
+		}
+	case *SetterElem:
+		if e2, ok := e2.(*SetterElem); ok {
+			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
+		}
+	case *PropertyElem:
+		if e2, ok := e2.(*PropertyElem); ok {
+			return e1.Name == e2.Name &&
+				e1.Optional == e2.Optional &&
+				e1.Readonly == e2.Readonly &&
+				equals(e1.Value, e2.Value)
+		}
+	case *MappedElem:
+		if e2, ok := e2.(*MappedElem); ok {
+			return e1.TypeParam.Name == e2.TypeParam.Name &&
+				equals(e1.TypeParam.Constraint, e2.TypeParam.Constraint) &&
+				e1.Name == e2.Name &&
+				equals(e1.Value, e2.Value) &&
+				e1.Optional == e2.Optional &&
+				e1.Readonly == e2.Readonly &&
+				equals(e1.Check, e2.Check) &&
+				equals(e1.Extends, e2.Extends)
+		}
+	case *RestSpreadElem:
+		if e2, ok := e2.(*RestSpreadElem); ok {
+			return equals(e1.Value, e2.Value)
+		}
+	}
+	return false
+}
+
+func namespaceEquals(n1, n2 *Namespace) bool {
+	if n1 == nil && n2 == nil {
+		return true
+	}
+	if n1 == nil || n2 == nil {
+		return false
+	}
+	// Compare Values
+	if len(n1.Values) != len(n2.Values) {
+		return false
+	}
+	for k, v1 := range n1.Values {
+		if v2, ok := n2.Values[k]; !ok {
+			return false
+		} else if v1.Mutable != v2.Mutable {
+			return false
+		} else if !equals(v1.Type, v2.Type) {
+			return false
+		}
+	}
+	// Compare Types
+	if len(n1.Types) != len(n2.Types) {
+		return false
+	}
+	for k, v1 := range n1.Types {
+		if v2, ok := n2.Types[k]; !ok {
+			return false
+		} else {
+			// Compare TypeAlias
+			if (v1 == nil) != (v2 == nil) {
+				return false
+			}
+			if v1 != nil && v2 != nil {
+				if !equals(v1.Type, v2.Type) {
+					return false
+				}
+				if len(v1.TypeParams) != len(v2.TypeParams) {
+					return false
+				}
+				for i := range v1.TypeParams {
+					if v1.TypeParams[i].Name != v2.TypeParams[i].Name {
+						return false
+					}
+					if !equals(v1.TypeParams[i].Constraint, v2.TypeParams[i].Constraint) {
+						return false
+					}
+					if !equals(v1.TypeParams[i].Default, v2.TypeParams[i].Default) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	// Compare Namespaces
+	if len(n1.Namespaces) != len(n2.Namespaces) {
+		return false
+	}
+	for k, v1 := range n1.Namespaces {
+		if v2, ok := n2.Namespaces[k]; !ok || !namespaceEquals(v1, v2) {
+			return false
+		}
+	}
+	return true
+}
+
+// Equals is a convenience function that delegates to the Equals method
 func Equals(t1 Type, t2 Type) bool {
-	return cmp.Equal(t1, t2,
-		cmpopts.IgnoreUnexported(
-			// nolint:exhaustruct
-			TypeVarType{}, TypeRefType{}, PrimType{}, RegexType{}, regexp.Regexp{}, LitType{},
-			// nolint:exhaustruct
-			UniqueSymbolType{}, UnknownType{}, NeverType{}, AnyType{}, GlobalThisType{},
-			// nolint:exhaustruct
-			FuncType{}, ObjectType{}, TupleType{}, RestSpreadType{}, UnionType{},
-			// nolint:exhaustruct
-			IntersectionType{}, KeyOfType{}, IndexType{}, CondType{}, InferType{},
-			// nolint:exhaustruct
-			MutabilityType{}, WildcardType{}, ExtractorType{}, TemplateLitType{},
-			// nolint:exhaustruct
-			IntrinsicType{}, NamespaceType{}, MappedElem{}, Ident{}, Member{},
-		),
-		cmp.Comparer(regexEqual),
-	)
+	return equals(t1, t2)
 }
