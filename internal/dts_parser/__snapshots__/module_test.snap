@@ -2286,3 +2286,24 @@ map[string]interface {}{
     },
 }
 ---
+
+[TestExportDeclarations/export_without_any_exports - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ExportDecl{
+            Declaration:  nil,
+            NamedExports: {
+            },
+            From:          "",
+            ExportDefault: false,
+            ExportAll:     false,
+            TypeOnly:      false,
+            span:          ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---

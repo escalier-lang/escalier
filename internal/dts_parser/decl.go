@@ -362,6 +362,8 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 	if p.peek().Type == Extends {
 		p.consume() // consume 'extends'
 
+		extends = make([]TypeAnn, 0, 2) // pre-allocate for common case of 1-2 extended interfaces
+
 		// Parse first extended interface
 		ext := p.parseTypeAnn()
 		if ext != nil {
@@ -383,7 +385,7 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 		return nil
 	}
 
-	members := []InterfaceMember{}
+	members := make([]InterfaceMember, 0, 8) // pre-allocate for typical interface size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		// Skip comments before member
 		for p.peek().Type == LineComment || p.peek().Type == BlockComment {
@@ -480,7 +482,7 @@ func (p *DtsParser) parseEnumDeclaration() Statement {
 		return nil
 	}
 
-	members := []*EnumMember{}
+	members := make([]*EnumMember, 0, 8) // pre-allocate for typical enum size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		member := p.parseEnumMember()
 		if member != nil {
@@ -603,7 +605,7 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 		p.consume() // consume 'extends'
 		extends = p.parseTypeAnn()
 		if extends == nil {
-			p.reportError(p.peek().Span, "Expected base class type after 'extends'")
+			p.reportError(p.peek().Span, "Expected type after 'extends'")
 		}
 	}
 
@@ -611,6 +613,8 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 	var implements []TypeAnn
 	if p.peek().Type == Implements {
 		p.consume() // consume 'implements'
+
+		implements = make([]TypeAnn, 0, 2) // pre-allocate for common case of 1-2 implemented interfaces
 
 		// Parse first implemented interface
 		impl := p.parseTypeAnn()
@@ -633,7 +637,7 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 		return nil
 	}
 
-	members := []ClassMember{}
+	members := make([]ClassMember, 0, 8) // pre-allocate for typical class size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		member := p.parseClassMember()
 		if member != nil {
@@ -713,7 +717,7 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 	savedAmbientContext := p.inAmbientContext
 	p.inAmbientContext = true
 
-	statements := []Statement{}
+	statements := make([]Statement, 0, 8) // pre-allocate for typical namespace size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		// Skip comments before parsing statements
 		p.skipComments()
@@ -770,7 +774,7 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 	savedAmbientContext := p.inAmbientContext
 	p.inAmbientContext = true
 
-	statements := []Statement{}
+	statements := make([]Statement, 0, 8) // pre-allocate for typical module size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		stmt := p.parseStatement()
 		if stmt != nil {

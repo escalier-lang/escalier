@@ -143,7 +143,7 @@ func (p *DtsParser) parseNamedImports() []*ImportSpecifier {
 		return nil
 	}
 
-	var specifiers []*ImportSpecifier
+	specifiers := make([]*ImportSpecifier, 0, 4) // pre-allocate for common case of 2-4 imports
 
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		specifier := p.parseImportSpecifier()
@@ -443,7 +443,7 @@ func (p *DtsParser) parseNamedExports() []*ExportSpecifier {
 		return nil
 	}
 
-	var specifiers []*ExportSpecifier
+	specifiers := make([]*ExportSpecifier, 0, 4) // pre-allocate for common case of 2-4 exports
 
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
 		specifier := p.parseExportSpecifier()

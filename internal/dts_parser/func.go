@@ -116,7 +116,7 @@ func (p *DtsParser) parseTypeParams() []*TypeParam {
 	}
 	p.consume() // consume '<'
 
-	typeParams := []*TypeParam{}
+	typeParams := make([]*TypeParam, 0, 2) // pre-allocate for common case of 1-2 type parameters
 
 	// Parse first type parameter
 	typeParam := p.parseTypeParam()
@@ -200,7 +200,7 @@ func (p *DtsParser) parseParams() []*Param {
 	}
 	p.consume() // consume '('
 
-	params := []*Param{}
+	params := make([]*Param, 0, 4) // pre-allocate for common case of 2-4 parameters
 
 	// Handle empty parameter list
 	if p.peek().Type == CloseParen {

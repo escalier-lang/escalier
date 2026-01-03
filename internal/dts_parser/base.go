@@ -26,7 +26,7 @@ func NewDtsParser(source *ast.Source) *DtsParser {
 
 // ParseModule parses a complete .d.ts file and returns a Module
 func (p *DtsParser) ParseModule() (*Module, []*Error) {
-	statements := []Statement{}
+	statements := make([]Statement, 0, 16) // pre-allocate for typical module size
 
 	for {
 		token := p.peek()
