@@ -120,7 +120,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "class Response<T: any = string>(data: T) { data: data }",
 		},
 		"ClassWithGenericMethod": {
-			input: `class Mapper<T>(value: T) { 
+			input: `class Mapper<T>(value: T) {
 				map<U>(self, callback: fn (value: T) -> U) -> Mapper<U> {
 					return Mapper(callback(self.value))
 				},
@@ -149,7 +149,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: "class Util { static identity<T>(x: T) -> T { return x } }",
 		},
 		"ClassWithStaticAndInstanceMethods": {
-			input: `class Math { 
+			input: `class Math {
 				static add(a: number, b: number) -> number {
 					return a + b
 				},
@@ -161,8 +161,8 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"VarDecl": {
 			input: "var x = 5",
 		},
-		"ValDecl": {
-			input: "val x = 5",
+		"ValDeclWithUnicodeIdent": {
+			input: "val π = Math.PI",
 		},
 		"ValDeclWithTypeAnn": {
 			input: "val x: number = 5",
@@ -287,7 +287,7 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		},
 		"FunctionDeclWithIncompleteStmts": {
 			input: `fn foo() {
-				val a = 
+				val a =
 				val b = 5
 				return a +
 			}`,
