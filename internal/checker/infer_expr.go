@@ -684,10 +684,18 @@ func (c *Checker) handleFuncCall(
 		substitutions := make(map[string]type_system.Type)
 		for _, typeParam := range fnType.TypeParams {
 			t := c.FreshVar(nil)
-			if typeParam.Constraint != nil {
-				t.Constraint = typeParam.Constraint
-			}
 			substitutions[typeParam.Name] = t
+		}
+
+		// After all type parameters are in the substitution map,
+		// substitute any type parameter references in the constraints
+		for _, typeParam := range fnType.TypeParams {
+			if typeParam.Constraint != nil {
+				substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, substitutions)
+				if freshVar, ok := substitutions[typeParam.Name].(*type_system.TypeVarType); ok {
+					freshVar.Constraint = substitutedConstraint
+				}
+			}
 		}
 
 		// Substitute type refs in the copied function type with fresh type variables

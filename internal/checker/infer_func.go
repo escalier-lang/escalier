@@ -57,20 +57,24 @@ func (c *Checker) inferFuncTypeParams(
 	astTypeParams []*ast.TypeParam,
 ) ([]*type_system.TypeParam, []Error) {
 	errors := []Error{}
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
 
-	for i, tp := range astTypeParams {
+	// Sort type parameters topologically so dependencies come first
+	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
+
+	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
+
+	for i, tp := range sortedTypeParams {
 		var defaultType type_system.Type
 		var constraintType type_system.Type
 		if tp.Default != nil {
 			var defaultErrors []Error
-			defaultType, defaultErrors = c.inferTypeAnn(ctx, tp.Default)
+			defaultType, defaultErrors = c.inferTypeAnn(funcCtx, tp.Default)
 			defaultType.SetProvenance(&ast.NodeProvenance{Node: tp.Default})
 			errors = slices.Concat(errors, defaultErrors)
 		}
 		if tp.Constraint != nil {
 			var constraintErrors []Error
-			constraintType, constraintErrors = c.inferTypeAnn(ctx, tp.Constraint)
+			constraintType, constraintErrors = c.inferTypeAnn(funcCtx, tp.Constraint)
 			constraintType.SetProvenance(&ast.NodeProvenance{Node: tp.Constraint})
 			errors = slices.Concat(errors, constraintErrors)
 		}
