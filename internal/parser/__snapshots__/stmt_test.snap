@@ -7166,3 +7166,65 @@ nil
     },
 }
 ---
+
+[TestParseStmtNoErrors/ValDeclWithUnicodeIdent - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "π",
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: nil,
+        Init:    &ast.MemberExpr{
+            Object: &ast.IdentExpr{
+                Name:      "Math",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:9},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Prop: &ast.Ident{
+                Name: "PI",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+            OptChain: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:16},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:16},
+        SourceID: 0,
+    },
+}
+---
