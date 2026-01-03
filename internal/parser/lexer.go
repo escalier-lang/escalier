@@ -413,10 +413,10 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	default:
-		value, i := lexer.scanIdent(startOffset)
+		value, _endOffset, runeCount := lexer.scanIdent(startOffset)
 		if value != "" {
-			endOffset = i
-			end.Column = start.Column + utf8.RuneCountInString(value)
+			endOffset = _endOffset
+			end.Column = start.Column + runeCount
 			span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
 
 			if keyword, ok := keywords[value]; ok {
@@ -476,14 +476,14 @@ func isIdentContinue(r rune) bool {
 		!unicode.Is(unicode.Pattern_White_Space, r)
 }
 
-// scanIdent scans an identifier starting at the given offset and returns the normalized value
-// and the ending offset. Returns empty string and start offset if not a valid identifier.
-func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
+// scanIdent scans an identifier starting at the given offset and returns the normalized value,
+// the ending offset, and the rune count. Returns empty string, start offset, and 0 if not a valid identifier.
+func (lexer *Lexer) scanIdent(startOffset int) (string, int, int) {
 	contents := lexer.source.Contents
 	n := len(contents)
 
 	if startOffset >= n {
-		return "", startOffset
+		return "", startOffset, 0
 	}
 
 	// Fast path for ASCII identifiers (most common case)
@@ -493,11 +493,12 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 		if !((firstChar >= 'a' && firstChar <= 'z') ||
 			(firstChar >= 'A' && firstChar <= 'Z') ||
 			firstChar == '_' || firstChar == '$') {
-			return "", startOffset
+			return "", startOffset, 0
 		}
 
 		// Scan ASCII identifier continuation: a-z, A-Z, 0-9, _, $
 		i := startOffset + 1
+		runeCount := 1
 		for i < n && contents[i] <= 127 {
 			c := contents[i]
 			if !((c >= 'a' && c <= 'z') ||
@@ -507,11 +508,12 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 				break
 			}
 			i++
+			runeCount++
 		}
 
 		// If we scanned to the end or hit ASCII non-identifier char, we're done (no normalization needed)
 		if i >= n || contents[i] <= 127 {
-			return contents[startOffset:i], i
+			return contents[startOffset:i], i, runeCount
 		}
 
 		// We hit a Unicode character - continue scanning from where we left off
@@ -527,6 +529,7 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 					break
 				}
 				i++
+				runeCount++
 				continue
 			}
 
@@ -536,13 +539,14 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 				break
 			}
 			i += width
+			runeCount++
 		}
 
 		value := contents[startOffset:i]
 		if needsNormalization {
 			value = string(norm.NFC.Bytes([]byte(value)))
 		}
-		return value, i
+		return value, i, runeCount
 	}
 
 	// Slow path for Unicode identifiers starting with Unicode character
@@ -550,11 +554,12 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 
 	// Check if it starts with a valid identifier start character
 	if !idIdentStart(codePoint) {
-		return "", startOffset
+		return "", startOffset, 0
 	}
 
 	// Scan the full identifier and track if normalization is needed
 	i := startOffset + width
+	runeCount := 1
 	needsNormalization := true
 
 	for i < n {
@@ -568,6 +573,7 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 				break
 			}
 			i++
+			runeCount++
 			continue
 		}
 
@@ -577,6 +583,7 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 			break
 		}
 		i += width
+		runeCount++
 	}
 
 	value := contents[startOffset:i]
@@ -584,7 +591,7 @@ func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
 	if needsNormalization {
 		value = string(norm.NFC.Bytes([]byte(value)))
 	}
-	return value, i
+	return value, i, runeCount
 }
 
 func (lexer *Lexer) saveState() *Lexer {

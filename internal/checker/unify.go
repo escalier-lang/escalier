@@ -1095,7 +1095,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	if union, ok := t2.(*type_system.UnionType); ok {
 		// Try to unify t1 with any type in the union
 		for _, unionType := range union.Types {
-			fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())
+			// fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())
 			// Try unifying - if any unification succeeds, we're good
 			unifyErrors := c.Unify(ctx, t1, unionType)
 			if len(unifyErrors) == 0 {
