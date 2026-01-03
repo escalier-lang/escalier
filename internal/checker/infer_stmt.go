@@ -172,14 +172,17 @@ func (c *Checker) inferTypeDecl(
 ) (*type_system.TypeAlias, []Error) {
 	errors := []Error{}
 
-	typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
+	// Sort type parameters topologically so dependencies come first
+	sortedTypeParams := sortTypeParamsTopologically(decl.TypeParams)
+
+	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 
 	// Create a context that accumulates type parameters as we process them
 	// This allows later type parameters to reference earlier ones in their constraints
 	paramCtx := ctx
 	paramScope := ctx.Scope.WithNewScope()
 
-	for i, typeParam := range decl.TypeParams {
+	for i, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
 		if typeParam.Constraint != nil {
@@ -236,21 +239,24 @@ func (c *Checker) inferInterface(
 ) (*type_system.TypeAlias, []Error) {
 	errors := []Error{}
 
-	typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
+	// Sort type parameters topologically so dependencies come first
+	sortedTypeParams := sortTypeParamsTopologically(decl.TypeParams)
+
+	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 
 	// Create a context that accumulates type parameters as we process them
 	// This allows later type parameters to reference earlier ones in their constraints
 	typeCtx := ctx.WithNewScope()
 
-	typeArgs := make([]type_system.Type, len(decl.TypeParams))
-	for i, typeParam := range decl.TypeParams {
+	typeArgs := make([]type_system.Type, len(sortedTypeParams))
+	for i, typeParam := range sortedTypeParams {
 		typeArgs[i] = type_system.NewTypeRefType(nil, typeParam.Name, nil)
 	}
 	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...)
 	selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
 	typeCtx.Scope.SetTypeAlias("Self", &selfTypeAlias)
 
-	for i, typeParam := range decl.TypeParams {
+	for i, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
 		if typeParam.Constraint != nil {

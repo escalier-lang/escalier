@@ -159,8 +159,11 @@ func GetNamespaceCtx(
 //   - is NOT a replacement for inferFuncTypeParams, which is responsible for
 //     function-level generic parameter handling and associated diagnostics.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
-	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
-	for i, typeParam := range astTypeParams {
+	// Sort type parameters topologically so dependencies come first
+	sortedTypeParams := sortTypeParamsTopologically(astTypeParams)
+
+	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
+	for i, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
 		if typeParam.Constraint != nil {
