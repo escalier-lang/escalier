@@ -413,34 +413,9 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	default:
-		c := codePoint
-		if idIdentStart(c) {
-			contents := lexer.source.Contents
-
-			n := len(contents)
-			i := startOffset
-			for i < n {
-				c := lexer.source.Contents[i]
-				if c < 128 {
-					// ASCII fast path
-					if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-						(c >= '0' && c <= '9') || c == '_' || c == '$' {
-						i++
-					} else {
-						break
-					}
-				} else {
-					// Non-ASCII, use UTF-8 decoding
-					codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[i:])
-					if !isIdentContinue(codePoint) {
-						break
-					}
-					i += width
-				}
-			}
+		value, i := lexer.scanIdent(startOffset)
+		if value != "" {
 			endOffset = i
-
-			value := string(norm.NFC.Bytes([]byte(contents[startOffset:i])))
 			end.Column = start.Column + utf8.RuneCountInString(value)
 			span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
 
@@ -499,6 +474,117 @@ func isIdentContinue(r rune) bool {
 		unicode.Is(unicode.Other_ID_Continue, r)) &&
 		!unicode.Is(unicode.Pattern_Syntax, r) &&
 		!unicode.Is(unicode.Pattern_White_Space, r)
+}
+
+// scanIdent scans an identifier starting at the given offset and returns the normalized value
+// and the ending offset. Returns empty string and start offset if not a valid identifier.
+func (lexer *Lexer) scanIdent(startOffset int) (string, int) {
+	contents := lexer.source.Contents
+	n := len(contents)
+
+	if startOffset >= n {
+		return "", startOffset
+	}
+
+	// Fast path for ASCII identifiers (most common case)
+	firstChar := contents[startOffset]
+	if firstChar <= 127 {
+		// Check ASCII identifier start: a-z, A-Z, _, $
+		if !((firstChar >= 'a' && firstChar <= 'z') ||
+			(firstChar >= 'A' && firstChar <= 'Z') ||
+			firstChar == '_' || firstChar == '$') {
+			return "", startOffset
+		}
+
+		// Scan ASCII identifier continuation: a-z, A-Z, 0-9, _, $
+		i := startOffset + 1
+		for i < n && contents[i] <= 127 {
+			c := contents[i]
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '_' || c == '$') {
+				break
+			}
+			i++
+		}
+
+		// If we scanned to the end or hit ASCII non-identifier char, we're done (no normalization needed)
+		if i >= n || contents[i] <= 127 {
+			return contents[startOffset:i], i
+		}
+
+		// We hit a Unicode character - continue scanning from where we left off
+		needsNormalization := true
+		for i < n {
+			// Fast check for ASCII continuation
+			if contents[i] <= 127 {
+				c := contents[i]
+				if !((c >= 'a' && c <= 'z') ||
+					(c >= 'A' && c <= 'Z') ||
+					(c >= '0' && c <= '9') ||
+					c == '_' || c == '$') {
+					break
+				}
+				i++
+				continue
+			}
+
+			// Unicode path
+			codePoint, width := utf8.DecodeRuneInString(contents[i:])
+			if !isIdentContinue(codePoint) {
+				break
+			}
+			i += width
+		}
+
+		value := contents[startOffset:i]
+		if needsNormalization {
+			value = string(norm.NFC.Bytes([]byte(value)))
+		}
+		return value, i
+	}
+
+	// Slow path for Unicode identifiers starting with Unicode character
+	codePoint, width := utf8.DecodeRuneInString(contents[startOffset:])
+
+	// Check if it starts with a valid identifier start character
+	if !idIdentStart(codePoint) {
+		return "", startOffset
+	}
+
+	// Scan the full identifier and track if normalization is needed
+	i := startOffset + width
+	needsNormalization := true
+
+	for i < n {
+		// Fast check for ASCII continuation
+		if contents[i] <= 127 {
+			c := contents[i]
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '_' || c == '$') {
+				break
+			}
+			i++
+			continue
+		}
+
+		// Unicode path
+		codePoint, width := utf8.DecodeRuneInString(contents[i:])
+		if !isIdentContinue(codePoint) {
+			break
+		}
+		i += width
+	}
+
+	value := contents[startOffset:i]
+	// Only normalize if we found non-ASCII characters
+	if needsNormalization {
+		value = string(norm.NFC.Bytes([]byte(value)))
+	}
+	return value, i
 }
 
 func (lexer *Lexer) saveState() *Lexer {
