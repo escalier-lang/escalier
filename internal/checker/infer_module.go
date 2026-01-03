@@ -160,7 +160,7 @@ func GetNamespaceCtx(
 //     function-level generic parameter handling and associated diagnostics.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
 	// Sort type parameters topologically so dependencies come first
-	sortedTypeParams := sortTypeParamsTopologically(astTypeParams)
+	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
 	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 	for i, typeParam := range sortedTypeParams {

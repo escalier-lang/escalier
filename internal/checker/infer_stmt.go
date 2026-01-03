@@ -173,7 +173,7 @@ func (c *Checker) inferTypeDecl(
 	errors := []Error{}
 
 	// Sort type parameters topologically so dependencies come first
-	sortedTypeParams := sortTypeParamsTopologically(decl.TypeParams)
+	sortedTypeParams := ast.SortTypeParamsTopologically(decl.TypeParams)
 
 	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 
@@ -240,7 +240,7 @@ func (c *Checker) inferInterface(
 	errors := []Error{}
 
 	// Sort type parameters topologically so dependencies come first
-	sortedTypeParams := sortTypeParamsTopologically(decl.TypeParams)
+	sortedTypeParams := ast.SortTypeParamsTopologically(decl.TypeParams)
 
 	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 

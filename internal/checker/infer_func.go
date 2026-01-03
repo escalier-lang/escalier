@@ -59,7 +59,7 @@ func (c *Checker) inferFuncTypeParams(
 	errors := []Error{}
 
 	// Sort type parameters topologically so dependencies come first
-	sortedTypeParams := sortTypeParamsTopologically(astTypeParams)
+	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
 	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
 
