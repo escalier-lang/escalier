@@ -43,6 +43,36 @@ func isIdentContinue(r rune) bool {
 		!unicode.Is(unicode.Pattern_White_Space, r)
 }
 
+// scanIdentContinuation scans identifier continuation characters starting at offset i.
+// Returns the updated offset and rune count.
+func scanIdentContinuation(contents string, i int, runeCount int) (int, int) {
+	n := len(contents)
+	for i < n {
+		// Fast check for ASCII continuation
+		if contents[i] <= 127 {
+			c := contents[i]
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '_' || c == '$') {
+				break
+			}
+			i++
+			runeCount++
+			continue
+		}
+
+		// Unicode path
+		codePoint, width := utf8.DecodeRuneInString(contents[i:])
+		if !isIdentContinue(codePoint) {
+			break // trigger on unicode operators or punctuation
+		}
+		i += width
+		runeCount++
+	}
+	return i, runeCount
+}
+
 // scanIdent scans an identifier starting at the given offset and returns the normalized value,
 // the ending offset, and the rune count. Returns empty string, start offset, and 0 if not a valid identifier.
 func ScanIdent(contents string, startOffset int) (string, int, int) {
@@ -84,29 +114,7 @@ func ScanIdent(contents string, startOffset int) (string, int, int) {
 
 		// We hit a Unicode character - continue scanning from where we left off
 		needsNormalization := true
-		for i < n {
-			// Fast check for ASCII continuation
-			if contents[i] <= 127 {
-				c := contents[i]
-				if !((c >= 'a' && c <= 'z') ||
-					(c >= 'A' && c <= 'Z') ||
-					(c >= '0' && c <= '9') ||
-					c == '_' || c == '$') {
-					break
-				}
-				i++
-				runeCount++
-				continue
-			}
-
-			// Unicode path
-			codePoint, width := utf8.DecodeRuneInString(contents[i:])
-			if !isIdentContinue(codePoint) {
-				break
-			}
-			i += width
-			runeCount++
-		}
+		i, runeCount = scanIdentContinuation(contents, i, runeCount)
 
 		value := contents[startOffset:i]
 		if needsNormalization {
@@ -128,29 +136,7 @@ func ScanIdent(contents string, startOffset int) (string, int, int) {
 	runeCount := 1
 	needsNormalization := true
 
-	for i < n {
-		// Fast check for ASCII continuation
-		if contents[i] <= 127 {
-			c := contents[i]
-			if !((c >= 'a' && c <= 'z') ||
-				(c >= 'A' && c <= 'Z') ||
-				(c >= '0' && c <= '9') ||
-				c == '_' || c == '$') {
-				break
-			}
-			i++
-			runeCount++
-			continue
-		}
-
-		// Unicode path
-		codePoint, width := utf8.DecodeRuneInString(contents[i:])
-		if !isIdentContinue(codePoint) {
-			break
-		}
-		i += width
-		runeCount++
-	}
+	i, runeCount = scanIdentContinuation(contents, i, runeCount)
 
 	value := contents[startOffset:i]
 	// Only normalize if we found non-ASCII characters

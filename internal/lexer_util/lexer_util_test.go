@@ -418,6 +418,152 @@ func TestScanIdentNormalization(t *testing.T) {
 	}
 }
 
+func TestIsIdentStart(t *testing.T) {
+	tests := []struct {
+		name string
+		r    rune
+		want bool
+	}{
+		// ASCII lowercase letters
+		{"lowercase a", 'a', true},
+		{"lowercase z", 'z', true},
+		{"lowercase m", 'm', true},
+
+		// ASCII uppercase letters
+		{"uppercase A", 'A', true},
+		{"uppercase Z", 'Z', true},
+		{"uppercase M", 'M', true},
+
+		// Underscore and dollar sign
+		{"underscore", '_', true},
+		{"dollar sign", '$', true},
+
+		// ASCII numbers (invalid start)
+		{"digit 0", '0', false},
+		{"digit 5", '5', false},
+		{"digit 9", '9', false},
+
+		// ASCII punctuation (invalid)
+		{"hyphen", '-', false},
+		{"dot", '.', false},
+		{"comma", ',', false},
+		{"semicolon", ';', false},
+		{"colon", ':', false},
+		{"exclamation", '!', false},
+		{"question", '?', false},
+		{"at sign", '@', false},
+		{"hash", '#', false},
+		{"percent", '%', false},
+		{"ampersand", '&', false},
+		{"asterisk", '*', false},
+		{"plus", '+', false},
+		{"equals", '=', false},
+		{"less than", '<', false},
+		{"greater than", '>', false},
+
+		// ASCII whitespace (invalid)
+		{"space", ' ', false},
+		{"tab", '\t', false},
+		{"newline", '\n', false},
+		{"carriage return", '\r', false},
+
+		// Unicode letters (valid)
+		{"greek alpha", 'α', true},
+		{"greek beta", 'β', true},
+		{"greek gamma", 'γ', true},
+		{"cyrillic а", 'а', true},
+		{"cyrillic б", 'б', true},
+		{"chinese 变", '变', true},
+		{"chinese 量", '量', true},
+		{"arabic م", 'م', true},
+		{"arabic ت", 'ت', true},
+		{"hebrew א", 'א', true},
+
+		// Unicode numbers (invalid start)
+		{"unicode digit", '٠', false}, // Arabic-Indic digit zero
+
+		// Emojis (invalid)
+		{"emoji grinning", '😀', false},
+		{"emoji heart", '❤', false},
+
+		// Other special Unicode
+		{"zero width joiner", '\u200D', false},
+		{"zero width space", '\u200B', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsIdentStart(tt.r)
+			if got != tt.want {
+				t.Errorf("IsIdentStart(%q) = %v, want %v", tt.r, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsIdentContinue(t *testing.T) {
+	tests := []struct {
+		name string
+		r    rune
+		want bool
+	}{
+		// ASCII lowercase letters
+		{"lowercase a", 'a', true},
+		{"lowercase z", 'z', true},
+
+		// ASCII uppercase letters
+		{"uppercase A", 'A', true},
+		{"uppercase Z", 'Z', true},
+
+		// ASCII digits (valid in continuation)
+		{"digit 0", '0', true},
+		{"digit 5", '5', true},
+		{"digit 9", '9', true},
+
+		// Underscore and dollar sign
+		{"underscore", '_', true},
+		{"dollar sign", '$', true},
+
+		// ASCII punctuation (invalid)
+		{"hyphen", '-', false},
+		{"dot", '.', false},
+		{"comma", ',', false},
+		{"semicolon", ';', false},
+		{"space", ' ', false},
+		{"tab", '\t', false},
+		{"newline", '\n', false},
+
+		// Unicode letters (valid)
+		{"greek alpha", 'α', true},
+		{"cyrillic а", 'а', true},
+		{"chinese 变", '变', true},
+		{"arabic م", 'م', true},
+
+		// Unicode digits (valid in continuation)
+		{"arabic-indic digit", '٥', true},
+
+		// Unicode combining marks (valid in continuation)
+		{"combining acute accent", '\u0301', true},
+		{"combining diaeresis", '\u0308', true},
+
+		// Emojis (invalid)
+		{"emoji", '😀', false},
+
+		// Zero-width characters
+		{"zero width joiner", '\u200D', false},
+		{"zero width space", '\u200B', false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isIdentContinue(tt.r)
+			if got != tt.want {
+				t.Errorf("isIdentContinue(%q) = %v, want %v", tt.r, got, tt.want)
+			}
+		})
+	}
+}
+
 func BenchmarkScanIdent(b *testing.B) {
 	benchmarks := []struct {
 		name     string
