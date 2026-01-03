@@ -15,6 +15,13 @@ type DtsParser struct {
 	inAmbientContext bool // true when inside a declare namespace or declare module
 }
 
+// ParserState represents a lightweight snapshot of parser state for backtracking
+type ParserState struct {
+	lexerState       *Lexer
+	errorCount       int
+	inAmbientContext bool
+}
+
 // NewDtsParser creates a new parser for TypeScript declaration files
 func NewDtsParser(source *ast.Source) *DtsParser {
 	return &DtsParser{
@@ -92,22 +99,20 @@ func (p *DtsParser) skipComments() {
 }
 
 // saveState saves the current parser state for backtracking
-func (p *DtsParser) saveState() *DtsParser {
-	// Create a deep copy of the errors slice to avoid sharing the underlying array
-	errorsCopy := make([]*Error, len(p.errors))
-	copy(errorsCopy, p.errors)
-
-	return &DtsParser{
-		lexer:            p.lexer.SaveState(),
-		errors:           errorsCopy,
+// Returns a lightweight snapshot that only tracks error count instead of copying errors
+func (p *DtsParser) saveState() *ParserState {
+	return &ParserState{
+		lexerState:       p.lexer.SaveState(),
+		errorCount:       len(p.errors),
 		inAmbientContext: p.inAmbientContext,
 	}
 }
 
 // restoreState restores a previously saved parser state
-func (p *DtsParser) restoreState(saved *DtsParser) {
-	p.lexer.RestoreState(saved.lexer)
-	p.errors = saved.errors
+// Truncates errors slice to the saved count instead of replacing it
+func (p *DtsParser) restoreState(saved *ParserState) {
+	p.lexer.RestoreState(saved.lexerState)
+	p.errors = p.errors[:saved.errorCount]
 	p.inAmbientContext = saved.inAmbientContext
 }
 
