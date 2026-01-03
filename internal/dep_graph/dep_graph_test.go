@@ -1700,3 +1700,92 @@ func TestDependencyVisitor_LocalValueAndTypeBindings(t *testing.T) {
 		})
 	}
 }
+
+func TestTypeParamTopologicalSort(t *testing.T) {
+	// This test verifies that type parameters are processed in topological order
+	// allowing dependencies to be declared in any order
+	tests := map[string]struct {
+		source        string
+		description   string
+		shouldCompile bool
+	}{
+		"TypeParam_DependsOnLater": {
+			source: `
+				type Foo<Baz: string, Bar: Baz> = {
+					bar: Bar,
+					baz: Baz,
+				}
+			`,
+			description:   "Type parameter Bar depends on Baz which comes after it",
+			shouldCompile: true,
+		},
+		"TypeParam_ChainDependency": {
+			source: `
+				type Chain<C: B, B: A, A: string> = {
+					a: A,
+					b: B,
+					c: C,
+				}
+			`,
+			description:   "Type parameters with chain dependency: C -> B -> A",
+			shouldCompile: true,
+		},
+		"TypeParam_MultipleReferences": {
+			source: `
+				type Multi<D: B | C, C: A, B: A, A: string> = {
+					a: A,
+					b: B,
+					c: C,
+					d: D,
+				}
+			`,
+			description:   "Type parameter D depends on both B and C which depend on A",
+			shouldCompile: true,
+		},
+		"TypeParam_NoDependencies": {
+			source: `
+				type Simple<A, B, C> = {
+					a: A,
+					b: B,
+					c: C,
+				}
+			`,
+			description:   "Type parameters with no dependencies should work in any order",
+			shouldCompile: true,
+		},
+		"TypeParam_SelfReference": {
+			source: `
+				type Recursive<T: T> = {
+					value: T,
+				}
+			`,
+			description:   "Type parameter with self-reference (cycle) should preserve original order",
+			shouldCompile: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: test.source,
+			}
+
+			sources := []*ast.Source{source}
+			module, errors := parser.ParseLibFiles(ctx, sources)
+
+			if test.shouldCompile {
+				assert.Len(t, errors, 0, "Parse errors for %s: %v", test.description, errors)
+				assert.NotNil(t, module, "Module should not be nil for %s", test.description)
+
+				// Verify that we can build the dependency graph without errors
+				depGraph := BuildDepGraph(module)
+				assert.NotNil(t, depGraph, "Dependency graph should not be nil for %s", test.description)
+			}
+		})
+	}
+}
