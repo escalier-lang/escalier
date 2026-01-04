@@ -2,10 +2,6 @@
 
 package ast
 
-func (node *IgnoreExpr) Span() Span             { return node.span }
-func (node *IgnoreExpr) InferredType() Type     { return node.inferredType }
-func (node *IgnoreExpr) SetInferredType(t Type) { node.inferredType = t }
-
 func (node *EmptyExpr) Span() Span             { return node.span }
 func (node *EmptyExpr) InferredType() Type     { return node.inferredType }
 func (node *EmptyExpr) SetInferredType(t Type) { node.inferredType = t }
@@ -61,10 +57,6 @@ func (node *IfLetExpr) SetInferredType(t Type) { node.inferredType = t }
 func (node *MatchExpr) Span() Span             { return node.span }
 func (node *MatchExpr) InferredType() Type     { return node.inferredType }
 func (node *MatchExpr) SetInferredType(t Type) { node.inferredType = t }
-
-func (node *AssignExpr) Span() Span             { return node.span }
-func (node *AssignExpr) InferredType() Type     { return node.inferredType }
-func (node *AssignExpr) SetInferredType(t Type) { node.inferredType = t }
 
 func (node *TryCatchExpr) Span() Span             { return node.span }
 func (node *TryCatchExpr) InferredType() Type     { return node.inferredType }

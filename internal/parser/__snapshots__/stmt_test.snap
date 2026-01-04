@@ -7228,3 +7228,58 @@ nil
     },
 }
 ---
+
+[TestParseStmtErrorHandling/VarDeclMissingInitializer - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    1,
+        Pattern: &ast.IdentPat{
+            Name:    "x",
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: nil,
+        Init:    &ast.EmptyExpr{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtErrorHandling/VarDeclMissingInitializer - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        Message: "Expected an expression",
+    },
+}
+---
