@@ -70,7 +70,7 @@ export class Client {
                 if (match) {
                     this.contentLength = Number.parseInt(match[1], 10);
                     // Extract payload after the header
-                    const headerEndIndex = match.index! + match[0].length;
+                    const headerEndIndex = (match.index ?? 0) + match[0].length;
                     this.messageBuffer = message.substring(headerEndIndex);
                 } else {
                     console.error('No Content-Length header found in message');
