@@ -20,7 +20,6 @@ type Expr interface {
 	Inferrable
 }
 
-func (*IgnoreExpr) isExpr()            {}
 func (*EmptyExpr) isExpr()             {}
 func (*BinaryExpr) isExpr()            {}
 func (*UnaryExpr) isExpr()             {}
@@ -35,7 +34,6 @@ func (*ObjectExpr) isExpr()            {}
 func (*IfElseExpr) isExpr()            {}
 func (*IfLetExpr) isExpr()             {}
 func (*MatchExpr) isExpr()             {}
-func (*AssignExpr) isExpr()            {}
 func (*TryCatchExpr) isExpr()          {}
 func (*DoExpr) isExpr()                {}
 func (*AwaitExpr) isExpr()             {}
@@ -45,16 +43,6 @@ func (*TaggedTemplateLitExpr) isExpr() {}
 func (*JSXElementExpr) isExpr()        {}
 func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
-
-type IgnoreExpr struct {
-	span         Span
-	inferredType Type
-}
-
-func (e *IgnoreExpr) Accept(v Visitor) {
-	v.EnterExpr(e)
-	v.ExitExpr(e)
-}
 
 type EmptyExpr struct {
 	span         Span
@@ -714,24 +702,6 @@ func (e *MatchExpr) Accept(v Visitor) {
 				matchCase.Body.Expr.Accept(v)
 			}
 		}
-	}
-	v.ExitExpr(e)
-}
-
-type AssignExpr struct {
-	Left         Expr
-	Right        Expr
-	span         Span
-	inferredType Type
-}
-
-func NewAssign(left, right Expr, span Span) *AssignExpr {
-	return &AssignExpr{Left: left, Right: right, span: span, inferredType: nil}
-}
-func (e *AssignExpr) Accept(v Visitor) {
-	if v.EnterExpr(e) {
-		e.Left.Accept(v)
-		e.Right.Accept(v)
 	}
 	v.ExitExpr(e)
 }

@@ -279,6 +279,9 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		"VarDeclMissingEquals": {
 			input: "var x 5",
 		},
+		"VarDeclMissingInitializer": {
+			input: "var x = ",
+		},
 		"FunctionDeclMissingIdent": {
 			input: `fn () {return 5}`,
 		},

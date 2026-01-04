@@ -309,8 +309,6 @@ func (p *Printer) printEnumDecl(decl *ast.EnumDecl) {
 
 func (p *Printer) printExpr(expr ast.Expr) {
 	switch e := expr.(type) {
-	case *ast.IgnoreExpr:
-		p.writeString("_")
 	case *ast.EmptyExpr:
 		// Empty expression - don't print anything
 	case *ast.BinaryExpr:
@@ -339,8 +337,6 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printIfLetExpr(e)
 	case *ast.MatchExpr:
 		p.printMatchExpr(e)
-	case *ast.AssignExpr:
-		p.printAssignExpr(e)
 	case *ast.TryCatchExpr:
 		p.printTryCatchExpr(e)
 	case *ast.DoExpr:
@@ -624,12 +620,6 @@ func (p *Printer) printMatchExpr(expr *ast.MatchExpr) {
 
 	p.dedent()
 	p.writeString("}")
-}
-
-func (p *Printer) printAssignExpr(expr *ast.AssignExpr) {
-	p.printExpr(expr.Left)
-	p.writeString(" = ")
-	p.printExpr(expr.Right)
 }
 
 func (p *Printer) printTryCatchExpr(expr *ast.TryCatchExpr) {
@@ -1349,7 +1339,7 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 		}
 		return false
 
-	case *ast.IfElseExpr, *ast.MatchExpr, *ast.AssignExpr:
+	case *ast.IfElseExpr, *ast.MatchExpr:
 		// These always need parens when used as operands
 		return true
 

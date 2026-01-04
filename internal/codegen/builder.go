@@ -1224,10 +1224,17 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		stmts := slices.Concat(tagStmts, exprStmts)
 
 		return NewTaggedTemplateLitExpr(tag, quasis, exprs, expr), stmts
-	case *ast.IgnoreExpr:
-		panic("TODO - buildExpr - IgnoreExpr")
+	case *ast.IfLetExpr:
+		panic("TODO - buildExpr - IfLetExpr")
+	case *ast.TryCatchExpr:
+		panic("TODO - buildExpr - TryCatchExpr")
+	case *ast.JSXElementExpr:
+		panic("TODO - buildExpr - JSXElementExpr")
+	case *ast.JSXFragmentExpr:
+		panic("TODO - buildExpr - JSXFragmentExpr")
 	case *ast.EmptyExpr:
-		panic("TODO - buildExpr - EmptyExpr")
+		undefined := NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr)
+		return undefined, []Stmt{}
 	default:
 		panic(fmt.Sprintf("TODO - buildExpr - default case: %#v", expr))
 	}

@@ -511,6 +511,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 		// Template literals always result in a string type
 		resultType = type_system.NewStrPrimType(provenance)
+	case *ast.IfLetExpr:
+		panic("TODO: infer IfLetExpr")
+	case *ast.TryCatchExpr:
+		panic("TODO: infer TryCatchExpr")
+	case *ast.JSXElementExpr:
+		panic("TODO: infer JSXElementExpr")
+	case *ast.JSXFragmentExpr:
+		panic("TODO: infer JSXFragmentExpr")
 	default:
 		resultType = type_system.NewNeverType(nil)
 		errors = []Error{
