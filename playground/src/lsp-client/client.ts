@@ -45,6 +45,8 @@ export class Client {
     private requestID: number;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
+    private contentLength: number;
+    private messageBuffer: string;
 
     constructor(wasmBuf: ArrayBuffer, fs: FSAPI) {
         this.stdin = new SimpleStream();
@@ -54,28 +56,64 @@ export class Client {
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
         this.errorBuffer = '';
+        this.contentLength = 0;
+        this.messageBuffer = '';
 
         this.stdout.on('data', (chunk) => {
             const message = decoder.decode(chunk);
-            const headerRegex = /Content-Length: (\d+)/;
-            const payload = message.replace(headerRegex, '').trim();
-            const object = JSON.parse(payload);
 
-            // TODO: validate the the object being returned is a valid RPC JSON response
-            if (object.id != null) {
-                // Handle response to a client request
-                const deferred = this.deferreds.get(object.id);
-                if (deferred) {
-                    if (object.error) {
-                        deferred.reject(object.error);
-                    }
-                    if ('result' in object) {
-                        deferred.resolve(object.result);
-                    }
+            // If we don't have a content length yet, we're starting a new message
+            if (this.contentLength === 0) {
+                const headerRegex = /Content-Length: (\d+)\r?\n\r?\n/;
+                const match = message.match(headerRegex);
+
+                if (match) {
+                    this.contentLength = Number.parseInt(match[1], 10);
+                    // Extract payload after the header
+                    const headerEndIndex = match.index! + match[0].length;
+                    this.messageBuffer = message.substring(headerEndIndex);
+                } else {
+                    console.error('No Content-Length header found in message');
+                    return;
                 }
             } else {
-                // Handle server initiated message
-                this.emitter.emit(object.method, object.params);
+                // Continuing to accumulate chunks for the current message
+                this.messageBuffer += message;
+            }
+
+            // Check if we have received the complete message
+            if (this.messageBuffer.length >= this.contentLength) {
+                const payload = this.messageBuffer.substring(
+                    0,
+                    this.contentLength,
+                );
+
+                try {
+                    const object = JSON.parse(payload);
+
+                    // TODO: validate the the object being returned is a valid RPC JSON response
+                    if (object.id != null) {
+                        // Handle response to a client request
+                        const deferred = this.deferreds.get(object.id);
+                        if (deferred) {
+                            if (object.error) {
+                                deferred.reject(object.error);
+                            }
+                            if ('result' in object) {
+                                deferred.resolve(object.result);
+                            }
+                        }
+                    } else {
+                        // Handle server initiated message
+                        this.emitter.emit(object.method, object.params);
+                    }
+                } catch (e) {
+                    console.log('Error parsing JSON:', e);
+                }
+
+                // Reset state for next message
+                this.contentLength = 0;
+                this.messageBuffer = '';
             }
         });
 
