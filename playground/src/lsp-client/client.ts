@@ -81,8 +81,11 @@ export class Client {
                 this.messageBuffer += message;
             }
 
-            // Check if we have received the complete message
-            if (this.messageBuffer.length >= this.contentLength) {
+            // Check if we have received the complete message (Content-Length is in bytes)
+            if (
+                encoder.encode(this.messageBuffer).byteLength >=
+                this.contentLength
+            ) {
                 const payload = this.messageBuffer.substring(
                     0,
                     this.contentLength,
@@ -91,7 +94,7 @@ export class Client {
                 try {
                     const object = JSON.parse(payload);
 
-                    // TODO: validate the the object being returned is a valid RPC JSON response
+                    // TODO: validate that the object being returned is a valid RPC JSON response
                     if (object.id != null) {
                         // Handle response to a client request
                         const deferred = this.deferreds.get(object.id);
@@ -102,6 +105,9 @@ export class Client {
                             if ('result' in object) {
                                 deferred.resolve(object.result);
                             }
+                            // After resolving/rejecting the promise, remove it from the map
+                            // to prevent memory leaks.
+                            this.deferreds.delete(object.id);
                         }
                     } else {
                         // Handle server initiated message
