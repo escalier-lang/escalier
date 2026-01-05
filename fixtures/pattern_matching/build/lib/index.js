@@ -139,13 +139,13 @@ export const objectRestMatch = temp23;
 let temp25;
 let temp26;
 temp26 = ref;
-if (temp26 != null && "value" in temp26 && temp26.value == "string") {
+if (temp26 != null && "value" in temp26 && typeof temp26.value == "string") {
   const {value: a} = temp26;
   temp25 = "string";
-} else if (temp26 != null && "value" in temp26 && temp26.value == "number") {
+} else if (temp26 != null && "value" in temp26 && typeof temp26.value == "number") {
   const {value: b} = temp26;
   temp25 = "number";
-} else if (temp26 != null && "value" in temp26 && temp26.value == "boolean") {
+} else if (temp26 != null && "value" in temp26 && typeof temp26.value == "boolean") {
   const {value: c} = temp26;
   temp25 = "boolean";
 }

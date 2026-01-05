@@ -54,6 +54,7 @@ var unaryOpMap = map[UnaryOp]string{
 	UnaryPlus:  "+",
 	UnaryMinus: "-",
 	LogicalNot: "!",
+	TypeOf:     "typeof ",
 }
 
 func (p *Printer) print(s string) {

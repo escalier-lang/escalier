@@ -1,6 +1,6 @@
 export const tuple = [42, "hello"];
 let temp1;
-if (tuple.length == 2) {
+if (tuple != null && tuple.length == 2) {
   const [num, str] = tuple;
   temp1 = "Number: " + num.toString() + ", String: " + str;
 } else {
@@ -9,7 +9,7 @@ if (tuple.length == 2) {
 export const basicIfLetStr = temp1;
 export const tupleNum = [42, "hello"];
 let temp2;
-if (tupleNum.length == 2) {
+if (tupleNum != null && tupleNum.length == 2) {
   const [num, str] = tupleNum;
   temp2 = num * 2;
 } else {
@@ -18,7 +18,7 @@ if (tupleNum.length == 2) {
 export const basicIfLetNum = temp2;
 export const nullableTuple = null;
 let temp3;
-if (nullableTuple.length == 2) {
+if (nullableTuple != null && nullableTuple.length == 2) {
   const [flag, value] = nullableTuple;
   let temp4;
   if (flag) {
@@ -32,7 +32,7 @@ if (nullableTuple.length == 2) {
 }
 export const ifLetWithElseNum = temp3;
 let temp5;
-if (nullableTuple.length == 2) {
+if (nullableTuple != null && nullableTuple.length == 2) {
   const [flag, value] = nullableTuple;
   let temp6;
   if (flag) {
@@ -47,7 +47,7 @@ if (nullableTuple.length == 2) {
 export const ifLetWithElseStr = temp5;
 export const nestedNum = [[1, 2], [3, 4]];
 let temp7;
-if (nestedNum.length == 2 && nestedNum[0].length == 2 && nestedNum[1].length == 2) {
+if (nestedNum != null && nestedNum.length == 2 && nestedNum[0].length == 2 && nestedNum[1].length == 2) {
   const [[x, y], [a, b]] = nestedNum;
   temp7 = x + y + a + b;
 } else {
@@ -56,7 +56,7 @@ if (nestedNum.length == 2 && nestedNum[0].length == 2 && nestedNum[1].length == 
 export const nestedIfLetNum = temp7;
 export const nestedStr = [[1, "b"], ["c", "d"]];
 let temp8;
-if (nestedStr.length == 2 && nestedStr[0].length == 2 && nestedStr[1].length == 2) {
+if (nestedStr != null && nestedStr.length == 2 && nestedStr[0].length == 2 && nestedStr[1].length == 2) {
   const [[num, str1], [str2, str3]] = nestedStr;
   temp8 = "Num: " + num.toString() + ", Str1: " + str1 + ", Str2: " + str2 + ", Str3: " + str3;
 } else {
@@ -65,7 +65,7 @@ if (nestedStr.length == 2 && nestedStr[0].length == 2 && nestedStr[1].length == 
 export const nestedIfLetStr = temp8;
 export const point = {x: 10, y: 20};
 let temp9;
-if (point != null && "x" in point && "y" in point) {
+if (point != null && point != null && "x" in point && "y" in point) {
   const {x, y} = point;
   temp9 = x * y;
 } else {
@@ -73,7 +73,7 @@ if (point != null && "x" in point && "y" in point) {
 }
 export const objectIfLetNum = temp9;
 let temp10;
-if (point != null && "x" in point && "y" in point) {
+if (point != null && point != null && "x" in point && "y" in point) {
   const {x, y} = point;
   temp10 = "Point: (" + x.toString() + ", " + y.toString() + ")";
 } else {
@@ -82,7 +82,7 @@ if (point != null && "x" in point && "y" in point) {
 export const objectIfLetStr = temp10;
 export const config = {enabled: true, count: 5};
 let temp11;
-if (config != null && "enabled" in config && "count" in config) {
+if (config != undefined && config != null && "enabled" in config && "count" in config) {
   const {enabled, count} = config;
   let temp12;
   if (enabled) {
@@ -96,7 +96,7 @@ if (config != null && "enabled" in config && "count" in config) {
 }
 export const shorthandIfLetNum = temp11;
 let temp13;
-if (config != null && "enabled" in config && "count" in config) {
+if (config != undefined && config != null && "enabled" in config && "count" in config) {
   const {enabled, count} = config;
   let temp14;
   if (enabled) {
@@ -111,77 +111,69 @@ if (config != null && "enabled" in config && "count" in config) {
 export const shorthandIfLetStr = temp13;
 export const option = 42;
 let temp15;
-if (true) {
+if (option != null && true) {
   const valueNum = option;
   temp15 = valueNum * 2;
 } else {
   temp15 = 0;
 }
 export const ifLetWithExprAltNum = temp15;
-let temp16;
-if (true) {
-  const valueStr = option;
-  temp16 = "Value: " + valueStr.toString();
-} else {
-  temp16 = "No value";
-}
-export const ifLetWithExprAltStr = temp16;
 export const complex = [100, ["test", true]];
-let temp17;
-if (complex.length == 2 && complex[0] == "number" && complex[1].length == 2 && complex[1][0] == "string" && complex[1][1] == "boolean") {
+let temp16;
+if (complex != null && complex.length == 2 && typeof complex[0] == "number" && complex[1].length == 2 && typeof complex[1][0] == "string" && typeof complex[1][1] == "boolean") {
   const [num, [str, flag]] = complex;
-  let temp18;
+  let temp17;
   if (flag) {
-    temp18 = num + str.length;
+    temp17 = num + str.length;
   } else {
-    temp18 = num;
+    temp17 = num;
   }
-  temp17 = temp18;
+  temp16 = temp17;
 } else {
-  temp17 = 0;
+  temp16 = 0;
 }
-export const complexIfLetNum = temp17;
-let temp19;
-if (complex.length == 2 && complex[0] == "number" && complex[1].length == 2 && complex[1][0] == "string" && complex[1][1] == "boolean") {
+export const complexIfLetNum = temp16;
+let temp18;
+if (complex != null && complex.length == 2 && typeof complex[0] == "number" && complex[1].length == 2 && typeof complex[1][0] == "string" && typeof complex[1][1] == "boolean") {
   const [num, [str, flag]] = complex;
-  let temp20;
+  let temp19;
   if (flag) {
-    temp20 = "Number: " + num.toString() + ", Length: " + str.length.toString();
+    temp19 = "Number: " + num.toString() + ", Length: " + str.length.toString();
   } else {
-    temp20 = "Number: " + num.toString();
+    temp19 = "Number: " + num.toString();
   }
-  temp19 = temp20;
+  temp18 = temp19;
 } else {
-  temp19 = "No complex";
+  temp18 = "No complex";
 }
-export const complexIfLetStr = temp19;
+export const complexIfLetStr = temp18;
 export const data = {user: {name: "Alice", age: 30}, active: true};
-let temp21;
-if (data != null && "user" in data && data.user != null && "name" in data.user && "age" in data.user && "active" in data) {
+let temp20;
+if (data != null && data != null && "user" in data && data.user != null && "name" in data.user && "age" in data.user && "active" in data) {
   const {user: {name, age}, active} = data;
-  let temp22;
+  let temp21;
   if (active) {
-    temp22 = name + " is " + age.toString() + " years old";
+    temp21 = name + " is " + age.toString() + " years old";
   } else {
-    temp22 = name;
+    temp21 = name;
   }
-  temp21 = temp22;
+  temp20 = temp21;
 } else {
-  temp21 = "Unknown user";
+  temp20 = "Unknown user";
 }
-export const multipleBindingsStr = temp21;
-let temp23;
-if (data != null && "user" in data && data.user != null && "name" in data.user && "age" in data.user && "active" in data) {
+export const multipleBindingsStr = temp20;
+let temp22;
+if (data != null && data != null && "user" in data && data.user != null && "name" in data.user && "age" in data.user && "active" in data) {
   const {user: {name: _, age}, active} = data;
-  let temp24;
+  let temp23;
   if (active) {
-    temp24 = age * 2;
+    temp23 = age * 2;
   } else {
-    temp24 = 0;
+    temp23 = 0;
   }
-  temp23 = temp24;
+  temp22 = temp23;
 } else {
-  temp23 = 0;
+  temp22 = 0;
 }
-export const multipleBindingsNum = temp23;
+export const multipleBindingsNum = temp22;
 //# sourceMappingURL=./index.js.map

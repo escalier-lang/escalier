@@ -19,7 +19,6 @@ export declare const shorthandIfLetNum: number | 0 | -1;
 export declare const shorthandIfLetStr: string | "Disabled" | "No config";
 declare const option: number | null;
 export declare const ifLetWithExprAltNum: number | 0;
-export declare const ifLetWithExprAltStr: string | "No value";
 declare const complex: [number, [string, boolean]] | null;
 export declare const complexIfLetNum: number | number | 0;
 export declare const complexIfLetStr: string | string | "No complex";

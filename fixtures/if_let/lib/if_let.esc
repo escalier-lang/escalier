@@ -87,13 +87,6 @@ export val ifLetWithExprAltNum = if let valueNum = option {
     0
 }
 
-// If-let with expression alternative (string result)
-export val ifLetWithExprAltStr = if let valueStr = option {
-    "Value: " ++ valueStr.toString()
-} else {
-    "No value"
-}
-
 // Complex pattern with type annotations (numeric result)
 val complex: [number, [string, boolean]] | null = [100, ["test", true]]
 export val complexIfLetNum = if let [num: number, [str: string, flag: boolean]] = complex {

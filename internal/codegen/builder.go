@@ -1237,6 +1237,48 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Generate the condition and binding statements for the pattern
 		condition, bindingStmts := b.buildPatternCondition(expr.Pattern, targetExpr)
 
+		// For if-let expressions, check if the target type is nullable and add null/undefined check
+		if expr.Target.InferredType() != nil {
+			targetType := type_system.Prune(expr.Target.InferredType())
+			if unionType, ok := targetType.(*type_system.UnionType); ok {
+				// Check if the union contains null or undefined
+				hasNull := false
+				hasUndefined := false
+				for _, t := range unionType.Types {
+					if litType, ok := type_system.Prune(t).(*type_system.LitType); ok {
+						if _, isNull := litType.Lit.(*type_system.NullLit); isNull {
+							hasNull = true
+						}
+						if _, isUndefined := litType.Lit.(*type_system.UndefinedLit); isUndefined {
+							hasUndefined = true
+						}
+					}
+				}
+
+				// Add null check if needed
+				if hasNull {
+					nullCheck := NewBinaryExpr(
+						targetExpr,
+						NotEqual,
+						NewLitExpr(NewNullLit(expr), expr),
+						expr,
+					)
+					condition = NewBinaryExpr(nullCheck, LogicalAnd, condition, expr)
+				}
+
+				// Add undefined check if needed
+				if hasUndefined {
+					undefinedCheck := NewBinaryExpr(
+						targetExpr,
+						NotEqual,
+						NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr),
+						expr,
+					)
+					condition = NewBinaryExpr(undefinedCheck, LogicalAnd, condition, expr)
+				}
+			}
+		}
+
 		// Build the consequent (then branch) with assignments to temp variable
 		consStmts := b.buildBlockStmtsWithTempAssignment(expr.Cons.Stmts, tempVar, expr)
 
@@ -1716,7 +1758,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 		var cond Expr = NewLitExpr(NewBoolLit(true, pat), pat)
 		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
-			inferred := pat.TypeAnn.InferredType()
+			inferred := type_system.Prune(pat.TypeAnn.InferredType())
 			// Try to match on the type name for basic types
 			switch t := inferred.(type) {
 			case *type_system.PrimType:
