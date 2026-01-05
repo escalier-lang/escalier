@@ -221,9 +221,20 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 			}
 			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
 		default:
-			token := p.lexer.lexJSXText()
-			text := ast.NewJSXText(token.Value, token.Span)
-			children = append(children, text)
+			// Try to lex JSX text at the current position
+			jsxToken := p.lexer.lexJSXText()
+			// If lexJSXText returns empty content, we have a token that was already
+			// lexed (like <= after a malformed JSX tag). Consume it to avoid infinite loop.
+			if jsxToken.Value == "" {
+				p.lexer.consume()
+				p.reportError(token.Span, "Unexpected token in JSX children")
+				// Use the token's value as text to recover
+				text := ast.NewJSXText(token.Value, token.Span)
+				children = append(children, text)
+			} else {
+				text := ast.NewJSXText(jsxToken.Value, jsxToken.Span)
+				children = append(children, text)
+			}
 		}
 	}
 }
