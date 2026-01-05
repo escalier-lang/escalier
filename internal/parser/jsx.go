@@ -83,6 +83,15 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 	attrs := []*ast.JSXAttr{}
 
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return attrs
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 		name := ""
 		if token.Type == Identifier {
@@ -180,6 +189,15 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 	children := []ast.JSXChild{}
 
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return children
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 
 		//nolint: exhaustive
