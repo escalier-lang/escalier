@@ -1,0 +1,128 @@
+// Test cases for if-let expressions
+
+// Basic tuple pattern matching (string result)
+val tuple: [number, string] | null = [42, "hello"]
+export val basicIfLetStr = if let [num, str] = tuple {
+    "Number: " ++ num.toString() ++ ", String: " ++ str
+} else {
+    "No value"
+}
+
+// Basic tuple pattern matching (numeric result)
+val tupleNum: [number, string] | null = [42, "hello"]
+export val basicIfLetNum = if let [num, str] = tupleNum {
+    num * 2
+} else {
+    0
+}
+
+// If-let with alternative block (numeric result)
+val nullableTuple: [boolean, number] | null = null
+export val ifLetWithElseNum = if let [flag, value] = nullableTuple {
+    if (flag) { value * 2 } else { value }
+} else {
+    -1
+}
+
+// If-let with alternative block (string result)
+export val ifLetWithElseStr = if let [flag, value] = nullableTuple {
+    if (flag) { "Value: " ++ value.toString() } else { "Not flagged" }
+} else {
+    "No tuple"
+}
+
+// Nested pattern matching (numeric result)
+val nestedNum: [[number, number], [number, number]] | null = [[1, 2], [3, 4]]
+export val nestedIfLetNum = if let [[x, y], [a, b]] = nestedNum {
+    x + y + a + b
+} else {
+    0
+}
+
+// Nested pattern matching (string result)
+val nestedStr: [[number, string], [string, string]] | null = [[1, "b"], ["c", "d"]]
+export val nestedIfLetStr = if let [[num, str1], [str2, str3]] = nestedStr {
+    "Num: " ++ num.toString() ++ ", Str1: " ++ str1 ++ ", Str2: " ++ str2 ++ ", Str3: " ++ str3
+} else {
+    "none"
+}
+
+// Object pattern matching (numeric result)
+type Point = {x: number, y: number}
+val point: Point | null = {x: 10, y: 20}
+export val objectIfLetNum = if let {x, y} = point {
+    x * y
+} else {
+    0
+}
+
+// Object pattern matching (string result)
+export val objectIfLetStr = if let {x, y} = point {
+    "Point: (" ++ x.toString() ++ ", " ++ y.toString() ++ ")"
+} else {
+    "No point"
+}
+
+// Object shorthand pattern (numeric result)
+type Config = {enabled: boolean, count: number}
+val config: Config | undefined = {enabled: true, count: 5}
+export val shorthandIfLetNum = if let {enabled, count} = config {
+    if (enabled) { count * 2 } else { 0 }
+} else {
+    -1
+}
+
+// Object shorthand pattern (string result)
+export val shorthandIfLetStr = if let {enabled, count} = config {
+    if (enabled) { "Count: " ++ count.toString() } else { "Disabled" }
+} else {
+    "No config"
+}
+
+// If-let with expression alternative (numeric result)
+val option: number | null = 42
+export val ifLetWithExprAltNum = if let valueNum = option {
+    valueNum * 2
+} else {
+    0
+}
+
+// If-let with expression alternative (string result)
+export val ifLetWithExprAltStr = if let valueStr = option {
+    "Value: " ++ valueStr.toString()
+} else {
+    "No value"
+}
+
+// Complex pattern with type annotations (numeric result)
+val complex: [number, [string, boolean]] | null = [100, ["test", true]]
+export val complexIfLetNum = if let [num: number, [str: string, flag: boolean]] = complex {
+    if (flag) { num + str.length } else { num }
+} else {
+    0
+}
+
+// Complex pattern with type annotations (string result)
+export val complexIfLetStr = if let [num: number, [str: string, flag: boolean]] = complex {
+    if (flag) { "Number: " ++ num.toString() ++ ", Length: " ++ str.length.toString() } else { "Number: " ++ num.toString() }
+} else {
+    "No complex"
+}
+
+// Multiple bindings in pattern (string result)
+val data: {user: {name: string, age: number}, active: boolean} | null = {
+    user: {name: "Alice", age: 30},
+    active: true
+}
+export val multipleBindingsStr = if let {user: {name, age}, active} = data {
+    if (active) { name ++ " is " ++ age.toString() ++ " years old" } else { name }
+} else {
+    "Unknown user"
+}
+
+// Multiple bindings in pattern (numeric result)
+export val multipleBindingsNum = if let {user: {name: _, age}, active} = data {
+    if (active) { age * 2 } else { 0 }
+} else {
+    0
+}
