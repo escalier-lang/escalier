@@ -176,7 +176,7 @@ func FuzzParseScript(f *testing.F) {
 		}
 
 		// Use a timeout to prevent infinite loops
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
 		// Create parser and parse
@@ -277,7 +277,7 @@ func FuzzParseLibFiles(f *testing.F) {
 		}
 
 		// Use a shorter timeout to prevent resource exhaustion
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
 		// The test passes if ParseLibFiles doesn't panic
@@ -410,7 +410,7 @@ func FuzzParseTypeAnn(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Use a timeout to prevent infinite loops
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
 		// The test passes if ParseTypeAnn doesn't panic
@@ -460,7 +460,7 @@ func FuzzParseCombination(f *testing.F) {
 			Contents: input,
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
 		parser := NewParser(ctx, source)
