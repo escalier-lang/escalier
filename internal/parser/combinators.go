@@ -1,6 +1,6 @@
 package parser
 
-func parseDelimSeq[T interface{}](
+func parseDelimSeq[T any](
 	p *Parser,
 	terminator TokenType,
 	separator TokenType,
@@ -17,14 +17,26 @@ func parseDelimSeq[T interface{}](
 	}
 
 	item := parserCombinator()
-	if interface{}(item) == nil {
+	if any(item) == nil {
 		return items
 	}
 	items = append(items, item)
 
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return items
+		default:
+			// continue
+		}
+
 		token = p.lexer.peek()
-		if token.Type == separator {
+		if token.Type == EndOfFile {
+			// If we hit EOF before finding terminator, return what we have
+			return items
+		} else if token.Type == separator {
 			p.lexer.consume() // consume separator
 
 			token = p.lexer.peek()

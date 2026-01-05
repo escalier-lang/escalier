@@ -83,6 +83,15 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 	attrs := []*ast.JSXAttr{}
 
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return attrs
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 		name := ""
 		if token.Type == Identifier {
@@ -180,6 +189,15 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 	children := []ast.JSXChild{}
 
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return children
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 
 		//nolint: exhaustive
@@ -203,9 +221,20 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 			}
 			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
 		default:
-			token := p.lexer.lexJSXText()
-			text := ast.NewJSXText(token.Value, token.Span)
-			children = append(children, text)
+			// Try to lex JSX text at the current position
+			jsxToken := p.lexer.lexJSXText()
+			// If lexJSXText returns empty content, we have a token that was already
+			// lexed (like <= after a malformed JSX tag). Consume it to avoid infinite loop.
+			if jsxToken.Value == "" {
+				p.lexer.consume()
+				p.reportError(token.Span, "Unexpected token in JSX children")
+				// Use the token's value as text to recover
+				text := ast.NewJSXText(token.Value, token.Span)
+				children = append(children, text)
+			} else {
+				text := ast.NewJSXText(jsxToken.Value, jsxToken.Span)
+				children = append(children, text)
+			}
 		}
 	}
 }

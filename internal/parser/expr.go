@@ -28,13 +28,6 @@ var Precedence = map[ast.BinaryOp]int{
 }
 
 func (p *Parser) expr() ast.Expr {
-	select {
-	case <-p.ctx.Done():
-		fmt.Println("Taking too long to parse")
-	default:
-		// continue
-	}
-
 	expr := p.exprWithoutErrorCheck()
 	if expr == nil {
 		token := p.lexer.peek()
@@ -61,6 +54,15 @@ func (p *Parser) exprWithoutErrorCheck() ast.Expr {
 
 loop:
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return values.Pop()
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 		var nextOp ast.BinaryOp
 
@@ -157,6 +159,15 @@ func (p *Parser) parsePrefix() Stack[TokenAndOp] {
 
 loop:
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return result
+		default:
+			// continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case Plus:
@@ -180,6 +191,15 @@ func (p *Parser) exprSuffix(expr ast.Expr) ast.Expr {
 
 loop:
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return expr
+		default:
+			// continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case OpenParen, QuestionOpenParen:
@@ -312,6 +332,15 @@ func (p *Parser) primaryExpr() ast.Expr {
 
 	// Loop so that we can skip over unexpected tokens
 	for expr == nil {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return nil
+		default:
+			// continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:
@@ -782,6 +811,20 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 	quasis := []*ast.Quasi{}
 	exprs := []ast.Expr{}
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			span := ast.Span{Start: token.Span.Start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			if tag != nil {
+				return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
+			} else {
+				return ast.NewTemplateLit(quasis, exprs, span)
+			}
+		default:
+			// continue
+		}
+
 		quasi := p.lexer.lexQuasi()
 
 		var raw string

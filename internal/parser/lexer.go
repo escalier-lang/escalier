@@ -429,7 +429,10 @@ func (lexer *Lexer) next() *Token {
 		} else if startOffset >= len(lexer.source.Contents) {
 			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
 		} else {
-			token = NewToken(Invalid, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
+			// Invalid character - ensure we advance past it to avoid infinite loop
+			// endOffset was already set to startOffset + width at the top
+			end.Column = start.Column + 1
+			token = NewToken(Invalid, "", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	}
 

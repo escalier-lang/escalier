@@ -26,13 +26,6 @@ type TypeAnnOp struct {
 }
 
 func (p *Parser) typeAnn() ast.TypeAnn {
-	select {
-	case <-p.ctx.Done():
-		fmt.Println("Taking too long to parse")
-	default:
-		// continue
-	}
-
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
 
@@ -56,6 +49,15 @@ func (p *Parser) typeAnn() ast.TypeAnn {
 
 loop:
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return typeAnns.Pop()
+		default:
+			// continue
+		}
+
 		token := p.lexer.peek()
 		var nextOp *TypeAnnOp
 
@@ -102,7 +104,9 @@ loop:
 					typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
 				default:
 					// This should never happen, but just in case
-					panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+					token := p.lexer.peek()
+					p.reportError(token.Span, fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+					return nil
 				}
 			}
 		}
@@ -114,12 +118,11 @@ loop:
 		typeAnn := p.primaryTypeAnn()
 		if typeAnn == nil {
 			token := p.lexer.peek()
-			p.reportError(token.Span, "Expected an type annotation")
+			p.reportError(token.Span, "Expected a type annotation")
 
-			// TODO: add an EmptyTypeAnn to the AST
-			// For now, we panic to indicate that something went wrong
-			panic("parseExpr - expected a TypeAnn, but got none")
-			// return ast.NewEmpty(token.Span)
+			// Return nil to indicate parsing failed gracefully
+			// The error has already been reported
+			return nil
 		}
 		typeAnns.Push(typeAnn)
 	}
@@ -141,12 +144,18 @@ loop:
 			typeAnns.Push(ast.NewIntersectionTypeAnn(args, span))
 		default:
 			// This should never happen, but just in case
-			panic(fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+			token := p.lexer.peek()
+			p.reportError(token.Span, fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
+			return nil
 		}
 	}
 
 	if len(typeAnns) != 1 {
-		panic("parseExpr - expected one TypeAnn on the stack")
+		// This indicates an internal parser error, but we should not panic
+		// Report an error and return nil
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Internal parser error: invalid type annotation state")
+		return nil
 	}
 	return typeAnns.Pop()
 }
@@ -426,6 +435,15 @@ func (p *Parser) typeAnnSuffix(typeAnn ast.TypeAnn) ast.TypeAnn {
 
 loop:
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return typeAnn
+		default:
+			// continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case OpenBracket:
@@ -809,8 +827,9 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 			}
 		}
 	default:
-		// skip over the token and return optional.None
-		panic("objTypeAnnElem - not a valid property")
+		// Report error for invalid property syntax instead of panicking
+		p.reportError(token.Span, "not a valid property")
+		return nil
 	}
 }
 
@@ -895,6 +914,16 @@ func (p *Parser) templateLitTypeAnn(token *Token) ast.TypeAnn {
 	quasis := []*ast.Quasi{}
 	typeAnns := []ast.TypeAnn{}
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
+			return ast.NewTemplateLitTypeAnn(quasis, typeAnns, span)
+		default:
+			// continue
+		}
+
 		quasi := p.lexer.lexQuasi()
 
 		var raw string

@@ -26,10 +26,22 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 
 	token := p.lexer.peek()
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return &stmts, token.Span.End
+		default:
+			// continue
+		}
+
 		//nolint: exhaustive
 		switch token.Type {
 		case stopOn:
 			p.lexer.consume()
+			return &stmts, token.Span.End
+		case EndOfFile:
+			// If we hit EOF before finding stopOn, return what we have
 			return &stmts, token.Span.End
 		case LineComment, BlockComment:
 			p.lexer.consume()

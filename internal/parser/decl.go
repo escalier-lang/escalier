@@ -165,6 +165,15 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 
 	// Parse modifiers: static, async, private, readonly (order-insensitive)
 	for {
+		// Check if context has been cancelled (timeout or cancellation)
+		select {
+		case <-p.ctx.Done():
+			// Return what we have so far when context is done
+			return nil
+		default:
+			// continue
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case Static:
