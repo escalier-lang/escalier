@@ -558,7 +558,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		errors = slices.Concat(errors, consErrors)
 
 		// Infer the type of the alternative (if present)
-		var altType type_system.Type = type_system.NewNeverType(nil)
+		// If there's no else clause, the if-let expression returns undefined when the pattern doesn't match
+		var altType type_system.Type = type_system.NewUndefinedType(nil)
 		if expr.Alt != nil {
 			alt := expr.Alt
 			if alt.Block != nil {

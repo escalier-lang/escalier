@@ -68,3 +68,9 @@ export val multipleBindingsStr = if let {user: {name, age}, active} = data {
 } else {
     "Unknown user"
 }
+
+// If-let without else block
+declare val target: [number, string] | null
+val result = if let [num, str] = target {
+	str
+}

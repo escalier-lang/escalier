@@ -94,4 +94,10 @@ if (data != null && data != null && "user" in data && data.user != null && "name
   temp11 = "Unknown user";
 }
 export const multipleBindingsStr = temp11;
+let temp13;
+if (target != null && target.length == 2) {
+  const [num, str] = target;
+  temp13 = str;
+}
+export const result = temp13;
 //# sourceMappingURL=./index.js.map

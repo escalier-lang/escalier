@@ -1424,7 +1424,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "string",
+				"result": "string | undefined",
 			},
 		},
 		"IfLetWithNestedPatterns": {

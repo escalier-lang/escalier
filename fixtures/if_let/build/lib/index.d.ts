@@ -16,3 +16,5 @@ declare const complex: [number, [string, boolean]] | null;
 export declare const complexIfLetNum: number | number | 0;
 declare const data: {user: {name: string, age: number}, active: boolean} | null;
 export declare const multipleBindingsStr: string | string | "Unknown user";
+declare const target: [number, string] | null;
+declare const result: string | undefined;
