@@ -1,0 +1,76 @@
+// Test cases for if-let expressions
+
+// Basic tuple pattern matching
+val tuple: [number, string] | null = [42, "hello"]
+export val basicIfLetStr = if let [num, str] = tuple {
+    "Number: " ++ num.toString() ++ ", String: " ++ str
+} else {
+    "No value"
+}
+
+// If-let with alternative block
+val nullableTuple: [boolean, number] | null = null
+export val ifLetWithElseNum = if let [flag, value] = nullableTuple {
+    if (flag) { value * 2 } else { value }
+} else {
+    -1
+}
+
+// Nested pattern matching
+val nestedNum: [[number, number], [number, number]] | null = [[1, 2], [3, 4]]
+export val nestedIfLetNum = if let [[x, y], [a, b]] = nestedNum {
+    x + y + a + b
+} else {
+    0
+}
+
+// Object pattern matching
+type Point = {x: number, y: number}
+val point: Point | null = {x: 10, y: 20}
+export val objectIfLetNum = if let {x, y} = point {
+    x * y
+} else {
+    0
+}
+
+// Object shorthand pattern
+type Config = {enabled: boolean, count: number}
+val config: Config | undefined = {enabled: true, count: 5}
+export val shorthandIfLetNum = if let {enabled, count} = config {
+    if (enabled) { count * 2 } else { 0 }
+} else {
+    -1
+}
+
+// If-let with expression alternative
+val option: number | null = 42
+export val ifLetWithExprAltNum = if let valueNum = option {
+    valueNum * 2
+} else {
+    0
+}
+
+// Complex pattern with type annotations
+val complex: [number, [string, boolean]] | null = [100, ["test", true]]
+export val complexIfLetNum = if let [num: number, [str: string, flag: boolean]] = complex {
+    if (flag) { num + str.length } else { num }
+} else {
+    0
+}
+
+// Multiple bindings in pattern
+val data: {user: {name: string, age: number}, active: boolean} | null = {
+    user: {name: "Alice", age: 30},
+    active: true
+}
+export val multipleBindingsStr = if let {user: {name, age}, active} = data {
+    if (active) { name ++ " is " ++ age.toString() ++ " years old" } else { name }
+} else {
+    "Unknown user"
+}
+
+// If-let without else block
+declare val target: [number, string] | null
+val result = if let [num, str] = target {
+	str
+}

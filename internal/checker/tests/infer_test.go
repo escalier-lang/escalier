@@ -1398,6 +1398,161 @@ func TestCheckModuleNoErrors(t *testing.T) {
 	}
 }
 
+func TestIfLetExprInference(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicIfLetWithTuple": {
+			input: `
+				declare val target: [number, number] | null
+				val result = if let [a, b] = target {
+					a + b
+				} else {
+					0
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "number | 0",
+			},
+		},
+		"IfLetWithAlternativeOnly": {
+			input: `
+				declare val target: [number, string] | null
+				val result = if let [num, str] = target {
+					str
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "string | undefined",
+			},
+		},
+		"IfLetWithNestedPatterns": {
+			input: `
+				declare val target: [[number, number], [number, number]] | null
+				val result = if let [[a, b], [c, d]] = target {
+					a + b + c + d
+				} else {
+					-1
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "number | -1",
+			},
+		},
+		"IfLetWithTypeAnnotations": {
+			input: `
+				declare val target: [number, boolean] | null
+				val result = if let [num, flag] = target {
+					if (flag) {
+						num * 2
+					} else {
+						num
+					}
+				} else {
+					0
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "number | number | 0",
+			},
+		},
+		"IfLetWithObjectPattern": {
+			input: `
+				declare val target: {x: number, y: number} | null
+				val result = if let {x, y} = target {
+					x * y
+				} else {
+					-1
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "number | -1",
+			},
+		},
+		"IfLetWithShorthandObjectPattern": {
+			input: `
+				declare val target: {value: number, active: boolean} | null
+				val result = if let {value, active} = target {
+					if (active) { value } else { 0 }
+				} else {
+					-1
+				}
+			`,
+			expectedTypes: map[string]string{
+				"result": "number | 0 | -1",
+			},
+		},
+		"IfLetNullable": {
+			input: `
+				val option: number | null = 42
+				export val ifLetWithExprAltNum = if let valueNum = option {
+				    valueNum * 2
+				} else {
+				    0
+				}
+			`,
+			expectedTypes: map[string]string{
+				"ifLetWithExprAltNum": "number | 0",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			source := &ast.Source{
+				Path:     "test.esc",
+				Contents: test.input,
+				ID:       0,
+			}
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			schema := loadSchema(t)
+			c.Schema = schema
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
+				}
+				assert.Equal(t, inferErrors, []*Error{})
+			}
+
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Values {
+				assert.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+		})
+	}
+}
+
 func TestCheckModuleWithErrors(t *testing.T) {
 	tests := map[string]struct {
 		input          string

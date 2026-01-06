@@ -512,7 +512,71 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// Template literals always result in a string type
 		resultType = type_system.NewStrPrimType(provenance)
 	case *ast.IfLetExpr:
-		panic("TODO: infer IfLetExpr")
+		// Infer the type of the target expression
+		targetType, targetErrors := c.inferExpr(ctx, expr.Target)
+		errors = slices.Concat(errors, targetErrors)
+
+		// Infer the pattern and get the bindings it creates
+		patternType, bindings, patternErrors := c.inferPattern(ctx, expr.Pattern)
+		errors = slices.Concat(errors, patternErrors)
+
+		// For if-let expressions, we need to narrow the target type by removing null/undefined
+		// The pattern should match the non-nullable part of the target type
+		narrowedTargetType := targetType
+		if unionType, ok := type_system.Prune(targetType).(*type_system.UnionType); ok {
+			definedElems := c.getDefinedElems(unionType)
+			if len(definedElems) > 0 {
+				narrowedTargetType = type_system.NewUnionType(nil, definedElems...)
+			}
+		}
+
+		// Unify the pattern type with the narrowed target type
+		unifyErrors := c.Unify(ctx, patternType, narrowedTargetType)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// Create a new scope and context with the pattern bindings
+		newNamespace := &type_system.Namespace{
+			Values:     map[string]*type_system.Binding{},
+			Types:      map[string]*type_system.TypeAlias{},
+			Namespaces: map[string]*type_system.Namespace{},
+		}
+		// Add the pattern bindings to the new namespace
+		for name, binding := range bindings {
+			newNamespace.Values[name] = binding
+		}
+		newScope := ctx.Scope.WithNewScopeAndNamespace(newNamespace)
+		newCtx := Context{
+			Scope:                  newScope,
+			IsAsync:                ctx.IsAsync,
+			IsPatMatch:             ctx.IsPatMatch,
+			AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
+			TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
+		}
+
+		// Infer the type of the consequent block with the new context
+		consType, consErrors := c.inferBlock(newCtx, &expr.Cons, type_system.NewNeverType(nil))
+		errors = slices.Concat(errors, consErrors)
+
+		// Infer the type of the alternative (if present)
+		// If there's no else clause, the if-let expression returns undefined when the pattern doesn't match
+		var altType type_system.Type = type_system.NewUndefinedType(nil)
+		if expr.Alt != nil {
+			alt := expr.Alt
+			if alt.Block != nil {
+				var altErrors []Error
+				altType, altErrors = c.inferBlock(ctx, alt.Block, type_system.NewNeverType(nil))
+				errors = slices.Concat(errors, altErrors)
+			} else if alt.Expr != nil {
+				t, altErrors := c.inferExpr(ctx, alt.Expr)
+				errors = slices.Concat(errors, altErrors)
+				altType = t
+			} else {
+				panic("alt must be a block or expression")
+			}
+		}
+
+		// The overall type of the if let is the union of the consequent and alternative types
+		resultType = type_system.NewUnionType(provenance, consType, altType)
 	case *ast.TryCatchExpr:
 		panic("TODO: infer TryCatchExpr")
 	case *ast.JSXElementExpr:

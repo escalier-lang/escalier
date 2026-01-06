@@ -1225,7 +1225,103 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		return NewTaggedTemplateLitExpr(tag, quasis, exprs, expr), stmts
 	case *ast.IfLetExpr:
-		panic("TODO - buildExpr - IfLetExpr")
+		// Generate a temporary variable for the if-let result
+		tempVar, tempDeclStmt := b.createTempVar(expr)
+
+		stmts := []Stmt{tempDeclStmt}
+
+		// First, generate code for the target expression
+		targetExpr, targetStmts := b.buildExpr(expr.Target, expr)
+		stmts = slices.Concat(stmts, targetStmts)
+
+		// Generate the condition and binding statements for the pattern
+		condition, bindingStmts := b.buildPatternCondition(expr.Pattern, targetExpr)
+
+		// For if-let expressions, check if the target type is nullable and add null/undefined check
+		if expr.Target.InferredType() != nil {
+			targetType := type_system.Prune(expr.Target.InferredType())
+			if unionType, ok := targetType.(*type_system.UnionType); ok {
+				// Check if the union contains null or undefined
+				hasNull := false
+				hasUndefined := false
+				for _, t := range unionType.Types {
+					if litType, ok := type_system.Prune(t).(*type_system.LitType); ok {
+						if _, isNull := litType.Lit.(*type_system.NullLit); isNull {
+							hasNull = true
+						}
+						if _, isUndefined := litType.Lit.(*type_system.UndefinedLit); isUndefined {
+							hasUndefined = true
+						}
+					}
+				}
+
+				// Add null check if needed
+				if hasNull {
+					nullCheck := NewBinaryExpr(
+						targetExpr,
+						NotEqual,
+						NewLitExpr(NewNullLit(expr), expr),
+						expr,
+					)
+					condition = NewBinaryExpr(nullCheck, LogicalAnd, condition, expr)
+				}
+
+				// Add undefined check if needed
+				if hasUndefined {
+					undefinedCheck := NewBinaryExpr(
+						targetExpr,
+						NotEqual,
+						NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr),
+						expr,
+					)
+					condition = NewBinaryExpr(undefinedCheck, LogicalAnd, condition, expr)
+				}
+			}
+		}
+
+		// Build the consequent (then branch) with assignments to temp variable
+		consStmts := b.buildBlockStmtsWithTempAssignment(expr.Cons.Stmts, tempVar, expr)
+
+		// Prepend the binding statements to the consequent
+		consStmts = slices.Concat(bindingStmts, consStmts)
+
+		// Create the consequent block
+		consBlock := NewBlockStmt(consStmts, expr)
+
+		// Build the alternative expression or block
+		var altStmt Stmt
+		if expr.Alt != nil {
+			var altStmts []Stmt
+
+			if expr.Alt.Block != nil {
+				// Alternative is a block
+				altStmts = b.buildBlockStmtsWithTempAssignment(expr.Alt.Block.Stmts, tempVar, expr)
+			} else if expr.Alt.Expr != nil {
+				// Alternative is an expression
+				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
+				altStmts = slices.Concat(altStmts, altExprStmts)
+
+				// Assign expression result to temp variable
+				assignment := NewBinaryExpr(tempVar, Assign, altExpr, expr.Alt.Expr)
+				altStmts = append(altStmts, &ExprStmt{
+					Expr:   assignment,
+					span:   nil,
+					source: expr.Alt.Expr,
+				})
+			}
+
+			// Always wrap alternative in a block for proper formatting
+			if len(altStmts) > 0 {
+				altStmt = NewBlockStmt(altStmts, expr)
+			}
+		}
+
+		// Create the if statement
+		ifStmt := NewIfStmt(condition, consBlock, altStmt, expr)
+		stmts = append(stmts, ifStmt)
+
+		// Return the temp variable and all generated statements
+		return tempVar, stmts
 	case *ast.TryCatchExpr:
 		panic("TODO - buildExpr - TryCatchExpr")
 	case *ast.JSXElementExpr:
@@ -1662,7 +1758,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 		var cond Expr = NewLitExpr(NewBoolLit(true, pat), pat)
 		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
-			inferred := pat.TypeAnn.InferredType()
+			inferred := type_system.Prune(pat.TypeAnn.InferredType())
 			// Try to match on the type name for basic types
 			switch t := inferred.(type) {
 			case *type_system.PrimType:
