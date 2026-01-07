@@ -602,6 +602,7 @@ func (*ReturnStmt) isStmt() {}
 func (*BlockStmt) isStmt()  {}
 func (*IfStmt) isStmt()     {}
 func (*ThrowStmt) isStmt()  {}
+func (*TryStmt) isStmt()    {}
 
 type ExprStmt struct {
 	Expr   Expr
@@ -673,6 +674,26 @@ func NewThrowStmt(expr Expr, source ast.Node) *ThrowStmt {
 func (s *ThrowStmt) Span() *Span        { return s.span }
 func (s *ThrowStmt) SetSpan(span *Span) { s.span = span }
 func (s *ThrowStmt) Source() ast.Node   { return s.source }
+
+type TryStmt struct {
+	Try     *BlockStmt
+	Catch   *CatchClause // optional, can be nil
+	Finally *BlockStmt   // optional, can be nil
+	span    *Span
+	source  ast.Node
+}
+
+type CatchClause struct {
+	Param Pat  // optional, can be nil
+	Body  *BlockStmt
+}
+
+func NewTryStmt(tryBlock *BlockStmt, catchClause *CatchClause, finallyBlock *BlockStmt, source ast.Node) *TryStmt {
+	return &TryStmt{Try: tryBlock, Catch: catchClause, Finally: finallyBlock, source: source, span: nil}
+}
+func (s *TryStmt) Span() *Span        { return s.span }
+func (s *TryStmt) SetSpan(span *Span) { s.span = span }
+func (s *TryStmt) Source() ast.Node   { return s.source }
 
 // TODO add support for imports and exports
 type Module struct {

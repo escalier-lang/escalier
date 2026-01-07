@@ -2,7 +2,6 @@ package checker
 
 import (
 	"fmt"
-	"os"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -604,8 +603,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		} else {
 			throwTargetType = type_system.NewUnionType(nil, throwTypes...)
 		}
-
-		fmt.Fprintf(os.Stderr, "Debug: throwTargetType = %s\n", throwTargetType.String())
 
 		// Collect the types of all catch case bodies
 		catchTypes := make([]type_system.Type, 0, len(expr.Catch))

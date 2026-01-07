@@ -823,6 +823,22 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 		p.print("throw ")
 		p.PrintExpr(s.Expr)
 		p.print(";")
+	case *TryStmt:
+		p.print("try ")
+		p.PrintStmt(s.Try)
+		if s.Catch != nil {
+			p.print(" catch ")
+			if s.Catch.Param != nil {
+				p.print("(")
+				p.printPattern(s.Catch.Param)
+				p.print(") ")
+			}
+			p.PrintStmt(s.Catch.Body)
+		}
+		if s.Finally != nil {
+			p.print(" finally ")
+			p.PrintStmt(s.Finally)
+		}
 	}
 
 	end := p.location
