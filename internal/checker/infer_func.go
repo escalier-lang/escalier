@@ -218,49 +218,26 @@ func (c *Checker) inferFuncBody(
 		errors = slices.Concat(errors, stmtErrors)
 	}
 
-	visitor := &ReturnVisitor{
+	returnVisitor := &ReturnVisitor{
 		DefaultVisitor: ast.DefaultVisitor{},
 		Returns:        []*ast.ReturnStmt{},
 	}
 
-	throwVisitor := &ThrowVisitor{
-		DefaultVisitor: ast.DefaultVisitor{},
-		Throws:         []*ast.ThrowExpr{},
-	}
-
-	awaitVisitor := &AwaitVisitor{
-		DefaultVisitor: ast.DefaultVisitor{},
-		Awaits:         []*ast.AwaitExpr{},
-	}
-
 	for _, stmt := range body.Stmts {
 		// TODO: don't visit statements that are unreachable
-		stmt.Accept(visitor)
-		stmt.Accept(throwVisitor)
-		stmt.Accept(awaitVisitor)
+		stmt.Accept(returnVisitor)
 	}
 
 	returnTypes := []type_system.Type{}
-	for _, returnStmt := range visitor.Returns {
+	for _, returnStmt := range returnVisitor.Returns {
 		if returnStmt.Expr != nil {
 			returnType := returnStmt.Expr.InferredType()
 			returnTypes = append(returnTypes, returnType)
 		}
 	}
 
-	throwTypes := []type_system.Type{}
-	for _, throwExpr := range throwVisitor.Throws {
-		throwType, throwErrors := c.inferExpr(ctx, throwExpr.Arg)
-		throwTypes = append(throwTypes, throwType)
-		errors = slices.Concat(errors, throwErrors)
-	}
-
-	// Collect throw types from await expressions (Promise rejection types)
-	for _, awaitExpr := range awaitVisitor.Awaits {
-		if awaitExpr.Throws != nil {
-			throwTypes = append(throwTypes, awaitExpr.Throws)
-		}
-	}
+	throwTypes, throwErrors := c.findThrowTypes(ctx, body)
+	errors = slices.Concat(errors, throwErrors)
 
 	// TODO: We also need to do dead code analysis to account for unreachable
 	// code.
@@ -375,4 +352,40 @@ func (v *AwaitVisitor) EnterDecl(decl ast.Decl) bool {
 
 func (v *AwaitVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
+}
+
+func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.Type, []Error) {
+	errors := []Error{}
+
+	throwVisitor := &ThrowVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Throws:         []*ast.ThrowExpr{},
+	}
+
+	awaitVisitor := &AwaitVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Awaits:         []*ast.AwaitExpr{},
+	}
+
+	for _, stmt := range block.Stmts {
+		// TODO: don't visit statements that are unreachable
+		stmt.Accept(throwVisitor)
+		stmt.Accept(awaitVisitor)
+	}
+
+	throwTypes := []type_system.Type{}
+	for _, throwExpr := range throwVisitor.Throws {
+		throwType, throwErrors := c.inferExpr(ctx, throwExpr.Arg)
+		throwTypes = append(throwTypes, throwType)
+		errors = slices.Concat(errors, throwErrors)
+	}
+
+	// Collect throw types from await expressions (Promise rejection types)
+	for _, awaitExpr := range awaitVisitor.Awaits {
+		if awaitExpr.Throws != nil {
+			throwTypes = append(throwTypes, awaitExpr.Throws)
+		}
+	}
+
+	return throwTypes, errors
 }
