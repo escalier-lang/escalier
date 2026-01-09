@@ -578,7 +578,90 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// The overall type of the if let is the union of the consequent and alternative types
 		resultType = type_system.NewUnionType(provenance, consType, altType)
 	case *ast.TryCatchExpr:
-		panic("TODO: infer TryCatchExpr")
+		errors = []Error{}
+
+		// TODO:
+		// - find any expressions that can throw inside the try block, this includes all:
+		//   - `throw` expression
+		//   - function calls that can throw
+		//   - await expressions where the Promise can reject
+
+		// Infer the type of the try block
+		tryType, tryErrors := c.inferBlock(ctx, &expr.Try, type_system.NewUndefinedType(nil))
+		errors = slices.Concat(errors, tryErrors)
+
+		// Now that we've inferred the try block, find all the throw types within it
+		throwTypes, throwErrors := c.findThrowTypes(ctx, &expr.Try)
+		errors = slices.Concat(errors, throwErrors)
+
+		// Create a union of all throw types to use as the target type for catch patterns
+		var throwTargetType type_system.Type
+		if len(throwTypes) == 0 {
+			// If no throw types were found, use never type
+			throwTargetType = type_system.NewNeverType(nil)
+		} else if len(throwTypes) == 1 {
+			throwTargetType = throwTypes[0]
+		} else {
+			throwTargetType = type_system.NewUnionType(nil, throwTypes...)
+		}
+
+		// Collect the types of all catch case bodies
+		catchTypes := make([]type_system.Type, 0, len(expr.Catch))
+
+		for _, matchCase := range expr.Catch {
+			// Create a new scope for this catch case to handle pattern bindings
+			caseCtx := ctx.WithNewScope()
+
+			// Infer the pattern type and get bindings
+			patternType, patternBindings, patternErrors := c.inferPattern(caseCtx, matchCase.Pattern)
+			errors = slices.Concat(errors, patternErrors)
+
+			// Add pattern bindings to the case scope
+			for name, binding := range patternBindings {
+				caseCtx.Scope.setValue(name, binding)
+			}
+
+			// Unify the pattern type with the throw target type
+			unifyErrors := c.Unify(caseCtx, patternType, throwTargetType)
+			errors = slices.Concat(errors, unifyErrors)
+
+			// If there's a guard, check that it's a boolean
+			if matchCase.Guard != nil {
+				guardType, guardErrors := c.inferExpr(caseCtx, matchCase.Guard)
+				errors = slices.Concat(errors, guardErrors)
+
+				// Unify the guard type with boolean
+				guardUnifyErrors := c.Unify(caseCtx, guardType, type_system.NewBoolPrimType(nil))
+				errors = slices.Concat(errors, guardUnifyErrors)
+			}
+
+			// Infer the type of the case body
+			var caseType type_system.Type
+			if matchCase.Body.Block != nil {
+				var bodyErrors []Error
+				caseType, bodyErrors = c.inferBlock(caseCtx, matchCase.Body.Block, type_system.NewUndefinedType(nil))
+				errors = slices.Concat(errors, bodyErrors)
+			} else if matchCase.Body.Expr != nil {
+				var exprErrors []Error
+				caseType, exprErrors = c.inferExpr(caseCtx, matchCase.Body.Expr)
+				errors = slices.Concat(errors, exprErrors)
+			} else {
+				// Empty case body defaults to never
+				caseType = type_system.NewNeverType(nil)
+			}
+
+			catchTypes = append(catchTypes, caseType)
+		}
+
+		// The type of the try-catch expression is the union of the try type
+		// and all catch case types
+		if len(catchTypes) > 0 {
+			allTypes := append([]type_system.Type{tryType}, catchTypes...)
+			resultType = type_system.NewUnionType(provenance, allTypes...)
+		} else {
+			// No catch clauses, just the try type
+			resultType = tryType
+		}
 	case *ast.JSXElementExpr:
 		panic("TODO: infer JSXElementExpr")
 	case *ast.JSXFragmentExpr:

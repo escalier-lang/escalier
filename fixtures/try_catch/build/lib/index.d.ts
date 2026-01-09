@@ -1,0 +1,11 @@
+export declare const basicTryCatch: "success" | "error";
+export declare const tryCatchWithThrow: string;
+export declare const multipleCases: "caught error" | "unknown";
+export declare const patternBinding: "fail" | "unknown";
+export declare const withGuard: "critical error" | "other error";
+export declare const tryOnly: 42;
+export declare function safeDivide(a: number, b: number): number;
+export declare const objectPattern: "fail" | "unknown";
+export declare const nestedTryCatch: 5 | 10 | 0;
+export declare const blockBody: number | 0;
+export declare const mixedReturn: 42 | "error";

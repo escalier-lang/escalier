@@ -1,0 +1,88 @@
+// Basic try-catch
+export val basicTryCatch = try {
+    "success"
+} catch {
+    _ => "error"
+}
+
+// Try-catch with throw
+export val tryCatchWithThrow = try {
+    throw "error"
+} catch {
+    msg => "caught: " ++ msg
+}
+
+// Try-catch with multiple patterns
+export val multipleCases = try {
+    throw Error("fail")
+} catch {
+    Error => "caught error",
+    _ => "unknown",
+}
+
+// Try-catch with pattern binding
+export val patternBinding = try {
+    throw "fail"
+} catch {
+    msg => msg,
+    _ => "unknown",
+}
+
+// Try-catch with guard
+export val withGuard = try {
+    throw "critical"
+} catch {
+    err if err == "critical" => "critical error",
+    _ => "other error",
+}
+
+// Try-catch without catch (try-only)
+export val tryOnly = try {
+    42
+}
+
+// Try-catch in function
+export fn safeDivide(a: number, b: number) -> number {
+    return try {
+        a / b
+    } catch {
+        _ => 0
+    }
+}
+
+// Try-catch with object pattern
+export val objectPattern = try {
+    throw {message: "fail"}
+} catch {
+    {message: msg} => msg,
+    _ => "unknown",
+}
+
+// Nested try-catch
+export val nestedTryCatch = try {
+    try {
+        5
+    } catch {
+        _ => 10
+    }
+} catch {
+    _ => 0
+}
+
+// Try-catch with block body
+export val blockBody = try {
+    val x = 5
+    x + 10
+} catch {
+    _ => {
+        val y = 0
+        y
+    }
+}
+
+// Try-catch returning different types (union)
+export val mixedReturn = try {
+    42
+} catch {
+    _ => "error"
+}

@@ -64,6 +64,12 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 			return c.Unify(ctx, mut1.Type, t2)
 		}
 	}
+	// | _, MutableType -> ...
+	if mut2, ok := t2.(*type_system.MutabilityType); ok {
+		// When the RHS is a MutabilityType, we need to unwrap it for unification
+		// This allows patterns without mutability markers to match against mutable values
+		return c.Unify(ctx, t1, mut2.Type)
+	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*type_system.PrimType); ok {
 		if prim2, ok := t2.(*type_system.PrimType); ok {

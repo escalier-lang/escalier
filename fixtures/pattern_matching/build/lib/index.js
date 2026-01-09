@@ -69,12 +69,14 @@ export const tuple2 = [3, 3];
 let temp13;
 let temp14;
 temp14 = tuple2;
-if (temp14.length == 2 && a == b) {
+if (temp14.length == 2) {
   const [a, b] = temp14;
-  temp13 = "equal";
-} else if (temp14.length == 2) {
-  const [a, b] = temp14;
-  temp13 = "not equal";
+  if (a == b) {
+    temp13 = "equal";
+  } else if (temp14.length == 2) {
+    const [a, b] = temp14;
+    temp13 = "not equal";
+  }
 }
 export const guardMatch = temp13;
 export const str = "hello";

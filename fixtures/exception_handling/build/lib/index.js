@@ -12,7 +12,6 @@ export function getValueOrThrow(temp3) {
   } else {
     let temp5;
     throw Error("value is empty");
-    temp4 = temp5;
   }
   return temp4;
 }
@@ -34,11 +33,9 @@ export const multipleThrows = function (temp9) {
   if (flag) {
     let temp11;
     throw "string error";
-    temp10 = temp11;
   } else {
     let temp12;
     throw 42;
-    temp10 = temp12;
   }
   temp10;
 };
@@ -60,7 +57,6 @@ export function throwTypeIsWrong(temp15) {
   } else {
     let temp17;
     throw Error("value is empty");
-    temp16 = temp17;
   }
   temp16;
 }

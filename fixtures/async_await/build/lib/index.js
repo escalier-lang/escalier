@@ -13,7 +13,6 @@ export async function fetchWithError(temp3) {
   if (shouldError) {
     let temp5;
     throw "Something went wrong";
-    temp4 = temp5;
   }
   temp4;
   return "success";
