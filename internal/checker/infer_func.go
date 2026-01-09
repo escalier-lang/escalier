@@ -305,6 +305,15 @@ func (v *ThrowVisitor) EnterExpr(expr ast.Expr) bool {
 	if _, ok := expr.(*ast.FuncExpr); ok {
 		return false
 	}
+
+	// Don't visit try-catch expressions with a catch clause since throws
+	// inside them are caught locally.
+	if tryCatchExpr, ok := expr.(*ast.TryCatchExpr); ok {
+		if tryCatchExpr.Catch != nil {
+			return false
+		}
+	}
+
 	return true
 }
 
