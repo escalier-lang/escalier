@@ -586,12 +586,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		//   - function calls that can throw
 		//   - await expressions where the Promise can reject
 
-		throwTypes, throwErrors := c.findThrowTypes(ctx, &expr.Try)
-		errors = slices.Concat(errors, throwErrors)
-
 		// Infer the type of the try block
 		tryType, tryErrors := c.inferBlock(ctx, &expr.Try, type_system.NewUndefinedType(nil))
 		errors = slices.Concat(errors, tryErrors)
+
+		// Now that we've inferred the try block, find all the throw types within it
+		throwTypes, throwErrors := c.findThrowTypes(ctx, &expr.Try)
+		errors = slices.Concat(errors, throwErrors)
 
 		// Create a union of all throw types to use as the target type for catch patterns
 		var throwTargetType type_system.Type

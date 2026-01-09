@@ -1433,8 +1433,8 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 				if !isWildcard {
 					// Not exhaustive, add a re-throw
-					rehrowStmt := NewThrowStmt(errorIdent, expr)
-					rehrowBlock := NewBlockStmt([]Stmt{rehrowStmt}, expr)
+					rethrowStmt := NewThrowStmt(errorIdent, expr)
+					rethrowBlock := NewBlockStmt([]Stmt{rethrowStmt}, expr)
 					currentStmt = simplifyTrueLiterals(currentStmt)
 
 					// Find the last if statement and add the re-throw as its else
@@ -1442,7 +1442,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					for {
 						if ifStmt, ok := lastIf.(*IfStmt); ok {
 							if ifStmt.Alt == nil {
-								ifStmt.Alt = rehrowBlock
+								ifStmt.Alt = rethrowBlock
 								break
 							}
 							lastIf = ifStmt.Alt
