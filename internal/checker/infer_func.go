@@ -384,6 +384,12 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 
 	throwTypes := []type_system.Type{}
 	for _, throwExpr := range throwVisitor.Throws {
+		argType := throwExpr.Arg.InferredType()
+		if argType != nil {
+			throwTypes = append(throwTypes, argType)
+			continue
+		}
+
 		throwType, throwErrors := c.inferExpr(ctx, throwExpr.Arg)
 		throwTypes = append(throwTypes, throwType)
 		errors = slices.Concat(errors, throwErrors)
