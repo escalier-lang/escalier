@@ -7283,3 +7283,149 @@ nil
     },
 }
 ---
+
+[TestParseStmtNoErrors/ImportNamedWithAlias - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "foo",
+            Alias: "bar",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:20},
+                SourceID: 0,
+            },
+        },
+    },
+    ModulePath: "module",
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:36},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportNamedMultiple - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "foo",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+        &ast.ImportSpecifier{
+            Name:  "bar",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+        &ast.ImportSpecifier{
+            Name:  "baz",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:20},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 0,
+            },
+        },
+    },
+    ModulePath: "module",
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:39},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportNamespace - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "*",
+            Alias: "ns",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+        },
+    },
+    ModulePath: "module",
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:29},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportNamedSingle - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "foo",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+    },
+    ModulePath: "module",
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:29},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportNamedMixed - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "foo",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+        &ast.ImportSpecifier{
+            Name:  "bar",
+            Alias: "baz",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:25},
+                SourceID: 0,
+            },
+        },
+        &ast.ImportSpecifier{
+            Name:  "qux",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:27},
+                End:      ast.Location{Line:1, Column:30},
+                SourceID: 0,
+            },
+        },
+    },
+    ModulePath: "module",
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:46},
+        SourceID: 0,
+    },
+}
+---

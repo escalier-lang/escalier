@@ -244,6 +244,21 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"InterfaceDeclDeclare": {
 			input: "declare interface Global { version: string }",
 		},
+		"ImportNamedSingle": {
+			input: `import { foo } from "module"`,
+		},
+		"ImportNamedMultiple": {
+			input: `import { foo, bar, baz } from "module"`,
+		},
+		"ImportNamedWithAlias": {
+			input: `import { foo as bar } from "module"`,
+		},
+		"ImportNamedMixed": {
+			input: `import { foo, bar as baz, qux } from "module"`,
+		},
+		"ImportNamespace": {
+			input: `import * as ns from "module"`,
+		},
 	}
 
 	for name, test := range tests {

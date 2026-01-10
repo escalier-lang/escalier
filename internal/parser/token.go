@@ -40,6 +40,7 @@ const (
 	FatArrow
 	Fn
 	For
+	From
 	Gen
 	Get
 	GreaterThan

@@ -7,6 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@types/react':
+        specifier: ^19.0.10
+        version: 19.0.10
+      '@types/react-dom':
+        specifier: ^19.0.4
+        version: 19.0.4(@types/react@19.0.10)
     devDependencies:
       '@biomejs/biome':
         specifier: 1.9.4
@@ -32,6 +39,104 @@ importers:
       vitest:
         specifier: ^4.0.8
         version: 4.0.8(@types/node@20.19.24)(@vitest/ui@4.0.8)
+
+  fixtures/async_await: {}
+
+  fixtures/bin_and_lib: {}
+
+  fixtures/bin_only: {}
+
+  fixtures/class_with_computed_members: {}
+
+  fixtures/class_with_fluent_mutating_methods: {}
+
+  fixtures/class_with_generic_methods: {}
+
+  fixtures/class_with_getter_setter: {}
+
+  fixtures/class_with_static_members: {}
+
+  fixtures/comments: {}
+
+  fixtures/destructuring: {}
+
+  fixtures/do: {}
+
+  fixtures/enum: {}
+
+  fixtures/exception_handling: {}
+
+  fixtures/extractor_arg_with_init: {}
+
+  fixtures/extractor_basic: {}
+
+  fixtures/extractor_inside_namespaces: {}
+
+  fixtures/extractor_nested: {}
+
+  fixtures/extractor_rest_arg: {}
+
+  fixtures/extractor_with_defaults: {}
+
+  fixtures/func_decl: {}
+
+  fixtures/func_destructuring: {}
+
+  fixtures/func_expr: {}
+
+  fixtures/func_generics: {}
+
+  fixtures/func_generics_with_constraints: {}
+
+  fixtures/func_rest_params: {}
+
+  fixtures/generic_class: {}
+
+  fixtures/generic_enum: {}
+
+  fixtures/incomplete_fn: {}
+
+  fixtures/interface: {}
+
+  fixtures/literals: {}
+
+  fixtures/logging: {}
+
+  fixtures/member_access: {}
+
+  fixtures/namespace_complex_chain: {}
+
+  fixtures/namespace_cross_refs: {}
+
+  fixtures/namespace_simple_same: {}
+
+  fixtures/namespace_type_aliases: {}
+
+  fixtures/namespace_use_parent_symbol: {}
+
+  fixtures/not_enough_elements: {}
+
+  fixtures/objects: {}
+
+  fixtures/objects_with_computed_members: {}
+
+  fixtures/objects_with_generic_methods: {}
+
+  fixtures/objects_with_self: {}
+
+  fixtures/operators: {}
+
+  fixtures/pattern_matching: {}
+
+  fixtures/readonly_properties: {}
+
+  fixtures/symbols: {}
+
+  fixtures/template_literal_types: {}
+
+  fixtures/template_literals: {}
+
+  fixtures/try_catch: {}
 
   packages/cli: {}
 
