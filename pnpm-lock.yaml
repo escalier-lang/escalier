@@ -4,16 +4,24 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@types/react':
+      specifier: ^19.0.10
+      version: 19.0.10
+    '@types/react-dom':
+      specifier: ^19.0.4
+      version: 19.0.4
+    react:
+      specifier: ^19.0.0
+      version: 19.0.0
+    react-dom:
+      specifier: ^19.0.0
+      version: 19.0.0
+
 importers:
 
   .:
-    dependencies:
-      '@types/react':
-        specifier: ^19.0.10
-        version: 19.0.10
-      '@types/react-dom':
-        specifier: ^19.0.4
-        version: 19.0.4(@types/react@19.0.10)
     devDependencies:
       '@biomejs/biome':
         specifier: 1.9.4
@@ -21,12 +29,24 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.24
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.0.10
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.0.4(@types/react@19.0.10)
       '@vitest/coverage-v8':
         specifier: ^4.0.8
         version: 4.0.8(vitest@4.0.8)
       '@vitest/ui':
         specifier: ^4.0.8
         version: 4.0.8(vitest@4.0.8)
+      react:
+        specifier: 'catalog:'
+        version: 19.0.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.0.0(react@19.0.0)
       sloc:
         specifier: ^0.3.2
         version: 0.3.2
@@ -170,17 +190,17 @@ importers:
         specifier: ^0.52.2
         version: 0.52.2
       react:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.0.0
       react-dom:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.0.0(react@19.0.0)
     devDependencies:
       '@types/react':
-        specifier: ^19.0.10
+        specifier: 'catalog:'
         version: 19.0.10
       '@types/react-dom':
-        specifier: ^19.0.4
+        specifier: 'catalog:'
         version: 19.0.4(@types/react@19.0.10)
       '@vitejs/plugin-react':
         specifier: ^5.1.0
