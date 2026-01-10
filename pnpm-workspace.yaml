@@ -7,4 +7,5 @@ minimumReleaseAge: 4320
 
 packages:
   - packages/*
+  - fixtures/*
   - playground

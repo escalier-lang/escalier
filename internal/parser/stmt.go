@@ -76,6 +76,8 @@ func (p *Parser) stmt() ast.Stmt {
 
 	// nolint: exhaustive
 	switch token.Type {
+	case Import:
+		stmt = p.importStmt()
 	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class:
 		decl := p.Decl()
 		if decl == nil {
@@ -102,4 +104,103 @@ func (p *Parser) stmt() ast.Stmt {
 	}
 
 	return stmt
+}
+
+// importStmt = 'import' importSpecifiers 'from' string
+// importSpecifiers = '{' namedImport (',' namedImport)* '}' | '*' 'as' identifier
+// namedImport = identifier ('as' identifier)?
+func (p *Parser) importStmt() ast.Stmt {
+	importToken := p.lexer.next()
+	if importToken.Type != Import {
+		p.reportError(importToken.Span, "Expected 'import'")
+		return nil
+	}
+
+	var specifiers []*ast.ImportSpecifier
+	token := p.lexer.peek()
+
+	// Parse import specifiers
+	if token.Type == Asterisk {
+		// Namespace import: import * as ns from "module"
+		p.lexer.consume()
+		asToken := p.lexer.next()
+		if asToken.Type != Identifier || asToken.Value != "as" {
+			p.reportError(asToken.Span, "Expected 'as' after '*'")
+			return nil
+		}
+		nameToken := p.lexer.next()
+		if nameToken.Type != Identifier {
+			p.reportError(nameToken.Span, "Expected identifier after 'as'")
+			return nil
+		}
+		specifier := ast.NewImportSpecifier(
+			"*",
+			nameToken.Value,
+			ast.MergeSpans(token.Span, nameToken.Span),
+		)
+		specifiers = append(specifiers, specifier)
+	} else if token.Type == OpenBrace {
+		// Named imports: import { foo, bar as baz } from "module"
+		p.lexer.consume()
+		for {
+			token = p.lexer.peek()
+			if token.Type == CloseBrace {
+				p.lexer.consume()
+				break
+			}
+			if token.Type == Comma {
+				p.lexer.consume()
+				continue
+			}
+			if token.Type != Identifier {
+				p.reportError(token.Span, "Expected identifier in import specifier")
+				return nil
+			}
+
+			nameToken := p.lexer.next()
+			name := nameToken.Value
+			alias := ""
+
+			// Check for "as" alias
+			nextToken := p.lexer.peek()
+			if nextToken.Type == Identifier && nextToken.Value == "as" {
+				p.lexer.consume()
+				aliasToken := p.lexer.next()
+				if aliasToken.Type != Identifier {
+					p.reportError(aliasToken.Span, "Expected identifier after 'as'")
+					return nil
+				}
+				alias = aliasToken.Value
+				specifier := ast.NewImportSpecifier(
+					name,
+					alias,
+					ast.MergeSpans(nameToken.Span, aliasToken.Span),
+				)
+				specifiers = append(specifiers, specifier)
+			} else {
+				specifier := ast.NewImportSpecifier(name, alias, nameToken.Span)
+				specifiers = append(specifiers, specifier)
+			}
+		}
+	} else {
+		p.reportError(token.Span, "Expected import specifiers ('{' or '*')")
+		return nil
+	}
+
+	// Expect 'from'
+	fromToken := p.lexer.next()
+	if fromToken.Type != From {
+		p.reportError(fromToken.Span, "Expected 'from' after import specifiers")
+		return nil
+	}
+
+	// Expect string literal for module path
+	moduleToken := p.lexer.next()
+	if moduleToken.Type != StrLit {
+		p.reportError(moduleToken.Span, "Expected string literal for module path")
+		return nil
+	}
+
+	span := ast.MergeSpans(importToken.Span, moduleToken.Span)
+	return ast.NewImportStmt(specifiers, moduleToken.Value, span)
 }

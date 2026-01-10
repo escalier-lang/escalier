@@ -58,3 +58,35 @@ func (s *ReturnStmt) Accept(v Visitor) {
 	}
 	v.ExitStmt(s)
 }
+
+// ImportSpecifier represents a single import specifier
+// For named imports: { foo, bar as baz }
+// For namespace imports: * as ns
+type ImportSpecifier struct {
+	Name  string // The name being imported (or "*" for namespace imports)
+	Alias string // The local name (optional for named imports, required for namespace imports)
+	span  Span
+}
+
+func NewImportSpecifier(name, alias string, span Span) *ImportSpecifier {
+	return &ImportSpecifier{Name: name, Alias: alias, span: span}
+}
+func (i *ImportSpecifier) Span() Span { return i.span }
+
+type ImportStmt struct {
+	Specifiers []*ImportSpecifier
+	ModulePath string
+	span       Span
+}
+
+func NewImportStmt(specifiers []*ImportSpecifier, modulePath string, span Span) *ImportStmt {
+	return &ImportStmt{Specifiers: specifiers, ModulePath: modulePath, span: span}
+}
+func (*ImportStmt) isStmt()      {}
+func (s *ImportStmt) Span() Span { return s.span }
+func (s *ImportStmt) Accept(v Visitor) {
+	if v.EnterStmt(s) {
+		// Import statements don't have nested expressions to visit
+	}
+	v.ExitStmt(s)
+}
