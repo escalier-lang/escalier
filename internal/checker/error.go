@@ -21,6 +21,7 @@ type Error interface {
 }
 
 func (e UnimplementedError) isError()                       {}
+func (e GenericError) isError()                             {}
 func (e InvalidObjectKeyError) isError()                    {}
 func (e KeyNotFoundError) isError()                         {}
 func (e InterfaceMergeError) isError()                      {}
@@ -81,6 +82,26 @@ func (e UnimplementedError) Span() ast.Span {
 }
 func (e UnimplementedError) Message() string {
 	return "Unimplemented: " + e.message
+}
+
+type GenericError struct {
+	message string
+	span    ast.Span
+}
+
+func (e GenericError) Span() ast.Span {
+	return e.span
+}
+func (e GenericError) Message() string {
+	return e.message
+}
+
+// NewGenericError creates a new generic error with the given message and span
+func NewGenericError(message string, span ast.Span) GenericError {
+	return GenericError{
+		message: message,
+		span:    span,
+	}
 }
 
 type InvalidObjectKeyError struct {

@@ -27,6 +27,9 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 			errors = exprErrors
 		}
 		return errors
+	case *ast.ImportStmt:
+		errors := c.inferImport(ctx, stmt)
+		return errors
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}

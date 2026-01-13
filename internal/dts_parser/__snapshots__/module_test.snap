@@ -2129,7 +2129,7 @@ map[string]interface {}{
         &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:22},
-                End:      ast.Location{Line:1, Column:22},
+                End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
             },
             Message: "Expected interface, type, enum, or namespace declaration",
@@ -2137,23 +2137,7 @@ map[string]interface {}{
         &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:22},
-                End:      ast.Location{Line:1, Column:22},
-                SourceID: 0,
-            },
-            Message: "Unexpected token",
-        },
-        &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:29},
-                End:      ast.Location{Line:1, Column:29},
-                SourceID: 0,
-            },
-            Message: "Expected identifier",
-        },
-        &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:23},
-                End:      ast.Location{Line:1, Column:29},
+                End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
             },
             Message: "Unexpected token",
@@ -2223,7 +2207,7 @@ map[string]interface {}{
         &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:19},
-                End:      ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:27},
                 SourceID: 0,
             },
             Message: "Expected interface, type, enum, or namespace declaration",
@@ -2231,23 +2215,7 @@ map[string]interface {}{
         &dts_parser.Error{
             Span: ast.Span{
                 Start:    ast.Location{Line:1, Column:19},
-                End:      ast.Location{Line:1, Column:19},
-                SourceID: 0,
-            },
-            Message: "Unexpected token",
-        },
-        &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:26},
-                End:      ast.Location{Line:1, Column:26},
-                SourceID: 0,
-            },
-            Message: "Expected identifier",
-        },
-        &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:20},
-                End:      ast.Location{Line:1, Column:26},
+                End:      ast.Location{Line:1, Column:27},
                 SourceID: 0,
             },
             Message: "Unexpected token",
@@ -2301,6 +2269,204 @@ map[string]interface {}{
             span:          ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestImportDeclarations/single_quote_import - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ImportDecl{
+            DefaultImport: &dts_parser.Ident{
+                Name: "foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+            },
+            NamedImports: nil,
+            NamespaceAs:  (*dts_parser.Ident)(nil),
+            From:         "module",
+            TypeOnly:     false,
+            span:         ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:25},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestImportDeclarations/single_quote_named_import - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ImportDecl{
+            DefaultImport: (*dts_parser.Ident)(nil),
+            NamedImports:  {
+                &dts_parser.ImportSpecifier{
+                    Imported: &dts_parser.Ident{
+                        Name: "foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    Local: &dts_parser.Ident{
+                        Name: "foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.ImportSpecifier{
+                    Imported: &dts_parser.Ident{
+                        Name: "bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    Local: &dts_parser.Ident{
+                        Name: "bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:15},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                },
+            },
+            NamespaceAs: (*dts_parser.Ident)(nil),
+            From:        "module",
+            TypeOnly:    false,
+            span:        ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:34},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestImportDeclarations/single_quote_side_effect - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ImportDecl{
+            DefaultImport: (*dts_parser.Ident)(nil),
+            NamedImports:  nil,
+            NamespaceAs:   (*dts_parser.Ident)(nil),
+            From:          "side-effects",
+            TypeOnly:      false,
+            span:          ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:22},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestExportDeclarations/single_quote_export_all - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ExportDecl{
+            Declaration:   nil,
+            NamedExports:  nil,
+            From:          "module",
+            ExportDefault: false,
+            ExportAll:     true,
+            TypeOnly:      false,
+            span:          ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestExportDeclarations/single_quote_export_from - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.ExportDecl{
+            Declaration:  nil,
+            NamedExports: {
+                &dts_parser.ExportSpecifier{
+                    Local: &dts_parser.Ident{
+                        Name: "foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    Exported: &dts_parser.Ident{
+                        Name: "foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:10},
+                            End:      ast.Location{Line:1, Column:13},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.ExportSpecifier{
+                    Local: &dts_parser.Ident{
+                        Name: "bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    Exported: &dts_parser.Ident{
+                        Name: "bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:15},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                },
+            },
+            From:          "module",
+            ExportDefault: false,
+            ExportAll:     false,
+            TypeOnly:      false,
+            span:          ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:34},
                 SourceID: 0,
             },
         },
