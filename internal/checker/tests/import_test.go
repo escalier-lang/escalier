@@ -25,6 +25,18 @@ func TestImportInferenceScript(t *testing.T) {
 				"equal": "fn (a: any, b: any) -> boolean throws never",
 			},
 		},
+		// TODO:
+		// - allow `export {}`
+		// - handle union types with leading pipe symbol
+		// "NamespaceImportCsstype": {
+		// 	input: `
+		// 		import * as CSS from "csstype"
+		// 		declare val alignItems: CSS.Property.AlignItems
+		// 	`,
+		// 	expectedValues: map[string]string{
+		// 		"alignItems": "fn (a: any, b: any) -> boolean throws never",
+		// 	},
+		// },
 	}
 
 	for testName, testCase := range tests {
