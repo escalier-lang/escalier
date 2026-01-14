@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -46,7 +45,7 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 		return "", &GenericError{message: "Could not find package.json for import", span: importStmt.Span()}
 	}
 
-	moduleDir := path.Join(packageJsonDir, "node_modules", importStmt.ModulePath)
+	moduleDir := filepath.Join(packageJsonDir, "node_modules", importStmt.ModulePath)
 
 	// Check if moduleDir is a symlink
 	fileInfo, err := os.Lstat(moduleDir)
@@ -61,7 +60,11 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 		if err != nil {
 			return "", &GenericError{message: "Could not resolve symlink for module import: " + importStmt.ModulePath, span: importStmt.Span()}
 		}
-		moduleDir = path.Join(packageJsonDir, "node_modules", resolvedPath)
+		if filepath.IsAbs(resolvedPath) {
+			moduleDir = resolvedPath
+		} else {
+			moduleDir = filepath.Join(packageJsonDir, "node_modules", resolvedPath)
+		}
 	}
 
 	// Read package.json in moduleDir to find the main entry point
@@ -79,8 +82,12 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	}
 
 	if typesField, ok := pkgJsonMap["types"]; ok {
+		typesStr, isString := typesField.(string)
+		if !isString {
+			return "", &GenericError{message: "Invalid types field in package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+		}
 		// Use typesField as the entry point for type definitions
-		return path.Join(moduleDir, typesField.(string)), nil
+		return filepath.Join(moduleDir, typesStr), nil
 	}
 
 	return "", &GenericError{message: "No types field found in package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
@@ -121,8 +128,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	inferCtx := ctx.WithNewScope()
 	inferErrors := c.InferModule(inferCtx, typeDefModule)
 	if len(inferErrors) > 0 {
-		// TODO: return a proper Error type
-		panic("Failed to infer types for imported module")
+		errors = append(errors, inferErrors...)
 	}
 
 	for name := range inferCtx.Scope.Namespace.Values {

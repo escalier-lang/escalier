@@ -213,7 +213,7 @@ func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 		for _, parseErr := range parseErrors {
 			fmt.Fprintf(os.Stderr, "- %s\n", parseErr)
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to parse DTS module %s: %d errors", filename, len(parseErrors))
 	}
 
 	// TODO:
