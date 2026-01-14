@@ -271,13 +271,14 @@ func (lexer *Lexer) next() *Token {
 		} else {
 			token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
-	case '"':
+	case '"', '\'':
 		contents := lexer.source.Contents
 		n := len(contents)
 		i := startOffset + 1
+		quote := codePoint // remember which quote character we're looking for
 		for i < n {
 			c := contents[i]
-			if c == '"' {
+			if rune(c) == quote {
 				break
 			}
 			i++

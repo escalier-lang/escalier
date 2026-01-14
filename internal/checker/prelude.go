@@ -183,7 +183,9 @@ func UpdateArrayMutability(namespace *type_system.Namespace) {
 	}
 }
 
-func loadTypeScriptModule(filename string) (*ast.Module, error) {
+// TODO: wrap `error` returns in a proper Error type
+// We actually need to return multiple Escalier modules in some cases
+func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 	if _, err := os.Lstat(filename); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "DTS file not found: %s\n", filename)
 		return nil, err
@@ -208,16 +210,54 @@ func loadTypeScriptModule(filename string) (*ast.Module, error) {
 
 	if len(parseErrors) > 0 {
 		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
-		return nil, err
+		for _, parseErr := range parseErrors {
+			fmt.Fprintf(os.Stderr, "- %s\n", parseErr)
+		}
+		return nil, fmt.Errorf("failed to parse DTS module %s: %d errors", filename, len(parseErrors))
 	}
 
-	astModule, err := interop.ConvertModule(dtsModule)
+	// TODO:
+	// - copy all of the exported types/values from the inferred module scope
+	//   into a namespace and put that namespace into a mapping of named imports
+
+	// NOTES:
+	// - we'll probably have to keep track of both the filepath as well as the
+	//   module name.  This is because there could be multiple versions of the
+	//   same npm package installed in different places in the monorepo.  Also,
+	//   npm packages could conceivably provide types for multiple named packages.
+
+	moduleMap := make(map[string]*ast.Module)
+
+	globalModule := &dts_parser.Module{
+		Statements: []dts_parser.Statement{},
+	}
+
+	for _, stmt := range dtsModule.Statements {
+		switch s := stmt.(type) {
+		case *dts_parser.ModuleDecl:
+			namedModule := &dts_parser.Module{
+				Statements: s.Statements,
+			}
+			namedAstModule, err := interop.ConvertModule(namedModule)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error converting DTS to AST: %s\n", err.Error())
+				return nil, err
+			}
+			moduleMap[s.Name] = namedAstModule
+		default:
+			globalModule.Statements = append(globalModule.Statements, s)
+		}
+	}
+
+	globalAstModule, err := interop.ConvertModule(globalModule)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error converting DTS to AST: %s\n", err.Error())
 		return nil, err
 	}
 
-	return astModule, nil
+	moduleMap["global"] = globalAstModule // default module
+
+	return moduleMap, nil
 }
 
 var preludeScope *Scope
@@ -234,13 +274,13 @@ func Prelude(c *Checker) *Scope {
 	repoRoot, _ := findRepoRoot()
 
 	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-	libES5Module, err := loadTypeScriptModule(libES5Path)
+	libES5ModuleMap, err := loadTypeScriptModule(libES5Path)
 	if err != nil {
 		panic("Failed to load TypeScript lib.es5.d.ts")
 	}
 
 	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
-	libDOMModule, err := loadTypeScriptModule(libDOMPath)
+	libDOMModuleMap, err := loadTypeScriptModule(libDOMPath)
 	if err != nil {
 		panic("Failed to load TypeScript lib.dom.d.ts")
 	}
@@ -252,11 +292,13 @@ func Prelude(c *Checker) *Scope {
 		IsPatMatch: false,
 	}
 
+	libES5Module := libES5ModuleMap["global"]
 	inferErrors := c.InferModule(inferCtx, libES5Module)
 	if len(inferErrors) > 0 {
 		panic("Failed to infer types for lib.es5.d.ts")
 	}
 
+	libDOMModule := libDOMModuleMap["global"]
 	inferErrors = c.InferModule(inferCtx, libDOMModule)
 	if len(inferErrors) > 0 {
 		for _, err := range inferErrors {

@@ -28,6 +28,9 @@ func TestImportDeclarations(t *testing.T) {
 		{"type-only import", `import type { foo } from "module"`},
 		{"type-only namespace", `import type * as foo from "module"`},
 		{"trailing comma", `import { foo, bar, } from "module"`},
+		{"single quote import", `import foo from 'module'`},
+		{"single quote named import", `import { foo, bar } from 'module'`},
+		{"single quote side effect", `import 'side-effects'`},
 	}
 
 	for _, tt := range tests {
@@ -80,6 +83,8 @@ func TestExportDeclarations(t *testing.T) {
 		{"type-only export", "export type { Foo }"},
 		{"trailing comma", "export { foo, bar, }"},
 		{"export without any exports", "export { }"},
+		{"single quote export all", `export * from 'module'`},
+		{"single quote export from", `export { foo, bar } from 'module'`},
 	}
 
 	for _, tt := range tests {

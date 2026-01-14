@@ -518,6 +518,26 @@ func TestAmbientNamespaceVariableDeclarations(t *testing.T) {
 			"var in declare module",
 			`declare module "my-module" { var x: number; }`,
 		},
+		{
+			"export equals in declare module",
+			`declare module 'fast-deep-equal' {
+    const equal: (a: any, b: any) => boolean;
+    export = equal;
+}`,
+		},
+		{
+			"export equals simple",
+			`declare module "simple-module" {
+    const value: string;
+    export = value;
+}`,
+		},
+		{
+			"module with single quotes",
+			`declare module 'my-lib' {
+    export function foo(): void;
+}`,
+		},
 	}
 
 	for _, tt := range tests {

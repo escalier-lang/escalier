@@ -521,6 +521,12 @@ func (p *DtsParser) parseExportAssignment(startToken *Token) Statement {
 		SourceID: startToken.Span.SourceID,
 	}
 
+	// Consume optional semicolon
+	if p.peek().Type == Semicolon {
+		semiToken := p.consume()
+		span.End = semiToken.Span.End
+	}
+
 	// Represent 'export = X' as a special export
 	return &ExportDecl{
 		NamedExports: []*ExportSpecifier{
