@@ -47,9 +47,19 @@ func (p *DtsParser) ParseModule() (*Module, []*Error) {
 			continue
 		}
 
+		// Skip semicolons (optional statement terminators)
+		if token.Type == Semicolon {
+			p.consume()
+			continue
+		}
+
 		stmt := p.parseStatement()
 		if stmt != nil {
 			statements = append(statements, stmt)
+			// Consume optional trailing semicolon after statement
+			if p.peek().Type == Semicolon {
+				p.consume()
+			}
 		} else {
 			// If we can't parse a statement, skip the token to avoid infinite loop
 			p.reportError(token.Span, "Unexpected token")

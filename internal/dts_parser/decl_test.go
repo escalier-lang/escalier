@@ -136,6 +136,8 @@ func TestTypeAliasDeclarations(t *testing.T) {
 	}{
 		{"simple type alias", "type Name = string"},
 		{"union type alias", "type StringOrNumber = string | number"},
+		{"union type alias with leading pipe", "type FooBar = | \"foo\" | \"bar\""},
+		{"union type alias with leading pipe multiline", "type FooBar =\n  | \"foo\"\n  | \"bar\""},
 		{"intersection type", "type Combined = A & B"},
 		{"generic type alias", "type Box<T> = { value: T }"},
 		{"conditional type", "type NonNullable<T> = T extends null | undefined ? never : T"},

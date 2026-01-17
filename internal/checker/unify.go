@@ -913,8 +913,31 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	// | IntersectionType, IntersectionType -> ...
 	if intersection1, ok := t1.(*type_system.IntersectionType); ok {
 		if intersection2, ok := t2.(*type_system.IntersectionType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection1, intersection2))
-			// TODO
+			// For intersection types to unify, t1 (A & B) must be a subtype of t2 (C & D)
+			// This means that for each type in t2, there must be at least one type in t1
+			// that can be unified with it.
+			//
+			// In other words: every constraint in t2 must be satisfied by t1
+			errors := []Error{}
+			for _, t2Type := range intersection2.Types {
+				found := false
+				for _, t1Type := range intersection1.Types {
+					unifyErrors := c.Unify(ctx, t1Type, t2Type)
+					if len(unifyErrors) == 0 {
+						found = true
+						break
+					}
+				}
+				if !found {
+					// Could not find a matching type in intersection1 for this t2Type
+					errors = append(errors, &CannotUnifyTypesError{
+						T1: intersection1,
+						T2: intersection2,
+					})
+					break
+				}
+			}
+			return errors
 		}
 	}
 	// | UnionType, _ -> ...

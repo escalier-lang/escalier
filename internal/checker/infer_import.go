@@ -121,7 +121,34 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 
 	typeDefModule, ok := typeDefModuleMap[importStmt.ModulePath]
 	if !ok {
-		errors = append(errors, &GenericError{message: "Type definitions for module import do not contain expected module: " + importStmt.ModulePath, span: importStmt.Span()})
+		globalModule, ok := typeDefModuleMap["global"]
+		if !ok {
+			errors = append(errors, &GenericError{message: "Type definitions for module import do not contain expected module: " + importStmt.ModulePath, span: importStmt.Span()})
+			return errors
+		}
+
+		fmt.Fprintf(os.Stderr, "globalModule = %#v\n", globalModule)
+		fmt.Fprintf(os.Stderr, "Namespace count in global type definitions: %d\n", globalModule.Namespaces.Len())
+		for _, ns := range globalModule.Namespaces.Keys() {
+			fmt.Fprintf(os.Stderr, "Found global namespace in type definitions: %s\n", ns)
+		}
+
+		inferCtx := ctx.WithNewScope()
+		inferErrors := c.InferModule(inferCtx, globalModule)
+		if len(inferErrors) > 0 {
+			errors = append(errors, inferErrors...)
+		}
+
+		for name := range inferCtx.Scope.Namespace.Values {
+			fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n", importStmt.ModulePath, name)
+		}
+
+		for _, specifier := range importStmt.Specifiers {
+			if specifier.Name == "*" {
+				ctx.Scope.Namespace.Namespaces[specifier.Alias] = inferCtx.Scope.Namespace
+			}
+		}
+
 		return errors
 	}
 

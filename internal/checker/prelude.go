@@ -208,6 +208,10 @@ func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 	parser := dts_parser.NewDtsParser(source)
 	dtsModule, parseErrors := parser.ParseModule()
 
+	if strings.HasSuffix(filename, "index.d.ts") {
+		fmt.Fprintf(os.Stderr, "Parsed DTS module from %s with %d statements\n", filename, len(dtsModule.Statements))
+	}
+
 	if len(parseErrors) > 0 {
 		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
 		for _, parseErr := range parseErrors {
@@ -247,6 +251,10 @@ func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 		default:
 			globalModule.Statements = append(globalModule.Statements, s)
 		}
+	}
+
+	if strings.HasSuffix(filename, "index.d.ts") {
+		fmt.Fprintf(os.Stderr, "Converting global DTS module with %d statements\n", len(globalModule.Statements))
 	}
 
 	globalAstModule, err := interop.ConvertModule(globalModule)

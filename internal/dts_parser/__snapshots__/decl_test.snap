@@ -8472,3 +8472,127 @@
     },
 }
 ---
+
+[TestTypeAliasDeclarations/union_type_alias_with_leading_pipe - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.TypeDecl{
+            Name: &dts_parser.Ident{
+                Name: "FooBar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.UnionType{
+                Types: {
+                    &dts_parser.LiteralType{
+                        Literal: &dts_parser.StringLiteral{
+                            Value: "foo",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:1, Column:17},
+                                End:      ast.Location{Line:1, Column:22},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:17},
+                            End:      ast.Location{Line:1, Column:22},
+                            SourceID: 0,
+                        },
+                    },
+                    &dts_parser.LiteralType{
+                        Literal: &dts_parser.StringLiteral{
+                            Value: "bar",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:1, Column:25},
+                                End:      ast.Location{Line:1, Column:30},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:25},
+                            End:      ast.Location{Line:1, Column:30},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:15},
+                    End:      ast.Location{Line:1, Column:30},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:30},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestTypeAliasDeclarations/union_type_alias_with_leading_pipe_multiline - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.TypeDecl{
+            Name: &dts_parser.Ident{
+                Name: "FooBar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.UnionType{
+                Types: {
+                    &dts_parser.LiteralType{
+                        Literal: &dts_parser.StringLiteral{
+                            Value: "foo",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:2, Column:5},
+                                End:      ast.Location{Line:2, Column:10},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:5},
+                            End:      ast.Location{Line:2, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    &dts_parser.LiteralType{
+                        Literal: &dts_parser.StringLiteral{
+                            Value: "bar",
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:3, Column:5},
+                                End:      ast.Location{Line:3, Column:10},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:5},
+                            End:      ast.Location{Line:3, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:3},
+                    End:      ast.Location{Line:3, Column:10},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:3, Column:10},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---

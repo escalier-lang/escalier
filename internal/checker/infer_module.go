@@ -86,6 +86,7 @@ const DEBUG = false
 // The order of the declarations doesn't matter because we compute the dependency
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
+// TODO: all interface declarations in a namespace to shadow previous ones.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	depGraph := dep_graph.BuildDepGraph(m)
 
