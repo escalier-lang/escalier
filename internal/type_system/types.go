@@ -1669,14 +1669,15 @@ type IntersectionType struct {
 //   - Empty intersections return never
 //   - Single-type intersections return that type directly
 //   - Nested intersections are flattened: (A & B) & C becomes A & B & C
-//   - Duplicate types are removed: A & A becomes A
+//   - Duplicate types are removed using structural equality
 //   - any absorbs all other types: A & any becomes any
 //   - never collapses the intersection: A & never becomes never
 //   - unknown is the identity: A & unknown becomes A
 //   - Conflicting primitives produce never: string & number becomes never
 //   - For (mut T) & T, the immutable version T is preferred
 //
-// These normalization rules match TypeScript's intersection type semantics.
+// Note: This performs basic normalization only. Additional normalization may be
+// needed after type inference when type aliases are resolved.
 func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	if len(types) == 0 {
 		return NewNeverType(nil)
@@ -1698,7 +1699,6 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 
 	// Normalize
 	normalized := []Type{}
-	seen := make(map[string]bool)
 	hasAny := false
 	hasNever := false
 	primitiveTypes := make(map[Prim]*PrimType)
@@ -1749,12 +1749,18 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 			primitiveTypes[prim.Prim] = prim
 		}
 
-		// Remove duplicates
-		typeStr := t.String()
-		if seen[typeStr] {
+		// Remove duplicates using Equals
+		alreadyExists := false
+		for _, existing := range normalized {
+			if existing.Equals(t) {
+				alreadyExists = true
+				break
+			}
+		}
+		if alreadyExists {
 			continue
 		}
-		seen[typeStr] = true
+
 		normalized = append(normalized, t)
 	}
 
@@ -1764,11 +1770,10 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	for _, t := range normalized {
 		if mut, ok := t.(*MutabilityType); ok {
 			if mut.Mutability == MutabilityMutable {
-				// Check if immutable version exists in normalized
-				innerStr := mut.Type.String()
+				// Check if immutable version exists in normalized using Equals
 				hasImmutable := false
 				for _, other := range normalized {
-					if other.String() == innerStr {
+					if other.Equals(mut.Type) {
 						hasImmutable = true
 						break
 					}

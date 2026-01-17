@@ -15,49 +15,127 @@ This plan outlines the work needed to fully support intersection types with Type
 - ✅ Parser creates `ast.IntersectionTypeAnn` nodes
 - ✅ `inferTypeAnn` converts to `type_system.IntersectionType`
 - ✅ `IntersectionType` struct exists with `Accept`, `Equals`, `String` methods
-- ✅ `NewIntersectionType` constructor with basic normalization (returns single type if len=1, never if len=0)
+- ✅ `NewIntersectionType` constructor with comprehensive normalization
+  - Flattens nested intersections
+  - Removes duplicates using structural equality (`Equals()`)
+  - Handles `never`, `unknown`, `any`
+  - Detects incompatible primitives
+  - Handles mutability types
 - ✅ Basic visitor support for traversing intersection types
+- ✅ Unit tests for normalization in `internal/type_system/intersection_test.go`
 
 ### What's Broken/Missing
 - ❌ `Unify` has a TODO panic for `IntersectionType & ObjectType`
 - ❌ `Unify` has partial implementation for `IntersectionType & IntersectionType` but may be incomplete
 - ❌ `getMemberType` doesn't handle `IntersectionType` at all
-- ❌ No normalization for `never`, `unknown`, `any` in intersections
-- ❌ No flattening of nested intersections
+- ❌ No post-inference normalization for type aliases and type variables
 - ❌ No merging of object types in intersections
 - ❌ No handling of primitive & object intersections (branded types)
 - ❌ No handling of function intersections (overloads)
+- ❌ No re-normalization in `ExpandType`
 
 ## Implementation Tasks
 
-### Phase 1: Normalization (High Priority)
+### Phase 1: Basic Normalization in Constructor (High Priority) ✅ COMPLETE
 
 **Location**: `internal/type_system/types.go` - `NewIntersectionType` function
 
-**Current Code** (lines 1666-1674):
+**Status**: Implemented and tested
+
+**Tasks Completed**:
+1. ✅ Flatten nested intersections: `(A & B) & C` → `A & B & C`
+2. ✅ Remove duplicates using `Equals()`: `A & A` → `A`
+3. ✅ Handle `never`: `A & never` → `never`
+4. ✅ Handle `unknown`: `A & unknown` → `A`
+5. ✅ Handle `any`: `A & any` → `any`
+6. ✅ Detect incompatible primitives: `string & number` → `never`
+7. ✅ Handle mutable object types: `(mut T) & T` → `T`
+
+**Implementation Notes**:
+- Uses structural equality (`Equals()`) instead of string comparison for reliable deduplication
+- Performs basic normalization at construction time
+- Additional normalization needed after type inference (see Phase 1.5 below)
+
+### Phase 1.5: Post-Inference Normalization (High Priority)
+
+**Location**: `internal/checker/expand_type.go` or new utility in `internal/type_system/`
+
+**Rationale**: `NewIntersectionType` performs basic normalization, but additional normalization is needed after:
+- Type aliases are resolved to their underlying types
+- Type variables are substituted with concrete types
+- Type expansion reveals equivalent types with different representations
+
+**Tasks**:
+1. Create a `NormalizeIntersectionType(t *IntersectionType) Type` function
+2. Handle type aliases that resolve to the same underlying type
+3. Detect and merge equivalent object types after expansion
+4. Re-normalize after type variable substitution
+5. Handle cases where type references point to the same concrete type
+
+**Implementation Strategy**:
+
 ```go
-func NewIntersectionType(provenance Provenance, types ...Type) Type {
-	if len(types) == 0 {
-		return NewNeverType(nil)
+// NormalizeIntersectionType performs deep normalization of an intersection type
+// after type inference and expansion. This handles cases that NewIntersectionType
+// cannot handle because types haven't been fully resolved yet.
+func NormalizeIntersectionType(t *IntersectionType) Type {
+	// Step 1: Expand type aliases and prune type variables
+	expanded := []Type{}
+	for _, typ := range t.Types {
+		typ = Prune(typ)
+		// TODO: Consider expanding type aliases here
+		expanded = append(expanded, typ)
 	}
-	if len(types) == 1 {
-		return types[0]
+	
+	// Step 2: Use NewIntersectionType to apply basic normalization
+	result := NewIntersectionType(t.Provenance(), expanded...)
+	
+	// Step 3: If still an intersection, check for mergeable object types
+	if inter, ok := result.(*IntersectionType); ok {
+		// Check if all types are object types that can be merged
+		allObjects := true
+		for _, typ := range inter.Types {
+			if _, ok := typ.(*ObjectType); !ok {
+				allObjects = false
+				break
+			}
+		}
+		
+		if allObjects {
+			// Consider merging object types into a single object type
+			// This is an optimization but may not always be desirable
+			// (depends on whether we want nominal vs structural semantics)
+		}
 	}
-	return &IntersectionType{
-		Types:      types,
-		provenance: provenance,
-	}
+	
+	return result
 }
 ```
 
-**Tasks**:
-1. Flatten nested intersections: `(A & B) & C` → `A & B & C`
-2. Remove duplicates: `A & A` → `A`
-3. Handle `never`: `A & never` → `never`
-4. Handle `unknown`: `A & unknown` → `A`
-5. Handle `any`: `A & any` → `any`
-6. Detect incompatible primitives: `string & number` → `never`
-7. Handle mutable object types: `(mut T) & T` → `T`
+**Where to Apply**:
+- In `ExpandType` after expanding type references
+- In `Unify` after type variable substitution
+- In `ExitType` visitor for `IntersectionType` case
+- After applying conditional type resolution
+
+**Example Cases to Handle**:
+```typescript
+// Type aliases resolving to the same type
+type A = {x: number}
+type B = A
+type C = A & B  // Should normalize to A
+
+// Type variables after substitution
+function f<T>(a: T & string, b: T & number) {
+  // After substituting T with never, both should become never
+}
+
+// Nested type references
+type Obj = {x: number}
+type Ref1 = Obj
+type Ref2 = Obj
+type Both = Ref1 & Ref2  // Should normalize to Obj
+```
 
 **Implementation**:
 ```go
@@ -316,17 +394,26 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 **Location**: `internal/checker/expand_type.go` - `TypeExpansionVisitor`
 
-Check if `ExitType` needs special handling for intersection types. Currently it handles `UnionType` to filter out `never` types. We should add similar logic for intersections:
+**Tasks**:
+1. Add handling for intersection types in `ExitType` method
+2. Re-normalize intersections after type expansion using `NormalizeIntersectionType` (from Phase 1.5)
+3. Ensure that expanded types within intersections are properly normalized
+
+**Implementation**:
 
 Add in `ExitType` method (around line 218):
 
 ```go
 case *type_system.IntersectionType:
-	// Check for any/never/unknown normalization
-	// This should mostly be handled by NewIntersectionType, 
-	// but we may need to re-normalize after type expansion
-	return type_system.NewIntersectionType(nil, t.Types...)
+	// Re-normalize after type expansion
+	// Type expansion may reveal equivalent types or simplifications
+	return type_system.NormalizeIntersectionType(t)
 ```
+
+**Additional Considerations**:
+- Type expansion may reveal that types in the intersection are equivalent
+- After expanding type aliases, we may need to merge or simplify the intersection
+- Similar to `UnionType` handling which filters out `never` types
 
 ### Phase 5: Handle Special Cases (Medium Priority)
 
@@ -398,30 +485,45 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 
 ## Implementation Order
 
-1. **Phase 1** (Normalization) - Foundation for everything else
-2. **Phase 7.1-7.2** (Basic tests + normalization tests) - Verify Phase 1
-   - Add unit tests to `internal/checker/tests/intersection_test.go` for normalization
-   - Add integration test fixtures for basic intersection syntax
-3. **Phase 2** (Unify support) - Core type checking
-4. **Phase 7.6** (Subtyping tests) - Verify Phase 2
+1. **Phase 1** (Basic normalization in constructor) - ✅ **COMPLETE**
+   - Implemented `NewIntersectionType` with normalization
+   - Uses `Equals()` for reliable deduplication
+   - Handles basic cases: flattening, never/any/unknown, primitives, mutability
+
+2. **Phase 7.1-7.2** (Basic tests + normalization tests) - ✅ **COMPLETE**
+   - Added unit tests to `internal/type_system/intersection_test.go` for normalization
+   - All tests passing
+   - Verified flattening, deduplication, never/any/unknown, primitives, mutability
+
+3. **Phase 1.5** (Post-inference normalization) - **NEXT PRIORITY**
+   - Create `NormalizeIntersectionType()` helper function
+   - Handle type alias resolution
+   - Apply after type variable substitution
+   - Add tests for post-inference normalization scenarios
+
+4. **Phase 2** (Unify support) - Core type checking
+5. **Phase 7.6** (Subtyping tests) - Verify Phase 2
    - Add unit tests to `intersection_test.go` for subtyping rules
    - Add integration test fixtures for subtyping scenarios
-5. **Phase 3** (Member access) - Enable practical usage
-6. **Phase 7.3** (Member access tests) - Verify Phase 3
+6. **Phase 3** (Member access) - Enable practical usage
+7. **Phase 7.3** (Member access tests) - Verify Phase 3
    - Add unit tests to `intersection_test.go` for property/method access
    - Add integration test fixtures for member access
-7. **Phase 4** (Expand type support) - Handle edge cases
-8. **Phase 5** (Special cases) - Branded types and function overloads
-9. **Phase 7.4-7.5** (Branded types + function tests) - Verify Phase 5
-10. **Phase 7.7** (Union distribution tests) - Final verification
-11. **Phase 6** (Code generation) - Ensure output is correct
+8. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
+9. **Phase 5** (Special cases) - Branded types and function overloads
+10. **Phase 7.4-7.5** (Branded types + function tests) - Verify Phase 5
+11. **Phase 7.7** (Union distribution tests) - Final verification
+12. **Phase 6** (Code generation) - Ensure output is correct
 
 ## Success Criteria
 
+- [x] Basic normalization in `NewIntersectionType` complete
+- [x] Unit tests for normalization passing
+- [ ] Post-inference normalization implemented with `NormalizeIntersectionType()`
 - [ ] All test fixtures pass
 - [ ] No TODO panics remain for intersection types
 - [ ] Member access works on intersection types
-- [ ] Intersection types are properly normalized
+- [ ] Intersection types are properly normalized after type inference
 - [ ] Subtyping rules are correctly implemented
 - [ ] Branded types work as expected
 - [ ] Generated TypeScript code is valid
@@ -431,7 +533,14 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 
 - The parser already handles intersection types, so no parser changes needed
 - The `IntersectionType` struct already exists and has visitor support
+- **Phase 1 Complete**: Basic normalization in `NewIntersectionType` using structural equality
+- **Two-Phase Normalization Strategy**:
+  - Phase 1: Basic normalization at construction time (handles syntactic cases)
+  - Phase 1.5: Post-inference normalization (handles semantic equivalences after type resolution)
 - Focus on type checking logic in `Unify` and `getMemberType`
 - TypeScript compatibility is the goal - match TypeScript semantics exactly
 - Consider looking at `UnionType` implementation as a reference for similar patterns
-- **Testing Strategy**: Write unit tests in `internal/checker/tests/intersection_test.go` alongside each implementation phase. These tests should be fast, focused, and test specific behaviors. Integration tests in `fixtures/` verify end-to-end functionality
+- **Testing Strategy**: 
+  - Unit tests in `internal/type_system/intersection_test.go` for basic normalization ✅
+  - Unit tests in `internal/checker/tests/` for post-inference and type checking behaviors
+  - Integration tests in `fixtures/intersection_types/` verify end-to-end functionality
