@@ -1663,6 +1663,20 @@ type IntersectionType struct {
 	provenance Provenance
 }
 
+// NewIntersectionType creates a normalized intersection type from the given types.
+// The normalization process ensures consistent representation and eliminates redundant types:
+//
+//   - Empty intersections return never
+//   - Single-type intersections return that type directly
+//   - Nested intersections are flattened: (A & B) & C becomes A & B & C
+//   - Duplicate types are removed: A & A becomes A
+//   - any absorbs all other types: A & any becomes any
+//   - never collapses the intersection: A & never becomes never
+//   - unknown is the identity: A & unknown becomes A
+//   - Conflicting primitives produce never: string & number becomes never
+//   - For (mut T) & T, the immutable version T is preferred
+//
+// These normalization rules match TypeScript's intersection type semantics.
 func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	if len(types) == 0 {
 		return NewNeverType(nil)
@@ -1670,8 +1684,123 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	if len(types) == 1 {
 		return types[0]
 	}
+
+	// Flatten nested intersections
+	flattened := []Type{}
+	for _, t := range types {
+		t = Prune(t)
+		if inter, ok := t.(*IntersectionType); ok {
+			flattened = append(flattened, inter.Types...)
+		} else {
+			flattened = append(flattened, t)
+		}
+	}
+
+	// Normalize
+	normalized := []Type{}
+	seen := make(map[string]bool)
+	hasAny := false
+	hasNever := false
+	primitiveTypes := make(map[Prim]*PrimType)
+
+	for _, t := range flattened {
+		t = Prune(t)
+
+		// Check for any
+		if _, ok := t.(*AnyType); ok {
+			hasAny = true
+			break
+		}
+
+		// Check for never
+		if _, ok := t.(*NeverType); ok {
+			hasNever = true
+			continue // Don't add never to the list
+		}
+
+		// Remove unknown
+		if _, ok := t.(*UnknownType); ok {
+			continue
+		}
+
+		// Track primitive types to detect conflicts
+		if prim, ok := t.(*PrimType); ok {
+			if existing, exists := primitiveTypes[prim.Prim]; exists {
+				// Same primitive, already added
+				if existing.Prim == prim.Prim {
+					continue
+				}
+			}
+			// Check for conflicting primitives
+			if len(primitiveTypes) > 0 {
+				// Different primitive types exist
+				hasConflict := false
+				for existingPrim := range primitiveTypes {
+					if existingPrim != prim.Prim {
+						hasConflict = true
+						break
+					}
+				}
+				if hasConflict {
+					// Conflicting primitives: string & number → never
+					return NewNeverType(provenance)
+				}
+			}
+			primitiveTypes[prim.Prim] = prim
+		}
+
+		// Remove duplicates
+		typeStr := t.String()
+		if seen[typeStr] {
+			continue
+		}
+		seen[typeStr] = true
+		normalized = append(normalized, t)
+	}
+
+	// Second pass: handle MutabilityType
+	// If we have both (mut T) and T, keep only T
+	finalNormalized := []Type{}
+	for _, t := range normalized {
+		if mut, ok := t.(*MutabilityType); ok {
+			if mut.Mutability == MutabilityMutable {
+				// Check if immutable version exists in normalized
+				innerStr := mut.Type.String()
+				hasImmutable := false
+				for _, other := range normalized {
+					if other.String() == innerStr {
+						hasImmutable = true
+						break
+					}
+				}
+				if hasImmutable {
+					// Skip the mutable version, keep immutable
+					continue
+				}
+			}
+		}
+		finalNormalized = append(finalNormalized, t)
+	}
+	normalized = finalNormalized
+
+	if hasAny {
+		return NewAnyType(provenance)
+	}
+
+	if hasNever {
+		return NewNeverType(provenance)
+	}
+
+	if len(normalized) == 0 {
+		return NewNeverType(provenance)
+	}
+
+	if len(normalized) == 1 {
+		return normalized[0]
+	}
+
 	return &IntersectionType{
-		Types:      types,
+		Types:      normalized,
 		provenance: provenance,
 	}
 }
