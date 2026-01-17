@@ -1809,6 +1809,7 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 		provenance: provenance,
 	}
 }
+
 func (t *IntersectionType) Accept(v TypeVisitor) Type {
 	if result := v.EnterType(t); result != nil {
 		t = result.(*IntersectionType)

@@ -144,6 +144,10 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			return nil // No filtering needed, return nil to let Accept handle it
 		}
 		return type_system.NewUnionType(nil, filteredTypes...)
+	case *type_system.IntersectionType:
+		// Re-normalize intersection after type expansion
+		// Type expansion may reveal equivalent types or simplifications
+		return v.checker.NormalizeIntersectionType(v.ctx, t)
 	case *type_system.KeyOfType:
 		// Expand keyof T by extracting the keys from the type T
 		targetType := type_system.Prune(t.Type)
@@ -998,6 +1002,45 @@ func (v *TypeExpansionVisitor) expandTemplateLitType(t *type_system.TemplateLitT
 
 	// Return a union of all possible string literals
 	return type_system.NewUnionType(t.Provenance(), resultTypes...)
+}
+
+// NormalizeIntersectionType performs deep normalization of an intersection type
+// after type inference and expansion. This handles cases that NewIntersectionType
+// cannot handle because types haven't been fully resolved yet, such as:
+// - Type aliases that resolve to the same underlying type
+// - Type variables after substitution
+// - Type references that point to the same concrete type
+func (c *Checker) NormalizeIntersectionType(ctx Context, t *type_system.IntersectionType) type_system.Type {
+	// Step 1: Prune and expand all types to resolve type variables and type aliases
+	expanded := make([]type_system.Type, len(t.Types))
+	for i, typ := range t.Types {
+		// Prune to resolve type variables
+		typ = type_system.Prune(typ)
+
+		// Expand type aliases to their underlying types
+		// Use depth 1 to expand one level of type aliases
+		if _, ok := typ.(*type_system.TypeRefType); ok {
+			expandedType, _ := c.ExpandType(ctx, typ, 1)
+			expanded[i] = expandedType
+		} else {
+			expanded[i] = typ
+		}
+	}
+
+	// Step 2: Use NewIntersectionType to apply basic normalization
+	// This handles flattening, duplicates, never/any/unknown, primitives, mutability
+	result := type_system.NewIntersectionType(t.Provenance(), expanded...)
+
+	// Step 3: If still an intersection after normalization, check for further simplifications
+	if inter, ok := result.(*type_system.IntersectionType); ok {
+		// Future enhancements:
+		// - Detect structurally equivalent object types after expansion
+		// - Merge compatible object types into a single object type
+		// - Handle nominal type equivalences
+		_ = inter
+	}
+
+	return result
 }
 
 // cartesianProduct generates the cartesian product of multiple slices of types
