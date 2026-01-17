@@ -25,9 +25,7 @@ func TestImportInferenceScript(t *testing.T) {
 				"equal": "fn (a: any, b: any) -> boolean throws never",
 			},
 		},
-		// TODO:
-		// - allow `export {}`
-		// - handle union types with leading pipe symbol
+		// TODO: re-enable once we support shadowing of global interface declarations
 		// "NamespaceImportCsstype": {
 		// 	input: `
 		// 		import * as CSS from "csstype"

@@ -128,6 +128,8 @@ func TestUnionTypes(t *testing.T) {
 		{"simple union", "string | number"},
 		{"three types", "string | number | boolean"},
 		{"with type refs", "Foo | Bar | Baz"},
+		{"with leading pipe", "| string | number"},
+		{"with leading pipe three types", "| string | number | boolean"},
 	}
 
 	for _, tt := range tests {

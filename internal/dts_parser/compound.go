@@ -28,17 +28,50 @@ func (p *DtsParser) parseTypeAnn() TypeAnn {
 	return left
 }
 
-// parseUnionType parses union types (T | U | ...)
+// parseUnionType parses union types (T | U | ...) or (| T | U | ...)
 func (p *DtsParser) parseUnionType() TypeAnn {
-	// Start with intersection types (higher precedence than union)
+	var types []TypeAnn
+	var firstSpan ast.Span
+
+	// Check for leading pipe (optional in union types)
+	hasLeadingPipe := false
+	if p.peek().Type == Pipe {
+		hasLeadingPipe = true
+		firstSpan = p.consume().Span // consume leading '|'
+	}
+
+	// Parse first type
 	left := p.parseIntersectionType()
 	if left == nil {
+		if hasLeadingPipe {
+			p.reportError(p.peek().Span, "Expected type after leading '|'")
+		}
 		return nil
 	}
 
-	// Check for union operator
+	// If we had a leading pipe, we're definitely in union mode
+	if hasLeadingPipe {
+		types = make([]TypeAnn, 1, 4)
+		types[0] = left
+
+		// Continue parsing union members (expecting | between each)
+		for p.peek().Type == Pipe {
+			p.consume() // consume '|'
+			right := p.parseIntersectionType()
+			if right == nil {
+				p.reportError(p.peek().Span, "Expected type after '|'")
+				return nil
+			}
+			types = append(types, right)
+		}
+
+		span := ast.MergeSpans(firstSpan, types[len(types)-1].Span())
+		return &UnionType{Types: types, span: span}
+	}
+
+	// No leading pipe, check for union operator after first type
 	if p.peek().Type == Pipe {
-		types := make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 union members
+		types = make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 union members
 		types[0] = left
 
 		for p.peek().Type == Pipe {

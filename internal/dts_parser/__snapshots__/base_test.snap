@@ -3087,3 +3087,67 @@ map[string]interface {}{
     },
 }
 ---
+
+[TestUnionTypes/with_leading_pipe - 1]
+&dts_parser.UnionType{
+    Types: {
+        &dts_parser.PrimitiveType{
+            Kind: 6,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+        },
+        &dts_parser.PrimitiveType{
+            Kind: 7,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
+        SourceID: 0,
+    },
+}
+---
+
+[TestUnionTypes/with_leading_pipe_three_types - 1]
+&dts_parser.UnionType{
+    Types: {
+        &dts_parser.PrimitiveType{
+            Kind: 6,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+        },
+        &dts_parser.PrimitiveType{
+            Kind: 7,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+        &dts_parser.PrimitiveType{
+            Kind: 8,
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:21},
+                End:      ast.Location{Line:1, Column:28},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:28},
+        SourceID: 0,
+    },
+}
+---

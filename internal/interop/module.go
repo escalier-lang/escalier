@@ -42,9 +42,38 @@ func processNamespace(
 			// since Escalier doesn't support importing other packages yet
 			return fmt.Errorf("module declarations are not supported: %s", s.Name)
 
-		case *dts_parser.ImportDecl, *dts_parser.ExportDecl:
-			// Skip imports and exports for now
-			// TODO: handle exports to set export flag on declarations
+		case *dts_parser.ImportDecl:
+			// Skip imports for now
+			continue
+
+		case *dts_parser.ExportDecl:
+			// Handle export declarations
+			if s.Declaration != nil {
+				// Export wraps another declaration (e.g., export interface Foo {}, export namespace Bar {})
+				switch inner := s.Declaration.(type) {
+				case *dts_parser.NamespaceDecl:
+					// Process exported namespace
+					nestedName := qualifiedName(name, inner.Name.Name)
+					if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
+						return fmt.Errorf("processing exported namespace %s: %w", inner.Name.Name, err)
+					}
+
+				case *dts_parser.ModuleDecl:
+					// Module declarations are not supported
+					return fmt.Errorf("module declarations are not supported: %s", inner.Name)
+
+				default:
+					// Convert the exported declaration like any other statement
+					decl, err := convertStatement(inner)
+					if err != nil {
+						return fmt.Errorf("converting exported declaration: %w", err)
+					}
+					if decl != nil {
+						decls = append(decls, decl)
+					}
+				}
+			}
+			// For other export forms (export {}, export * from "...", etc.), skip for now
 			continue
 
 		case *dts_parser.AmbientDecl:
