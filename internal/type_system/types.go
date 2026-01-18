@@ -1317,6 +1317,9 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 }
 func (t *ObjectType) Equals(other Type) bool {
 	if other, ok := other.(*ObjectType); ok {
+		if t.Nominal && other.Nominal {
+			return t.ID == other.ID
+		}
 		if t.Exact != other.Exact {
 			return false
 		}

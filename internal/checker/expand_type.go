@@ -145,9 +145,48 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		}
 		return type_system.NewUnionType(nil, filteredTypes...)
 	case *type_system.IntersectionType:
-		// Re-normalize intersection after type expansion
-		// Type expansion may reveal equivalent types or simplifications
-		return v.checker.NormalizeIntersectionType(v.ctx, t)
+		// First distribute intersection over any unions it contains
+		// e.g., A & (B | C) becomes (A & B) | (A & C)
+		distributed, changed := distributeIntersectionOverUnion(t)
+
+		if !changed {
+			// If no distribution occurred, re-normalize intersection after type expansion
+			// Type expansion may reveal equivalent types or simplifications
+			return v.checker.NormalizeIntersectionType(v.ctx, t)
+		}
+
+		// TODO: Consider moving this code into distributeIntersectionOverUnion
+		// If the result of distribution is a union, recursively expand the union members
+		if union, isUnion := distributed.(*type_system.UnionType); isUnion {
+			// Recursively expand each member of the union to handle nested intersections
+			expandedMembers := make([]type_system.Type, len(union.Types))
+			for i, member := range union.Types {
+				expanded, _ := v.checker.ExpandType(v.ctx, member, v.expandTypeRefsCount)
+				expandedMembers[i] = expanded
+			}
+
+			// Filter out never types from the expanded union
+			var filteredMembers []type_system.Type
+			for _, member := range expandedMembers {
+				if _, ok := member.(*type_system.NeverType); !ok {
+					filteredMembers = append(filteredMembers, member)
+				}
+			}
+
+			// If all members were filtered out, return never
+			if len(filteredMembers) == 0 {
+				return type_system.NewNeverType(nil)
+			}
+
+			// If only one member remains, return it directly
+			if len(filteredMembers) == 1 {
+				return filteredMembers[0]
+			}
+
+			return type_system.NewUnionType(nil, filteredMembers...)
+		}
+
+		return distributed
 	case *type_system.KeyOfType:
 		// Expand keyof T by extracting the keys from the type T
 		targetType := type_system.Prune(t.Type)
@@ -1033,14 +1072,62 @@ func (c *Checker) NormalizeIntersectionType(ctx Context, t *type_system.Intersec
 
 	// Step 3: If still an intersection after normalization, check for further simplifications
 	if inter, ok := result.(*type_system.IntersectionType); ok {
-		// Future enhancements:
-		// - Detect structurally equivalent object types after expansion
-		// - Merge compatible object types into a single object type
-		// - Handle nominal type equivalences
-		_ = inter
+		// Check if all types in the intersection are ObjectTypes - if so, merge them
+		allObjects := true
+		for _, typ := range inter.Types {
+			if _, ok := typ.(*type_system.ObjectType); !ok {
+				allObjects = false
+				break
+			}
+		}
+
+		if allObjects && len(inter.Types) > 1 {
+			// Merge all object types into a single object type
+			return c.mergeObjectTypes(inter.Provenance(), inter.Types)
+		}
 	}
 
 	return result
+}
+
+// mergeObjectTypes merges multiple object types into a single object type
+// by combining their elements. In case of property conflicts, properties from
+// later types override properties from earlier types.
+func (c *Checker) mergeObjectTypes(prov provenance.Provenance, types []type_system.Type) type_system.Type {
+	mergedElems := []type_system.ObjTypeElem{}
+	seenProps := make(map[string]bool)
+
+	// Iterate through object types and collect their elements
+	for _, typ := range types {
+		if obj, ok := typ.(*type_system.ObjectType); ok {
+			for _, elem := range obj.Elems {
+				// Track property names to handle overwrites
+				if propElem, ok := elem.(*type_system.PropertyElem); ok {
+					propKey := propElem.Name.String()
+					// If we've already seen this property, we need to handle the merge
+					// For now, we'll overwrite (later properties take precedence)
+					// In a full implementation, we'd handle contravariance/covariance
+					if !seenProps[propKey] {
+						mergedElems = append(mergedElems, elem)
+						seenProps[propKey] = true
+					} else {
+						// Find and replace the existing property
+						for i, e := range mergedElems {
+							if p, ok := e.(*type_system.PropertyElem); ok && p.Name.String() == propKey {
+								mergedElems[i] = elem
+								break
+							}
+						}
+					}
+				} else {
+					// For non-property elements (methods, getters, setters), just append
+					mergedElems = append(mergedElems, elem)
+				}
+			}
+		}
+	}
+
+	return type_system.NewObjectType(prov, mergedElems)
 }
 
 // cartesianProduct generates the cartesian product of multiple slices of types

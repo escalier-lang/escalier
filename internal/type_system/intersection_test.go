@@ -10,13 +10,13 @@ import (
 func TestIntersectionNormalization(t *testing.T) {
 	t.Run("empty intersection returns never", func(t *testing.T) {
 		result := NewIntersectionType(nil)
-		assert.IsType(t, &NeverType{}, result)
+		assert.Equal(t, "never", result.String())
 	})
 
 	t.Run("single type intersection returns the type", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		result := NewIntersectionType(nil, strType)
-		assert.Equal(t, strType, result)
+		assert.Equal(t, "string", result.String())
 	})
 
 	t.Run("flattens nested intersections", func(t *testing.T) {
@@ -37,54 +37,52 @@ func TestIntersectionNormalization(t *testing.T) {
 			NewPropertyElem(NewStrKey("c"), boolType),
 		})
 
-		inner2 := NewIntersectionType(nil, obj1, obj2)
-		result := NewIntersectionType(nil, inner2, obj3)
+		inner := NewIntersectionType(nil, obj1, obj2)
+		result := NewIntersectionType(nil, inner, obj3)
 
 		// Should flatten to single intersection with 3 types
-		intersection, ok := result.(*IntersectionType)
-		assert.True(t, ok, "Expected IntersectionType")
-		assert.Equal(t, 3, len(intersection.Types))
+		assert.Equal(t, "{a: string} & {b: number} & {c: boolean}", result.String())
 	})
 
 	t.Run("removes duplicates", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		result := NewIntersectionType(nil, strType, strType, strType)
-		assert.Equal(t, strType, result)
+		assert.Equal(t, "string", result.String())
 	})
 
 	t.Run("A & never returns never", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		neverType := NewNeverType(nil)
 		result := NewIntersectionType(nil, strType, neverType)
-		assert.IsType(t, &NeverType{}, result)
+		assert.Equal(t, "never", result.String())
 	})
 
 	t.Run("A & unknown returns A", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		unknownType := NewUnknownType(nil)
 		result := NewIntersectionType(nil, strType, unknownType)
-		assert.Equal(t, strType, result)
+		assert.Equal(t, "string", result.String())
 	})
 
 	t.Run("A & any returns any", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		anyType := NewAnyType(nil)
 		result := NewIntersectionType(nil, strType, anyType)
-		assert.IsType(t, &AnyType{}, result)
+		assert.Equal(t, "any", result.String())
 	})
 
 	t.Run("conflicting primitives return never", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		numType := NewNumPrimType(nil)
 		result := NewIntersectionType(nil, strType, numType)
-		assert.IsType(t, &NeverType{}, result)
+		assert.Equal(t, "never", result.String())
 	})
 
 	t.Run("same primitive types are deduplicated", func(t *testing.T) {
 		strType1 := NewStrPrimType(nil)
 		strType2 := NewStrPrimType(nil)
 		result := NewIntersectionType(nil, strType1, strType2)
-		assert.Equal(t, strType1, result)
+		assert.Equal(t, "string", result.String())
 	})
 
 	t.Run("(mut T) & T returns T", func(t *testing.T) {
@@ -94,7 +92,7 @@ func TestIntersectionNormalization(t *testing.T) {
 		mutObj := NewMutableType(nil, obj)
 		result := NewIntersectionType(nil, mutObj, obj)
 		// Should return the immutable version
-		assert.Equal(t, obj, result)
+		assert.Equal(t, "{a: string}", result.String())
 	})
 
 	t.Run("T & (mut T) returns T", func(t *testing.T) {
@@ -104,7 +102,7 @@ func TestIntersectionNormalization(t *testing.T) {
 		mutObj := NewMutableType(nil, obj)
 		result := NewIntersectionType(nil, obj, mutObj)
 		// Should return the immutable version
-		assert.Equal(t, obj, result)
+		assert.Equal(t, "{a: string}", result.String())
 	})
 
 	t.Run("multiple unknown types are removed", func(t *testing.T) {
@@ -112,14 +110,14 @@ func TestIntersectionNormalization(t *testing.T) {
 		unknownType1 := NewUnknownType(nil)
 		unknownType2 := NewUnknownType(nil)
 		result := NewIntersectionType(nil, strType, unknownType1, unknownType2)
-		assert.Equal(t, strType, result)
+		assert.Equal(t, "string", result.String())
 	})
 
 	t.Run("only unknown types return never", func(t *testing.T) {
 		unknownType1 := NewUnknownType(nil)
 		unknownType2 := NewUnknownType(nil)
 		result := NewIntersectionType(nil, unknownType1, unknownType2)
-		assert.IsType(t, &NeverType{}, result)
+		assert.Equal(t, "never", result.String())
 	})
 
 	t.Run("complex normalization - mixed types", func(t *testing.T) {
@@ -134,8 +132,6 @@ func TestIntersectionNormalization(t *testing.T) {
 
 		result := NewIntersectionType(nil, obj1, unknownType, obj2, obj1)
 		// Should remove unknown and deduplicate obj1
-		intersection, ok := result.(*IntersectionType)
-		assert.True(t, ok, "Expected IntersectionType")
-		assert.Equal(t, 2, len(intersection.Types))
+		assert.Equal(t, "{a: string} & {b: string}", result.String())
 	})
 }

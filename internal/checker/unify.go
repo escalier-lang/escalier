@@ -897,48 +897,94 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 			return errors
 		}
 	}
-	// | IntersectionType, ObjectType -> ...
-	if intersection, ok := t1.(*type_system.IntersectionType); ok {
-		if obj, ok := t2.(*type_system.ObjectType); ok {
-			panic(fmt.Sprintf("TODO: unify types %#v and %#v", intersection, obj))
-		}
-	}
-	// | ObjectType, UnionType -> ...
-	// if obj, ok := t1.(*ObjectType); ok {
-	// 	if union, ok := t2.(*type_system.UnionType); ok {
-	// 		panic(fmt.Sprintf("TODO: unify types %#v and %#v", obj, union))
-	// 		// TODO
-	// 	}
-	// }
 	// | IntersectionType, IntersectionType -> ...
+	// Special case: both types are intersections
+	// First, try to distribute intersections over unions (Phase 2: Distributive laws)
+	// A & (B | C) should be equivalent to (A & B) | (A & C)
 	if intersection1, ok := t1.(*type_system.IntersectionType); ok {
+		distributed1, _ := distributeIntersectionOverUnion(intersection1)
+		// Check if distribution occurred by seeing if the type changed
+		if _, stillIntersection := distributed1.(*type_system.IntersectionType); !stillIntersection {
+			// Distribution created a different type (likely a union), retry unification
+			return c.Unify(ctx, distributed1, t2)
+		}
+
 		if intersection2, ok := t2.(*type_system.IntersectionType); ok {
-			// For intersection types to unify, t1 (A & B) must be a subtype of t2 (C & D)
-			// This means that for each type in t2, there must be at least one type in t1
-			// that can be unified with it.
-			//
-			// In other words: every constraint in t2 must be satisfied by t1
+			distributed2, _ := distributeIntersectionOverUnion(intersection2)
+			// Check if distribution occurred on t2
+			if _, stillIntersection := distributed2.(*type_system.IntersectionType); !stillIntersection {
+				// Distribution occurred on t2, retry unification
+				return c.Unify(ctx, distributed1, distributed2)
+			}
+
+			// For A & B <: C & D, every constraint in C & D must be satisfied by A & B
+			// This means for each part of t2, at least one part of t1 must be a subtype
 			errors := []Error{}
-			for _, t2Type := range intersection2.Types {
+			for _, t2Part := range intersection2.Types {
 				found := false
-				for _, t1Type := range intersection1.Types {
-					unifyErrors := c.Unify(ctx, t1Type, t2Type)
+				for _, t1Part := range intersection1.Types {
+					unifyErrors := c.Unify(ctx, t1Part, t2Part)
 					if len(unifyErrors) == 0 {
 						found = true
 						break
 					}
 				}
 				if !found {
-					// Could not find a matching type in intersection1 for this t2Type
+					// Could not find a matching type in intersection1 for this t2Part
 					errors = append(errors, &CannotUnifyTypesError{
 						T1: intersection1,
 						T2: intersection2,
 					})
-					break
 				}
 			}
 			return errors
 		}
+	}
+	// | IntersectionType, _ -> check if intersection is subtype of t2
+	// For an intersection A & B to be a subtype of C, at least one part of the
+	// intersection must be a subtype of C, OR the combined intersection satisfies C.
+	// We try each part and if any succeeds, the intersection is valid.
+	if intersection, ok := t1.(*type_system.IntersectionType); ok {
+		// First, try distribution (Phase 2: Distributive laws)
+		distributed, _ := distributeIntersectionOverUnion(intersection)
+		// Check if distribution occurred
+		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
+			// Distribution created a different type (likely a union), retry unification
+			return c.Unify(ctx, distributed, t2)
+		}
+
+		// Try to unify each part with t2
+		// If any part successfully unifies, the intersection is a valid subtype
+		var allErrors []Error
+		for _, part := range intersection.Types {
+			unifyErrors := c.Unify(ctx, part, t2)
+			if len(unifyErrors) == 0 {
+				// At least one part is a subtype of t2, so the intersection is valid
+				return nil
+			}
+			allErrors = slices.Concat(allErrors, unifyErrors)
+		}
+		// None of the parts successfully unified with t2
+		return allErrors
+	}
+	// | _, IntersectionType -> check if t1 is subtype of intersection
+	// For A to be a subtype of B & C, A must be a subtype of both B and C.
+	// This is because B & C requires all the properties of both B and C.
+	if intersection, ok := t2.(*type_system.IntersectionType); ok {
+		// First, try distribution (Phase 2: Distributive laws)
+		distributed, _ := distributeIntersectionOverUnion(intersection)
+		// Check if distribution occurred
+		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
+			// Distribution created a different type (likely a union), retry unification
+			return c.Unify(ctx, t1, distributed)
+		}
+
+		errors := []Error{}
+		for _, part := range intersection.Types {
+			unifyErrors := c.Unify(ctx, t1, part)
+			errors = slices.Concat(errors, unifyErrors)
+		}
+		return errors
 	}
 	// | UnionType, _ -> ...
 	if union, ok := t1.(*type_system.UnionType); ok {
@@ -1527,4 +1573,46 @@ func removeUncertainMutability(t type_system.Type) type_system.Type {
 	visitor := &RemoveUncertainMutabilityVisitor{}
 	result := t.Accept(visitor)
 	return result
+}
+
+// distributeIntersectionOverUnion distributes an intersection type over any unions it contains.
+// For example: A & (B | C) becomes (A & B) | (A & C)
+// Returns the original type if no distribution is needed or if distribution involves problematic nominal types.
+func distributeIntersectionOverUnion(intersection *type_system.IntersectionType) (type_system.Type, bool) {
+	// Check if any of the types in the intersection is a union
+	var unionIndex = -1
+	for i, t := range intersection.Types {
+		t = type_system.Prune(t)
+		if _, ok := t.(*type_system.UnionType); ok {
+			unionIndex = i
+			break
+		}
+	}
+
+	// No union found, return the intersection as-is
+	if unionIndex == -1 {
+		return intersection, false
+	}
+
+	union := type_system.Prune(intersection.Types[unionIndex]).(*type_system.UnionType)
+
+	otherTypes := make([]type_system.Type, 0, len(intersection.Types)-1)
+	otherTypes = append(otherTypes, intersection.Types[:unionIndex]...)
+	otherTypes = append(otherTypes, intersection.Types[unionIndex+1:]...)
+
+	// Create a new union where each member is the intersection of otherTypes with that union member
+	distributedTypes := make([]type_system.Type, 0, len(union.Types))
+	for _, unionMember := range union.Types {
+		// Create intersection: otherTypes & unionMember
+		intersectionTypes := make([]type_system.Type, 0, len(otherTypes)+1)
+		intersectionTypes = append(intersectionTypes, otherTypes...)
+		intersectionTypes = append(intersectionTypes, unionMember)
+
+		// Create the intersection (NewIntersectionType will normalize it)
+		newIntersection := type_system.NewIntersectionType(nil, intersectionTypes...)
+
+		distributedTypes = append(distributedTypes, newIntersection)
+	}
+
+	return type_system.NewUnionType(nil, distributedTypes...), true
 }
