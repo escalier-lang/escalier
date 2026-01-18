@@ -504,7 +504,6 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
    - Test coverage for property intersection from multiple object types
 
 7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
-7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
 8. **Phase 5.1 Remaining** (Function overloads) - Multiple function signatures in intersections
 9. **Phase 7.4-7.5** (Additional integration tests) - Verify edge cases
 10. **Phase 7.7** (Union distribution tests) - Final verification
