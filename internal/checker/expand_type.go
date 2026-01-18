@@ -585,6 +585,19 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
+	case *type_system.FuncType:
+		// Delegate function method calls to the Function interface
+		if _, ok := key.(PropertyKey); ok {
+			functionRef := &type_system.TypeRefType{
+				Name:     type_system.NewIdent("Function"),
+				TypeArgs: []type_system.Type{},
+			}
+			return c.getMemberType(ctx, functionRef, key)
+		}
+		// FuncType doesn't support index access
+		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		return type_system.NewNeverType(nil), errors
+
 	case *type_system.ObjectType:
 		return c.getObjectAccess(t, key, errors)
 	case *type_system.UnionType:
@@ -801,11 +814,14 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	// Separate object types from non-object types
 	objectTypes := []*type_system.ObjectType{}
+	funcTypes := []*type_system.FuncType{}
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
 		if objType, ok := part.(*type_system.ObjectType); ok {
 			objectTypes = append(objectTypes, objType)
+		} else if funcType, ok := part.(*type_system.FuncType); ok {
+			funcTypes = append(funcTypes, funcType)
 		}
 	}
 
@@ -849,9 +865,33 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		return type_system.NewIntersectionType(nil, memberTypes...), errors
 	}
 
-	// For mixed cases (e.g., branded primitives: string & {__brand: "email"})
-	// Try to access the member from each part and return the first successful one
+	// For mixed cases (e.g., branded primitives: string & {__brand: "email"}, or function & {metadata: string})
+	// First, collect all properties from object type parts
+	memberTypesFromObjects := []type_system.Type{}
+	for _, objType := range objectTypes {
+		memberType, memberErrors := c.getObjectAccess(objType, key, nil)
+		if len(memberErrors) == 0 {
+			memberTypesFromObjects = append(memberTypesFromObjects, memberType)
+		}
+	}
+
+	// If we found the property in multiple object types, intersect them
+	if len(memberTypesFromObjects) > 1 {
+		return type_system.NewIntersectionType(nil, memberTypesFromObjects...), errors
+	}
+
+	// If we found the property in exactly one object type, return it
+	if len(memberTypesFromObjects) == 1 {
+		return memberTypesFromObjects[0], errors
+	}
+
+	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
+		part = type_system.Prune(part)
+		// Skip object types since we already checked them
+		if _, ok := part.(*type_system.ObjectType); ok {
+			continue
+		}
 		memberType, memberErrors := c.getMemberType(ctx, part, key)
 		if len(memberErrors) == 0 {
 			return memberType, errors
