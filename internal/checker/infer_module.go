@@ -253,10 +253,14 @@ func (c *Checker) InferComponent(
 					Mutable: false,
 				})
 			} else {
+				// Merge with existing overload by creating a new intersection type
+				// This ensures proper normalization and deduplication
 				if it, ok := binding.Type.(*type_system.IntersectionType); ok {
-					// If the function type is already overloaded, update the intersection type.
-					it.Types = append(it.Types, funcType)
+					// Already an intersection, append to the list and recreate
+					allTypes := append(it.Types, funcType)
+					binding.Type = type_system.NewIntersectionType(nil, allTypes...)
 				} else {
+					// First overload, create new intersection
 					binding.Type = type_system.NewIntersectionType(nil, binding.Type, funcType)
 				}
 			}

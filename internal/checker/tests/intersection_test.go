@@ -783,3 +783,234 @@ func TestIntersectionMemberAccess(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionOverloads(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectedVars map[string]string
+		wantErr      bool
+	}{
+		"successful call to first overload (number)": {
+			input: `
+				declare fn format(value: number) -> string throws never
+				declare fn format(value: string) -> string throws never
+				val result = format(42)
+			`,
+			expectedVars: map[string]string{
+				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"result": "string",
+			},
+			wantErr: false,
+		},
+		"successful call to second overload (string)": {
+			input: `
+				declare fn format(value: number) -> string throws never
+				declare fn format(value: string) -> string throws never
+				val result = format("hello")
+			`,
+			expectedVars: map[string]string{
+				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"result": "string",
+			},
+			wantErr: false,
+		},
+		"no matching overload": {
+			input: `
+				declare fn format(value: number) -> string throws never
+				declare fn format(value: string) -> string throws never
+				val result = format(true)
+			`,
+			expectedVars: map[string]string{},
+			wantErr:      true,
+		},
+		"three overloads - all match correctly": {
+			input: `
+				declare fn process(value: number) -> string throws never
+				declare fn process(value: string) -> number throws never
+				declare fn process(value: boolean) -> void throws never
+				val r1 = process(42)
+				val r2 = process("hello")
+				val r3 = process(true)
+			`,
+			expectedVars: map[string]string{
+				"r1": "string",
+				"r2": "number",
+				"r3": "void",
+			},
+			wantErr: false,
+		},
+		"overload with different parameter counts": {
+			input: `
+				declare fn makeArray(value: number) -> Array<number> throws never
+				declare fn makeArray(value: number, count: number) -> Array<number> throws never
+				val arr1 = makeArray(5)
+				val arr2 = makeArray(5, 3)
+			`,
+			expectedVars: map[string]string{
+				"arr1": "Array<number>",
+				"arr2": "Array<number>",
+			},
+			wantErr: false,
+		},
+		"overload with optional parameters": {
+			input: `
+				declare fn greet(name: string) -> string throws never
+				declare fn greet(name: string, greeting: string) -> string throws never
+				val msg1 = greet("Alice")
+				val msg2 = greet("Bob", "Hello")
+			`,
+			expectedVars: map[string]string{
+				"msg1": "string",
+				"msg2": "string",
+			},
+			wantErr: false,
+		},
+		"overload with generic function": {
+			input: `
+				declare fn identity<T>(value: T) -> T throws never
+				declare fn identity(value: string) -> string throws never
+				val str = identity("hello")
+			`,
+			expectedVars: map[string]string{
+				"str": "\"hello\"",
+			},
+			wantErr: false,
+		},
+		"overload return types are correctly inferred": {
+			input: `
+				declare fn convert(value: number) -> string throws never
+				declare fn convert(value: string) -> number throws never
+				val strResult = convert(42)
+				val numResult = convert("123")
+			`,
+			expectedVars: map[string]string{
+				"strResult": "string",
+				"numResult": "number",
+			},
+			wantErr: false,
+		},
+		"overload with rest parameters": {
+			input: `
+				declare fn sum(x: number) -> number throws never
+				declare fn sum(x: number, ...rest: Array<number>) -> number throws never
+				val r1 = sum(1)
+				val r2 = sum(1, 2, 3, 4)
+			`,
+			expectedVars: map[string]string{
+				"r1": "number",
+				"r2": "number",
+			},
+			wantErr: false,
+		},
+		"overload intersection type is preserved": {
+			input: `
+				declare fn format(value: number) -> string throws never
+				declare fn format(value: string) -> string throws never
+			`,
+			expectedVars: map[string]string{
+				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+			},
+			wantErr: false,
+		},
+		"wrong argument type for all overloads": {
+			input: `
+				declare fn parse(value: number) -> string throws never
+				declare fn parse(value: string) -> number throws never
+				val result = parse({x: 5})
+			`,
+			expectedVars: map[string]string{},
+			wantErr:      true,
+		},
+		"overload returns first matching signature": {
+			input: `
+				declare fn process(value: string | number) -> string throws never
+				declare fn process(value: number) -> number throws never
+				val result = process(42)
+			`,
+			expectedVars: map[string]string{
+				"result": "string",
+			},
+			wantErr: false,
+		},
+		"multiple overloads with incompatible return types": {
+			input: `
+				declare fn getData(id: number) -> {name: string} throws never
+				declare fn getData(id: string) -> {age: number} throws never
+				val data1 = getData(123)
+				val data2 = getData("abc")
+			`,
+			expectedVars: map[string]string{
+				"data1": "{name: string}",
+				"data2": "{age: number}",
+			},
+			wantErr: false,
+		},
+		"overload with too few arguments": {
+			input: `
+				declare fn calculate(x: number, y: number) -> number throws never
+				declare fn calculate(x: number, y: number, z: number) -> number throws never
+				val result = calculate(5)
+			`,
+			expectedVars: map[string]string{},
+			wantErr:      true,
+		},
+		"overload with too many arguments": {
+			input: `
+				declare fn add(x: number) -> number throws never
+				declare fn add(x: number, y: number) -> number throws never
+				val result = add(1, 2, 3)
+			`,
+			expectedVars: map[string]string{},
+			wantErr:      true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: tc.input,
+			}
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
+
+			if tc.wantErr {
+				assert.True(t, len(inferErrors) > 0, "Expected inference errors but got none")
+			} else {
+				if len(inferErrors) > 0 {
+					for _, err := range inferErrors {
+						t.Logf("Inference error: %v", err.Message())
+					}
+				}
+				assert.Equal(t, 0, len(inferErrors), "Unexpected inference errors")
+			}
+
+			// Verify that all expected variables have the correct types
+			for expectedName, expectedType := range tc.expectedVars {
+				binding, exists := scope.Values[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					actualType := binding.Type.String()
+					assert.Equal(t, expectedType, actualType,
+						"Type mismatch for variable %s: expected %s but got %s", expectedName, expectedType, actualType)
+				}
+			}
+		})
+	}
+}

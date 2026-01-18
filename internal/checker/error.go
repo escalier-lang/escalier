@@ -35,6 +35,7 @@ func (e UnknownOperatorError) isError()                     {}
 func (e UnknownTypeError) isError()                         {}
 func (e CalleeIsNotCallableError) isError()                 {}
 func (e InvalidNumberOfArgumentsError) isError()            {}
+func (e NoMatchingOverloadError) isError()                  {}
 func (e ExpectedObjectError) isError()                      {}
 func (e ExpectedArrayError) isError()                       {}
 func (e CyclicDependencyError) isError()                    {}
@@ -307,6 +308,38 @@ func (e InvalidNumberOfArgumentsError) Span() ast.Span {
 func (e InvalidNumberOfArgumentsError) Message() string {
 	return "Invalid number of arguments for function: " + e.Callee.String() +
 		". Expected: " + strconv.Itoa(len(e.Callee.Params)) + ", got: " + strconv.Itoa(len(e.Args))
+}
+
+type NoMatchingOverloadError struct {
+	CallExpr         *ast.CallExpr
+	IntersectionType *type_system.IntersectionType
+	AttemptedErrors  [][]Error
+}
+
+func (e NoMatchingOverloadError) Span() ast.Span {
+	return e.CallExpr.Span()
+}
+func (e NoMatchingOverloadError) Message() string {
+	msg := "No overload matches this call:\n"
+
+	// Collect all function types from the intersection
+	funcTypes := []*type_system.FuncType{}
+	for _, t := range e.IntersectionType.Types {
+		if funcType, ok := t.(*type_system.FuncType); ok {
+			funcTypes = append(funcTypes, funcType)
+		}
+	}
+
+	// Show each overload with its errors
+	for i, funcType := range funcTypes {
+		msg += "  Overload " + strconv.Itoa(i+1) + ": " + funcType.String()
+		if i < len(e.AttemptedErrors) && len(e.AttemptedErrors[i]) > 0 {
+			msg += "\n    Error: " + e.AttemptedErrors[i][0].Message()
+		}
+		msg += "\n"
+	}
+
+	return msg
 }
 
 type ExpectedObjectError struct {

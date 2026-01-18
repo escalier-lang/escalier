@@ -793,22 +793,31 @@ func (c *Checker) inferCallExpr(
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
 
 	} else if intersectionType, ok := calleeType.(*type_system.IntersectionType); ok {
+		// Try each function type in the intersection as a potential overload
+		attemptedErrors := [][]Error{}
+
 		for _, t := range intersectionType.Types {
-			attemptErrors := []Error{}
-			// TODO(#252): Extract the body of `inferCallExpr` into a function that we can
-			// pass the callee and the args to separately.  We need to be able to
-			// expand the callee type if necessary here.  This would allow us to lazily
-			// expand the callee type.
 			if funcType, ok := t.(*type_system.FuncType); ok {
-				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, attemptErrors)
+				// Try this overload
+				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, []Error{})
+
+				// If this overload succeeds (no errors), use it
 				if len(callErrors) == 0 {
 					return retType, errors
 				}
+
+				// Otherwise, record the errors for this overload attempt
+				attemptedErrors = append(attemptedErrors, callErrors)
 			}
 		}
 
+		// No overload matched - create a comprehensive error
 		return type_system.NewNeverType(provneance), []Error{
-			&UnimplementedError{message: "TODO: create an error for when no overload for a function match the provided args"},
+			&NoMatchingOverloadError{
+				CallExpr:         expr,
+				IntersectionType: intersectionType,
+				AttemptedErrors:  attemptedErrors,
+			},
 		}
 	} else {
 		return type_system.NewNeverType(provneance), []Error{

@@ -386,16 +386,32 @@ case *type_system.IntersectionType:
 
 #### Task 5.1: Function Intersections (Overloads) ✅ COMPLETE
 
-**Status**: Basic function/object intersection support implemented
+**Status**: Fully implemented and tested
 
-Function types can now be intersected with object types to add custom properties:
-- `(fn () -> void) & {metadata: string}` works correctly
-- Member access checks object types first, then falls back to Function interface methods
-- Tests verify both custom properties and Function methods (apply, call, bind) are accessible
+Function overloads are now fully supported via intersection types:
+- Multiple `declare fn` declarations with the same name are merged into an intersection type ✅
+- Function call inference tries each overload in order and returns the first match ✅
+- Comprehensive error reporting when no overload matches ✅
+- Function/object intersections (e.g., `fn & {metadata: string}`) work correctly ✅
+- Member access checks object types first, then falls back to Function interface methods ✅
 
-**Remaining Work**:
-- Function overloads (multiple function signatures in an intersection)
-- May require changes to function call inference in `internal/checker/infer_expr.go`
+**Implementation Details**:
+- Updated `InferComponent` in `internal/checker/infer_module.go` to properly merge multiple function declarations using `NewIntersectionType` (ensuring normalization)
+- Added `NoMatchingOverloadError` in `internal/checker/error.go` that shows all attempted overloads with their specific errors
+- Updated `inferCallExpr` in `internal/checker/infer_expr.go` to iterate through intersection types and try each function signature
+- Added 15 comprehensive test cases in `TestFunctionOverloads` covering various scenarios
+- Created integration test fixture in `fixtures/intersection_types/`
+
+**Test Coverage**:
+- Successful calls to different overloads ✅
+- No matching overload error cases ✅
+- Different parameter counts ✅
+- Optional parameters ✅
+- Rest parameters ✅
+- Generic function overloads ✅
+- Multiple return types ✅
+- Too few/too many arguments ✅
+- All 15 unit tests passing ✅
 
 #### Task 5.2: Primitive & Object Intersections (Branded Types) ✅ COMPLETE
 Already partially handled by normalization, but verify:
@@ -446,12 +462,12 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
    - `number & {__brand: "currency"}`
    - Assignment compatibility
 
-5. **Function intersections** ✅ PARTIALLY COMPLETE
+5. **Function intersections** ✅ COMPLETE
    - Function/object intersections (e.g., `fn & {metadata: string}`) ✅
    - Custom property access ✅
    - Function interface method access ✅
-   - Overloaded functions (TODO)
-   - Calling with different signatures (TODO)
+   - Overloaded functions ✅
+   - Calling with different signatures ✅
 
 6. **Subtyping**
    - `A & B <: A` and `A & B <: B`
@@ -503,8 +519,15 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
    - 4 test cases for function/object intersections
    - Test coverage for property intersection from multiple object types
 
-7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
-8. **Phase 5.1 Remaining** (Function overloads) - Multiple function signatures in intersections
+7. **Phase 5.1** (Function overloads) - ✅ **COMPLETE**
+   - Implemented proper merging of multiple `declare fn` declarations
+   - Added `NoMatchingOverloadError` with comprehensive error messages
+   - Updated function call inference to try all overloads in order
+   - Added 15 comprehensive test cases in `TestFunctionOverloads`
+   - Created integration test fixture in `fixtures/intersection_types/`
+   - All tests passing ✅
+
+8. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
 9. **Phase 7.4-7.5** (Additional integration tests) - Verify edge cases
 10. **Phase 7.7** (Union distribution tests) - Final verification
 11. **Phase 6** (Code generation) - Ensure output is correct
@@ -526,7 +549,10 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - [x] Custom properties accessible on function intersections
 - [x] Function interface methods accessible on function intersections
 - [x] `getMemberType` added support for `FuncType` to delegate to Function interface
-- [ ] Function overloads (multiple function signatures) implemented
+- [x] Function overloads (multiple function signatures) implemented
+- [x] Function call inference tries all overloads and returns first match
+- [x] Comprehensive error messages when no overload matches
+- [x] 15 unit tests for function overloads passing
 - [ ] All integration test fixtures pass
 - [ ] Generated TypeScript code is valid
 
@@ -535,12 +561,14 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - **Phase 4 Complete**: Integrated into type expansion visitor
 - **Phase 2 Complete**: Intersection type unification fully implemented in `Unify` function ✅
 - **Phase 3 Complete**: Member access support fully implemented in `getMemberType` and `mergeObjectTypes` ✅
-- **Phase 5.1 Partial**: Function/object intersection support implemented, function overloads TODO
+- **Phase 5.1 Complete**: Function overloads fully implemented with comprehensive tests ✅
 - **Phase 5.2 Complete**: Branded types fully working with comprehensive tests ✅
 - **Branded Types Working**: Tests confirm that `primitive & object` intersections correctly support both primitive methods and object properties ✅
 - **Function Intersections Working**: Tests confirm that `function & object` intersections correctly support both custom properties and Function interface methods ✅
+- **Function Overloads Working**: Multiple `declare fn` declarations are properly merged into intersection types, calls try each overload in order ✅
 - **Bug Fix**: Fixed infinite loop in `getMemberType` by stopping expansion when `IntersectionType` is encountered
 - **Bug Fix**: Fixed `getIntersectionAccess` to collect all matching properties from object types before falling back
+- **Bug Fix**: Fixed function overload merging to use `NewIntersectionType` instead of direct mutation for proper normalization
 - **Two-Phase Normalization Strategy**:
   - Initial: Basic flattening and obvious simplifications (any, never, duplicates)
   - Post-inference: More sophisticated normalization using `NormalizeIntersectionType` after type resolution
@@ -552,9 +580,13 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
   - Called automatically in `ExitType` visitor after type expansion
   - `getMemberType` now has a case for `FuncType` that delegates to Function interface
   - `getIntersectionAccess` prioritizes object type properties over primitive/function methods
+  - `InferComponent` properly merges function declarations using `NewIntersectionType` for normalization
+  - `inferCallExpr` iterates through intersection types to find matching overloads
+  - `NoMatchingOverloadError` provides detailed error messages showing all attempted overloads
 - TypeScript compatibility is the goal - match TypeScript semantics exactly
 - **Testing Strategy**: 
   - Unit tests in `internal/type_system/intersection_test.go` for basic normalization ✅
   - Unit tests in `internal/checker/tests/` for post-inference and type checking behaviors ✅
-  - Integration tests in `fixtures/intersection_types/` verify end-to-end functionality (TODO)
+  - 15 comprehensive unit tests for function overloads in `TestFunctionOverloads` ✅
+  - Integration tests in `fixtures/intersection_types/` verify end-to-end functionality ✅
 
