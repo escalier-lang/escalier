@@ -741,11 +741,12 @@ func (c *Checker) inferCallExpr(
 		argTypes[i] = argType
 	}
 
-	// Check if calleeType is a FuncType
-	if fnType, ok := calleeType.(*type_system.FuncType); ok {
-		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
-	} else if typeRefType, ok := calleeType.(*type_system.TypeRefType); ok {
-		name := type_system.QualIdentToString(typeRefType.Name)
+	switch t := calleeType.(type) {
+	case *type_system.FuncType:
+		return c.handleFuncCall(ctx, t, expr, argTypes, provneance, errors)
+
+	case *type_system.TypeRefType:
+		name := type_system.QualIdentToString(t.Name)
 		typeAlias := ctx.Scope.getTypeAlias(name)
 
 		if objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType); ok {
@@ -771,11 +772,12 @@ func (c *Checker) inferCallExpr(
 		} else {
 			panic("TODO: try expanding the type alias using ExpandType")
 		}
-	} else if objType, ok := calleeType.(*type_system.ObjectType); ok {
+
+	case *type_system.ObjectType:
 		// Check if ObjectType has a constructor or callable element
 		var fnType *type_system.FuncType = nil
 
-		for _, elem := range objType.Elems {
+		for _, elem := range t.Elems {
 			if constructorElem, ok := elem.(*type_system.ConstructorElem); ok {
 				fnType = constructorElem.Fn
 				break
@@ -792,25 +794,34 @@ func (c *Checker) inferCallExpr(
 
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
 
-	} else if intersectionType, ok := calleeType.(*type_system.IntersectionType); ok {
-		for _, t := range intersectionType.Types {
-			attemptErrors := []Error{}
-			// TODO(#252): Extract the body of `inferCallExpr` into a function that we can
-			// pass the callee and the args to separately.  We need to be able to
-			// expand the callee type if necessary here.  This would allow us to lazily
-			// expand the callee type.
-			if funcType, ok := t.(*type_system.FuncType); ok {
-				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, attemptErrors)
+	case *type_system.IntersectionType:
+		// Try each function type in the intersection as a potential overload
+		attemptedErrors := [][]Error{}
+
+		for _, funcType := range t.Types {
+			if funcType, ok := funcType.(*type_system.FuncType); ok {
+				// Try this overload
+				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, []Error{})
+
+				// If this overload succeeds (no errors), use it
 				if len(callErrors) == 0 {
 					return retType, errors
 				}
+
+				// Otherwise, record the errors for this overload attempt
+				attemptedErrors = append(attemptedErrors, callErrors)
 			}
 		}
 
-		return type_system.NewNeverType(provneance), []Error{
-			&UnimplementedError{message: "TODO: create an error for when no overload for a function match the provided args"},
+		// No overload matched - create a comprehensive error
+		overloadErr := &NoMatchingOverloadError{
+			CallExpr:         expr,
+			IntersectionType: t,
+			AttemptedErrors:  attemptedErrors,
 		}
-	} else {
+		return type_system.NewNeverType(provneance), append(errors, overloadErr)
+
+	default:
 		return type_system.NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 	}
