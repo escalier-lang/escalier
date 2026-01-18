@@ -493,24 +493,27 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 1. **Phase 1** (Basic normalization in constructor) - ✅ **COMPLETE**
    - Implemented `NewIntersectionType` with normalization
    - Uses `Equals()` for reliable deduplication
-   - Handles basic cases: flattening, never/any/un✅ **COMPLETE**
+   - Handles basic cases: flattening, never/any/unknown, primitives, mutability ✅
+   - Added 15 comprehensive test cases - all passing
+
+2. **Phase 1.5** (Post-inference normalization) - ✅ **COMPLETE**
    - Implemented `NormalizeIntersectionType()` as method on `*Checker`
    - Handles type alias resolution via `ExpandType`
    - Applied in `ExitType` visitor for automatic re-normalization
    - Added 10 comprehensive test cases - all passing
 
-4. **Phase 2** (Unify support) - **NEXT PRIORITY**
-3. **Phase 1.5** (Post-inference normalization) - **NEXT PRIORITY**
-   - Create `NormalizeIntersectionType()` helper function
-   - Handle type alias resolution
-   - Apply after type variable substitution
-   - Add tests for post-inference normalization scenarios
+3. **Phase 2** (Unify support) - ✅ **COMPLETE**
+   - Implemented general `IntersectionType & _` case (at least one part must satisfy)
+   - Implemented general `_ & IntersectionType` case (must satisfy all parts)
+   - Implemented specific `IntersectionType & IntersectionType` case
+   - All 10 unit tests passing in `intersection_unify_test.go`
+   - No regressions in existing test suite
 
-4. **Phase 2** (Unify support) - Core type checking
-5. **Phase 7.6** (Subtyping tests) - Ve✅ **COMPLETE** (implemented with Phase 1.5)
-   - Add unit tests to `intersection_test.go` for subtyping rules
-   - Add integration test fixtures for subtyping scenarios
-6. **Phase 3** (Member access) - Enable practical usage
+4. **Phase 7.6** (Subtyping tests) - ✅ **COMPLETE** (implemented with Phase 2)
+   - Added unit tests to `intersection_unify_test.go` for subtyping rules
+   - Tests cover intersection with objects, primitives, and other intersections
+
+5. **Phase 3** (Member access) - **NEXT PRIORITY**
 7. **Phase 7.3** (Member access tests) - Verify Phase 3
    - Add unit tests to `intersection_test.go` for property/method access
    - Add integration test fixtures for member access
@@ -526,19 +529,19 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - [x] Unit tests for post-inference normalization passing (10 test cases)
 - [x] Intersection types are properly normalized after type inference
 - [x] Type alias expansion within intersections working
+- [x] Intersection type unification fully implemented in `Unify`
+- [x] All intersection unify tests passing (10 test cases in `intersection_unify_test.go`)
+- [x] No regressions in existing test suite (all 100+ tests passing)
+- [x] Subtyping rules correctly implemented for intersections
 - [ ] All integration test fixtures pass
-- [ ] No TODO panics remain for intersection types
 - [ ] Member access works on intersection types
-- [ ] Member access works on intersection types
-- [ ] Intersection types are properly normalized after type inference
-- [ ] Subtyping rules are correctly implemented
 - [ ] Branded types work as expected
 - [ ] Generated TypeScript code is valid
-- [ ] No regressions in existing tests
 
 ## Notes
-Phase 1.5 Complete**: Post-inference normalization implemented as `*Checker` method
+- **Phase 1.5 Complete**: Post-inference normalization implemented as `*Checker` method
 - **Phase 4 Complete**: Integrated into type expansion visitor
+- **Phase 2 Complete**: Intersection type unification fully implemented in `Unify` function ✅
 - **Two-Phase Normalization Strategy**:
   - Phase 1: Basic normalization at construction time (handles syntactic cases) ✅
   - Phase 1.5: Post-inference normalization (handles semantic equivalences after type resolution) ✅

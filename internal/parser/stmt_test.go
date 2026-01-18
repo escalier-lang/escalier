@@ -229,6 +229,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 				| Bar
 				| Baz`,
 		},
+		"TypeDeclWithIntersectionType": {
+			input: `type MyType = string & number | boolean`,
+		},
 		"InterfaceDecl": {
 			input: "interface Point { x: number, y: number }",
 		},

@@ -7429,3 +7429,76 @@ nil
     },
 }
 ---
+
+[TestParseStmtNoErrors/TypeDeclWithIntersectionType - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "MyType",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        TypeAnn:    &ast.UnionTypeAnn{
+            Types: {
+                &ast.IntersectionTypeAnn{
+                    Types: {
+                        &ast.StringTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:15},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:24},
+                                End:      ast.Location{Line:1, Column:30},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:15},
+                        End:      ast.Location{Line:1, Column:30},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                &ast.BooleanTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
+                        End:      ast.Location{Line:1, Column:40},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:15},
+                End:      ast.Location{Line:1, Column:40},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:40},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:40},
+        SourceID: 0,
+    },
+}
+---
