@@ -1185,6 +1185,18 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"tupleTail":   "Array<5 | \"hello\" | true>",
 			},
 		},
+		"MethodsOnFunctions": {
+			input: `
+				val func = fn (x: number) -> number {
+					return x * 2
+				}
+				val arity = func.length
+			`,
+			expectedTypes: map[string]string{
+				"func":  "fn (x: number) -> number throws never",
+				"arity": "number",
+			},
+		},
 		"IndexOnArray": {
 			input: `
 				val array: Array<number> = [10, 20, 30]

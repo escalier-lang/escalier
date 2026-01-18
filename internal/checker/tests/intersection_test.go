@@ -692,6 +692,54 @@ func TestIntersectionMemberAccess(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		"function intersection - access object property": {
+			input: `
+				type Callable = (fn () -> string throws never) & {metadata: string}
+				declare val func: Callable
+				val meta = func.metadata
+			`,
+			expectedVars: map[string]string{
+				"meta": "string",
+			},
+			wantErr: false,
+		},
+		"function intersection - access Function method": {
+			input: `
+				type Callable = (fn () -> string throws never) & {metadata: string}
+				declare val func: Callable
+				val apply = func.apply
+			`,
+			expectedVars: map[string]string{
+				"apply": "fn (this: Function, thisArg: any, argArray?: any) -> any throws never",
+			},
+			wantErr: false,
+		},
+		"function intersection - multiple object properties": {
+			input: `
+				type EnhancedFunc = (fn (x: number) -> number throws never) & {name: string, version: number}
+				declare val func: EnhancedFunc
+				val name = func.name
+				val version = func.version
+			`,
+			expectedVars: map[string]string{
+				"name":    "string",
+				"version": "number",
+			},
+			wantErr: false,
+		},
+		"function intersection - access both Function method and custom property": {
+			input: `
+				type Tagged = (fn () -> void throws never) & {tag: string}
+				declare val func: Tagged
+				val tag = func.tag
+				val call = func.call
+			`,
+			expectedVars: map[string]string{
+				"tag":  "string",
+				"call": "fn (this: Function, thisArg: any, ...argArray: Array<any>) -> any throws never",
+			},
+			wantErr: false,
+		},
 	}
 
 	for name, tc := range tests {
