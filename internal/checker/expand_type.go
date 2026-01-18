@@ -438,7 +438,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	objType = type_system.Prune(objType)
 
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
-	// or can't be expanded any further
+	// IntersectionType, or can't be expanded any further
 	for {
 		expandedType, expandErrors := c.ExpandType(ctx, objType, 1)
 		errors = slices.Concat(errors, expandErrors)
@@ -450,12 +450,15 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 		objType = expandedType
 
-		// If we've reached an ObjectType or NamespaceType, we can stop expanding
+		// If we've reached an ObjectType, NamespaceType, or IntersectionType, we can stop expanding
 		// since these are the types we can directly get properties from
 		if _, ok := objType.(*type_system.ObjectType); ok {
 			break
 		}
 		if _, ok := objType.(*type_system.NamespaceType); ok {
+			break
+		}
+		if _, ok := objType.(*type_system.IntersectionType); ok {
 			break
 		}
 	}
@@ -604,6 +607,8 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		// NamespaceType doesn't support index access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
+	case *type_system.IntersectionType:
+		return c.getIntersectionAccess(ctx, t, key, errors)
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
@@ -785,6 +790,88 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		return resultType, errors
 	}
 
+	return type_system.NewNeverType(nil), errors
+}
+
+// getIntersectionAccess handles property and index access on IntersectionType
+func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
+	// For an intersection A & B, member access should:
+	// 1. If all parts are object types, merge their properties (the result is the intersection of matching property types)
+	// 2. Otherwise, try to access from each part and use the first successful one
+
+	// Separate object types from non-object types
+	objectTypes := []*type_system.ObjectType{}
+
+	for _, part := range intersectionType.Types {
+		part = type_system.Prune(part)
+		if objType, ok := part.(*type_system.ObjectType); ok {
+			objectTypes = append(objectTypes, objType)
+		}
+	}
+
+	// If all parts are object types, merge their properties
+	if len(objectTypes) == len(intersectionType.Types) {
+		memberTypes := []type_system.Type{}
+		foundAny := false
+
+		for _, objType := range objectTypes {
+			memberType, memberErrors := c.getObjectAccess(objType, key, nil)
+			// Only include results from object types that have this property
+			if len(memberErrors) == 0 {
+				memberTypes = append(memberTypes, memberType)
+				foundAny = true
+			}
+		}
+
+		if !foundAny {
+			// Property doesn't exist in any part of the intersection
+			if propKey, ok := key.(PropertyKey); ok {
+				errors = append(errors, &UnknownPropertyError{
+					ObjectType: intersectionType,
+					Property:   propKey.Name,
+					span:       propKey.Span(),
+				})
+			} else {
+				indexKey := key.(IndexKey)
+				errors = append(errors, &InvalidObjectKeyError{
+					Key:  indexKey.Type,
+					span: indexKey.Span(),
+				})
+			}
+			return type_system.NewNeverType(nil), errors
+		}
+
+		// The result type is the intersection of all matching property types
+		// This ensures that the property type satisfies all parts of the intersection
+		if len(memberTypes) == 1 {
+			return memberTypes[0], errors
+		}
+		return type_system.NewIntersectionType(nil, memberTypes...), errors
+	}
+
+	// For mixed cases (e.g., branded primitives: string & {__brand: "email"})
+	// Try to access the member from each part and return the first successful one
+	for _, part := range intersectionType.Types {
+		memberType, memberErrors := c.getMemberType(ctx, part, key)
+		if len(memberErrors) == 0 {
+			return memberType, errors
+		}
+	}
+
+	// If no part has this property, report error
+	if propKey, ok := key.(PropertyKey); ok {
+		errors = append(errors, &UnknownPropertyError{
+			ObjectType: intersectionType,
+			Property:   propKey.Name,
+			span:       propKey.Span(),
+		})
+	} else {
+		indexKey := key.(IndexKey)
+		errors = append(errors, &InvalidObjectKeyError{
+			Key:  indexKey.Type,
+			span: indexKey.Span(),
+		})
+	}
 	return type_system.NewNeverType(nil), errors
 }
 
@@ -1091,36 +1178,45 @@ func (c *Checker) NormalizeIntersectionType(ctx Context, t *type_system.Intersec
 }
 
 // mergeObjectTypes merges multiple object types into a single object type
-// by combining their elements. In case of property conflicts, properties from
-// later types override properties from earlier types.
+// by combining their elements. When properties have the same name, their types
+// are intersected (e.g., {x: string} & {x: number} becomes {x: string & number}).
 func (c *Checker) mergeObjectTypes(prov provenance.Provenance, types []type_system.Type) type_system.Type {
 	mergedElems := []type_system.ObjTypeElem{}
-	seenProps := make(map[string]bool)
+	propMap := make(map[string]int) // Maps property key to index in mergedElems
 
 	// Iterate through object types and collect their elements
 	for _, typ := range types {
 		if obj, ok := typ.(*type_system.ObjectType); ok {
 			for _, elem := range obj.Elems {
-				// Track property names to handle overwrites
 				if propElem, ok := elem.(*type_system.PropertyElem); ok {
 					propKey := propElem.Name.String()
-					// If we've already seen this property, we need to handle the merge
-					// For now, we'll overwrite (later properties take precedence)
-					// In a full implementation, we'd handle contravariance/covariance
-					if !seenProps[propKey] {
-						mergedElems = append(mergedElems, elem)
-						seenProps[propKey] = true
-					} else {
-						// Find and replace the existing property
-						for i, e := range mergedElems {
-							if p, ok := e.(*type_system.PropertyElem); ok && p.Name.String() == propKey {
-								mergedElems[i] = elem
-								break
-							}
+
+					if idx, exists := propMap[propKey]; exists {
+						// Property already exists - create intersection of the types
+						existingProp := mergedElems[idx].(*type_system.PropertyElem)
+						intersectedType := type_system.NewIntersectionType(
+							nil,
+							existingProp.Value,
+							propElem.Value,
+						)
+
+						// Update the property with the intersected type
+						// Preserve other attributes from the first occurrence
+						updatedProp := &type_system.PropertyElem{
+							Name:     existingProp.Name,
+							Value:    intersectedType,
+							Optional: existingProp.Optional && propElem.Optional, // Both must be optional
+							Readonly: existingProp.Readonly || propElem.Readonly, // Either readonly makes it readonly
 						}
+						mergedElems[idx] = updatedProp
+					} else {
+						// First occurrence of this property - add it
+						propMap[propKey] = len(mergedElems)
+						mergedElems = append(mergedElems, propElem)
 					}
 				} else {
 					// For non-property elements (methods, getters, setters), just append
+					// TODO: Handle method/getter/setter conflicts similarly
 					mergedElems = append(mergedElems, elem)
 				}
 			}

@@ -208,9 +208,9 @@ func TestDistributiveLawsUsingExpandType(t *testing.T) {
 		"distribution with overlapping properties": {
 			input: `
                 type T1 = {x: number} & ({x: 5} | {x: 10})
-                type T2 = {x: 5} | {x: 10}
+                type T2 = {x: number & 5} | {x: number & 10}
             `,
-			wantErr: false, // {x: number} & {x: 5} = {x: 5}, so distributes to {x: 5} | {x: 10}
+			wantErr: false, // {x: number} & {x: 5} = {x: number & 5} (could be simplified to {x: 5} with subtype checking)
 		},
 		"distribution with branded types": {
 			input: `
@@ -576,6 +576,169 @@ func TestUnifyWithIntersections(t *testing.T) {
 			}
 			if !tc.wantErr && len(unifyErrors) > 0 {
 				t.Errorf("Unify() unexpected error: %v", unifyErrors)
+			}
+		})
+	}
+}
+
+func TestIntersectionMemberAccess(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectedVars map[string]string
+		wantErr      bool
+	}{
+		"simple property access on object intersection": {
+			input: `
+				type A = {x: string}
+				type B = {y: number}
+				type C = A & B
+				declare val obj: C
+				val x = obj.x
+				val y = obj.y
+			`,
+			expectedVars: map[string]string{
+				"x": "string",
+				"y": "number",
+			},
+			wantErr: false,
+		},
+		"property access returns intersection when both objects have the property": {
+			input: `
+				type A = {value: string}
+				type B = {value: number}
+				type C = A & B
+				declare val obj: C
+				val value = obj.value
+			`,
+			expectedVars: map[string]string{
+				"value": "never",
+			},
+			wantErr: false,
+		},
+		"three-way intersection property access": {
+			input: `
+				type A = {a: string}
+				type B = {b: number}
+				type C = {c: boolean}
+				type D = A & B & C
+				declare val obj: D
+				val a = obj.a
+				val b = obj.b
+				val c = obj.c
+			`,
+			expectedVars: map[string]string{
+				"a": "string",
+				"b": "number",
+				"c": "boolean",
+			},
+			wantErr: false,
+		},
+		"branded primitive - access object property": {
+			input: `
+				type Email = string & {__brand: "email"}
+				declare val email: Email
+				val brand = email.__brand
+			`,
+			expectedVars: map[string]string{
+				"brand": "\"email\"",
+			},
+			wantErr: false,
+		},
+		"branded primitive - access primitive method": {
+			input: `
+				type Email = string & {__brand: "email"}
+				declare val email: Email
+				val len = email.length
+			`,
+			expectedVars: map[string]string{
+				"len": "number",
+			},
+			wantErr: false,
+		},
+		"branded number - access object property": {
+			input: `
+				type UserId = number & {__brand: "userId"}
+				declare val id: UserId
+				val brand = id.__brand
+			`,
+			expectedVars: map[string]string{
+				"brand": "\"userId\"",
+			},
+			wantErr: false,
+		},
+		"branded number - access primitive method": {
+			input: `
+				type UserId = number & {__brand: "userId"}
+				declare val id: UserId
+				val fixed = id.toFixed
+			`,
+			expectedVars: map[string]string{
+				"fixed": "fn (fractionDigits?: number) -> string throws never",
+			},
+			wantErr: false,
+		},
+		"multiple branded properties": {
+			input: `
+				type Tagged = string & {__brand: "tag", __version: 1}
+				declare val tagged: Tagged
+				val brand = tagged.__brand
+				val version = tagged.__version
+				val len = tagged.length
+			`,
+			expectedVars: map[string]string{
+				"brand":   "\"tag\"",
+				"version": "1",
+				"len":     "number",
+			},
+			wantErr: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.es",
+				Contents: tc.input,
+			}
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			if len(errors) > 0 {
+				t.Fatalf("Parse errors: %v", errors)
+			}
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
+
+			if tc.wantErr {
+				assert.True(t, len(inferErrors) > 0, "Expected inference errors but got none")
+			} else {
+				if len(inferErrors) > 0 {
+					for _, err := range inferErrors {
+						t.Logf("Inference error: %v", err.Message())
+					}
+				}
+				assert.Equal(t, 0, len(inferErrors), "Unexpected inference errors")
+			}
+
+			// Verify that all expected variables have the correct types
+			for expectedName, expectedType := range tc.expectedVars {
+				binding, exists := scope.Values[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					actualType := binding.Type.String()
+					assert.Equal(t, expectedType, actualType,
+						"Type mismatch for variable %s: expected %s but got %s", expectedName, expectedType, actualType)
+				}
 			}
 		})
 	}

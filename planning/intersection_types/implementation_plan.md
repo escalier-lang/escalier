@@ -302,94 +302,46 @@ The existing code at line 914 looks reasonable but should be reviewed:
 - Add comments explaining the algorithm
 - Consider whether we need both directions (already handled by general cases above)
 
-### Phase 3: Member Access Support (High Priority)
+### Phase 3: Member Access Support (High Priority) ✅ COMPLETE
 
 **Location**: `internal/checker/expand_type.go` - `getMemberType` function
 
-Add a new case in the switch statement (around line 570, after UnionType case):
+**Status**: Implemented and tested
 
+**Tasks Completed**:
+1. ✅ Added `IntersectionType` case in `getMemberType` switch statement
+2. ✅ Implemented `getIntersectionAccess` helper function
+3. ✅ Fixed `mergeObjectTypes` to properly intersect properties with the same name
+4. ✅ Added comprehensive unit tests in `internal/checker/tests/intersection_test.go`
+
+**Implementation Details**:
+
+Added case in `getMemberType`:
 ```go
 case *type_system.IntersectionType:
 	return c.getIntersectionAccess(ctx, t, key, errors)
 ```
 
-Then implement the helper function:
+Implemented `getIntersectionAccess` helper function:
+- When all parts of the intersection are object types, returns the intersection of matching property types
+- For mixed cases (e.g., branded primitives like `string & {__brand: "email"}`), tries each part and returns the first successful access
+- Properly reports errors when properties don't exist in any part
 
-```go
-// getIntersectionAccess handles property and index access on IntersectionType
-func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
-	// For an intersection A & B, a member access should:
-	// 1. Try to get the member from each constituent type
-	// 2. Merge the results appropriately
-	
-	// Separate object types from non-object types
-	objectTypes := []*type_system.ObjectType{}
-	primitiveWithObjectTypes := []type_system.Type{} // For branded primitives
-	
-	for _, part := range intersectionType.Types {
-		part = type_system.Prune(part)
-		if objType, ok := part.(*type_system.ObjectType); ok {
-			objectTypes = append(objectTypes, objType)
-		} else {
-			// Could be a primitive with object properties (branded type)
-			primitiveWithObjectTypes = append(primitiveWithObjectTypes, part)
-		}
-	}
-	
-	// If all parts are object types, merge their properties
-	if len(objectTypes) == len(intersectionType.Types) {
-		// Create a merged object type for property access
-		// The property must exist in at least one of the object types
-		// and the result is the intersection of matching property types
-		
-		memberTypes := []type_system.Type{}
-		foundAny := false
-		
-		for _, objType := range objectTypes {
-			memberType, memberErrors := c.getObjectAccess(objType, key, nil)
-			// Only report errors if no object type has this property
-			if len(memberErrors) == 0 {
-				memberTypes = append(memberTypes, memberType)
-				foundAny = true
-			}
-		}
-		
-		if !foundAny {
-			// Property doesn't exist in any part of the intersection
-			if propKey, ok := key.(PropertyKey); ok {
-				errors = append(errors, &UnknownPropertyError{
-					ObjectType: intersectionType,
-					Property:   propKey.Name,
-					span:       propKey.Span(),
-				})
-			} else {
-				errors = append(errors, &InvalidObjectKeyError{
-					Key:  key.(IndexKey).Type,
-					span: key.Span(),
-				})
-			}
-			return type_system.NewNeverType(nil), errors
-		}
-		
-		// The result type is the intersection of all matching property types
-		if len(memberTypes) == 1 {
-			return memberTypes[0], errors
-		}
-		return type_system.NewIntersectionType(nil, memberTypes...), errors
-	}
-	
-	// For mixed cases (e.g., branded primitives: string & {__brand: "email"})
-	// Try to access the member from each part and return the first successful one
-	for _, part := range intersectionType.Types {
-		memberType, memberErrors := c.getMemberType(ctx, part, key)
-		if len(memberErrors) == 0 {
-			return memberType, errors
-		}
-	}
-	
-	// If no part has this property, report error
-	errors = append(errors, &ExpectedObjectError{Type: intersectionType, span: key.Span()})
-	return type_system.NewNeverType(nil), errors ✅ COMPLETE
+Fixed `mergeObjectTypes` function:
+- When properties have the same name in multiple object types, their types are now intersected
+- Example: `{value: string} & {value: number}` becomes `{value: string & number}` (which normalizes to `{value: never}`)
+- Preserves property order for consistent output
+- Handles readonly and optional properties correctly
+
+**Test Coverage**:
+- 8 comprehensive test cases in `TestIntersectionMemberAccess`
+- Tests cover: simple property access, property access with same-named properties, multi-way intersections, and branded types
+- Branded type tests verify both object property access and primitive method access
+- All tests passing ✅
+
+**Bug Fixes**:
+- Fixed infinite loop in `getMemberType` expansion loop by adding early exit for `IntersectionType`
+- The expansion loop now stops when encountering object types, namespace types, or intersection types ✅ COMPLETE
 
 **Location**: `internal/checker/expand_type.go` - `TypeExpansionVisitor`
 
@@ -513,11 +465,17 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
    - Added unit tests to `intersection_unify_test.go` for subtyping rules
    - Tests cover intersection with objects, primitives, and other intersections
 
-5. **Phase 3** (Member access) - **NEXT PRIORITY**
-7. **Phase 7.3** (Member access tests) - Verify Phase 3
-   - Add unit tests to `intersection_test.go` for property/method access
-   - Add integration test fixtures for member access
-8. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
+5. **Phase 3** (Member access) - ✅ **COMPLETE**
+   - Implemented `IntersectionType` case in `getMemberType`
+   - Implemented `getIntersectionAccess` helper function
+   - Added 5 branded type test cases covering primitive & object intersections
+   - Fixed `mergeObjectTypes` to intersect properties with same names
+   - Added 3 unit tests - all passing
+
+6. **Phase 7.3** (Member access tests) - ✅ **COMPLETE** (implemented with Phase 3)
+   - Added unit tests to `intersection_test.go` for property access
+
+7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
 9. **Phase 5** (Special cases) - Branded types and function overloads
 10. **Phase 7.4-7.5** (Branded types + function tests) - Verify Phase 5
 11. **Phase 7.7** (Union distribution tests) - Final verification
@@ -528,36 +486,35 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - [x] Post-inference normalization implemented with `NormalizeIntersectionType()`
 - [x] Unit tests for post-inference normalization passing (10 test cases)
 - [x] Intersection types are properly normalized after type inference
-- [x] Type alias expansion within intersections working
-- [x] Intersection type unification fully implemented in `Unify`
-- [x] All intersection unify tests passing (10 test cases in `intersection_unify_test.go`)
+- [x] Unification logic implemented for intersection types (10 test cases in `intersection_unify_test.go`)
 - [x] No regressions in existing test suite (all 100+ tests passing)
 - [x] Subtyping rules correctly implemented for intersections
+- [x] Member access works on intersection types (8 test cases passing)
+- [x] Property intersection for same-named properties implemented
+- [x] Branded types work correctly (primitive & object intersections)
+- [x] Both object property access and primitive method access work on branded types
 - [ ] All integration test fixtures pass
-- [ ] Member access works on intersection types
-- [ ] Branded types work as expected
 - [ ] Generated TypeScript code is valid
 
 ## Notes
 - **Phase 1.5 Complete**: Post-inference normalization implemented as `*Checker` method
 - **Phase 4 Complete**: Integrated into type expansion visitor
 - **Phase 2 Complete**: Intersection type unification fully implemented in `Unify` function ✅
+- **Phase 3 Complete**: Member access support fully implemented in `getMemberType` and `mergeObjectTypes` ✅
+- **Branded Types Working**: Tests confirm that `primitive & object` intersections correctly support both primitive methods and object properties ✅
+- **Bug Fix**: Fixed infinite loop in `getMemberType` by stopping expansion when `IntersectionType` is encountered
 - **Two-Phase Normalization Strategy**:
-  - Phase 1: Basic normalization at construction time (handles syntactic cases) ✅
-  - Phase 1.5: Post-inference normalization (handles semantic equivalences after type resolution) ✅
+  - Initial: Basic flattening and obvious simplifications (any, never, duplicates)
+  - Post-inference: More sophisticated normalization using `NormalizeIntersectionType` after type resolution
+- Property intersections correctly produce `never` when primitives conflict (e.g., `{x: string} & {x: number}` → `{x: never}`)
 - **Implementation Details**:
   - `NormalizeIntersectionType` is a method on `*Checker` in `internal/checker/expand_type.go`
   - Automatically expands type aliases one level using `ExpandType(ctx, typ, 1)`
   - Prunes type variables to resolve substitutions
   - Called automatically in `ExitType` visitor after type expansion
-- Focus on type checking logic in `Unify` and `getMemberType` (next priorities)
 - TypeScript compatibility is the goal - match TypeScript semantics exactly
-- Consider looking at `UnionType` implementation as a reference for similar patterns
 - **Testing Strategy**: 
   - Unit tests in `internal/type_system/intersection_test.go` for basic normalization ✅
-  - Unit tests in `internal/checker/tests/intersection_normalization_test.go` for post-inference normalization ✅
-  - Integration tests in `fixtures/intersection_types/` to verify end-to-end functionality (TODO)
-- **Testing Strategy**: 
-  - Unit tests in `internal/type_system/intersection_test.go` for basic normalization ✅
-  - Unit tests in `internal/checker/tests/` for post-inference and type checking behaviors
-  - Integration tests in `fixtures/intersection_types/` verify end-to-end functionality
+  - Unit tests in `internal/checker/tests/` for post-inference and type checking behaviors ✅
+  - Integration tests in `fixtures/intersection_types/` verify end-to-end functionality (TODO)
+
