@@ -866,12 +866,23 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	}
 
 	// For mixed cases (e.g., branded primitives: string & {__brand: "email"}, or function & {metadata: string})
-	// First, try to access from object type parts
+	// First, collect all properties from object type parts
+	memberTypesFromObjects := []type_system.Type{}
 	for _, objType := range objectTypes {
 		memberType, memberErrors := c.getObjectAccess(objType, key, nil)
 		if len(memberErrors) == 0 {
-			return memberType, errors
+			memberTypesFromObjects = append(memberTypesFromObjects, memberType)
 		}
+	}
+
+	// If we found the property in multiple object types, intersect them
+	if len(memberTypesFromObjects) > 1 {
+		return type_system.NewIntersectionType(nil, memberTypesFromObjects...), errors
+	}
+
+	// If we found the property in exactly one object type, return it
+	if len(memberTypesFromObjects) == 1 {
+		return memberTypesFromObjects[0], errors
 	}
 
 	// If not found in object types, try other parts (primitives, functions, etc.)

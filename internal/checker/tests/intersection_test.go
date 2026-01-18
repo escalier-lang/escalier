@@ -633,53 +633,35 @@ func TestIntersectionMemberAccess(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		"branded primitive - access object property": {
+		"branded string primitive": {
 			input: `
 				type Email = string & {__brand: "email"}
 				declare val email: Email
 				val brand = email.__brand
+				val len = email.length
 			`,
 			expectedVars: map[string]string{
+				"len":   "number",
 				"brand": "\"email\"",
 			},
 			wantErr: false,
 		},
-		"branded primitive - access primitive method": {
-			input: `
-				type Email = string & {__brand: "email"}
-				declare val email: Email
-				val len = email.length
-			`,
-			expectedVars: map[string]string{
-				"len": "number",
-			},
-			wantErr: false,
-		},
-		"branded number - access object property": {
+		"branded number primitive": {
 			input: `
 				type UserId = number & {__brand: "userId"}
 				declare val id: UserId
 				val brand = id.__brand
+				val fixed = id.toFixed()
 			`,
 			expectedVars: map[string]string{
 				"brand": "\"userId\"",
+				"fixed": "string",
 			},
 			wantErr: false,
 		},
-		"branded number - access primitive method": {
+		"primitive intersected with multiple objects": {
 			input: `
-				type UserId = number & {__brand: "userId"}
-				declare val id: UserId
-				val fixed = id.toFixed
-			`,
-			expectedVars: map[string]string{
-				"fixed": "fn (fractionDigits?: number) -> string throws never",
-			},
-			wantErr: false,
-		},
-		"multiple branded properties": {
-			input: `
-				type Tagged = string & {__brand: "tag", __version: 1}
+				type Tagged = string & {__brand: "tag"} & {__version: 1}
 				declare val tagged: Tagged
 				val brand = tagged.__brand
 				val version = tagged.__version
@@ -689,6 +671,17 @@ func TestIntersectionMemberAccess(t *testing.T) {
 				"brand":   "\"tag\"",
 				"version": "1",
 				"len":     "number",
+			},
+			wantErr: false,
+		},
+		"primitive intersected with multiple objects with the same property": {
+			input: `
+				type Tagged = string & {foo: string} & {foo: number}
+				declare val tagged: Tagged
+				val foo = tagged.foo
+			`,
+			expectedVars: map[string]string{
+				"foo": "never",
 			},
 			wantErr: false,
 		},
@@ -710,20 +703,19 @@ func TestIntersectionMemberAccess(t *testing.T) {
 				val apply = func.apply
 			`,
 			expectedVars: map[string]string{
+				// TODO: look into why `argArray?: any` isn't `...argArray?: Array<any>`
 				"apply": "fn (this: Function, thisArg: any, argArray?: any) -> any throws never",
 			},
 			wantErr: false,
 		},
 		"function intersection - multiple object properties": {
 			input: `
-				type EnhancedFunc = (fn (x: number) -> number throws never) & {name: string, version: number}
+				type EnhancedFunc = (fn (x: number) -> number throws never) & {foo: string} & {foo: number}
 				declare val func: EnhancedFunc
-				val name = func.name
-				val version = func.version
+				val foo = func.foo
 			`,
 			expectedVars: map[string]string{
-				"name":    "string",
-				"version": "number",
+				"foo": "never",
 			},
 			wantErr: false,
 		},

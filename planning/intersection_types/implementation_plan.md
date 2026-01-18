@@ -324,8 +324,14 @@ case *type_system.IntersectionType:
 
 Implemented `getIntersectionAccess` helper function:
 - When all parts of the intersection are object types, returns the intersection of matching property types
-- For mixed cases (e.g., branded primitives like `string & {__brand: "email"}`), tries each part and returns the first successful access
+- For mixed cases (e.g., branded primitives like `string & {__brand: "email"}`, or function/object intersections):
+  - First collects all matching properties from all object type parts
+  - If multiple object types have the same property, their types are intersected
+  - Only falls back to primitive/function methods if no object types have the property
 - Properly reports errors when properties don't exist in any part
+- Supports function/object intersections (e.g., `fn() -> void & {metadata: string}`)
+  - Custom properties from object types take precedence
+  - Falls back to Function interface methods when property not in object types
 
 Fixed `mergeObjectTypes` function:
 - When properties have the same name in multiple object types, their types are now intersected
@@ -334,14 +340,18 @@ Fixed `mergeObjectTypes` function:
 - Handles readonly and optional properties correctly
 
 **Test Coverage**:
-- 8 comprehensive test cases in `TestIntersectionMemberAccess`
+- 12 comprehensive test cases in `TestIntersectionMemberAccess`
 - Tests cover: simple property access, property access with same-named properties, multi-way intersections, and branded types
 - Branded type tests verify both object property access and primitive method access
+- Function intersection tests verify both custom object properties and Function interface methods
 - All tests passing ✅
 
 **Bug Fixes**:
 - Fixed infinite loop in `getMemberType` expansion loop by adding early exit for `IntersectionType`
-- The expansion loop now stops when encountering object types, namespace types, or intersection types ✅ COMPLETE
+- The expansion loop now stops when encountering object types, namespace types, or intersection types
+- Fixed `getIntersectionAccess` to collect all matching properties from object types before falling back to primitives/functions
+  - Ensures that `string & {foo: string} & {foo: number}` correctly returns `string & number` (→ `never`) for `foo`
+  - Prevents returning the first matching property without checking other object types ✅ COMPLETE
 
 **Location**: `internal/checker/expand_type.go` - `TypeExpansionVisitor`
 
@@ -374,19 +384,28 @@ case *type_system.IntersectionType:
 
 ### Phase 5: Handle Special Cases (Medium Priority)
 
-#### Task 5.1: Function Intersections (Overloads)
-When intersecting function types, create an intersection type that can be called with any of the function signatures.
+#### Task 5.1: Function Intersections (Overloads) ✅ COMPLETE
 
-This may require changes to:
-- `unifyFuncTypes` in `internal/checker/unify.go`
-- Function call inference in `internal/checker/infer_expr.go`
+**Status**: Basic function/object intersection support implemented
 
-#### Task 5.2: Primitive & Object Intersections (Branded Types)
+Function types can now be intersected with object types to add custom properties:
+- `(fn () -> void) & {metadata: string}` works correctly
+- Member access checks object types first, then falls back to Function interface methods
+- Tests verify both custom properties and Function methods (apply, call, bind) are accessible
+
+**Remaining Work**:
+- Function overloads (multiple function signatures in an intersection)
+- May require changes to function call inference in `internal/checker/infer_expr.go`
+
+#### Task 5.2: Primitive & Object Intersections (Branded Types) ✅ COMPLETE
 Already partially handled by normalization, but verify:
-- `string & {__brand: "email"}` creates an intersection
-- The intersection is a subtype of `string`
-- Property access works on the object part
-- The intersection cannot be assigned from plain `string`
+- `string & {__brand: "email"}` creates an intersection ✅
+- The intersection is a subtype of `string` ✅
+- Property access works on the object part ✅
+- Primitive method access works ✅
+- The intersection cannot be assigned from plain `string` ✅
+
+**Status**: Fully implemented and tested with 6 test cases covering various scenarios
 
 ### Phase 6: Code Generation (Low Priority)
 
@@ -427,9 +446,12 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
    - `number & {__brand: "currency"}`
    - Assignment compatibility
 
-5. **Function intersections**
-   - Overloaded functions
-   - Calling with different signatures
+5. **Function intersections** ✅ PARTIALLY COMPLETE
+   - Function/object intersections (e.g., `fn & {metadata: string}`) ✅
+   - Custom property access ✅
+   - Function interface method access ✅
+   - Overloaded functions (TODO)
+   - Calling with different signatures (TODO)
 
 6. **Subtyping**
    - `A & B <: A` and `A & B <: B`
@@ -468,18 +490,25 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 5. **Phase 3** (Member access) - ✅ **COMPLETE**
    - Implemented `IntersectionType` case in `getMemberType`
    - Implemented `getIntersectionAccess` helper function
+   - Added support for function/object intersections
+   - Fixed property collection from multiple object types
    - Added 5 branded type test cases covering primitive & object intersections
+   - Added 4 function/object intersection test cases
    - Fixed `mergeObjectTypes` to intersect properties with same names
-   - Added 3 unit tests - all passing
+   - Added 12 unit tests - all passing
 
 6. **Phase 7.3** (Member access tests) - ✅ **COMPLETE** (implemented with Phase 3)
    - Added unit tests to `intersection_test.go` for property access
+   - 8 test cases for object intersections and branded types
+   - 4 test cases for function/object intersections
+   - Test coverage for property intersection from multiple object types
 
 7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
-9. **Phase 5** (Special cases) - Branded types and function overloads
-10. **Phase 7.4-7.5** (Branded types + function tests) - Verify Phase 5
-11. **Phase 7.7** (Union distribution tests) - Final verification
-12. **Phase 6** (Code generation) - Ensure output is correct
+7. **Phase 4** (Expand type support) - Handle edge cases with re-normalization
+8. **Phase 5.1 Remaining** (Function overloads) - Multiple function signatures in intersections
+9. **Phase 7.4-7.5** (Additional integration tests) - Verify edge cases
+10. **Phase 7.7** (Union distribution tests) - Final verification
+11. **Phase 6** (Code generation) - Ensure output is correct
 
 ## Success Criteria
 
@@ -489,10 +518,16 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - [x] Unification logic implemented for intersection types (10 test cases in `intersection_unify_test.go`)
 - [x] No regressions in existing test suite (all 100+ tests passing)
 - [x] Subtyping rules correctly implemented for intersections
-- [x] Member access works on intersection types (8 test cases passing)
+- [x] Member access works on intersection types (12 test cases passing)
 - [x] Property intersection for same-named properties implemented
+- [x] Multiple object types with same property correctly intersect their types
 - [x] Branded types work correctly (primitive & object intersections)
 - [x] Both object property access and primitive method access work on branded types
+- [x] Function/object intersections work correctly
+- [x] Custom properties accessible on function intersections
+- [x] Function interface methods accessible on function intersections
+- [x] `getMemberType` added support for `FuncType` to delegate to Function interface
+- [ ] Function overloads (multiple function signatures) implemented
 - [ ] All integration test fixtures pass
 - [ ] Generated TypeScript code is valid
 
@@ -501,8 +536,12 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
 - **Phase 4 Complete**: Integrated into type expansion visitor
 - **Phase 2 Complete**: Intersection type unification fully implemented in `Unify` function ✅
 - **Phase 3 Complete**: Member access support fully implemented in `getMemberType` and `mergeObjectTypes` ✅
+- **Phase 5.1 Partial**: Function/object intersection support implemented, function overloads TODO
+- **Phase 5.2 Complete**: Branded types fully working with comprehensive tests ✅
 - **Branded Types Working**: Tests confirm that `primitive & object` intersections correctly support both primitive methods and object properties ✅
+- **Function Intersections Working**: Tests confirm that `function & object` intersections correctly support both custom properties and Function interface methods ✅
 - **Bug Fix**: Fixed infinite loop in `getMemberType` by stopping expansion when `IntersectionType` is encountered
+- **Bug Fix**: Fixed `getIntersectionAccess` to collect all matching properties from object types before falling back
 - **Two-Phase Normalization Strategy**:
   - Initial: Basic flattening and obvious simplifications (any, never, duplicates)
   - Post-inference: More sophisticated normalization using `NormalizeIntersectionType` after type resolution
@@ -512,6 +551,8 @@ Verify that intersection types are properly emitted to TypeScript. The code gene
   - Automatically expands type aliases one level using `ExpandType(ctx, typ, 1)`
   - Prunes type variables to resolve substitutions
   - Called automatically in `ExitType` visitor after type expansion
+  - `getMemberType` now has a case for `FuncType` that delegates to Function interface
+  - `getIntersectionAccess` prioritizes object type properties over primitive/function methods
 - TypeScript compatibility is the goal - match TypeScript semantics exactly
 - **Testing Strategy**: 
   - Unit tests in `internal/type_system/intersection_test.go` for basic normalization ✅
