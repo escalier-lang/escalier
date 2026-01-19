@@ -387,11 +387,10 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 // the strongly connected components of the dependency graph.  The reason why
 // we pass this in is because we don't want to compute the strongly connected
 // components more than once and BuildDefinitions needs this information as well.
-func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
-	return b.BuildTopLevelDeclsWithOverloads(depGraph, nil)
-}
-
-func (b *Builder) BuildTopLevelDeclsWithOverloads(depGraph *dep_graph.DepGraph, overloadDecls map[string][]*ast.FuncDecl) *Module {
+func (b *Builder) BuildTopLevelDecls(
+	depGraph *dep_graph.DepGraph,
+	overloadDecls map[string][]*ast.FuncDecl,
+) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
 	b.isModule = true

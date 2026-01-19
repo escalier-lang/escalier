@@ -117,10 +117,14 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			IsPatMatch: false,
 		}
 		typeErrors := c.InferDepGraph(inferCtx, depGraph)
+
+		// Merge overloaded functions in the dependency graph
+		depGraph.MergeOverloadedFunctions(c.OverloadDecls)
+
 		libNS = inferCtx.Scope.Namespace
 
 		builder := &codegen.Builder{}
-		jsMod := builder.BuildTopLevelDeclsWithOverloads(depGraph, c.OverloadDecls)
+		jsMod := builder.BuildTopLevelDecls(depGraph, c.OverloadDecls)
 		dtsMod := builder.BuildDefinitions(depGraph, libNS)
 
 		printer := codegen.NewPrinter()

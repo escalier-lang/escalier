@@ -1,0 +1,39 @@
+// Test overloaded functions with different signature dependencies
+
+// First, define some types that will be dependencies
+type NumberConfig = {
+  value: number
+}
+
+type StringConfig = {
+  text: string
+}
+
+type BooleanConfig = {
+  flag: boolean
+}
+
+// Overloaded function where each overload depends on a different type
+// The first overload depends on NumberConfig
+fn process(config: NumberConfig) -> string {
+  return "Number: " ++ config.value.toString()
+}
+
+// The second overload depends on StringConfig
+fn process(config: StringConfig) -> string {
+  return "String: " ++ config.text
+}
+
+// The third overload depends on BooleanConfig
+fn process(config: BooleanConfig) -> string {
+  if config.flag {
+    return "Boolean: true"
+  } else {
+    return "Boolean: false"
+  }
+}
+
+// Test the overloaded function
+val numResult = process({value: 42})
+val strResult = process({text: "hello"})
+val boolResult = process({flag: true})

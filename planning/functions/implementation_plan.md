@@ -127,11 +127,13 @@ case *type_system.IntersectionType:
 
 ---
 
-### ✅ Phase 4: Code Generation - COMPLETE
+### ✅ Phase 4: Code Generation - COMPLETE (with known issue)
 
-**Status**: ✅ **COMPLETE**  
+**Status**: ✅ **COMPLETE** (⚠️ Dependency ordering issue identified)
 **Priority**: **HIGH** - Critical missing piece
 **Files**: `internal/codegen/builder.go`, `internal/codegen/ast.go`, `internal/codegen/printer.go`, `internal/checker/checker.go`, `internal/checker/infer_module.go`, `internal/compiler/compiler.go`
+
+**Known Issue**: Dependency graph treats each overload as separate declaration, but codegen happens on first overload. Need to merge overload dependencies.
 
 **What's Done**:
 - Added `OverloadDecls` map to `Checker` struct to track overloaded function declarations
@@ -371,11 +373,189 @@ val arr2 = makeArray(5, 3)   // ✅ Works
 | 2. Scope & Symbol Table | ✅ Complete | 95% | Module-level works; block-level needs validation error |
 | 3. Type Checker | ✅ Complete | 90% | Works but uses "first match" not "most specific" |
 | 4. Code Generation | ✅ Complete | 95% | **Fully implemented with dispatch logic and type guards** |
+| 4b. Dependency Graph | ✅ Complete | 100% | **Merges overload nodes with combined dependencies** |
 | 5. .d.ts Generation | ⚠️ Partial | 40% | Variables work; function declarations missing |
 | 6. Error Reporting | ✅ Complete | 100% | Excellent error messages |
 | 7. Testing | ✅ Complete | 90% | Comprehensive tests including function_overloading fixture |
 
 ## Remaining Work - Priority Order
+
+### ✅ **COMPLETE** - Phase 4b: Dependency Graph for Overloads
+
+**Status**: ✅ **COMPLETE**  
+
+**What Was Completed**:
+- ✅ Added `MergeOverloadedFunctions` method to DepGraph
+- ✅ Method merges dependencies from all overloads into primary node
+- ✅ Removes non-primary overload nodes and rebuilds graph
+- ✅ Updates bindings to point overloaded names to primary overload
+- ✅ Recomputes strongly connected components after merge
+- ✅ Called from compiler after type checking, before codegen
+- ✅ Comprehensive unit tests in `internal/dep_graph/overload_test.go`
+- ✅ Test fixture `function_overloading_with_deps` demonstrates the fix
+
+**Solution Implemented**:
+Used a post-processing approach that merges overload nodes after initial graph construction. This keeps core graph logic unchanged and handles overload merging as a separate phase.
+
+**Files Modified**:
+- `internal/dep_graph/dep_graph.go` - Added MergeOverloadedFunctions method (~200 lines)
+- `internal/compiler/compiler.go` - Calls merge after type checking
+- `internal/dep_graph/overload_test.go` - Unit tests for merge functionality
+- `fixtures/function_overloading_with_deps/` - Integration test fixture
+
+---
+
+### 🔴 **CRITICAL** - Phase 4b: Dependency Graph for Overloads
+
+**Estimated Effort**: 2-3 hours  
+**Blocker**: Code generation may fail or produce incorrect output when overloads have different dependencies
+
+**Problem Statement**:
+Currently, the dependency graph treats each overloaded function declaration as a separate node. However, code generation merges all overloads into a single dispatch function when it encounters the **first** overload in dependency order.
+
+This creates a problem:
+1. Overload 1 of `foo` depends on module A
+2. Overload 2 of `foo` depends on module B
+3. If overload 1 comes first in dependency order, codegen generates the dispatch function
+4. But the dispatch function includes overload 2's body, which uses module B
+5. If module B hasn't been codegen'd yet, the output will be incorrect or fail
+
+**Example Failure Case**:
+```typescript
+// lib/file1.esc
+type NumberConfig = {value: number}
+
+fn process(x: NumberConfig) -> string {
+    return "number: " ++ x.value.toString()
+}
+
+// lib/file2.esc
+type StringConfig = {text: string}
+
+// Adds overload to existing process from file1.esc
+fn process(x: StringConfig) -> string {
+    return "string: " ++ x.text
+}
+```
+
+The dependency graph tracks that:
+- Overload 1 of `process` depends on `NumberConfig` (appears in signature)
+- Overload 2 of `process` depends on `StringConfig` (appears in signature)
+
+If `file1.esc` is processed first, codegen generates the dispatch function for `process`, which includes type guards for both overloads. The generated code needs to check `typeof x === "object"` for both types, but the dispatch function must be generated after **both** `NumberConfig` and `StringConfig` are available.
+
+Note: The dependency graph only considers signature dependencies, not body dependencies. Future support for param defaults (e.g., `fn process(x: Config = defaultConfig)`) would also create signature-level dependencies.
+
+**Solution Approach**:
+
+Use a **post-processing approach** to merge overloaded function declarations after the dependency graph is initially built. This keeps the core graph construction logic unchanged and handles overload merging as a separate phase.
+
+**Implementation Steps**:
+
+1. **Add post-processing method to DepGraph**:
+   ```go
+   // In internal/dep_graph/dep_graph.go
+   
+   // MergeOverloadedFunctions post-processes the graph to merge overload nodes.
+   // After normal graph construction (where each overload is a separate node),
+   // this combines all overloads into a single logical node with union of dependencies.
+   func (g *DepGraph) MergeOverloadedFunctions(overloadDecls map[string][]*ast.FuncDecl) error {
+       nodesToRemove := make(map[int]bool)
+       
+       for funcName, decls := range overloadDecls {
+           if len(decls) <= 1 {
+               continue // Not overloaded, skip
+           }
+           
+           // Use first overload as primary node
+           primaryDeclID := decls[0].ID()
+           
+           // Merge dependencies from all other overloads
+           for i := 1; i < len(decls); i++ {
+               declID := decls[i].ID()
+               
+               // Get dependencies of this overload
+               deps := g.GetDependencies(declID)
+               
+               // Add them to primary overload
+               for _, dep := range deps {
+                   g.AddDependency(primaryDeclID, dep)
+               }
+               
+               // Mark this node for removal
+               nodesToRemove[declID] = true
+           }
+       }
+       
+       // Remove non-primary overload nodes
+       for declID := range nodesToRemove {
+           g.RemoveNode(declID)
+       }
+       
+       // Recompute topological sort with merged nodes
+       return g.ComputeTopologicalSort()
+   }
+   ```
+
+2. **Invoke post-processing after graph construction**:
+   ```go
+   // In internal/compiler/compiler.go or wherever dep graph is built
+   
+   // Build dependency graph normally
+   depGraph := dep_graph.BuildDepGraph(module)
+   
+   // Post-process to merge overloaded functions
+   if err := depGraph.MergeOverloadedFunctions(c.OverloadDecls); err != nil {
+       return nil, err
+   }
+   
+   // Use merged graph for codegen
+   sortedDecls := depGraph.GetTopologicalSort()
+   ```
+
+3. **Add helper methods to DepGraph** (if not already present):
+   ```go
+   // GetDependencies returns all dependencies for a given declaration ID
+   func (g *DepGraph) GetDependencies(declID int) []int
+   
+   // AddDependency adds a dependency edge between two declarations
+   func (g *DepGraph) AddDependency(fromDeclID, toDeclID int) error
+   
+   // RemoveNode removes a node from the graph
+   func (g *DepGraph) RemoveNode(declID int) error
+   
+   // ComputeTopologicalSort recomputes the topological ordering
+   func (g *DepGraph) ComputeTopologicalSort() error
+   ```
+
+**Advantages of Post-Processing Approach**:
+- ✅ **Minimal changes to graph construction** - core logic remains untouched
+- ✅ **Clear separation of concerns** - overload merging is isolated
+- ✅ **Easier to test** - can verify graph before and after merge
+- ✅ **Lower risk** - doesn't affect other declaration types
+- ✅ **Better for debugging** - can inspect intermediate state
+
+**Alternative Approach** (not recommended):
+
+Fix at codegen time by validating dependencies:
+1. When codegenning first overload, collect dependencies of ALL overloads
+2. Assert all those dependencies are already codegen'd
+3. If any missing, return error or defer generation
+
+This is simpler but less robust - better to fix in dep_graph where ordering is computed.
+
+**Testing**:
+- Create fixture with overloads having different dependencies
+- Verify dependency graph contains merged dependencies
+- Verify generated code has correct import order
+- Test with circular dependencies involving overloads
+
+**Files to Modify**:
+- `internal/dep_graph/dep_graph.go` - Core graph construction logic
+- `internal/dep_graph/dep_graph_test.go` - Add test cases
+- `fixtures/function_overloading_with_deps/` - New test fixture
+
+---
 
 ###  **IMPORTANT** - Phase 5: .d.ts Generation
 
@@ -522,13 +702,14 @@ func (b *Builder) generateGuardForType(typeAnn ast.TypeAnn) Expr {
 }
 ```
 
-### Dispatch Function Template
+### Dispat4b: Dependency Graph for Overloads** | 2-3 hours | 🔴 CRITICAL |
+| **Phase 5: .d.ts Multiple Declarations** | 3-4 hours | 🟡 IMPORTANT |
+| **Block scope validation error** | 30 min | 🟢 Nice-to-have |
+| **Most specific overload selection** | 2-3 hours | 🟢 Nice-to-have |
+| **Object type guards** | 4-6 hours | 🟢 Future |
 
-```javascript
-function overloadedFunc(param1, param2, ...rest) {
-  // Generated guards based on first parameter
-  if (typeof param1 === "number") {
-    // Overload 1 implementation
+**Total Critical Path**: ~5-7 hours (Phase 4b + Phase 5)  
+**Full MVP with enhancements**: ~10-15
     return /* body of overload 1 */;
   } else if (typeof param1 === "string") {
     // Overload 2 implementation  
@@ -589,6 +770,7 @@ function overloadedFunc(param1, param2, ...rest) {
    - **Decision**: Keep separate `FuncDecl` nodes (Option A)
    - **Rationale**: Simpler parser, checker does merging
    - **Status**: Implemented
+- ⚠️ **Dependency graph issue identified** - Overloads treated as separate nodes but codegen'd together on first encounter; need to merge dependencies
 
 ### ⚠️ Open
 
@@ -641,6 +823,7 @@ function overloadedFunc(param1, param2, ...rest) {
 | Task | Estimated Time | Priority |
 |------|---------------|----------|
 | ~~**Phase 4: Code Generation**~~ | ~~12-16 hours~~ | ✅ COMPLETE |
+| ~~**Phase 4b: Dependency Graph for Overloads**~~ | ~~2-3 hours~~ | ✅ COMPLETE |
 | **Phase 5: .d.ts Multiple Declarations** | 3-4 hours | 🟡 IMPORTANT |
 | **Block scope validation error** | 30 min | 🟢 Nice-to-have |
 | **Most specific overload selection** | 2-3 hours | 🟢 Nice-to-have |
