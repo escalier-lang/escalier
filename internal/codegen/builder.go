@@ -14,11 +14,12 @@ import (
 )
 
 type Builder struct {
-	tempId       int
-	depGraph     *dep_graph.DepGraph
-	hasExtractor bool
-	isModule     bool
-	inBlockScope bool
+	tempId        int
+	depGraph      *dep_graph.DepGraph
+	hasExtractor  bool
+	isModule      bool
+	inBlockScope  bool
+	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
 }
 
 func (b *Builder) NewTempId() string {
@@ -387,9 +388,17 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 // we pass this in is because we don't want to compute the strongly connected
 // components more than once and BuildDefinitions needs this information as well.
 func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
+	return b.BuildTopLevelDeclsWithOverloads(depGraph, nil)
+}
+
+func (b *Builder) BuildTopLevelDeclsWithOverloads(depGraph *dep_graph.DepGraph, overloadDecls map[string][]*ast.FuncDecl) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
 	b.isModule = true
+	b.overloadDecls = overloadDecls
+	if b.overloadDecls == nil {
+		b.overloadDecls = make(map[string][]*ast.FuncDecl)
+	}
 
 	var stmts []Stmt
 
@@ -591,6 +600,24 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
+		// Check if this is an overloaded function
+		funcName := d.Name.Name
+		if nsName != "" {
+			funcName = nsName + "." + funcName
+		}
+
+		overloads, isOverloaded := b.overloadDecls[funcName]
+		if isOverloaded && len(overloads) > 1 {
+			// Only generate the dispatch function for the first overload we encounter
+			// Check if this is the first one by comparing pointers
+			if overloads[0] == d {
+				return b.buildOverloadedFunc(overloads, nsName)
+			}
+			// Skip other overload declarations - they're handled by the first one
+			return []Stmt{}
+		}
+
+		// Single function (non-overloaded) - use existing logic
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
@@ -933,6 +960,252 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		str, _ := printer.Print(d, printer.DefaultOptions())
 		fmt.Fprintf(os.Stderr, "d = %s\n", str)
 		panic("TODO - TransformDecl - default case")
+	}
+}
+
+// buildOverloadedFunc generates a single function with dispatch logic for overloaded functions
+func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) []Stmt {
+	if len(overloads) == 0 {
+		return []Stmt{}
+	}
+
+	// All overloads should have the same name
+	funcName := overloads[0].Name.Name
+
+	// Filter out declare-only functions (they have no body)
+	var implementedOverloads []*ast.FuncDecl
+	for _, overload := range overloads {
+		if overload.Body != nil {
+			implementedOverloads = append(implementedOverloads, overload)
+		}
+	}
+
+	// If all overloads are declare-only, skip codegen
+	if len(implementedOverloads) == 0 {
+		return []Stmt{}
+	}
+
+	// Collect all unique parameter names across overloads
+	// We'll use the maximum parameter count and give them generic names
+	maxParams := 0
+	for _, overload := range implementedOverloads {
+		if len(overload.Params) > maxParams {
+			maxParams = len(overload.Params)
+		}
+	}
+
+	// Generate parameter names: param0, param1, param2, ...
+	params := make([]*Param, 0, maxParams)
+	for i := 0; i < maxParams; i++ {
+		paramName := fmt.Sprintf("param%d", i)
+		params = append(params, &Param{
+			Pattern:  NewIdentPat(paramName, nil, nil),
+			Optional: false,
+			TypeAnn:  nil,
+		})
+	}
+
+	// Build the dispatch logic as nested if-else statements
+	var buildDispatchChain func(int) Stmt
+	buildDispatchChain = func(overloadIdx int) Stmt {
+		if overloadIdx >= len(implementedOverloads) {
+			// No more overloads - throw error
+			errorMsg := fmt.Sprintf("No overload matches the provided arguments for function '%s'", funcName)
+			return NewThrowStmt(
+				NewCallExpr(
+					NewIdentExpr("TypeError", "", nil),
+					[]Expr{NewLitExpr(NewStrLit(errorMsg, nil), nil)},
+					false,
+					nil,
+				),
+				nil,
+			)
+		}
+
+		overload := implementedOverloads[overloadIdx]
+
+		if len(overload.Params) == 0 {
+			// No parameters - this overload always matches
+			prevInBlockScope := b.inBlockScope
+			b.inBlockScope = true
+			bodyStmts := b.buildStmts(overload.Body.Stmts)
+			b.inBlockScope = prevInBlockScope
+			return NewBlockStmt(bodyStmts, overload)
+		}
+
+		// Generate type guard for first parameter
+		firstParam := overload.Params[0]
+		var guard Expr
+
+		if firstParam.TypeAnn != nil {
+			guard = b.buildTypeGuard(NewIdentExpr("param0", "", nil), firstParam.TypeAnn)
+		} else {
+			// No type annotation - accept anything
+			guard = NewLitExpr(NewBoolLit(true, nil), nil)
+		}
+
+		// Build the body for this overload
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+
+		// Map params to expected names
+		var bodyStmts []Stmt
+		for j, param := range overload.Params {
+			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
+				// Create: const actualParamName = param{j}
+				mapping := &VarDecl{
+					Kind: ValKind,
+					Decls: []*Declarator{
+						{
+							Pattern: NewIdentPat(identPat.Name, nil, param.Pattern),
+							TypeAnn: nil,
+							Init:    NewIdentExpr(fmt.Sprintf("param%d", j), "", nil),
+						},
+					},
+					declare: false,
+					export:  false,
+					span:    nil,
+					source:  param.Pattern,
+				}
+				bodyStmts = append(bodyStmts, &DeclStmt{
+					Decl:   mapping,
+					span:   nil,
+					source: param.Pattern,
+				})
+			}
+		}
+
+		bodyStmts = slices.Concat(bodyStmts, b.buildStmts(overload.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
+		// Create if-else: if (guard) { body } else { next overload }
+		return NewIfStmt(
+			guard,
+			NewBlockStmt(bodyStmts, overload),
+			buildDispatchChain(overloadIdx+1),
+			overload,
+		)
+	}
+
+	dispatchStmt := buildDispatchChain(0)
+
+	// Create the function declaration
+	fnDecl := &FuncDecl{
+		Name: &Identifier{
+			Name:   fullyQualifyName(funcName, nsName),
+			span:   nil,
+			source: overloads[0].Name,
+		},
+		TypeParams: nil,
+		Params:     params,
+		Body:       []Stmt{dispatchStmt},
+		TypeAnn:    nil,
+		declare:    false,
+		export:     b.isModule,
+		async:      false, // TODO: handle async overloads
+		span:       nil,
+		source:     overloads[0],
+	}
+
+	return []Stmt{&DeclStmt{
+		Decl:   fnDecl,
+		span:   nil,
+		source: overloads[0],
+	}}
+}
+
+// buildTypeGuard generates a runtime type check expression for a given type annotation
+func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
+	switch t := typeAnn.(type) {
+	case *ast.NumberTypeAnn:
+		return NewBinaryExpr(
+			NewUnaryExpr(TypeOf, valueExpr, nil),
+			StrictEqual,
+			NewLitExpr(NewStrLit("number", nil), nil),
+			nil,
+		)
+	case *ast.StringTypeAnn:
+		return NewBinaryExpr(
+			NewUnaryExpr(TypeOf, valueExpr, nil),
+			StrictEqual,
+			NewLitExpr(NewStrLit("string", nil), nil),
+			nil,
+		)
+	case *ast.BooleanTypeAnn:
+		return NewBinaryExpr(
+			NewUnaryExpr(TypeOf, valueExpr, nil),
+			StrictEqual,
+			NewLitExpr(NewStrLit("boolean", nil), nil),
+			nil,
+		)
+	case *ast.LitTypeAnn:
+		// For literal types, check exact value
+		var litExpr Expr
+		switch lit := t.Lit.(type) {
+		case *ast.NumLit:
+			litExpr = NewLitExpr(NewNumLit(lit.Value, lit), nil)
+		case *ast.StrLit:
+			litExpr = NewLitExpr(NewStrLit(lit.Value, lit), nil)
+		case *ast.BoolLit:
+			litExpr = NewLitExpr(NewBoolLit(lit.Value, lit), nil)
+		default:
+			// For other literal types, fall back to true (accept anything)
+			return NewLitExpr(NewBoolLit(true, nil), nil)
+		}
+		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)
+	case *ast.ObjectTypeAnn:
+		// For object types, check that it's not null and typeof is "object"
+		notNull := NewBinaryExpr(
+			valueExpr,
+			StrictNotEqual,
+			NewLitExpr(NewNullLit(nil), nil),
+			nil,
+		)
+		isObject := NewBinaryExpr(
+			NewUnaryExpr(TypeOf, valueExpr, nil),
+			StrictEqual,
+			NewLitExpr(NewStrLit("object", nil), nil),
+			nil,
+		)
+		return NewBinaryExpr(notNull, LogicalAnd, isObject, nil)
+	case *ast.TupleTypeAnn:
+		// Check if it's an array
+		return NewCallExpr(
+			NewMemberExpr(
+				NewIdentExpr("Array", "", nil),
+				NewIdentifier("isArray", nil),
+				false,
+				nil,
+			),
+			[]Expr{valueExpr},
+			false,
+			nil,
+		)
+	case *ast.TypeRefTypeAnn:
+		// For type references like Array<T>, try to infer the check
+		if t.Name != nil {
+			// Get the simple name from QualIdent
+			name := ast.QualIdentToString(t.Name)
+			switch name {
+			case "Array":
+				return NewCallExpr(
+					NewMemberExpr(
+						NewIdentExpr("Array", "", nil),
+						NewIdentifier("isArray", nil),
+						false,
+						nil,
+					),
+					[]Expr{valueExpr},
+					false,
+					nil,
+				)
+			}
+		}
+		// Default: accept anything
+		return NewLitExpr(NewBoolLit(true, nil), nil)
+	default:
+		// For complex types we can't easily check at runtime, accept anything
+		return NewLitExpr(NewBoolLit(true, nil), nil)
 	}
 }
 

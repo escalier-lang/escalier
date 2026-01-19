@@ -360,6 +360,8 @@ const (
 	GreaterThanEqual  BinaryOp = ">="
 	EqualEqual        BinaryOp = "=="
 	NotEqual          BinaryOp = "!="
+	StrictEqual       BinaryOp = "==="
+	StrictNotEqual    BinaryOp = "!=="
 	LogicalAnd        BinaryOp = "&&"
 	LogicalOr         BinaryOp = "||"
 	NullishCoalescing BinaryOp = "??"
@@ -684,7 +686,7 @@ type TryStmt struct {
 }
 
 type CatchClause struct {
-	Param Pat  // optional, can be nil
+	Param Pat // optional, can be nil
 	Body  *BlockStmt
 }
 

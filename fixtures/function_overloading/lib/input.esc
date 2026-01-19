@@ -1,0 +1,33 @@
+// Simple function overloading with implementations
+
+fn dup(value: number) -> number {
+  return 2 * value
+}
+
+fn dup(value: string) -> string {
+  return value ++ value
+}
+
+val num = dup(5)
+val str = dup("hello")
+
+// Multiple overloads with different logic
+fn format(value: number) -> string {
+  return "Number: " ++ value.toString()
+}
+
+fn format(value: string) -> string {
+  return "String: " ++ value
+}
+
+fn format(value: boolean) -> string {
+  if value {
+    return "Boolean: true"
+  } else {
+    return "Boolean: false"
+  }
+}
+
+val f1 = format(42)
+val f2 = format("test")
+val f3 = format(true)

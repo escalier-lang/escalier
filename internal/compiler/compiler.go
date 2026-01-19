@@ -120,7 +120,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		libNS = inferCtx.Scope.Namespace
 
 		builder := &codegen.Builder{}
-		jsMod := builder.BuildTopLevelDecls(depGraph)
+		jsMod := builder.BuildTopLevelDeclsWithOverloads(depGraph, c.OverloadDecls)
 		dtsMod := builder.BuildDefinitions(depGraph, libNS)
 
 		printer := codegen.NewPrinter()
