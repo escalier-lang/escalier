@@ -31,3 +31,57 @@ fn format(value: boolean) -> string {
 val f1 = format(42)
 val f2 = format("test")
 val f3 = format(true)
+
+// Multi-parameter overloading - requires checking multiple params
+fn combine(a: number, b: number) -> string {
+  return "Numbers: " ++ (a + b).toString()
+}
+
+fn combine(a: string, b: string) -> string {
+  return "Strings: " ++ a ++ b
+}
+
+fn combine(a: number, b: string) -> string {
+  return "Mixed: " ++ a.toString() ++ b
+}
+
+val c1 = combine(1, 2)
+val c2 = combine("hello", "world")
+val c3 = combine(42, "test")
+
+// Class-based overloading - requires instanceof checks
+class Point(x: number, y: number) {
+  x,
+  y,
+}
+
+class Circle(radius: number) {
+  radius,
+}
+
+fn describe(shape: Point) -> string {
+  return "Point at (" ++ shape.x.toString() ++ ", " ++ shape.y.toString() ++ ")"
+}
+
+fn describe(shape: Circle) -> string {
+  return "Circle with radius " ++ shape.radius.toString()
+}
+
+val point = Point(10, 20)
+val circle = Circle(5)
+val d1 = describe(point)
+val d2 = describe(circle)
+
+// Async overloading - if any overload is async, the generated function must be async
+async fn fetchData(id: number) -> string {
+  return "Data for ID: " ++ id.toString()
+}
+
+async fn fetchData(id: string) -> string {
+  return "Data for key: " ++ id
+}
+
+async fn test() {
+  val data1 = await fetchData(42)
+  val data2 = await fetchData("user123")
+}

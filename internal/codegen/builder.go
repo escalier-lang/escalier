@@ -325,6 +325,13 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			return []Stmt{}
 		default:
 			expr, exprStmts := b.buildExpr(s.Expr, nil)
+
+			// If the expr is an empty identifier (used for terminal expressions),
+			// don't create an ExprStmt for it
+			if identExpr, ok := expr.(*IdentExpr); ok && identExpr.Name == "" {
+				return exprStmts
+			}
+
 			stmt := &ExprStmt{
 				Expr:   expr,
 				span:   nil,
@@ -341,6 +348,12 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			var exprStmts []Stmt
 			expr, exprStmts = b.buildExpr(s.Expr, nil)
 			stmts = slices.Concat(stmts, exprStmts)
+
+			// If the expression is a throw (empty identifier), don't create
+			// the return statement since throw never returns
+			if identExpr, ok := expr.(*IdentExpr); ok && identExpr.Name == "" {
+				return stmts
+			}
 		}
 		stmt := &ReturnStmt{
 			Expr:   expr,
@@ -593,6 +606,13 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			panic("TODO - TransformDecl - VarDecl - Init is nil")
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
+
+		// If the init expression is a throw (empty identifier), don't create the variable
+		// declaration, just return the throw statement
+		if identExpr, ok := initExpr.(*IdentExpr); ok && identExpr.Name == "" {
+			return initStmts
+		}
+
 		// Ignore checks returned by buildPattern
 		// Only export if we're in module mode AND not inside a block scope
 		export := b.isModule && !b.inBlockScope
@@ -1011,10 +1031,9 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 			// No more overloads - throw error
 			errorMsg := fmt.Sprintf("No overload matches the provided arguments for function '%s'", funcName)
 			return NewThrowStmt(
-				NewCallExpr(
+				NewNewExpr(
 					NewIdentExpr("TypeError", "", nil),
 					[]Expr{NewLitExpr(NewStrLit(errorMsg, nil), nil)},
-					false,
 					nil,
 				),
 				nil,
@@ -1032,15 +1051,29 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 			return NewBlockStmt(bodyStmts, overload)
 		}
 
-		// Generate type guard for first parameter
-		firstParam := overload.Params[0]
-		var guard Expr
+		// Generate type guards for all parameters that need checking
+		// We need to check enough parameters to distinguish this overload from remaining ones
+		var guards []Expr
+		for i, param := range overload.Params {
+			if param.TypeAnn != nil {
+				paramGuard := b.buildTypeGuard(NewIdentExpr(fmt.Sprintf("param%d", i), "", nil), param.TypeAnn)
+				guards = append(guards, paramGuard)
+			}
+		}
 
-		if firstParam.TypeAnn != nil {
-			guard = b.buildTypeGuard(NewIdentExpr("param0", "", nil), firstParam.TypeAnn)
-		} else {
-			// No type annotation - accept anything
+		// Combine all guards with && operators
+		var guard Expr
+		if len(guards) == 0 {
+			// No type annotations - accept anything
 			guard = NewLitExpr(NewBoolLit(true, nil), nil)
+		} else if len(guards) == 1 {
+			guard = guards[0]
+		} else {
+			// Combine multiple guards with &&
+			guard = guards[0]
+			for _, g := range guards[1:] {
+				guard = NewBinaryExpr(guard, LogicalAnd, g, nil)
+			}
 		}
 
 		// Build the body for this overload
@@ -1088,6 +1121,15 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 
 	dispatchStmt := buildDispatchChain(0)
 
+	// Check if any overload is async - if so, the generated function must be async
+	isAsync := false
+	for _, overload := range implementedOverloads {
+		if overload.Async {
+			isAsync = true
+			break
+		}
+	}
+
 	// Create the function declaration
 	fnDecl := &FuncDecl{
 		Name: &Identifier{
@@ -1101,7 +1143,7 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		TypeAnn:    nil,
 		declare:    false,
 		export:     b.isModule,
-		async:      false, // TODO: handle async overloads
+		async:      isAsync,
 		span:       nil,
 		source:     overloads[0],
 	}
@@ -1181,6 +1223,48 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 			nil,
 		)
 	case *ast.TypeRefTypeAnn:
+		// For type references, expand the type and check if it's a nominal type
+		inferredType := t.InferredType()
+		if inferredType != nil {
+			// Prune type variables to get the actual type
+			prunedType := type_system.Prune(inferredType)
+
+			// Check if it's a TypeRefType with a TypeAlias
+			if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
+				if typeRef.TypeAlias != nil {
+					// Get the aliased type
+					aliasedType := type_system.Prune(typeRef.TypeAlias.Type)
+
+					// Check if the aliased type is a nominal object type
+					if objType, ok := aliasedType.(*type_system.ObjectType); ok && objType.Nominal {
+						// Generate instanceof check for nominal types
+						typeName := ast.QualIdentToString(t.Name)
+						return NewBinaryExpr(
+							valueExpr,
+							InstanceOf,
+							NewIdentExpr(typeName, "", nil),
+							nil,
+						)
+					}
+				}
+			}
+
+			// Check if it's directly an object type (not aliased)
+			if objType, ok := prunedType.(*type_system.ObjectType); ok && objType.Nominal {
+				// Generate instanceof check for nominal types
+				typeName := ast.QualIdentToString(t.Name)
+				return NewBinaryExpr(
+					valueExpr,
+					InstanceOf,
+					NewIdentExpr(typeName, "", nil),
+					nil,
+				)
+			}
+
+			// TODO: handle non-object types
+			// TODO: handle structural object types
+		}
+
 		// For type references like Array<T>, try to infer the check
 		if t.Name != nil {
 			// Get the simple name from QualIdent
@@ -1389,13 +1473,66 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	case *ast.DoExpr:
 		return b.buildBlockWithTempVar(expr.Body.Stmts, expr)
 	case *ast.IfElseExpr:
+		// Check if all branches are terminal (return or throw in all paths)
+		consIsTerminal := isASTBlockTerminal(expr.Cons.Stmts)
+		altIsTerminal := expr.Alt != nil && ((expr.Alt.Block != nil && isASTBlockTerminal(expr.Alt.Block.Stmts)) ||
+			(expr.Alt.Expr != nil && isASTExprTerminal(expr.Alt.Expr)))
+		allBranchesTerminal := consIsTerminal && altIsTerminal
+
+		// Build the condition
+		condExpr, condStmts := b.buildExpr(expr.Cond, expr)
+
+		if allBranchesTerminal {
+			// All branches terminate - no need for temp variable
+			// Just build the if-else as statements
+			stmts := condStmts
+
+			// Build the consequent (then branch) without temp assignment
+			consStmts := b.buildStmts(expr.Cons.Stmts)
+
+			var altStmt Stmt
+			if expr.Alt != nil {
+				var altStmts []Stmt
+
+				if expr.Alt.Block != nil {
+					// Alternative is a block
+					altStmts = b.buildStmts(expr.Alt.Block.Stmts)
+				} else if expr.Alt.Expr != nil {
+					// Alternative is an expression
+					altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
+					altStmts = slices.Concat(altStmts, altExprStmts)
+
+					// If it's a terminal expression, it should be a statement
+					altStmts = append(altStmts, &ExprStmt{
+						Expr:   altExpr,
+						span:   nil,
+						source: expr.Alt.Expr,
+					})
+				}
+
+				// Always wrap alternative in a block for proper formatting
+				if len(altStmts) > 0 {
+					altStmt = NewBlockStmt(altStmts, expr)
+				}
+			}
+
+			// Create the consequent statement - always wrap in a block for proper formatting
+			consStmt := NewBlockStmt(consStmts, expr)
+
+			// Create the if statement
+			ifStmt := NewIfStmt(condExpr, consStmt, altStmt, expr)
+			stmts = append(stmts, ifStmt)
+
+			// Return a dummy identifier (will not be used since this is terminal)
+			// The caller should handle terminal expressions properly
+			return NewIdentExpr("", "", expr), stmts
+		}
+
+		// Non-terminal branches - use temp variable
 		// Generate a temporary variable for the if-else result
 		tempVar, tempDeclStmt := b.createTempVar(expr)
 
 		stmts := []Stmt{tempDeclStmt}
-
-		// Build the condition
-		condExpr, condStmts := b.buildExpr(expr.Cond, expr)
 		stmts = slices.Concat(stmts, condStmts)
 
 		// Build the consequent (then branch)
@@ -1445,16 +1582,12 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Create a throw statement
 		throwStmt := NewThrowStmt(argExpr, expr)
 
-		// Since throw never returns, we need to create a temporary variable
-		// for the expression context, but it will never be reached
-		tempVar, tempDeclStmt := b.createTempVar(expr)
-
-		// Return the temp variable (unreachable) and the statements
-		allStmts := []Stmt{tempDeclStmt}
-		allStmts = slices.Concat(allStmts, argStmts)
+		// Since throw never returns, we don't need a temporary variable
+		// Return an empty identifier (will be filtered out by buildStmt)
+		allStmts := argStmts
 		allStmts = append(allStmts, throwStmt)
 
-		return tempVar, allStmts
+		return NewIdentExpr("", "", expr), allStmts
 	case *ast.AwaitExpr:
 		// Build the argument expression
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
@@ -1818,6 +1951,64 @@ func (b *Builder) buildBlockWithTempVar(stmts []ast.Stmt, sourceExpr ast.Expr) (
 	return tempVar, outStmts
 }
 
+// isASTBlockTerminal checks if an AST block is guaranteed to terminate execution
+func isASTBlockTerminal(stmts []ast.Stmt) bool {
+	if len(stmts) == 0 {
+		return false
+	}
+	lastStmt := stmts[len(stmts)-1]
+	switch s := lastStmt.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.ExprStmt:
+		return isASTExprTerminal(s.Expr)
+	default:
+		return false
+	}
+}
+
+// isASTExprTerminal checks if an AST expression is guaranteed to terminate execution
+func isASTExprTerminal(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.ThrowExpr:
+		return true
+	case *ast.IfElseExpr:
+		// If-else is terminal if both branches are terminal
+		consIsTerminal := isASTBlockTerminal(e.Cons.Stmts)
+		altIsTerminal := e.Alt != nil && ((e.Alt.Block != nil && isASTBlockTerminal(e.Alt.Block.Stmts)) ||
+			(e.Alt.Expr != nil && isASTExprTerminal(e.Alt.Expr)))
+		return consIsTerminal && altIsTerminal
+	default:
+		return false
+	}
+}
+
+// isTerminalStmt checks if a statement is guaranteed to terminate execution
+// (return, throw, or if-else with returns in all branches)
+func isTerminalStmt(stmt Stmt) bool {
+	switch s := stmt.(type) {
+	case *ReturnStmt:
+		return true
+	case *ThrowStmt:
+		return true
+	case *IfStmt:
+		// If statement is terminal if the consequent is terminal AND
+		// there is an alternative that is also terminal
+		if s.Alt == nil {
+			return false // if without else can skip the body
+		}
+		return isTerminalStmt(s.Cons) && isTerminalStmt(s.Alt)
+	case *BlockStmt:
+		// Block is terminal if its last statement is terminal
+		if len(s.Stmts) == 0 {
+			return false
+		}
+		return isTerminalStmt(s.Stmts[len(s.Stmts)-1])
+	default:
+		return false
+	}
+}
+
 // buildBlockStmtsWithTempAssignment builds statements for a block, treating the last
 // statement specially by assigning its result to the given temp variable.
 func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Expr, sourceExpr ast.Expr) []Stmt {
@@ -1861,17 +2052,13 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 			}
 		} else {
 			// Last statement is not an expression, add it as-is
-			blockStmts = slices.Concat(blockStmts, b.buildStmt(lastStmt))
+			builtLastStmts := b.buildStmt(lastStmt)
+			blockStmts = slices.Concat(blockStmts, builtLastStmts)
 
 			// Only assign undefined if the last statement is not a terminal statement
-			// (return statements and throw expressions end execution, so no assignment is needed)
-			_, isReturn := lastStmt.(*ast.ReturnStmt)
-			isThrow := false
-			if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-				_, isThrow = exprStmt.Expr.(*ast.ThrowExpr)
-			}
-
-			if !isReturn && !isThrow {
+			// (return statements, throw expressions, and if-else statements with
+			// returns in all branches end execution, so no assignment is needed)
+			if len(builtLastStmts) > 0 && !isTerminalStmt(builtLastStmts[len(builtLastStmts)-1]) {
 				// Assign undefined to temp variable
 				assignment := NewBinaryExpr(
 					tempVar,

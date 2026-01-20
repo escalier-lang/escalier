@@ -9,7 +9,6 @@ try {
 export const basicTryCatch = temp1;
 let temp2;
 try {
-  let temp3;
   throw "error";
 } catch (__error) {
   if (true) {
@@ -20,113 +19,109 @@ try {
   }
 }
 export const tryCatchWithThrow = temp2;
-let temp4;
+let temp3;
 try {
-  let temp5;
   throw Error("fail");
 } catch (__error) {
   if (true) {
     const Error = __error;
-    temp4 = "caught error";
+    temp3 = "caught error";
   } else {
-    temp4 = "unknown";
+    temp3 = "unknown";
   }
 }
-export const multipleCases = temp4;
-let temp6;
+export const multipleCases = temp3;
+let temp4;
 try {
-  let temp7;
   throw "fail";
 } catch (__error) {
   if (true) {
     const msg = __error;
-    temp6 = msg;
+    temp4 = msg;
   } else {
-    temp6 = "unknown";
+    temp4 = "unknown";
   }
 }
-export const patternBinding = temp6;
-let temp8;
+export const patternBinding = temp4;
+let temp5;
 try {
-  let temp9;
   throw "critical";
 } catch (__error) {
   if (true) {
     const err = __error;
     if (err == "critical") {
-      temp8 = "critical error";
+      temp5 = "critical error";
     } else if (true) {
-      temp8 = "other error";
+      temp5 = "other error";
     }
   }
 }
-export const withGuard = temp8;
-let temp10;
+export const withGuard = temp5;
+let temp6;
 try {
-  temp10 = 42;
+  temp6 = 42;
 }
-export const tryOnly = temp10;
-export function safeDivide(temp11, temp12) {
-  const a = temp11;
-  const b = temp12;
-  let temp13;
+export const tryOnly = temp6;
+export function safeDivide(temp7, temp8) {
+  const a = temp7;
+  const b = temp8;
+  let temp9;
   try {
-    temp13 = a / b;
+    temp9 = a / b;
   } catch (__error) {
     if (true) {
-      temp13 = 0;
+      temp9 = 0;
     }
   }
-  return temp13;
+  return temp9;
 }
-let temp14;
+let temp10;
 try {
-  let temp15;
   throw {message: "fail"};
 } catch (__error) {
   if (__error != null && "message" in __error) {
     const {message: msg} = __error;
-    temp14 = msg;
+    temp10 = msg;
   } else {
-    temp14 = "unknown";
+    temp10 = "unknown";
   }
 }
-export const objectPattern = temp14;
-let temp16;
+export const objectPattern = temp10;
+let temp11;
 try {
-  let temp17;
+  let temp12;
   try {
-    temp17 = 5;
+    temp12 = 5;
   } catch (__error) {
     if (true) {
-      temp17 = 10;
+      temp12 = 10;
     }
   }
-  temp16 = temp17;
+  temp11 = temp12;
 } catch (__error) {
   if (true) {
-    temp16 = 0;
+    temp11 = 0;
   }
 }
-export const nestedTryCatch = temp16;
-let temp18;
+export const nestedTryCatch = temp11;
+let temp13;
 try {
   const x = 5;
-  temp18 = x + 10;
+  temp13 = x + 10;
 } catch (__error) {
   if (true) {
     const y = 0;
-    temp18 = y;
+    temp13 = y;
   }
 }
-export const blockBody = temp18;
-let temp19;
+export const blockBody = temp13;
+let temp14;
 try {
-  temp19 = 42;
+  temp14 = 42;
 } catch (__error) {
   if (true) {
-    temp19 = "error";
+    temp14 = "error";
   }
 }
-export const mixedReturn = temp19;
+export const mixedReturn = temp14;
 //# sourceMappingURL=./index.js.map
