@@ -86,4 +86,15 @@ export async function test() {
   const data1 = await fetchData(42);
   const data2 = await fetchData("user123");
 }
+export function processPoint(param0) {
+  if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number") {
+    const {x, y} = param0;
+    return "2D Point: " + x.toString() + ", " + y.toString();
+  } else if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number" && "z" in param0 && typeof param0.z === "number") {
+    const {x, y, z} = param0;
+    return "3D Point: " + x.toString() + ", " + y.toString() + ", " + z.toString();
+  } else throw new TypeError("No overload matches the provided arguments for function 'processPoint'");
+}
+export const p1 = processPoint({x: 1, y: 2});
+export const p2 = processPoint({x: 1, y: 2, z: 3});
 //# sourceMappingURL=./index.js.map

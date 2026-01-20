@@ -1080,31 +1080,16 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		prevInBlockScope := b.inBlockScope
 		b.inBlockScope = true
 
-		// Map params to expected names
+		// Map params to expected names using buildPattern to handle all pattern types
 		var bodyStmts []Stmt
 		for j, param := range overload.Params {
-			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
-				// Create: const actualParamName = param{j}
-				mapping := &VarDecl{
-					Kind: ValKind,
-					Decls: []*Declarator{
-						{
-							Pattern: NewIdentPat(identPat.Name, nil, param.Pattern),
-							TypeAnn: nil,
-							Init:    NewIdentExpr(fmt.Sprintf("param%d", j), "", nil),
-						},
-					},
-					declare: false,
-					export:  false,
-					span:    nil,
-					source:  param.Pattern,
-				}
-				bodyStmts = append(bodyStmts, &DeclStmt{
-					Decl:   mapping,
-					span:   nil,
-					source: param.Pattern,
-				})
-			}
+			// Create the source expression: param{j}
+			paramExpr := NewIdentExpr(fmt.Sprintf("param%d", j), "", nil)
+
+			// Use buildPattern to handle all pattern types (IdentPat, destructuring, rest, etc.)
+			// Pass export=false since these are local parameter bindings
+			_, patternStmts := b.buildPattern(param.Pattern, paramExpr, false, ast.ValKind, "")
+			bodyStmts = slices.Concat(bodyStmts, patternStmts)
 		}
 
 		bodyStmts = slices.Concat(bodyStmts, b.buildStmts(overload.Body.Stmts))
@@ -1195,20 +1180,59 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		}
 		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)
 	case *ast.ObjectTypeAnn:
-		// For object types, check that it's not null and typeof is "object"
+		// For structural object types, check properties similar to buildPatternCondition
+		var conditions []Expr
+
+		// Check that it's not null
 		notNull := NewBinaryExpr(
 			valueExpr,
 			StrictNotEqual,
 			NewLitExpr(NewNullLit(nil), nil),
 			nil,
 		)
+		conditions = append(conditions, notNull)
+
+		// Check that typeof is "object"
 		isObject := NewBinaryExpr(
 			NewUnaryExpr(TypeOf, valueExpr, nil),
 			StrictEqual,
 			NewLitExpr(NewStrLit("object", nil), nil),
 			nil,
 		)
-		return NewBinaryExpr(notNull, LogicalAnd, isObject, nil)
+		conditions = append(conditions, isObject)
+
+		// For each required property, check that it exists
+		for _, elem := range t.Elems {
+			switch objElem := elem.(type) {
+			case *ast.PropertyTypeAnn:
+				// Check that the property exists: "propName" in object
+				var propName string
+				switch key := objElem.Name.(type) {
+				case *ast.IdentExpr:
+					propName = key.Name
+				case *ast.StrLit:
+					propName = key.Value
+				default:
+					continue // Skip computed properties
+				}
+
+				propExistsCheck := NewBinaryExpr(
+					NewLitExpr(NewStrLit(propName, nil), nil),
+					In,
+					valueExpr,
+					nil,
+				)
+				conditions = append(conditions, propExistsCheck)
+
+				// Recursively check the property's type
+				propAccess := NewMemberExpr(valueExpr, NewIdentifier(propName, nil), false, nil)
+				propTypeGuard := b.buildTypeGuard(propAccess, objElem.Value)
+				conditions = append(conditions, propTypeGuard)
+			}
+		}
+
+		// Combine all conditions with &&
+		return combineConditions(conditions, t)
 	case *ast.TupleTypeAnn:
 		// Check if it's an array
 		return NewCallExpr(
