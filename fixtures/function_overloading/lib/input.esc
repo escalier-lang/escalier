@@ -97,3 +97,19 @@ fn processPoint({x, y, z}: {x: number, y: number, z: number}) -> string {
 
 val p1 = processPoint({x: 1, y: 2})
 val p2 = processPoint({x: 1, y: 2, z: 3})
+// Variable arity overloading - verify overloads with different param counts are ordered correctly
+fn greet(name: string) -> string {
+  return "Hello, " ++ name ++ "!"
+}
+
+fn greet(title: string, name: string) -> string {
+  return "Hello, " ++ title ++ " " ++ name ++ "!"
+}
+
+fn greet(title: string, firstName: string, lastName: string) -> string {
+  return "Hello, " ++ title ++ " " ++ firstName ++ " " ++ lastName ++ "!"
+}
+
+val g1 = greet("Alice")
+val g2 = greet("Dr.", "Bob")
+val g3 = greet("Prof.", "Carol", "Smith")

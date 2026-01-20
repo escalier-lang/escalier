@@ -1004,6 +1004,54 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		return []Stmt{}
 	}
 
+	// Helper function to count the specificity of a parameter type
+	// For object types, count the number of required properties
+	countTypeSpecificity := func(param *ast.Param) int {
+		if param.TypeAnn == nil {
+			return 0
+		}
+		switch typeAnn := param.TypeAnn.(type) {
+		case *ast.ObjectTypeAnn:
+			// Count required properties (non-optional)
+			count := 0
+			for _, elem := range typeAnn.Elems {
+				if propType, ok := elem.(*ast.PropertyTypeAnn); ok {
+					if !propType.Optional {
+						count++
+					}
+				}
+			}
+			return count
+		default:
+			return 1 // Default specificity for other types
+		}
+	}
+
+	// Sort overloads by specificity (descending) so that more specific overloads
+	// are checked first. This is necessary because without arity checks, function
+	// subtyping allows less specific functions to match more specific calls.
+	// We sort by: 1) parameter count (more first), 2) type specificity (more first)
+	slices.SortFunc(implementedOverloads, func(a, b *ast.FuncDecl) int {
+		// First, compare by parameter count
+		if len(a.Params) != len(b.Params) {
+			return len(b.Params) - len(a.Params) // Descending order
+		}
+
+		// If same parameter count, compare by type specificity
+		// Calculate total specificity for each overload
+		aSpecificity := 0
+		for _, param := range a.Params {
+			aSpecificity += countTypeSpecificity(param)
+		}
+
+		bSpecificity := 0
+		for _, param := range b.Params {
+			bSpecificity += countTypeSpecificity(param)
+		}
+
+		return bSpecificity - aSpecificity // Descending order
+	})
+
 	// Collect all unique parameter names across overloads
 	// We'll use the maximum parameter count and give them generic names
 	maxParams := 0

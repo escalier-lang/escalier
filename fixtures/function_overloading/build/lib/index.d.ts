@@ -17,3 +17,6 @@ declare const d2: string;
 declare async function test(): Promise<void, never>;
 declare const p1: string;
 declare const p2: string;
+declare const g1: string;
+declare const g2: string;
+declare const g3: string;

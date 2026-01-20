@@ -87,14 +87,32 @@ export async function test() {
   const data2 = await fetchData("user123");
 }
 export function processPoint(param0) {
-  if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number") {
-    const {x, y} = param0;
-    return "2D Point: " + x.toString() + ", " + y.toString();
-  } else if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number" && "z" in param0 && typeof param0.z === "number") {
+  if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number" && "z" in param0 && typeof param0.z === "number") {
     const {x, y, z} = param0;
     return "3D Point: " + x.toString() + ", " + y.toString() + ", " + z.toString();
+  } else if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number" && "y" in param0 && typeof param0.y === "number") {
+    const {x, y} = param0;
+    return "2D Point: " + x.toString() + ", " + y.toString();
   } else throw new TypeError("No overload matches the provided arguments for function 'processPoint'");
 }
 export const p1 = processPoint({x: 1, y: 2});
 export const p2 = processPoint({x: 1, y: 2, z: 3});
+export function greet(param0, param1, param2) {
+  if (typeof param0 === "string" && typeof param1 === "string" && typeof param2 === "string") {
+    const title = param0;
+    const firstName = param1;
+    const lastName = param2;
+    return "Hello, " + title + " " + firstName + " " + lastName + "!";
+  } else if (typeof param0 === "string" && typeof param1 === "string") {
+    const title = param0;
+    const name = param1;
+    return "Hello, " + title + " " + name + "!";
+  } else if (typeof param0 === "string") {
+    const name = param0;
+    return "Hello, " + name + "!";
+  } else throw new TypeError("No overload matches the provided arguments for function 'greet'");
+}
+export const g1 = greet("Alice");
+export const g2 = greet("Dr.", "Bob");
+export const g3 = greet("Prof.", "Carol", "Smith");
 //# sourceMappingURL=./index.js.map
