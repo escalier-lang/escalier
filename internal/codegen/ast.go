@@ -136,6 +136,7 @@ func (*AwaitExpr) isExpr()             {}
 func (*TypeCastExpr) isExpr()          {}
 func (*TemplateLitExpr) isExpr()       {}
 func (*TaggedTemplateLitExpr) isExpr() {}
+func (*EmptyExpr) isExpr()             {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -434,6 +435,20 @@ func NewIdentExpr(name string, namespace string, source ast.Node) *IdentExpr {
 func (e *IdentExpr) Span() *Span        { return e.span }
 func (e *IdentExpr) SetSpan(span *Span) { e.span = span }
 func (e *IdentExpr) Source() ast.Node   { return e.source }
+
+// EmptyExpr represents a placeholder expression used when an expression is needed
+// but no actual value should be generated (e.g., after a throw or in terminal branches).
+type EmptyExpr struct {
+	span   *Span
+	source ast.Node
+}
+
+func NewEmptyExpr(source ast.Node) *EmptyExpr {
+	return &EmptyExpr{source: source, span: nil}
+}
+func (e *EmptyExpr) Span() *Span        { return e.span }
+func (e *EmptyExpr) SetSpan(span *Span) { e.span = span }
+func (e *EmptyExpr) Source() ast.Node   { return e.source }
 
 // Match expressions and related types
 type MatchExpr struct {

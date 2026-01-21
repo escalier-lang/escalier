@@ -326,9 +326,9 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 		default:
 			expr, exprStmts := b.buildExpr(s.Expr, nil)
 
-			// If the expr is an empty identifier (used for terminal expressions),
+			// If the expr is an EmptyExpr (used for terminal expressions),
 			// don't create an ExprStmt for it
-			if identExpr, ok := expr.(*IdentExpr); ok && identExpr.Name == "" {
+			if _, ok := expr.(*EmptyExpr); ok {
 				return exprStmts
 			}
 
@@ -349,9 +349,9 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			expr, exprStmts = b.buildExpr(s.Expr, nil)
 			stmts = slices.Concat(stmts, exprStmts)
 
-			// If the expression is a throw (empty identifier), don't create
+			// If the expression is a throw (EmptyExpr), don't create
 			// the return statement since throw never returns
-			if identExpr, ok := expr.(*IdentExpr); ok && identExpr.Name == "" {
+			if _, ok := expr.(*EmptyExpr); ok {
 				return stmts
 			}
 		}
@@ -607,9 +607,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
 
-		// If the init expression is a throw (empty identifier), don't create the variable
+		// If the init expression is a throw (EmptyExpr), don't create the variable
 		// declaration, just return the throw statement
-		if identExpr, ok := initExpr.(*IdentExpr); ok && identExpr.Name == "" {
+		if _, ok := initExpr.(*EmptyExpr); ok {
 			return initStmts
 		}
 
@@ -1188,44 +1188,72 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 	}}
 }
 
+// buildTypeOfCheck constructs a binary expression for typeof checks like `typeof x === "string"`
+func (b *Builder) buildTypeOfCheck(valueExpr Expr, typeString string, operator BinaryOp, source ast.Node) Expr {
+	typeofExpr := NewUnaryExpr(TypeOf, valueExpr, source)
+	typeStringLit := NewLitExpr(NewStrLit(typeString, source), source)
+	return NewBinaryExpr(typeofExpr, operator, typeStringLit, source)
+}
+
+// buildLit converts an ast.Lit to a codegen Lit
+func buildLit(lit ast.Lit) Lit {
+	switch l := lit.(type) {
+	case *ast.BoolLit:
+		return NewBoolLit(l.Value, l)
+	case *ast.NumLit:
+		return NewNumLit(l.Value, l)
+	case *ast.StrLit:
+		return NewStrLit(l.Value, l)
+	case *ast.RegexLit:
+		return NewRegexLit(l.Value, l)
+	case *ast.BigIntLit:
+		panic("TODO: big int literal")
+	case *ast.NullLit:
+		return NewNullLit(l)
+	case *ast.UndefinedLit:
+		return NewUndefinedLit(l)
+	default:
+		panic(fmt.Sprintf("buildLit: unsupported literal type: %T", lit))
+	}
+}
+
+// buildArrayIsArrayCheck generates a call to Array.isArray(valueExpr)
+func buildArrayIsArrayCheck(valueExpr Expr, source ast.Node) Expr {
+	return NewCallExpr(
+		NewMemberExpr(
+			NewIdentExpr("Array", "", source),
+			NewIdentifier("isArray", source),
+			false,
+			source,
+		),
+		[]Expr{valueExpr},
+		false,
+		source,
+	)
+}
+
+// buildPropertyInObjectCheck generates a check for "propName" in objectExpr
+func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Node) Expr {
+	return NewBinaryExpr(
+		NewLitExpr(NewStrLit(propName, source), source),
+		In,
+		objectExpr,
+		source,
+	)
+}
+
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	switch t := typeAnn.(type) {
 	case *ast.NumberTypeAnn:
-		return NewBinaryExpr(
-			NewUnaryExpr(TypeOf, valueExpr, nil),
-			StrictEqual,
-			NewLitExpr(NewStrLit("number", nil), nil),
-			nil,
-		)
+		return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
 	case *ast.StringTypeAnn:
-		return NewBinaryExpr(
-			NewUnaryExpr(TypeOf, valueExpr, nil),
-			StrictEqual,
-			NewLitExpr(NewStrLit("string", nil), nil),
-			nil,
-		)
+		return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
 	case *ast.BooleanTypeAnn:
-		return NewBinaryExpr(
-			NewUnaryExpr(TypeOf, valueExpr, nil),
-			StrictEqual,
-			NewLitExpr(NewStrLit("boolean", nil), nil),
-			nil,
-		)
+		return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
 	case *ast.LitTypeAnn:
 		// For literal types, check exact value
-		var litExpr Expr
-		switch lit := t.Lit.(type) {
-		case *ast.NumLit:
-			litExpr = NewLitExpr(NewNumLit(lit.Value, lit), nil)
-		case *ast.StrLit:
-			litExpr = NewLitExpr(NewStrLit(lit.Value, lit), nil)
-		case *ast.BoolLit:
-			litExpr = NewLitExpr(NewBoolLit(lit.Value, lit), nil)
-		default:
-			// For other literal types, fall back to true (accept anything)
-			return NewLitExpr(NewBoolLit(true, nil), nil)
-		}
+		litExpr := NewLitExpr(buildLit(t.Lit), nil)
 		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)
 	case *ast.ObjectTypeAnn:
 		// For structural object types, check properties similar to buildPatternCondition
@@ -1241,12 +1269,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		conditions = append(conditions, notNull)
 
 		// Check that typeof is "object"
-		isObject := NewBinaryExpr(
-			NewUnaryExpr(TypeOf, valueExpr, nil),
-			StrictEqual,
-			NewLitExpr(NewStrLit("object", nil), nil),
-			nil,
-		)
+		isObject := b.buildTypeOfCheck(valueExpr, "object", StrictEqual, nil)
 		conditions = append(conditions, isObject)
 
 		// For each required property, check that it exists
@@ -1264,15 +1287,8 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 					continue // Skip computed properties
 				}
 
-				propExistsCheck := NewBinaryExpr(
-					NewLitExpr(NewStrLit(propName, nil), nil),
-					In,
-					valueExpr,
-					nil,
-				)
+				propExistsCheck := buildPropertyInObjectCheck(propName, valueExpr, nil)
 				conditions = append(conditions, propExistsCheck)
-
-				// Recursively check the property's type
 				propAccess := NewMemberExpr(valueExpr, NewIdentifier(propName, nil), false, nil)
 				propTypeGuard := b.buildTypeGuard(propAccess, objElem.Value)
 				conditions = append(conditions, propTypeGuard)
@@ -1283,17 +1299,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		return combineConditions(conditions, t)
 	case *ast.TupleTypeAnn:
 		// Check if it's an array
-		return NewCallExpr(
-			NewMemberExpr(
-				NewIdentExpr("Array", "", nil),
-				NewIdentifier("isArray", nil),
-				false,
-				nil,
-			),
-			[]Expr{valueExpr},
-			false,
-			nil,
-		)
+		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
 		// For type references, expand the type and check if it's a nominal type
 		inferredType := t.InferredType()
@@ -1333,8 +1339,8 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 				)
 			}
 
-			// TODO: handle non-object types
-			// TODO: handle structural object types
+			// TODO(#289): handle non-object types
+			// TODO(#289): handle structural object types
 		}
 
 		// For type references like Array<T>, try to infer the check
@@ -1343,17 +1349,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 			name := ast.QualIdentToString(t.Name)
 			switch name {
 			case "Array":
-				return NewCallExpr(
-					NewMemberExpr(
-						NewIdentExpr("Array", "", nil),
-						NewIdentifier("isArray", nil),
-						false,
-						nil,
-					),
-					[]Expr{valueExpr},
-					false,
-					nil,
-				)
+				return buildArrayIsArrayCheck(valueExpr, nil)
 			}
 		}
 		// Default: accept anything
@@ -1371,24 +1367,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 	switch expr := expr.(type) {
 	case *ast.LiteralExpr:
-		switch lit := expr.Lit.(type) {
-		case *ast.BoolLit:
-			return NewLitExpr(NewBoolLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.NumLit:
-			return NewLitExpr(NewNumLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.StrLit:
-			return NewLitExpr(NewStrLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.RegexLit:
-			return NewLitExpr(NewRegexLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.BigIntLit:
-			panic("TODO: big int literal")
-		case *ast.NullLit:
-			return NewLitExpr(NewNullLit(lit), expr), []Stmt{}
-		case *ast.UndefinedLit:
-			return NewLitExpr(NewUndefinedLit(lit), expr), []Stmt{}
-		default:
-			panic("TODO: literal type")
-		}
+		return NewLitExpr(buildLit(expr.Lit), expr), []Stmt{}
 	case *ast.BinaryExpr:
 		leftExpr, leftStmts := b.buildExpr(expr.Left, expr)
 		rightExpr, rightStmts := b.buildExpr(expr.Right, expr)
@@ -1595,9 +1574,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			ifStmt := NewIfStmt(condExpr, consStmt, altStmt, expr)
 			stmts = append(stmts, ifStmt)
 
-			// Return a dummy identifier (will not be used since this is terminal)
+			// Return an EmptyExpr as a placeholder since all branches are terminal
 			// The caller should handle terminal expressions properly
-			return NewIdentExpr("", "", expr), stmts
+			return NewEmptyExpr(expr), stmts
 		}
 
 		// Non-terminal branches - use temp variable
@@ -1655,11 +1634,11 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		throwStmt := NewThrowStmt(argExpr, expr)
 
 		// Since throw never returns, we don't need a temporary variable
-		// Return an empty identifier (will be filtered out by buildStmt)
+		// Return an EmptyExpr as a placeholder since this is a terminal expression
 		allStmts := argStmts
 		allStmts = append(allStmts, throwStmt)
 
-		return NewIdentExpr("", "", expr), allStmts
+		return NewEmptyExpr(expr), allStmts
 	case *ast.AwaitExpr:
 		// Build the argument expression
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
@@ -2130,6 +2109,10 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 			// Only assign undefined if the last statement is not a terminal statement
 			// (return statements, throw expressions, and if-else statements with
 			// returns in all branches end execution, so no assignment is needed)
+			// Note: We check isTerminalStmt on the *built* statement rather than the AST
+			// because buildStmt can transform statements in ways that affect terminality.
+			// For example, buildStmt might return multiple statements or transform an
+			// expression statement containing a throw into a terminal ThrowStmt.
 			if len(builtLastStmts) > 0 && !isTerminalStmt(builtLastStmts[len(builtLastStmts)-1]) {
 				// Assign undefined to temp variable
 				assignment := NewBinaryExpr(
@@ -2581,12 +2564,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			switch objElem := elem.(type) {
 			case *ast.ObjKeyValuePat:
 				// Check that the property exists: "propName" in object
-				propExistsCheck := NewBinaryExpr(
-					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
-					In,
-					targetExpr,
-					objElem,
-				)
+				propExistsCheck := buildPropertyInObjectCheck(objElem.Key.Name, targetExpr, objElem)
 				conditions = append(conditions, propExistsCheck)
 
 				// Recursively check the value pattern (condition only)
@@ -2599,12 +2577,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object
-				propExistsCheck := NewBinaryExpr(
-					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
-					In,
-					targetExpr,
-					objElem,
-				)
+				propExistsCheck := buildPropertyInObjectCheck(objElem.Key.Name, targetExpr, objElem)
 				conditions = append(conditions, propExistsCheck)
 
 				// Handle defaults for shorthand patterns
