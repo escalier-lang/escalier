@@ -684,7 +684,7 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph, nil)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -795,7 +795,7 @@ app.utils.calculate = app__utils__calculate;`,
 
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph, nil)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -870,7 +870,7 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 
 			// Create a builder and test BuildTopLevelDecls
 			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph)
+			outModule := builder.BuildTopLevelDecls(depGraph, nil)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()

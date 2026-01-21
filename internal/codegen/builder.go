@@ -14,11 +14,12 @@ import (
 )
 
 type Builder struct {
-	tempId       int
-	depGraph     *dep_graph.DepGraph
-	hasExtractor bool
-	isModule     bool
-	inBlockScope bool
+	tempId        int
+	depGraph      *dep_graph.DepGraph
+	hasExtractor  bool
+	isModule      bool
+	inBlockScope  bool
+	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
 }
 
 func (b *Builder) NewTempId() string {
@@ -324,6 +325,13 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			return []Stmt{}
 		default:
 			expr, exprStmts := b.buildExpr(s.Expr, nil)
+
+			// If the expr is an EmptyExpr (used for terminal expressions),
+			// don't create an ExprStmt for it
+			if _, ok := expr.(*EmptyExpr); ok {
+				return exprStmts
+			}
+
 			stmt := &ExprStmt{
 				Expr:   expr,
 				span:   nil,
@@ -340,6 +348,12 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			var exprStmts []Stmt
 			expr, exprStmts = b.buildExpr(s.Expr, nil)
 			stmts = slices.Concat(stmts, exprStmts)
+
+			// If the expression is a throw (EmptyExpr), don't create
+			// the return statement since throw never returns
+			if _, ok := expr.(*EmptyExpr); ok {
+				return stmts
+			}
 		}
 		stmt := &ReturnStmt{
 			Expr:   expr,
@@ -386,10 +400,17 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 // the strongly connected components of the dependency graph.  The reason why
 // we pass this in is because we don't want to compute the strongly connected
 // components more than once and BuildDefinitions needs this information as well.
-func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
+func (b *Builder) BuildTopLevelDecls(
+	depGraph *dep_graph.DepGraph,
+	overloadDecls map[string][]*ast.FuncDecl,
+) *Module {
 	// Set up builder state
 	b.depGraph = depGraph
 	b.isModule = true
+	b.overloadDecls = overloadDecls
+	if b.overloadDecls == nil {
+		b.overloadDecls = make(map[string][]*ast.FuncDecl)
+	}
 
 	var stmts []Stmt
 
@@ -585,12 +606,37 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			panic("TODO - TransformDecl - VarDecl - Init is nil")
 		}
 		initExpr, initStmts := b.buildExpr(d.Init, nil)
+
+		// If the init expression is a throw (EmptyExpr), don't create the variable
+		// declaration, just return the throw statement
+		if _, ok := initExpr.(*EmptyExpr); ok {
+			return initStmts
+		}
+
 		// Ignore checks returned by buildPattern
 		// Only export if we're in module mode AND not inside a block scope
 		export := b.isModule && !b.inBlockScope
 		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
+		// Check if this is an overloaded function
+		funcName := d.Name.Name
+		if nsName != "" {
+			funcName = nsName + "." + funcName
+		}
+
+		overloads, isOverloaded := b.overloadDecls[funcName]
+		if isOverloaded && len(overloads) > 1 {
+			// Only generate the dispatch function for the first overload we encounter
+			// Check if this is the first one by comparing pointers
+			if overloads[0] == d {
+				return b.buildOverloadedFunc(overloads, nsName)
+			}
+			// Skip other overload declarations - they're handled by the first one
+			return []Stmt{}
+		}
+
+		// Single function (non-overloaded) - use existing logic
 		params, allParamStmts := b.buildParams(d.Params)
 		if d.Body == nil {
 			return []Stmt{}
@@ -936,6 +982,384 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	}
 }
 
+// buildOverloadedFunc generates a single function with dispatch logic for overloaded functions
+func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) []Stmt {
+	if len(overloads) == 0 {
+		return []Stmt{}
+	}
+
+	// All overloads should have the same name
+	funcName := overloads[0].Name.Name
+
+	// Filter out declare-only functions (they have no body)
+	var implementedOverloads []*ast.FuncDecl
+	for _, overload := range overloads {
+		if overload.Body != nil {
+			implementedOverloads = append(implementedOverloads, overload)
+		}
+	}
+
+	// If all overloads are declare-only, skip codegen
+	if len(implementedOverloads) == 0 {
+		return []Stmt{}
+	}
+
+	// Helper function to count the specificity of a parameter type
+	// For object types, count the number of required properties
+	countTypeSpecificity := func(param *ast.Param) int {
+		if param.TypeAnn == nil {
+			return 0
+		}
+		switch typeAnn := param.TypeAnn.(type) {
+		case *ast.ObjectTypeAnn:
+			// Count required properties (non-optional)
+			count := 0
+			for _, elem := range typeAnn.Elems {
+				if propType, ok := elem.(*ast.PropertyTypeAnn); ok {
+					if !propType.Optional {
+						count++
+					}
+				}
+			}
+			return count
+		default:
+			return 1 // Default specificity for other types
+		}
+	}
+
+	// Sort overloads by specificity (descending) so that more specific overloads
+	// are checked first. This is necessary because without arity checks, function
+	// subtyping allows less specific functions to match more specific calls.
+	// We sort by: 1) parameter count (more first), 2) type specificity (more first)
+	slices.SortFunc(implementedOverloads, func(a, b *ast.FuncDecl) int {
+		// First, compare by parameter count
+		if len(a.Params) != len(b.Params) {
+			return len(b.Params) - len(a.Params) // Descending order
+		}
+
+		// If same parameter count, compare by type specificity
+		// Calculate total specificity for each overload
+		aSpecificity := 0
+		for _, param := range a.Params {
+			aSpecificity += countTypeSpecificity(param)
+		}
+
+		bSpecificity := 0
+		for _, param := range b.Params {
+			bSpecificity += countTypeSpecificity(param)
+		}
+
+		return bSpecificity - aSpecificity // Descending order
+	})
+
+	// Collect all unique parameter names across overloads
+	// We'll use the maximum parameter count and give them generic names
+	maxParams := 0
+	for _, overload := range implementedOverloads {
+		if len(overload.Params) > maxParams {
+			maxParams = len(overload.Params)
+		}
+	}
+
+	// Generate parameter names: param0, param1, param2, ...
+	params := make([]*Param, 0, maxParams)
+	for i := 0; i < maxParams; i++ {
+		paramName := fmt.Sprintf("param%d", i)
+		params = append(params, &Param{
+			Pattern:  NewIdentPat(paramName, nil, nil),
+			Optional: false,
+			TypeAnn:  nil,
+		})
+	}
+
+	// Build the dispatch logic as nested if-else statements
+	var buildDispatchChain func(int) Stmt
+	buildDispatchChain = func(overloadIdx int) Stmt {
+		if overloadIdx >= len(implementedOverloads) {
+			// No more overloads - throw error
+			errorMsg := fmt.Sprintf("No overload matches the provided arguments for function '%s'", funcName)
+			return NewThrowStmt(
+				NewNewExpr(
+					NewIdentExpr("TypeError", "", nil),
+					[]Expr{NewLitExpr(NewStrLit(errorMsg, nil), nil)},
+					nil,
+				),
+				nil,
+			)
+		}
+
+		overload := implementedOverloads[overloadIdx]
+
+		if len(overload.Params) == 0 {
+			// No parameters - this overload always matches
+			prevInBlockScope := b.inBlockScope
+			b.inBlockScope = true
+			bodyStmts := b.buildStmts(overload.Body.Stmts)
+			b.inBlockScope = prevInBlockScope
+			return NewBlockStmt(bodyStmts, overload)
+		}
+
+		// Generate type guards for all parameters that need checking
+		// We need to check enough parameters to distinguish this overload from remaining ones
+		var guards []Expr
+		for i, param := range overload.Params {
+			if param.TypeAnn != nil {
+				paramGuard := b.buildTypeGuard(NewIdentExpr(fmt.Sprintf("param%d", i), "", nil), param.TypeAnn)
+				guards = append(guards, paramGuard)
+			}
+		}
+
+		// Combine all guards with && operators
+		var guard Expr
+		if len(guards) == 0 {
+			// No type annotations - accept anything
+			guard = NewLitExpr(NewBoolLit(true, nil), nil)
+		} else if len(guards) == 1 {
+			guard = guards[0]
+		} else {
+			// Combine multiple guards with &&
+			guard = guards[0]
+			for _, g := range guards[1:] {
+				guard = NewBinaryExpr(guard, LogicalAnd, g, nil)
+			}
+		}
+
+		// Build the body for this overload
+		prevInBlockScope := b.inBlockScope
+		b.inBlockScope = true
+
+		// Map params to expected names using buildPattern to handle all pattern types
+		var bodyStmts []Stmt
+		for j, param := range overload.Params {
+			// Create the source expression: param{j}
+			paramExpr := NewIdentExpr(fmt.Sprintf("param%d", j), "", nil)
+
+			// Use buildPattern to handle all pattern types (IdentPat, destructuring, rest, etc.)
+			// Pass export=false since these are local parameter bindings
+			_, patternStmts := b.buildPattern(param.Pattern, paramExpr, false, ast.ValKind, "")
+			bodyStmts = slices.Concat(bodyStmts, patternStmts)
+		}
+
+		bodyStmts = slices.Concat(bodyStmts, b.buildStmts(overload.Body.Stmts))
+		b.inBlockScope = prevInBlockScope
+
+		// Create if-else: if (guard) { body } else { next overload }
+		return NewIfStmt(
+			guard,
+			NewBlockStmt(bodyStmts, overload),
+			buildDispatchChain(overloadIdx+1),
+			overload,
+		)
+	}
+
+	dispatchStmt := buildDispatchChain(0)
+
+	// Check if any overload is async - if so, the generated function must be async
+	isAsync := false
+	for _, overload := range implementedOverloads {
+		if overload.Async {
+			isAsync = true
+			break
+		}
+	}
+
+	// Create the function declaration
+	fnDecl := &FuncDecl{
+		Name: &Identifier{
+			Name:   fullyQualifyName(funcName, nsName),
+			span:   nil,
+			source: overloads[0].Name,
+		},
+		TypeParams: nil,
+		Params:     params,
+		Body:       []Stmt{dispatchStmt},
+		TypeAnn:    nil,
+		declare:    false,
+		export:     b.isModule,
+		async:      isAsync,
+		span:       nil,
+		source:     overloads[0],
+	}
+
+	return []Stmt{&DeclStmt{
+		Decl:   fnDecl,
+		span:   nil,
+		source: overloads[0],
+	}}
+}
+
+// buildTypeOfCheck constructs a binary expression for typeof checks like `typeof x === "string"`
+func (b *Builder) buildTypeOfCheck(valueExpr Expr, typeString string, operator BinaryOp, source ast.Node) Expr {
+	typeofExpr := NewUnaryExpr(TypeOf, valueExpr, source)
+	typeStringLit := NewLitExpr(NewStrLit(typeString, source), source)
+	return NewBinaryExpr(typeofExpr, operator, typeStringLit, source)
+}
+
+// buildLit converts an ast.Lit to a codegen Lit
+func buildLit(lit ast.Lit) Lit {
+	switch l := lit.(type) {
+	case *ast.BoolLit:
+		return NewBoolLit(l.Value, l)
+	case *ast.NumLit:
+		return NewNumLit(l.Value, l)
+	case *ast.StrLit:
+		return NewStrLit(l.Value, l)
+	case *ast.RegexLit:
+		return NewRegexLit(l.Value, l)
+	case *ast.BigIntLit:
+		panic("TODO: big int literal")
+	case *ast.NullLit:
+		return NewNullLit(l)
+	case *ast.UndefinedLit:
+		return NewUndefinedLit(l)
+	default:
+		panic(fmt.Sprintf("buildLit: unsupported literal type: %T", lit))
+	}
+}
+
+// buildArrayIsArrayCheck generates a call to Array.isArray(valueExpr)
+func buildArrayIsArrayCheck(valueExpr Expr, source ast.Node) Expr {
+	return NewCallExpr(
+		NewMemberExpr(
+			NewIdentExpr("Array", "", source),
+			NewIdentifier("isArray", source),
+			false,
+			source,
+		),
+		[]Expr{valueExpr},
+		false,
+		source,
+	)
+}
+
+// buildPropertyInObjectCheck generates a check for "propName" in objectExpr
+func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Node) Expr {
+	return NewBinaryExpr(
+		NewLitExpr(NewStrLit(propName, source), source),
+		In,
+		objectExpr,
+		source,
+	)
+}
+
+// buildTypeGuard generates a runtime type check expression for a given type annotation
+func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
+	switch t := typeAnn.(type) {
+	case *ast.NumberTypeAnn:
+		return b.buildTypeOfCheck(valueExpr, "number", StrictEqual, nil)
+	case *ast.StringTypeAnn:
+		return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
+	case *ast.BooleanTypeAnn:
+		return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
+	case *ast.LitTypeAnn:
+		// For literal types, check exact value
+		litExpr := NewLitExpr(buildLit(t.Lit), nil)
+		return NewBinaryExpr(valueExpr, StrictEqual, litExpr, nil)
+	case *ast.ObjectTypeAnn:
+		// For structural object types, check properties similar to buildPatternCondition
+		var conditions []Expr
+
+		// Check that it's not null
+		notNull := NewBinaryExpr(
+			valueExpr,
+			StrictNotEqual,
+			NewLitExpr(NewNullLit(nil), nil),
+			nil,
+		)
+		conditions = append(conditions, notNull)
+
+		// Check that typeof is "object"
+		isObject := b.buildTypeOfCheck(valueExpr, "object", StrictEqual, nil)
+		conditions = append(conditions, isObject)
+
+		// For each required property, check that it exists
+		for _, elem := range t.Elems {
+			switch objElem := elem.(type) {
+			case *ast.PropertyTypeAnn:
+				// Check that the property exists: "propName" in object
+				var propName string
+				switch key := objElem.Name.(type) {
+				case *ast.IdentExpr:
+					propName = key.Name
+				case *ast.StrLit:
+					propName = key.Value
+				default:
+					continue // Skip computed properties
+				}
+
+				propExistsCheck := buildPropertyInObjectCheck(propName, valueExpr, nil)
+				conditions = append(conditions, propExistsCheck)
+				propAccess := NewMemberExpr(valueExpr, NewIdentifier(propName, nil), false, nil)
+				propTypeGuard := b.buildTypeGuard(propAccess, objElem.Value)
+				conditions = append(conditions, propTypeGuard)
+			}
+		}
+
+		// Combine all conditions with &&
+		return combineConditions(conditions, t)
+	case *ast.TupleTypeAnn:
+		// Check if it's an array
+		return buildArrayIsArrayCheck(valueExpr, nil)
+	case *ast.TypeRefTypeAnn:
+		// For type references, expand the type and check if it's a nominal type
+		inferredType := t.InferredType()
+		if inferredType != nil {
+			// Prune type variables to get the actual type
+			prunedType := type_system.Prune(inferredType)
+
+			// Check if it's a TypeRefType with a TypeAlias
+			if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
+				if typeRef.TypeAlias != nil {
+					// Get the aliased type
+					aliasedType := type_system.Prune(typeRef.TypeAlias.Type)
+
+					// Check if the aliased type is a nominal object type
+					if objType, ok := aliasedType.(*type_system.ObjectType); ok && objType.Nominal {
+						// Generate instanceof check for nominal types
+						typeName := ast.QualIdentToString(t.Name)
+						return NewBinaryExpr(
+							valueExpr,
+							InstanceOf,
+							NewIdentExpr(typeName, "", nil),
+							nil,
+						)
+					}
+				}
+			}
+
+			// Check if it's directly an object type (not aliased)
+			if objType, ok := prunedType.(*type_system.ObjectType); ok && objType.Nominal {
+				// Generate instanceof check for nominal types
+				typeName := ast.QualIdentToString(t.Name)
+				return NewBinaryExpr(
+					valueExpr,
+					InstanceOf,
+					NewIdentExpr(typeName, "", nil),
+					nil,
+				)
+			}
+
+			// TODO(#289): handle non-object types
+			// TODO(#289): handle structural object types
+		}
+
+		// For type references like Array<T>, try to infer the check
+		if t.Name != nil {
+			// Get the simple name from QualIdent
+			name := ast.QualIdentToString(t.Name)
+			switch name {
+			case "Array":
+				return buildArrayIsArrayCheck(valueExpr, nil)
+			}
+		}
+		// Default: accept anything
+		return NewLitExpr(NewBoolLit(true, nil), nil)
+	default:
+		// For complex types we can't easily check at runtime, accept anything
+		return NewLitExpr(NewBoolLit(true, nil), nil)
+	}
+}
+
 func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	if expr == nil {
 		return nil, []Stmt{}
@@ -943,24 +1367,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 	switch expr := expr.(type) {
 	case *ast.LiteralExpr:
-		switch lit := expr.Lit.(type) {
-		case *ast.BoolLit:
-			return NewLitExpr(NewBoolLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.NumLit:
-			return NewLitExpr(NewNumLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.StrLit:
-			return NewLitExpr(NewStrLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.RegexLit:
-			return NewLitExpr(NewRegexLit(lit.Value, lit), expr), []Stmt{}
-		case *ast.BigIntLit:
-			panic("TODO: big int literal")
-		case *ast.NullLit:
-			return NewLitExpr(NewNullLit(lit), expr), []Stmt{}
-		case *ast.UndefinedLit:
-			return NewLitExpr(NewUndefinedLit(lit), expr), []Stmt{}
-		default:
-			panic("TODO: literal type")
-		}
+		return NewLitExpr(buildLit(expr.Lit), expr), []Stmt{}
 	case *ast.BinaryExpr:
 		leftExpr, leftStmts := b.buildExpr(expr.Left, expr)
 		rightExpr, rightStmts := b.buildExpr(expr.Right, expr)
@@ -1117,13 +1524,66 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	case *ast.DoExpr:
 		return b.buildBlockWithTempVar(expr.Body.Stmts, expr)
 	case *ast.IfElseExpr:
+		// Check if all branches are terminal (return or throw in all paths)
+		consIsTerminal := isASTBlockTerminal(expr.Cons.Stmts)
+		altIsTerminal := expr.Alt != nil && ((expr.Alt.Block != nil && isASTBlockTerminal(expr.Alt.Block.Stmts)) ||
+			(expr.Alt.Expr != nil && isASTExprTerminal(expr.Alt.Expr)))
+		allBranchesTerminal := consIsTerminal && altIsTerminal
+
+		// Build the condition
+		condExpr, condStmts := b.buildExpr(expr.Cond, expr)
+
+		if allBranchesTerminal {
+			// All branches terminate - no need for temp variable
+			// Just build the if-else as statements
+			stmts := condStmts
+
+			// Build the consequent (then branch) without temp assignment
+			consStmts := b.buildStmts(expr.Cons.Stmts)
+
+			var altStmt Stmt
+			if expr.Alt != nil {
+				var altStmts []Stmt
+
+				if expr.Alt.Block != nil {
+					// Alternative is a block
+					altStmts = b.buildStmts(expr.Alt.Block.Stmts)
+				} else if expr.Alt.Expr != nil {
+					// Alternative is an expression
+					altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
+					altStmts = slices.Concat(altStmts, altExprStmts)
+
+					// If it's a terminal expression, it should be a statement
+					altStmts = append(altStmts, &ExprStmt{
+						Expr:   altExpr,
+						span:   nil,
+						source: expr.Alt.Expr,
+					})
+				}
+
+				// Always wrap alternative in a block for proper formatting
+				if len(altStmts) > 0 {
+					altStmt = NewBlockStmt(altStmts, expr)
+				}
+			}
+
+			// Create the consequent statement - always wrap in a block for proper formatting
+			consStmt := NewBlockStmt(consStmts, expr)
+
+			// Create the if statement
+			ifStmt := NewIfStmt(condExpr, consStmt, altStmt, expr)
+			stmts = append(stmts, ifStmt)
+
+			// Return an EmptyExpr as a placeholder since all branches are terminal
+			// The caller should handle terminal expressions properly
+			return NewEmptyExpr(expr), stmts
+		}
+
+		// Non-terminal branches - use temp variable
 		// Generate a temporary variable for the if-else result
 		tempVar, tempDeclStmt := b.createTempVar(expr)
 
 		stmts := []Stmt{tempDeclStmt}
-
-		// Build the condition
-		condExpr, condStmts := b.buildExpr(expr.Cond, expr)
 		stmts = slices.Concat(stmts, condStmts)
 
 		// Build the consequent (then branch)
@@ -1173,16 +1633,12 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Create a throw statement
 		throwStmt := NewThrowStmt(argExpr, expr)
 
-		// Since throw never returns, we need to create a temporary variable
-		// for the expression context, but it will never be reached
-		tempVar, tempDeclStmt := b.createTempVar(expr)
-
-		// Return the temp variable (unreachable) and the statements
-		allStmts := []Stmt{tempDeclStmt}
-		allStmts = slices.Concat(allStmts, argStmts)
+		// Since throw never returns, we don't need a temporary variable
+		// Return an EmptyExpr as a placeholder since this is a terminal expression
+		allStmts := argStmts
 		allStmts = append(allStmts, throwStmt)
 
-		return tempVar, allStmts
+		return NewEmptyExpr(expr), allStmts
 	case *ast.AwaitExpr:
 		// Build the argument expression
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
@@ -1546,6 +2002,64 @@ func (b *Builder) buildBlockWithTempVar(stmts []ast.Stmt, sourceExpr ast.Expr) (
 	return tempVar, outStmts
 }
 
+// isASTBlockTerminal checks if an AST block is guaranteed to terminate execution
+func isASTBlockTerminal(stmts []ast.Stmt) bool {
+	if len(stmts) == 0 {
+		return false
+	}
+	lastStmt := stmts[len(stmts)-1]
+	switch s := lastStmt.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.ExprStmt:
+		return isASTExprTerminal(s.Expr)
+	default:
+		return false
+	}
+}
+
+// isASTExprTerminal checks if an AST expression is guaranteed to terminate execution
+func isASTExprTerminal(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.ThrowExpr:
+		return true
+	case *ast.IfElseExpr:
+		// If-else is terminal if both branches are terminal
+		consIsTerminal := isASTBlockTerminal(e.Cons.Stmts)
+		altIsTerminal := e.Alt != nil && ((e.Alt.Block != nil && isASTBlockTerminal(e.Alt.Block.Stmts)) ||
+			(e.Alt.Expr != nil && isASTExprTerminal(e.Alt.Expr)))
+		return consIsTerminal && altIsTerminal
+	default:
+		return false
+	}
+}
+
+// isTerminalStmt checks if a statement is guaranteed to terminate execution
+// (return, throw, or if-else with returns in all branches)
+func isTerminalStmt(stmt Stmt) bool {
+	switch s := stmt.(type) {
+	case *ReturnStmt:
+		return true
+	case *ThrowStmt:
+		return true
+	case *IfStmt:
+		// If statement is terminal if the consequent is terminal AND
+		// there is an alternative that is also terminal
+		if s.Alt == nil {
+			return false // if without else can skip the body
+		}
+		return isTerminalStmt(s.Cons) && isTerminalStmt(s.Alt)
+	case *BlockStmt:
+		// Block is terminal if its last statement is terminal
+		if len(s.Stmts) == 0 {
+			return false
+		}
+		return isTerminalStmt(s.Stmts[len(s.Stmts)-1])
+	default:
+		return false
+	}
+}
+
 // buildBlockStmtsWithTempAssignment builds statements for a block, treating the last
 // statement specially by assigning its result to the given temp variable.
 func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Expr, sourceExpr ast.Expr) []Stmt {
@@ -1589,17 +2103,17 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 			}
 		} else {
 			// Last statement is not an expression, add it as-is
-			blockStmts = slices.Concat(blockStmts, b.buildStmt(lastStmt))
+			builtLastStmts := b.buildStmt(lastStmt)
+			blockStmts = slices.Concat(blockStmts, builtLastStmts)
 
 			// Only assign undefined if the last statement is not a terminal statement
-			// (return statements and throw expressions end execution, so no assignment is needed)
-			_, isReturn := lastStmt.(*ast.ReturnStmt)
-			isThrow := false
-			if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-				_, isThrow = exprStmt.Expr.(*ast.ThrowExpr)
-			}
-
-			if !isReturn && !isThrow {
+			// (return statements, throw expressions, and if-else statements with
+			// returns in all branches end execution, so no assignment is needed)
+			// Note: We check isTerminalStmt on the *built* statement rather than the AST
+			// because buildStmt can transform statements in ways that affect terminality.
+			// For example, buildStmt might return multiple statements or transform an
+			// expression statement containing a throw into a terminal ThrowStmt.
+			if len(builtLastStmts) > 0 && !isTerminalStmt(builtLastStmts[len(builtLastStmts)-1]) {
 				// Assign undefined to temp variable
 				assignment := NewBinaryExpr(
 					tempVar,
@@ -2050,12 +2564,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			switch objElem := elem.(type) {
 			case *ast.ObjKeyValuePat:
 				// Check that the property exists: "propName" in object
-				propExistsCheck := NewBinaryExpr(
-					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
-					In,
-					targetExpr,
-					objElem,
-				)
+				propExistsCheck := buildPropertyInObjectCheck(objElem.Key.Name, targetExpr, objElem)
 				conditions = append(conditions, propExistsCheck)
 
 				// Recursively check the value pattern (condition only)
@@ -2068,12 +2577,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object
-				propExistsCheck := NewBinaryExpr(
-					NewLitExpr(NewStrLit(objElem.Key.Name, objElem.Key), objElem.Key),
-					In,
-					targetExpr,
-					objElem,
-				)
+				propExistsCheck := buildPropertyInObjectCheck(objElem.Key.Name, targetExpr, objElem)
 				conditions = append(conditions, propExistsCheck)
 
 				// Handle defaults for shorthand patterns

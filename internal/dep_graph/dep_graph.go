@@ -777,3 +777,205 @@ func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
 	}
 	return builder.String()
 }
+
+// MergeOverloadedFunctions post-processes the graph to merge overload nodes.
+// After normal graph construction (where each overload is a separate node),
+// this combines all overloads into a single logical node with union of dependencies.
+func (g *DepGraph) MergeOverloadedFunctions(overloadDecls map[string][]*ast.FuncDecl) {
+	if len(overloadDecls) == 0 {
+		return
+	}
+
+	// Track which DeclIDs to remove
+	declIDsToRemove := make(map[DeclID]bool)
+
+	// For each overload group
+	for _, decls := range overloadDecls {
+		if len(decls) <= 1 {
+			continue // Not overloaded, skip
+		}
+
+		// Find the DeclID of the primary (first) overload
+		// We need to search through all decls to find which one matches
+		var primaryDeclID DeclID
+		primaryFound := false
+
+		for i, decl := range g.Decls {
+			if decl == decls[0] {
+				primaryDeclID = DeclID(i)
+				primaryFound = true
+				break
+			}
+		}
+
+		if !primaryFound {
+			continue // Primary overload not found in graph
+		}
+
+		// Get the primary's dependency set
+		primaryDeps := g.DeclDeps[primaryDeclID]
+
+		// Merge dependencies from all other overloads
+		for j := 1; j < len(decls); j++ {
+			// Find the DeclID for this overload
+			var overloadDeclID DeclID
+			overloadFound := false
+
+			for i, decl := range g.Decls {
+				if decl == decls[j] {
+					overloadDeclID = DeclID(i)
+					overloadFound = true
+					break
+				}
+			}
+
+			if !overloadFound {
+				continue // This overload not found in graph
+			}
+
+			// Merge dependencies from this overload into primary
+			overloadDeps := g.DeclDeps[overloadDeclID]
+			iter := overloadDeps.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				depID := iter.Key()
+				primaryDeps.Insert(depID)
+			}
+
+			// Mark this overload for removal
+			declIDsToRemove[overloadDeclID] = true
+		}
+
+		// Update the primary's dependencies
+		g.DeclDeps[primaryDeclID] = primaryDeps
+	}
+
+	// If no overloads to remove, just recompute components
+	if len(declIDsToRemove) == 0 {
+		g.Components = g.FindStronglyConnectedComponents(0)
+		return
+	}
+
+	// Remove non-primary overload nodes by rebuilding the graph
+	// We need to rebuild because DeclID is used as array index
+	newDecls := make([]ast.Decl, 0, len(g.Decls)-len(declIDsToRemove))
+	newDeclDeps := make([]btree.Set[DeclID], 0, len(g.DeclDeps)-len(declIDsToRemove))
+	newDeclNamespace := make([]string, 0, len(g.DeclNamespace)-len(declIDsToRemove))
+
+	// Create a mapping from old DeclID to new DeclID
+	oldToNew := make(map[DeclID]DeclID)
+	newID := DeclID(0)
+
+	for oldID := DeclID(0); oldID < DeclID(len(g.Decls)); oldID++ {
+		if declIDsToRemove[oldID] {
+			// Skip removed declarations
+			continue
+		}
+
+		// Keep this declaration
+		oldToNew[oldID] = newID
+		newDecls = append(newDecls, g.Decls[oldID])
+		newDeclNamespace = append(newDeclNamespace, g.DeclNamespace[oldID])
+		newID++
+	}
+
+	// Rebuild dependency sets with new IDs
+	for oldID := DeclID(0); oldID < DeclID(len(g.Decls)); oldID++ {
+		if declIDsToRemove[oldID] {
+			continue // Skip removed declarations
+		}
+
+		// Translate dependencies to new IDs
+		oldDeps := g.DeclDeps[oldID]
+		var newDeps btree.Set[DeclID]
+
+		iter := oldDeps.Iter()
+		for ok := iter.First(); ok; ok = iter.Next() {
+			oldDepID := iter.Key()
+			if !declIDsToRemove[oldDepID] {
+				// Dependency still exists, translate to new ID
+				newDepID := oldToNew[oldDepID]
+				newDeps.Insert(newDepID)
+			}
+			// If dependency was removed, skip it
+		}
+
+		newDeclDeps = append(newDeclDeps, newDeps)
+	}
+
+	// Rebuild value and type bindings with new DeclIDs
+	// Need to handle overloaded functions specially - if the old binding
+	// pointed to a removed overload, update it to point to the primary
+	overloadPrimaries := make(map[DeclID]DeclID) // maps removed overload ID -> primary ID
+	for _, decls := range overloadDecls {
+		if len(decls) <= 1 {
+			continue
+		}
+
+		// Find primary DeclID
+		var primaryDeclID DeclID
+		primaryFound := false
+		for i, decl := range g.Decls {
+			if decl == decls[0] {
+				primaryDeclID = DeclID(i)
+				primaryFound = true
+				break
+			}
+		}
+
+		if !primaryFound {
+			continue
+		}
+
+		// Map all secondary overloads to the primary
+		for j := 1; j < len(decls); j++ {
+			for i, decl := range g.Decls {
+				if decl == decls[j] {
+					overloadPrimaries[DeclID(i)] = primaryDeclID
+					break
+				}
+			}
+		}
+	}
+
+	var newValueBindings btree.Map[string, DeclID]
+	valueIter := g.ValueBindings.Iter()
+	for ok := valueIter.First(); ok; ok = valueIter.Next() {
+		name := valueIter.Key()
+		oldID := valueIter.Value()
+
+		if declIDsToRemove[oldID] {
+			// This binding pointed to a removed overload
+			// Update it to point to the primary
+			if primaryID, exists := overloadPrimaries[oldID]; exists {
+				newID := oldToNew[primaryID]
+				newValueBindings.Set(name, newID)
+			}
+			// Otherwise skip this binding
+		} else {
+			// Normal case - translate to new ID
+			newID := oldToNew[oldID]
+			newValueBindings.Set(name, newID)
+		}
+	}
+
+	var newTypeBindings btree.Map[string, DeclID]
+	typeIter := g.TypeBindings.Iter()
+	for ok := typeIter.First(); ok; ok = typeIter.Next() {
+		name := typeIter.Key()
+		oldID := typeIter.Value()
+		if !declIDsToRemove[oldID] {
+			newID := oldToNew[oldID]
+			newTypeBindings.Set(name, newID)
+		}
+	}
+
+	// Update the graph
+	g.Decls = newDecls
+	g.DeclDeps = newDeclDeps
+	g.DeclNamespace = newDeclNamespace
+	g.ValueBindings = newValueBindings
+	g.TypeBindings = newTypeBindings
+
+	// Recompute strongly connected components
+	g.Components = g.FindStronglyConnectedComponents(0)
+}

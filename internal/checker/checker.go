@@ -1,22 +1,25 @@
 package checker
 
 import (
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/vektah/gqlparser/v2/ast"
+	gqlast "github.com/vektah/gqlparser/v2/ast"
 )
 
 type Checker struct {
-	TypeVarID int
-	SymbolID  int
-	Schema    *ast.Schema
+	TypeVarID     int
+	SymbolID      int
+	Schema        *gqlast.Schema
+	OverloadDecls map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
 }
 
 func NewChecker() *Checker {
 	return &Checker{
-		TypeVarID: 0,
-		SymbolID:  0,
-		Schema:    nil,
+		TypeVarID:     0,
+		SymbolID:      0,
+		Schema:        nil,
+		OverloadDecls: make(map[string][]*ast.FuncDecl),
 	}
 }
 

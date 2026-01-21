@@ -1,17 +1,15 @@
 export class Box {
-  constructor(temp3) {
-    const value = temp3;
+  constructor(temp2) {
+    const value = temp2;
     this.value = value;
   }
   getValue(temp1) {
     const defaultValue = temp1;
-    let temp2;
     if (this.value != 0) {
       return this.value;
     } else {
       return defaultValue;
     }
-    temp2;
   }
 }
 export const box = new Box(5);

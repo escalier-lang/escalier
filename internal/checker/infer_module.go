@@ -228,6 +228,11 @@ func (c *Checker) InferComponent(
 	declMethodCtxs := make([][]Context, len(component))
 	typeRefsToUpdate := make(map[dep_graph.DeclID][]*type_system.TypeRefType)
 
+	// Store individual function types for each declaration
+	// This is needed for overloaded functions where the binding has IntersectionType
+	// but we need the individual FuncType for each declID
+	funcTypeForDecl := make(map[dep_graph.DeclID]*type_system.FuncType)
+
 	// Infer placeholders
 	for i, declID := range component {
 		nsCtx := GetNamespaceCtx(ctx, depGraph, declID)
@@ -241,6 +246,9 @@ func (c *Checker) InferComponent(
 
 			// Save the context for inferring the function body later
 			declCtxMap[declID] = funcCtx
+
+			// Store the individual function type for this declaration
+			funcTypeForDecl[declID] = funcType
 
 			// Functions can have multiple declarations.  This is to support function
 			// overloading.  We only create a binding for the function if one doesn't
@@ -264,6 +272,15 @@ func (c *Checker) InferComponent(
 					binding.Type = type_system.NewIntersectionType(nil, binding.Type, funcType)
 				}
 			}
+
+			// Track this declaration for codegen (for overload dispatch generation)
+			// Use the fully qualified name if inside a namespace
+			nsName, _ := depGraph.GetDeclNamespace(declID)
+			funcName := decl.Name.Name
+			if nsName != "" {
+				funcName = nsName + "." + funcName
+			}
+			c.OverloadDecls[funcName] = append(c.OverloadDecls[funcName], decl)
 		case *ast.VarDecl:
 			patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 			errors = slices.Concat(errors, patErrors)
@@ -647,12 +664,11 @@ func (c *Checker) InferComponent(
 
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			// We reuse the binding that was previous created for the function
-			// declaration, so that we can unify the signature with the body's
-			// inferred type.
-			funcBinding := nsCtx.Scope.GetValue(decl.Name.Name)
+			// We reuse the function type that was created for this specific declaration
+			// For overloaded functions, the binding contains an IntersectionType,
+			// but we need the individual FuncType for this particular overload
+			funcType := funcTypeForDecl[declID]
 			paramBindings := paramBindingsForDecl[declID]
-			funcType := funcBinding.Type.(*type_system.FuncType)
 
 			declCtx := declCtxMap[declID]
 

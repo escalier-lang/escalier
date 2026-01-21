@@ -1,63 +1,45 @@
-let temp1;
 throw "Something went wrong";
-export const simpleThrow = temp1;
-let temp2;
 throw {message: "Custom error", code: 500};
-export const errorThrow = temp2;
-export function getValueOrThrow(temp3) {
-  const value = temp3;
-  let temp4;
+export function getValueOrThrow(temp1) {
+  const value = temp1;
+  let temp2;
   if (value != "") {
-    temp4 = value;
+    temp2 = value;
   } else {
-    let temp5;
     throw Error("value is empty");
   }
-  return temp4;
+  return temp2;
 }
-export const throwingFunc = function (temp6) {
-  const condition = temp6;
-  let temp7;
+export const throwingFunc = function (temp3) {
+  const condition = temp3;
   if (condition) {
     return "success";
   } else {
-    let temp8;
     throw Error("failure");
-    return temp8;
   }
-  temp7;
 };
-export const multipleThrows = function (temp9) {
-  const flag = temp9;
-  let temp10;
+export const multipleThrows = function (temp4) {
+  const flag = temp4;
   if (flag) {
-    let temp11;
     throw "string error";
   } else {
-    let temp12;
     throw 42;
   }
-  temp10;
 };
 export const nestedThrows = function () {
   const innerFunc = function () {
-    let temp13;
     throw "inner error";
-    temp13;
   };
-  let temp14;
   throw "outer error";
-  temp14;
 };
-export function throwTypeIsWrong(temp15) {
-  const value = temp15;
-  let temp16;
+export function throwTypeIsWrong(temp5) {
+  const value = temp5;
+  let temp6;
   if (value != "") {
-    temp16 = value;
+    temp6 = value;
   } else {
-    let temp17;
     throw Error("value is empty");
   }
-  temp16;
+  temp6;
 }
 //# sourceMappingURL=./index.js.map
