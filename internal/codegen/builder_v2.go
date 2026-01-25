@@ -24,8 +24,18 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 	nsStmts := b.buildNamespaceStatementsV2(depGraph)
 	stmts = slices.Concat(stmts, nsStmts)
 
-	// Track which declarations we've already processed to avoid duplicates
-	// (VarDecls with pattern destructuring can appear under multiple binding keys)
+	// Track which declarations we've already processed to avoid duplicates.
+	// A single VarDecl with pattern destructuring introduces multiple bindings
+	// but should only emit code once. For example:
+	//   val C(D(msg), E(x, y)) = subject
+	// This creates three binding keys in the dep_graph Decls map:
+	//   "value:msg" → [VarDecl]
+	//   "value:x"   → [VarDecl]
+	//   "value:y"   → [VarDecl]
+	// All pointing to the same VarDecl instance. When we iterate over binding keys
+	// below, we'll encounter this declaration three times. We track processed
+	// declarations to ensure we only emit the code once, on the first binding key
+	// we encounter.
 	processedDecls := make(map[ast.Decl]bool)
 
 	// Iterate over components in topological order
