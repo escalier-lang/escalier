@@ -361,11 +361,6 @@ func TestFindCyclesV2_EdgeCases(t *testing.T) {
 			depGraph := BuildDepGraphV2(module)
 			cycles := depGraph.FindCyclesV2()
 
-			// Ensure no panics
-			assert.NotPanics(t, func() {
-				depGraph.FindCyclesV2()
-			}, "Cycle detection should not panic on edge cases")
-
 			// Assert expected number of cycles
 			assert.Equal(t, test.expectedCycles, len(cycles),
 				"Expected %d problematic cycles, got %d. %s",
