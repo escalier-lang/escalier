@@ -1,4 +1,3 @@
-throw "Something went wrong";
 throw {message: "Custom error", code: 500};
 export function getValueOrThrow(temp1) {
   const value = temp1;
@@ -10,16 +9,8 @@ export function getValueOrThrow(temp1) {
   }
   return temp2;
 }
-export const throwingFunc = function (temp3) {
-  const condition = temp3;
-  if (condition) {
-    return "success";
-  } else {
-    throw Error("failure");
-  }
-};
-export const multipleThrows = function (temp4) {
-  const flag = temp4;
+export const multipleThrows = function (temp3) {
+  const flag = temp3;
   if (flag) {
     throw "string error";
   } else {
@@ -32,14 +23,23 @@ export const nestedThrows = function () {
   };
   throw "outer error";
 };
-export function throwTypeIsWrong(temp5) {
-  const value = temp5;
-  let temp6;
+throw "Something went wrong";
+export function throwTypeIsWrong(temp4) {
+  const value = temp4;
+  let temp5;
   if (value != "") {
-    temp6 = value;
+    temp5 = value;
   } else {
     throw Error("value is empty");
   }
-  temp6;
+  temp5;
 }
+export const throwingFunc = function (temp6) {
+  const condition = temp6;
+  if (condition) {
+    return "success";
+  } else {
+    throw Error("failure");
+  }
+};
 //# sourceMappingURL=./index.js.map

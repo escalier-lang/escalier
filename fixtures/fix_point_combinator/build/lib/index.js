@@ -1,23 +1,23 @@
-export const fix = function (temp1) {
-  const f = temp1;
-  const temp3 = {recurse(temp2) {
-    const arg = temp2;
+export const fact = function (temp1) {
+  const cont = temp1;
+  return function (temp2) {
+    const n = temp2;
+    let temp3;
+    if (n <= 0) {
+      temp3 = 1;
+    } else {
+      temp3 = n * cont(n - 1);
+    }
+    return temp3;
+  };
+};
+export const fix = function (temp4) {
+  const f = temp4;
+  const temp6 = {recurse(temp5) {
+    const arg = temp5;
     return f(this.recurse.bind(this))(arg);
   }};
-  return temp3.recurse.bind(temp3);
-};
-export const fact = function (temp4) {
-  const cont = temp4;
-  return function (temp5) {
-    const n = temp5;
-    let temp6;
-    if (n <= 0) {
-      temp6 = 1;
-    } else {
-      temp6 = n * cont(n - 1);
-    }
-    return temp6;
-  };
+  return temp6.recurse.bind(temp6);
 };
 export const result = fix(fact)(10);
 //# sourceMappingURL=./index.js.map

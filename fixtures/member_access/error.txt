@@ -1,10 +1,10 @@
-lib/member_access.esc:8:14: Unknown property 'foo' in object type {kind: "bar", id: number, bar: boolean}
-
-8:  val foo = fb.foo
-                 ^^^
-
 lib/member_access.esc:9:14: Unknown property 'bar' in object type {kind: "foo", id: number, foo: string}
 
 9:  val bar = fb.bar
+                 ^^^
+
+lib/member_access.esc:8:14: Unknown property 'foo' in object type {kind: "bar", id: number, bar: boolean}
+
+8:  val foo = fb.foo
                  ^^^
 

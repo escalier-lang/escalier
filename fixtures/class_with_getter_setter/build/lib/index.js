@@ -16,8 +16,8 @@ export class Person {
   }
 }
 export const person = new Person("John", "Doe");
-export const name = person.fullName;
 export function main() {
   person.fullName = "Jane Smith";
 }
+export const name = person.fullName;
 //# sourceMappingURL=./index.js.map

@@ -15,7 +15,6 @@ export class MyEnum__Color {
   }
 }
 MyEnum.Color = MyEnum__Color;
-MyEnum.Color = MyEnum__Color;
 export class MyEnum__MyEvent {
   constructor(temp6) {
     const kind = temp6;
@@ -26,7 +25,6 @@ export class MyEnum__MyEvent {
     return [subject.kind];
   }
 }
-MyEnum.MyEvent = MyEnum__MyEvent;
 MyEnum.MyEvent = MyEnum__MyEvent;
 let temp7;
 let temp8;

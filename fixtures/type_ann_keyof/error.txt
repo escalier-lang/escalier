@@ -1,12 +1,12 @@
-lib/keyof.esc:3:22: 3 cannot be assigned to "length" | 0 | 1 | 2
-
-3:  val j: keyof Tuple = 3
-                         ^
-
 lib/keyof.esc:7:27: "z" cannot be assigned to "x" | "y"
 
 7:  val coord2: keyof Point = "z"
                               ^^^
+
+lib/keyof.esc:3:22: 3 cannot be assigned to "length" | 0 | 1 | 2
+
+3:  val j: keyof Tuple = 3
+                         ^
 
 lib/keyof.esc:19:25: "print" cannot be assigned to "msg"
 

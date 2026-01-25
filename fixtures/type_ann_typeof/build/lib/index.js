@@ -1,11 +1,11 @@
 const shapes = {};
+export const shapes__unitCircle = {center: {x: 0, y: 0}, radius: 1};
+shapes.unitCircle = shapes__unitCircle;
 export const p1 = {x: 5, y: 10};
 export const q1 = {x: 5, y: 10};
+export const cx = 0;
 export const p2 = {x: 0, y: 0};
 export const q2 = {x: 0, y: 0};
 export const x = 0;
 export const y = 0;
-export const shapes__unitCircle = {center: {x: 0, y: 0}, radius: 1};
-shapes.unitCircle = shapes__unitCircle;
-export const cx = 0;
 //# sourceMappingURL=./index.js.map
