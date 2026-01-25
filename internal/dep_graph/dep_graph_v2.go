@@ -535,14 +535,24 @@ func (v *DependencyVisitorV2) ExitBlock(block ast.Block) {
 
 // EnterObjExprElem handles object expression elements
 func (v *DependencyVisitorV2) EnterObjExprElem(elem ast.ObjExprElem) bool {
-	// Handle property shorthand (e.g., { foo } where foo refers to a binding)
-	if prop, ok := elem.(*ast.PropertyExpr); ok {
-		if prop.Value == nil {
-			switch key := prop.Name.(type) {
+	switch el := elem.(type) {
+	case *ast.PropertyExpr:
+		// Handle property shorthand (e.g., { foo } where foo refers to a binding)
+		if el.Value == nil {
+			switch key := el.Name.(type) {
 			case *ast.IdentExpr:
 				v.addValueDependency(key.Name, nil)
 			}
 			return false
+		}
+		// Handle computed keys (e.g., { [foo]: value } where foo refers to a binding)
+		if compKey, ok := el.Name.(*ast.ComputedKey); ok {
+			compKey.Expr.Accept(v)
+		}
+	case *ast.MethodExpr:
+		// Handle computed keys in methods (e.g., { [foo]() { ... } })
+		if compKey, ok := el.Name.(*ast.ComputedKey); ok {
+			compKey.Expr.Accept(v)
 		}
 	}
 	return true

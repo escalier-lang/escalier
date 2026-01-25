@@ -88,22 +88,27 @@ const DEBUG = false
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
-	depGraph := dep_graph.BuildDepGraph(m)
+	depGraph := dep_graph.BuildDepGraphV2(m)
 
 	// print out all of the dependencies in depGraph for debugging
 	if DEBUG {
-		for declID, decl := range depGraph.Decls {
-			deps := depGraph.DeclDeps[declID]
-			fmt.Fprintf(os.Stderr, "Decl ID: %d, Decl: %s, Deps: [", declID, getDeclIdentifier(decl))
-			for _, depID := range deps.Keys() {
-				depDecl, _ := depGraph.GetDecl(depID)
-				fmt.Fprintf(os.Stderr, "%d (%s), ", depID, getDeclIdentifier(depDecl))
+		for _, key := range depGraph.AllBindings() {
+			decls := depGraph.GetDecls(key)
+			deps := depGraph.GetDeps(key)
+			fmt.Fprintf(os.Stderr, "Binding: %s, Decls: [", key)
+			for _, decl := range decls {
+				fmt.Fprintf(os.Stderr, "%s, ", getDeclIdentifier(decl))
+			}
+			fmt.Fprintf(os.Stderr, "], Deps: [")
+			iter := deps.Iter()
+			for ok := iter.First(); ok; ok = iter.Next() {
+				fmt.Fprintf(os.Stderr, "%s, ", iter.Key())
 			}
 			fmt.Fprintf(os.Stderr, "]\n")
 		}
 	}
 
-	return c.InferDepGraph(ctx, depGraph)
+	return c.InferDepGraphV2(ctx, depGraph)
 }
 
 func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Error {

@@ -289,6 +289,30 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				ValueBindingKey("d"): {ValueBindingKey("c")},
 			},
 		},
+		"ClassWithComputedMembers": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val bar = "bar"
+						val baz = "baz"
+						class Foo() {
+							[bar]: 42:number,
+							[baz](self) {
+								return self[bar]
+							}
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("bar"):  {},
+				ValueBindingKey("baz"):  {},
+				TypeBindingKey("Foo"):   {ValueBindingKey("bar"), ValueBindingKey("baz")},
+				ValueBindingKey("Foo"):  {ValueBindingKey("bar"), ValueBindingKey("baz")},
+			},
+		},
 		"MultipleDependencies": {
 			sources: []*ast.Source{
 				{
