@@ -500,6 +500,19 @@ func NewMethod(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *MethodExpr 
 func (e *MethodExpr) Span() Span { return e.span }
 func (e *MethodExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
+		switch key := e.Name.(type) {
+		case *IdentExpr:
+			// IdentExpr here is a method name (a label), not a variable reference,
+			// so we skip visiting it to avoid treating it as a reference in scope.
+			_ = key
+		case *StrLit:
+			key.Accept(v)
+		case *NumLit:
+			key.Accept(v)
+		case *ComputedKey:
+			key.Accept(v)
+		}
+
 		e.Fn.Accept(v)
 	}
 	v.ExitObjExprElem(e)
@@ -517,6 +530,19 @@ func NewGetter(name ObjKey, fn *FuncExpr, span Span) *GetterExpr {
 func (e *GetterExpr) Span() Span { return e.span }
 func (e *GetterExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
+		switch key := e.Name.(type) {
+		case *IdentExpr:
+			// IdentExpr here is a getter name (a label), not a variable reference,
+			// so we skip visiting it to avoid treating it as a reference in scope.
+			_ = key
+		case *StrLit:
+			key.Accept(v)
+		case *NumLit:
+			key.Accept(v)
+		case *ComputedKey:
+			key.Accept(v)
+		}
+
 		e.Fn.Accept(v)
 	}
 	v.ExitObjExprElem(e)
@@ -534,6 +560,19 @@ func NewSetter(name ObjKey, fn *FuncExpr, span Span) *SetterExpr {
 func (e *SetterExpr) Span() Span { return e.span }
 func (e *SetterExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
+		switch key := e.Name.(type) {
+		case *IdentExpr:
+			// IdentExpr here is a setter name (a label), not a variable reference,
+			// so we skip visiting it to avoid treating it as a reference in scope.
+			_ = key
+		case *StrLit:
+			key.Accept(v)
+		case *NumLit:
+			key.Accept(v)
+		case *ComputedKey:
+			key.Accept(v)
+		}
+
 		e.Fn.Accept(v)
 	}
 	v.ExitObjExprElem(e)
@@ -555,8 +594,9 @@ func (e *PropertyExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
 		switch key := e.Name.(type) {
 		case *IdentExpr:
-			// We don't want these keys to be treated as identifiers
-			// key.Accept(v)
+			// IdentExpr here is a property name (a label), not a variable reference,
+			// so we skip visiting it to avoid treating it as a reference in scope.
+			_ = key
 		case *StrLit:
 			key.Accept(v)
 		case *NumLit:

@@ -96,6 +96,7 @@ type MethodElem struct {
 func (*MethodElem) IsClassElem() {}
 func (m *MethodElem) Accept(v Visitor) {
 	if v.EnterClassElem(m) {
+		m.Name.Accept(v)
 		if m.Fn != nil {
 			m.Fn.Accept(v)
 		}
