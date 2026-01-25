@@ -18,7 +18,7 @@ This document outlines the step-by-step implementation plan for refactoring `Dep
 
 ### Phase 3: Update SCC Algorithm
 - [x] Step 3.1: Implement FindStronglyConnectedComponentsV2
-- [ ] Step 3.2: Create cycles_v2.go with V2 cycle detection functions
+- [x] Step 3.2: Create cycles_v2.go with V2 cycle detection functions
 
 ### Phase 4: Update Checker (infer_module.go)
 - [ ] Step 4.1: Update InferModule
