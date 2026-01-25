@@ -258,11 +258,11 @@ type LocalScopeV2 struct {
 // - Returns dependencies as btree.Set[BindingKey]
 type DependencyVisitorV2 struct {
 	ast.DefaultVisitor
-	Graph            *DepGraphV2           // The dependency graph to look up bindings
+	Graph            *DepGraphV2                // The dependency graph to look up bindings
 	NamespaceMap     map[string]ast.NamespaceID // Map from namespace name to ID
-	Dependencies     btree.Set[BindingKey] // Found dependencies
-	LocalScopes      []LocalScopeV2        // Stack of local scopes
-	CurrentNamespace string                // Current namespace being analyzed
+	Dependencies     btree.Set[BindingKey]      // Found dependencies
+	LocalScopes      []LocalScopeV2             // Stack of local scopes
+	CurrentNamespace string                     // Current namespace being analyzed
 }
 
 // pushScope adds a new local scope
@@ -360,22 +360,40 @@ func (v *DependencyVisitorV2) addTypeDependency(typeName string) bool {
 func (v *DependencyVisitorV2) EnterStmt(stmt ast.Stmt) bool {
 	switch s := stmt.(type) {
 	case *ast.DeclStmt:
-		// Declaration statement introduces bindings in the current scope
+		// For local variable declarations, we must NOT hoist the binding.
+		// We need to visit the initializer BEFORE adding the binding to scope,
+		// so that references to the same name in the initializer are treated
+		// as dependencies on module-level bindings, not as local references.
 		if len(v.LocalScopes) > 0 {
 			currentScope := &v.LocalScopes[len(v.LocalScopes)-1]
 			switch decl := s.Decl.(type) {
 			case *ast.VarDecl:
+				// Visit type annotation and initializer FIRST
+				if decl.TypeAnn != nil {
+					decl.TypeAnn.Accept(v)
+				}
+				if decl.Init != nil {
+					decl.Init.Accept(v)
+				}
+				// THEN add bindings to scope
 				bindings := ast.FindBindings(decl.Pattern)
 				for binding := range bindings {
 					currentScope.ValueBindings.Add(binding)
 				}
+				return false // Don't traverse again
 			case *ast.FuncDecl:
+				// Function declarations are hoisted, so add to scope first
 				if decl.Name != nil && decl.Name.Name != "" {
 					currentScope.ValueBindings.Add(decl.Name.Name)
 				}
 			case *ast.TypeDecl:
 				if decl.Name != nil && decl.Name.Name != "" {
 					currentScope.TypeBindings.Add(decl.Name.Name)
+				}
+			case *ast.ClassDecl:
+				if decl.Name != nil && decl.Name.Name != "" {
+					currentScope.TypeBindings.Add(decl.Name.Name)
+					currentScope.ValueBindings.Add(decl.Name.Name)
 				}
 			case *ast.InterfaceDecl:
 				if decl.Name != nil && decl.Name.Name != "" {
@@ -404,6 +422,14 @@ func (v *DependencyVisitorV2) EnterExpr(expr ast.Expr) bool {
 		// For member expressions like obj.prop, check if the full qualified name exists in bindings
 		qualifiedName := v.buildQualifiedName(e)
 		if qualifiedName != "" {
+			root := qualifiedName
+			if idx := strings.IndexByte(root, '.'); idx != -1 {
+				root = root[:idx]
+			}
+			if v.isLocalValueBinding(root) {
+				return true // local root shadows module namespace
+			}
+
 			// Check if the qualified name is a valid value dependency
 			key := ValueBindingKey(qualifiedName)
 			if v.Graph.HasBinding(key) && !v.isLocalValueBinding(qualifiedName) {
@@ -455,6 +481,13 @@ func (v *DependencyVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 		parts := strings.Split(qualName, ".")
 		for i := len(parts); i > 0; i-- {
 			candidateName := strings.Join(parts[:i], ".")
+			root := candidateName
+			if idx := strings.IndexByte(root, '.'); idx != -1 {
+				root = root[:idx]
+			}
+			if v.isLocalValueBinding(root) {
+				break // local root shadows module namespace
+			}
 
 			// Try with current namespace prefix first
 			if v.CurrentNamespace != "" {

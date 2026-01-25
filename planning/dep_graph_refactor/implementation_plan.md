@@ -18,6 +18,7 @@ This document outlines the step-by-step implementation plan for refactoring `Dep
 
 ### Phase 3: Update SCC Algorithm
 - [x] Step 3.1: Implement FindStronglyConnectedComponentsV2
+- [ ] Step 3.2: Create cycles_v2.go with V2 cycle detection functions
 
 ### Phase 4: Update Checker (infer_module.go)
 - [ ] Step 4.1: Update InferModule
@@ -522,6 +523,250 @@ func (g *DepGraphV2) FindStronglyConnectedComponentsV2(threshold int) [][]Bindin
 }
 ```
 
+### Step 3.2: Create cycles_v2.go with V2 cycle detection functions
+
+**File:** `internal/dep_graph/cycles_v2.go`
+
+**Status:** Not started
+
+Create a new file `cycles_v2.go` with V2 versions of all cycle-related types and functions from `cycles.go`. The V2 versions work with `BindingKey` instead of `DeclID`.
+
+#### CycleInfoV2
+
+The cycle info struct uses `BindingKey` instead of `DeclID`:
+
+```go
+// CycleInfoV2 represents information about a problematic cycle using BindingKey
+type CycleInfoV2 struct {
+    Cycle   []BindingKey // The binding keys involved in the cycle
+    Message string       // Description of why this cycle is problematic
+}
+```
+
+#### Helper methods on BindingKey
+
+Since `BindingKey` already encodes the kind (value/type), many helper functions become trivial:
+
+```go
+// IsValueBinding returns true if this is a value binding
+func (k BindingKey) IsValueBinding() bool {
+    return k.Kind() == DepKindValue
+}
+
+// IsTypeBinding returns true if this is a type binding
+func (k BindingKey) IsTypeBinding() bool {
+    return k.Kind() == DepKindType
+}
+```
+
+#### FindCyclesV2
+
+The main cycle detection function adapted for `DepGraphV2`:
+
+```go
+// FindCyclesV2 detects problematic cycles in the dependency graph.
+// It uses Tarjan's algorithm to find strongly connected components, then identifies
+// cycles that are problematic according to these rules:
+// - Type-only cycles are allowed and ignored
+// - Mixed cycles (containing both types and values) are always problematic
+// - Value-only cycles are problematic if any binding in the cycle is used outside function bodies
+// Returns a slice of CycleInfoV2 containing details about each problematic cycle found.
+func (g *DepGraphV2) FindCyclesV2() []CycleInfoV2 {
+    var problematicCycles []CycleInfoV2
+
+    // Find all strongly connected components (cycles)
+    cycles := g.FindStronglyConnectedComponentsV2(1)
+
+    // Pre-compute bindings used outside function bodies (only once for all cycles)
+    var usedOutsideFunctionBodies set.Set[BindingKey]
+    var hasComputedUsage bool
+
+    for _, cycle := range cycles {
+        // Check if cycle contains any value bindings
+        hasValue := false
+        for _, key := range cycle {
+            if key.IsValueBinding() {
+                hasValue = true
+                break
+            }
+        }
+
+        if !hasValue {
+            // Type-only cycles are allowed, skip
+            continue
+        }
+
+        // For cycles involving values, they are problematic in these cases:
+        // 1. Mixed cycles (type + value) are always problematic
+        // 2. Value-only cycles are problematic if any value is used outside function bodies
+
+        isProblematic := false
+
+        hasType := false
+        for _, key := range cycle {
+            if key.IsTypeBinding() {
+                hasType = true
+                break
+            }
+        }
+
+        if hasType {
+            // Mixed cycle: always problematic
+            isProblematic = true
+        } else {
+            // Value-only cycle: check if any value is used outside function bodies
+            if !hasComputedUsage {
+                usedOutsideFunctionBodies = g.findBindingsUsedOutsideFunctionBodiesV2()
+                hasComputedUsage = true
+            }
+
+            for _, key := range cycle {
+                if key.IsValueBinding() && usedOutsideFunctionBodies.Contains(key) {
+                    isProblematic = true
+                    break
+                }
+            }
+        }
+
+        if isProblematic {
+            problematicCycles = append(problematicCycles, CycleInfoV2{
+                Cycle:   cycle,
+                Message: "Cycle detected between bindings that are used outside of function bodies",
+            })
+        }
+    }
+
+    return problematicCycles
+}
+```
+
+#### findBindingsUsedOutsideFunctionBodiesV2
+
+Finds all bindings used outside function bodies, returning a set of `BindingKey`:
+
+```go
+// findBindingsUsedOutsideFunctionBodiesV2 finds all bindings that are used outside function bodies
+// This function traverses the AST only once and returns a set of all such bindings
+func (g *DepGraphV2) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey] {
+    usedOutsideFunctionBodies := set.NewSet[BindingKey]()
+
+    // Iterate over all bindings and their declarations
+    iter := g.Decls.Iter()
+    for ok := iter.First(); ok; ok = iter.Next() {
+        decls := iter.Value()
+        for _, decl := range decls {
+            visitor := &AllBindingsUsageVisitorV2{
+                DefaultVisitor:                  ast.DefaultVisitor{},
+                Graph:                           g,
+                FunctionDepth:                   0,
+                LocalBindings:                   make([]set.Set[string], 0),
+                BindingsUsedOutsideFunctionBody: usedOutsideFunctionBodies,
+            }
+            decl.Accept(visitor)
+        }
+    }
+
+    return usedOutsideFunctionBodies
+}
+```
+
+#### AllBindingsUsageVisitorV2
+
+The visitor for tracking binding usage, adapted to work with `DepGraphV2`:
+
+```go
+// AllBindingsUsageVisitorV2 checks if any bindings are used outside function bodies
+type AllBindingsUsageVisitorV2 struct {
+    ast.DefaultVisitor
+    Graph                           *DepGraphV2
+    FunctionDepth                   int               // Track nesting depth in function bodies
+    LocalBindings                   []set.Set[string] // Stack of local scopes
+    BindingsUsedOutsideFunctionBody set.Set[BindingKey]
+}
+
+// Key methods (similar to original but use BindingKey):
+// - EnterExpr: Check identifier usage, construct BindingKey if graph.HasBinding()
+// - ExitExpr: Handle function expression exit
+// - EnterDecl: Handle function declaration entry
+// - ExitDecl: Handle function declaration exit
+// - EnterBlock/ExitBlock: Manage scope stack
+// - EnterTypeAnn: Handle type references
+// - pushScope/popScope: Scope management
+// - isLocalBinding: Check for shadowed bindings
+
+func (v *AllBindingsUsageVisitorV2) EnterExpr(expr ast.Expr) bool {
+    switch e := expr.(type) {
+    case *ast.IdentExpr:
+        if !v.isLocalBinding(e.Name) && v.FunctionDepth == 0 {
+            // Check if this name exists as a value binding in the graph
+            valueKey := ValueBindingKey(e.Name)
+            if v.Graph.HasBinding(valueKey) {
+                v.BindingsUsedOutsideFunctionBody.Add(valueKey)
+            }
+        }
+        return false
+    case *ast.CallExpr:
+        // Handle call expressions similarly
+        if ident, ok := e.Callee.(*ast.IdentExpr); ok {
+            if !v.isLocalBinding(ident.Name) && v.FunctionDepth == 0 {
+                valueKey := ValueBindingKey(ident.Name)
+                if v.Graph.HasBinding(valueKey) {
+                    v.BindingsUsedOutsideFunctionBody.Add(valueKey)
+                }
+            }
+        }
+        return true
+    case *ast.FuncExpr:
+        v.FunctionDepth++
+        v.pushScope()
+        // Add parameters to scope...
+        return true
+    default:
+        return true
+    }
+}
+
+func (v *AllBindingsUsageVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
+    switch t := typeAnn.(type) {
+    case *ast.TypeRefTypeAnn:
+        typeName := ast.QualIdentToString(t.Name)
+        if !v.isLocalBinding(typeName) && v.FunctionDepth == 0 {
+            typeKey := TypeBindingKey(typeName)
+            if v.Graph.HasBinding(typeKey) {
+                v.BindingsUsedOutsideFunctionBody.Add(typeKey)
+            }
+        }
+        return true
+    default:
+        return true
+    }
+}
+
+// ... other methods similar to original but adapted for BindingKey
+```
+
+#### GetBindingNames (optional utility)
+
+A utility method to get all binding key names in the graph:
+
+```go
+// GetBindingNames returns the names for a slice of binding keys
+func GetBindingNames(keys []BindingKey) []string {
+    names := make([]string, len(keys))
+    for i, key := range keys {
+        names[i] = key.Name()
+    }
+    return names
+}
+```
+
+**Key differences from cycles.go:**
+1. Uses `BindingKey` instead of `DeclID` throughout
+2. No need for `getBindingsForDecl` - the key already identifies the binding
+3. `hasValueBinding`/`hasTypeBinding` replaced by `key.IsValueBinding()`/`key.IsTypeBinding()`
+4. The visitor uses `Graph.HasBinding()` to check if a name is a graph binding
+5. Simpler logic since binding keys encode both name and kind
+
 ## Phase 4: Update Checker (infer_module.go)
 
 ### Step 4.1: Update InferModule
@@ -801,14 +1046,17 @@ Once all tests pass with the V2 implementation:
 
 1. Remove `DeclID` type
 2. Remove `ModuleBindingVisitor` (old version)
-3. Remove `DependencyVisitor` (old version)  
+3. Remove `DependencyVisitor` (old version)
 4. Remove `FindModuleBindings` function
 5. Remove `FindDeclDependencies` function
 6. Remove `BuildDepGraph` function (old version)
 7. Remove `MergeOverloadedFunctions` function
 8. Remove `ValueBindings` and `TypeBindings` from old `DepGraph`
-9. Rename `DepGraphV2` to `DepGraph`
-10. Rename all V2 functions to remove suffix
+9. Remove `cycles.go` (replaced by `cycles_v2.go`)
+10. Rename `DepGraphV2` to `DepGraph`
+11. Rename `CycleInfoV2` to `CycleInfo`
+12. Rename `cycles_v2.go` to `cycles.go`
+13. Rename all V2 functions to remove suffix
 
 ### Step 8.2: Update all imports
 
@@ -828,14 +1076,14 @@ To minimize risk, implement this refactor incrementally:
 
 | Phase | Files Modified | Lines Changed (Est.) |
 |-------|---------------|---------------------|
-| 1-3   | dep_graph_v2.go (new) | +380           |
+| 1-3   | dep_graph_v2.go (new), cycles_v2.go (new) | +580 |
 | 4     | infer_module.go | +150, -100        |
 | 5     | builder.go, dts.go | +100, -80      |
 | 6     | compiler.go   | +10, -15            |
 | 7     | *_test.go     | +200, -150          |
-| 8     | dep_graph.go, cycles.go, dep_graph_v2.go | -400, rename |
+| 8     | dep_graph.go, cycles.go, dep_graph_v2.go, cycles_v2.go | -600, rename |
 
-**Total estimated: ~840 lines added, ~745 lines removed**
+**Total estimated: ~1040 lines added, ~945 lines removed**
 
 ## Open Questions Resolution
 

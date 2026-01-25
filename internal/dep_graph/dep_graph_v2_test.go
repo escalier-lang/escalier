@@ -104,7 +104,7 @@ func TestBuildDepGraphV2_SimpleBindings(t *testing.T) {
 				ValueBindingKey("createUser"),
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				TypeBindingKey("User"):       {},
+				TypeBindingKey("User"):         {},
 				ValueBindingKey("defaultUser"): {},
 				ValueBindingKey("createUser"):  {},
 			},
@@ -245,7 +245,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				},
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				TypeBindingKey("Point"):    {},
+				TypeBindingKey("Point"):   {},
 				ValueBindingKey("origin"): {TypeBindingKey("Point")},
 			},
 		},
@@ -264,8 +264,8 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				},
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				TypeBindingKey("Input"):     {},
-				TypeBindingKey("Output"):    {},
+				TypeBindingKey("Input"):    {},
+				TypeBindingKey("Output"):   {},
 				ValueBindingKey("process"): {TypeBindingKey("Input"), TypeBindingKey("Output")},
 			},
 		},
@@ -453,7 +453,7 @@ func TestBuildDepGraphV2_Namespaces(t *testing.T) {
 				TypeBindingKey("models.User"),
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				ValueBindingKey("user"):     {TypeBindingKey("models.User")},
+				ValueBindingKey("user"):       {TypeBindingKey("models.User")},
 				TypeBindingKey("models.User"): {},
 			},
 			expectedNamespaces: []string{"", "models"},
@@ -759,7 +759,7 @@ func TestBuildDepGraphV2_ClassAndEnum(t *testing.T) {
 func TestBuildDepGraphV2_StronglyConnectedComponents(t *testing.T) {
 	tests := map[string]struct {
 		sources              []*ast.Source
-		expectedMultiNodeSCC int  // Expected multi-node SCCs (actual cycles)
+		expectedMultiNodeSCC int            // Expected multi-node SCCs (actual cycles)
 		expectedCycleKeys    [][]BindingKey // Expected cycles (order within cycle doesn't matter)
 	}{
 		"NoCycles": {
@@ -950,6 +950,49 @@ func TestBuildDepGraphV2_LocalShadowing(t *testing.T) {
 			expectedDeps: map[BindingKey][]BindingKey{
 				ValueBindingKey("global"): {},
 				ValueBindingKey("test"):   {}, // global is shadowed locally
+			},
+		},
+		"LocalVarNotHoisted_InitializerUsesGlobal": {
+			// Local variable declarations should NOT be hoisted.
+			// When we have `val x = x + 1`, the `x` in the initializer
+			// should reference the module-level `x`, not the local `x` being declared.
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val x = 10
+						fn test() {
+							val x = x + 1
+							return x
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("x"):    {},
+				ValueBindingKey("test"): {ValueBindingKey("x")}, // x in initializer references global x
+			},
+		},
+		"LocalVarNotHoisted_TypeAnnotationUsesGlobal": {
+			// Type annotations in local variable declarations should also
+			// use the global type before the binding shadows it.
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Config = {debug: boolean}
+						fn test() {
+							val Config: Config = {debug: true}
+							return Config
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Config"): {},
+				ValueBindingKey("test"):  {TypeBindingKey("Config")}, // Type annotation uses global Config
 			},
 		},
 		"NestedFunctionShadowing": {
@@ -1280,4 +1323,1118 @@ func TestDepGraphV2_HelperMethods(t *testing.T) {
 		assert.Equal(t, "", graph.GetNamespace(ValueBindingKey("root")))
 		assert.Equal(t, "utils", graph.GetNamespace(ValueBindingKey("utils.helper")))
 	})
+}
+
+func TestBuildDepGraphV2_TypeOfDependencies(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"TypeOf_SimpleValueBinding": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val config = {debug: true, port: 8080}
+						type Config = typeof config
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("config"): {},
+				TypeBindingKey("Config"):  {ValueBindingKey("config")},
+			},
+		},
+		"TypeOf_QualifiedName": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						type HelperType = typeof utils.helper
+					`,
+				},
+				{
+					ID:   1,
+					Path: "utils/helpers.esc",
+					Contents: `
+						val helper = {name: "helper"}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("HelperType"):    {ValueBindingKey("utils.helper")},
+				ValueBindingKey("utils.helper"): {},
+			},
+		},
+		"TypeOf_InUnionType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val defaultConfig = {mode: "default"}
+						val customConfig = {mode: "custom", extra: true}
+						type Config = typeof defaultConfig | typeof customConfig
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("defaultConfig"): {},
+				ValueBindingKey("customConfig"):  {},
+				TypeBindingKey("Config"):         {ValueBindingKey("defaultConfig"), ValueBindingKey("customConfig")},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_ObjectTypeComputedKeys(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"ObjectType_ComputedKeyDependency": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val keyName = "myKey"
+						type MyObj = {[keyName]: string}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("keyName"): {},
+				TypeBindingKey("MyObj"):    {ValueBindingKey("keyName")},
+			},
+		},
+		"ObjectType_MultipleComputedKeys": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						val key1 = "first"
+						val key2 = "second"
+						type MultiKey = {[key1]: number, [key2]: string}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("key1"):    {},
+				ValueBindingKey("key2"):    {},
+				TypeBindingKey("MultiKey"): {ValueBindingKey("key1"), ValueBindingKey("key2")},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_InterfaceExtends(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"Interface_SingleExtends": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Base {
+							id: number,
+						}
+						interface Child extends Base {
+							name: string,
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Base"):  {},
+				TypeBindingKey("Child"): {TypeBindingKey("Base")},
+			},
+		},
+		"Interface_MultipleExtends": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Identifiable {
+							id: number,
+						}
+						interface Named {
+							name: string,
+						}
+						interface Entity extends Identifiable, Named {
+							createdAt: string,
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Identifiable"): {},
+				TypeBindingKey("Named"):        {},
+				TypeBindingKey("Entity"):       {TypeBindingKey("Identifiable"), TypeBindingKey("Named")},
+			},
+		},
+		"Interface_ExtendsAcrossNamespaces": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						interface AppUser extends models.User {
+							permissions: string,
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "models/user.esc",
+					Contents: `
+						interface User {
+							id: number,
+							name: string,
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("AppUser"):     {TypeBindingKey("models.User")},
+				TypeBindingKey("models.User"): {},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"Class_ExtendsOtherClass": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						class Animal(name: string) {}
+						class Dog(name: string, breed: string) extends Animal {}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Animal"):  {},
+				ValueBindingKey("Animal"): {},
+				TypeBindingKey("Dog"):     {TypeBindingKey("Animal")},
+				ValueBindingKey("Dog"):    {TypeBindingKey("Animal")},
+			},
+		},
+		"Class_ExtendsAcrossNamespaces": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						class AppEntity(id: number) extends models.Entity {}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "models/entity.esc",
+					Contents: `
+						class Entity(id: number) {}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("AppEntity"):      {TypeBindingKey("models.Entity")},
+				ValueBindingKey("AppEntity"):     {TypeBindingKey("models.Entity")},
+				TypeBindingKey("models.Entity"):  {},
+				ValueBindingKey("models.Entity"): {},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_EnumSpread(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"Enum_SpreadOtherEnum": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						enum BaseColors {
+							Red(),
+							Green(),
+							Blue(),
+						}
+						enum ExtendedColors {
+							...BaseColors,
+							Yellow(),
+							Purple(),
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("BaseColors"):      {},
+				ValueBindingKey("BaseColors"):     {},
+				TypeBindingKey("ExtendedColors"):  {TypeBindingKey("BaseColors")},
+				ValueBindingKey("ExtendedColors"): {TypeBindingKey("BaseColors")},
+			},
+		},
+		"Enum_MultipleSpread": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						enum Status {
+							Active(),
+							Inactive(),
+						}
+						enum Priority {
+							Low(),
+							High(),
+						}
+						enum TaskState {
+							...Status,
+							...Priority,
+							Pending(),
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Status"):     {},
+				ValueBindingKey("Status"):    {},
+				TypeBindingKey("Priority"):   {},
+				ValueBindingKey("Priority"):  {},
+				TypeBindingKey("TaskState"):  {TypeBindingKey("Status"), TypeBindingKey("Priority")},
+				ValueBindingKey("TaskState"): {TypeBindingKey("Status"), TypeBindingKey("Priority")},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"TypeParam_ConstraintDependsOnType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Serializable {
+							serialize() -> string,
+						}
+						type Container<T: Serializable> = {value: T}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Serializable"): {},
+				TypeBindingKey("Container"):    {TypeBindingKey("Serializable")},
+			},
+		},
+		"TypeParam_MultipleConstraints": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Identifiable {
+							id: number,
+						}
+						interface Named {
+							name: string,
+						}
+						type Entity<T: Identifiable, U: Named> = {item: T, label: U}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Identifiable"): {},
+				TypeBindingKey("Named"):        {},
+				TypeBindingKey("Entity"):       {TypeBindingKey("Identifiable"), TypeBindingKey("Named")},
+			},
+		},
+		"TypeParam_DefaultType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type DefaultValue = {value: number}
+						type Optional<T = DefaultValue> = {item: T | null}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("DefaultValue"): {},
+				TypeBindingKey("Optional"):     {TypeBindingKey("DefaultValue")},
+			},
+		},
+		"FuncDecl_TypeParamConstraint": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Comparable {
+							compareTo(other: Comparable) -> number,
+						}
+						fn sort<T: Comparable>(items: Array<T>) -> Array<T> throws never {
+							return items
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Comparable"): {TypeBindingKey("Comparable")}, // Self-reference in method signature
+				ValueBindingKey("sort"):      {TypeBindingKey("Comparable")},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_IntraNamespaceDependencies(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"SameNamespace_ValueDependsOnValue": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "utils/math.esc",
+					Contents: `
+						val PI = 3.14159
+						fn circleArea(radius) {
+							return PI * radius * radius
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("utils.PI"):         {},
+				ValueBindingKey("utils.circleArea"): {ValueBindingKey("utils.PI")},
+			},
+		},
+		"SameNamespace_TypeDependsOnType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "models/user.esc",
+					Contents: `
+						type Address = {street: string, city: string}
+						type User = {name: string, address: Address}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("models.Address"): {},
+				TypeBindingKey("models.User"):    {TypeBindingKey("models.Address")},
+			},
+		},
+		"SameNamespace_ValueDependsOnType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "config/settings.esc",
+					Contents: `
+						type Config = {debug: boolean, port: number}
+						val defaultConfig: Config = {debug: false, port: 8080}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("config.Config"):         {},
+				ValueBindingKey("config.defaultConfig"): {TypeBindingKey("config.Config")},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_MemberExpressionChains(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"DeepNestedNamespace": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						val result = a.b.c.helper()
+					`,
+				},
+				{
+					ID:   1,
+					Path: "a/b/c/helpers.esc",
+					Contents: `
+						fn helper() {
+							return 42
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("result"):       {ValueBindingKey("a.b.c.helper")},
+				ValueBindingKey("a.b.c.helper"): {},
+			},
+		},
+		"PartialMatch_LocalShadows": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "main.esc",
+					Contents: `
+						fn test() {
+							val a = {b: {c: 5}}
+							return a.b.c
+						}
+					`,
+				},
+				{
+					ID:   1,
+					Path: "a/b/c/value.esc",
+					Contents: `
+						val something = 100
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("test"):            {},
+				ValueBindingKey("a.b.c.something"): {},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+func TestBuildDepGraphV2_TypeShadowing(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"TypeParam_ShadowsGlobalType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Point = {x: number, y: number}
+						type Container<Point> = {value: Point}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Point"):     {},
+				TypeBindingKey("Container"): {}, // Point is shadowed by type param
+			},
+		},
+		"TypeParam_PartialShadowing": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type A = {a: number}
+						type B = {b: string}
+						type Wrapper<A> = {first: A, second: B}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("A"):       {},
+				TypeBindingKey("B"):       {},
+				TypeBindingKey("Wrapper"): {TypeBindingKey("B")}, // A is shadowed, B is not
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
+}
+
+// TestBuildDepGraphV2_LocalDeclShadowing tests that local declarations within
+// function bodies properly shadow module-level bindings. This covers the
+// EnterStmt method's handling of DeclStmt for FuncDecl, TypeDecl, ClassDecl,
+// InterfaceDecl, and EnumDecl.
+func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
+	tests := map[string]struct {
+		sources      []*ast.Source
+		expectedDeps map[BindingKey][]BindingKey
+	}{
+		"LocalFuncDecl_ShadowsGlobalFunc": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn helper() {
+							return 42
+						}
+						fn test() {
+							fn helper() {
+								return 100
+							}
+							return helper()
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("helper"): {},
+				ValueBindingKey("test"):   {}, // helper is shadowed by local fn
+			},
+		},
+		"LocalFuncDecl_HoistedShadowing": {
+			// Local function declarations are hoisted, so the local fn shadows
+			// the global from the start of the block
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn helper() {
+							return 42
+						}
+						fn test() {
+							val x = helper()
+							fn helper() {
+								return 100
+							}
+							return x
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("helper"): {},
+				ValueBindingKey("test"):   {ValueBindingKey("helper")}, // Function decls are hoisted like in JS
+			},
+		},
+		"LocalTypeDecl_ShadowsGlobalType": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Config = {debug: boolean}
+						fn test() {
+							type Config = {verbose: boolean}
+							val cfg: Config = {verbose: true}
+							return cfg
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Config"): {},
+				ValueBindingKey("test"):  {}, // Config is shadowed by local type
+			},
+		},
+		"LocalTypeDecl_UsesGlobalBeforeShadow": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						type Config = {debug: boolean}
+						fn test() {
+							val cfg1: Config = {debug: true}
+							type Config = {verbose: boolean}
+							val cfg2: Config = {verbose: true}
+							return cfg1
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Config"): {},
+				ValueBindingKey("test"):  {TypeBindingKey("Config")}, // Uses global before local shadow
+			},
+		},
+		"LocalClassDecl_ShadowsGlobalClass": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						class Point(x: number, y: number) {}
+						fn test() {
+							class Point(a: string) {}
+							val p: Point = Point("hello")
+							return p
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Point"):  {},
+				ValueBindingKey("Point"): {},
+				ValueBindingKey("test"):  {}, // Both type and value Point are shadowed
+			},
+		},
+		"LocalClassDecl_UsesGlobalBeforeShadow": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						class Point(x: number, y: number) {}
+						fn test() {
+							val p1: Point = Point(1, 2)
+							class Point(a: string) {}
+							val p2: Point = Point("hello")
+							return p1
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Point"):  {},
+				ValueBindingKey("Point"): {},
+				ValueBindingKey("test"):  {TypeBindingKey("Point"), ValueBindingKey("Point")}, // Uses global before shadow
+			},
+		},
+		"LocalInterfaceDecl_ShadowsGlobalInterface": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Printable {
+							print() -> string,
+						}
+						fn test() {
+							interface Printable {
+								display() -> string,
+							}
+							val obj: Printable = {display: fn() { return "hello" }}
+							return obj
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Printable"): {},
+				ValueBindingKey("test"):     {}, // Printable is shadowed by local interface
+			},
+		},
+		"LocalInterfaceDecl_UsesGlobalBeforeShadow": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						interface Printable {
+							print() -> string,
+						}
+						fn test() {
+							val obj1: Printable = {print: fn() { return "hello" }}
+							interface Printable {
+								display() -> string,
+							}
+							val obj2: Printable = {display: fn() { return "world" }}
+							return obj1
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Printable"): {},
+				ValueBindingKey("test"):     {TypeBindingKey("Printable")}, // Uses global before shadow
+			},
+		},
+		"LocalEnumDecl_ShadowsGlobalEnum": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						enum Color {
+							Red(),
+							Green(),
+							Blue(),
+						}
+						fn test() {
+							enum Color {
+								Black(),
+								White(),
+							}
+							val c: Color = Color.Black()
+							return c
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Color"):  {},
+				ValueBindingKey("Color"): {},
+				ValueBindingKey("test"):  {}, // Both type and value Color are shadowed
+			},
+		},
+		"LocalEnumDecl_UsesGlobalBeforeShadow": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						enum Color {
+							Red(),
+							Green(),
+							Blue(),
+						}
+						fn test() {
+							val c1: Color = Color.Red()
+							enum Color {
+								Black(),
+								White(),
+							}
+							val c2: Color = Color.Black()
+							return c1
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("Color"):  {},
+				ValueBindingKey("Color"): {},
+				ValueBindingKey("test"):  {TypeBindingKey("Color"), ValueBindingKey("Color")}, // Uses global before shadow
+			},
+		},
+		"NestedBlocks_LocalDeclsShadow": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn helper() {
+							return 1
+						}
+						type Config = {a: number}
+						fn test() {
+							val x = helper()
+							val y: Config = {a: 1}
+							if true {
+								fn helper() {
+									return 2
+								}
+								type Config = {b: string}
+								val z = helper()
+								val w: Config = {b: "test"}
+							}
+							return x
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("helper"): {},
+				TypeBindingKey("Config"):  {},
+				ValueBindingKey("test"):   {ValueBindingKey("helper"), TypeBindingKey("Config")}, // Uses global outside nested block
+			},
+		},
+		"MixedLocalDecls_AllTypes": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+						fn globalFunc() { return 1 }
+						type GlobalType = {x: number}
+						class GlobalClass(n: number) {}
+						interface GlobalInterface { foo() -> number }
+						enum GlobalEnum { A(), B() }
+
+						fn test() {
+							fn globalFunc() { return 2 }
+							type GlobalType = {y: string}
+							class GlobalClass(s: string) {}
+							interface GlobalInterface { bar() -> string }
+							enum GlobalEnum { C(), D() }
+
+							val a = globalFunc()
+							val b: GlobalType = {y: "test"}
+							val c: GlobalClass = GlobalClass("hi")
+							val d: GlobalInterface = {bar: fn() { return "x" }}
+							val e: GlobalEnum = GlobalEnum.C()
+							return a
+						}
+					`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				ValueBindingKey("globalFunc"):     {},
+				TypeBindingKey("GlobalType"):      {},
+				TypeBindingKey("GlobalClass"):     {},
+				ValueBindingKey("GlobalClass"):    {},
+				TypeBindingKey("GlobalInterface"): {},
+				TypeBindingKey("GlobalEnum"):      {},
+				ValueBindingKey("GlobalEnum"):     {},
+				ValueBindingKey("test"):           {}, // All global bindings are shadowed
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, test.sources)
+
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			graph := BuildDepGraphV2(module)
+
+			for key, expectedDeps := range test.expectedDeps {
+				actualDeps := graph.GetDeps(key)
+				actualDepsSlice := make([]BindingKey, 0, actualDeps.Len())
+				iter := actualDeps.Iter()
+				for ok := iter.First(); ok; ok = iter.Next() {
+					actualDepsSlice = append(actualDepsSlice, iter.Key())
+				}
+				assert.ElementsMatch(t, expectedDeps, actualDepsSlice,
+					"For key %s: expected deps %v, got %v", key, expectedDeps, actualDepsSlice)
+			}
+		})
+	}
 }
