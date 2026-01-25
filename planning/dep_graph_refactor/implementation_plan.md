@@ -773,9 +773,9 @@ func GetBindingNames(keys []BindingKey) []string {
 
 **File:** `internal/checker/infer_module_v2.go`
 
-**Status:** Not yet implemented - will be added when integrating V2 into the main flow.
+**Status:** Not created as a separate function
 
-The V2 functions are currently in a separate file. When ready to switch over, we'll update the main `InferModule` function to use `BuildDepGraphV2` and `InferDepGraphV2`.
+The V2 functions are in a separate file (`infer_module_v2.go`) that will be integrated into the main flow via the compiler. There is no separate `InferModuleV2` function; instead, `InferDepGraphV2` serves as the entry point.
 
 ### Step 4.2: Update InferDepGraph ✅
 
@@ -802,37 +802,99 @@ func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) [
 
 **Status:** Fully implemented (lines 50-1094)
 
-This is a comprehensive implementation that handles all declaration types with the new `BindingKey`-based structure. Key features:
+This is a comprehensive implementation that handles all declaration types with the new `BindingKey`-based structure. The implementation uses a multi-phase approach with careful handling of declaration processing order.
 
-1. **Tracking maps use `ast.Decl` as keys** (not `BindingKey`) to maintain separate state for each declaration, even when multiple declarations share the same binding key (overloads, interface merging).
+#### Key Implementation Details:
 
-2. **Placeholder phase** (lines 84-524):
-   - Iterates over binding keys and processes all declarations for each key
-   - Uses `processedPlaceholders` map to avoid processing classes/enums twice (they have both type and value keys)
-   - **FuncDecl**: Creates individual `FuncType` for each declaration, merges into `IntersectionType` in binding, stores overload declarations in `c.OverloadDecls`
-   - **VarDecl**: Infers pattern type, handles type annotations with deferred type refs
-   - **TypeDecl**: Creates placeholder type alias with fresh variable
-   - **ClassDecl**: Creates instance type, static type, constructor, processes all body elements
-   - **EnumDecl**: Creates enum namespace and type alias
-   - **InterfaceDecl**: Creates placeholder, allows merging by directly setting in namespace
+**Tracking Maps:**
+- Uses `ast.Decl` as keys (not `BindingKey`) to maintain separate state for each declaration
+- This is critical for overloaded functions and interface merging where multiple declarations share the same binding key
+- Maps include: `paramBindingsForDecl`, `declCtxMap`, `typeRefsToUpdate`, `funcTypeForDecl`, `methodCtxForElem`
 
-3. **Definition phase - Pass 1** (lines 531-1030):
-   - Processes FuncDecl, TypeDecl, InterfaceDecl, EnumDecl, ClassDecl
-   - Skips VarDecl (processed in pass 2)
-   - Uses `processedDefinitionsPass1` map to avoid re-processing
-   - **FuncDecl**: Infers body using individual `FuncType` from `funcTypeForDecl` map
-   - **TypeDecl**: Infers type and unifies with placeholder
-   - **InterfaceDecl**: Merges elements if interface already exists, otherwise unifies
-   - **EnumDecl**: Creates variant types and unifies with placeholder
-   - **ClassDecl**: Infers field/method bodies, handles static vs instance elements
+**Phase 1: Placeholder Creation** (lines 84-524):
+- Iterates over binding keys and processes all declarations for each key
+- Uses `processedPlaceholders` map to avoid processing classes/enums twice (they have both type and value keys)
 
-4. **Definition phase - Pass 2** (lines 1032-1083):
-   - Processes VarDecl initializers after other declarations
-   - Uses `processedDefinitionsPass2` map
-   - Allows VarDecl to reference types/functions defined in pass 1
+Declaration-specific handling:
+- **FuncDecl** (lines 97-139):
+  - Creates individual `FuncType` for each declaration and stores in `funcTypeForDecl` map
+  - Merges multiple declarations into `IntersectionType` in the binding for overloads
+  - Stores overload declarations in `c.OverloadDecls` for codegen
+  - Handles both first declaration and subsequent overloads
 
-5. **Type reference resolution** (lines 1085-1091):
-   - Resolves deferred type references for recursive definitions
+- **VarDecl** (lines 140-190):
+  - Infers pattern type to create bindings
+  - Handles type annotations with `AllowUndefinedTypeRefs` for recursive definitions
+  - Tracks deferred type refs in `typeRefsToUpdate` for later resolution
+  - Stores inferred type in `decl.InferredType` for use in definition phase
+
+- **TypeDecl** (lines 191-203):
+  - Creates placeholder type alias with fresh variable
+  - Actual type inference happens in definition phase
+
+- **ClassDecl** (lines 204-456):
+  - Creates instance type and class object type
+  - Processes all body elements (fields, methods, getters, setters)
+  - Separates static vs instance elements
+  - Handles extends clause
+  - Stores method contexts in `methodCtxForElem` map for later body inference
+  - Creates constructor with proper signature
+
+- **EnumDecl** (lines 457-500):
+  - Creates enum namespace
+  - Creates placeholder type alias with fresh variable
+  - Sets up context for inferring variants in definition phase
+
+- **InterfaceDecl** (lines 501-522):
+  - Creates placeholder type with fresh variable
+  - Directly sets in namespace (not using SetTypeAlias) to allow interface merging
+  - Merging happens in definition phase
+
+**Phase 2: Definition Inference - Pass 1** (lines 531-1030):
+Processes FuncDecl, TypeDecl, InterfaceDecl, EnumDecl, ClassDecl (skips VarDecl):
+
+- Uses `processedDefinitionsPass1` map to avoid re-processing
+- Skips declarations with `declare` keyword (except types)
+
+- **FuncDecl** (lines 566-579):
+  - Reuses individual `FuncType` from `funcTypeForDecl` map
+  - Infers function body with proper parameter bindings
+  - Critical for overloads: each overload has its own FuncType
+
+- **TypeDecl** (lines 582-593):
+  - Infers actual type from type annotation
+  - Unifies with placeholder created in phase 1
+  - Validates type parameters
+
+- **InterfaceDecl** (lines 594-622):
+  - Infers interface type
+  - If interface already exists (from previous declaration), merges elements
+  - Otherwise unifies with placeholder
+  - Handles interface merging for declaration merging
+
+- **EnumDecl** (lines 623-763):
+  - Creates variant types with constructors
+  - Generates Symbol.customMatcher methods for pattern matching
+  - Builds union type from all variants
+  - Unifies with placeholder
+
+- **ClassDecl** (lines 764-1028):
+  - Infers field initializers and method bodies
+  - Handles static vs instance elements separately
+  - Processes fields, methods, getters, setters
+  - Properly sets up `self` parameter for instance members
+
+**Phase 3: Definition Inference - Pass 2** (lines 1032-1083):
+Processes VarDecl initializers:
+
+- Uses `processedDefinitionsPass2` map
+- Allows VarDecl to reference types/functions defined in pass 1
+- Handles destructuring patterns that create multiple bindings
+- Unifies initializer type with pattern type or type annotation
+
+**Phase 4: Type Reference Resolution** (lines 1085-1091):
+- Resolves deferred type references that were marked in phase 1
+- Enables recursive definitions between type and variable declarations
 
 ### Step 4.4: Update GetNamespaceCtx ✅
 
@@ -840,7 +902,7 @@ This is a comprehensive implementation that handles all declaration types with t
 
 **Status:** Implemented (lines 27-48)
 
-Creates a context with the appropriate namespace for a binding key:
+Creates a context with the appropriate namespace for a binding key. Handles nested namespaces by splitting on "." and creating/navigating the namespace hierarchy:
 
 ```go
 func GetNamespaceCtxV2(
@@ -880,83 +942,110 @@ Key differences from the original:
 - No longer requires `overloadDecls` parameter
 - Handles interface merging (multiple declarations per binding)
 - Skips type-only bindings that don't have corresponding value bindings
+- Tracks processed declarations to avoid duplicating code for destructuring patterns
 
 ### Step 5.1: Update Builder struct ✅
 
 **File:** `internal/codegen/builder.go`
 
-**Note:** The existing Builder struct remains unchanged. The V2 functions work with the existing struct and set `b.depGraph = nil` since they don't use the old DepGraph field.
+**Status:** Builder struct remains unchanged
 
-```go
-type Builder struct {
-    tempId       int
-    depGraph     *dep_graph.DepGraphV2  // Changed type
-    hasExtractor bool
-    isModule     bool
-    inBlockScope bool
-    // Remove overloadDecls - no longer needed as overloads are grouped by BindingKey
-}
-```
+The existing Builder struct was not modified. Instead, the V2 functions work with the existing struct and manage the dep graph fields appropriately:
+- Sets `b.depGraph = nil` (old version not used)
+- Sets `b.depGraphV2 = depGraph` (stores V2 graph for namespace lookups)
+
+The Builder struct already had a `depGraphV2` field added in previous work.
 
 ### Step 5.2: Update BuildTopLevelDecls ✅
 
 **File:** `internal/codegen/builder_v2.go`
 
-Implemented as `BuildTopLevelDeclsV2`. The original example code in the plan is retained below for reference:
+**Status:** Fully implemented (lines 16-144)
 
+Implemented as `BuildTopLevelDeclsV2`. Generates JavaScript code from the dependency graph.
+
+#### Key Implementation Details:
+
+**Initialization** (lines 17-26):
 ```go
-func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraphV2) *Module {
-    b.depGraph = depGraph
-    b.isModule = true
-
-    var stmts []Stmt
-    nsStmts := b.buildNamespaceStatements(depGraph)
-    stmts = slices.Concat(stmts, nsStmts)
-
-    // Iterate over components (now [][]BindingKey)
-    for _, component := range depGraph.Components {
-        for _, key := range component {
-            decls := depGraph.GetDecls(key)
-            nsName := depGraph.GetNamespace(key)
-            
-            // Skip type-only bindings
-            if key.Kind == dep_graph.DepKindType {
-                // Check if there's also a value binding with same name
-                valueKey := dep_graph.BindingKey{Name: key.Name, Kind: dep_graph.DepKindValue}
-                if !depGraph.HasBinding(valueKey) {
-                    continue // Type-only, skip codegen
-                }
-            }
-            
-            // Handle multiple declarations (overloaded functions)
-            if len(decls) > 1 {
-                if _, ok := decls[0].(*ast.FuncDecl); ok {
-                    // Build overloaded function dispatch
-                    funcDecls := make([]*ast.FuncDecl, len(decls))
-                    for i, d := range decls {
-                        funcDecls[i] = d.(*ast.FuncDecl)
-                    }
-                    stmts = slices.Concat(stmts, b.buildOverloadedFunc(funcDecls, nsName))
-                    continue
-                }
-            }
-            
-            // Single declaration
-            stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decls[0], nsName))
-        }
-    }
-    
-    // ... rest unchanged
-}
+b.depGraph = nil       // We're using V2, so set old depGraph to nil
+b.depGraphV2 = depGraph // Store V2 dep graph for namespace lookups
+b.isModule = true
+var stmts []Stmt
+nsStmts := b.buildNamespaceStatementsV2(depGraph)
+stmts = slices.Concat(stmts, nsStmts)
 ```
+
+**Duplicate Declaration Tracking** (lines 28-40):
+- Uses `processedDecls` map to track which `ast.Decl` nodes have been processed
+- Critical for VarDecl with pattern destructuring that creates multiple binding keys
+- Example: `val C(D(msg), E(x, y)) = subject` creates three binding keys ("value:msg", "value:x", "value:y") all pointing to the same VarDecl
+- Ensures code is only emitted once for such declarations
+
+**Component Iteration** (lines 42-121):
+Iterates over components in topological order, processing each binding key:
+
+1. **Type-only binding skip** (lines 52-61):
+   - Skips bindings with `DepKindType` that don't have a corresponding value binding
+   - Type-only declarations (like `type Foo = ...` or standalone interfaces) don't generate JS code
+   - Classes and enums have both type and value bindings, so they're handled via the value binding
+
+2. **Overloaded function handling** (lines 63-85):
+   - Checks if binding has multiple declarations that are all FuncDecls
+   - Generates overloaded function dispatch using `buildOverloadedFunc`
+   - For interface merging (multiple interface declarations), only first is used (interfaces don't generate runtime code)
+
+3. **Single declaration processing** (lines 87-98):
+   - Processes first declaration if not already processed
+   - Uses existing `buildDeclWithNamespace` helper
+
+4. **Namespace assignment** (lines 99-119):
+   - For namespaced bindings (name contains "."), generates assignment to namespace
+   - Example: `Foo.bar` gets assigned as `Foo.bar = Foo__bar`
+
+**Extractor Import** (lines 123-139):
+- Adds import statement for `InvokeCustomMatcherOrThrow` if extractors were used
+- Prepends import to start of statements
+- Resets `hasExtractor` flag
+
+**Helper: buildNamespaceStatementsV2** (lines 148-162):
+- Generates variable declarations for namespace objects
+- Tracks defined namespaces to avoid redefinition
+- Builds full hierarchy for nested namespaces
 
 ### Step 5.3: Update BuildDefinitions ✅
 
 **File:** `internal/codegen/builder_v2.go`
 
-Implemented as `BuildDefinitionsV2`. The original example code in the plan is retained below for reference:
+**Status:** Fully implemented (lines 166-267)
 
-Similar changes - iterate over `BindingKey` instead of `DeclID`.
+Implemented as `BuildDefinitionsV2`. Generates TypeScript `.d.ts` definition files from the dependency graph.
+
+#### Key Implementation Details:
+
+**Namespace Grouping** (lines 171-183):
+- Groups binding keys by their namespace
+- Collects all binding keys in topological order from components
+- Creates a map from namespace name to list of binding keys
+
+**Namespace Processing** (lines 186-264):
+Processes namespaces in sorted order for consistent output:
+
+1. **Root namespace** (lines 202-223):
+   - Declarations without a namespace go directly to module level
+   - Processes all declarations for each binding key (to handle overloads and interface merging)
+   - Uses `processedDecls` map to avoid duplicates (classes/enums have both type and value bindings)
+
+2. **Named namespaces** (lines 224-263):
+   - Finds the nested namespace in the type system using `findNamespace`
+   - Processes all declarations for each binding key
+   - Wraps statements in namespace declaration using `buildNamespaceDecl`
+   - Only emits namespace if it has statements
+
+**Declaration Processing:**
+- Calls `buildDeclStmt` for each declaration to generate TypeScript definition
+- Passes the appropriate namespace from the type system for type lookups
+- Handles export flag based on whether it's root or nested namespace
 
 ## Phase 6: Update Compiler ✅
 
@@ -966,44 +1055,41 @@ Similar changes - iterate over `BindingKey` instead of `DeclID`.
 
 **File:** `internal/compiler/compiler.go`
 
+**Status:** Fully implemented (lines 110, 119, 126-127)
+
 Updated the `CompilePackage` function to use V2 functions:
-- Changed `BuildDepGraph` → `BuildDepGraphV2`
-- Changed `InferDepGraph` → `InferDepGraphV2`
-- Removed `MergeOverloadedFunctions` call (no longer needed)
-- Changed `BuildTopLevelDecls` → `BuildTopLevelDeclsV2` (no overloadDecls parameter)
-- Changed `BuildDefinitions` → `BuildDefinitionsV2`
 
-The original plan example is retained below for reference:
+**Changes made:**
+1. **Line 110**: Changed `BuildDepGraph` → `BuildDepGraphV2`
+   ```go
+   depGraph := dep_graph.BuildDepGraphV2(inMod)
+   ```
 
-```go
-func CompilePackage(sources []*ast.Source) CompilerOutput {
-    // ...
-    
-    if len(libSources) > 0 {
-        inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
-        depGraph := dep_graph.BuildDepGraphV2(inMod)
+2. **Line 119**: Changed `InferDepGraph` → `InferDepGraphV2`
+   ```go
+   typeErrors := c.InferDepGraphV2(inferCtx, depGraph)
+   ```
 
-        c := checker.NewChecker()
-        inferCtx := checker.Context{
-            Scope:      checker.Prelude(c).WithNewScope(),
-            IsAsync:    false,
-            IsPatMatch: false,
-        }
-        typeErrors := c.InferDepGraphV2(inferCtx, depGraph)
+3. **Line 121**: Removed `MergeOverloadedFunctions` call
+   - Added comment explaining it's no longer needed
+   - Overloads are automatically grouped by `BindingKey` in the V2 implementation
 
-        // No longer need MergeOverloadedFunctions - overloads are already grouped
+4. **Line 126**: Changed `BuildTopLevelDecls` → `BuildTopLevelDeclsV2`
+   ```go
+   jsMod := builder.BuildTopLevelDeclsV2(depGraph)
+   ```
+   - No longer requires `overloadDecls` parameter
 
-        libNS = inferCtx.Scope.Namespace
+5. **Line 127**: Changed `BuildDefinitions` → `BuildDefinitionsV2`
+   ```go
+   dtsMod := builder.BuildDefinitionsV2(depGraph, libNS)
+   ```
 
-        builder := &codegen.Builder{}
-        jsMod := builder.BuildTopLevelDecls(depGraph)  // No overloadDecls param
-        dtsMod := builder.BuildDefinitions(depGraph, libNS)
-        
-        // ... rest unchanged
-    }
-    // ...
-}
-```
+**Impact:**
+- The compiler now uses the BindingKey-based dependency graph throughout
+- Overloaded functions are handled seamlessly without manual merging
+- Interface merging works automatically
+- Code generation properly handles destructuring patterns and other edge cases
 
 ## Phase 7: Update Tests
 
