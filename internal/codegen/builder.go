@@ -16,6 +16,7 @@ import (
 type Builder struct {
 	tempId        int
 	depGraph      *dep_graph.DepGraph
+	depGraphV2    *dep_graph.DepGraphV2
 	hasExtractor  bool
 	isModule      bool
 	inBlockScope  bool
@@ -1380,6 +1381,8 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		var namespaceStr string
 		if b.depGraph != nil {
 			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
+		} else if b.depGraphV2 != nil {
+			namespaceStr = b.depGraphV2.GetNamespaceString(expr.Namespace)
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
 	case *ast.CallExpr:

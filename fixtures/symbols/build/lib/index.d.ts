@@ -1,2 +1,2 @@
-declare const foo: symbol;
 declare const bar: unique symbol;
+declare const foo: symbol;

@@ -107,7 +107,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 	if len(libSources) > 0 {
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
-		depGraph := dep_graph.BuildDepGraph(inMod)
+		depGraph := dep_graph.BuildDepGraphV2(inMod)
 
 		c := checker.NewChecker()
 		inferCtx := checker.Context{
@@ -116,16 +116,15 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		typeErrors := c.InferDepGraph(inferCtx, depGraph)
+		typeErrors := c.InferDepGraphV2(inferCtx, depGraph)
 
-		// Merge overloaded functions in the dependency graph
-		depGraph.MergeOverloadedFunctions(c.OverloadDecls)
+		// No longer need MergeOverloadedFunctions - overloads are already grouped by BindingKey
 
 		libNS = inferCtx.Scope.Namespace
 
 		builder := &codegen.Builder{}
-		jsMod := builder.BuildTopLevelDecls(depGraph, c.OverloadDecls)
-		dtsMod := builder.BuildDefinitions(depGraph, libNS)
+		jsMod := builder.BuildTopLevelDeclsV2(depGraph)
+		dtsMod := builder.BuildDefinitionsV2(depGraph, libNS)
 
 		printer := codegen.NewPrinter()
 		jsOutput := printer.PrintModule(jsMod)

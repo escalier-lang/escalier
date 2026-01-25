@@ -14,7 +14,7 @@ export function process(param0) {
     }
   } else throw new TypeError("No overload matches the provided arguments for function 'process'");
 }
+export const boolResult = process({flag: true});
 export const numResult = process({value: 42});
 export const strResult = process({text: "hello"});
-export const boolResult = process({flag: true});
 //# sourceMappingURL=./index.js.map

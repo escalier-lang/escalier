@@ -1,3 +1,8 @@
+lib/index.esc:37:9: Cannot mutate readonly property 'value' on type: mut Counter
+
+37:         self.value = self.value + 1
+            ^^^^^^^^^^
+
 lib/index.esc:29:5: Cannot mutate readonly property 'apiUrl' on type: mut {readonly apiUrl: string, timeout: number}
 
 29:     config.apiUrl = "https://foo.example.com"
@@ -7,9 +12,4 @@ lib/index.esc:30:5: Cannot mutate readonly property 'x' on type: mut Point
 
 30:     point.x = 0
         ^^^^^^^
-
-lib/index.esc:37:9: Cannot mutate readonly property 'value' on type: mut Counter
-
-37:         self.value = self.value + 1
-            ^^^^^^^^^^
 
