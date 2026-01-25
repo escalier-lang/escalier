@@ -11,11 +11,10 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// Callers of this function should create a new scope when inferring a module.
+// If it's inferring global declarations then it's okay to omit that step.
+// TODO: Create separate InferModuleDepGraph and InferGlobalDepGraph functions?
 func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) []Error {
-	// Define a module scope so that declarations don't leak into the global scope
-	// TODO: Move this call before the call to InferDepGraphV2
-	// ctx = ctx.WithNewScope()
-
 	var errors []Error
 	for _, component := range depGraph.Components {
 		declsErrors := c.InferComponentV2(ctx, depGraph, component)
@@ -515,6 +514,7 @@ func (c *Checker) InferComponentV2(
 					}
 
 					// Directly set in the namespace to allow interface merging
+					// We don't use SetTypeAlias since that would panic if it already exists
 					nsCtx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
 				}
 				// If it already exists, we'll merge during the definition phase
