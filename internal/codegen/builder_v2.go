@@ -24,6 +24,10 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 	nsStmts := b.buildNamespaceStatementsV2(depGraph)
 	stmts = slices.Concat(stmts, nsStmts)
 
+	// Track which declarations we've already processed to avoid duplicates
+	// (VarDecls with pattern destructuring can appear under multiple binding keys)
+	processedDecls := make(map[ast.Decl]bool)
+
 	// Iterate over components in topological order
 	for _, component := range depGraph.Components {
 		for _, key := range component {
@@ -71,6 +75,14 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 
 			// Single declaration or first of merged declarations
 			decl := decls[0]
+
+			// Skip if we've already processed this declaration
+			// (VarDecls with pattern destructuring appear under multiple binding keys)
+			if processedDecls[decl] {
+				continue
+			}
+			processedDecls[decl] = true
+
 			stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 			// Handle namespace assignment for namespaced bindings

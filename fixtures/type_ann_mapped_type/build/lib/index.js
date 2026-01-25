@@ -17,7 +17,6 @@ export const c4 = obj4.c;
 export const email = strPerson.email;
 export const email1 = record.email;
 export const flag = obj6.flag;
-export const {foo, bar} = obj5;
 export const foo1 = obj5.foo;
 export const foo2 = obj6.foo;
 export const id = strPerson.id;

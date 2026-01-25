@@ -15,7 +15,4 @@ export const subject = new C(undefined, 5);
 export const [temp4 = "hello", temp5] = InvokeCustomMatcherOrThrow(C, subject, undefined);
 export const x = temp4;
 export const y = temp5;
-export const [temp6 = "hello", temp7] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-export const x = temp6;
-export const y = temp7;
 //# sourceMappingURL=./index.js.map
