@@ -21,10 +21,10 @@ This document outlines the step-by-step implementation plan for refactoring `Dep
 - [x] Step 3.2: Create cycles_v2.go with V2 cycle detection functions
 
 ### Phase 4: Update Checker (infer_module.go)
-- [ ] Step 4.1: Update InferModule
-- [ ] Step 4.2: Update InferDepGraph
-- [ ] Step 4.3: Update InferComponent
-- [ ] Step 4.4: Update GetNamespaceCtx
+- [x] Step 4.1: Update InferModule
+- [x] Step 4.2: Update InferDepGraph
+- [x] Step 4.3: Update InferComponent
+- [x] Step 4.4: Update GetNamespaceCtx
 
 ### Phase 5: Update Codegen (builder.go)
 - [ ] Step 5.1: Update Builder struct
@@ -523,11 +523,11 @@ func (g *DepGraphV2) FindStronglyConnectedComponentsV2(threshold int) [][]Bindin
 }
 ```
 
-### Step 3.2: Create cycles_v2.go with V2 cycle detection functions
+### Step 3.2: Create cycles_v2.go with V2 cycle detection functions ✅
 
 **File:** `internal/dep_graph/cycles_v2.go`
 
-**Status:** Not started
+**Status:** Implemented
 
 Create a new file `cycles_v2.go` with V2 versions of all cycle-related types and functions from `cycles.go`. The V2 versions work with `BindingKey` instead of `DeclID`.
 
@@ -767,22 +767,23 @@ func GetBindingNames(keys []BindingKey) []string {
 4. The visitor uses `Graph.HasBinding()` to check if a name is a graph binding
 5. Simpler logic since binding keys encode both name and kind
 
-## Phase 4: Update Checker (infer_module.go)
+## Phase 4: Update Checker (infer_module.go) ✅
 
-### Step 4.1: Update InferModule
+### Step 4.1: Update InferModule ✅
 
-**File:** `internal/checker/infer_module.go`
+**File:** `internal/checker/infer_module_v2.go`
 
-```go
-func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
-    depGraph := dep_graph.BuildDepGraphV2(m)
-    return c.InferDepGraphV2(ctx, depGraph)
-}
-```
+**Status:** Not yet implemented - will be added when integrating V2 into the main flow.
 
-### Step 4.2: Update InferDepGraph
+The V2 functions are currently in a separate file. When ready to switch over, we'll update the main `InferModule` function to use `BuildDepGraphV2` and `InferDepGraphV2`.
 
-**File:** `internal/checker/infer_module.go`
+### Step 4.2: Update InferDepGraph ✅
+
+**File:** `internal/checker/infer_module_v2.go`
+
+**Status:** Implemented (lines 17-25)
+
+Simple implementation that iterates over components and calls `InferComponentV2`:
 
 ```go
 func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) []Error {
@@ -795,56 +796,51 @@ func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) [
 }
 ```
 
-### Step 4.3: Update InferComponent
+### Step 4.3: Update InferComponent ✅
 
-**File:** `internal/checker/infer_module.go`
+**File:** `internal/checker/infer_module_v2.go`
 
-The key changes:
-1. Iterate over `[]BindingKey` instead of `[]DeclID`
-2. Use `depGraph.GetDecls(key)` to get declarations
-3. Handle multiple declarations per key (for overloads and interface merging)
+**Status:** Fully implemented (lines 50-1094)
 
-```go
-func (c *Checker) InferComponentV2(
-    ctx Context,
-    depGraph *dep_graph.DepGraphV2,
-    component []dep_graph.BindingKey,
-) []Error {
-    errors := []Error{}
-    
-    // Maps to track state per binding key
-    paramBindingsForKey := make(map[dep_graph.BindingKey]map[string]*type_system.Binding)
-    declCtxMap := make(map[dep_graph.BindingKey]Context)
-    
-    // Infer placeholders
-    for _, key := range component {
-        nsCtx := GetNamespaceCtxV2(ctx, depGraph, key)
-        decls := depGraph.GetDecls(key)
-        
-        // Process all declarations for this key
-        for _, decl := range decls {
-            switch d := decl.(type) {
-            case *ast.FuncDecl:
-                // Handle function (potentially overloaded)
-                // ... existing logic but accumulate into intersection type
-            case *ast.InterfaceDecl:
-                // Handle interface (potentially merged)
-                // ... existing logic but merge into existing interface
-            // ... other cases
-            }
-        }
-    }
-    
-    // Infer definitions (similar structure)
-    // ...
-    
-    return errors
-}
-```
+This is a comprehensive implementation that handles all declaration types with the new `BindingKey`-based structure. Key features:
 
-### Step 4.4: Update GetNamespaceCtx
+1. **Tracking maps use `ast.Decl` as keys** (not `BindingKey`) to maintain separate state for each declaration, even when multiple declarations share the same binding key (overloads, interface merging).
 
-**File:** `internal/checker/infer_module.go`
+2. **Placeholder phase** (lines 84-524):
+   - Iterates over binding keys and processes all declarations for each key
+   - Uses `processedPlaceholders` map to avoid processing classes/enums twice (they have both type and value keys)
+   - **FuncDecl**: Creates individual `FuncType` for each declaration, merges into `IntersectionType` in binding, stores overload declarations in `c.OverloadDecls`
+   - **VarDecl**: Infers pattern type, handles type annotations with deferred type refs
+   - **TypeDecl**: Creates placeholder type alias with fresh variable
+   - **ClassDecl**: Creates instance type, static type, constructor, processes all body elements
+   - **EnumDecl**: Creates enum namespace and type alias
+   - **InterfaceDecl**: Creates placeholder, allows merging by directly setting in namespace
+
+3. **Definition phase - Pass 1** (lines 531-1030):
+   - Processes FuncDecl, TypeDecl, InterfaceDecl, EnumDecl, ClassDecl
+   - Skips VarDecl (processed in pass 2)
+   - Uses `processedDefinitionsPass1` map to avoid re-processing
+   - **FuncDecl**: Infers body using individual `FuncType` from `funcTypeForDecl` map
+   - **TypeDecl**: Infers type and unifies with placeholder
+   - **InterfaceDecl**: Merges elements if interface already exists, otherwise unifies
+   - **EnumDecl**: Creates variant types and unifies with placeholder
+   - **ClassDecl**: Infers field/method bodies, handles static vs instance elements
+
+4. **Definition phase - Pass 2** (lines 1032-1083):
+   - Processes VarDecl initializers after other declarations
+   - Uses `processedDefinitionsPass2` map
+   - Allows VarDecl to reference types/functions defined in pass 1
+
+5. **Type reference resolution** (lines 1085-1091):
+   - Resolves deferred type references for recursive definitions
+
+### Step 4.4: Update GetNamespaceCtx ✅
+
+**File:** `internal/checker/infer_module_v2.go`
+
+**Status:** Implemented (lines 27-48)
+
+Creates a context with the appropriate namespace for a binding key:
 
 ```go
 func GetNamespaceCtxV2(
@@ -856,7 +852,16 @@ func GetNamespaceCtxV2(
     if nsName == "" {
         return ctx
     }
-    // ... rest unchanged
+    ns := ctx.Scope.Namespace
+    nsCtx := ctx
+    for part := range strings.SplitSeq(nsName, ".") {
+        if _, ok := ns.Namespaces[part]; !ok {
+            ns.Namespaces[part] = type_system.NewNamespace()
+        }
+        ns = ns.Namespaces[part]
+        nsCtx = nsCtx.WithNewScopeAndNamespace(ns)
+    }
+    return nsCtx
 }
 ```
 
