@@ -107,21 +107,16 @@ try {
 export const tryCatchWithThrow = temp12;
 let temp13;
 try {
-  temp13 = 42;
-}
-export const tryOnly = temp13;
-let temp14;
-try {
   throw "critical";
 } catch (__error) {
   if (true) {
     const err = __error;
     if (err == "critical") {
-      temp14 = "critical error";
+      temp13 = "critical error";
     } else if (true) {
-      temp14 = "other error";
+      temp13 = "other error";
     }
   }
 }
-export const withGuard = temp14;
+export const withGuard = temp13;
 //# sourceMappingURL=./index.js.map

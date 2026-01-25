@@ -36,11 +36,6 @@ export val withGuard = try {
     _ => "other error",
 }
 
-// Try-catch without catch (try-only)
-export val tryOnly = try {
-    42
-}
-
 // Try-catch in function
 export fn safeDivide(a: number, b: number) -> number {
     return try {

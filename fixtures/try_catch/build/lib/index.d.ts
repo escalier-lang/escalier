@@ -7,5 +7,4 @@ export declare const objectPattern: "fail" | "unknown";
 export declare const patternBinding: "fail" | "unknown";
 export declare function safeDivide(a: number, b: number): number;
 export declare const tryCatchWithThrow: string;
-export declare const tryOnly: 42;
 export declare const withGuard: "critical error" | "other error";
