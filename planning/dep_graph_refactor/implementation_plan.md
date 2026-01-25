@@ -27,12 +27,12 @@ This document outlines the step-by-step implementation plan for refactoring `Dep
 - [x] Step 4.4: Update GetNamespaceCtx
 
 ### Phase 5: Update Codegen (builder.go)
-- [ ] Step 5.1: Update Builder struct
-- [ ] Step 5.2: Update BuildTopLevelDecls
-- [ ] Step 5.3: Update BuildDefinitions
+- [x] Step 5.1: Update Builder struct
+- [x] Step 5.2: Update BuildTopLevelDecls
+- [x] Step 5.3: Update BuildDefinitions
 
 ### Phase 6: Update Compiler
-- [ ] Step 6.1: Update compiler.go
+- [x] Step 6.1: Update compiler.go
 
 ### Phase 7: Update Tests
 - [ ] Step 7.1: Update dep_graph_test.go
@@ -865,11 +865,27 @@ func GetNamespaceCtxV2(
 }
 ```
 
-## Phase 5: Update Codegen (builder.go)
+## Phase 5: Update Codegen (builder.go) ✅
 
-### Step 5.1: Update Builder struct
+**Status:** V2 implementations completed in `internal/codegen/builder_v2.go`
+
+The V2 versions of the codegen functions have been implemented in a separate file `builder_v2.go`:
+- `BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module` - Generates JavaScript code
+- `BuildDefinitionsV2(depGraph *dep_graph.DepGraphV2, moduleNS *type_sys.Namespace) *Module` - Generates .d.ts definitions
+- `buildNamespaceStatementsV2(depGraph *dep_graph.DepGraphV2) []Stmt` - Helper for namespace creation
+
+Key differences from the original:
+- Uses `BindingKey` instead of `DeclID` throughout
+- Automatically handles overloaded functions (grouped by binding key)
+- No longer requires `overloadDecls` parameter
+- Handles interface merging (multiple declarations per binding)
+- Skips type-only bindings that don't have corresponding value bindings
+
+### Step 5.1: Update Builder struct ✅
 
 **File:** `internal/codegen/builder.go`
+
+**Note:** The existing Builder struct remains unchanged. The V2 functions work with the existing struct and set `b.depGraph = nil` since they don't use the old DepGraph field.
 
 ```go
 type Builder struct {
@@ -882,9 +898,11 @@ type Builder struct {
 }
 ```
 
-### Step 5.2: Update BuildTopLevelDecls
+### Step 5.2: Update BuildTopLevelDecls ✅
 
-**File:** `internal/codegen/builder.go`
+**File:** `internal/codegen/builder_v2.go`
+
+Implemented as `BuildTopLevelDeclsV2`. The original example code in the plan is retained below for reference:
 
 ```go
 func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraphV2) *Module {
@@ -932,17 +950,30 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraphV2) *Module {
 }
 ```
 
-### Step 5.3: Update BuildDefinitions
+### Step 5.3: Update BuildDefinitions ✅
 
-**File:** `internal/codegen/dts.go`
+**File:** `internal/codegen/builder_v2.go`
+
+Implemented as `BuildDefinitionsV2`. The original example code in the plan is retained below for reference:
 
 Similar changes - iterate over `BindingKey` instead of `DeclID`.
 
-## Phase 6: Update Compiler
+## Phase 6: Update Compiler ✅
 
-### Step 6.1: Update compiler.go
+**Status:** Completed - updated to use V2 functions
+
+### Step 6.1: Update compiler.go ✅
 
 **File:** `internal/compiler/compiler.go`
+
+Updated the `CompilePackage` function to use V2 functions:
+- Changed `BuildDepGraph` → `BuildDepGraphV2`
+- Changed `InferDepGraph` → `InferDepGraphV2`
+- Removed `MergeOverloadedFunctions` call (no longer needed)
+- Changed `BuildTopLevelDecls` → `BuildTopLevelDeclsV2` (no overloadDecls parameter)
+- Changed `BuildDefinitions` → `BuildDefinitionsV2`
+
+The original plan example is retained below for reference:
 
 ```go
 func CompilePackage(sources []*ast.Source) CompilerOutput {
