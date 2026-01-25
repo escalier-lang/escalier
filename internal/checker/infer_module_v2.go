@@ -120,8 +120,9 @@ func (c *Checker) InferComponentV2(
 					// Merge with existing overload by creating a new intersection type
 					// This ensures proper normalization and deduplication
 					if it, ok := binding.Type.(*type_system.IntersectionType); ok {
-						// Already an intersection, append to the list and recreate
-						allTypes := append(it.Types, funcType)
+						var allTypes []type_system.Type
+						allTypes = append(allTypes, it.Types...)
+						allTypes = append(allTypes, funcType)
 						binding.Type = type_system.NewIntersectionType(nil, allTypes...)
 					} else {
 						// First overload, create new intersection
