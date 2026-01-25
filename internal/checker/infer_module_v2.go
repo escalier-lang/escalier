@@ -207,6 +207,7 @@ func (c *Checker) InferComponentV2(
 				// Only check the current namespace, not parent scopes - we want to allow
 				// local classes to shadow global types from prelude
 				if _, exists := nsCtx.Scope.Namespace.Types[decl.Name.Name]; exists {
+					// TODO(#295): Handle class declarations and interface declarations with the same name
 					// Already processed from another component, skip
 					continue
 				}
