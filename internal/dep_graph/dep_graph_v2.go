@@ -106,6 +106,14 @@ func (g *DepGraphV2) GetNamespace(key BindingKey) string {
 	return ns
 }
 
+// GetNamespaceString returns the namespace string for a given namespace ID
+func (g *DepGraphV2) GetNamespaceString(id ast.NamespaceID) string {
+	if int(id) < len(g.Namespaces) {
+		return g.Namespaces[id]
+	}
+	return ""
+}
+
 // AllBindings returns all binding keys in the graph in deterministic order
 func (g *DepGraphV2) AllBindings() []BindingKey {
 	keys := make([]BindingKey, 0, g.Decls.Len())
@@ -323,6 +331,12 @@ func (v *DependencyVisitorV2) addValueDependency(name string, expr *ast.IdentExp
 	// Then try the unqualified name (global namespace)
 	key := ValueBindingKey(name)
 	if v.Graph.HasBinding(key) {
+		// Set the namespace based on where the binding was declared
+		if expr != nil {
+			if declNS, ok := v.Graph.DeclNamespace.Get(key); ok {
+				expr.Namespace = v.NamespaceMap[declNS]
+			}
+		}
 		v.Dependencies.Insert(key)
 		return true
 	}

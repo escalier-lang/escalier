@@ -161,6 +161,7 @@ type DependencyVisitor struct {
 	Dependencies     btree.Set[DeclID]          // Found dependencies by declaration ID
 	LocalScopes      []LocalScope               // Stack of local scopes with separate value/type bindings
 	CurrentNamespace string                     // Current namespace being analyzed
+	DepGraph         *DepGraph                  // Reference to the dependency graph for namespace lookups
 }
 
 // EnterStmt handles statements that introduce new scopes
@@ -220,7 +221,10 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 			qualifiedName := v.CurrentNamespace + "." + e.Name
 			if declID, exists := v.ValueBindings.Get(qualifiedName); exists &&
 				!v.isLocalValueBinding(e.Name) {
-				e.Namespace = v.NamespaceMap[v.CurrentNamespace] // Allows us to codegen a fully qualified name
+				// Set the namespace based on where the binding was declared
+				if declNS, ok := v.DepGraph.GetDeclNamespace(declID); ok {
+					e.Namespace = v.NamespaceMap[declNS]
+				}
 				v.Dependencies.Insert(declID)
 				return false
 			}
@@ -228,6 +232,10 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 		// Then try the unqualified name (global namespace or explicit global reference)
 		if declID, exists := v.ValueBindings.Get(e.Name); exists &&
 			!v.isLocalValueBinding(e.Name) {
+			// Set the namespace based on where the binding was declared
+			if declNS, ok := v.DepGraph.GetDeclNamespace(declID); ok {
+				e.Namespace = v.NamespaceMap[declNS]
+			}
 			v.Dependencies.Insert(declID)
 			return false
 		}
@@ -462,6 +470,7 @@ func FindDeclDependencies(
 		Dependencies:     dependencies,
 		CurrentNamespace: currentNamespace,
 		LocalScopes:      make([]LocalScope, 0),
+		DepGraph:         depGraph,
 	}
 
 	// Create a scope for type parameters

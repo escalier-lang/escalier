@@ -15,7 +15,8 @@ import (
 // overloaded functions and interface merging.
 func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 	// Set up builder state
-	b.depGraph = nil // We're using V2, so set old depGraph to nil
+	b.depGraph = nil       // We're using V2, so set old depGraph to nil
+	b.depGraphV2 = depGraph // Store V2 dep graph for namespace lookups
 	b.isModule = true
 
 	var stmts []Stmt
