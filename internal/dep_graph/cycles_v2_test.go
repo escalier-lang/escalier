@@ -247,6 +247,37 @@ func TestFindCyclesV2(t *testing.T) {
 			expectProblematic: false,
 			description:       "No cycles should not report any problems",
 		},
+		"TypeOfCycle_OutsideFunction_Problematic": {
+			input: `
+				val a: typeof b = 1
+				val b: typeof a = 2
+			`,
+			expectedCycles:    1,
+			expectProblematic: true,
+			description:       "typeof creating value cycles outside function bodies should be problematic",
+		},
+		"TypeOfNoCycle_Allowed": {
+			input: `
+				val a = 42
+				val b: typeof a = 10
+			`,
+			expectedCycles:    0,
+			expectProblematic: false,
+			description:       "typeof without cycles should be allowed",
+		},
+		"TypeOfInsideFunction_Allowed": {
+			input: `
+				val a = 1
+				fn foo() {
+					val b: typeof a = 2
+					return b
+				}
+				val c = foo()
+			`,
+			expectedCycles:    0,
+			expectProblematic: false,
+			description:       "typeof inside function bodies should be allowed even with references",
+		},
 	}
 
 	for name, test := range tests {

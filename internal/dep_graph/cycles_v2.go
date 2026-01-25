@@ -227,6 +227,12 @@ func (v *AllBindingsUsageVisitorV2) ExitExpr(expr ast.Expr) {
 // EnterDecl handles function declarations which introduce function body scope
 func (v *AllBindingsUsageVisitorV2) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
+	case *ast.VarDecl:
+		// VarDecl.Accept doesn't visit TypeAnn, so we need to manually visit it
+		if d.TypeAnn != nil {
+			d.TypeAnn.Accept(v)
+		}
+		return true
 	case *ast.FuncDecl:
 		if d.Body != nil {
 			// Function declaration body increases function depth
@@ -279,6 +285,16 @@ func (v *AllBindingsUsageVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 			typeKey := TypeBindingKey(typeName)
 			if v.Graph.HasBinding(typeKey) {
 				v.BindingsUsedOutsideFunctionBody.Add(typeKey)
+			}
+		}
+		return true
+	case *ast.TypeOfTypeAnn:
+		// typeof references a value binding, not a type binding
+		valueName := ast.QualIdentToString(t.Value)
+		if !v.isLocalBinding(valueName) && v.FunctionDepth == 0 {
+			key := ValueBindingKey(valueName)
+			if v.Graph.HasBinding(key) {
+				v.BindingsUsedOutsideFunctionBody.Add(key)
 			}
 		}
 		return true
