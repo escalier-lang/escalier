@@ -105,7 +105,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			assert.Empty(t, errors, "Expected no parsing errors")
 
 			// Build the dependency graph
-			depGraph := BuildDepGraphV2(module)
+			depGraph := BuildDepGraph(module)
 
 			// Find the last binding key (which should be our class under test)
 			// We need to iterate through all components to find the last one
@@ -132,7 +132,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			assert.True(t, ok, "Last declaration should be a ClassDecl")
 
 			// Find dependencies
-			deps := FindDeclDependenciesV2(lastKey, depGraph)
+			deps := FindDeclDependencies(lastKey, depGraph)
 
 			// Convert dependency BindingKeys to names
 			var depNames []string

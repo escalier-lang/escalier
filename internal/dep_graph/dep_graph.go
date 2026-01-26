@@ -88,8 +88,8 @@ type DepGraph struct {
 	Namespaces []string
 }
 
-// NewDepGraphV2 creates a new DepGraphV2 with initialized empty maps.
-func NewDepGraphV2(namespaceMap []string) *DepGraph {
+// NewDepGraph creates a new DepGraph with initialized empty maps.
+func NewDepGraph(namespaceMap []string) *DepGraph {
 	return &DepGraph{
 		Decls:         btree.Map[BindingKey, []ast.Decl]{},
 		DeclDeps:      btree.Map[BindingKey, btree.Set[BindingKey]]{},
@@ -154,19 +154,19 @@ func (g *DepGraph) SetDeps(key BindingKey, deps btree.Set[BindingKey]) {
 	g.DeclDeps.Set(key, deps)
 }
 
-// ModuleBindingVisitorV2 collects all declarations and populates a DepGraphV2.
+// ModuleBindingVisitor collects all declarations and populates a DepGraph.
 // Unlike the original ModuleBindingVisitor, this version:
 // - Uses BindingKey instead of DeclID
 // - Automatically groups multiple declarations under the same key (for overloads and interface merging)
 // - Does not require separate ValueBindings/TypeBindings maps
-type ModuleBindingVisitorV2 struct {
+type ModuleBindingVisitor struct {
 	ast.DefaultVisitor
 	Graph         *DepGraph
 	currentNSName string // Current namespace being visited
 }
 
 // qualifyName returns the fully qualified name by prepending the current namespace
-func (v *ModuleBindingVisitorV2) qualifyName(name string) string {
+func (v *ModuleBindingVisitor) qualifyName(name string) string {
 	if v.currentNSName != "" {
 		return v.currentNSName + "." + name
 	}
@@ -176,7 +176,7 @@ func (v *ModuleBindingVisitorV2) qualifyName(name string) string {
 // EnterDecl visits declarations and adds them to the graph under the appropriate BindingKey.
 // Multiple declarations with the same name (overloaded functions, merged interfaces)
 // will be appended to the same key.
-func (v *ModuleBindingVisitorV2) EnterDecl(decl ast.Decl) bool {
+func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		// Extract bindings from the pattern
@@ -234,18 +234,18 @@ func (v *ModuleBindingVisitorV2) EnterDecl(decl ast.Decl) bool {
 }
 
 // Other visitor methods return false to avoid traversing into nested structures
-func (v *ModuleBindingVisitorV2) EnterStmt(stmt ast.Stmt) bool               { return false }
-func (v *ModuleBindingVisitorV2) EnterExpr(expr ast.Expr) bool               { return false }
-func (v *ModuleBindingVisitorV2) EnterPat(pat ast.Pat) bool                  { return false }
-func (v *ModuleBindingVisitorV2) EnterObjExprElem(elem ast.ObjExprElem) bool { return false }
-func (v *ModuleBindingVisitorV2) EnterTypeAnn(t ast.TypeAnn) bool            { return false }
-func (v *ModuleBindingVisitorV2) EnterLit(lit ast.Lit) bool                  { return false }
-func (v *ModuleBindingVisitorV2) EnterBlock(block ast.Block) bool            { return false }
+func (v *ModuleBindingVisitor) EnterStmt(stmt ast.Stmt) bool               { return false }
+func (v *ModuleBindingVisitor) EnterExpr(expr ast.Expr) bool               { return false }
+func (v *ModuleBindingVisitor) EnterPat(pat ast.Pat) bool                  { return false }
+func (v *ModuleBindingVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool { return false }
+func (v *ModuleBindingVisitor) EnterTypeAnn(t ast.TypeAnn) bool            { return false }
+func (v *ModuleBindingVisitor) EnterLit(lit ast.Lit) bool                  { return false }
+func (v *ModuleBindingVisitor) EnterBlock(block ast.Block) bool            { return false }
 
 // PopulateBindings visits all declarations in a module and populates the graph.
 // This is the entry point for collecting bindings.
 func PopulateBindings(graph *DepGraph, module *ast.Module) {
-	visitor := &ModuleBindingVisitorV2{
+	visitor := &ModuleBindingVisitor{
 		DefaultVisitor: ast.DefaultVisitor{},
 		Graph:          graph,
 		currentNSName:  "",
@@ -263,30 +263,30 @@ func PopulateBindings(graph *DepGraph, module *ast.Module) {
 	}
 }
 
-// LocalScopeV2 represents a single scope with separate value and type bindings.
+// LocalScope represents a single scope with separate value and type bindings.
 // This is used to track local bindings that shadow module-level bindings.
-type LocalScopeV2 struct {
+type LocalScope struct {
 	ValueBindings set.Set[string] // Local value bindings in this scope
 	TypeBindings  set.Set[string] // Local type bindings in this scope
 }
 
-// DependencyVisitorV2 finds dependencies in a declaration and returns them as BindingKeys.
+// DependencyVisitor finds dependencies in a declaration and returns them as BindingKeys.
 // Unlike the original DependencyVisitor, this version:
 // - Uses BindingKey instead of DeclID
-// - Looks up bindings directly in the DepGraphV2
+// - Looks up bindings directly in the DepGraph
 // - Returns dependencies as btree.Set[BindingKey]
-type DependencyVisitorV2 struct {
+type DependencyVisitor struct {
 	ast.DefaultVisitor
 	Graph            *DepGraph                  // The dependency graph to look up bindings
 	NamespaceMap     map[string]ast.NamespaceID // Map from namespace name to ID
 	Dependencies     btree.Set[BindingKey]      // Found dependencies
-	LocalScopes      []LocalScopeV2             // Stack of local scopes
+	LocalScopes      []LocalScope               // Stack of local scopes
 	CurrentNamespace string                     // Current namespace being analyzed
 }
 
 // pushScope adds a new local scope
-func (v *DependencyVisitorV2) pushScope() {
-	newScope := LocalScopeV2{
+func (v *DependencyVisitor) pushScope() {
+	newScope := LocalScope{
 		ValueBindings: set.NewSet[string](),
 		TypeBindings:  set.NewSet[string](),
 	}
@@ -294,14 +294,14 @@ func (v *DependencyVisitorV2) pushScope() {
 }
 
 // popScope removes the current local scope
-func (v *DependencyVisitorV2) popScope() {
+func (v *DependencyVisitor) popScope() {
 	if len(v.LocalScopes) > 0 {
 		v.LocalScopes = v.LocalScopes[:len(v.LocalScopes)-1]
 	}
 }
 
 // isLocalValueBinding checks if a binding is a value binding in any local scope
-func (v *DependencyVisitorV2) isLocalValueBinding(name string) bool {
+func (v *DependencyVisitor) isLocalValueBinding(name string) bool {
 	for _, scope := range v.LocalScopes {
 		if scope.ValueBindings.Contains(name) {
 			return true
@@ -311,7 +311,7 @@ func (v *DependencyVisitorV2) isLocalValueBinding(name string) bool {
 }
 
 // isLocalTypeBinding checks if a binding is a type binding in any local scope
-func (v *DependencyVisitorV2) isLocalTypeBinding(name string) bool {
+func (v *DependencyVisitor) isLocalTypeBinding(name string) bool {
 	for _, scope := range v.LocalScopes {
 		if scope.TypeBindings.Contains(name) {
 			return true
@@ -321,7 +321,7 @@ func (v *DependencyVisitorV2) isLocalTypeBinding(name string) bool {
 }
 
 // addValueDependency adds a value dependency if it exists in the graph and is not shadowed locally
-func (v *DependencyVisitorV2) addValueDependency(name string, expr *ast.IdentExpr) bool {
+func (v *DependencyVisitor) addValueDependency(name string, expr *ast.IdentExpr) bool {
 	if v.isLocalValueBinding(name) {
 		return false
 	}
@@ -356,7 +356,7 @@ func (v *DependencyVisitorV2) addValueDependency(name string, expr *ast.IdentExp
 }
 
 // addTypeDependency adds a type dependency if it exists in the graph and is not shadowed locally
-func (v *DependencyVisitorV2) addTypeDependency(typeName string) bool {
+func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 	if v.isLocalTypeBinding(typeName) {
 		return false
 	}
@@ -382,7 +382,7 @@ func (v *DependencyVisitorV2) addTypeDependency(typeName string) bool {
 }
 
 // EnterStmt handles statements that introduce new scopes
-func (v *DependencyVisitorV2) EnterStmt(stmt ast.Stmt) bool {
+func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 	switch s := stmt.(type) {
 	case *ast.DeclStmt:
 		// For local variable declarations, we must NOT hoist the binding.
@@ -438,7 +438,7 @@ func (v *DependencyVisitorV2) EnterStmt(stmt ast.Stmt) bool {
 }
 
 // EnterExpr handles expressions that might introduce scope or contain dependencies
-func (v *DependencyVisitorV2) EnterExpr(expr ast.Expr) bool {
+func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		v.addValueDependency(e.Name, e)
@@ -484,7 +484,7 @@ func (v *DependencyVisitorV2) EnterExpr(expr ast.Expr) bool {
 }
 
 // ExitExpr handles exiting expression scopes
-func (v *DependencyVisitorV2) ExitExpr(expr ast.Expr) {
+func (v *DependencyVisitor) ExitExpr(expr ast.Expr) {
 	switch expr.(type) {
 	case *ast.FuncExpr:
 		v.popScope()
@@ -492,7 +492,7 @@ func (v *DependencyVisitorV2) ExitExpr(expr ast.Expr) {
 }
 
 // EnterTypeAnn handles type annotations that might contain dependencies
-func (v *DependencyVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
+func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		typeName := ast.QualIdentToString(t.Name)
@@ -548,18 +548,18 @@ func (v *DependencyVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 }
 
 // EnterBlock handles entering blocks which introduce new scopes
-func (v *DependencyVisitorV2) EnterBlock(block ast.Block) bool {
+func (v *DependencyVisitor) EnterBlock(block ast.Block) bool {
 	v.pushScope()
 	return true
 }
 
 // ExitBlock handles exiting blocks which end scopes
-func (v *DependencyVisitorV2) ExitBlock(block ast.Block) {
+func (v *DependencyVisitor) ExitBlock(block ast.Block) {
 	v.popScope()
 }
 
 // EnterObjExprElem handles object expression elements
-func (v *DependencyVisitorV2) EnterObjExprElem(elem ast.ObjExprElem) bool {
+func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	if el, ok := elem.(*ast.PropertyExpr); ok {
 		// Handle property shorthand (e.g., { foo } where foo refers to a binding)
 		if el.Value == nil {
@@ -575,7 +575,7 @@ func (v *DependencyVisitorV2) EnterObjExprElem(elem ast.ObjExprElem) bool {
 }
 
 // processTypeParams handles type parameters by adding them to scope and visiting constraints
-func (v *DependencyVisitorV2) processTypeParams(typeParams []*ast.TypeParam) {
+func (v *DependencyVisitor) processTypeParams(typeParams []*ast.TypeParam) {
 	sortedTypeParams := ast.SortTypeParamsTopologically(typeParams)
 
 	if len(v.LocalScopes) > 0 {
@@ -594,7 +594,7 @@ func (v *DependencyVisitorV2) processTypeParams(typeParams []*ast.TypeParam) {
 }
 
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
-func (v *DependencyVisitorV2) buildQualifiedName(expr *ast.MemberExpr) string {
+func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
 	parts := make([]string, 0)
 
 	current := expr
@@ -627,10 +627,10 @@ func (v *DependencyVisitorV2) buildQualifiedName(expr *ast.MemberExpr) string {
 	return builder.String()
 }
 
-// FindDeclDependenciesV2 finds all dependencies for declarations under a binding key.
+// FindDeclDependencies finds all dependencies for declarations under a binding key.
 // For bindings with multiple declarations (overloaded functions, merged interfaces),
 // the dependencies are the union of all declarations' dependencies.
-func FindDeclDependenciesV2(key BindingKey, graph *DepGraph) btree.Set[BindingKey] {
+func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey] {
 	decls := graph.GetDecls(key)
 	currentNamespace := graph.GetNamespace(key)
 
@@ -644,13 +644,13 @@ func FindDeclDependenciesV2(key BindingKey, graph *DepGraph) btree.Set[BindingKe
 
 	// Process each declaration and union their dependencies
 	for _, decl := range decls {
-		visitor := &DependencyVisitorV2{
+		visitor := &DependencyVisitor{
 			DefaultVisitor:   ast.DefaultVisitor{},
 			Graph:            graph,
 			NamespaceMap:     namespaceMap,
 			Dependencies:     btree.Set[BindingKey]{},
 			CurrentNamespace: currentNamespace,
-			LocalScopes:      make([]LocalScopeV2, 0),
+			LocalScopes:      make([]LocalScope, 0),
 		}
 
 		// Create a scope for type parameters
@@ -791,14 +791,14 @@ func FindDeclDependenciesV2(key BindingKey, graph *DepGraph) btree.Set[BindingKe
 	return allDeps
 }
 
-// FindStronglyConnectedComponentsV2 uses Tarjan's algorithm to find SCCs using BindingKey.
+// FindStronglyConnectedComponents uses Tarjan's algorithm to find SCCs using BindingKey.
 // The returned components appear in topological order, meaning that if component
 // A depends on component B, then A will appear after B in the result.
 //
 // The threshold parameter specifies the minimum size of a strongly connected
 // component to be reported. If a component has size equal to threshold, it is
 // reported only if it contains a self-reference.
-func (g *DepGraph) FindStronglyConnectedComponentsV2(threshold int) [][]BindingKey {
+func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey {
 	index := 0
 	stack := make([]BindingKey, 0)
 	indices := make(map[BindingKey]int)
@@ -882,12 +882,12 @@ func collectNamespaces(module *ast.Module) []string {
 	return namespaces
 }
 
-// BuildDepGraphV2 builds a dependency graph for a module using the new BindingKey-based approach.
+// BuildDepGraph builds a dependency graph for a module using the new BindingKey-based approach.
 // This is the main entry point for building the V2 dependency graph.
-func BuildDepGraphV2(module *ast.Module) *DepGraph {
+func BuildDepGraph(module *ast.Module) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
-	graph := NewDepGraphV2(namespaceMap)
+	graph := NewDepGraph(namespaceMap)
 
 	// Populate bindings by visiting all declarations
 	PopulateBindings(graph, module)
@@ -895,13 +895,13 @@ func BuildDepGraphV2(module *ast.Module) *DepGraph {
 	// Find dependencies for each binding
 	allKeys := graph.AllBindings()
 	for _, key := range allKeys {
-		deps := FindDeclDependenciesV2(key, graph)
+		deps := FindDeclDependencies(key, graph)
 		graph.SetDeps(key, deps)
 	}
 
 	// Compute strongly connected components
-	// Note: FindStronglyConnectedComponentsV2 will be implemented in Phase 3
-	graph.Components = graph.FindStronglyConnectedComponentsV2(0)
+	// Note: FindStronglyConnectedComponents will be implemented in Phase 3
+	graph.Components = graph.FindStronglyConnectedComponents(0)
 
 	return graph
 }

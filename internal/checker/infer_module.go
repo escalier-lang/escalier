@@ -87,7 +87,7 @@ const DEBUG = false
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
-	depGraph := dep_graph.BuildDepGraphV2(m)
+	depGraph := dep_graph.BuildDepGraph(m)
 
 	// print out all of the dependencies in depGraph for debugging
 	if DEBUG {
@@ -107,7 +107,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 		}
 	}
 
-	return c.InferDepGraphV2(ctx, depGraph)
+	return c.InferDepGraph(ctx, depGraph)
 }
 
 // inferTypeParams infers type parameters from AST type parameters by creating

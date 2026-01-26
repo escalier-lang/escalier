@@ -50,7 +50,7 @@ func parseMultiFileModule(sources map[string]string) *ast.Module {
 	return module
 }
 
-func TestFindCyclesV2(t *testing.T) {
+func TestFindCycles(t *testing.T) {
 	tests := map[string]struct {
 		input             string
 		expectedCycles    int
@@ -300,8 +300,8 @@ func TestFindCyclesV2(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			module := parseModule(test.input)
-			depGraph := BuildDepGraphV2(module)
-			cycles := depGraph.FindCyclesV2()
+			depGraph := BuildDepGraph(module)
+			cycles := depGraph.FindCycles()
 
 			assert.Equal(t, test.expectedCycles, len(cycles),
 				"Expected %d problematic cycles, got %d. %s",
@@ -375,8 +375,8 @@ func TestFindCyclesV2_EdgeCases(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			module := parseModule(test.input)
-			depGraph := BuildDepGraphV2(module)
-			cycles := depGraph.FindCyclesV2()
+			depGraph := BuildDepGraph(module)
+			cycles := depGraph.FindCycles()
 
 			// Assert expected number of cycles
 			assert.Equal(t, test.expectedCycles, len(cycles),
@@ -591,8 +591,8 @@ func TestFindCyclesV2_NamespacedBindings(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			module := parseMultiFileModule(test.sources)
-			depGraph := BuildDepGraphV2(module)
-			cycles := depGraph.FindCyclesV2()
+			depGraph := BuildDepGraph(module)
+			cycles := depGraph.FindCycles()
 
 			assert.Equal(t, test.expectedCycles, len(cycles),
 				"Expected %d problematic cycles, got %d. %s",
@@ -664,8 +664,8 @@ func TestFindCyclesV2_InterfaceMerging(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			module := parseModule(test.input)
-			depGraph := BuildDepGraphV2(module)
-			cycles := depGraph.FindCyclesV2()
+			depGraph := BuildDepGraph(module)
+			cycles := depGraph.FindCycles()
 
 			assert.Equal(t, test.expectedCycles, len(cycles),
 				"Expected %d problematic cycles, got %d. %s",
