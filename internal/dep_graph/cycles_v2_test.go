@@ -10,6 +10,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func parseModule(input string) *ast.Module {
+	source := &ast.Source{
+		Path:     "test.esc",
+		Contents: input,
+		ID:       0,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	if len(errors) > 0 {
+		panic(errors[0])
+	}
+	return module
+}
+
 // parseMultiFileModule parses multiple source files and returns a module
 func parseMultiFileModule(sources map[string]string) *ast.Module {
 	astSources := make([]*ast.Source, 0, len(sources))

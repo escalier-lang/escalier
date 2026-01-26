@@ -97,11 +97,11 @@ models.utils.validation = {};`,
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Create a mock dependency graph
-			depGraph := dep_graph.NewDepGraph(test.namespaces)
+			depGraph := dep_graph.NewDepGraphV2(test.namespaces)
 
 			// Create a builder and test the method
-			builder := &Builder{tempId: 0, depGraph: depGraph}
-			stmts := builder.buildNamespaceStatements(depGraph)
+			builder := &Builder{tempId: 0, depGraphV2: depGraph}
+			stmts := builder.buildNamespaceStatementsV2(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -153,7 +153,7 @@ very.deep.nested.namespace.structure = {};`,
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			builder := &Builder{tempId: 0, depGraph: nil}
+			builder := &Builder{tempId: 0, depGraphV2: nil}
 			definedNamespaces := make(map[string]bool)
 			stmts := builder.buildNamespaceHierarchy(test.namespace, definedNamespaces)
 
@@ -172,7 +172,7 @@ very.deep.nested.namespace.structure = {};`,
 }
 
 func TestBuildNamespaceHierarchy_AvoidRedefinition(t *testing.T) {
-	builder := &Builder{tempId: 0, depGraph: nil}
+	builder := &Builder{tempId: 0, depGraphV2: nil}
 	definedNamespaces := make(map[string]bool)
 
 	// First call should generate all statements
@@ -428,7 +428,7 @@ Color.RGB = Color__RGB;`,
 			// Parse the declaration from source string
 			decl := parseDecl(t, test.declSource)
 
-			builder := &Builder{tempId: 0, depGraph: nil}
+			builder := &Builder{tempId: 0, depGraphV2: nil}
 			stmts := builder.buildDeclWithNamespace(decl, test.ns)
 
 			// Use the printer to generate the output
@@ -486,13 +486,13 @@ foo.x = foo__x;`,
 				},
 			},
 			expected: `const math = {};
-export const math__x = 42;
-math.x = math__x;
 export function math__double(temp1) {
   const n = temp1;
   return n * 2;
 }
-math.double = math__double;`,
+math.double = math__double;
+export const math__x = 42;
+math.x = math__x;`,
 		},
 		"Multiple_Decls_Different_Namespaces": {
 			sources: []*ast.Source{
@@ -617,15 +617,15 @@ coords.y = coords__y;`,
 			expected: `const models = {};
 models.user = {};
 models.user.defaults = {};
-export const models__user__user = {name: "Alice"};
-models.user.user = models__user__user;
 export function models__user__createUser(temp1) {
   const name = temp1;
   return {name};
 }
 models.user.createUser = models__user__createUser;
 export const models__user__defaults__defaultUser = null;
-models.user.defaults.defaultUser = models__user__defaults__defaultUser;`,
+models.user.defaults.defaultUser = models__user__defaults__defaultUser;
+export const models__user__user = {name: "Alice"};
+models.user.user = models__user__user;`,
 		},
 		"Type_Declaration_Skip": {
 			sources: []*ast.Source{
@@ -679,12 +679,12 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			// Build dependency graph using BuildDepGraph
-			depGraph := dep_graph.BuildDepGraph(module)
+			// Build dependency graph using BuildDepGraphV2
+			depGraph := dep_graph.BuildDepGraphV2(module)
 
-			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph, nil)
+			// Create a builder and test BuildTopLevelDeclsV2
+			builder := &Builder{tempId: 0, depGraphV2: depGraph}
+			outModule := builder.BuildTopLevelDeclsV2(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -790,12 +790,12 @@ app.utils.calculate = app__utils__calculate;`,
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			// Build dependency graph using BuildDepGraph
-			depGraph := dep_graph.BuildDepGraph(module)
+			// Build dependency graph using BuildDepGraphV2
+			depGraph := dep_graph.BuildDepGraphV2(module)
 
-			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph, nil)
+			// Create a builder and test BuildTopLevelDeclsV2
+			builder := &Builder{tempId: 0, depGraphV2: depGraph}
+			outModule := builder.BuildTopLevelDeclsV2(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()
@@ -865,12 +865,12 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 			// Ensure parsing was successful
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			// Build dependency graph using BuildDepGraph
-			depGraph := dep_graph.BuildDepGraph(module)
+			// Build dependency graph using BuildDepGraphV2
+			depGraph := dep_graph.BuildDepGraphV2(module)
 
-			// Create a builder and test BuildTopLevelDecls
-			builder := &Builder{tempId: 0, depGraph: depGraph}
-			outModule := builder.BuildTopLevelDecls(depGraph, nil)
+			// Create a builder and test BuildTopLevelDeclsV2
+			builder := &Builder{tempId: 0, depGraphV2: depGraph}
+			outModule := builder.BuildTopLevelDeclsV2(depGraph)
 
 			// Use the printer to generate the output
 			printer := NewPrinter()

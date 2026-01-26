@@ -13,9 +13,8 @@ import (
 // BuildTopLevelDeclsV2 builds JavaScript code from a V2 dependency graph.
 // This version uses BindingKey instead of DeclID and automatically handles
 // overloaded functions and interface merging.
-func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
+func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraph) *Module {
 	// Set up builder state
-	b.depGraph = nil       // We're using V2, so set old depGraph to nil
 	b.depGraphV2 = depGraph // Store V2 dep graph for namespace lookups
 	b.isModule = true
 
@@ -87,17 +86,18 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 			// Single declaration or first of merged declarations
 			decl := decls[0]
 
-			// Skip if we've already processed this declaration
+			// Build the declaration only once
 			// (VarDecls with pattern destructuring appear under multiple binding keys)
-			if processedDecls[decl] {
-				continue
+			if !processedDecls[decl] {
+				processedDecls[decl] = true
+				stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 			}
-			processedDecls[decl] = true
-
-			stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 
 			// Handle namespace assignment for namespaced bindings
-			// If the binding name contains a dot, we need to assign it to the namespace
+			// This needs to happen for EVERY binding, even if the declaration was already processed
+			// For example, with `val {x, y} = getPoint()` in namespace "coords", we need both:
+			//   coords.x = coords__x
+			//   coords.y = coords__y
 			bindingName := key.Name()
 			if strings.Contains(bindingName, ".") {
 				parts := strings.Split(bindingName, ".")
@@ -145,7 +145,7 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraphV2) *Module {
 
 // buildNamespaceStatementsV2 generates statements to create namespace objects
 // for all namespaces in the V2 dependency graph
-func (b *Builder) buildNamespaceStatementsV2(depGraph *dep_graph.DepGraphV2) []Stmt {
+func (b *Builder) buildNamespaceStatementsV2(depGraph *dep_graph.DepGraph) []Stmt {
 	// Track which namespace segments have been defined to avoid redefinition
 	definedNamespaces := make(map[string]bool)
 	var stmts []Stmt
@@ -164,7 +164,7 @@ func (b *Builder) buildNamespaceStatementsV2(depGraph *dep_graph.DepGraphV2) []S
 // BuildDefinitionsV2 builds TypeScript .d.ts definitions from a V2 dependency graph.
 // This version uses BindingKey instead of DeclID.
 func (b *Builder) BuildDefinitionsV2(
-	depGraph *dep_graph.DepGraphV2,
+	depGraph *dep_graph.DepGraph,
 	moduleNS *type_sys.Namespace,
 ) *Module {
 	// Group declarations by namespace

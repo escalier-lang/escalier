@@ -1,12 +1,23 @@
 package dep_graph
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
+
+type DepKind int
+
+const (
+	DepKindValue DepKind = iota
+	DepKindType
+)
+
+// DeclID represents a unique identifier for each declaration
+type DeclID int
 
 // BindingKey uniquely identifies a binding in the dependency graph.
 // It is a string that combines the dependency kind ("value" or "type") with
@@ -53,8 +64,8 @@ func (k BindingKey) String() string {
 	return string(k)
 }
 
-// DepGraphV2 is the refactored dependency graph using BindingKey as the primary key.
-type DepGraphV2 struct {
+// DepGraph is the refactored dependency graph using BindingKey as the primary key.
+type DepGraph struct {
 	// Map from binding key to all declarations that contribute to that binding.
 	// For most bindings this will be a single declaration, but for interfaces
 	// (declaration merging) and functions (overloading) there may be multiple.
@@ -78,8 +89,8 @@ type DepGraphV2 struct {
 }
 
 // NewDepGraphV2 creates a new DepGraphV2 with initialized empty maps.
-func NewDepGraphV2(namespaceMap []string) *DepGraphV2 {
-	return &DepGraphV2{
+func NewDepGraphV2(namespaceMap []string) *DepGraph {
+	return &DepGraph{
 		Decls:         btree.Map[BindingKey, []ast.Decl]{},
 		DeclDeps:      btree.Map[BindingKey, btree.Set[BindingKey]]{},
 		DeclNamespace: btree.Map[BindingKey, string]{},
@@ -89,25 +100,25 @@ func NewDepGraphV2(namespaceMap []string) *DepGraphV2 {
 }
 
 // GetDecls returns all declarations for a binding key
-func (g *DepGraphV2) GetDecls(key BindingKey) []ast.Decl {
+func (g *DepGraph) GetDecls(key BindingKey) []ast.Decl {
 	decls, _ := g.Decls.Get(key)
 	return decls
 }
 
 // GetDeps returns the dependencies for a binding key
-func (g *DepGraphV2) GetDeps(key BindingKey) btree.Set[BindingKey] {
+func (g *DepGraph) GetDeps(key BindingKey) btree.Set[BindingKey] {
 	deps, _ := g.DeclDeps.Get(key)
 	return deps
 }
 
 // GetNamespace returns the namespace for a binding key
-func (g *DepGraphV2) GetNamespace(key BindingKey) string {
+func (g *DepGraph) GetNamespace(key BindingKey) string {
 	ns, _ := g.DeclNamespace.Get(key)
 	return ns
 }
 
 // GetNamespaceString returns the namespace string for a given namespace ID
-func (g *DepGraphV2) GetNamespaceString(id ast.NamespaceID) string {
+func (g *DepGraph) GetNamespaceString(id ast.NamespaceID) string {
 	if int(id) < len(g.Namespaces) {
 		return g.Namespaces[id]
 	}
@@ -115,7 +126,7 @@ func (g *DepGraphV2) GetNamespaceString(id ast.NamespaceID) string {
 }
 
 // AllBindings returns all binding keys in the graph in deterministic order
-func (g *DepGraphV2) AllBindings() []BindingKey {
+func (g *DepGraph) AllBindings() []BindingKey {
 	keys := make([]BindingKey, 0, g.Decls.Len())
 	iter := g.Decls.Iter()
 	for ok := iter.First(); ok; ok = iter.Next() {
@@ -125,21 +136,21 @@ func (g *DepGraphV2) AllBindings() []BindingKey {
 }
 
 // HasBinding checks if a binding exists
-func (g *DepGraphV2) HasBinding(key BindingKey) bool {
+func (g *DepGraph) HasBinding(key BindingKey) bool {
 	_, exists := g.Decls.Get(key)
 	return exists
 }
 
 // AddDecl adds a declaration to the graph under the given binding key.
 // If the key already exists, the declaration is appended to the existing slice.
-func (g *DepGraphV2) AddDecl(key BindingKey, decl ast.Decl, namespace string) {
+func (g *DepGraph) AddDecl(key BindingKey, decl ast.Decl, namespace string) {
 	existing, _ := g.Decls.Get(key)
 	g.Decls.Set(key, append(existing, decl))
 	g.DeclNamespace.Set(key, namespace)
 }
 
 // SetDeps sets the dependencies for a binding key
-func (g *DepGraphV2) SetDeps(key BindingKey, deps btree.Set[BindingKey]) {
+func (g *DepGraph) SetDeps(key BindingKey, deps btree.Set[BindingKey]) {
 	g.DeclDeps.Set(key, deps)
 }
 
@@ -150,7 +161,7 @@ func (g *DepGraphV2) SetDeps(key BindingKey, deps btree.Set[BindingKey]) {
 // - Does not require separate ValueBindings/TypeBindings maps
 type ModuleBindingVisitorV2 struct {
 	ast.DefaultVisitor
-	Graph         *DepGraphV2
+	Graph         *DepGraph
 	currentNSName string // Current namespace being visited
 }
 
@@ -233,7 +244,7 @@ func (v *ModuleBindingVisitorV2) EnterBlock(block ast.Block) bool            { r
 
 // PopulateBindings visits all declarations in a module and populates the graph.
 // This is the entry point for collecting bindings.
-func PopulateBindings(graph *DepGraphV2, module *ast.Module) {
+func PopulateBindings(graph *DepGraph, module *ast.Module) {
 	visitor := &ModuleBindingVisitorV2{
 		DefaultVisitor: ast.DefaultVisitor{},
 		Graph:          graph,
@@ -266,7 +277,7 @@ type LocalScopeV2 struct {
 // - Returns dependencies as btree.Set[BindingKey]
 type DependencyVisitorV2 struct {
 	ast.DefaultVisitor
-	Graph            *DepGraphV2                // The dependency graph to look up bindings
+	Graph            *DepGraph                  // The dependency graph to look up bindings
 	NamespaceMap     map[string]ast.NamespaceID // Map from namespace name to ID
 	Dependencies     btree.Set[BindingKey]      // Found dependencies
 	LocalScopes      []LocalScopeV2             // Stack of local scopes
@@ -619,7 +630,7 @@ func (v *DependencyVisitorV2) buildQualifiedName(expr *ast.MemberExpr) string {
 // FindDeclDependenciesV2 finds all dependencies for declarations under a binding key.
 // For bindings with multiple declarations (overloaded functions, merged interfaces),
 // the dependencies are the union of all declarations' dependencies.
-func FindDeclDependenciesV2(key BindingKey, graph *DepGraphV2) btree.Set[BindingKey] {
+func FindDeclDependenciesV2(key BindingKey, graph *DepGraph) btree.Set[BindingKey] {
 	decls := graph.GetDecls(key)
 	currentNamespace := graph.GetNamespace(key)
 
@@ -787,7 +798,7 @@ func FindDeclDependenciesV2(key BindingKey, graph *DepGraphV2) btree.Set[Binding
 // The threshold parameter specifies the minimum size of a strongly connected
 // component to be reported. If a component has size equal to threshold, it is
 // reported only if it contains a self-reference.
-func (g *DepGraphV2) FindStronglyConnectedComponentsV2(threshold int) [][]BindingKey {
+func (g *DepGraph) FindStronglyConnectedComponentsV2(threshold int) [][]BindingKey {
 	index := 0
 	stack := make([]BindingKey, 0)
 	indices := make(map[BindingKey]int)
@@ -853,9 +864,27 @@ func (g *DepGraphV2) FindStronglyConnectedComponentsV2(threshold int) [][]Bindin
 	return sccs
 }
 
+// collectNamespaces collects all namespace names from a module and returns a namespace map
+func collectNamespaces(module *ast.Module) []string {
+	namespaces := make([]string, 1) // Start with capacity for root namespace
+	namespaces[0] = ""              // Register root namespace at index 0
+
+	nsIter := module.Namespaces.Iter()
+	for ok := nsIter.First(); ok; ok = nsIter.Next() {
+		nsName := nsIter.Key()
+		// Check if namespace already exists
+		if !slices.Contains(namespaces, nsName) {
+			// Add new namespace
+			namespaces = append(namespaces, nsName)
+		}
+	}
+
+	return namespaces
+}
+
 // BuildDepGraphV2 builds a dependency graph for a module using the new BindingKey-based approach.
 // This is the main entry point for building the V2 dependency graph.
-func BuildDepGraphV2(module *ast.Module) *DepGraphV2 {
+func BuildDepGraphV2(module *ast.Module) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
 	graph := NewDepGraphV2(namespaceMap)

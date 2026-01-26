@@ -15,8 +15,7 @@ import (
 
 type Builder struct {
 	tempId        int
-	depGraph      *dep_graph.DepGraph
-	depGraphV2    *dep_graph.DepGraphV2
+	depGraphV2    *dep_graph.DepGraph
 	hasExtractor  bool
 	isModule      bool
 	inBlockScope  bool
@@ -395,116 +394,6 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 	return &Module{
 		Stmts: stmts,
 	}
-}
-
-// declIDs must be sorted according to reverse topological order based on the
-// the strongly connected components of the dependency graph.  The reason why
-// we pass this in is because we don't want to compute the strongly connected
-// components more than once and BuildDefinitions needs this information as well.
-func (b *Builder) BuildTopLevelDecls(
-	depGraph *dep_graph.DepGraph,
-	overloadDecls map[string][]*ast.FuncDecl,
-) *Module {
-	// Set up builder state
-	b.depGraph = depGraph
-	b.isModule = true
-	b.overloadDecls = overloadDecls
-	if b.overloadDecls == nil {
-		b.overloadDecls = make(map[string][]*ast.FuncDecl)
-	}
-
-	var stmts []Stmt
-
-	nsStmts := b.buildNamespaceStatements(depGraph)
-	stmts = slices.Concat(stmts, nsStmts)
-
-	var topoDeclIDs []dep_graph.DeclID
-	for _, component := range depGraph.Components {
-		topoDeclIDs = append(topoDeclIDs, component...)
-	}
-
-	for _, declID := range topoDeclIDs {
-		decl, _ := depGraph.GetDecl(declID)
-
-		// if decl is a type declaration skip it
-		if _, ok := decl.(*ast.TypeDecl); ok {
-			continue
-		}
-
-		nsName, _ := depGraph.GetDeclNamespace(declID)
-		stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
-
-		bindings := depGraph.GetDeclNames(declID)
-
-		for _, name := range bindings {
-			if !strings.Contains(name, ".") {
-				continue // Skip non-namespaced identifiers
-			}
-
-			parts := strings.Split(name, ".")
-			dunderName := strings.Join(parts, "__")
-			assignExpr := NewBinaryExpr(
-				NewIdentExpr(name, "", nil),
-				Assign,
-				NewIdentExpr(dunderName, "", nil),
-				nil,
-			)
-
-			stmts = append(stmts, &ExprStmt{
-				Expr:   assignExpr,
-				span:   nil,
-				source: decl,
-			})
-		}
-	}
-
-	// TODO: Fully qualify variables
-	// Codegen flattens the namespace hierarchy.  Bindings are given prefixes
-	// like `foo__bar__baz` for `foo.bar.baz`.  We need to do the same for the
-	// identifiers used in the declaration bodies within the namespaces.
-	// We need to be able to look up the declaration for the identifier by their
-	// ID.  This means we should probably give each declaration a unique ID field
-	// and the Source field on the identifier can just be the declaration ID.
-
-	if b.hasExtractor {
-		// Add an import statement at the start of `stmts`
-		importDecl := NewImportDecl(
-			[]string{"InvokeCustomMatcherOrThrow"},
-			"@escalier/runtime",
-			nil,
-		)
-		importStmt := &DeclStmt{
-			Decl:   importDecl,
-			span:   nil,
-			source: nil,
-		}
-		stmts = slices.Concat([]Stmt{importStmt}, stmts)
-
-		// Reset hasExtractor for future builds
-		b.hasExtractor = false
-	}
-
-	return &Module{
-		Stmts: stmts,
-	}
-}
-
-// buildNamespaceStatements generates statements to create namespace objects
-// for all namespaces used by the given declarations
-func (b *Builder) buildNamespaceStatements(depGraph *dep_graph.DepGraph) []Stmt {
-	// Track which namespace segments have been defined to avoid redefinition
-	definedNamespaces := make(map[string]bool)
-	var stmts []Stmt
-
-	// For each namespace, generate the hierarchy of statements
-	for _, namespace := range depGraph.Namespaces {
-		if namespace == "" {
-			continue // Skip the root namespace
-		}
-		stmts = slices.Concat(stmts, b.buildNamespaceHierarchy(namespace, definedNamespaces))
-	}
-
-	return stmts
 }
 
 // buildNamespaceHierarchy generates statements to create a namespace hierarchy
@@ -1379,9 +1268,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
 		var namespaceStr string
-		if b.depGraph != nil {
-			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
-		} else if b.depGraphV2 != nil {
+		if b.depGraphV2 != nil {
 			namespaceStr = b.depGraphV2.GetNamespaceString(expr.Namespace)
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}

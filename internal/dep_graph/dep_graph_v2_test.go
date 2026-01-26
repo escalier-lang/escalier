@@ -307,10 +307,10 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				},
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				ValueBindingKey("bar"):  {},
-				ValueBindingKey("baz"):  {},
-				TypeBindingKey("Foo"):   {ValueBindingKey("bar"), ValueBindingKey("baz")},
-				ValueBindingKey("Foo"):  {ValueBindingKey("bar"), ValueBindingKey("baz")},
+				ValueBindingKey("bar"): {},
+				ValueBindingKey("baz"): {},
+				TypeBindingKey("Foo"):  {ValueBindingKey("bar"), ValueBindingKey("baz")},
+				ValueBindingKey("Foo"): {ValueBindingKey("bar"), ValueBindingKey("baz")},
 			},
 		},
 		"MultipleDependencies": {
