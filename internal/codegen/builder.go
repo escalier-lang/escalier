@@ -15,7 +15,7 @@ import (
 
 type Builder struct {
 	tempId        int
-	depGraphV2    *dep_graph.DepGraphV2
+	depGraphV2    *dep_graph.DepGraph
 	hasExtractor  bool
 	isModule      bool
 	inBlockScope  bool

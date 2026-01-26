@@ -30,7 +30,7 @@ func (k BindingKey) IsTypeBinding() bool {
 // - Mixed cycles (containing both types and values) are always problematic
 // - Value-only cycles are problematic if any binding in the cycle is used outside function bodies
 // Returns a slice of CycleInfoV2 containing details about each problematic cycle found.
-func (g *DepGraphV2) FindCyclesV2() []CycleInfoV2 {
+func (g *DepGraph) FindCyclesV2() []CycleInfoV2 {
 	var problematicCycles []CycleInfoV2
 
 	// Find all strongly connected components (cycles)
@@ -100,7 +100,7 @@ func (g *DepGraphV2) FindCyclesV2() []CycleInfoV2 {
 
 // findBindingsUsedOutsideFunctionBodiesV2 finds all bindings that are used outside function bodies
 // This function traverses the AST only once and returns a set of all such bindings
-func (g *DepGraphV2) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey] {
+func (g *DepGraph) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey] {
 	usedOutsideFunctionBodies := set.NewSet[BindingKey]()
 
 	// Iterate over all bindings and their declarations
@@ -125,7 +125,7 @@ func (g *DepGraphV2) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKe
 // AllBindingsUsageVisitorV2 checks if any bindings are used outside function bodies
 type AllBindingsUsageVisitorV2 struct {
 	ast.DefaultVisitor
-	Graph                           *DepGraphV2
+	Graph                           *DepGraph
 	FunctionDepth                   int               // Track nesting depth in function bodies
 	LocalBindings                   []set.Set[string] // Stack of local scopes
 	BindingsUsedOutsideFunctionBody set.Set[BindingKey]

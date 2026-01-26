@@ -14,7 +14,7 @@ import (
 // Callers of this function should create a new scope when inferring a module.
 // If it's inferring global declarations then it's okay to omit that step.
 // TODO: Create separate InferModuleDepGraph and InferGlobalDepGraph functions?
-func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) []Error {
+func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraph) []Error {
 	var errors []Error
 	for _, component := range depGraph.Components {
 		declsErrors := c.InferComponentV2(ctx, depGraph, component)
@@ -28,7 +28,7 @@ func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraphV2) [
 // the binding with the given key. If the namespace doesn't exist yet, it creates one.
 func GetNamespaceCtxV2(
 	ctx Context,
-	depGraph *dep_graph.DepGraphV2,
+	depGraph *dep_graph.DepGraph,
 	key dep_graph.BindingKey,
 ) Context {
 	nsName := depGraph.GetNamespace(key)
@@ -49,7 +49,7 @@ func GetNamespaceCtxV2(
 
 func (c *Checker) InferComponentV2(
 	ctx Context,
-	depGraph *dep_graph.DepGraphV2,
+	depGraph *dep_graph.DepGraph,
 	component []dep_graph.BindingKey,
 ) []Error {
 	errors := []Error{}
