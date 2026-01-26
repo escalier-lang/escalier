@@ -883,7 +883,7 @@ func collectNamespaces(module *ast.Module) []string {
 }
 
 // BuildDepGraph builds a dependency graph for a module using the new BindingKey-based approach.
-// This is the main entry point for building the V2 dependency graph.
+// This is the main entry point for building the dependency graph.
 func BuildDepGraph(module *ast.Module) *DepGraph {
 	// Collect all namespaces from the module
 	namespaceMap := collectNamespaces(module)
