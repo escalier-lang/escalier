@@ -66,6 +66,157 @@ func Zip[T, U any](ts []T, us []U) []Pair[T, U] {
 	return pairs
 }
 
+// BuildTopLevelDecls builds JavaScript code from a dependency graph.
+// This version uses BindingKey instead of DeclID and automatically handles
+// overloaded functions and interface merging.
+func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
+	// Set up builder state
+	b.depGraph = depGraph // Store dep graph for namespace lookups
+	b.isModule = true
+
+	var stmts []Stmt
+
+	// Build namespace hierarchy statements
+	nsStmts := b.buildNamespaceStatements(depGraph)
+	stmts = slices.Concat(stmts, nsStmts)
+
+	// Track which declarations we've already processed to avoid duplicates.
+	// A single VarDecl with pattern destructuring introduces multiple bindings
+	// but should only emit code once. For example:
+	//   val C(D(msg), E(x, y)) = subject
+	// This creates three binding keys in the dep_graph Decls map:
+	//   "value:msg" → [VarDecl]
+	//   "value:x"   → [VarDecl]
+	//   "value:y"   → [VarDecl]
+	// All pointing to the same VarDecl instance. When we iterate over binding keys
+	// below, we'll encounter this declaration three times. We track processed
+	// declarations to ensure we only emit the code once, on the first binding key
+	// we encounter.
+	processedDecls := make(map[ast.Decl]bool)
+
+	// Iterate over components in topological order
+	for _, component := range depGraph.Components {
+		for _, key := range component {
+			decls := depGraph.GetDecls(key)
+			if len(decls) == 0 {
+				continue
+			}
+
+			nsName := depGraph.GetNamespace(key)
+
+			// Skip type-only bindings unless they also have a value binding
+			if key.Kind() == dep_graph.DepKindType {
+				// Check if there's also a value binding with the same name
+				valueKey := dep_graph.ValueBindingKey(key.Name())
+				if !depGraph.HasBinding(valueKey) {
+					continue // Type-only, skip codegen
+				}
+				// If there is a value binding, that will handle codegen
+				continue
+			}
+
+			// Handle multiple declarations (overloaded functions)
+			if len(decls) > 1 {
+				// Check if all declarations are function declarations
+				allFuncs := true
+				funcDecls := make([]*ast.FuncDecl, 0, len(decls))
+				for _, decl := range decls {
+					if fd, ok := decl.(*ast.FuncDecl); ok {
+						funcDecls = append(funcDecls, fd)
+					} else {
+						allFuncs = false
+						break
+					}
+				}
+
+				if allFuncs && len(funcDecls) > 0 {
+					// Build overloaded function dispatch
+					stmts = slices.Concat(stmts, b.buildOverloadedFunc(funcDecls, nsName))
+					continue
+				}
+
+				// For interface merging, only the first declaration is used for codegen
+				// (interfaces don't generate runtime code)
+			}
+
+			// Single declaration or first of merged declarations
+			decl := decls[0]
+
+			// Build the declaration only once
+			// (VarDecls with pattern destructuring appear under multiple binding keys)
+			if !processedDecls[decl] {
+				processedDecls[decl] = true
+				stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
+			}
+
+			// Handle namespace assignment for namespaced bindings
+			// This needs to happen for EVERY binding, even if the declaration was already processed
+			// For example, with `val {x, y} = getPoint()` in namespace "coords", we need both:
+			//   coords.x = coords__x
+			//   coords.y = coords__y
+			bindingName := key.Name()
+			if strings.Contains(bindingName, ".") {
+				parts := strings.Split(bindingName, ".")
+				dunderName := strings.Join(parts, "__")
+
+				// Create assignment: namespace.member = dunderName
+				assignExpr := NewBinaryExpr(
+					NewIdentExpr(bindingName, "", nil),
+					Assign,
+					NewIdentExpr(dunderName, "", nil),
+					nil,
+				)
+
+				stmts = append(stmts, &ExprStmt{
+					Expr:   assignExpr,
+					span:   nil,
+					source: decl,
+				})
+			}
+		}
+	}
+
+	if b.hasExtractor {
+		// Add an import statement at the start of `stmts`
+		importDecl := NewImportDecl(
+			[]string{"InvokeCustomMatcherOrThrow"},
+			"@escalier/runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset hasExtractor for future builds
+		b.hasExtractor = false
+	}
+
+	return &Module{
+		Stmts: stmts,
+	}
+}
+
+// buildNamespaceStatements generates statements to create namespace objects
+// for all namespaces in the dependency graph
+func (b *Builder) buildNamespaceStatements(depGraph *dep_graph.DepGraph) []Stmt {
+	// Track which namespace segments have been defined to avoid redefinition
+	definedNamespaces := make(map[string]bool)
+	var stmts []Stmt
+
+	// For each namespace, generate the hierarchy of statements
+	for _, namespace := range depGraph.Namespaces {
+		if namespace == "" {
+			continue // Skip the root namespace
+		}
+		stmts = slices.Concat(stmts, b.buildNamespaceHierarchy(namespace, definedNamespaces))
+	}
+
+	return stmts
+}
+
 func fullyQualifyName(name, nsName string) string {
 	if nsName == "" {
 		return name

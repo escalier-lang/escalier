@@ -6,8 +6,114 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
+
+// BuildDefinitions builds TypeScript .d.ts definitions from a dependency graph.
+// This version uses BindingKey instead of DeclID.
+func (b *Builder) BuildDefinitions(
+	depGraph *dep_graph.DepGraph,
+	moduleNS *type_sys.Namespace,
+) *Module {
+	// Group declarations by namespace
+	namespaceGroups := make(map[string][]dep_graph.BindingKey)
+
+	// Collect all binding keys in topological order
+	var topoBindingKeys []dep_graph.BindingKey
+	for _, component := range depGraph.Components {
+		topoBindingKeys = append(topoBindingKeys, component...)
+	}
+
+	// Group binding keys by their namespace
+	for _, key := range topoBindingKeys {
+		namespace := depGraph.GetNamespace(key)
+		namespaceGroups[namespace] = append(namespaceGroups[namespace], key)
+	}
+
+	// Build statements for each namespace
+	stmts := []Stmt{}
+
+	// Sort namespace names for consistent output
+	var namespaceNames []string
+	for namespace := range namespaceGroups {
+		namespaceNames = append(namespaceNames, namespace)
+	}
+	sort.Strings(namespaceNames)
+
+	// Track which declarations we've already processed to avoid duplicates
+	// (enums and classes have both type and value bindings pointing to the same decl)
+	processedDecls := make(map[ast.Decl]bool)
+
+	for _, namespace := range namespaceNames {
+		bindingKeys := namespaceGroups[namespace]
+
+		if namespace == "" {
+			// Root namespace declarations go directly to module level
+			for _, key := range bindingKeys {
+				decls := depGraph.GetDecls(key)
+				if len(decls) == 0 {
+					continue
+				}
+
+				// For multiple declarations (overloads, interface merging), process all of them
+				for _, decl := range decls {
+					// Skip if we've already processed this declaration
+					if processedDecls[decl] {
+						continue
+					}
+					processedDecls[decl] = true
+
+					declStmts := b.buildDeclStmt(decl, moduleNS, true)
+					if len(declStmts) != 0 {
+						stmts = append(stmts, declStmts...)
+					}
+				}
+			}
+		} else {
+			// Non-root namespace declarations go inside namespace blocks
+			namespaceStmts := []Stmt{}
+			for _, key := range bindingKeys {
+				decls := depGraph.GetDecls(key)
+				if len(decls) == 0 {
+					continue
+				}
+
+				// Find the nested namespace in moduleNS based on the namespace string
+				nestedNS := findNamespace(moduleNS, namespace)
+				if nestedNS == nil {
+					// If the nested namespace doesn't exist, fall back to the module namespace
+					nestedNS = moduleNS
+				}
+
+				// For multiple declarations (overloads, interface merging), process all of them
+				for _, decl := range decls {
+					// Skip if we've already processed this declaration
+					if processedDecls[decl] {
+						continue
+					}
+					processedDecls[decl] = true
+
+					declStmts := b.buildDeclStmt(decl, nestedNS, false)
+					if len(declStmts) != 0 {
+						namespaceStmts = append(namespaceStmts, declStmts...)
+					}
+				}
+			}
+
+			if len(namespaceStmts) > 0 {
+				namespaceDecl := b.buildNamespaceDecl(namespace, namespaceStmts)
+				stmts = append(stmts, &DeclStmt{
+					Decl:   namespaceDecl,
+					span:   nil,
+					source: nil,
+				})
+			}
+		}
+	}
+
+	return &Module{Stmts: stmts}
+}
 
 // buildDeclStmt creates a DeclStmt for a given declaration
 func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, isTopLevel bool) []Stmt {
