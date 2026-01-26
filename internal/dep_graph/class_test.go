@@ -105,27 +105,44 @@ func TestClassDeclDependencies(t *testing.T) {
 			assert.Empty(t, errors, "Expected no parsing errors")
 
 			// Build the dependency graph
-			depGraph := BuildDepGraph(module)
+			depGraph := BuildDepGraphV2(module)
 
-			// Find the last declaration (which should be our class under test)
-			if len(depGraph.Decls) == 0 {
-				t.Fatal("No declarations found")
+			// Find the last binding key (which should be our class under test)
+			// We need to iterate through all components to find the last one
+			if len(depGraph.Components) == 0 {
+				t.Fatal("No components found")
 			}
-			lastDeclID := DeclID(len(depGraph.Decls) - 1)
-			lastDecl := depGraph.Decls[lastDeclID]
+
+			// Get the last binding key from the last component
+			lastComponent := depGraph.Components[len(depGraph.Components)-1]
+			if len(lastComponent) == 0 {
+				t.Fatal("Last component is empty")
+			}
+			lastKey := lastComponent[len(lastComponent)-1]
+
+			// Get the declaration for this key
+			lastDecls := depGraph.GetDecls(lastKey)
+			if len(lastDecls) == 0 {
+				t.Fatal("No declarations found for last key")
+			}
+			lastDecl := lastDecls[0]
 
 			// Verify it's a class declaration
 			_, ok := lastDecl.(*ast.ClassDecl)
 			assert.True(t, ok, "Last declaration should be a ClassDecl")
 
 			// Find dependencies
-			deps := FindDeclDependencies(lastDeclID, depGraph)
+			deps := FindDeclDependenciesV2(lastKey, depGraph)
 
-			// Convert dependency DeclIDs to names
+			// Convert dependency BindingKeys to names
 			var depNames []string
 			for iter := deps.Iter(); iter.Next(); {
-				depID := iter.Key()
-				depDecl := depGraph.Decls[depID]
+				depKey := iter.Key()
+				depDecls := depGraph.GetDecls(depKey)
+				if len(depDecls) == 0 {
+					continue
+				}
+				depDecl := depDecls[0]
 				switch d := depDecl.(type) {
 				case *ast.VarDecl:
 					if identPat, ok := d.Pattern.(*ast.IdentPat); ok {

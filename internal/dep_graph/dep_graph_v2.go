@@ -1,12 +1,23 @@
 package dep_graph
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
+
+type DepKind int
+
+const (
+	DepKindValue DepKind = iota
+	DepKindType
+)
+
+// DeclID represents a unique identifier for each declaration
+type DeclID int
 
 // BindingKey uniquely identifies a binding in the dependency graph.
 // It is a string that combines the dependency kind ("value" or "type") with
@@ -851,6 +862,24 @@ func (g *DepGraphV2) FindStronglyConnectedComponentsV2(threshold int) [][]Bindin
 	}
 
 	return sccs
+}
+
+// collectNamespaces collects all namespace names from a module and returns a namespace map
+func collectNamespaces(module *ast.Module) []string {
+	namespaces := make([]string, 1) // Start with capacity for root namespace
+	namespaces[0] = ""              // Register root namespace at index 0
+
+	nsIter := module.Namespaces.Iter()
+	for ok := nsIter.First(); ok; ok = nsIter.Next() {
+		nsName := nsIter.Key()
+		// Check if namespace already exists
+		if !slices.Contains(namespaces, nsName) {
+			// Add new namespace
+			namespaces = append(namespaces, nsName)
+		}
+	}
+
+	return namespaces
 }
 
 // BuildDepGraphV2 builds a dependency graph for a module using the new BindingKey-based approach.

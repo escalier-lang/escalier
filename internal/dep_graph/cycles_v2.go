@@ -357,3 +357,8 @@ func GetBindingNames(keys []BindingKey) []string {
 	}
 	return names
 }
+
+type DepBinding struct {
+	Name string
+	Kind DepKind
+}
