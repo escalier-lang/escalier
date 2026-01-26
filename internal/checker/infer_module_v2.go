@@ -14,19 +14,19 @@ import (
 // Callers of this function should create a new scope when inferring a module.
 // If it's inferring global declarations then it's okay to omit that step.
 // TODO: Create separate InferModuleDepGraph and InferGlobalDepGraph functions?
-func (c *Checker) InferDepGraphV2(ctx Context, depGraph *dep_graph.DepGraph) []Error {
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Error {
 	var errors []Error
 	for _, component := range depGraph.Components {
-		declsErrors := c.InferComponentV2(ctx, depGraph, component)
+		declsErrors := c.InferComponent(ctx, depGraph, component)
 		errors = slices.Concat(errors, declsErrors)
 	}
 
 	return errors
 }
 
-// GetNamespaceCtxV2 returns a new Context with its namespace set to the namespace of
+// GetNamespaceCtx returns a new Context with its namespace set to the namespace of
 // the binding with the given key. If the namespace doesn't exist yet, it creates one.
-func GetNamespaceCtxV2(
+func GetNamespaceCtx(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
 	key dep_graph.BindingKey,
@@ -47,7 +47,7 @@ func GetNamespaceCtxV2(
 	return nsCtx
 }
 
-func (c *Checker) InferComponentV2(
+func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
 	component []dep_graph.BindingKey,
@@ -82,7 +82,7 @@ func (c *Checker) InferComponentV2(
 
 	// Infer placeholders
 	for _, key := range component {
-		nsCtx := GetNamespaceCtxV2(ctx, depGraph, key)
+		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -531,7 +531,7 @@ func (c *Checker) InferComponentV2(
 	// Infer definitions - Pass 1: FuncDecl, ClassDecl, EnumDecl, TypeDecl, InterfaceDecl
 	// These need to be processed first so their inferred types are available for VarDecl
 	for _, key := range component {
-		nsCtx := GetNamespaceCtxV2(ctx, depGraph, key)
+		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -1033,7 +1033,7 @@ func (c *Checker) InferComponentV2(
 	// VarDecl initializers are processed after other declarations so that
 	// function/method return types are already inferred and available.
 	for _, key := range component {
-		nsCtx := GetNamespaceCtxV2(ctx, depGraph, key)
+		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {

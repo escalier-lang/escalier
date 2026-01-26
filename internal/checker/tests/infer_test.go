@@ -2188,7 +2188,7 @@ func TestGetDeclCtx(t *testing.T) {
 			depGraph.DeclNamespace.Set(key, test.declNamespace)
 
 			// Call getDeclCtx
-			resultCtx := GetNamespaceCtxV2(rootCtx, depGraph, key)
+			resultCtx := GetNamespaceCtx(rootCtx, depGraph, key)
 
 			// Verify the result context has the expected namespace
 			assert.Equal(t, test.expectedNS, resultCtx.Scope.Namespace)
@@ -2233,7 +2233,7 @@ func TestGetDeclCtxWithNonExistentDeclID(t *testing.T) {
 	key := dep_graph.ValueBindingKey("nonexistent")
 
 	// Call getDeclCtx - should return original context since namespace is empty
-	resultCtx := GetNamespaceCtxV2(rootCtx, depGraph, key)
+	resultCtx := GetNamespaceCtx(rootCtx, depGraph, key)
 
 	// Should return the same context since no namespace mapping exists
 	assert.Equal(t, rootCtx.Scope.Namespace, resultCtx.Scope.Namespace)
@@ -2280,7 +2280,7 @@ func TestGetDeclCtxNestedNamespaceOrder(t *testing.T) {
 	depGraph.DeclNamespace.Set(key, "foo.bar.baz.qux")
 
 	// Call getDeclCtx
-	resultCtx := GetNamespaceCtxV2(rootCtx, depGraph, key)
+	resultCtx := GetNamespaceCtx(rootCtx, depGraph, key)
 
 	// Verify the final context points to the deepest namespace
 	assert.Equal(t, quxNS, resultCtx.Scope.Namespace)
@@ -3030,9 +3030,9 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 
 			depGraph, ctx := test.setup()
 
-			// Run InferDepGraphV2
+			// Run InferDepGraph
 			c := NewChecker()
-			errors := c.InferDepGraphV2(ctx, depGraph)
+			errors := c.InferDepGraph(ctx, depGraph)
 
 			// Verify results
 			test.expected(t, ctx.Scope.Namespace, errors)
@@ -3040,7 +3040,7 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 	}
 }
 
-// newTestDepGraph creates a properly initialized DepGraphV2 for testing
+// newTestDepGraph creates a properly initialized DepGraph for testing
 func newTestDepGraph() *dep_graph.DepGraph {
 	return &dep_graph.DepGraph{
 		Decls:         btree.Map[dep_graph.BindingKey, []ast.Decl]{},

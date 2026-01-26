@@ -7,8 +7,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// CycleInfoV2 represents information about a problematic cycle using BindingKey
-type CycleInfoV2 struct {
+// CycleInfo represents information about a problematic cycle using BindingKey
+type CycleInfo struct {
 	Cycle   []BindingKey // The binding keys involved in the cycle
 	Message string       // Description of why this cycle is problematic
 }
@@ -23,18 +23,18 @@ func (k BindingKey) IsTypeBinding() bool {
 	return k.Kind() == DepKindType
 }
 
-// FindCyclesV2 detects problematic cycles in the dependency graph.
+// FindCycles detects problematic cycles in the dependency graph.
 // It uses Tarjan's algorithm to find strongly connected components, then identifies
 // cycles that are problematic according to these rules:
 // - Type-only cycles are allowed and ignored
 // - Mixed cycles (containing both types and values) are always problematic
 // - Value-only cycles are problematic if any binding in the cycle is used outside function bodies
-// Returns a slice of CycleInfoV2 containing details about each problematic cycle found.
-func (g *DepGraph) FindCyclesV2() []CycleInfoV2 {
-	var problematicCycles []CycleInfoV2
+// Returns a slice of CycleInfo containing details about each problematic cycle found.
+func (g *DepGraph) FindCycles() []CycleInfo {
+	var problematicCycles []CycleInfo
 
 	// Find all strongly connected components (cycles)
-	cycles := g.FindStronglyConnectedComponentsV2(1)
+	cycles := g.FindStronglyConnectedComponents(1)
 
 	// Pre-compute bindings used outside function bodies (only once for all cycles)
 	var usedOutsideFunctionBodies set.Set[BindingKey]
@@ -75,7 +75,7 @@ func (g *DepGraph) FindCyclesV2() []CycleInfoV2 {
 		} else {
 			// Value-only cycle: check if any value is used outside function bodies
 			if !hasComputedUsage {
-				usedOutsideFunctionBodies = g.findBindingsUsedOutsideFunctionBodiesV2()
+				usedOutsideFunctionBodies = g.findBindingsUsedOutsideFunctionBodies()
 				hasComputedUsage = true
 			}
 
@@ -88,7 +88,7 @@ func (g *DepGraph) FindCyclesV2() []CycleInfoV2 {
 		}
 
 		if isProblematic {
-			problematicCycles = append(problematicCycles, CycleInfoV2{
+			problematicCycles = append(problematicCycles, CycleInfo{
 				Cycle:   cycle,
 				Message: "Cycle detected between bindings that are used outside of function bodies",
 			})
@@ -98,9 +98,9 @@ func (g *DepGraph) FindCyclesV2() []CycleInfoV2 {
 	return problematicCycles
 }
 
-// findBindingsUsedOutsideFunctionBodiesV2 finds all bindings that are used outside function bodies
+// findBindingsUsedOutsideFunctionBodies finds all bindings that are used outside function bodies
 // This function traverses the AST only once and returns a set of all such bindings
-func (g *DepGraph) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey] {
+func (g *DepGraph) findBindingsUsedOutsideFunctionBodies() set.Set[BindingKey] {
 	usedOutsideFunctionBodies := set.NewSet[BindingKey]()
 
 	// Iterate over all bindings and their declarations
@@ -108,7 +108,7 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey]
 	for ok := iter.First(); ok; ok = iter.Next() {
 		decls := iter.Value()
 		for _, decl := range decls {
-			visitor := &AllBindingsUsageVisitorV2{
+			visitor := &AllBindingsUsageVisitor{
 				DefaultVisitor:                  ast.DefaultVisitor{},
 				Graph:                           g,
 				FunctionDepth:                   0,
@@ -122,8 +122,8 @@ func (g *DepGraph) findBindingsUsedOutsideFunctionBodiesV2() set.Set[BindingKey]
 	return usedOutsideFunctionBodies
 }
 
-// AllBindingsUsageVisitorV2 checks if any bindings are used outside function bodies
-type AllBindingsUsageVisitorV2 struct {
+// AllBindingsUsageVisitor checks if any bindings are used outside function bodies
+type AllBindingsUsageVisitor struct {
 	ast.DefaultVisitor
 	Graph                           *DepGraph
 	FunctionDepth                   int               // Track nesting depth in function bodies
@@ -132,7 +132,7 @@ type AllBindingsUsageVisitorV2 struct {
 }
 
 // EnterExpr handles expressions to track usage
-func (v *AllBindingsUsageVisitorV2) EnterExpr(expr ast.Expr) bool {
+func (v *AllBindingsUsageVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		// Check if this is a valid binding used outside function body
@@ -215,7 +215,7 @@ func (v *AllBindingsUsageVisitorV2) EnterExpr(expr ast.Expr) bool {
 }
 
 // ExitExpr handles exiting expression scopes
-func (v *AllBindingsUsageVisitorV2) ExitExpr(expr ast.Expr) {
+func (v *AllBindingsUsageVisitor) ExitExpr(expr ast.Expr) {
 	switch expr.(type) {
 	case *ast.FuncExpr:
 		// Exit function expression scope
@@ -225,7 +225,7 @@ func (v *AllBindingsUsageVisitorV2) ExitExpr(expr ast.Expr) {
 }
 
 // EnterDecl handles function declarations which introduce function body scope
-func (v *AllBindingsUsageVisitorV2) EnterDecl(decl ast.Decl) bool {
+func (v *AllBindingsUsageVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		// VarDecl.Accept doesn't visit TypeAnn, so we need to manually visit it
@@ -253,7 +253,7 @@ func (v *AllBindingsUsageVisitorV2) EnterDecl(decl ast.Decl) bool {
 }
 
 // ExitDecl handles exiting declaration scopes
-func (v *AllBindingsUsageVisitorV2) ExitDecl(decl ast.Decl) {
+func (v *AllBindingsUsageVisitor) ExitDecl(decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		if d.Body != nil {
@@ -265,18 +265,18 @@ func (v *AllBindingsUsageVisitorV2) ExitDecl(decl ast.Decl) {
 }
 
 // EnterBlock handles entering blocks which introduce new scopes
-func (v *AllBindingsUsageVisitorV2) EnterBlock(block ast.Block) bool {
+func (v *AllBindingsUsageVisitor) EnterBlock(block ast.Block) bool {
 	v.pushScope()
 	return true
 }
 
 // ExitBlock handles exiting blocks which end scopes
-func (v *AllBindingsUsageVisitorV2) ExitBlock(block ast.Block) {
+func (v *AllBindingsUsageVisitor) ExitBlock(block ast.Block) {
 	v.popScope()
 }
 
 // EnterTypeAnn handles type annotations to track usage
-func (v *AllBindingsUsageVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
+func (v *AllBindingsUsageVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	switch t := typeAnn.(type) {
 	case *ast.TypeRefTypeAnn:
 		// Type references are always outside function bodies (at declaration level)
@@ -304,19 +304,19 @@ func (v *AllBindingsUsageVisitorV2) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 }
 
 // pushScope adds a new local scope
-func (v *AllBindingsUsageVisitorV2) pushScope() {
+func (v *AllBindingsUsageVisitor) pushScope() {
 	v.LocalBindings = append(v.LocalBindings, set.NewSet[string]())
 }
 
 // popScope removes the current local scope
-func (v *AllBindingsUsageVisitorV2) popScope() {
+func (v *AllBindingsUsageVisitor) popScope() {
 	if len(v.LocalBindings) > 0 {
 		v.LocalBindings = v.LocalBindings[:len(v.LocalBindings)-1]
 	}
 }
 
 // isLocalBinding checks if a binding is in any local scope
-func (v *AllBindingsUsageVisitorV2) isLocalBinding(name string) bool {
+func (v *AllBindingsUsageVisitor) isLocalBinding(name string) bool {
 	for _, scope := range v.LocalBindings {
 		if scope.Contains(name) {
 			return true
@@ -326,7 +326,7 @@ func (v *AllBindingsUsageVisitorV2) isLocalBinding(name string) bool {
 }
 
 // buildQualifiedName constructs a qualified name from a MemberExpr chain
-func (v *AllBindingsUsageVisitorV2) buildQualifiedName(expr *ast.MemberExpr) string {
+func (v *AllBindingsUsageVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
 	parts := make([]string, 0)
 
 	current := expr

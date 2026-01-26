@@ -134,7 +134,7 @@ func TestBuildDepGraphV2_SimpleBindings(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Verify bindings
 			actualKeys := graph.AllBindings()
@@ -345,7 +345,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -494,7 +494,7 @@ func TestBuildDepGraphV2_Namespaces(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Verify bindings
 			actualKeys := graph.AllBindings()
@@ -598,7 +598,7 @@ func TestBuildDepGraphV2_OverloadedFunctions(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Verify bindings
 			actualKeys := graph.AllBindings()
@@ -680,7 +680,7 @@ func TestBuildDepGraphV2_InterfaceMerging(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Verify bindings
 			actualKeys := graph.AllBindings()
@@ -771,7 +771,7 @@ func TestBuildDepGraphV2_ClassAndEnum(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			actualKeys := graph.AllBindings()
 			assert.ElementsMatch(t, test.expectedKeys, actualKeys,
@@ -882,7 +882,7 @@ func TestBuildDepGraphV2_StronglyConnectedComponents(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Count actual cycles (multi-node SCCs or self-referencing single-node SCCs)
 			actualCycles := 0
@@ -1070,7 +1070,7 @@ func TestBuildDepGraphV2_LocalShadowing(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1192,7 +1192,7 @@ func TestBuildDepGraphV2_DestructuringPatterns(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			// Verify bindings
 			actualKeys := graph.AllBindings()
@@ -1311,7 +1311,7 @@ func TestDepGraphV2_HelperMethods(t *testing.T) {
 		module, errors := parser.ParseLibFiles(ctx, sources)
 		assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-		graph := BuildDepGraphV2(module)
+		graph := BuildDepGraph(module)
 
 		assert.True(t, graph.HasBinding(ValueBindingKey("foo")))
 		assert.True(t, graph.HasBinding(TypeBindingKey("Bar")))
@@ -1342,7 +1342,7 @@ func TestDepGraphV2_HelperMethods(t *testing.T) {
 		module, errors := parser.ParseLibFiles(ctx, sources)
 		assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-		graph := BuildDepGraphV2(module)
+		graph := BuildDepGraph(module)
 
 		assert.Equal(t, "", graph.GetNamespace(ValueBindingKey("root")))
 		assert.Equal(t, "utils", graph.GetNamespace(ValueBindingKey("utils.helper")))
@@ -1422,7 +1422,7 @@ func TestBuildDepGraphV2_TypeOfDependencies(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1489,7 +1489,7 @@ func TestBuildDepGraphV2_ObjectTypeComputedKeys(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1593,7 +1593,7 @@ func TestBuildDepGraphV2_InterfaceExtends(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1668,7 +1668,7 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1758,7 +1758,7 @@ func TestBuildDepGraphV2_EnumSpread(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1867,7 +1867,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -1950,7 +1950,7 @@ func TestBuildDepGraphV2_IntraNamespaceDependencies(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -2032,7 +2032,7 @@ func TestBuildDepGraphV2_MemberExpressionChains(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -2099,7 +2099,7 @@ func TestBuildDepGraphV2_TypeShadowing(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)
@@ -2447,7 +2447,7 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 
 			assert.Len(t, errors, 0, "Parser errors: %v", errors)
 
-			graph := BuildDepGraphV2(module)
+			graph := BuildDepGraph(module)
 
 			for key, expectedDeps := range test.expectedDeps {
 				actualDeps := graph.GetDeps(key)

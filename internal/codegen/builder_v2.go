@@ -10,18 +10,18 @@ import (
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// BuildTopLevelDeclsV2 builds JavaScript code from a V2 dependency graph.
+// BuildTopLevelDecls builds JavaScript code from a V2 dependency graph.
 // This version uses BindingKey instead of DeclID and automatically handles
 // overloaded functions and interface merging.
-func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraph) *Module {
+func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// Set up builder state
-	b.depGraphV2 = depGraph // Store V2 dep graph for namespace lookups
+	b.depGraph = depGraph // Store V2 dep graph for namespace lookups
 	b.isModule = true
 
 	var stmts []Stmt
 
 	// Build namespace hierarchy statements
-	nsStmts := b.buildNamespaceStatementsV2(depGraph)
+	nsStmts := b.buildNamespaceStatements(depGraph)
 	stmts = slices.Concat(stmts, nsStmts)
 
 	// Track which declarations we've already processed to avoid duplicates.
@@ -143,9 +143,9 @@ func (b *Builder) BuildTopLevelDeclsV2(depGraph *dep_graph.DepGraph) *Module {
 	}
 }
 
-// buildNamespaceStatementsV2 generates statements to create namespace objects
+// buildNamespaceStatements generates statements to create namespace objects
 // for all namespaces in the V2 dependency graph
-func (b *Builder) buildNamespaceStatementsV2(depGraph *dep_graph.DepGraph) []Stmt {
+func (b *Builder) buildNamespaceStatements(depGraph *dep_graph.DepGraph) []Stmt {
 	// Track which namespace segments have been defined to avoid redefinition
 	definedNamespaces := make(map[string]bool)
 	var stmts []Stmt
@@ -161,9 +161,9 @@ func (b *Builder) buildNamespaceStatementsV2(depGraph *dep_graph.DepGraph) []Stm
 	return stmts
 }
 
-// BuildDefinitionsV2 builds TypeScript .d.ts definitions from a V2 dependency graph.
+// BuildDefinitions builds TypeScript .d.ts definitions from a V2 dependency graph.
 // This version uses BindingKey instead of DeclID.
-func (b *Builder) BuildDefinitionsV2(
+func (b *Builder) BuildDefinitions(
 	depGraph *dep_graph.DepGraph,
 	moduleNS *type_sys.Namespace,
 ) *Module {
