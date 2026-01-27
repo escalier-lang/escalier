@@ -62,22 +62,22 @@ All exported declarations belong to the package namespace identified by the `pac
 
 ### Rule 2: Named Module Declarations → Separate Packages
 
-`declare module "name"` blocks each define a **separate package**, regardless of other content in the file:
+`declare module "name"` blocks each define a **separate package**, regardless of other content in the file. Unlike files with top-level exports (which use `package.json` path as identity), named module declarations use the **module name string** as their identity:
 
 ```typescript
 // multi-module.d.ts
 declare module "lodash" {
-    // This is package "lodash"
+    // Package identity: "lodash" (the module name string)
     export function map<T, U>(arr: T[], fn: (x: T) => U): U[];
 }
 
 declare module "lodash/fp" {
-    // This is a separate package "lodash/fp"
+    // Package identity: "lodash/fp" (a separate module name string)
     export function map<T, U>(fn: (x: T) => U): (arr: T[]) => U[];
 }
 ```
 
-Each named module declaration creates its own isolated package namespace.
+Each named module declaration creates its own isolated package namespace, keyed by the module name string. Multiple `declare module "lodash"` blocks across different files will merge into the same "lodash" package namespace.
 
 ### Rule 3: No Top-level Exports → Globals
 
@@ -108,7 +108,7 @@ declare module "timers" {
 | File Characteristics | Classification | Package Identity |
 |---------------------|----------------|------------------|
 | Has top-level `export` | Package | Path to closest `package.json` |
-| `declare module "name"` block | Package (named) | Path to `package.json` resolved via Node module resolution for the module name |
+| `declare module "name"` block | Package (named) | The module name string (e.g., `"lodash"`, `"lodash/fp"`) |
 | No exports, outside named modules | Global | N/A |
 
 ### Mixed Files
@@ -130,6 +130,31 @@ declare module "my-lib" {
 ```
 
 Note: If the file had any top-level `export`, then `GlobalConfig` and `__VERSION__` would be part of an anonymous package, not globals. The presence of `export` changes the entire file's default classification.
+
+## .esc File Classification Rules
+
+`.esc` files (Escalier source files) follow simpler classification rules:
+
+### User Code (.esc files in project)
+
+`.esc` files in the user's project are always classified as **local/user code**:
+- Declarations are added to the local namespace
+- Can shadow both package and global declarations
+- Do not require imports to be visible within the same project
+
+### Library Code (.esc files in libs/)
+
+`.esc` files in a `libs/` folder are treated as **packages**:
+- The package identity is the path to the `package.json` in the library's root
+- Declarations must be exported to be accessible from outside the library
+- Follow the same merging rules as `.d.ts` packages
+
+### .esc Classification Summary
+
+| Location | Classification | Package Identity |
+|----------|----------------|------------------|
+| Project source files | Local/User code | N/A |
+| `libs/` folder | Package | Path to library's `package.json` |
 
 ## Cross-File Namespace Merging
 
@@ -164,11 +189,15 @@ Global Namespace
 
 ### Package Identity
 
-Packages are **not** identified by their name (names are not unique). Instead, packages are identified by the **path to the `package.json`** file resolved using the standard Node module resolution algorithm.
+Package identity depends on how the package is defined:
 
-This means:
+**1. Files with top-level exports**: Identified by the **path to the `package.json`** file found by traversing up the directory tree. This means:
 - Two packages with the same name but different `package.json` paths are **different packages**
-- Files belonging to the same `package.json` are merged into **the same namespace**
+- Multiple `.d.ts` files belonging to the same `package.json` are merged into **the same namespace**
+
+**2. Named module declarations (`declare module "name"`)**: Identified by the **module name string**. This means:
+- `declare module "lodash"` and `declare module "lodash/fp"` are **different packages** (different strings)
+- Multiple `declare module "lodash"` blocks across different files merge into **the same namespace**
 
 ### Package Namespace Merging (Same package.json)
 
@@ -248,16 +277,32 @@ Introduce separate namespaces for globals and packages, where package declaratio
 
 ### Proposed Namespace Hierarchy
 
+Each package has its own isolated namespace. When a package is imported, its exported declarations become available for lookup and can shadow globals.
+
 ```
 Lookup Resolution (priority order):
 1. Local scope (user-defined types/values)
-2. Package namespace (shadowing globals)
+2. Imported package namespaces (in import order, shadowing globals)
 3. Global namespace (TypeScript builtins)
 
 Scope Structure:
     └── Local Namespace (user code)
-        └── Package Namespace (imported packages)
+        └── Imported Package Namespaces (one per imported package)
             └── Global Namespace (lib.es5.d.ts, lib.dom.d.ts)
+```
+
+**Important**: Package declarations only participate in lookup **after being imported**. An unimported package's declarations do not shadow globals.
+
+### Multiple Package Lookup
+
+When multiple imported packages define the same name, the **first import wins** (earlier imports shadow later ones):
+
+```typescript
+// user code
+import { Array } from "custom-arrays";  // This Array shadows...
+import { Array } from "other-arrays";   // ...this Array
+
+let arr: Array<string>;  // Resolves to custom-arrays.Array
 ```
 
 ### Shadowing Example
@@ -270,6 +315,7 @@ interface Array<T> { length: number; ... }
 interface Array<T> { customMethod(): void; ... }
 
 // user code
+import { Array } from "some-package";
 let arr: Array<string>;  // Resolves to package Array, not global
 ```
 
@@ -277,9 +323,10 @@ let arr: Array<string>;  // Resolves to package Array, not global
 
 ### 1. Namespace Separation
 
-- **R1.1**: Create distinct namespace containers for globals and packages
-- **R1.2**: Both namespaces must be "nameless" (no prefix required for access)
-- **R1.3**: Implement lookup chain: Local → Package → Global
+- **R1.1**: Create a distinct global namespace container for TypeScript builtins
+- **R1.2**: Create separate namespace containers for each package (keyed by package identity)
+- **R1.3**: Both global and package namespaces must be "nameless" (no prefix required for access)
+- **R1.4**: Implement lookup chain: Local → Imported Packages (in import order) → Global
 
 ### 2. Type Resolution
 
@@ -287,20 +334,37 @@ let arr: Array<string>;  // Resolves to package Array, not global
 - **R2.2**: First match in the chain wins (enables shadowing)
 - **R2.3**: Unresolved lookups should continue to parent namespaces
 - **R2.4**: Error only when a binding is not found in any namespace
+- **R2.5**: Local (user code) types can shadow package types
+- **R2.6**: Package types can shadow global types
 
 ### 3. Value Resolution
 
 - **R3.1**: Value bindings follow the same resolution rules as types
-- **R3.2**: Package values can shadow global values (e.g., custom `fetch`)
+- **R3.2**: Local (user code) values can shadow package values
+- **R3.3**: Package values can shadow global values (e.g., custom `fetch`)
 
 ### 4. .d.ts File Classification
 
 - **R4.1**: Files with top-level `export` statements must be classified as packages
 - **R4.2**: For files with top-level exports, the package identity is the path to the closest `package.json` found by traversing up the file's directory path
-- **R4.3**: `declare module "name"` blocks must resolve to a package identified by the `package.json` path found via Node module resolution for the module name
+- **R4.3**: `declare module "name"` blocks must use the module name string as the package identity (e.g., `"lodash"`, `"lodash/fp"`)
 - **R4.4**: Files without top-level exports must treat non-module declarations as globals
 - **R4.5**: A single `.d.ts` file may contain both global declarations and named module packages
 - **R4.6**: The parser/loader must detect and categorize declarations based on these rules
+
+### 4b. .esc File Classification
+
+- **R4b.1**: `.esc` files in the user's project must be classified as local/user code
+- **R4b.2**: `.esc` files in a `libs/` folder must be classified as packages
+- **R4b.3**: Library `.esc` files must use the library's `package.json` path as package identity
+- **R4b.4**: Only exported declarations from library `.esc` files are accessible externally
+
+### 4c. Global Augmentation (`declare global`)
+
+- **R4c.1**: `declare global { ... }` blocks must add declarations to the global namespace, not the package namespace
+- **R4c.2**: Global augmentations apply regardless of whether the file is classified as a package
+- **R4c.3**: Global augmentations merge with existing global declarations (following TypeScript's declaration merging rules)
+- **R4c.4**: Global augmentations do not affect shadowing—packages can still shadow augmented globals
 
 ### 5. Cross-File Namespace Merging
 
@@ -321,7 +385,25 @@ let arr: Array<string>;  // Resolves to package Array, not global
 
 - **R7.1**: Modify `Scope` structure to support chained namespace lookups
 - **R7.2**: Each scope level should have access to its namespace and parent chain
-- **R7.3**: Namespace chain should be: `local.Parent → package.Parent → global`
+- **R7.3**: Namespace chain should be: `local → imported packages (in order) → global`
+- **R7.4**: Package namespaces must only be included in lookup after the package is imported
+
+### 8. Import Mechanics
+
+- **R8.1**: `import { name } from "pkg"` must add `name` to the local namespace, bound to the package's exported declaration
+- **R8.2**: `import * as ns from "pkg"` must add `ns` to the local namespace as a namespace object containing all exports
+- **R8.3**: `import pkg from "pkg"` must add `pkg` to the local namespace, bound to the package's default export
+- **R8.4**: After any import from a package, that package's namespace must be added to the lookup chain for shadowing
+- **R8.5**: When the same package is imported multiple times, it must only appear once in the lookup chain (at its first import position)
+- **R8.6**: Import order determines shadowing priority: earlier imports shadow later imports
+
+### 9. Error Handling
+
+- **R9.1**: If no `package.json` is found when traversing up from a `.d.ts` file with top-level exports, emit an error indicating the package cannot be identified
+- **R9.2**: If a `package.json` is found but lacks a `name` field, emit a warning (package identity is still the path)
+- **R9.3**: If an import cannot be resolved via Node module resolution, emit an error indicating the module was not found
+- **R9.4**: If a binding is not found in any namespace (local, packages, or global), emit an "undefined identifier" error
+- **R9.5**: Error messages should indicate which namespace was searched and suggest possible corrections (e.g., "Did you mean to import X from package Y?")
 
 ## Design Considerations
 
@@ -422,25 +504,54 @@ type Binding struct {
 
 ## Acceptance Criteria
 
+### Namespace Separation
 1. [ ] Global types from `lib.es5.d.ts` and `lib.dom.d.ts` are in a separate namespace from package types
 2. [ ] Package declarations can shadow global declarations of the same name
-3. [ ] User code can access both shadowed and shadowing types (if qualified access is supported)
-4. [ ] Existing code that doesn't rely on shadowing continues to work
-5. [ ] Type resolution performance is not significantly degraded
-6. [ ] Error messages clearly indicate which namespace a binding came from
-7. [ ] Tests cover shadowing scenarios for both types and values
-8. [ ] `.d.ts` files with top-level exports are correctly classified as packages
-9. [ ] `.d.ts` files without exports correctly treat non-module declarations as globals
-10. [ ] Named module declarations (`declare module "name"`) create separate package namespaces
-11. [ ] Mixed files (globals + named modules) are correctly partitioned
-12. [ ] Global declarations from multiple files merge into a single global namespace
-13. [ ] Files resolving to the same `package.json` path merge into a single package namespace
-14. [ ] Files resolving to different `package.json` paths have isolated namespaces (even with same package name)
+3. [ ] User code (local) declarations can shadow package declarations
+4. [ ] User code can access both shadowed and shadowing types (if qualified access is supported)
+5. [ ] Existing code that doesn't rely on shadowing continues to work
+
+### .d.ts File Classification
+6. [ ] `.d.ts` files with top-level exports are correctly classified as packages
+7. [ ] `.d.ts` files without exports correctly treat non-module declarations as globals
+8. [ ] Named module declarations (`declare module "name"`) use module name string as identity
+9. [ ] Mixed files (globals + named modules) are correctly partitioned
+
+### Cross-File Merging
+10. [ ] Global declarations from multiple files merge into a single global namespace
+11. [ ] Files resolving to the same `package.json` path merge into a single package namespace
+12. [ ] Files resolving to different `package.json` paths have isolated namespaces (even with same package name)
+13. [ ] Multiple `declare module "X"` blocks (same name) across files merge into one namespace
+
+### .esc File Handling
+14. [ ] `.esc` files in user project are classified as local/user code
+15. [ ] `.esc` files in `libs/` folder are classified as packages
+
+### Import Mechanics
+16. [ ] Importing a package adds it to the lookup chain for shadowing
+17. [ ] Import order determines shadowing priority (earlier imports shadow later)
+18. [ ] Same package imported multiple times appears only once in lookup chain
+
+### Global Augmentation
+19. [ ] `declare global` blocks add declarations to global namespace (not package)
+20. [ ] Global augmentations merge with existing globals
+
+### Error Handling
+21. [ ] Error emitted when `package.json` not found for files with top-level exports
+22. [ ] Error emitted when imported module cannot be resolved
+23. [ ] Error messages indicate which namespaces were searched
+
+### Performance & Quality
+24. [ ] Type resolution performance is not significantly degraded
+25. [ ] Error messages clearly indicate which namespace a binding came from
+26. [ ] Tests cover shadowing scenarios for both types and values
 
 ## Open Questions
 
 1. Should there be a way to explicitly access the global namespace when shadowed (e.g., `global::Array`)?
 2. How should conflicting declarations within the same namespace be handled (e.g., two files defining the same interface with incompatible signatures)?
+3. Should package subpath imports (e.g., `import from "lodash/array"`) resolve to the same package namespace as the root import (`import from "lodash"`)?
+4. How should re-exports be handled? If package A re-exports a type from package B, does it shadow globals or expose B's original?
 
 ## References
 
