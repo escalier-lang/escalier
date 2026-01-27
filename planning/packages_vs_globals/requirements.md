@@ -323,42 +323,43 @@ Introduce separate namespaces for globals and packages. Packages have their own 
 
 ### 6.1 Proposed Namespace Hierarchy
 
-Each package has its own isolated namespace. When a package is imported, its namespace is bound to a **local identifier**. All access to package symbols must be **qualified** using that identifier.
+Each package has its own isolated namespace stored in a separate package registry. When a package is imported, its namespace is bound as a **sub-namespace** within the local namespace, accessible via a **local identifier**. All access to package symbols must be **qualified** using that identifier.
 
 ```
 Lookup Resolution (priority order):
-1. Local scope (user-defined types/values, including package identifiers)
+1. Local scope (user-defined types/values, package identifiers bound to sub-namespaces)
 2. Global namespace (TypeScript builtins)
 
 Scope Structure:
-    └── Local Namespace (user code + package identifiers)
+    └── Local Namespace (user code + package sub-namespaces)
         └── Global Namespace (lib.es5.d.ts, lib.dom.d.ts)
 ```
 
-Package namespaces are **not** part of the unqualified lookup chain. They are accessed via the local identifier bound during import.
+Package namespaces are **not** part of the unqualified lookup chain. They are accessed via the local identifier bound during import (e.g., `lodash.map` looks up `lodash` locally, then accesses the `map` member of that sub-namespace).
 
 ### 6.2 Import and Qualified Access
 
-When a package is imported, the import statement binds the package's namespace to a local identifier:
+When a package is imported, the import statement binds the package's namespace as a sub-namespace within the local namespace:
 
 ```escalier
 import "lodash"
 
 fn main() {
     // All package symbols must be qualified with the package identifier
+    // lodash.map: lookup 'lodash' locally (finds sub-namespace), access 'map' member
     let result = lodash.map([1, 2, 3], fn(x) { x * 2 })
     console.log(`result = ${result}`)
 }
 ```
 
-Multiple packages can be imported without conflict, since each has its own qualified namespace:
+Multiple packages can be imported without conflict, since each is bound as a separate sub-namespace:
 
 ```escalier
 import "lodash"
 import "ramda"
 
 fn main() {
-    // No ambiguity - each is qualified
+    // No ambiguity - each is a separate sub-namespace
     let a = lodash.map([1, 2, 3], fn(x) { x * 2 })
     let b = ramda.map(fn(x) { x * 2 }, [1, 2, 3])
 }
@@ -386,10 +387,11 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 ### 7.1 Namespace Separation
 
 - **R1.1**: Create a distinct global namespace container for TypeScript builtins
-- **R1.2**: Create separate namespace containers for each package (keyed by package identity)
-- **R1.3**: Global namespace must be "nameless" (no prefix required for access)
-- **R1.4**: Package namespaces must be accessed via qualified identifiers (e.g., `pkg.Symbol`)
-- **R1.5**: Implement lookup chain: Local → Global (packages are not in the unqualified lookup chain)
+- **R1.2**: Create a separate package registry to store package namespaces (keyed by package identity)
+- **R1.3**: Package namespaces in the registry are bound as sub-namespaces within the local namespace during import
+- **R1.4**: Global namespace must be "nameless" (no prefix required for access)
+- **R1.5**: Package namespaces must be accessed via qualified identifiers (e.g., `pkg.Symbol`), using standard namespace member lookup
+- **R1.6**: Implement lookup chain: Local → Global (packages are not in the unqualified lookup chain)
 
 ### 7.2 Type Resolution
 
@@ -444,27 +446,29 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 ### 7.8 Inference Changes
 
 - **R8.1**: `Prelude()` should infer globals into a dedicated global namespace
-- **R8.2**: Package imports should infer into a dedicated package namespace
+- **R8.2**: Package declarations should infer into dedicated package namespaces stored in the package registry
 - **R8.3**: User code should infer into the local namespace
-- **R8.4**: Named module declarations should infer into their respective package namespaces
-- **R8.5**: Maintain backwards compatibility for existing code
+- **R8.4**: Named module declarations should infer into their respective package namespaces in the registry
+- **R8.5**: Import statements bind package namespaces as sub-namespaces in the local namespace
+- **R8.6**: Maintain backwards compatibility for existing code
 
 ### 7.9 Scope Structure Changes
 
 - **R9.1**: Modify `Scope` structure to support chained namespace lookups (Local → Global)
 - **R9.2**: Each scope level should have access to its namespace and parent chain
-- **R9.3**: Package namespaces are stored separately and accessed via qualified identifiers
-- **R9.4**: Import statements bind package namespaces to local identifiers
+- **R9.3**: Package namespaces are stored in a separate package registry (e.g., at Checker level)
+- **R9.4**: Import statements bind package namespaces as sub-namespaces within the local namespace
+- **R9.5**: Qualified access uses standard namespace member lookup (no special package handling in Scope)
 
 ### 7.10 Import Mechanics
 
-- **R10.1**: `import "pkg"` must bind the package namespace to a local identifier derived from the package name (strip scope prefix, replace hyphens with underscores, e.g., `@scope/pkg-name` → `pkg_name`)
-- **R10.2**: `import "pkg" as alias` must bind the package namespace to the specified alias instead of the derived name
-- **R10.3**: All package symbols must be accessed via the qualified identifier (e.g., `pkg.symbol`)
+- **R10.1**: `import "pkg"` must look up the package in the package registry and bind its namespace as a sub-namespace within the local namespace, using a local identifier derived from the package name (strip scope prefix, replace hyphens with underscores, e.g., `@scope/pkg-name` → `pkg_name`)
+- **R10.2**: `import "pkg" as alias` must bind the package namespace as a sub-namespace using the specified alias instead of the derived name
+- **R10.3**: All package symbols must be accessed via the qualified identifier (e.g., `pkg.symbol`), which uses standard namespace member lookup
 - **R10.4**: The local identifier bound by import can shadow global declarations of the same name
-- **R10.5**: Multiple packages can be imported without conflict (each has its own qualified namespace)
-- **R10.6**: If the same package is imported multiple times, subsequent imports are no-ops
-- **R10.7**: Subpath imports (e.g., `import "lodash/array"`) create separate package namespaces from root imports (`import "lodash"`)
+- **R10.5**: Multiple packages can be imported without conflict (each is a separate sub-namespace)
+- **R10.6**: If the same package is imported multiple times, subsequent imports are no-ops (bind to the same sub-namespace)
+- **R10.7**: Subpath imports (e.g., `import "lodash/array"`) create separate package namespace entries in the registry from root imports (`import "lodash"`)
 - **R10.8**: Package identifiers follow the same scoping rules as other local bindings
 
 ### 7.11 Error Handling
@@ -479,40 +483,44 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 
 ### 8.1 Option A: Two-Level Scope Chain with Package Registry
 
-Scope chain for unqualified lookup is Local → Global. Packages are stored in a separate registry and accessed via qualified identifiers:
+Scope chain for unqualified lookup is Local → Global. Packages are stored in a separate registry (at Checker level or standalone) and bound as sub-namespaces in the local namespace:
 
 ```go
+// Separate from Scope structure
+type PackageRegistry struct {
+    packages map[string]*type_system.Namespace  // package identity → namespace
+}
+
 type Scope struct {
     Parent    *Scope
     Namespace *type_system.Namespace
-    Packages  map[string]*type_system.Namespace  // Package registry
 }
 ```
+
+When processing `import "lodash"`:
+1. Look up package in registry to get its namespace
+2. Bind the identifier `lodash` as a sub-namespace within userScope's namespace
+3. Qualified access `lodash.map` works naturally through namespace member lookup
 
 Scope structure:
 ```
-globalScope (Namespace: globals, Packages: {})
+globalScope (Namespace: globals)
     ↑
-userScope (Namespace: local, Parent: globalScope, Packages: {"lodash": ..., "ramda": ...})
+userScope (Namespace: local with sub-namespaces {"lodash": ..., "ramda": ...}, Parent: globalScope)
 ```
 
-**Pros**: Clean separation between unqualified lookup (Local → Global) and qualified package access
-**Cons**: Requires separate handling for qualified member access
+**Pros**: Clean separation between unqualified lookup (Local → Global) and qualified package access; qualified access is just regular namespace member lookup
+**Cons**: None significant
 
-### 8.2 Option B: Package Identifiers as Local Bindings
+### 8.2 Option B: Package Identifiers as Local Bindings (Merged with Option A)
 
-Treat imported package identifiers as regular local bindings whose type is the package's namespace:
+This option has been merged with Option A. Package identifiers are bound as sub-namespaces in the local namespace:
+- The package registry stores complete package namespaces
+- Import processing binds the package identifier to a sub-namespace in the local scope
+- Member access (`pkg.Symbol`) uses standard namespace member lookup
+- Package identifiers can shadow globals (they're just local bindings)
 
-```go
-type Binding struct {
-    Type    *Type
-    Kind    BindingKind  // Value, Type, Package
-    Package *type_system.Namespace  // Non-nil for package bindings
-}
-```
-
-**Pros**: Unified lookup for all identifiers; package identifiers can shadow globals
-**Cons**: Need to distinguish package bindings for member access
+**Note**: This is now the recommended approach (see 8.4)
 
 ### 8.3 Option C: Unified Namespace with Provenance
 
@@ -530,11 +538,13 @@ type Binding struct {
 
 ### 8.4 Recommended Approach
 
-**Option A** is recommended because:
+**Option A (with package identifiers as sub-namespaces)** is recommended because:
 1. Clean separation between unqualified lookup (Local → Global) and qualified package access
 2. Local shadowing of globals is automatic via parent chain
-3. Package registry provides direct access for qualified lookups
-4. Matches the desired import semantics (qualified access only)
+3. Package registry provides single source of truth for package namespaces
+4. Qualified access (`pkg.Symbol`) uses standard namespace member lookup - no special handling needed
+5. Package identifiers are just local bindings to sub-namespaces, allowing them to shadow globals naturally
+6. Matches the desired import semantics (qualified access only)
 
 ## 9. Implementation Considerations
 
@@ -543,32 +553,35 @@ type Binding struct {
 | File | Changes Required |
 |------|------------------|
 | `internal/checker/prelude.go` | Create global scope as base; classify declarations per rules |
-| `internal/checker/infer_import.go` | Infer packages into package registry; bind package identifier to local scope |
-| `internal/checker/scope.go` | Add package registry; add helper for qualified member access |
-| `internal/checker/infer_*.go` | Handle qualified access (e.g., `pkg.Symbol`) via package registry |
+| `internal/checker/infer_import.go` | Look up packages in registry; bind package identifier as sub-namespace in local scope |
+| `internal/checker/scope.go` | Remove any package-specific logic; scopes now only handle parent chain |
+| `internal/checker/checker.go` | Add package registry structure to store all loaded package namespaces |
+| `internal/checker/infer_*.go` | Qualified access (e.g., `pkg.Symbol`) uses standard namespace member lookup |
 | `internal/dts_parser/*.go` | Detect top-level exports to determine file classification |
 | `internal/interop/*.go` | Convert declarations with correct namespace assignment |
-| `internal/type_system/types.go` | No changes expected |
+| `internal/type_system/types.go` | May need to support sub-namespaces within namespaces |
 
 ### 9.2 Migration Path
 
 1. Update `.d.ts` parser to detect top-level exports and track file classification
 2. Modify `loadTypeScriptModule()` to separate globals from packages based on classification rules
 3. Refactor `Prelude()` to return a `globalScope` containing only global declarations
-4. Add package registry to `Scope` structure
-5. Update import handling to:
-   - Infer packages into package registry
-   - Bind package identifier to local scope
-6. User code scope has `Parent: globalScope`
-7. Implement qualified member access lookup via package registry
-8. Add tests for qualified access and local shadowing of globals
+4. Create a separate package registry structure (e.g., at Checker level) to store package namespaces
+5. Extend namespace support to allow sub-namespaces (for binding package identifiers)
+6. Update import handling to:
+   - Look up package in registry to get its complete namespace
+   - Bind package identifier as a sub-namespace within the local scope's namespace
+7. User code scope has `Parent: globalScope`
+8. Qualified member access (`pkg.Symbol`) now uses standard namespace member lookup (no special handling needed)
+9. Add tests for qualified access and local shadowing of globals
 
 ### 9.3 Edge Cases to Handle
 
 1. **Circular imports between packages**: Each package should resolve against globals, not other packages being loaded
 2. **Re-exports**: A package re-exporting from another package should expose the original package's type
 3. **Type augmentation**: TypeScript's `declare global` should still augment globals, not create package-level bindings
-4. **Qualified access**: Package symbols are always accessed via qualified identifiers (e.g., `pkg.Array`)
+4. **Qualified access**: Package symbols are accessed via qualified identifiers (e.g., `pkg.Array`), which uses standard namespace member lookup on the bound sub-namespace
+5. **Sub-namespace support**: Namespaces must support nested sub-namespaces for binding package identifiers
 
 ## 10. Acceptance Criteria
 
