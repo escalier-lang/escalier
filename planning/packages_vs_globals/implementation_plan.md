@@ -72,7 +72,6 @@ Scope Chain (for unqualified lookup):
 // Package registry - separate from scope chain
 type PackageRegistry struct {
     packages map[string]*type_system.Namespace  // package identity → namespace
-    mutex    sync.RWMutex                       // for concurrent access
 }
 
 func NewPackageRegistry() *PackageRegistry {
@@ -82,14 +81,10 @@ func NewPackageRegistry() *PackageRegistry {
 }
 
 func (pr *PackageRegistry) Register(identity string, ns *type_system.Namespace) {
-    pr.mutex.Lock()
-    defer pr.mutex.Unlock()
     pr.packages[identity] = ns
 }
 
 func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool) {
-    pr.mutex.RLock()
-    defer pr.mutex.RUnlock()
     ns, ok := pr.packages[identity]
     return ns, ok
 }
@@ -101,25 +96,29 @@ func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool
 // Checker - add package registry
 type Checker struct {
     // ... existing fields ...
-    packageRegistry *PackageRegistry
-    globalScope     *Scope  // new: explicit reference to global scope
-}
-
-// Scope - simplified (no package-specific logic)
-type Scope struct {
-    Parent    *Scope
-    Namespace *type_system.Namespace  // can contain sub-namespaces
-}
-
-// Namespace - support sub-namespaces
-type Namespace struct {
-    Types         map[string]*Type
-    Values        map[string]*Type
-    SubNamespaces map[string]*Namespace  // NEW: for binding package identifiers
+    packageRegistry *PackageRegistry  // new
+    globalScope     *Scope            // new: explicit reference to global scope
 }
 ```
 
-### 3.3 File Classification Metadata
+### 3.3 Existing Structures (for reference)
+
+```go
+// Scope - no changes needed
+type Scope struct {
+    Parent    *Scope
+    Namespace *type_system.Namespace
+}
+
+// Namespace - no changes needed, already has Namespaces field
+type Namespace struct {
+    Values     map[string]*Binding
+    Types      map[string]*TypeAlias
+    Namespaces map[string]*Namespace  // used for binding package identifiers
+}
+```
+
+### 3.4 File Classification Metadata
 
 ```go
 // Track classification during parsing
@@ -157,27 +156,17 @@ type NamedModule struct {
 **Duration**: ~4-5 days
 **Risk**: High (core feature implementation)
 
-### Phase 5: Qualified Access and Member Lookup
-**Goal**: Support `pkg.Symbol` syntax via namespace member lookup
-**Duration**: ~2-3 days
-**Risk**: Medium
-
-### Phase 6: Local Shadowing and globalThis
+### Phase 5: Local Shadowing and globalThis
 **Goal**: Enable local shadowing of globals + `globalThis` access
 **Duration**: ~2-3 days
 **Risk**: Medium
 
-### Phase 7: .esc File Classification
-**Goal**: Handle libs/ and bin/ folders correctly
-**Duration**: ~2-3 days
-**Risk**: Low
-
-### Phase 8: Testing and Edge Cases
+### Phase 6: Testing and Edge Cases
 **Goal**: Comprehensive testing and bug fixes
 **Duration**: ~3-5 days
 **Risk**: Medium
 
-**Total Estimated Duration**: 20-31 days
+**Total Estimated Duration**: 16-25 days
 
 ## 5. Detailed Phase Implementation
 
@@ -190,13 +179,11 @@ type NamedModule struct {
 package checker
 
 import (
-    "sync"
     "github.com/escalier-lang/escalier/internal/type_system"
 )
 
 type PackageRegistry struct {
     packages map[string]*type_system.Namespace
-    mutex    sync.RWMutex
 }
 
 func NewPackageRegistry() *PackageRegistry {
@@ -212,7 +199,7 @@ func (pr *PackageRegistry) Register(identity string, ns *type_system.Namespace) 
 }
 
 func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool) {
-    // Thread-safe lookup
+    // Simple map lookup
 }
 
 func (pr *PackageRegistry) MustLookup(identity string) *type_system.Namespace {
@@ -225,7 +212,6 @@ func (pr *PackageRegistry) MustLookup(identity string) *type_system.Namespace {
 - [ ] Implement `Register()` method with validation
 - [ ] Implement `Lookup()` and `MustLookup()` methods
 - [ ] Add unit tests for registry operations
-- [ ] Document thread-safety guarantees
 
 #### 1.2 Update Checker Structure
 **File**: `internal/checker/checker.go`
@@ -261,14 +247,14 @@ func NewChecker(...) *Checker {
 
 ```go
 type Namespace struct {
-    Types         map[string]*Type
-    Values        map[string]*Type
-    SubNamespaces map[string]*Namespace  // NEW
+    Values     map[string]*Binding
+    Types      map[string]*TypeAlias
+    Namespaces map[string]*Namespace  // already exists
 }
 
-func (ns *Namespace) BindSubNamespace(name string, subNs *Namespace) error {
-    if ns.SubNamespaces == nil {
-        ns.SubNamespaces = make(map[string]*Namespace)
+func (ns *Namespace) setNamespace(name string, subNs *Namespace) error {
+    if ns.Namespaces == nil {
+        ns.Namespaces = make(map[string]*Namespace)
     }
 
     // Check for conflicts with types/values
@@ -279,23 +265,22 @@ func (ns *Namespace) BindSubNamespace(name string, subNs *Namespace) error {
         return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing value", name)
     }
 
-    ns.SubNamespaces[name] = subNs
+    ns.Namespaces[name] = subNs
     return nil
 }
 
-func (ns *Namespace) LookupSubNamespace(name string) (*Namespace, bool) {
-    if ns.SubNamespaces == nil {
+func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
+    if ns.Namespaces == nil {
         return nil, false
     }
-    subNs, ok := ns.SubNamespaces[name]
+    subNs, ok := ns.Namespaces[name]
     return subNs, ok
 }
 ```
 
 **Tasks**:
-- [ ] Add `SubNamespaces` field to Namespace type
-- [ ] Implement `BindSubNamespace()` method
-- [ ] Implement `LookupSubNamespace()` method
+- [ ] Implement `setNamespace()` method
+- [ ] Implement `getNamespace()` method
 - [ ] Add conflict detection (sub-namespace vs type/value names)
 - [ ] Write unit tests for sub-namespace operations
 
@@ -528,30 +513,34 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
     filePath := c.resolveTypeScriptLib(filename)
 
     // Load and classify
-    module, err := LoadTypeScriptModule(filePath)
+    loadedModule, err := LoadTypeScriptModule(filePath)
     if err != nil {
         return err
     }
 
-    // Infer global declarations only
-    for _, decl := range module.GlobalDecls {
-        if err := c.inferDeclaration(decl, globalScope); err != nil {
-            return err
+    // Build ast.Module from global declarations and infer
+    if len(loadedModule.GlobalDecls) > 0 {
+        globalModule := &ast.Module{Decls: loadedModule.GlobalDecls}
+        depGraph := dep_graph.BuildDepGraph(globalModule)
+        ctx := Context{Scope: globalScope}
+        if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
+            return errs[0]  // or collect all errors
         }
     }
 
     // Handle packages (named modules) - register in package registry
-    for identity, pkgDecls := range module.Packages {
+    for identity, pkgDecls := range loadedModule.Packages {
         pkgNs := type_system.NewNamespace()
         pkgScope := &Scope{
             Parent:    globalScope,  // Packages can reference globals
             Namespace: pkgNs,
         }
 
-        for _, decl := range pkgDecls.Decls {
-            if err := c.inferDeclaration(decl, pkgScope); err != nil {
-                return err
-            }
+        pkgModule := &ast.Module{Decls: pkgDecls.Decls}
+        depGraph := dep_graph.BuildDepGraph(pkgModule)
+        ctx := Context{Scope: pkgScope}
+        if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
+            return errs[0]  // or collect all errors
         }
 
         c.packageRegistry.Register(identity, pkgNs)
@@ -570,37 +559,65 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
 - [ ] Verify global scope is available to all user code scopes
 - [ ] Test that globals are isolated
 
-#### 3.2 Update User Code Scope Creation
-**File**: `internal/checker/infer_module.go` (or wherever user code is inferred)
+#### 3.2 Update InferModule and InferScript
+**Files**: `internal/checker/infer_module.go`, `internal/checker/infer_script.go`
 
+Escalier distinguishes between **modules** and **scripts**:
+- A **module** is comprised of multiple files and directories where each directory corresponds to a namespace and each namespace contains all declarations from the files in that directory
+- A **script** is a single `.esc` file
+
+Both `InferModule` and `InferScript` already exist. The key change is ensuring the context passed to these functions has a scope whose parent chain includes the global scope.
+
+**Current `InferModule`** (no changes needed to the function itself):
 ```go
-func (c *Checker) inferUserModule(file *ast.File) error {
-    // Create user scope with global scope as parent
-    userNs := type_system.NewNamespace()
-    userScope := &Scope{
-        Parent:    c.globalScope,  // Link to global scope
-        Namespace: userNs,
-    }
-
-    // Set as current scope
-    c.pushScope(userScope)
-    defer c.popScope()
-
-    // Infer user code
-    for _, stmt := range file.Statements {
-        if err := c.inferStatement(stmt); err != nil {
-            return err
-        }
-    }
-
-    return nil
+func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
+    depGraph := dep_graph.BuildDepGraph(m)
+    return c.InferDepGraph(ctx, depGraph)
 }
 ```
 
+**Current `InferScript`** (no changes needed to the function itself):
+```go
+func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
+    errors := []Error{}
+    ctx = ctx.WithNewScope()
+
+    for _, stmt := range m.Stmts {
+        stmtErrors := c.inferStmt(ctx, stmt)
+        errors = slices.Concat(errors, stmtErrors)
+    }
+
+    return ctx.Scope, errors
+}
+```
+
+**Changes needed at the call site** (e.g., in compiler or main entry point):
+
+The caller must create a context with a scope that has the global scope as its parent:
+
+```go
+// Create user scope with global scope as parent
+userNs := type_system.NewNamespace()
+userScope := &Scope{
+    Parent:    c.globalScope,  // Link to global scope
+    Namespace: userNs,
+}
+
+// Create context with user scope
+ctx := Context{Scope: userScope}
+
+// For modules:
+errors := c.InferModule(ctx, module)
+
+// For scripts:
+scope, errors := c.InferScript(ctx, script)
+```
+
 **Tasks**:
-- [ ] Update user scope creation to link to global scope
-- [ ] Verify parent chain works correctly
-- [ ] Test that user code can access globals
+- [ ] Update call sites of `InferModule` to pass context with global scope parent
+- [ ] Update call sites of `InferScript` to pass context with global scope parent
+- [ ] Verify parent chain works correctly (user scope → global scope)
+- [ ] Test that user code can access globals via parent chain lookup
 - [ ] Test that lookup traverses parent chain
 
 ---
@@ -645,7 +662,7 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
     }
 
     currentNs := c.currentScope.Namespace
-    if err := currentNs.BindSubNamespace(packageIdent, pkgNs); err != nil {
+    if err := currentNs.setNamespace(packageIdent, pkgNs); err != nil {
         return err
     }
 
@@ -695,10 +712,12 @@ func (c *Checker) loadPackage(modulePath string) error {
         }
     }
 
-    for _, decl := range pkgDecls.Decls {
-        if err := c.inferDeclaration(decl, pkgScope); err != nil {
-            return err
-        }
+    // Build dep graph and infer package declarations
+    pkgModule := &ast.Module{Decls: pkgDecls.Decls}
+    depGraph := dep_graph.BuildDepGraph(pkgModule)
+    ctx := Context{Scope: pkgScope}
+    if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
+        return errs[0]  // or collect all errors
     }
 
     // Register in package registry
@@ -706,10 +725,11 @@ func (c *Checker) loadPackage(modulePath string) error {
 
     // Handle global augmentations if any
     if len(module.GlobalDecls) > 0 {
-        for _, decl := range module.GlobalDecls {
-            if err := c.inferDeclaration(decl, c.globalScope); err != nil {
-                return err
-            }
+        globalModule := &ast.Module{Decls: module.GlobalDecls}
+        globalDepGraph := dep_graph.BuildDepGraph(globalModule)
+        globalCtx := Context{Scope: c.globalScope}
+        if errs := c.InferDepGraph(globalCtx, globalDepGraph); len(errs) > 0 {
+            return errs[0]  // or collect all errors
         }
     }
 
@@ -752,103 +772,9 @@ func (c *Checker) loadPackage(modulePath string) error {
 
 ---
 
-### Phase 5: Qualified Access and Member Lookup
+### Phase 5: Local Shadowing and globalThis
 
-#### 5.1 Update Member Access Resolution
-**File**: `internal/checker/infer_expr.go` (or wherever member access is handled)
-
-Current approach (likely):
-```go
-func (c *Checker) inferMemberExpr(expr *ast.MemberExpr) (*Type, error) {
-    // Infer object
-    objType, err := c.inferExpr(expr.Object)
-    if err != nil {
-        return nil, err
-    }
-
-    // Access member on type
-    return c.accessMember(objType, expr.Property)
-}
-```
-
-New approach (add namespace support):
-```go
-func (c *Checker) inferMemberExpr(expr *ast.MemberExpr) (*Type, error) {
-    // Check if object is a simple identifier (potential package reference)
-    if ident, ok := expr.Object.(*ast.Identifier); ok {
-        // Try to resolve as sub-namespace first
-        if subNs, ok := c.currentScope.Namespace.LookupSubNamespace(ident.Name); ok {
-            // It's a package reference - look up member in package namespace
-            return c.lookupInNamespace(subNs, expr.Property)
-        }
-    }
-
-    // Not a package reference - treat as normal member access
-    objType, err := c.inferExpr(expr.Object)
-    if err != nil {
-        return nil, err
-    }
-
-    return c.accessMember(objType, expr.Property)
-}
-
-func (c *Checker) lookupInNamespace(ns *type_system.Namespace, name string) (*Type, error) {
-    // Try as type
-    if typ, ok := ns.Types[name]; ok {
-        return typ, nil
-    }
-
-    // Try as value
-    if val, ok := ns.Values[name]; ok {
-        return val, nil
-    }
-
-    return nil, fmt.Errorf("undefined: %s", name)
-}
-```
-
-**Tasks**:
-- [ ] Update member access to check for sub-namespace first
-- [ ] Implement namespace member lookup
-- [ ] Handle nested member access (e.g., `pkg.ns.symbol`)
-- [ ] Add error messages for undefined package members
-- [ ] Test qualified access:
-  - [ ] `pkg.Type` (type access)
-  - [ ] `pkg.func` (value access)
-  - [ ] `pkg.nested.member` (nested access)
-  - [ ] Error case: undefined member
-
-#### 5.2 Update Identifier Resolution
-**File**: `internal/checker/infer_expr.go`
-
-Ensure bare identifiers DON'T resolve to package names (package names are not types/values themselves):
-
-```go
-func (c *Checker) inferIdentifier(ident *ast.Identifier) (*Type, error) {
-    // Look up in current scope (Local → Global chain)
-    if typ, err := c.lookupInScope(ident.Name); err == nil {
-        return typ, nil
-    }
-
-    // Check if it's a sub-namespace (package identifier)
-    if _, ok := c.currentScope.Namespace.LookupSubNamespace(ident.Name); ok {
-        return nil, fmt.Errorf("%q is a package identifier, use qualified access (e.g., %s.member)", ident.Name, ident.Name)
-    }
-
-    return nil, fmt.Errorf("undefined: %s", ident.Name)
-}
-```
-
-**Tasks**:
-- [ ] Ensure package identifiers are not treated as values
-- [ ] Provide helpful error when bare package identifier is used
-- [ ] Test error messages
-
----
-
-### Phase 6: Local Shadowing and globalThis
-
-#### 6.1 Implement Shadowing via Parent Chain
+#### 5.1 Implement Shadowing via Parent Chain
 This should already work if the scope chain is set up correctly (Local → Global). Verify with tests.
 
 **File**: `internal/checker/scope.go`
@@ -877,7 +803,7 @@ func (s *Scope) Lookup(name string) (*Type, error) {
 - [ ] Test local shadowing of globals
 - [ ] Test that shadowed globals are not accessible via unqualified names
 
-#### 6.2 Implement globalThis
+#### 5.2 Implement globalThis
 **File**: `internal/checker/prelude.go` or `checker.go`
 
 Add a special `globalThis` binding that references the global namespace:
@@ -897,178 +823,48 @@ func (c *Checker) initializeGlobalScope() *Scope {
 }
 ```
 
-Then in member access:
+**File**: `internal/checker/infer_expr.go`
+
+The `ast.MemberExpr` case is handled inside `inferExpr` in a switch-case statement. Update this case to handle `globalThis.member` access:
+
 ```go
-func (c *Checker) inferMemberExpr(expr *ast.MemberExpr) (*Type, error) {
+func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Error) {
     // ... existing code ...
 
-    // Special handling for globalThis
-    if ident, ok := expr.Object.(*ast.Identifier); ok && ident.Name == "globalThis" {
-        // Access member on global namespace
-        return c.lookupInNamespace(c.globalScope.Namespace, expr.Property)
-    }
+    switch expr := expr.(type) {
+    // ... other cases ...
 
-    // ... rest of code ...
+    case *ast.MemberExpr:
+        // Special handling for globalThis
+        if ident, ok := expr.Object.(*ast.Identifier); ok && ident.Name == "globalThis" {
+            // Access member on global namespace
+            key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
+            return c.getMemberType(ctx, c.globalScope.Namespace, key)
+        }
+
+        // Normal member access
+        objType, objErrors := c.inferExpr(ctx, expr.Object)
+        key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
+        propType, propErrors := c.getMemberType(ctx, objType, key)
+        // ... rest of existing code ...
+
+    // ... other cases ...
+    }
 }
 ```
 
 **Tasks**:
 - [ ] Add `globalThis` binding to global namespace
 - [ ] Create NamespaceType kind (or similar mechanism)
-- [ ] Handle `globalThis.member` access
+- [ ] Update `ast.MemberExpr` case in `inferExpr` to handle `globalThis.member` access
 - [ ] Test `globalThis` access to shadowed globals
 - [ ] Document `globalThis` behavior
 
 ---
 
-### Phase 7: .esc File Classification
+### Phase 6: Testing and Edge Cases
 
-#### 7.1 Detect File Location
-**File**: `internal/checker/classify_esc.go` (new file)
-
-```go
-type EscFileKind int
-
-const (
-    EscFileUser EscFileKind = iota
-    EscFileLibrary
-    EscFileScript
-)
-
-func ClassifyEscFile(filePath, projectRoot string) (EscFileKind, string, error) {
-    relPath, err := filepath.Rel(projectRoot, filePath)
-    if err != nil {
-        return 0, "", err
-    }
-
-    parts := strings.Split(relPath, string(filepath.Separator))
-
-    // Check for libs/ folder
-    if len(parts) > 0 && parts[0] == "libs" {
-        // Find package.json for this library
-        pkgJson, err := findLibraryPackageJson(filePath)
-        if err != nil {
-            return 0, "", err
-        }
-        return EscFileLibrary, pkgJson, nil
-    }
-
-    // Check for bin/ folder
-    if len(parts) > 0 && parts[0] == "bin" {
-        return EscFileScript, "", nil
-    }
-
-    // Default: user code
-    return EscFileUser, "", nil
-}
-
-func findLibraryPackageJson(escFilePath string) (string, error) {
-    // Traverse up from .esc file to find package.json
-    // Stop at libs/ folder boundary
-}
-```
-
-**Tasks**:
-- [ ] Implement `ClassifyEscFile()` function
-- [ ] Handle libs/ folder detection
-- [ ] Handle bin/ folder detection
-- [ ] Find package.json for library files
-- [ ] Test classification:
-  - [ ] User file in root
-  - [ ] User file in src/
-  - [ ] Library file in libs/my-lib/
-  - [ ] Script file in bin/
-
-#### 7.2 Load .esc Libraries
-**File**: `internal/checker/load_esc_library.go` (new file)
-
-```go
-func (c *Checker) loadEscLibrary(libPath string) error {
-    // Find all .esc files in library
-    escFiles, err := findEscFiles(libPath)
-    if err != nil {
-        return err
-    }
-
-    // Determine package identity (package.json path)
-    packageIdentity, err := ResolvePackageIdentity(libPath)
-    if err != nil {
-        return err
-    }
-
-    // Create library namespace
-    libNs := type_system.NewNamespace()
-    libScope := &Scope{
-        Parent:    c.globalScope,
-        Namespace: libNs,
-    }
-
-    // Infer all library files
-    for _, file := range escFiles {
-        ast, err := parser.Parse(file)
-        if err != nil {
-            return err
-        }
-
-        // Infer into library scope
-        c.pushScope(libScope)
-        for _, stmt := range ast.Statements {
-            if err := c.inferStatement(stmt); err != nil {
-                return err
-            }
-        }
-        c.popScope()
-    }
-
-    // Register library in package registry
-    c.packageRegistry.Register(packageIdentity, libNs)
-
-    return nil
-}
-```
-
-**Tasks**:
-- [ ] Implement library loading
-- [ ] Handle multi-file libraries
-- [ ] Only export exported declarations
-- [ ] Register in package registry
-- [ ] Test library imports
-
-#### 7.3 Enforce Script Restrictions
-**File**: `internal/checker/infer_import.go`
-
-```go
-func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
-    // ... existing code ...
-
-    // Check if current file is a library (not allowed to import from bin/)
-    if c.currentFileKind == EscFileLibrary {
-        // Check if import target is a script
-        targetKind, _, err := ClassifyEscFile(targetPath, c.projectRoot)
-        if err != nil {
-            return err
-        }
-
-        if targetKind == EscFileScript {
-            return fmt.Errorf("library code cannot import from scripts (bin/ folder)")
-        }
-    }
-
-    // ... rest of code ...
-}
-```
-
-**Tasks**:
-- [ ] Track current file kind during inference
-- [ ] Enforce library → script restriction
-- [ ] Add helpful error message
-- [ ] Test restriction is enforced
-
----
-
-### Phase 8: Testing and Edge Cases
-
-#### 8.1 Unit Tests
+#### 6.1 Unit Tests
 
 **Core Infrastructure**:
 - [ ] Package registry operations (register, lookup, duplicate handling)
@@ -1080,7 +876,6 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
 - [ ] .d.ts files without exports
 - [ ] .d.ts files with named modules
 - [ ] Mixed .d.ts files
-- [ ] .esc file location classification
 
 **Namespace Operations**:
 - [ ] Global namespace isolation
@@ -1097,16 +892,13 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
 - [ ] Error: undefined package member
 - [ ] Error: bare package identifier used
 
-#### 8.2 Integration Tests
+#### 6.2 Integration Tests
 
 **End-to-End Scenarios**:
 - [ ] Load globals, import package, use both in user code
 - [ ] Local type shadows global, access global via `globalThis`
 - [ ] Multiple packages with same symbol name (no conflict)
 - [ ] Nested `node_modules` with same package name (separate namespaces)
-- [ ] Library in libs/ imported by user code
-- [ ] Script in bin/ importing from libs/
-- [ ] Error: library trying to import from bin/
 
 **TypeScript Interop**:
 - [ ] Load lib.es5.d.ts (globals)
@@ -1115,7 +907,7 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
 - [ ] Load lodash (package with top-level exports)
 - [ ] Mixed file with `declare global` augmentation
 
-#### 8.3 Edge Cases
+#### 6.3 Edge Cases
 
 **Circular Dependencies**:
 - [ ] Package A imports package B, which imports A
@@ -1138,17 +930,16 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
 - [ ] Symlinked packages
 - [ ] Monorepo packages
 
-#### 8.4 Performance Testing
+#### 6.4 Performance Testing
 
 - [ ] Measure type resolution time before/after changes
 - [ ] Ensure no significant regression (< 10% slowdown acceptable)
 - [ ] Profile hot paths if performance degrades
 
-#### 8.5 Documentation
+#### 6.5 Documentation
 
 - [ ] Update user-facing docs on import syntax
 - [ ] Document `globalThis` usage
-- [ ] Document libs/ and bin/ folder structure
 - [ ] Add migration guide for breaking changes
 - [ ] Update API documentation
 
@@ -1168,16 +959,10 @@ internal/checker/
     ├── globals/
     │   ├── lib.es5.d.ts
     │   └── lib.dom.d.ts
-    ├── packages/
-    │   ├── lodash.d.ts
-    │   ├── ramda.d.ts
-    │   └── mixed.d.ts
-    ├── libraries/
-    │   └── my-lib/
-    │       ├── package.json
-    │       └── index.esc
-    └── scripts/
-        └── main.esc
+    └── packages/
+        ├── lodash.d.ts
+        ├── ramda.d.ts
+        └── mixed.d.ts
 ```
 
 ### 6.2 Test Scenarios
@@ -1263,7 +1048,6 @@ Create a guide covering:
 - [ ] Local declarations can shadow globals
 - [ ] `globalThis` provides access to shadowed globals
 - [ ] .d.ts files are correctly classified
-- [ ] .esc files in libs/ and bin/ are handled correctly
 
 ### 8.2 Quality Requirements
 
@@ -1283,9 +1067,8 @@ From requirements.md section 10:
 4. ✅ Shadowed globals accessible via `globalThis`
 5. ✅ .d.ts file classification works correctly
 6. ✅ Cross-file namespace merging works correctly
-7. ✅ .esc files in libs/ and bin/ are classified correctly
-8. ✅ Import mechanics work as specified
-9. ✅ All tests pass
+7. ✅ Import mechanics work as specified
+8. ✅ All tests pass
 
 ---
 
@@ -1327,13 +1110,9 @@ From requirements.md section 10:
 - [ ] Complete Phase 3: Global namespace separation
 - [ ] Complete Phase 4: Package registry and imports
 
-### Milestone 3: Advanced Features (Week 3)
-- [ ] Complete Phase 5: Qualified access
-- [ ] Complete Phase 6: Shadowing and globalThis
-- [ ] Complete Phase 7: .esc file classification
-
-### Milestone 4: Polish and Release (Week 4)
-- [ ] Complete Phase 8: Testing and edge cases
+### Milestone 3: Advanced Features and Testing (Week 3)
+- [ ] Complete Phase 5: Shadowing and globalThis
+- [ ] Complete Phase 6: Testing and edge cases
 - [ ] Documentation
 - [ ] Migration guide
 - [ ] Release
@@ -1409,16 +1188,16 @@ type Scope struct {
 
 // Namespace (with sub-namespaces)
 type Namespace struct {
-    Types         map[string]*Type
-    Values        map[string]*Type
-    SubNamespaces map[string]*Namespace  // For package identifiers
+    Values     map[string]*Binding
+    Types      map[string]*TypeAlias
+    Namespaces map[string]*Namespace  // For package identifiers
 }
 
 // Scope Chain
 globalScope (Parent: nil)
     ↑
 userScope (Parent: globalScope)
-    └── SubNamespaces:
+    └── Namespaces:
         ├── "lodash" → points to packageRegistry["lodash"]
         └── "ramda" → points to packageRegistry["ramda"]
 ```
