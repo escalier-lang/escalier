@@ -18,6 +18,7 @@ This document outlines the implementation plan for introducing separate package 
 **Package Access**: Qualified only (via identifiers bound in local scope)
 **Package Storage**: Separate registry at Checker level
 **Import Mechanism**: Bind package namespace as sub-namespace in local namespace
+**Import Scope**: File-scoped (like Go) - each file must import packages it uses
 
 ## 2. Architecture Overview
 
@@ -37,7 +38,7 @@ All bindings exist in a flat namespace with no shadowing or isolation.
 ### 2.2 Target State
 
 ```
-Package Registry
+Package Registry (shared across all files)
 ├── "lodash" namespace → { map, filter, ... }
 ├── "ramda" namespace → { map, filter, ... }
 └── "@types/node" namespace → { ... }
@@ -45,12 +46,14 @@ Package Registry
 Scope Chain (for unqualified lookup):
     globalScope (Namespace: globals)
         ↑ Parent
-    userScope (Namespace: local + sub-namespaces)
+    fileScope (Namespace: file-local bindings + package sub-namespaces)
         ├── Local bindings (MyType, myFunc, ...)
-        └── Package sub-namespaces:
+        └── Package sub-namespaces (file-scoped, created by import statements):
             ├── "lodash" → points to registry entry
             └── "ramda" → points to registry entry
 ```
+
+Note: Each `.esc` file has its own file scope. Package sub-namespaces are bound per-file based on that file's import statements.
 
 **Unqualified lookup** (`Array`): Local → Global
 **Qualified lookup** (`lodash.map`): Lookup `lodash` in Local (finds sub-namespace) → Member access on that namespace
@@ -138,35 +141,21 @@ type NamedModule struct {
 
 ### Phase 1: Infrastructure Setup
 **Goal**: Create package registry and update core data structures
-**Duration**: ~2-3 days
-**Risk**: Low
 
 ### Phase 2: .d.ts Classification
 **Goal**: Detect and classify .d.ts files (package vs global)
-**Duration**: ~3-4 days
-**Risk**: Medium (complex parsing logic)
 
 ### Phase 3: Global Namespace Separation
 **Goal**: Isolate globals in their own namespace
-**Duration**: ~2-3 days
-**Risk**: Medium (may break existing code)
 
 ### Phase 4: Package Registry and Import Binding
 **Goal**: Load packages into registry and bind as sub-namespaces
-**Duration**: ~4-5 days
-**Risk**: High (core feature implementation)
 
 ### Phase 5: Local Shadowing and globalThis
 **Goal**: Enable local shadowing of globals + `globalThis` access
-**Duration**: ~2-3 days
-**Risk**: Medium
 
-### Phase 6: Testing and Edge Cases
-**Goal**: Comprehensive testing and bug fixes
-**Duration**: ~3-5 days
-**Risk**: Medium
-
-**Total Estimated Duration**: 16-25 days
+### Phase 6: Final Testing and Documentation
+**Goal**: End-to-end integration tests, performance testing, and documentation
 
 ## 5. Detailed Phase Implementation
 
@@ -284,6 +273,12 @@ func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
 - [ ] Add conflict detection (sub-namespace vs type/value names)
 - [ ] Write unit tests for sub-namespace operations
 
+#### 1.4 Phase 1 Tests
+
+**Unit Tests**:
+- [ ] Package registry operations (register, lookup, duplicate handling)
+- [ ] Sub-namespace binding and lookup
+
 ---
 
 ### Phase 2: .d.ts Classification
@@ -336,11 +331,19 @@ func ClassifyDTSFile(file *ast.File) *FileClassification {
 func isTopLevelExport(stmt ast.Node) bool {
     // Check for export keyword at top level
     // Return true for: export interface, export type, export function, etc.
+    // Also return true for: export = Namespace
 }
 
 func extractNamedModule(stmt ast.Node) *NamedModuleDecl {
     // Check if statement is "declare module "name" { ... }"
     // Return module name and declarations if found
+}
+
+func expandExportEquals(file *ast.File) []ast.Node {
+    // If file contains "export = Namespace", find the namespace declaration
+    // and return its members as top-level exports.
+    // Example: "export = Foo" where Foo is a namespace with {bar, baz}
+    // becomes equivalent to "export const bar; export const baz"
 }
 ```
 
@@ -349,12 +352,14 @@ func extractNamedModule(stmt ast.Node) *NamedModuleDecl {
 - [ ] Implement `ClassifyDTSFile()` function
 - [ ] Implement `isTopLevelExport()` helper
 - [ ] Implement `extractNamedModule()` helper
+- [ ] Implement `expandExportEquals()` helper to handle `export = Namespace` syntax
 - [ ] Add tests for various .d.ts file patterns:
   - [ ] File with top-level exports
   - [ ] File with no exports (all globals)
   - [ ] File with named modules only
   - [ ] Mixed file (globals + named modules)
   - [ ] Edge case: file with re-exports
+  - [ ] Edge case: file with `export = Namespace` (expand to top-level exports)
 
 #### 2.2 Resolve Package Identity
 **File**: `internal/dts_parser/package_identity.go` (new file)
@@ -405,7 +410,21 @@ func DerivePackageIdentifier(moduleName string) string {
   - [ ] Symlinked directories
 - [ ] Write tests for identity resolution
 
-#### 2.3 Update Module Loader
+#### 2.3 Phase 2 Tests
+
+**File Classification Tests**:
+- [ ] .d.ts files with top-level exports
+- [ ] .d.ts files without exports (all globals)
+- [ ] .d.ts files with named modules only
+- [ ] Mixed .d.ts files (globals + named modules)
+- [ ] Edge case: file with re-exports
+- [ ] Edge case: file with `export = Namespace` (should expand namespace members to top-level exports)
+
+**Package Identity Tests**:
+- [ ] Package identity resolution from file path
+- [ ] Package identifier derivation (scoped packages, hyphens)
+
+#### 2.4 Update Module Loader
 **File**: `internal/interop/load_typescript_module.go` (modify existing)
 
 ```go
@@ -566,13 +585,196 @@ Escalier distinguishes between **modules** and **scripts**:
 - A **module** is comprised of multiple files and directories where each directory corresponds to a namespace and each namespace contains all declarations from the files in that directory
 - A **script** is a single `.esc` file
 
-Both `InferModule` and `InferScript` already exist. The key change is ensuring the context passed to these functions has a scope whose parent chain includes the global scope.
+**Import Scoping**: Imports are file-scoped (similar to Go). Each `.esc` file must contain its own import statements for the packages it uses. A package namespace bound by an import in one file is NOT visible to other files in the same module. If a file attempts to access a package namespace without the corresponding import statement, an error should be reported.
 
-**Current `InferModule`** (no changes needed to the function itself):
+Both `InferModule` and `InferScript` already exist. However, `InferModule` needs changes to support file-scoped imports while still sharing module-level declarations across files.
+
+**Current `InferModule`** (NEEDS CHANGES for file-scoped imports):
 ```go
+// CURRENT - processes entire module with single scope (imports leak across files)
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
     depGraph := dep_graph.BuildDepGraph(m)
     return c.InferDepGraph(ctx, depGraph)
+}
+```
+
+**Problem**: The current approach builds a single DepGraph for all files and processes it with one scope. This means an import in file A would be visible in file B, violating file-scoped import semantics.
+
+**Challenge**: We still need a unified DepGraph across all files to handle cross-file cyclic dependencies:
+```escalier
+// file_a.esc
+type Foo = { bar: Bar }  // References Bar from file_b
+
+// file_b.esc
+type Bar = { foo: Foo }  // References Foo from file_a
+```
+
+Per-file dep graphs would fail here because when processing `file_a.esc`, `Bar` hasn't been defined yet.
+
+**Solution**: Track file provenance in the DepGraph and use file-specific scopes for imports:
+
+```go
+// Hybrid approach: Unified DepGraph + file-scoped imports
+func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
+    errors := []Error{}
+
+    // Shared namespace for module-level declarations (types, functions, values)
+    moduleNs := ctx.Scope.Namespace
+
+    // Phase 1: Process imports for each file, creating file-scoped bindings
+    fileScopes := make(map[string]*Scope)  // filename → file scope
+    for _, file := range m.Files {
+        fileNs := type_system.NewNamespace()
+        fileScope := &Scope{
+            Parent:    ctx.Scope,  // Parent is module scope (global as grandparent)
+            Namespace: fileNs,
+        }
+        fileScopes[file.Path] = fileScope
+
+        // Process import statements for this file
+        for _, stmt := range file.Imports {
+            fileCtx := ctx.WithScope(fileScope)
+            importErrors := c.inferImportStatement(fileCtx, stmt)
+            errors = append(errors, importErrors...)
+        }
+    }
+
+    // Phase 2: Build unified DepGraph for ALL declarations across all files
+    // The DepGraph tracks which file each declaration came from
+    depGraph := dep_graph.BuildDepGraphWithFileTracking(m)
+
+    // Phase 3: Infer declarations using the unified DepGraph
+    // When inferring a declaration, use the file scope for that declaration's file
+    // This ensures imports are file-scoped while declarations can reference
+    // each other across files (including cycles)
+    declErrors := c.InferDepGraphWithFileScopes(ctx, depGraph, moduleNs, fileScopes)
+    errors = append(errors, declErrors...)
+
+    return errors
+}
+```
+
+**Key insight**:
+- **Import bindings** → file scope (not visible to other files)
+- **Module declarations** (types, functions, values) → shared module namespace (visible across files in same directory)
+- **Unified DepGraph** → required for cross-file cyclic dependencies
+- **File tracking** → when inferring a declaration, use that declaration's file scope for looking up imports
+
+**BuildDepGraphWithFileTracking Implementation Sketch**:
+
+```go
+// DepNode represents a declaration in the dependency graph
+type DepNode struct {
+    Name     string       // Declaration name (e.g., "Foo", "myFunc")
+    Decl     ast.Decl     // The AST node for this declaration
+    FilePath string       // Source file path - NEW: tracks which file this came from
+    Deps     []string     // Names of declarations this depends on
+}
+
+// DepGraph represents the dependency graph with file tracking
+type DepGraph struct {
+    Nodes    map[string]*DepNode  // name → node
+    SCCs     [][]*DepNode         // Strongly connected components (for cycle handling)
+}
+
+// BuildDepGraphWithFileTracking builds a unified dep graph across all files
+// while tracking which file each declaration originated from
+func BuildDepGraphWithFileTracking(m *ast.Module) *DepGraph {
+    graph := &DepGraph{
+        Nodes: make(map[string]*DepNode),
+    }
+
+    // Phase 1: Collect all declarations from all files
+    for _, file := range m.Files {
+        for _, decl := range file.Decls {
+            name := getDeclName(decl)
+            node := &DepNode{
+                Name:     name,
+                Decl:     decl,
+                FilePath: file.Path,  // Track source file
+                Deps:     []string{},
+            }
+            graph.Nodes[name] = node
+        }
+    }
+
+    // Phase 2: Analyze dependencies (references to other declarations)
+    for _, node := range graph.Nodes {
+        // Find all identifiers referenced in this declaration
+        refs := findReferencedIdentifiers(node.Decl)
+        for _, ref := range refs {
+            // Only add as dependency if it's another declaration in the graph
+            // (not an import or builtin)
+            if _, exists := graph.Nodes[ref]; exists {
+                node.Deps = append(node.Deps, ref)
+            }
+        }
+    }
+
+    // Phase 3: Compute SCCs (strongly connected components) for cycle handling
+    // Declarations in the same SCC must be inferred together
+    graph.SCCs = computeSCCs(graph.Nodes)
+
+    return graph
+}
+
+// InferDepGraphWithFileScopes infers declarations using file-specific scopes
+func (c *Checker) InferDepGraphWithFileScopes(
+    ctx Context,
+    depGraph *DepGraph,
+    moduleNs *type_system.Namespace,
+    fileScopes map[string]*Scope,
+) []Error {
+    errors := []Error{}
+
+    // Process SCCs in topological order
+    for _, scc := range depGraph.SCCs {
+        if len(scc) == 1 {
+            // Single declaration (no cycle)
+            node := scc[0]
+            fileScope := fileScopes[node.FilePath]
+            fileCtx := ctx.WithScope(fileScope)
+
+            // Infer declaration - imports resolved via fileScope,
+            // but declaration is added to moduleNs
+            declErrors := c.inferDeclWithTargetNs(fileCtx, node.Decl, moduleNs)
+            errors = append(errors, declErrors...)
+        } else {
+            // Mutually recursive declarations (cycle)
+            // All declarations in the SCC are inferred together
+            // Each uses its own file scope for import resolution
+            declErrors := c.inferMutuallyRecursiveDecls(ctx, scc, moduleNs, fileScopes)
+            errors = append(errors, declErrors...)
+        }
+    }
+
+    return errors
+}
+
+// inferMutuallyRecursiveDecls handles a group of mutually recursive declarations
+func (c *Checker) inferMutuallyRecursiveDecls(
+    ctx Context,
+    scc []*DepNode,
+    moduleNs *type_system.Namespace,
+    fileScopes map[string]*Scope,
+) []Error {
+    // Step 1: Create placeholder types for all declarations in the SCC
+    for _, node := range scc {
+        placeholder := createPlaceholderType(node.Decl)
+        moduleNs.Types[node.Name] = placeholder
+    }
+
+    // Step 2: Infer each declaration, using its file scope for imports
+    errors := []Error{}
+    for _, node := range scc {
+        fileScope := fileScopes[node.FilePath]
+        fileCtx := ctx.WithScope(fileScope)
+
+        declErrors := c.inferDeclWithTargetNs(fileCtx, node.Decl, moduleNs)
+        errors = append(errors, declErrors...)
+    }
+
+    return errors
 }
 ```
 
@@ -619,6 +821,32 @@ scope, errors := c.InferScript(ctx, script)
 - [ ] Verify parent chain works correctly (user scope → global scope)
 - [ ] Test that user code can access globals via parent chain lookup
 - [ ] Test that lookup traverses parent chain
+- [ ] Modify `InferModule` to use hybrid approach (unified DepGraph + file-scoped imports)
+- [ ] Implement `BuildDepGraphWithFileTracking` to track which file each declaration comes from
+- [ ] Implement `InferDepGraphWithFileScopes` to use file-specific scopes when inferring declarations
+- [ ] Process imports in Phase 1 (before building unified DepGraph)
+- [ ] Ensure module-level declarations are visible across files in same directory
+- [ ] Ensure import bindings are NOT visible across files
+- [ ] Ensure cross-file cyclic dependencies work correctly
+
+#### 3.3 Phase 3 Tests
+
+**Unit Tests**:
+- [ ] Scope chain traversal (Local → Global)
+- [ ] Global namespace isolation
+
+**Integration Tests**:
+- [ ] Load lib.es5.d.ts (globals)
+- [ ] Load lib.dom.d.ts (globals)
+- [ ] User code can access globals via parent chain lookup
+
+**File Scope vs Module Namespace Tests**:
+- [ ] Module declarations (types, functions) visible across files in same directory
+- [ ] Import bindings NOT visible across files (file-scoped)
+- [ ] File A declares type T, file B can use type T (shared module namespace)
+- [ ] File A imports "lodash", file B cannot use `lodash.map` (file-scoped imports)
+- [ ] Cross-file cyclic dependencies: file A has type Foo referencing Bar, file B has type Bar referencing Foo
+- [ ] Cross-file cycles with imports: file A imports "lodash" and declares type using lodash types, file B references that type
 
 ---
 
@@ -655,7 +883,9 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
         }
     }
 
-    // Bind package namespace as sub-namespace in current scope
+    // Bind package namespace as sub-namespace in current FILE's scope.
+    // This binding is file-scoped (like Go): other files in the same module
+    // must have their own import statements to access this package.
     pkgNs, ok := c.packageRegistry.Lookup(modulePath)
     if !ok {
         return fmt.Errorf("package %q not found in registry", modulePath)
@@ -770,6 +1000,37 @@ func (c *Checker) loadPackage(modulePath string) error {
 - [ ] Test that `import "lodash"` and `import "lodash/fp"` are separate
 - [ ] Document subpath import behavior
 
+#### 4.3 Phase 4 Tests
+
+**Unit Tests**:
+- [ ] Package namespace isolation
+- [ ] Simple imports
+- [ ] Aliased imports
+- [ ] Re-imports (no-op)
+- [ ] Qualified access (`pkg.symbol`)
+- [ ] Nested qualified access
+- [ ] Error: undefined package member
+- [ ] Error: bare package identifier used
+- [ ] Subpath imports create separate registry entries
+
+**File-Scoped Import Tests**:
+- [ ] Import in file A is not visible in file B (same module)
+- [ ] Each file must have its own import statement for packages it uses
+- [ ] Error: accessing package namespace without import statement in that file
+- [ ] Same package imported in multiple files works correctly (shared registry entry, separate bindings)
+
+**Integration Tests**:
+- [ ] Load globals, import package, use both in user code
+- [ ] Multiple packages with same symbol name (no conflict)
+- [ ] Nested `node_modules` with same package name (separate namespaces)
+- [ ] Load @types/node (package with named modules)
+- [ ] Load lodash (package with top-level exports)
+
+**Edge Cases**:
+- [ ] Circular dependencies (Package A imports B, which imports A)
+- [ ] Package re-exports (preserve type identity)
+- [ ] Package identity edge cases (nested node_modules, symlinked packages, monorepo packages)
+
 ---
 
 ### Phase 5: Local Shadowing and globalThis
@@ -860,83 +1121,35 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 - [ ] Test `globalThis` access to shadowed globals
 - [ ] Document `globalThis` behavior
 
+#### 5.3 Phase 5 Tests
+
+**Unit Tests**:
+- [ ] Local shadowing of globals
+- [ ] Shadowed globals are not accessible via unqualified names
+- [ ] `globalThis` access to global namespace
+
+**Integration Tests**:
+- [ ] Local type shadows global, access global via `globalThis`
+- [ ] Mixed file with `declare global` augmentation (augmentations go to global namespace)
+
 ---
 
-### Phase 6: Testing and Edge Cases
+### Phase 6: Final Testing and Documentation
 
-#### 6.1 Unit Tests
+#### 6.1 End-to-End Integration Tests
 
-**Core Infrastructure**:
-- [ ] Package registry operations (register, lookup, duplicate handling)
-- [ ] Sub-namespace binding and lookup
-- [ ] Scope chain traversal (Local → Global)
+Tests that exercise the complete system with all features working together:
 
-**File Classification**:
-- [ ] .d.ts files with top-level exports
-- [ ] .d.ts files without exports
-- [ ] .d.ts files with named modules
-- [ ] Mixed .d.ts files
+- [ ] Full workflow: load globals → import multiple packages → define local types that shadow globals → access shadowed globals via `globalThis` → use qualified package access
+- [ ] Complex project simulation with multiple .d.ts files (globals, packages, mixed)
 
-**Namespace Operations**:
-- [ ] Global namespace isolation
-- [ ] Package namespace isolation
-- [ ] Local shadowing of globals
-- [ ] `globalThis` access
-
-**Import and Access**:
-- [ ] Simple imports
-- [ ] Aliased imports
-- [ ] Re-imports (no-op)
-- [ ] Qualified access (`pkg.symbol`)
-- [ ] Nested qualified access
-- [ ] Error: undefined package member
-- [ ] Error: bare package identifier used
-
-#### 6.2 Integration Tests
-
-**End-to-End Scenarios**:
-- [ ] Load globals, import package, use both in user code
-- [ ] Local type shadows global, access global via `globalThis`
-- [ ] Multiple packages with same symbol name (no conflict)
-- [ ] Nested `node_modules` with same package name (separate namespaces)
-
-**TypeScript Interop**:
-- [ ] Load lib.es5.d.ts (globals)
-- [ ] Load lib.dom.d.ts (globals)
-- [ ] Load @types/node (package with named modules)
-- [ ] Load lodash (package with top-level exports)
-- [ ] Mixed file with `declare global` augmentation
-
-#### 6.3 Edge Cases
-
-**Circular Dependencies**:
-- [ ] Package A imports package B, which imports A
-- [ ] Solution: Load packages against global scope only, not each other
-
-**Re-exports**:
-- [ ] Package A re-exports types from package B
-- [ ] Ensure original package types are preserved
-
-**Global Augmentation**:
-- [ ] Package file with `declare global { ... }`
-- [ ] Ensure augmentations go to global namespace
-
-**Subpath Imports**:
-- [ ] `import "lodash"` vs `import "lodash/fp"`
-- [ ] Ensure separate namespaces
-
-**Package Identity Edge Cases**:
-- [ ] Nested `node_modules` with same package name
-- [ ] Symlinked packages
-- [ ] Monorepo packages
-
-#### 6.4 Performance Testing
+#### 6.2 Performance Testing
 
 - [ ] Measure type resolution time before/after changes
 - [ ] Ensure no significant regression (< 10% slowdown acceptable)
 - [ ] Profile hot paths if performance degrades
 
-#### 6.5 Documentation
+#### 6.3 Documentation
 
 - [ ] Update user-facing docs on import syntax
 - [ ] Document `globalThis` usage
@@ -962,7 +1175,8 @@ internal/checker/
     └── packages/
         ├── lodash.d.ts
         ├── ramda.d.ts
-        └── mixed.d.ts
+        ├── mixed.d.ts
+        └── export_equals.d.ts  // Tests export = Namespace pattern
 ```
 
 ### 6.2 Test Scenarios
@@ -1002,6 +1216,67 @@ declare global {
 
 User code should access `Window` as global, and `myFunc` via `my_pkg.myFunc`.
 
+#### Scenario 4: Export Equals Pattern
+```typescript
+// export_equals.d.ts
+declare namespace Foo {
+    export const bar: number;
+    export function baz(): string;
+}
+export = Foo;
+```
+
+This should be treated as equivalent to:
+```typescript
+export const bar: number;
+export function baz(): string;
+```
+
+User code imports this as `import "export_equals"` and accesses via `export_equals.bar` and `export_equals.baz`.
+
+#### Scenario 5: File-Scoped Imports
+```escalier
+// lib/file_a.esc
+import "lodash"
+
+val doubled = lodash.map([1, 2, 3], fn(x) { x * 2 })  // OK: lodash imported in this file
+```
+
+```escalier
+// lib/file_b.esc
+// No import statement for lodash
+
+val result = lodash.map([1, 2], fn(x) { x + 1 })  // ERROR: 'lodash' is not defined
+```
+
+Each file must have its own import statements. The import in `file_a.esc` does not make `lodash` available in `file_b.esc`.
+
+#### Scenario 6: Cross-File Cyclic Dependencies
+```escalier
+// lib/node.esc
+import "lodash"
+
+type Node = {
+    value: number,
+    children: Tree,  // References Tree from tree.esc
+}
+
+val createNode = fn(v: number): Node { { value: v, children: lodash.empty() } }
+```
+
+```escalier
+// lib/tree.esc
+type Tree = {
+    root: Node,  // References Node from node.esc
+    size: number,
+}
+```
+
+This should work correctly:
+- `Node` and `Tree` can reference each other (unified DepGraph handles the cycle)
+- `lodash` is only accessible in `node.esc` (file-scoped import)
+- `tree.esc` cannot use `lodash` without its own import
+
 ---
 
 ## 7. Migration and Backward Compatibility
@@ -1033,7 +1308,8 @@ This allows users to opt-in to new behavior gradually.
 
 Create a guide covering:
 - How to update import statements
-- How to use qualified access
+- How to use qualified access (e.g., `lodash.map` instead of `map`)
+- How to re-export package symbols (e.g., `export val map = lodash.map`)
 - How to handle shadowing conflicts
 - How to access globals via `globalThis`
 
@@ -1048,6 +1324,9 @@ Create a guide covering:
 - [ ] Local declarations can shadow globals
 - [ ] `globalThis` provides access to shadowed globals
 - [ ] .d.ts files are correctly classified
+- [ ] `export = Namespace` syntax is handled (expanded to top-level exports)
+- [ ] Imports are file-scoped (each file must import packages it uses)
+- [ ] Error reported when accessing package namespace without import in that file
 
 ### 8.2 Quality Requirements
 
@@ -1093,6 +1372,9 @@ From requirements.md section 10:
 2. **Circular Dependencies**: Edge case that may cause issues
    - Mitigation: Explicit handling, tests
 
+3. **DepGraph/InferModule Changes**: Modifying how modules are processed to support file-scoped imports while sharing module declarations
+   - Mitigation: Careful design of scope hierarchy, thorough testing of file vs module scope boundaries
+
 ### Low Risk Areas
 
 1. **Package Registry**: Simple data structure
@@ -1100,17 +1382,17 @@ From requirements.md section 10:
 
 ---
 
-## 10. Timeline and Milestones
+## 10. Milestones
 
-### Milestone 1: Infrastructure (Week 1)
+### Milestone 1: Infrastructure
 - [ ] Complete Phase 1: Package registry and data structures
 - [ ] Complete Phase 2: .d.ts classification
 
-### Milestone 2: Core Features (Week 2)
+### Milestone 2: Core Features
 - [ ] Complete Phase 3: Global namespace separation
 - [ ] Complete Phase 4: Package registry and imports
 
-### Milestone 3: Advanced Features and Testing (Week 3)
+### Milestone 3: Advanced Features and Testing
 - [ ] Complete Phase 5: Shadowing and globalThis
 - [ ] Complete Phase 6: Testing and edge cases
 - [ ] Documentation
@@ -1122,14 +1404,31 @@ From requirements.md section 10:
 ## 11. Open Questions
 
 1. **Should there be a way to bulk-import symbols from a package?**
-   - Example: `import "lodash" exposing (map, filter, reduce)`
-   - Decision: Not in initial implementation, can be added later
+   - No. All symbols from `import "lodash"` are accessible via the `lodash` namespace (e.g., `lodash.map`, `lodash.filter`) within the file containing the import statement.
 
-2. **How should TypeScript's `export = ` syntax be handled?**
-   - Need to investigate and document
+2. **How should TypeScript's `export =` syntax be handled?**
+   - When a .d.ts file uses `export = Namespace`, treat it as equivalent to top-level exports:
+     ```typescript
+     // This:
+     namespace Foo {
+       export const bar = ...
+       export const baz = ...
+     }
+     export = Foo
+
+     // Is equivalent to:
+     export const bar = ...
+     export const baz = ...
+     ```
 
 3. **Should package re-exports create aliases or copies?**
-   - Recommendation: Aliases to preserve type identity
+   - Aliases, to preserve type identity. Re-exports use explicit syntax:
+     ```escalier
+     import "lodash"
+
+     // re-export of `map` from "lodash"
+     export val map = lodash.map
+     ```
 
 4. **How should ambient module declarations in .d.ts files be handled?**
    - Example: `declare module "*.css" { ... }`
@@ -1164,6 +1463,9 @@ import "lodash"
 
 let result = lodash.map([1, 2, 3], fn(x) { x * 2 })  // Clear and explicit
 
+// Re-exporting package symbols
+export val map = lodash.map  // Creates an alias
+
 // Local shadowing
 type Array<T> = { items: T[] }
 let arr: Array<number>  // Local Array
@@ -1193,13 +1495,16 @@ type Namespace struct {
     Namespaces map[string]*Namespace  // For package identifiers
 }
 
-// Scope Chain
+// Scope Chain (per-file)
 globalScope (Parent: nil)
     ↑
-userScope (Parent: globalScope)
-    └── Namespaces:
+fileScope (Parent: globalScope)  // Each .esc file has its own fileScope
+    └── Namespaces (bound by import statements in this file):
         ├── "lodash" → points to packageRegistry["lodash"]
         └── "ramda" → points to packageRegistry["ramda"]
+
+// Note: Import bindings are file-scoped. If file_a.esc imports "lodash",
+// file_b.esc cannot access "lodash" unless it has its own import statement.
 ```
 
 ---
