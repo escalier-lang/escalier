@@ -45,20 +45,20 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 		return "", &GenericError{message: "Could not find package.json for import", span: importStmt.Span()}
 	}
 
-	moduleDir := filepath.Join(packageJsonDir, "node_modules", importStmt.ModulePath)
+	moduleDir := filepath.Join(packageJsonDir, "node_modules", importStmt.PackageName)
 
 	// Check if moduleDir is a symlink
 	fileInfo, err := os.Lstat(moduleDir)
 
 	if err != nil {
-		return "", &GenericError{message: "Could not locate module for import: " + importStmt.ModulePath, span: importStmt.Span()}
+		return "", &GenericError{message: "Could not locate module for import: " + importStmt.PackageName, span: importStmt.Span()}
 	}
 
 	if fileInfo.Mode()&os.ModeSymlink != 0 {
 		// Resolve the symlink
 		resolvedPath, err := os.Readlink(moduleDir)
 		if err != nil {
-			return "", &GenericError{message: "Could not resolve symlink for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+			return "", &GenericError{message: "Could not resolve symlink for module import: " + importStmt.PackageName, span: importStmt.Span()}
 		}
 		if filepath.IsAbs(resolvedPath) {
 			moduleDir = resolvedPath
@@ -72,25 +72,25 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	fmt.Fprintf(os.Stderr, "Reading package.json for module import at %s\n", pkgJsonPath)
 	pkgJsonBytes, err := os.ReadFile(pkgJsonPath)
 	if err != nil {
-		return "", &GenericError{message: "Could not read package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+		return "", &GenericError{message: "Could not read package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
 	}
 
 	var pkgJsonMap map[string]any
 	err = json.Unmarshal(pkgJsonBytes, &pkgJsonMap)
 	if err != nil {
-		return "", &GenericError{message: "Could not parse package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+		return "", &GenericError{message: "Could not parse package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
 	}
 
 	if typesField, ok := pkgJsonMap["types"]; ok {
 		typesStr, isString := typesField.(string)
 		if !isString {
-			return "", &GenericError{message: "Invalid types field in package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+			return "", &GenericError{message: "Invalid types field in package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
 		}
 		// Use typesField as the entry point for type definitions
 		return filepath.Join(moduleDir, typesStr), nil
 	}
 
-	return "", &GenericError{message: "No types field found in package.json for module import: " + importStmt.ModulePath, span: importStmt.Span()}
+	return "", &GenericError{message: "No types field found in package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
 }
 
 // TypeScript modules come in a few different flavours:
@@ -111,19 +111,19 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 		return errors
 	}
 
-	fmt.Fprintf(os.Stderr, "Resolved import %s to type definitions at %s\n", importStmt.ModulePath, typeDefPath)
+	fmt.Fprintf(os.Stderr, "Resolved import %s to type definitions at %s\n", importStmt.PackageName, typeDefPath)
 
 	typeDefModuleMap, err2 := loadTypeScriptModule(typeDefPath)
 	if err2 != nil {
-		errors = append(errors, &GenericError{message: "Could not load type definitions for module import: " + importStmt.ModulePath, span: importStmt.Span()})
+		errors = append(errors, &GenericError{message: "Could not load type definitions for module import: " + importStmt.PackageName, span: importStmt.Span()})
 		return errors
 	}
 
-	typeDefModule, ok := typeDefModuleMap[importStmt.ModulePath]
+	typeDefModule, ok := typeDefModuleMap[importStmt.PackageName]
 	if !ok {
 		globalModule, ok := typeDefModuleMap["global"]
 		if !ok {
-			errors = append(errors, &GenericError{message: "Type definitions for module import do not contain expected module: " + importStmt.ModulePath, span: importStmt.Span()})
+			errors = append(errors, &GenericError{message: "Type definitions for module import do not contain expected module: " + importStmt.PackageName, span: importStmt.Span()})
 			return errors
 		}
 
@@ -140,7 +140,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 		}
 
 		for name := range inferCtx.Scope.Namespace.Values {
-			fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n", importStmt.ModulePath, name)
+			fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n", importStmt.PackageName, name)
 		}
 
 		for _, specifier := range importStmt.Specifiers {
@@ -159,7 +159,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	}
 
 	for name := range inferCtx.Scope.Namespace.Values {
-		fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n", importStmt.ModulePath, name)
+		fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n", importStmt.PackageName, name)
 	}
 
 	for _, specifier := range importStmt.Specifiers {

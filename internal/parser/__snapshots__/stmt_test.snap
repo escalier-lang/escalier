@@ -7297,8 +7297,8 @@ nil
             },
         },
     },
-    ModulePath: "module",
-    span:       ast.Span{
+    PackageName: "module",
+    span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:36},
         SourceID: 0,
@@ -7337,8 +7337,8 @@ nil
             },
         },
     },
-    ModulePath: "module",
-    span:       ast.Span{
+    PackageName: "module",
+    span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:39},
         SourceID: 0,
@@ -7359,8 +7359,8 @@ nil
             },
         },
     },
-    ModulePath: "module",
-    span:       ast.Span{
+    PackageName: "module",
+    span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
         SourceID: 0,
@@ -7381,8 +7381,8 @@ nil
             },
         },
     },
-    ModulePath: "module",
-    span:       ast.Span{
+    PackageName: "module",
+    span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
         SourceID: 0,
@@ -7421,8 +7421,8 @@ nil
             },
         },
     },
-    ModulePath: "module",
-    span:       ast.Span{
+    PackageName: "module",
+    span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:46},
         SourceID: 0,
