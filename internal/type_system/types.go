@@ -2364,6 +2364,11 @@ func (ns *Namespace) SetNamespace(name string, subNs *Namespace) error {
 		ns.Namespaces = make(map[string]*Namespace)
 	}
 
+	// Check for conflicts with existing sub-namespaces
+	if _, exists := ns.Namespaces[name]; exists {
+		return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing namespace", name)
+	}
+
 	// Check for conflicts with types
 	if _, exists := ns.Types[name]; exists {
 		return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing type", name)
