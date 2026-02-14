@@ -43,29 +43,37 @@ Package Registry (shared across all files)
 ├── "ramda" namespace → { map, filter, ... }
 └── "@types/node" namespace → { ... }
 
-Scope Chain (for unqualified lookup):
-    globalScope (Namespace: globals)
+Scope Chain (for modules - three levels):
+    globalScope (Namespace: globals like Array, Promise, etc.)
         ↑ Parent
-    fileScope (Namespace: file-local bindings + package sub-namespaces)
-        ├── Local bindings (MyType, myFunc, ...)
+    moduleScope (Namespace: module-level declarations shared across files)
+        ↑ Parent
+    fileScope (Namespace: file-local import bindings)
         └── Package sub-namespaces (file-scoped, created by import statements):
             ├── "lodash" → points to registry entry
             └── "ramda" → points to registry entry
+
+Scope Chain (for scripts - two levels):
+    globalScope (Namespace: globals)
+        ↑ Parent
+    scriptScope (Namespace: local declarations + import bindings)
 ```
 
-Note: Each `.esc` file has its own file scope. Package sub-namespaces are bound per-file based on that file's import statements.
+Note: For modules, each `.esc` file has its own file scope for imports, but declarations are added to the shared module scope. For scripts, there's a single scope for both.
 
 **Unqualified lookup** (`Array`): Local → Global
 **Qualified lookup** (`lodash.map`): Lookup `lodash` in Local (finds sub-namespace) → Member access on that namespace
 
 ### 2.3 Access Patterns
 
-| Code | Lookup Path |
-|------|-------------|
-| `Array` | Local → Global (finds Global.Array) |
-| `MyType` | Local (finds Local.MyType) |
-| `lodash.map` | Local finds `lodash` sub-namespace → member access finds `map` |
+| Code | Lookup Path (for modules) |
+|------|---------------------------|
+| `Array` | fileScope → moduleScope → globalScope (finds globalScope.Array) |
+| `MyType` | fileScope → moduleScope (finds moduleScope.MyType) |
+| `lodash.map` | fileScope finds `lodash` sub-namespace → member access finds `map` |
 | `globalThis.Array` | Special `globalThis` binding → member access on global namespace |
+
+Note: For scripts, the lookup is simpler: scriptScope → globalScope.
 
 ## 3. Data Structure Changes
 
@@ -137,31 +145,31 @@ type NamedModule struct {
 }
 ```
 
-## 4. Implementation Phases
+## 4. Implementation Overview
 
-### Phase 1: Infrastructure Setup
+### 5.1 Infrastructure Setup
 **Goal**: Create package registry and update core data structures
 
-### Phase 2: .d.ts Classification
+### 5.2 .d.ts Classification
 **Goal**: Detect and classify .d.ts files (package vs global)
 
-### Phase 3: Global Namespace Separation
+### 5.3 Global Namespace Separation
 **Goal**: Isolate globals in their own namespace
 
-### Phase 4: Package Registry and Import Binding
+### 5.4 Package Registry and Import Binding
 **Goal**: Load packages into registry and bind as sub-namespaces
 
-### Phase 5: Local Shadowing and globalThis
+### 5.5 Local Shadowing and globalThis
 **Goal**: Enable local shadowing of globals + `globalThis` access
 
-### Phase 6: Final Testing and Documentation
+### 5.6 Final Testing and Documentation
 **Goal**: End-to-end integration tests, performance testing, and documentation
 
-## 5. Detailed Phase Implementation
+## 5. Detailed Implementation
 
-### Phase 1: Infrastructure Setup
+### 5.1 Infrastructure Setup
 
-#### 1.1 Create Package Registry
+#### 5.1.1 Create Package Registry
 **File**: `internal/checker/package_registry.go` (new file)
 
 ```go
@@ -202,7 +210,7 @@ func (pr *PackageRegistry) MustLookup(identity string) *type_system.Namespace {
 - [ ] Implement `Lookup()` and `MustLookup()` methods
 - [ ] Add unit tests for registry operations
 
-#### 1.2 Update Checker Structure
+#### 5.1.2 Update Checker Structure
 **File**: `internal/checker/checker.go`
 
 ```go
@@ -231,7 +239,7 @@ func NewChecker(...) *Checker {
 - [ ] Update `NewChecker()` to initialize registry
 - [ ] Update all Checker constructors/factories
 
-#### 1.3 Add Sub-Namespace Support
+#### 5.1.3 Add Sub-Namespace Support
 **File**: `internal/type_system/namespace.go` (or relevant file)
 
 ```go
@@ -273,7 +281,7 @@ func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
 - [ ] Add conflict detection (sub-namespace vs type/value names)
 - [ ] Write unit tests for sub-namespace operations
 
-#### 1.4 Phase 1 Tests
+#### 5.1.4 Infrastructure Setup Tests
 
 **Unit Tests**:
 - [ ] Package registry operations (register, lookup, duplicate handling)
@@ -281,9 +289,9 @@ func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
 
 ---
 
-### Phase 2: .d.ts Classification
+### 5.2 .d.ts Classification
 
-#### 2.1 Add Classification Detection
+#### 5.2.1 Add Classification Detection
 **File**: `internal/dts_parser/classifier.go` (new file)
 
 ```go
@@ -361,7 +369,7 @@ func expandExportEquals(file *ast.File) []ast.Node {
   - [ ] Edge case: file with re-exports
   - [ ] Edge case: file with `export = Namespace` (expand to top-level exports)
 
-#### 2.2 Resolve Package Identity
+#### 5.2.2 Resolve Package Identity
 **File**: `internal/dts_parser/package_identity.go` (new file)
 
 ```go
@@ -371,7 +379,12 @@ func ResolvePackageIdentity(dtsFilePath string) (string, error) {
     for {
         pkgJsonPath := filepath.Join(dir, "package.json")
         if fileExists(pkgJsonPath) {
-            return pkgJsonPath, nil
+            // Read package.json and extract "name" field
+            name, err := readPackageName(pkgJsonPath)
+            if err != nil {
+                return "", err
+            }
+            return name, nil  // Returns package name, e.g., "lodash" or "@types/node"
         }
 
         parent := filepath.Dir(dir)
@@ -410,7 +423,7 @@ func DerivePackageIdentifier(moduleName string) string {
   - [ ] Symlinked directories
 - [ ] Write tests for identity resolution
 
-#### 2.3 Phase 2 Tests
+#### 5.2.3 .d.ts Classification Tests
 
 **File Classification Tests**:
 - [ ] .d.ts files with top-level exports
@@ -424,7 +437,7 @@ func DerivePackageIdentifier(moduleName string) string {
 - [ ] Package identity resolution from file path
 - [ ] Package identifier derivation (scoped packages, hyphens)
 
-#### 2.4 Update Module Loader
+#### 5.2.4 Update Module Loader
 **File**: `internal/interop/load_typescript_module.go` (modify existing)
 
 ```go
@@ -483,9 +496,9 @@ type PackageDecls struct {
 
 ---
 
-### Phase 3: Global Namespace Separation
+### 5.3 Global Namespace Separation
 
-#### 3.1 Refactor Prelude Loading
+#### 5.3.1 Refactor Prelude Loading
 **File**: `internal/checker/prelude.go`
 
 Current approach likely looks like:
@@ -578,7 +591,7 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
 - [ ] Verify global scope is available to all user code scopes
 - [ ] Test that globals are isolated
 
-#### 3.2 Update InferModule and InferScript
+#### 5.3.2 Update InferModule and InferScript
 **Files**: `internal/checker/infer_module.go`, `internal/checker/infer_script.go`
 
 Escalier distinguishes between **modules** and **scripts**:
@@ -824,12 +837,14 @@ scope, errors := c.InferScript(ctx, script)
 - [ ] Modify `InferModule` to use hybrid approach (unified DepGraph + file-scoped imports)
 - [ ] Implement `BuildDepGraphWithFileTracking` to track which file each declaration comes from
 - [ ] Implement `InferDepGraphWithFileScopes` to use file-specific scopes when inferring declarations
+- [ ] Implement `inferDeclWithTargetNs` to infer a declaration using one scope but writing to another namespace
+- [ ] Implement `inferMutuallyRecursiveDecls` for handling SCCs with file-scoped imports
 - [ ] Process imports in Phase 1 (before building unified DepGraph)
 - [ ] Ensure module-level declarations are visible across files in same directory
 - [ ] Ensure import bindings are NOT visible across files
 - [ ] Ensure cross-file cyclic dependencies work correctly
 
-#### 3.3 Phase 3 Tests
+#### 5.3.3 Global Namespace Separation Tests
 
 **Unit Tests**:
 - [ ] Scope chain traversal (Local → Global)
@@ -850,9 +865,9 @@ scope, errors := c.InferScript(ctx, script)
 
 ---
 
-### Phase 4: Package Registry and Import Binding
+### 5.4 Package Registry and Import Binding
 
-#### 4.1 Load Packages into Registry
+#### 5.4.1 Load Packages into Registry
 **File**: `internal/checker/infer_import.go`
 
 Current approach (likely):
@@ -866,7 +881,9 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
 
 New approach:
 ```go
-func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
+// inferImportStatement takes a context with the file scope
+// The import binding is added to ctx.Scope.Namespace (the file's namespace)
+func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error {
     modulePath := stmt.ModulePath
 
     // Derive package identifier for binding
@@ -891,8 +908,9 @@ func (c *Checker) inferImportStatement(stmt *ast.ImportStmt) error {
         return fmt.Errorf("package %q not found in registry", modulePath)
     }
 
-    currentNs := c.currentScope.Namespace
-    if err := currentNs.setNamespace(packageIdent, pkgNs); err != nil {
+    // ctx.Scope is the file scope, so this binding is file-scoped
+    fileNs := ctx.Scope.Namespace
+    if err := fileNs.setNamespace(packageIdent, pkgNs); err != nil {
         return err
     }
 
@@ -967,20 +985,26 @@ func (c *Checker) loadPackage(modulePath string) error {
 }
 ```
 
+**Note on multi-file packages**: Some packages like `@types/node` span multiple .d.ts files. The current `loadPackage()` sketch assumes single-file packages. For multi-file packages, we may need to:
+- Load all .d.ts files in the package
+- Merge their declarations into a single package namespace
+- This is a simplification for now; full support for multi-file packages can be added later
+
 **Tasks**:
 - [ ] Implement new `inferImportStatement()` logic
 - [ ] Implement `loadPackage()` method
-- [ ] Implement `DerivePackageIdentifier()` (from Phase 2)
+- [ ] Implement `DerivePackageIdentifier()` (from 5.2)
 - [ ] Handle import aliases (`import "pkg" as alias`)
 - [ ] Handle re-imports (no-op if already loaded)
 - [ ] Add caching to avoid re-loading same package
+- [ ] Consider multi-file package support (e.g., @types/node)
 - [ ] Test various import scenarios:
   - [ ] Simple import
   - [ ] Import with alias
   - [ ] Multiple imports
   - [ ] Circular imports (edge case)
 
-#### 4.2 Handle Subpath Imports
+#### 5.4.2 Handle Subpath Imports
 **File**: `internal/checker/infer_import.go`
 
 ```go
@@ -1000,7 +1024,7 @@ func (c *Checker) loadPackage(modulePath string) error {
 - [ ] Test that `import "lodash"` and `import "lodash/fp"` are separate
 - [ ] Document subpath import behavior
 
-#### 4.3 Phase 4 Tests
+#### 5.4.3 Package Registry and Import Binding Tests
 
 **Unit Tests**:
 - [ ] Package namespace isolation
@@ -1033,9 +1057,9 @@ func (c *Checker) loadPackage(modulePath string) error {
 
 ---
 
-### Phase 5: Local Shadowing and globalThis
+### 5.5 Local Shadowing and globalThis
 
-#### 5.1 Implement Shadowing via Parent Chain
+#### 5.5.1 Implement Shadowing via Parent Chain
 This should already work if the scope chain is set up correctly (Local → Global). Verify with tests.
 
 **File**: `internal/checker/scope.go`
@@ -1064,7 +1088,7 @@ func (s *Scope) Lookup(name string) (*Type, error) {
 - [ ] Test local shadowing of globals
 - [ ] Test that shadowed globals are not accessible via unqualified names
 
-#### 5.2 Implement globalThis
+#### 5.5.2 Implement globalThis
 **File**: `internal/checker/prelude.go` or `checker.go`
 
 Add a special `globalThis` binding that references the global namespace:
@@ -1121,7 +1145,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 - [ ] Test `globalThis` access to shadowed globals
 - [ ] Document `globalThis` behavior
 
-#### 5.3 Phase 5 Tests
+#### 5.5.3 Local Shadowing and globalThis Tests
 
 **Unit Tests**:
 - [ ] Local shadowing of globals
@@ -1134,22 +1158,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 ---
 
-### Phase 6: Final Testing and Documentation
+### 5.6 Final Testing and Documentation
 
-#### 6.1 End-to-End Integration Tests
+#### 5.6.1 End-to-End Integration Tests
 
 Tests that exercise the complete system with all features working together:
 
 - [ ] Full workflow: load globals → import multiple packages → define local types that shadow globals → access shadowed globals via `globalThis` → use qualified package access
 - [ ] Complex project simulation with multiple .d.ts files (globals, packages, mixed)
 
-#### 6.2 Performance Testing
+#### 5.6.2 Performance Testing
 
 - [ ] Measure type resolution time before/after changes
 - [ ] Ensure no significant regression (< 10% slowdown acceptable)
 - [ ] Profile hot paths if performance degrades
 
-#### 6.3 Documentation
+#### 5.6.3 Documentation
 
 - [ ] Update user-facing docs on import syntax
 - [ ] Document `globalThis` usage
@@ -1385,16 +1409,16 @@ From requirements.md section 10:
 ## 10. Milestones
 
 ### Milestone 1: Infrastructure
-- [ ] Complete Phase 1: Package registry and data structures
-- [ ] Complete Phase 2: .d.ts classification
+- [ ] Complete 5.1: Package registry and data structures
+- [ ] Complete 5.2: .d.ts classification
 
 ### Milestone 2: Core Features
-- [ ] Complete Phase 3: Global namespace separation
-- [ ] Complete Phase 4: Package registry and imports
+- [ ] Complete 5.3: Global namespace separation
+- [ ] Complete 5.4: Package registry and imports
 
 ### Milestone 3: Advanced Features and Testing
-- [ ] Complete Phase 5: Shadowing and globalThis
-- [ ] Complete Phase 6: Testing and edge cases
+- [ ] Complete 5.5: Shadowing and globalThis
+- [ ] Complete 5.6: Testing and edge cases
 - [ ] Documentation
 - [ ] Migration guide
 - [ ] Release
@@ -1495,16 +1519,24 @@ type Namespace struct {
     Namespaces map[string]*Namespace  // For package identifiers
 }
 
-// Scope Chain (per-file)
+// Scope Chain for Modules (three levels)
 globalScope (Parent: nil)
     ↑
-fileScope (Parent: globalScope)  // Each .esc file has its own fileScope
+moduleScope (Parent: globalScope)  // Shared namespace for module declarations
+    ↑
+fileScope (Parent: moduleScope)  // Each .esc file has its own fileScope
     └── Namespaces (bound by import statements in this file):
         ├── "lodash" → points to packageRegistry["lodash"]
         └── "ramda" → points to packageRegistry["ramda"]
 
+// Scope Chain for Scripts (two levels)
+globalScope (Parent: nil)
+    ↑
+scriptScope (Parent: globalScope)  // Single scope for declarations + imports
+
 // Note: Import bindings are file-scoped. If file_a.esc imports "lodash",
 // file_b.esc cannot access "lodash" unless it has its own import statement.
+// Module declarations (types, functions) go to moduleScope and ARE visible across files.
 ```
 
 ---
