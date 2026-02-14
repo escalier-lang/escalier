@@ -2357,6 +2357,41 @@ func NewNamespace() *Namespace {
 	}
 }
 
+// SetNamespace binds a sub-namespace to the given name in this namespace.
+// Returns an error if the name conflicts with an existing type or value.
+func (ns *Namespace) SetNamespace(name string, subNs *Namespace) error {
+	if ns.Namespaces == nil {
+		ns.Namespaces = make(map[string]*Namespace)
+	}
+
+	// Check for conflicts with existing sub-namespaces
+	if _, exists := ns.Namespaces[name]; exists {
+		return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing namespace", name)
+	}
+
+	// Check for conflicts with types
+	if _, exists := ns.Types[name]; exists {
+		return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing type", name)
+	}
+	// Check for conflicts with values
+	if _, exists := ns.Values[name]; exists {
+		return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing value", name)
+	}
+
+	ns.Namespaces[name] = subNs
+	return nil
+}
+
+// GetNamespace returns the sub-namespace bound to the given name.
+// Returns (namespace, true) if found, or (nil, false) if not found.
+func (ns *Namespace) GetNamespace(name string) (*Namespace, bool) {
+	if ns.Namespaces == nil {
+		return nil, false
+	}
+	subNs, ok := ns.Namespaces[name]
+	return subNs, ok
+}
+
 type NamespaceType struct {
 	Namespace  *Namespace
 	provenance Provenance

@@ -40,10 +40,10 @@ func GetNamespaceCtx(
 	ns := ctx.Scope.Namespace
 	nsCtx := ctx
 	for part := range strings.SplitSeq(nsName, ".") {
-		if _, ok := ns.Namespaces[part]; !ok {
-			ns.Namespaces[part] = type_system.NewNamespace()
+		if _, ok := ns.GetNamespace(part); !ok {
+			ns.SetNamespace(part, type_system.NewNamespace())
 		}
-		ns = ns.Namespaces[part]
+		ns, _ = ns.GetNamespace(part)
 		nsCtx = nsCtx.WithNewScopeAndNamespace(ns)
 	}
 	return nsCtx

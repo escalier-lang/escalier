@@ -181,7 +181,7 @@ func (v *symbolCollector) EnterExpr(e ast.Expr) bool {
 		if _, exists := v.libNS.Values[ident.Name]; exists {
 			v.usedSymbols[ident.Name] = true
 		}
-		if _, exists := v.libNS.Namespaces[ident.Name]; exists {
+		if _, exists := v.libNS.GetNamespace(ident.Name); exists {
 			v.usedSymbols[ident.Name] = true
 		}
 	}

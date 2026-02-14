@@ -606,7 +606,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		if propKey, ok := key.(PropertyKey); ok {
 			if value := t.Namespace.Values[propKey.Name]; value != nil {
 				return value.Type, errors
-			} else if namespace := t.Namespace.Namespaces[propKey.Name]; namespace != nil {
+			} else if namespace, ok := t.Namespace.GetNamespace(propKey.Name); ok {
 				return type_system.NewNamespaceType(nil, namespace), errors
 			} else {
 				errors = append(errors, &UnknownPropertyError{

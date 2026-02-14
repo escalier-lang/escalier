@@ -176,6 +176,8 @@ type NamedModule struct {
 package checker
 
 import (
+    "fmt"
+
     "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -190,57 +192,77 @@ func NewPackageRegistry() *PackageRegistry {
 }
 
 func (pr *PackageRegistry) Register(identity string, ns *type_system.Namespace) error {
-    // Validate identity
-    // Register namespace
-    // Handle duplicate registrations (merge or error)
+    if identity == "" {
+        return fmt.Errorf("package identity cannot be empty")
+    }
+    if ns == nil {
+        return fmt.Errorf("package namespace cannot be nil")
+    }
+    if _, exists := pr.packages[identity]; exists {
+        return fmt.Errorf("package %q is already registered", identity)
+    }
+    pr.packages[identity] = ns
+    return nil
 }
 
 func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool) {
-    // Simple map lookup
+    ns, ok := pr.packages[identity]
+    return ns, ok
 }
 
 func (pr *PackageRegistry) MustLookup(identity string) *type_system.Namespace {
-    // Panic if not found (for internal use)
+    ns, ok := pr.packages[identity]
+    if !ok {
+        panic(fmt.Sprintf("package %q not found in registry", identity))
+    }
+    return ns
+}
+
+func (pr *PackageRegistry) Has(identity string) bool {
+    _, ok := pr.packages[identity]
+    return ok
 }
 ```
 
 **Tasks**:
-- [ ] Create `package_registry.go` with basic structure
-- [ ] Implement `Register()` method with validation
-- [ ] Implement `Lookup()` and `MustLookup()` methods
-- [ ] Add unit tests for registry operations
+- [x] Create `package_registry.go` with basic structure
+- [x] Implement `Register()` method with validation
+- [x] Implement `Lookup()` and `MustLookup()` methods
+- [x] Add unit tests for registry operations
 
 #### 5.1.2 Update Checker Structure
 **File**: `internal/checker/checker.go`
 
 ```go
 type Checker struct {
-    // ... existing fields ...
-    packageRegistry *PackageRegistry
-    globalScope     *Scope
+    TypeVarID       int
+    SymbolID        int
+    Schema          *gqlast.Schema
+    OverloadDecls   map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
+    PackageRegistry *PackageRegistry           // Registry for package namespaces (separate from scope chain)
+    GlobalScope     *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 }
 
-func NewChecker(...) *Checker {
-    c := &Checker{
-        packageRegistry: NewPackageRegistry(),
-        // ... other initialization ...
+func NewChecker() *Checker {
+    return &Checker{
+        TypeVarID:       0,
+        SymbolID:        0,
+        Schema:          nil,
+        OverloadDecls:   make(map[string][]*ast.FuncDecl),
+        PackageRegistry: NewPackageRegistry(),
+        GlobalScope:     nil, // Will be set by initializeGlobalScope() during prelude loading
     }
-
-    // Initialize global scope
-    c.globalScope = c.initializeGlobalScope()
-
-    return c
 }
 ```
 
 **Tasks**:
-- [ ] Add `packageRegistry` field to Checker
-- [ ] Add `globalScope` field to Checker
-- [ ] Update `NewChecker()` to initialize registry
-- [ ] Update all Checker constructors/factories
+- [x] Add `PackageRegistry` field to Checker
+- [x] Add `GlobalScope` field to Checker
+- [x] Update `NewChecker()` to initialize registry
+- [x] Update all Checker constructors/factories
 
 #### 5.1.3 Add Sub-Namespace Support
-**File**: `internal/type_system/namespace.go` (or relevant file)
+**File**: `internal/type_system/types.go`
 
 ```go
 type Namespace struct {
@@ -249,15 +271,18 @@ type Namespace struct {
     Namespaces map[string]*Namespace  // already exists
 }
 
-func (ns *Namespace) setNamespace(name string, subNs *Namespace) error {
+// SetNamespace binds a sub-namespace to the given name in this namespace.
+// Returns an error if the name conflicts with an existing type or value.
+func (ns *Namespace) SetNamespace(name string, subNs *Namespace) error {
     if ns.Namespaces == nil {
         ns.Namespaces = make(map[string]*Namespace)
     }
 
-    // Check for conflicts with types/values
+    // Check for conflicts with types
     if _, exists := ns.Types[name]; exists {
         return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing type", name)
     }
+    // Check for conflicts with values
     if _, exists := ns.Values[name]; exists {
         return fmt.Errorf("cannot bind sub-namespace %q: conflicts with existing value", name)
     }
@@ -266,7 +291,9 @@ func (ns *Namespace) setNamespace(name string, subNs *Namespace) error {
     return nil
 }
 
-func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
+// GetNamespace returns the sub-namespace bound to the given name.
+// Returns (namespace, true) if found, or (nil, false) if not found.
+func (ns *Namespace) GetNamespace(name string) (*Namespace, bool) {
     if ns.Namespaces == nil {
         return nil, false
     }
@@ -276,35 +303,47 @@ func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
 ```
 
 **Tasks**:
-- [ ] Implement `setNamespace()` method
-- [ ] Implement `getNamespace()` method
-- [ ] Add conflict detection (sub-namespace vs type/value names)
-- [ ] Write unit tests for sub-namespace operations
+- [x] Implement `SetNamespace()` method
+- [x] Implement `GetNamespace()` method
+- [x] Add conflict detection (sub-namespace vs type/value names)
+- [x] Write unit tests for sub-namespace operations
 
 #### 5.1.4 Update Import Statement AST
-**File**: `internal/ast/statements.go` (or relevant AST file)
+**File**: `internal/ast/stmt.go`
 
-Rename the `ModulePath` field to `PackageName` to better reflect that imports reference named npm packages, not arbitrary module paths.
+Renamed the `ModulePath` field to `PackageName` to better reflect that imports reference named npm packages, not arbitrary module paths.
 
 ```go
 type ImportStmt struct {
-    PackageName string  // e.g., "lodash", "@types/node", "lodash/fp"
-    Alias       string  // optional alias for the package identifier
-    // ... other fields ...
+    Specifiers  []*ImportSpecifier
+    PackageName string // e.g., "lodash", "@types/node", "lodash/fp"
+    span        Span
+}
+
+func NewImportStmt(specifiers []*ImportSpecifier, packageName string, span Span) *ImportStmt {
+    return &ImportStmt{Specifiers: specifiers, PackageName: packageName, span: span}
 }
 ```
 
 **Tasks**:
-- [ ] Rename `ImportStmt.ModulePath` to `ImportStmt.PackageName`
-- [ ] Update all references to `ModulePath` in the codebase
-- [ ] Update parser to populate `PackageName` field
-- [ ] Update any serialization/deserialization code
+- [x] Rename `ImportStmt.ModulePath` to `ImportStmt.PackageName`
+- [x] Update all references to `ModulePath` in the codebase
+- [x] Update parser to populate `PackageName` field (parser already uses constructor)
+- [x] Update any serialization/deserialization code (snapshot tests updated)
 
 #### 5.1.5 Infrastructure Setup Tests
 
-**Unit Tests**:
-- [ ] Package registry operations (register, lookup, duplicate handling)
-- [ ] Sub-namespace binding and lookup
+**Unit Tests** (in `internal/checker/tests/package_registry_test.go`):
+- [x] Package registry operations (register, lookup, duplicate handling)
+- [x] Empty identity and nil namespace validation
+- [x] Has() and MustLookup() methods
+- [x] Multiple packages registration
+
+**Unit Tests** (in `internal/type_system/namespace_test.go`):
+- [x] Sub-namespace binding and lookup
+- [x] Conflict detection with types and values
+- [x] Nil Namespaces map handling
+- [x] Multiple and nested sub-namespaces
 
 ---
 
@@ -1428,7 +1467,7 @@ From requirements.md section 10:
 ## 10. Milestones
 
 ### Milestone 1: Infrastructure
-- [ ] Complete 5.1: Package registry and data structures
+- [x] Complete 5.1: Package registry and data structures
 - [ ] Complete 5.2: .d.ts classification
 
 ### Milestone 2: Core Features

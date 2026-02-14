@@ -74,13 +74,13 @@ func NewImportSpecifier(name, alias string, span Span) *ImportSpecifier {
 func (i *ImportSpecifier) Span() Span { return i.span }
 
 type ImportStmt struct {
-	Specifiers []*ImportSpecifier
-	ModulePath string
-	span       Span
+	Specifiers  []*ImportSpecifier
+	PackageName string // e.g., "lodash", "@types/node", "lodash/fp"
+	span        Span
 }
 
-func NewImportStmt(specifiers []*ImportSpecifier, modulePath string, span Span) *ImportStmt {
-	return &ImportStmt{Specifiers: specifiers, ModulePath: modulePath, span: span}
+func NewImportStmt(specifiers []*ImportSpecifier, packageName string, span Span) *ImportStmt {
+	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, span: span}
 }
 func (*ImportStmt) isStmt()      {}
 func (s *ImportStmt) Span() Span { return s.span }
