@@ -52,7 +52,7 @@ func (s *Scope) setValue(name string, binding *type_system.Binding) {
 }
 
 func (s *Scope) getNamespace(name string) *type_system.Namespace {
-	if v, ok := s.Namespace.Namespaces[name]; ok {
+	if v, ok := s.Namespace.GetNamespace(name); ok {
 		return v
 	}
 	if s.Parent != nil {
@@ -62,10 +62,12 @@ func (s *Scope) getNamespace(name string) *type_system.Namespace {
 }
 
 func (s *Scope) setNamespace(name string, namespace *type_system.Namespace) {
-	if _, ok := s.Namespace.Namespaces[name]; ok {
+	if _, ok := s.Namespace.GetNamespace(name); ok {
 		panic("namespace already exists")
 	}
-	s.Namespace.Namespaces[name] = namespace
+	if err := s.Namespace.SetNamespace(name, namespace); err != nil {
+		panic(err)
+	}
 }
 
 func (s *Scope) getTypeAlias(name string) *type_system.TypeAlias {

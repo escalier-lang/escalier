@@ -164,7 +164,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 
 	for _, specifier := range importStmt.Specifiers {
 		if specifier.Name == "*" {
-			ctx.Scope.Namespace.Namespaces[specifier.Alias] = inferCtx.Scope.Namespace
+			ctx.Scope.Namespace.SetNamespace(specifier.Alias, inferCtx.Scope.Namespace)
 		}
 	}
 

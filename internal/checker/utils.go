@@ -205,7 +205,7 @@ func resolveQualifiedNamespace(ctx Context, qualIdent type_system.QualIdent) *ty
 			return nil
 		}
 		// Then look for the right part in the resolved namespace
-		if namespace, ok := leftNamespace.Namespaces[qi.Right.Name]; ok {
+		if namespace, ok := leftNamespace.GetNamespace(qi.Right.Name); ok {
 			return namespace
 		}
 		return nil

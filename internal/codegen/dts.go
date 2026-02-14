@@ -452,8 +452,8 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		// 3. Outside the namespace, create a type alias for the enum (union of variants)
 
 		// Get the enum namespace from the type system
-		enumNS := namespace.Namespaces[decl.Name.Name]
-		if enumNS == nil {
+		enumNS, ok := namespace.GetNamespace(decl.Name.Name)
+		if !ok {
 			return nil
 		}
 
@@ -1269,7 +1269,7 @@ func findNamespace(rootNS *type_sys.Namespace, namespaceStr string) *type_sys.Na
 	currentNS := rootNS
 
 	for _, part := range parts {
-		if nestedNS, exists := currentNS.Namespaces[part]; exists {
+		if nestedNS, exists := currentNS.GetNamespace(part); exists {
 			currentNS = nestedNS
 		} else {
 			// Namespace part not found, return nil
