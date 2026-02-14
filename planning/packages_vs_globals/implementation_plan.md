@@ -281,7 +281,26 @@ func (ns *Namespace) getNamespace(name string) (*Namespace, bool) {
 - [ ] Add conflict detection (sub-namespace vs type/value names)
 - [ ] Write unit tests for sub-namespace operations
 
-#### 5.1.4 Infrastructure Setup Tests
+#### 5.1.4 Update Import Statement AST
+**File**: `internal/ast/statements.go` (or relevant AST file)
+
+Rename the `ModulePath` field to `PackageName` to better reflect that imports reference named npm packages, not arbitrary module paths.
+
+```go
+type ImportStmt struct {
+    PackageName string  // e.g., "lodash", "@types/node", "lodash/fp"
+    Alias       string  // optional alias for the package identifier
+    // ... other fields ...
+}
+```
+
+**Tasks**:
+- [ ] Rename `ImportStmt.ModulePath` to `ImportStmt.PackageName`
+- [ ] Update all references to `ModulePath` in the codebase
+- [ ] Update parser to populate `PackageName` field
+- [ ] Update any serialization/deserialization code
+
+#### 5.1.5 Infrastructure Setup Tests
 
 **Unit Tests**:
 - [ ] Package registry operations (register, lookup, duplicate handling)
@@ -884,30 +903,23 @@ New approach:
 // inferImportStatement takes a context with the file scope
 // The import binding is added to ctx.Scope.Namespace (the file's namespace)
 func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error {
-    modulePath := stmt.ModulePath
+    packageName := stmt.PackageName  // e.g., "lodash", "@types/node", "lodash/fp"
 
-    // Derive package identifier for binding
+    // Derive package identifier for binding (used as the local name in user code)
     packageIdent := stmt.Alias
     if packageIdent == "" {
-        packageIdent = DerivePackageIdentifier(modulePath)
+        packageIdent = DerivePackageIdentifier(packageName)
     }
 
-    // Check if package already loaded
-    if _, exists := c.packageRegistry.Lookup(modulePath); !exists {
-        // Load package for the first time
-        if err := c.loadPackage(modulePath); err != nil {
-            return err
-        }
+    // Load package and get its namespace directly
+    pkgNs, err := c.loadPackageForImport(packageName)
+    if err != nil {
+        return err
     }
 
     // Bind package namespace as sub-namespace in current FILE's scope.
     // This binding is file-scoped (like Go): other files in the same module
     // must have their own import statements to access this package.
-    pkgNs, ok := c.packageRegistry.Lookup(modulePath)
-    if !ok {
-        return fmt.Errorf("package %q not found in registry", modulePath)
-    }
-
     // ctx.Scope is the file scope, so this binding is file-scoped
     fileNs := ctx.Scope.Namespace
     if err := fileNs.setNamespace(packageIdent, pkgNs); err != nil {
@@ -917,59 +929,70 @@ func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error 
     return nil
 }
 
-func (c *Checker) loadPackage(modulePath string) error {
+// loadPackageForImport loads a package and returns the namespace
+// that corresponds to the given package name
+func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespace, error) {
     // Resolve to file path via Node module resolution
-    filePath, err := c.resolveModule(modulePath)
+    filePath, err := c.resolvePackage(packageName)
     if err != nil {
-        return fmt.Errorf("cannot resolve module %q: %w", modulePath, err)
+        return nil, fmt.Errorf("cannot resolve package %q: %w", packageName, err)
     }
 
     // Load and classify
+    // LoadTypeScriptModule already populates module.Packages with correct keys:
+    // - For top-level exports: key is result of ResolvePackageIdentity (package name from package.json)
+    // - For named modules: key is the module name string (e.g., "lodash", "lodash/fp")
     module, err := LoadTypeScriptModule(filePath)
     if err != nil {
-        return err
+        return nil, err
     }
 
-    // Determine package identity
-    var packageIdentity string
-    if len(module.Packages) == 1 && module.GlobalDecls == nil {
-        // Single package file - use resolved identity
-        packageIdentity, err = ResolvePackageIdentity(filePath)
-        if err != nil {
-            return err
-        }
-    } else {
-        // Named module - use module name as identity
-        packageIdentity = modulePath
-    }
-
-    // Create package namespace
-    pkgNs := type_system.NewNamespace()
-    pkgScope := &Scope{
-        Parent:    c.globalScope,  // Packages can reference globals
-        Namespace: pkgNs,
-    }
-
-    // Infer package declarations
-    pkgDecls := module.Packages[packageIdentity]
-    if pkgDecls == nil && len(module.Packages) > 0 {
-        // Take the first (and likely only) package
-        for _, decls := range module.Packages {
-            pkgDecls = decls
+    // Determine which package identity corresponds to the import
+    // Priority:
+    // 1. Exact match with packageName (e.g., `declare module "lodash"` matches `import "lodash"`)
+    // 2. If only one package, use that (e.g., top-level exports from a single-package file)
+    var matchingIdentity string
+    if _, exists := module.Packages[packageName]; exists {
+        matchingIdentity = packageName
+    } else if len(module.Packages) == 1 {
+        for identity := range module.Packages {
+            matchingIdentity = identity
             break
         }
+    } else {
+        return nil, fmt.Errorf("cannot determine package identity for import %q", packageName)
     }
 
-    // Build dep graph and infer package declarations
-    pkgModule := &ast.Module{Decls: pkgDecls.Decls}
-    depGraph := dep_graph.BuildDepGraph(pkgModule)
-    ctx := Context{Scope: pkgScope}
-    if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
-        return errs[0]  // or collect all errors
+    // Check if already registered (handles re-imports)
+    if pkgNs, exists := c.packageRegistry.Lookup(matchingIdentity); exists {
+        return pkgNs, nil
     }
 
-    // Register in package registry
-    c.packageRegistry.Register(modulePath, pkgNs)
+    // Register all packages from this file (they may be needed by other imports)
+    for packageIdentity, pkgDecls := range module.Packages {
+        // Skip if already registered
+        if _, exists := c.packageRegistry.Lookup(packageIdentity); exists {
+            continue
+        }
+
+        // Create package namespace
+        pkgNs := type_system.NewNamespace()
+        pkgScope := &Scope{
+            Parent:    c.globalScope,  // Packages can reference globals
+            Namespace: pkgNs,
+        }
+
+        // Build dep graph and infer package declarations
+        pkgModule := &ast.Module{Decls: pkgDecls.Decls}
+        depGraph := dep_graph.BuildDepGraph(pkgModule)
+        ctx := Context{Scope: pkgScope}
+        if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
+            return nil, errs[0]
+        }
+
+        // Register in package registry
+        c.packageRegistry.Register(packageIdentity, pkgNs)
+    }
 
     // Handle global augmentations if any
     if len(module.GlobalDecls) > 0 {
@@ -977,22 +1000,24 @@ func (c *Checker) loadPackage(modulePath string) error {
         globalDepGraph := dep_graph.BuildDepGraph(globalModule)
         globalCtx := Context{Scope: c.globalScope}
         if errs := c.InferDepGraph(globalCtx, globalDepGraph); len(errs) > 0 {
-            return errs[0]  // or collect all errors
+            return nil, errs[0]
         }
     }
 
-    return nil
+    // Return the namespace for the requested package
+    pkgNs, _ := c.packageRegistry.Lookup(matchingIdentity)
+    return pkgNs, nil
 }
 ```
 
-**Note on multi-file packages**: Some packages like `@types/node` span multiple .d.ts files. The current `loadPackage()` sketch assumes single-file packages. For multi-file packages, we may need to:
+**Note on multi-file packages**: Some packages like `@types/node` span multiple .d.ts files. The current `loadPackageForImport()` sketch assumes single-file packages. For multi-file packages, we may need to:
 - Load all .d.ts files in the package
 - Merge their declarations into a single package namespace
 - This is a simplification for now; full support for multi-file packages can be added later
 
 **Tasks**:
 - [ ] Implement new `inferImportStatement()` logic
-- [ ] Implement `loadPackage()` method
+- [ ] Implement `loadPackageForImport()` method
 - [ ] Implement `DerivePackageIdentifier()` (from 5.2)
 - [ ] Handle import aliases (`import "pkg" as alias`)
 - [ ] Handle re-imports (no-op if already loaded)
@@ -1007,21 +1032,15 @@ func (c *Checker) loadPackage(modulePath string) error {
 #### 5.4.2 Handle Subpath Imports
 **File**: `internal/checker/infer_import.go`
 
-```go
-func (c *Checker) loadPackage(modulePath string) error {
-    // ... existing code ...
-
-    // For subpath imports, use full path as identity
-    // e.g., "lodash/array" is separate from "lodash"
-    packageIdentity := modulePath
-
-    // ... rest of loading logic ...
-}
-```
+Subpath imports (e.g., `import "lodash/fp"`) are handled naturally by `LoadTypeScriptModule`:
+- When loading `lodash/fp`, it resolves to a different `.d.ts` file than `lodash`
+- If that file has top-level exports, `ResolvePackageIdentity` returns the package name (e.g., `"lodash"` if both are in the same package)
+- If that file uses `declare module "lodash/fp"`, the module name string `"lodash/fp"` becomes the identity
+- Each distinct identity gets its own entry in the package registry
 
 **Tasks**:
-- [ ] Ensure subpath imports create separate registry entries
-- [ ] Test that `import "lodash"` and `import "lodash/fp"` are separate
+- [ ] Ensure subpath imports create separate registry entries when they resolve to different packages
+- [ ] Test that `import "lodash"` and `import "lodash/fp"` work correctly (may be same or different packages depending on .d.ts structure)
 - [ ] Document subpath import behavior
 
 #### 5.4.3 Package Registry and Import Binding Tests
