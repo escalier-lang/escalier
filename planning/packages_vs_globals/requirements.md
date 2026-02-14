@@ -103,15 +103,35 @@ declare module "timers" {
 }
 ```
 
-### 3.4 Classification Summary
+### 3.4 Rule 4: `export = Namespace` → Expand to Top-Level Exports
+
+When a `.d.ts` file uses the `export = Namespace` pattern, treat it as equivalent to top-level exports by expanding the namespace members:
+
+```typescript
+// This pattern:
+declare namespace Foo {
+    export const bar: number;
+    export function baz(): string;
+}
+export = Foo;
+
+// Is treated as equivalent to:
+export const bar: number;
+export function baz(): string;
+```
+
+This allows CommonJS-style module exports to be handled consistently with ES module exports.
+
+### 3.5 Classification Summary
 
 | File Characteristics | Classification | Package Identity |
 |---------------------|----------------|------------------|
 | Has top-level `export` | Package | Path to closest `package.json` |
+| Has `export = Namespace` | Package (expanded) | Path to closest `package.json` |
 | `declare module "name"` block | Package (named) | The module name string (e.g., `"lodash"`, `"lodash/fp"`) |
 | No exports, outside named modules | Global | N/A |
 
-### 3.5 Mixed Files
+### 3.6 Mixed Files
 
 A single `.d.ts` file can contain both globals and packages:
 
@@ -323,19 +343,33 @@ Introduce separate namespaces for globals and packages. Packages have their own 
 
 ### 6.1 Proposed Namespace Hierarchy
 
-Each package has its own isolated namespace stored in a separate package registry. When a package is imported, its namespace is bound as a **sub-namespace** within the local namespace, accessible via a **local identifier**. All access to package symbols must be **qualified** using that identifier.
+Each package has its own isolated namespace stored in a separate package registry. When a package is imported, its namespace is bound as a **sub-namespace** within the **file's local namespace**, accessible via a **local identifier**. All access to package symbols must be **qualified** using that identifier.
 
 ```
 Lookup Resolution (priority order):
-1. Local scope (user-defined types/values, package identifiers bound to sub-namespaces)
-2. Global namespace (TypeScript builtins)
+1. File scope (import bindings as sub-namespaces) - for modules only
+2. Module/Script scope (user-defined types/values)
+3. Global namespace (TypeScript builtins)
 
-Scope Structure:
-    └── Local Namespace (user code + package sub-namespaces)
-        └── Global Namespace (lib.es5.d.ts, lib.dom.d.ts)
+Scope Structure for Modules (three levels):
+    globalScope (Namespace: globals like Array, Promise, etc.)
+        ↑ Parent
+    moduleScope (Namespace: module-level declarations shared across files)
+        ↑ Parent
+    fileScope (Namespace: file-local import bindings)
+        └── Package sub-namespaces (file-scoped, created by import statements):
+            ├── "lodash" → points to registry entry
+            └── "ramda" → points to registry entry
+
+Scope Structure for Scripts (two levels):
+    globalScope (Namespace: globals)
+        ↑ Parent
+    scriptScope (Namespace: local declarations + import bindings)
 ```
 
-Package namespaces are **not** part of the unqualified lookup chain. They are accessed via the local identifier bound during import (e.g., `lodash.map` looks up `lodash` locally, then accesses the `map` member of that sub-namespace).
+Package namespaces are **not** part of the unqualified lookup chain. They are accessed via the local identifier bound during import (e.g., `lodash.map` looks up `lodash` in the file scope, then accesses the `map` member of that sub-namespace).
+
+**Import Scoping**: Imports are **file-scoped** (similar to Go). Each `.esc` file must contain its own import statements for the packages it uses. A package namespace bound by an import in one file is **NOT** visible to other files in the same module. If a file attempts to access a package namespace without the corresponding import statement, an error should be reported.
 
 ### 6.2 Import and Qualified Access
 
@@ -417,6 +451,7 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 - **R4.4**: Files without top-level exports must treat non-module declarations as globals
 - **R4.5**: A single `.d.ts` file may contain both global declarations and named module packages
 - **R4.6**: The parser/loader must detect and categorize declarations based on these rules
+- **R4.7**: Files with `export = Namespace` must expand the namespace members to top-level exports (CommonJS-style exports are treated as ES module exports)
 
 ### 7.5 .esc File Classification
 
@@ -462,14 +497,18 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 
 ### 7.10 Import Mechanics
 
-- **R10.1**: `import "pkg"` must look up the package in the package registry and bind its namespace as a sub-namespace within the local namespace, using a local identifier derived from the package name (strip scope prefix, replace hyphens with underscores, e.g., `@scope/pkg-name` → `pkg_name`)
+- **R10.1**: `import "pkg"` must look up the package in the package registry and bind its namespace as a sub-namespace within the **file's** local namespace, using a local identifier derived from the package name (strip scope prefix, replace hyphens with underscores, e.g., `@scope/pkg-name` → `pkg_name`)
 - **R10.2**: `import "pkg" as alias` must bind the package namespace as a sub-namespace using the specified alias instead of the derived name
 - **R10.3**: All package symbols must be accessed via the qualified identifier (e.g., `pkg.symbol`), which uses standard namespace member lookup
 - **R10.4**: The local identifier bound by import can shadow global declarations of the same name
 - **R10.5**: Multiple packages can be imported without conflict (each is a separate sub-namespace)
-- **R10.6**: If the same package is imported multiple times, subsequent imports are no-ops (bind to the same sub-namespace)
+- **R10.6**: If the same package is imported multiple times in the same file, subsequent imports are no-ops (bind to the same sub-namespace)
 - **R10.7**: Subpath imports (e.g., `import "lodash/array"`) create separate package namespace entries in the registry from root imports (`import "lodash"`)
 - **R10.8**: Package identifiers follow the same scoping rules as other local bindings
+- **R10.9**: **File-scoped imports**: Import bindings are file-scoped (like Go). Each `.esc` file must contain its own import statements for the packages it uses
+- **R10.10**: A package namespace bound by an import in one file is NOT visible to other files in the same module
+- **R10.11**: If a file attempts to access a package namespace without the corresponding import statement in that file, emit an "undefined identifier" error
+- **R10.12**: Re-exports of package symbols use alias syntax: `export val map = lodash.map`. This preserves type identity rather than creating copies
 
 ### 7.11 Error Handling
 
@@ -481,9 +520,9 @@ let globalArr: globalThis.Array<string>  // Explicitly access the shadowed globa
 
 ## 8. Design Considerations
 
-### 8.1 Option A: Two-Level Scope Chain with Package Registry
+### 8.1 Option A: Scope Chain with Package Registry
 
-Scope chain for unqualified lookup is Local → Global. Packages are stored in a separate registry (at Checker level or standalone) and bound as sub-namespaces in the local namespace:
+Scope chain for unqualified lookup traverses the parent chain. Packages are stored in a separate registry (at Checker level) and bound as sub-namespaces in the file's local namespace:
 
 ```go
 // Separate from Scope structure
@@ -497,20 +536,31 @@ type Scope struct {
 }
 ```
 
-When processing `import "lodash"`:
+When processing `import "lodash"` in a file:
 1. Look up package in registry to get its namespace
-2. Bind the identifier `lodash` as a sub-namespace within userScope's namespace
+2. Bind the identifier `lodash` as a sub-namespace within the **file's** scope namespace
 3. Qualified access `lodash.map` works naturally through namespace member lookup
 
-Scope structure:
+Scope structure for modules (three levels):
 ```
 globalScope (Namespace: globals)
-    ↑
-userScope (Namespace: local with sub-namespaces {"lodash": ..., "ramda": ...}, Parent: globalScope)
+    ↑ Parent
+moduleScope (Namespace: module-level declarations shared across files)
+    ↑ Parent
+fileScope (Namespace: file-local import bindings as sub-namespaces {"lodash": ..., "ramda": ...})
 ```
 
-**Pros**: Clean separation between unqualified lookup (Local → Global) and qualified package access; qualified access is just regular namespace member lookup
-**Cons**: None significant
+Scope structure for scripts (two levels):
+```
+globalScope (Namespace: globals)
+    ↑ Parent
+scriptScope (Namespace: local declarations + import bindings)
+```
+
+**Note**: Import bindings are file-scoped. If file_a.esc imports "lodash", file_b.esc cannot access "lodash" unless it has its own import statement. Module declarations (types, functions) go to moduleScope and ARE visible across files.
+
+**Pros**: Clean separation between unqualified lookup and qualified package access; file-scoped imports prevent accidental cross-file dependencies
+**Cons**: Slightly more complex scope structure for modules
 
 ### 8.2 Option B: Package Identifiers as Local Bindings (Merged with Option A)
 
@@ -564,16 +614,23 @@ type Binding struct {
 ### 9.2 Migration Path
 
 1. Update `.d.ts` parser to detect top-level exports and track file classification
-2. Modify `loadTypeScriptModule()` to separate globals from packages based on classification rules
-3. Refactor `Prelude()` to return a `globalScope` containing only global declarations
-4. Create a separate package registry structure (e.g., at Checker level) to store package namespaces
-5. Extend namespace support to allow sub-namespaces (for binding package identifiers)
-6. Update import handling to:
+2. Implement `export = Namespace` expansion to top-level exports
+3. Modify `loadTypeScriptModule()` to separate globals from packages based on classification rules
+4. Refactor `Prelude()` to return a `globalScope` containing only global declarations
+5. Create a separate package registry structure (at Checker level) to store package namespaces
+6. Extend namespace support to allow sub-namespaces (for binding package identifiers)
+7. Update `InferModule` to use three-level scope chain:
+   - globalScope → moduleScope → fileScope (per file)
+   - Process imports for each file, binding to that file's scope
+   - Build unified DepGraph with file tracking for cross-file cyclic dependencies
+8. Update import handling to:
    - Look up package in registry to get its complete namespace
-   - Bind package identifier as a sub-namespace within the local scope's namespace
-7. User code scope has `Parent: globalScope`
-8. Qualified member access (`pkg.Symbol`) now uses standard namespace member lookup (no special handling needed)
-9. Add tests for qualified access and local shadowing of globals
+   - Bind package identifier as a sub-namespace within the **file's** scope namespace
+9. Qualified member access (`pkg.Symbol`) uses standard namespace member lookup
+10. Add tests for:
+    - Qualified access and local shadowing of globals
+    - File-scoped imports (import in file A not visible in file B)
+    - Cross-file cyclic dependencies with file-scoped imports
 
 ### 9.3 Edge Cases to Handle
 
@@ -598,6 +655,7 @@ type Binding struct {
 8. [ ] `.d.ts` files without exports correctly treat non-module declarations as globals
 9. [ ] Named module declarations (`declare module "name"`) use module name string as identity
 10. [ ] Mixed files (globals + named modules) are correctly partitioned
+11. [ ] `export = Namespace` syntax is handled (namespace members expanded to top-level exports)
 
 ### 10.3 Cross-File Merging
 11. [ ] Global declarations from multiple files merge into a single global namespace
@@ -614,9 +672,12 @@ type Binding struct {
 20. [ ] Library code referencing script symbols emits an error
 
 ### 10.5 Import Mechanics
-21. [ ] Importing a package binds its namespace to a local identifier
+21. [ ] Importing a package binds its namespace to a local identifier in the file scope
 22. [ ] Package symbols are accessible only via qualified access (e.g., `pkg.symbol`)
-23. [ ] Same package imported multiple times results in the same binding
+23. [ ] Same package imported multiple times in the same file results in the same binding
+24. [ ] Import bindings are file-scoped (each file must import packages it uses)
+25. [ ] Import in file A is NOT visible to file B in the same module
+26. [ ] Error emitted when accessing package namespace without import in that file
 
 ### 10.6 Global Augmentation
 24. [ ] `declare global` blocks add declarations to global namespace (not package)
@@ -639,9 +700,15 @@ type Binding struct {
 3. ~~Should package subpath imports (e.g., `import "lodash/array"`) create a separate package namespace or share with the root package?~~ **Resolved**: Subpath imports create separate package namespaces (e.g., `import "lodash/array"` is separate from `import "lodash"`).
 4. ~~How should the package identifier be derived from the package name?~~ **Resolved**: Strip scope prefix and replace hyphens with underscores (e.g., `@scope/pkg-name` → `pkg_name`).
 5. ~~Should there be syntax for aliasing a package identifier?~~ **Resolved**: Yes, use `import "lodash" as _` to alias a package identifier.
+6. ~~Should there be a way to bulk-import symbols from a package?~~ **Resolved**: No. All symbols from `import "lodash"` are accessible via the `lodash` namespace (e.g., `lodash.map`, `lodash.filter`) within the file containing the import statement.
+7. ~~How should TypeScript's `export =` syntax be handled?~~ **Resolved**: When a .d.ts file uses `export = Namespace`, treat it as equivalent to top-level exports by expanding the namespace members.
+8. ~~Should package re-exports create aliases or copies?~~ **Resolved**: Aliases, to preserve type identity. Re-exports use explicit syntax: `export val map = lodash.map`.
+9. ~~Should imports be module-scoped or file-scoped?~~ **Resolved**: File-scoped (like Go). Each `.esc` file must contain its own import statements for the packages it uses. A package namespace bound by an import in one file is NOT visible to other files in the same module.
+10. How should ambient module declarations in .d.ts files be handled? (e.g., `declare module "*.css" { ... }`) - Need to investigate TypeScript semantics.
 
 ## 12. References
 
+- Implementation plan: [implementation_plan.md](implementation_plan.md)
 - Current implementation: [infer_module.go](../../internal/checker/infer_module.go)
 - Prelude loading: [prelude.go](../../internal/checker/prelude.go)
 - Import handling: [infer_import.go](../../internal/checker/infer_import.go)
