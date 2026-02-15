@@ -213,10 +213,6 @@ func TestClassifyDTSFile_NamedModules(t *testing.T) {
 }
 
 func TestClassifyDTSFile_GlobalAugmentation(t *testing.T) {
-	// NOTE: The dts_parser doesn't currently support `declare global { ... }` syntax.
-	// These tests are skipped until that feature is implemented.
-	// When implemented, the extractGlobalAugmentation function will handle these cases.
-	t.Skip("dts_parser doesn't support 'declare global' syntax yet")
 
 	tests := []struct {
 		name  string

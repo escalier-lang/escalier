@@ -196,3 +196,21 @@ map[string]interface {}{
     "packageDeclsCount":  int(1),
 }
 ---
+
+[TestClassifyDTSFile_GlobalAugmentation/global_augmentation_in_module_file - 1]
+map[string]interface {}{
+    "globalDeclsCount":   int(1),
+    "hasTopLevelExports": bool(true),
+    "namedModulesCount":  int(0),
+    "packageDeclsCount":  int(1),
+}
+---
+
+[TestClassifyDTSFile_GlobalAugmentation/global_augmentation_with_multiple_declarations - 1]
+map[string]interface {}{
+    "globalDeclsCount":   int(3),
+    "hasTopLevelExports": bool(true),
+    "namedModulesCount":  int(0),
+    "packageDeclsCount":  int(1),
+}
+---

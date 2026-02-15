@@ -406,22 +406,37 @@ func ClassifyDTSFile(file *ast.File) *FileClassification {
     return classifier
 }
 
-func isTopLevelExport(stmt ast.Node) bool {
+func isTopLevelExport(stmt Statement) bool {
     // Check for export keyword at top level
     // Return true for: export interface, export type, export function, etc.
     // Also return true for: export = Namespace
 }
 
-func extractNamedModule(stmt ast.Node) *NamedModuleDecl {
+func extractNamedModule(stmt Statement) *NamedModuleDecl {
     // Check if statement is "declare module "name" { ... }"
-    // Return module name and declarations if found
+    // Returns ModuleDecl (for `declare module "name" { ... }`)
 }
 
-func expandExportEquals(file *ast.File) []ast.Node {
-    // If file contains "export = Namespace", find the namespace declaration
+func extractGlobalAugmentation(stmt Statement) []Statement {
+    // Check if statement is `declare global { ... }`
+    // Returns GlobalDecl.Statements if found, nil otherwise
+    // Note: GlobalDecl is a distinct AST type from NamespaceDecl,
+    // so `declare global { ... }` is differentiated from `namespace global { ... }`
+    if globalDecl, ok := stmt.(*GlobalDecl); ok {
+        return globalDecl.Statements
+    }
+    return nil
+}
+
+func expandExportEquals(stmt Statement, module *Module) []Statement {
+    // If statement is "export = Namespace", find the namespace declaration
     // and return its members as top-level exports.
     // Example: "export = Foo" where Foo is a namespace with {bar, baz}
     // becomes equivalent to "export const bar; export const baz"
+    //
+    // Note: ExportDecl has an ExportAssignment field to distinguish
+    // `export = Foo` from `export { Foo }`. The isExportAssignment()
+    // helper simply checks this field.
 }
 ```
 
@@ -430,7 +445,10 @@ func expandExportEquals(file *ast.File) []ast.Node {
 - [x] Implement `ClassifyDTSFile()` function
 - [x] Implement `isTopLevelExport()` helper
 - [x] Implement `extractNamedModule()` helper
+- [x] Implement `extractGlobalAugmentation()` helper (checks for `GlobalDecl` AST type)
 - [x] Implement `expandExportEquals()` helper to handle `export = Namespace` syntax
+- [x] Add `ExportAssignment` field to `ExportDecl` to distinguish `export = Foo` from `export { Foo }`
+- [x] Simplify `isExportAssignment()` to check `ExportAssignment` field
 - [x] Add tests for various .d.ts file patterns:
   - [x] File with top-level exports
   - [x] File with no exports (all globals)

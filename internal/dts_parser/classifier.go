@@ -138,27 +138,10 @@ func extractNamedModule(stmt Statement) *NamedModuleDecl {
 // extractGlobalAugmentation extracts declarations from `declare global { ... }` blocks.
 // Returns nil if the statement is not a global augmentation.
 func extractGlobalAugmentation(stmt Statement) []Statement {
-	switch s := stmt.(type) {
-	case *NamespaceDecl:
-		// Check if this is a `declare global { ... }` block
-		// In TypeScript, `declare global` is represented as a namespace with the name "global"
-		if s.Name != nil && s.Name.Name == "global" {
-			return s.Statements
-		}
-		return nil
-
-	case *AmbientDecl:
-		// Check if the ambient declaration wraps a global namespace
-		if nsDecl, ok := s.Declaration.(*NamespaceDecl); ok {
-			if nsDecl.Name != nil && nsDecl.Name.Name == "global" {
-				return nsDecl.Statements
-			}
-		}
-		return nil
-
-	default:
-		return nil
+	if globalDecl, ok := stmt.(*GlobalDecl); ok {
+		return globalDecl.Statements
 	}
+	return nil
 }
 
 // expandExportEquals handles the `export = Namespace` syntax.
@@ -208,29 +191,8 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 }
 
 // isExportAssignment checks if an ExportDecl represents `export = Identifier` syntax.
-// The parser represents this as having exactly one NamedExport where Local == Exported.
 func isExportAssignment(exportDecl *ExportDecl) bool {
-	// export = X is represented with:
-	// - No Declaration
-	// - No From (not a re-export)
-	// - Exactly one NamedExport where Local == Exported
-	// - No ExportDefault, no ExportAll
-	if exportDecl.Declaration != nil {
-		return false
-	}
-	if exportDecl.From != "" {
-		return false
-	}
-	if exportDecl.ExportDefault || exportDecl.ExportAll {
-		return false
-	}
-	if len(exportDecl.NamedExports) != 1 {
-		return false
-	}
-
-	// Check that Local and Exported are the same (characteristic of export =)
-	spec := exportDecl.NamedExports[0]
-	return spec.Local.Name == spec.Exported.Name
+	return exportDecl.ExportAssignment
 }
 
 // findNamespaceDecl searches for a namespace declaration with the given name in the module.

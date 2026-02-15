@@ -195,13 +195,14 @@ type ImportSpecifier struct {
 func (i *ImportSpecifier) Span() ast.Span { return i.span }
 
 type ExportDecl struct {
-	Declaration   Statement          // optional, for `export ...`
-	NamedExports  []*ExportSpecifier // optional, for `export { ... }`
-	From          string             // optional, for re-exports
-	ExportDefault bool               // for `export default`
-	ExportAll     bool               // for `export *`
-	TypeOnly      bool
-	span          ast.Span
+	Declaration      Statement          // optional, for `export ...`
+	NamedExports     []*ExportSpecifier // optional, for `export { ... }`
+	From             string             // optional, for re-exports
+	ExportDefault    bool               // for `export default`
+	ExportAll        bool               // for `export *`
+	ExportAssignment bool               // for `export = foo`
+	TypeOnly         bool
+	span             ast.Span
 }
 
 func (e *ExportDecl) Span() ast.Span { return e.span }
