@@ -4101,12 +4101,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:1, Column:25},
                         End:      ast.Location{Line:1, Column:52},
                         SourceID: 0,
@@ -4171,12 +4172,13 @@
                                     SourceID: 0,
                                 },
                             },
-                            NamedExports:  nil,
-                            From:          "",
-                            ExportDefault: false,
-                            ExportAll:     false,
-                            TypeOnly:      false,
-                            span:          ast.Span{
+                            NamedExports:     nil,
+                            From:             "",
+                            ExportDefault:    false,
+                            ExportAll:        false,
+                            ExportAssignment: false,
+                            TypeOnly:         false,
+                            span:             ast.Span{
                                 Start:    ast.Location{Line:1, Column:37},
                                 End:      ast.Location{Line:1, Column:59},
                                 SourceID: 0,
@@ -4258,12 +4260,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:1, Column:19},
                         End:      ast.Location{Line:1, Column:59},
                         SourceID: 0,
@@ -4313,12 +4316,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:1, Column:31},
                         End:      ast.Location{Line:1, Column:66},
                         SourceID: 0,
@@ -4616,12 +4620,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:8, Column:19},
                         End:      ast.Location{Line:8, Column:42},
                         SourceID: 0,
@@ -7897,12 +7902,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:47},
                         SourceID: 0,
@@ -7959,12 +7965,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:54},
                         SourceID: 0,
@@ -8319,11 +8326,12 @@
                             },
                         },
                     },
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: true,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:3, Column:5},
                         End:      ast.Location{Line:3, Column:20},
                         SourceID: 0,
@@ -8397,11 +8405,12 @@
                             },
                         },
                     },
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: true,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:3, Column:5},
                         End:      ast.Location{Line:3, Column:20},
                         SourceID: 0,
@@ -8451,12 +8460,13 @@
                             SourceID: 0,
                         },
                     },
-                    NamedExports:  nil,
-                    From:          "",
-                    ExportDefault: false,
-                    ExportAll:     false,
-                    TypeOnly:      false,
-                    span:          ast.Span{
+                    NamedExports:     nil,
+                    From:             "",
+                    ExportDefault:    false,
+                    ExportAll:        false,
+                    ExportAssignment: false,
+                    TypeOnly:         false,
+                    span:             ast.Span{
                         Start:    ast.Location{Line:2, Column:5},
                         End:      ast.Location{Line:2, Column:33},
                         SourceID: 0,
@@ -8590,6 +8600,389 @@
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:3, Column:10},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/simple_global_with_interface - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.InterfaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "Window",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Members:    {
+                        &dts_parser.PropertySignature{
+                            Name: &dts_parser.Ident{
+                                Name: "myProp",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:37},
+                                    End:      ast.Location{Line:1, Column:43},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 6,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:45},
+                                    End:      ast.Location{Line:1, Column:51},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:51},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:53},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:55},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/global_with_multiple_declarations - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.InterfaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "Window",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Members:    {
+                        &dts_parser.PropertySignature{
+                            Name: &dts_parser.Ident{
+                                Name: "foo",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:37},
+                                    End:      ast.Location{Line:1, Column:40},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 6,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:42},
+                                    End:      ast.Location{Line:1, Column:48},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:48},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:50},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.InterfaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "Document",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:61},
+                            End:      ast.Location{Line:1, Column:69},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Members:    {
+                        &dts_parser.PropertySignature{
+                            Name: &dts_parser.Ident{
+                                Name: "bar",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:72},
+                                    End:      ast.Location{Line:1, Column:75},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 7,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:77},
+                                    End:      ast.Location{Line:1, Column:83},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:72},
+                                End:      ast.Location{Line:1, Column:83},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:51},
+                        End:      ast.Location{Line:1, Column:85},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:87},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/global_with_var_declaration - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.VarDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "globalVar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:22},
+                            End:      ast.Location{Line:1, Column:31},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 6,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:39},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:39},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:41},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/global_with_function_declaration - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.FuncDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "globalFunc",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
+                            End:      ast.Location{Line:1, Column:37},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:41},
+                            End:      ast.Location{Line:1, Column:45},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:45},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:47},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/global_with_namespace - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.NamespaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "NodeJS",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                    Statements: {
+                        &dts_parser.InterfaceDecl{
+                            Name: &dts_parser.Ident{
+                                Name: "ProcessEnv",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:47},
+                                    End:      ast.Location{Line:1, Column:57},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeParams: nil,
+                            Extends:    nil,
+                            Members:    {
+                                &dts_parser.PropertySignature{
+                                    Name: &dts_parser.Ident{
+                                        Name: "NODE_ENV",
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:1, Column:60},
+                                            End:      ast.Location{Line:1, Column:68},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    TypeAnn: &dts_parser.PrimitiveType{
+                                        Kind: 6,
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:1, Column:70},
+                                            End:      ast.Location{Line:1, Column:76},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    Optional: false,
+                                    Readonly: false,
+                                    span:     ast.Span{
+                                        Start:    ast.Location{Line:1, Column:60},
+                                        End:      ast.Location{Line:1, Column:76},
+                                        SourceID: 0,
+                                    },
+                                },
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:78},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:80},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:82},
+                SourceID: 0,
+            },
+        },
+    },
+}
+---
+
+[TestGlobalDeclarations/global_augmentation_typical_usage - 1]
+&dts_parser.Module{
+    Statements: {
+        &dts_parser.GlobalDecl{
+            Statements: {
+                &dts_parser.InterfaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "Window",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:12},
+                            End:      ast.Location{Line:2, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Members:    {
+                        &dts_parser.PropertySignature{
+                            Name: &dts_parser.Ident{
+                                Name: "myCustomProperty",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:3, Column:3},
+                                    End:      ast.Location{Line:3, Column:19},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 6,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:3, Column:21},
+                                    End:      ast.Location{Line:3, Column:27},
+                                    SourceID: 0,
+                                },
+                            },
+                            Optional: false,
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:3, Column:3},
+                                End:      ast.Location{Line:3, Column:27},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:2},
+                        End:      ast.Location{Line:4, Column:3},
+                        SourceID: 0,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:5, Column:2},
                 SourceID: 0,
             },
         },

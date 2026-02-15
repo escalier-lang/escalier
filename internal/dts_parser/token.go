@@ -115,6 +115,7 @@ const (
 	Void
 	Object
 	Intrinsic
+	Global
 )
 
 type Token struct {

@@ -65,6 +65,7 @@ func (*TypeDecl) isStatement()      {}
 func (*EnumDecl) isStatement()      {}
 func (*NamespaceDecl) isStatement() {}
 func (*ModuleDecl) isStatement()    {}
+func (*GlobalDecl) isStatement()    {}
 func (*ExportDecl) isStatement()    {}
 func (*ImportDecl) isStatement()    {}
 func (*AmbientDecl) isStatement()   {}
@@ -156,6 +157,13 @@ type ModuleDecl struct {
 
 func (d *ModuleDecl) Span() ast.Span { return d.span }
 
+type GlobalDecl struct {
+	Statements []Statement
+	span       ast.Span
+}
+
+func (d *GlobalDecl) Span() ast.Span { return d.span }
+
 type AmbientDecl struct {
 	Declaration Statement
 	span        ast.Span
@@ -187,13 +195,14 @@ type ImportSpecifier struct {
 func (i *ImportSpecifier) Span() ast.Span { return i.span }
 
 type ExportDecl struct {
-	Declaration   Statement          // optional, for `export ...`
-	NamedExports  []*ExportSpecifier // optional, for `export { ... }`
-	From          string             // optional, for re-exports
-	ExportDefault bool               // for `export default`
-	ExportAll     bool               // for `export *`
-	TypeOnly      bool
-	span          ast.Span
+	Declaration      Statement          // optional, for `export ...`
+	NamedExports     []*ExportSpecifier // optional, for `export { ... }`
+	From             string             // optional, for re-exports
+	ExportDefault    bool               // for `export default`
+	ExportAll        bool               // for `export *`
+	ExportAssignment bool               // for `export = foo`
+	TypeOnly         bool
+	span             ast.Span
 }
 
 func (e *ExportDecl) Span() ast.Span { return e.span }

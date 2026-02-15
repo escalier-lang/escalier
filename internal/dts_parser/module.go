@@ -536,6 +536,7 @@ func (p *DtsParser) parseExportAssignment(startToken *Token) Statement {
 				span:     name.Span(),
 			},
 		},
-		span: span,
+		ExportAssignment: true,
+		span:             span,
 	}
 }

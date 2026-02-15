@@ -74,6 +74,8 @@ func (p *DtsParser) parseAmbientDeclaration() Statement {
 		return p.parseEnumDeclaration()
 	case Namespace, ModuleKeyword:
 		return p.parseNamespaceDeclaration()
+	case Global:
+		return p.parseGlobalDeclaration()
 	default:
 		p.reportError(token.Span, "Expected variable, function, class, interface, type, enum, or namespace declaration after 'declare'")
 		return nil
@@ -801,6 +803,61 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 
 	return &ModuleDecl{
 		Name:       nameToken.Value,
+		Statements: statements,
+		span:       span,
+	}
+}
+
+// parseGlobalDeclaration parses: declare global { ... }
+func (p *DtsParser) parseGlobalDeclaration() Statement {
+	startToken := p.expect(Global)
+	if startToken == nil {
+		return nil
+	}
+
+	// Parse global body
+	if p.expect(OpenBrace) == nil {
+		return nil
+	}
+
+	// Set ambient context for parsing global body
+	savedAmbientContext := p.inAmbientContext
+	p.inAmbientContext = true
+
+	statements := make([]Statement, 0, 8) // pre-allocate for typical global size
+	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		// Skip comments before parsing statements
+		p.skipComments()
+
+		// Check again after skipping comments
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
+			break
+		}
+
+		stmt := p.parseStatement()
+		if stmt != nil {
+			statements = append(statements, stmt)
+		} else {
+			// Skip token on error to avoid infinite loop
+			p.consume()
+		}
+	}
+
+	// Restore ambient context
+	p.inAmbientContext = savedAmbientContext
+
+	endToken := p.expect(CloseBrace)
+	if endToken == nil {
+		return nil
+	}
+
+	span := ast.Span{
+		Start:    startToken.Span.Start,
+		End:      endToken.Span.End,
+		SourceID: startToken.Span.SourceID,
+	}
+
+	return &GlobalDecl{
 		Statements: statements,
 		span:       span,
 	}

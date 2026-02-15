@@ -88,6 +88,7 @@ var keywords = map[string]TokenType{
 	"void":       Void,
 	"object":     Object,
 	"intrinsic":  Intrinsic,
+	"global":     Global,
 }
 
 // skipWhitespace advances past whitespace characters and returns the new offset and location.

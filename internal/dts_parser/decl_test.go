@@ -467,6 +467,64 @@ func TestNamespaceDeclarations(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Global Declarations
+// ============================================================================
+
+func TestGlobalDeclarations(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			"simple global with interface",
+			"declare global { interface Window { myProp: string } }",
+		},
+		{
+			"global with multiple declarations",
+			"declare global { interface Window { foo: string } interface Document { bar: number } }",
+		},
+		{
+			"global with var declaration",
+			"declare global { var globalVar: string }",
+		},
+		{
+			"global with function declaration",
+			"declare global { function globalFunc(): void }",
+		},
+		{
+			"global with namespace",
+			"declare global { namespace NodeJS { interface ProcessEnv { NODE_ENV: string } } }",
+		},
+		{
+			"global augmentation typical usage",
+			`declare global {
+	interface Window {
+		myCustomProperty: string;
+	}
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.input,
+				ID:       0,
+			}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			if len(errors) > 0 {
+				t.Logf("Errors: %v", errors)
+			}
+
+			snaps.MatchSnapshot(t, module)
+		})
+	}
+}
+
 // TestAmbientNamespaceVariableDeclarations tests that variable declarations
 // without 'declare' keyword are allowed inside ambient namespace declarations.
 // This is required to properly parse TypeScript lib.es5.d.ts which contains
