@@ -97,8 +97,7 @@ func isTopLevelExport(stmt Statement) bool {
 	case *AmbientDecl:
 		// Check if the ambient declaration wraps an export
 		// e.g., declare export ...
-		if exportDecl, ok := s.Declaration.(*ExportDecl); ok {
-			_ = exportDecl
+		if _, ok := s.Declaration.(*ExportDecl); ok {
 			return true
 		}
 		return false
