@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/gkampitakis/go-snaps/snaps"
 )
 
 // ============================================================================
@@ -13,32 +12,52 @@ import (
 
 func TestClassifyDTSFile_GlobalsOnly(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModulesCount  int
 	}{
 		{
-			"simple global declarations",
-			`declare var x: string;
+			name: "simple global declarations",
+			input: `declare var x: string;
 			declare function foo(): void;
 			interface Bar { y: number }`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   3,
+			packageDeclsCount:  0,
+			namedModulesCount:  0,
 		},
 		{
-			"ambient type declarations",
-			`declare type Foo = string;
+			name: "ambient type declarations",
+			input: `declare type Foo = string;
 			declare interface Bar { x: number }`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   2,
+			packageDeclsCount:  0,
+			namedModulesCount:  0,
 		},
 		{
-			"global namespace",
-			`declare namespace MyLib {
+			name: "global namespace",
+			input: `declare namespace MyLib {
 				function doSomething(): void;
 				const VERSION: string;
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   1,
+			packageDeclsCount:  0,
+			namedModulesCount:  0,
 		},
 		{
-			"multiple global interfaces",
-			`interface Array<T> { length: number }
+			name: "multiple global interfaces",
+			input: `interface Array<T> { length: number }
 			interface String { length: number }
 			interface Number { toFixed(digits: number): string }`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   3,
+			packageDeclsCount:  0,
+			namedModulesCount:  0,
 		},
 	}
 
@@ -59,60 +78,106 @@ func TestClassifyDTSFile_GlobalsOnly(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModulesCount":  len(classification.NamedModules),
-			})
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
+			}
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != tt.namedModulesCount {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), tt.namedModulesCount)
+			}
 		})
 	}
 }
 
 func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModulesCount  int
 	}{
 		{
-			"export interface",
-			`export interface Foo { x: number }`,
+			name:               "export interface",
+			input:              `export interface Foo { x: number }`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"export type alias",
-			`export type MyString = string;`,
+			name:               "export type alias",
+			input:              `export type MyString = string;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"export function",
-			`export declare function foo(): void;`,
+			name:               "export function",
+			input:              `export declare function foo(): void;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"export variable",
-			`export declare const VERSION: string;`,
+			name:               "export variable",
+			input:              `export declare const VERSION: string;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"export class",
-			`export declare class MyClass { constructor() }`,
+			name:               "export class",
+			input:              `export declare class MyClass { constructor() }`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"multiple exports",
-			`export interface Foo { }
+			name: "multiple exports",
+			input: `export interface Foo { }
 			export type Bar = Foo;
 			export declare function baz(): Bar;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  3,
+			namedModulesCount:  0,
 		},
 		{
-			"named exports",
-			`declare interface Foo { }
+			name: "named exports",
+			input: `declare interface Foo { }
 			declare const bar: string;
 			export { Foo, bar }`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"re-export from module",
-			`export { something } from "other-module";`,
+			name:               "re-export from module",
+			input:              `export { something } from "other-module";`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"export all",
-			`export * from "other-module";`,
+			name:               "export all",
+			input:              `export * from "other-module";`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 	}
 
@@ -133,49 +198,75 @@ func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModulesCount":  len(classification.NamedModules),
-			})
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
+			}
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != tt.namedModulesCount {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), tt.namedModulesCount)
+			}
 		})
 	}
 }
 
 func TestClassifyDTSFile_NamedModules(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModules       map[string]int // module name -> declaration count
 	}{
 		{
-			"single named module",
-			`declare module "lodash" {
+			name: "single named module",
+			input: `declare module "lodash" {
 				export function map<T, U>(arr: T[], fn: (item: T) => U): U[];
 				export function filter<T>(arr: T[], fn: (item: T) => boolean): T[];
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   0,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"lodash": 2},
 		},
 		{
-			"multiple named modules",
-			`declare module "lodash" {
+			name: "multiple named modules",
+			input: `declare module "lodash" {
 				export function map<T, U>(arr: T[], fn: (item: T) => U): U[];
 			}
 			declare module "lodash/fp" {
 				export function map<T, U>(fn: (item: T) => U): (arr: T[]) => U[];
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   0,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"lodash": 1, "lodash/fp": 1},
 		},
 		{
-			"named module with scoped package",
-			`declare module "@types/node" {
+			name: "named module with scoped package",
+			input: `declare module "@types/node" {
 				export const version: string;
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   0,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"@types/node": 1},
 		},
 		{
-			"named module alongside globals",
-			`interface GlobalInterface { x: number }
+			name: "named module alongside globals",
+			input: `interface GlobalInterface { x: number }
 			declare module "my-package" {
 				export interface PackageInterface { y: string }
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   1,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"my-package": 1},
 		},
 	}
 
@@ -196,43 +287,64 @@ func TestClassifyDTSFile_NamedModules(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			// Build a map of module names to declaration counts
-			namedModules := make(map[string]int)
-			for _, nm := range classification.NamedModules {
-				namedModules[nm.ModuleName] = len(nm.Decls)
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
 			}
-
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModules":       namedModules,
-			})
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != len(tt.namedModules) {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), len(tt.namedModules))
+			}
+			for _, nm := range classification.NamedModules {
+				expectedCount, ok := tt.namedModules[nm.ModuleName]
+				if !ok {
+					t.Errorf("Unexpected named module: %q", nm.ModuleName)
+					continue
+				}
+				if len(nm.Decls) != expectedCount {
+					t.Errorf("Named module %q has %d decls, expected %d", nm.ModuleName, len(nm.Decls), expectedCount)
+				}
+			}
 		})
 	}
 }
 
 func TestClassifyDTSFile_GlobalAugmentation(t *testing.T) {
-
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModulesCount  int
 	}{
 		{
-			"global augmentation in module file",
-			`export interface MyInterface { }
+			name: "global augmentation in module file",
+			input: `export interface MyInterface { }
 			declare global {
 				interface Window { myProp: string }
 			}`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   1,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 		{
-			"global augmentation with multiple declarations",
-			`export type MyType = string;
+			name: "global augmentation with multiple declarations",
+			input: `export type MyType = string;
 			declare global {
 				interface Window { prop1: string }
 				interface Document { prop2: number }
 				var globalVar: boolean;
 			}`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   3,
+			packageDeclsCount:  1,
+			namedModulesCount:  0,
 		},
 	}
 
@@ -253,37 +365,55 @@ func TestClassifyDTSFile_GlobalAugmentation(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModulesCount":  len(classification.NamedModules),
-			})
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
+			}
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != tt.namedModulesCount {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), tt.namedModulesCount)
+			}
 		})
 	}
 }
 
 func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModulesCount  int
 	}{
 		{
-			"export equals namespace",
-			`declare namespace Foo {
+			name: "export equals namespace",
+			input: `declare namespace Foo {
 				export const bar: number;
 				export function baz(): string;
 			}
 			export = Foo;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  2,
+			namedModulesCount:  0,
 		},
 		{
-			"export equals with types",
-			`declare namespace MyLib {
+			name: "export equals with types",
+			input: `declare namespace MyLib {
 				export interface Options { timeout: number }
 				export function configure(opts: Options): void;
 				export const VERSION: string;
 			}
 			export = MyLib;`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  3,
+			namedModulesCount:  0,
 		},
 	}
 
@@ -304,24 +434,34 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModulesCount":  len(classification.NamedModules),
-			})
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
+			}
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != tt.namedModulesCount {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), tt.namedModulesCount)
+			}
 		})
 	}
 }
 
 func TestClassifyDTSFile_MixedFile(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
+		name               string
+		input              string
+		hasTopLevelExports bool
+		globalDeclsCount   int
+		packageDeclsCount  int
+		namedModules       map[string]int // module name -> declaration count
 	}{
 		{
-			"globals and named modules",
-			`interface GlobalType { x: number }
+			name: "globals and named modules",
+			input: `interface GlobalType { x: number }
 			declare var globalVar: string;
 			declare module "my-pkg" {
 				export interface PkgType { y: string }
@@ -329,17 +469,25 @@ func TestClassifyDTSFile_MixedFile(t *testing.T) {
 			declare module "other-pkg" {
 				export function fn(): void;
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   2,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"my-pkg": 1, "other-pkg": 1},
 		},
 		{
-			"exports and named modules",
-			`export interface ExportedType { }
+			name: "exports and named modules",
+			input: `export interface ExportedType { }
 			declare module "sub-module" {
 				export function subFn(): void;
 			}`,
+			hasTopLevelExports: true,
+			globalDeclsCount:   0,
+			packageDeclsCount:  1,
+			namedModules:       map[string]int{"sub-module": 1},
 		},
 		{
-			"complex mixed file",
-			`// Global interface
+			name: "complex mixed file",
+			input: `// Global interface
 			interface BaseType { id: string }
 
 			// Named module
@@ -351,6 +499,10 @@ func TestClassifyDTSFile_MixedFile(t *testing.T) {
 			declare module "package-b" {
 				export interface TypeB extends BaseType { b: string }
 			}`,
+			hasTopLevelExports: false,
+			globalDeclsCount:   1,
+			packageDeclsCount:  0,
+			namedModules:       map[string]int{"package-a": 1, "package-b": 1},
 		},
 	}
 
@@ -371,18 +523,28 @@ func TestClassifyDTSFile_MixedFile(t *testing.T) {
 
 			classification := ClassifyDTSFile(module)
 
-			// Build a map of module names to declaration counts
-			namedModules := make(map[string]int)
-			for _, nm := range classification.NamedModules {
-				namedModules[nm.ModuleName] = len(nm.Decls)
+			if classification.HasTopLevelExports != tt.hasTopLevelExports {
+				t.Errorf("HasTopLevelExports = %v, expected %v", classification.HasTopLevelExports, tt.hasTopLevelExports)
 			}
-
-			snaps.MatchSnapshot(t, map[string]interface{}{
-				"hasTopLevelExports": classification.HasTopLevelExports,
-				"globalDeclsCount":   len(classification.GlobalDecls),
-				"packageDeclsCount":  len(classification.PackageDecls),
-				"namedModules":       namedModules,
-			})
+			if len(classification.GlobalDecls) != tt.globalDeclsCount {
+				t.Errorf("GlobalDecls count = %d, expected %d", len(classification.GlobalDecls), tt.globalDeclsCount)
+			}
+			if len(classification.PackageDecls) != tt.packageDeclsCount {
+				t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), tt.packageDeclsCount)
+			}
+			if len(classification.NamedModules) != len(tt.namedModules) {
+				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), len(tt.namedModules))
+			}
+			for _, nm := range classification.NamedModules {
+				expectedCount, ok := tt.namedModules[nm.ModuleName]
+				if !ok {
+					t.Errorf("Unexpected named module: %q", nm.ModuleName)
+					continue
+				}
+				if len(nm.Decls) != expectedCount {
+					t.Errorf("Named module %q has %d decls, expected %d", nm.ModuleName, len(nm.Decls), expectedCount)
+				}
+			}
 		})
 	}
 }
