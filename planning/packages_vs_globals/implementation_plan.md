@@ -93,8 +93,18 @@ func NewPackageRegistry() *PackageRegistry {
     }
 }
 
-func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespace) {
+func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespace) error {
+    if dtsFilePath == "" {
+        return fmt.Errorf("package file path cannot be empty")
+    }
+    if ns == nil {
+        return fmt.Errorf("package namespace cannot be nil")
+    }
+    if _, exists := pr.packages[dtsFilePath]; exists {
+        return fmt.Errorf("package at %q is already registered", dtsFilePath)
+    }
     pr.packages[dtsFilePath] = ns
+    return nil
 }
 
 func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, bool) {
@@ -193,35 +203,35 @@ func NewPackageRegistry() *PackageRegistry {
     }
 }
 
-func (pr *PackageRegistry) Register(identity string, ns *type_system.Namespace) error {
-    if identity == "" {
-        return fmt.Errorf("package identity cannot be empty")
+func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespace) error {
+    if dtsFilePath == "" {
+        return fmt.Errorf("package file path cannot be empty")
     }
     if ns == nil {
         return fmt.Errorf("package namespace cannot be nil")
     }
-    if _, exists := pr.packages[identity]; exists {
-        return fmt.Errorf("package %q is already registered", identity)
+    if _, exists := pr.packages[dtsFilePath]; exists {
+        return fmt.Errorf("package at %q is already registered", dtsFilePath)
     }
-    pr.packages[identity] = ns
+    pr.packages[dtsFilePath] = ns
     return nil
 }
 
-func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool) {
-    ns, ok := pr.packages[identity]
+func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, bool) {
+    ns, ok := pr.packages[dtsFilePath]
     return ns, ok
 }
 
-func (pr *PackageRegistry) MustLookup(identity string) *type_system.Namespace {
-    ns, ok := pr.packages[identity]
+func (pr *PackageRegistry) MustLookup(dtsFilePath string) *type_system.Namespace {
+    ns, ok := pr.packages[dtsFilePath]
     if !ok {
-        panic(fmt.Sprintf("package %q not found in registry", identity))
+        panic(fmt.Sprintf("package at %q not found in registry", dtsFilePath))
     }
     return ns
 }
 
-func (pr *PackageRegistry) Has(identity string) bool {
-    _, ok := pr.packages[identity]
+func (pr *PackageRegistry) Has(dtsFilePath string) bool {
+    _, ok := pr.packages[dtsFilePath]
     return ok
 }
 ```
@@ -611,7 +621,7 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
     }
 
     // Handle packages (named modules) - register in package registry
-    for identity, pkgDecls := range loadedModule.Packages {
+    for dtsFilePath, pkgDecls := range loadedModule.Packages {
         pkgNs := type_system.NewNamespace()
         pkgScope := &Scope{
             Parent:    globalScope,  // Packages can reference globals
@@ -625,7 +635,7 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
             return errs[0]  // or collect all errors
         }
 
-        c.packageRegistry.Register(identity, pkgNs)
+        c.packageRegistry.Register(dtsFilePath, pkgNs)
     }
 
     return nil
