@@ -16,9 +16,8 @@ import (
 //   - "/path/to/project-a/node_modules/lodash/index.d.ts" (lodash v4.17.21)
 //   - "/path/to/project-b/node_modules/lodash/index.d.ts" (lodash v4.17.15)
 //
-// To get the binding name (e.g., "lodash" for `lodash.map`), use the import specifier
-// from the import statement and pass it to DerivePackageIdentifier from dts_parser
-// to convert it to a valid identifier.
+// Use resolveImport() to resolve a package name (e.g., "lodash") to its .d.ts
+// file path for registry lookup.
 type PackageRegistry struct {
 	packages map[string]*type_system.Namespace
 }
