@@ -268,68 +268,137 @@ func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 	return moduleMap, nil
 }
 
-var preludeScope *Scope
-var symbolIDCounter int
+var cachedGlobalScope *Scope
+var cachedSymbolIDCounter int
 
-// We assume that a new Checker instance is being passed in every time Prelude is called.
-// TODO(#256): Report all errors to the caller.
-func Prelude(c *Checker) *Scope {
-	if preludeScope != nil {
-		c.SymbolID = symbolIDCounter
-		return preludeScope.WithNewScope()
+// initializeGlobalScope creates the global scope containing TypeScript built-in types
+// (Array, Promise, etc. from lib.es5.d.ts and lib.dom.d.ts), operator bindings, and
+// the Symbol object.
+//
+// This method sets c.GlobalScope to the newly created scope. The global scope has no
+// parent (it is the root of the scope chain). User code scopes should use the global
+// scope as their parent to access built-in types.
+//
+// Named modules from .d.ts files are registered in the PackageRegistry, not in the
+// global scope. This separates package symbols from global symbols.
+func (c *Checker) initializeGlobalScope() {
+	// Create a fresh global namespace and scope
+	globalNs := type_system.NewNamespace()
+	globalScope := &Scope{
+		Parent:    nil, // Global scope has no parent
+		Namespace: globalNs,
 	}
 
-	repoRoot, _ := findRepoRoot()
+	// Load global definitions from TypeScript lib files
+	c.loadGlobalDefinitions(globalScope)
 
-	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-	libES5ModuleMap, err := loadTypeScriptModule(libES5Path)
-	if err != nil {
-		panic("Failed to load TypeScript lib.es5.d.ts")
+	// Post-process the namespace
+	for _, typeAlias := range globalNs.Types {
+		typeAlias.Type = type_system.Prune(typeAlias.Type)
 	}
 
-	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
-	libDOMModuleMap, err := loadTypeScriptModule(libDOMPath)
-	if err != nil {
-		panic("Failed to load TypeScript lib.dom.d.ts")
+	for _, binding := range globalNs.Values {
+		binding.Type = type_system.Prune(binding.Type)
 	}
 
-	scope := NewScope()
 	inferCtx := Context{
-		Scope:      scope,
+		Scope:      globalScope,
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
 
-	libES5Module := libES5ModuleMap["global"]
-	inferErrors := c.InferModule(inferCtx, libES5Module)
-	if len(inferErrors) > 0 {
-		panic("Failed to infer types for lib.es5.d.ts")
+	UpdateMethodMutability(inferCtx, globalNs)
+	UpdateArrayMutability(globalNs)
+
+	// Add built-in operator bindings
+	c.addOperatorBindings(globalNs)
+
+	// Add Symbol object with iterator and customMatcher unique symbols
+	c.addSymbolBinding(globalNs)
+
+	// Set the global scope on the Checker
+	c.GlobalScope = globalScope
+}
+
+// loadGlobalDefinitions loads TypeScript lib files (lib.es5.d.ts, lib.dom.d.ts)
+// and infers their declarations into the global scope.
+// Named modules are registered in the PackageRegistry.
+func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
+	repoRoot, _ := findRepoRoot()
+
+	// Load lib.es5.d.ts
+	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
+	c.loadGlobalFile(libES5Path, globalScope)
+
+	// Load lib.dom.d.ts
+	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
+	c.loadGlobalFile(libDOMPath, globalScope)
+}
+
+// loadGlobalFile loads a single .d.ts file and adds its declarations to the appropriate scope:
+// - Global declarations go to globalScope
+// - Named modules (declare module "...") are registered in the PackageRegistry
+func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
+	moduleMap, err := loadTypeScriptModule(filePath)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s", filePath))
 	}
 
-	libDOMModule := libDOMModuleMap["global"]
-	inferErrors = c.InferModule(inferCtx, libDOMModule)
-	if len(inferErrors) > 0 {
-		for _, err := range inferErrors {
-			fmt.Fprintf(os.Stderr, "Inference error: %s\n", err.Message())
+	// Process global declarations
+	if globalModule, ok := moduleMap["global"]; ok {
+		inferCtx := Context{
+			Scope:      globalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
 		}
-		panic("Failed to infer types for lib.dom.d.ts")
+
+		inferErrors := c.InferModule(inferCtx, globalModule)
+		if len(inferErrors) > 0 {
+			for _, err := range inferErrors {
+				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
+			}
+			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
+		}
 	}
 
-	inferredScope := inferCtx.Scope.Namespace
+	// Process named modules - register them in the PackageRegistry
+	for moduleName, astModule := range moduleMap {
+		if moduleName == "global" {
+			continue // Already handled above
+		}
 
-	for _, typeAlias := range inferredScope.Types {
-		typeAlias.Type = type_system.Prune(typeAlias.Type)
+		// Create a namespace for this named module
+		moduleNs := type_system.NewNamespace()
+		moduleScope := &Scope{
+			Parent:    globalScope, // Named modules can reference globals
+			Namespace: moduleNs,
+		}
+
+		inferCtx := Context{
+			Scope:      moduleScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		inferErrors := c.InferModule(inferCtx, astModule)
+		if len(inferErrors) > 0 {
+			for _, err := range inferErrors {
+				fmt.Fprintf(os.Stderr, "Inference error in module %s: %s\n", moduleName, err.Message())
+			}
+			// Don't panic for named modules - continue processing other modules
+			continue
+		}
+
+		// Register the named module in the PackageRegistry
+		// Use the module name as the key since lib files don't have package paths
+		if err := c.PackageRegistry.Register(moduleName, moduleNs); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to register module %s: %s\n", moduleName, err.Error())
+		}
 	}
+}
 
-	for _, binding := range inferredScope.Values {
-		binding.Type = type_system.Prune(binding.Type)
-	}
-
-	UpdateMethodMutability(inferCtx, inferredScope)
-	UpdateArrayMutability(inferredScope)
-
-	scope.Namespace = inferredScope
-
+// addOperatorBindings adds built-in operator bindings to the namespace
+func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 	binArithType := type_system.NewFuncType(
 		nil,
 		nil,
@@ -394,18 +463,6 @@ func Prelude(c *Checker) *Scope {
 		Mutable: false,
 	}
 
-	// unaryArithType := &FuncType{
-	// 	Params: []*type_system.FuncParam{
-	// 		type_system.NewFuncParam(type_system.NewIdentPat("a"), NewNumType()),
-	// 	},
-	// 	Return: NewNumType(),
-	// }
-	// unaryArithBinding := type_system.Binding{
-	// 	Source:  nil,
-	// 	Type:    unaryArithType,
-	// 	Mutable: false,
-	// }
-
 	unaryLogicType := type_system.NewFuncType(
 		nil,
 		nil,
@@ -420,30 +477,6 @@ func Prelude(c *Checker) *Scope {
 		Type:    unaryLogicType,
 		Mutable: false,
 	}
-
-	scope.Namespace.Values["+"] = &binArithBinding
-	scope.Namespace.Values["-"] = &binArithBinding
-	scope.Namespace.Values["*"] = &binArithBinding
-	scope.Namespace.Values["/"] = &binArithBinding
-
-	scope.Namespace.Values["=="] = &binEqBinding
-	scope.Namespace.Values["!="] = &binEqBinding
-	scope.Namespace.Values["<"] = &binACompBinding
-	scope.Namespace.Values[">"] = &binACompBinding
-	scope.Namespace.Values["<="] = &binACompBinding
-	scope.Namespace.Values[">="] = &binACompBinding
-
-	scope.Namespace.Values["&&"] = &binLogicBinding
-	scope.Namespace.Values["||"] = &binLogicBinding
-
-	// TODO: uncomment after adding support for calling overloaded functions
-	// scope.Namespace.Values["-"] = type_system.Binding{
-	// 	Source:  nil,
-	// 	Type:    NewIntersectionType(binArithType, unaryArithType),
-	// 	Mutable: false,
-	// }
-
-	scope.Namespace.Values["!"] = &unaryLogicBinding
 
 	// String concatenation operator
 	strConcatType := type_system.NewFuncType(
@@ -462,9 +495,28 @@ func Prelude(c *Checker) *Scope {
 		Mutable: false,
 	}
 
-	scope.Namespace.Values["++"] = &strConcatBinding
+	ns.Values["+"] = &binArithBinding
+	ns.Values["-"] = &binArithBinding
+	ns.Values["*"] = &binArithBinding
+	ns.Values["/"] = &binArithBinding
 
-	// Symbol object with iterator and customMatcher unique symbols
+	ns.Values["=="] = &binEqBinding
+	ns.Values["!="] = &binEqBinding
+	ns.Values["<"] = &binACompBinding
+	ns.Values[">"] = &binACompBinding
+	ns.Values["<="] = &binACompBinding
+	ns.Values[">="] = &binACompBinding
+
+	ns.Values["&&"] = &binLogicBinding
+	ns.Values["||"] = &binLogicBinding
+
+	ns.Values["!"] = &unaryLogicBinding
+
+	ns.Values["++"] = &strConcatBinding
+}
+
+// addSymbolBinding adds the Symbol object with iterator and customMatcher unique symbols
+func (c *Checker) addSymbolBinding(ns *type_system.Namespace) {
 	c.SymbolID++
 	iteratorSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
 	c.SymbolID++
@@ -485,14 +537,31 @@ func Prelude(c *Checker) *Scope {
 		},
 	}
 
-	scope.Namespace.Values["Symbol"] = &type_system.Binding{
+	ns.Values["Symbol"] = &type_system.Binding{
 		Source:  nil,
 		Type:    type_system.NewObjectType(nil, symbolElems),
 		Mutable: false,
 	}
+}
 
-	preludeScope = scope
-	symbolIDCounter = c.SymbolID
+// Prelude initializes the global scope if not already done, and returns a child scope
+// that can be used for user code. The global scope is cached for efficiency.
+//
+// We assume that a new Checker instance is being passed in every time Prelude is called.
+// TODO(#256): Report all errors to the caller.
+func Prelude(c *Checker) *Scope {
+	if cachedGlobalScope != nil {
+		c.SymbolID = cachedSymbolIDCounter
+		c.GlobalScope = cachedGlobalScope
+		return cachedGlobalScope.WithNewScope()
+	}
 
-	return scope.WithNewScope()
+	// Initialize the global scope for the first time
+	c.initializeGlobalScope()
+
+	// Cache for subsequent calls
+	cachedGlobalScope = c.GlobalScope
+	cachedSymbolIDCounter = c.SymbolID
+
+	return c.GlobalScope.WithNewScope()
 }
