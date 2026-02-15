@@ -65,6 +65,7 @@ func (*TypeDecl) isStatement()      {}
 func (*EnumDecl) isStatement()      {}
 func (*NamespaceDecl) isStatement() {}
 func (*ModuleDecl) isStatement()    {}
+func (*GlobalDecl) isStatement()    {}
 func (*ExportDecl) isStatement()    {}
 func (*ImportDecl) isStatement()    {}
 func (*AmbientDecl) isStatement()   {}
@@ -155,6 +156,13 @@ type ModuleDecl struct {
 }
 
 func (d *ModuleDecl) Span() ast.Span { return d.span }
+
+type GlobalDecl struct {
+	Statements []Statement
+	span       ast.Span
+}
+
+func (d *GlobalDecl) Span() ast.Span { return d.span }
 
 type AmbientDecl struct {
 	Declaration Statement

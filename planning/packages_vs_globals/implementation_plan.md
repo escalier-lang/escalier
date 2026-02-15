@@ -38,10 +38,10 @@ All bindings exist in a flat namespace with no shadowing or isolation.
 ### 2.2 Target State
 
 ```
-Package Registry (shared across all files)
-├── "lodash" namespace → { map, filter, ... }
-├── "ramda" namespace → { map, filter, ... }
-└── "@types/node" namespace → { ... }
+Package Registry (shared across all files, keyed by resolved .d.ts file path)
+├── "/path/to/node_modules/lodash/index.d.ts" → { map, filter, ... }
+├── "/path/to/node_modules/ramda/index.d.ts" → { map, filter, ... }
+└── "/path/to/node_modules/@types/node/index.d.ts" → { ... }
 
 Scope Chain (for modules - three levels):
     globalScope (Namespace: globals like Array, Promise, etc.)
@@ -81,8 +81,10 @@ Note: For scripts, the lookup is simpler: scriptScope → globalScope.
 
 ```go
 // Package registry - separate from scope chain
+// Uses resolved .d.ts file paths as keys (not package names) to support
+// monorepos where different projects may have different versions of the same package.
 type PackageRegistry struct {
-    packages map[string]*type_system.Namespace  // package identity → namespace
+    packages map[string]*type_system.Namespace  // .d.ts file path → namespace
 }
 
 func NewPackageRegistry() *PackageRegistry {
@@ -91,12 +93,12 @@ func NewPackageRegistry() *PackageRegistry {
     }
 }
 
-func (pr *PackageRegistry) Register(identity string, ns *type_system.Namespace) {
-    pr.packages[identity] = ns
+func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespace) {
+    pr.packages[dtsFilePath] = ns
 }
 
-func (pr *PackageRegistry) Lookup(identity string) (*type_system.Namespace, bool) {
-    ns, ok := pr.packages[identity]
+func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, bool) {
+    ns, ok := pr.packages[dtsFilePath]
     return ns, ok
 }
 ```
@@ -414,46 +416,28 @@ func expandExportEquals(file *ast.File) []ast.Node {
 ```
 
 **Tasks**:
-- [ ] Create classifier.go with classification types
-- [ ] Implement `ClassifyDTSFile()` function
-- [ ] Implement `isTopLevelExport()` helper
-- [ ] Implement `extractNamedModule()` helper
-- [ ] Implement `expandExportEquals()` helper to handle `export = Namespace` syntax
-- [ ] Add tests for various .d.ts file patterns:
-  - [ ] File with top-level exports
-  - [ ] File with no exports (all globals)
-  - [ ] File with named modules only
-  - [ ] Mixed file (globals + named modules)
-  - [ ] Edge case: file with re-exports
-  - [ ] Edge case: file with `export = Namespace` (expand to top-level exports)
+- [x] Create classifier.go with classification types
+- [x] Implement `ClassifyDTSFile()` function
+- [x] Implement `isTopLevelExport()` helper
+- [x] Implement `extractNamedModule()` helper
+- [x] Implement `expandExportEquals()` helper to handle `export = Namespace` syntax
+- [x] Add tests for various .d.ts file patterns:
+  - [x] File with top-level exports
+  - [x] File with no exports (all globals)
+  - [x] File with named modules only
+  - [x] Mixed file (globals + named modules)
+  - [x] Edge case: file with re-exports
+  - [x] Edge case: file with `export = Namespace` (expand to top-level exports)
+- [x] Global augmentation (`declare global { ... }`)
 
-#### 5.2.2 Resolve Package Identity
+#### 5.2.2 Package Identifier Derivation
 **File**: `internal/dts_parser/package_identity.go` (new file)
 
+Since the package registry uses resolved .d.ts file paths as keys (for monorepo support), and we always have the package name from the import specifier, we only need a function to derive a valid identifier from the module name.
+
 ```go
-func ResolvePackageIdentity(dtsFilePath string) (string, error) {
-    // Traverse up directory tree looking for package.json
-    dir := filepath.Dir(dtsFilePath)
-    for {
-        pkgJsonPath := filepath.Join(dir, "package.json")
-        if fileExists(pkgJsonPath) {
-            // Read package.json and extract "name" field
-            name, err := readPackageName(pkgJsonPath)
-            if err != nil {
-                return "", err
-            }
-            return name, nil  // Returns package name, e.g., "lodash" or "@types/node"
-        }
-
-        parent := filepath.Dir(dir)
-        if parent == dir {
-            // Reached filesystem root
-            return "", fmt.Errorf("no package.json found for %s", dtsFilePath)
-        }
-        dir = parent
-    }
-}
-
+// DerivePackageIdentifier transforms a module/package name (from an import specifier)
+// into a valid identifier that can be used as a binding name in Escalier code.
 func DerivePackageIdentifier(moduleName string) string {
     // Strip scope prefix (@scope/pkg → pkg)
     name := moduleName
@@ -464,36 +448,44 @@ func DerivePackageIdentifier(moduleName string) string {
         }
     }
 
+    // Replace forward slashes with underscores (for subpath exports)
+    name = strings.ReplaceAll(name, "/", "_")
+
     // Replace hyphens with underscores
     name = strings.ReplaceAll(name, "-", "_")
+
+    // Replace dots with underscores
+    name = strings.ReplaceAll(name, ".", "_")
 
     return name
 }
 ```
 
+**Note**: `ResolvePackageIdentity()` was removed because:
+1. The package registry uses file paths as keys (not package names)
+2. We always have the package name from the import specifier (e.g., `import "lodash"`)
+3. There's no need to traverse the filesystem to find package.json
+
 **Tasks**:
-- [ ] Implement `ResolvePackageIdentity()` function
-- [ ] Implement `DerivePackageIdentifier()` function
-- [ ] Add caching for package.json lookups
-- [ ] Handle edge cases:
-  - [ ] No package.json found
-  - [ ] package.json without "name" field
-  - [ ] Symlinked directories
-- [ ] Write tests for identity resolution
+- [x] Implement `DerivePackageIdentifier()` function
+- [x] Handle scoped packages (@scope/pkg → pkg)
+- [x] Handle subpath exports (lodash/fp → lodash_fp)
+- [x] Handle hyphens and dots
+- [x] Write tests for identifier derivation
 
 #### 5.2.3 .d.ts Classification Tests
 
 **File Classification Tests**:
-- [ ] .d.ts files with top-level exports
-- [ ] .d.ts files without exports (all globals)
-- [ ] .d.ts files with named modules only
-- [ ] Mixed .d.ts files (globals + named modules)
-- [ ] Edge case: file with re-exports
-- [ ] Edge case: file with `export = Namespace` (should expand namespace members to top-level exports)
+- [x] .d.ts files with top-level exports
+- [x] .d.ts files without exports (all globals)
+- [x] .d.ts files with named modules only
+- [x] Mixed .d.ts files (globals + named modules)
+- [x] Edge case: file with re-exports
+- [x] Edge case: file with `export = Namespace` (should expand namespace members to top-level exports)
+- [x] Global augmentation (`declare global { ... }`)
 
-**Package Identity Tests**:
-- [ ] Package identity resolution from file path
-- [ ] Package identifier derivation (scoped packages, hyphens)
+**Package Identifier Tests**:
+- [x] Package identifier derivation (scoped packages, hyphens, dots, subpaths)
 
 #### 5.2.4 Update Module Loader
 **File**: `internal/interop/load_typescript_module.go` (modify existing)
@@ -951,6 +943,7 @@ func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error 
     }
 
     // Load package and get its namespace directly
+    // The file path is used as the registry key (for monorepo support)
     pkgNs, err := c.loadPackageForImport(packageName)
     if err != nil {
         return err
@@ -961,7 +954,7 @@ func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error 
     // must have their own import statements to access this package.
     // ctx.Scope is the file scope, so this binding is file-scoped
     fileNs := ctx.Scope.Namespace
-    if err := fileNs.setNamespace(packageIdent, pkgNs); err != nil {
+    if err := fileNs.SetNamespace(packageIdent, pkgNs); err != nil {
         return err
     }
 
@@ -969,7 +962,9 @@ func (c *Checker) inferImportStatement(ctx Context, stmt *ast.ImportStmt) error 
 }
 
 // loadPackageForImport loads a package and returns the namespace
-// that corresponds to the given package name
+// that corresponds to the given package name.
+// The registry uses file paths as keys to support monorepos with different
+// versions of the same package in different project directories.
 func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespace, error) {
     // Resolve to file path via Node module resolution
     filePath, err := c.resolvePackage(packageName)
@@ -977,61 +972,51 @@ func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespa
         return nil, fmt.Errorf("cannot resolve package %q: %w", packageName, err)
     }
 
-    // Load and classify
-    // LoadTypeScriptModule already populates module.Packages with correct keys:
-    // - For top-level exports: key is result of ResolvePackageIdentity (package name from package.json)
-    // - For named modules: key is the module name string (e.g., "lodash", "lodash/fp")
+    // Check if already registered using file path as key (handles re-imports)
+    if pkgNs, exists := c.packageRegistry.Lookup(filePath); exists {
+        return pkgNs, nil
+    }
+
+    // Load and classify the .d.ts file
     module, err := LoadTypeScriptModule(filePath)
     if err != nil {
         return nil, err
     }
 
-    // Determine which package identity corresponds to the import
-    // Priority:
-    // 1. Exact match with packageName (e.g., `declare module "lodash"` matches `import "lodash"`)
-    // 2. If only one package, use that (e.g., top-level exports from a single-package file)
-    var matchingIdentity string
-    if _, exists := module.Packages[packageName]; exists {
-        matchingIdentity = packageName
-    } else if len(module.Packages) == 1 {
-        for identity := range module.Packages {
-            matchingIdentity = identity
-            break
-        }
+    // Create package namespace from the module's declarations
+    pkgNs := type_system.NewNamespace()
+    pkgScope := &Scope{
+        Parent:    c.globalScope,  // Packages can reference globals
+        Namespace: pkgNs,
+    }
+
+    // Build dep graph and infer package declarations
+    // For files with top-level exports, use PackageDecls
+    // For named modules, we'd need to match the packageName to find the right one
+    var decls []ast.Node
+    if classification := module.Classification; classification.HasTopLevelExports {
+        decls = classification.PackageDecls
     } else {
-        return nil, fmt.Errorf("cannot determine package identity for import %q", packageName)
+        // For named modules, find the matching module
+        for _, nm := range classification.NamedModules {
+            if nm.ModuleName == packageName {
+                decls = nm.Decls
+                break
+            }
+        }
     }
 
-    // Check if already registered (handles re-imports)
-    if pkgNs, exists := c.packageRegistry.Lookup(matchingIdentity); exists {
-        return pkgNs, nil
-    }
-
-    // Register all packages from this file (they may be needed by other imports)
-    for packageIdentity, pkgDecls := range module.Packages {
-        // Skip if already registered
-        if _, exists := c.packageRegistry.Lookup(packageIdentity); exists {
-            continue
-        }
-
-        // Create package namespace
-        pkgNs := type_system.NewNamespace()
-        pkgScope := &Scope{
-            Parent:    c.globalScope,  // Packages can reference globals
-            Namespace: pkgNs,
-        }
-
-        // Build dep graph and infer package declarations
-        pkgModule := &ast.Module{Decls: pkgDecls.Decls}
+    if len(decls) > 0 {
+        pkgModule := &ast.Module{Decls: decls}
         depGraph := dep_graph.BuildDepGraph(pkgModule)
         ctx := Context{Scope: pkgScope}
         if errs := c.InferDepGraph(ctx, depGraph); len(errs) > 0 {
             return nil, errs[0]
         }
-
-        // Register in package registry
-        c.packageRegistry.Register(packageIdentity, pkgNs)
     }
+
+    // Register in package registry using file path as key
+    c.packageRegistry.Register(filePath, pkgNs)
 
     // Handle global augmentations if any
     if len(module.GlobalDecls) > 0 {
@@ -1043,8 +1028,6 @@ func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespa
         }
     }
 
-    // Return the namespace for the requested package
-    pkgNs, _ := c.packageRegistry.Lookup(matchingIdentity)
     return pkgNs, nil
 }
 ```
@@ -1056,10 +1039,10 @@ func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespa
 
 **Tasks**:
 - [ ] Implement new `inferImportStatement()` logic
-- [ ] Implement `loadPackageForImport()` method
-- [ ] Implement `DerivePackageIdentifier()` (from 5.2)
+- [ ] Implement `loadPackageForImport()` method (uses file path as registry key)
+- [x] Implement `DerivePackageIdentifier()` (completed in 5.2)
 - [ ] Handle import aliases (`import "pkg" as alias`)
-- [ ] Handle re-imports (no-op if already loaded)
+- [ ] Handle re-imports (no-op if already loaded - checked by file path)
 - [ ] Add caching to avoid re-loading same package
 - [ ] Consider multi-file package support (e.g., @types/node)
 - [ ] Test various import scenarios:
@@ -1067,6 +1050,7 @@ func (c *Checker) loadPackageForImport(packageName string) (*type_system.Namespa
   - [ ] Import with alias
   - [ ] Multiple imports
   - [ ] Circular imports (edge case)
+  - [ ] Monorepo: same package at different paths (should be separate registry entries)
 
 #### 5.4.2 Handle Subpath Imports
 **File**: `internal/checker/infer_import.go`
@@ -1468,7 +1452,7 @@ From requirements.md section 10:
 
 ### Milestone 1: Infrastructure
 - [x] Complete 5.1: Package registry and data structures
-- [ ] Complete 5.2: .d.ts classification
+- [x] Complete 5.2: .d.ts classification
 
 ### Milestone 2: Core Features
 - [ ] Complete 5.3: Global namespace separation
@@ -1560,9 +1544,15 @@ let global: globalThis.Array<number>  // Global Array
 
 ```go
 // Package Registry (at Checker level)
+// Uses resolved .d.ts file paths as keys (not package names) to support
+// monorepos where different projects may have different versions of the same package.
 type PackageRegistry struct {
-    packages map[string]*type_system.Namespace
+    packages map[string]*type_system.Namespace  // .d.ts file path → namespace
 }
+
+// Example registry contents:
+// "/monorepo/project-a/node_modules/lodash/index.d.ts" → lodash v4.17.21 namespace
+// "/monorepo/project-b/node_modules/lodash/index.d.ts" → lodash v4.17.15 namespace
 
 // Scope (simplified)
 type Scope struct {
@@ -1584,8 +1574,8 @@ moduleScope (Parent: globalScope)  // Shared namespace for module declarations
     ↑
 fileScope (Parent: moduleScope)  // Each .esc file has its own fileScope
     └── Namespaces (bound by import statements in this file):
-        ├── "lodash" → points to packageRegistry["lodash"]
-        └── "ramda" → points to packageRegistry["ramda"]
+        ├── "lodash" → points to namespace from packageRegistry["/path/to/lodash/index.d.ts"]
+        └── "ramda" → points to namespace from packageRegistry["/path/to/ramda/index.d.ts"]
 
 // Scope Chain for Scripts (two levels)
 globalScope (Parent: nil)
@@ -1595,6 +1585,7 @@ scriptScope (Parent: globalScope)  // Single scope for declarations + imports
 // Note: Import bindings are file-scoped. If file_a.esc imports "lodash",
 // file_b.esc cannot access "lodash" unless it has its own import statement.
 // Module declarations (types, functions) go to moduleScope and ARE visible across files.
+// The identifier (e.g., "lodash") is derived from the import specifier using DerivePackageIdentifier().
 ```
 
 ---
