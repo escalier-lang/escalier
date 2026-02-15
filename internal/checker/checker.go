@@ -42,6 +42,11 @@ type Context struct {
 	IsPatMatch             bool
 	AllowUndefinedTypeRefs bool
 	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
+	// FileScopes maps SourceID to file-specific scope.
+	// Used for file-scoped imports in modules.
+	FileScopes map[int]*Scope
+	// Module is the current module being processed (for file path lookup).
+	Module *ast.Module
 }
 
 func (ctx *Context) WithNewScope() Context {
@@ -51,6 +56,8 @@ func (ctx *Context) WithNewScope() Context {
 		IsPatMatch:             ctx.IsPatMatch,
 		AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
 		TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
+		FileScopes:             ctx.FileScopes,
+		Module:                 ctx.Module,
 	}
 }
 
@@ -59,5 +66,31 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		Scope:      ctx.Scope.WithNewScopeAndNamespace(ns),
 		IsAsync:    ctx.IsAsync,
 		IsPatMatch: ctx.IsPatMatch,
+		FileScopes: ctx.FileScopes,
+		Module:     ctx.Module,
 	}
+}
+
+// WithScope creates a new context with a different scope.
+func (ctx *Context) WithScope(scope *Scope) Context {
+	return Context{
+		Scope:                  scope,
+		IsAsync:                ctx.IsAsync,
+		IsPatMatch:             ctx.IsPatMatch,
+		AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
+		TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
+		FileScopes:             ctx.FileScopes,
+		Module:                 ctx.Module,
+	}
+}
+
+// GetFileScope returns the file scope for a given SourceID.
+// If no file scope exists for the SourceID, returns the base module scope.
+func (ctx *Context) GetFileScope(sourceID int) *Scope {
+	if ctx.FileScopes != nil {
+		if scope, ok := ctx.FileScopes[sourceID]; ok {
+			return scope
+		}
+	}
+	return ctx.Scope
 }

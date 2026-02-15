@@ -105,6 +105,33 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	errors := []Error{}
 
+	// First, check if the package is already registered in the PackageRegistry.
+	// This allows for pre-loaded packages (e.g., for testing or caching).
+	if pkgNs, found := c.PackageRegistry.Lookup(importStmt.PackageName); found {
+		for _, specifier := range importStmt.Specifiers {
+			if specifier.Name == "*" {
+				ctx.Scope.Namespace.SetNamespace(specifier.Alias, pkgNs)
+			} else {
+				// Named import: copy the specific binding
+				if binding, ok := pkgNs.Values[specifier.Name]; ok {
+					name := specifier.Name
+					if specifier.Alias != "" {
+						name = specifier.Alias
+					}
+					ctx.Scope.Namespace.Values[name] = binding
+				}
+				if typeAlias, ok := pkgNs.Types[specifier.Name]; ok {
+					name := specifier.Name
+					if specifier.Alias != "" {
+						name = specifier.Alias
+					}
+					ctx.Scope.Namespace.Types[name] = typeAlias
+				}
+			}
+		}
+		return errors
+	}
+
 	typeDefPath, err1 := resolveImport(ctx, importStmt)
 	if err1 != nil {
 		errors = append(errors, err1)

@@ -49,6 +49,44 @@ func GetNamespaceCtx(
 	return nsCtx
 }
 
+// GetDeclContext returns a Context for inferring a specific declaration.
+// It uses the declaration's file scope for lookups (to resolve file-scoped imports),
+// while ensuring declarations are written to the correct module namespace.
+func GetDeclContext(
+	ctx Context,
+	depGraph *dep_graph.DepGraph,
+	key dep_graph.BindingKey,
+	decl ast.Decl,
+) Context {
+	// Get the base namespace context (for writing declarations)
+	nsCtx := GetNamespaceCtx(ctx, depGraph, key)
+
+	// If we have file scopes, use the file scope for this declaration's lookups
+	if ctx.FileScopes != nil {
+		sourceID := decl.Span().SourceID
+		if fileScope, ok := ctx.FileScopes[sourceID]; ok {
+			// Create a new scope that:
+			// 1. Uses the module namespace (for writing declarations)
+			// 2. Has the file scope as parent (for import resolution)
+			declScope := &Scope{
+				Parent:    fileScope,
+				Namespace: nsCtx.Scope.Namespace,
+			}
+			return Context{
+				Scope:                  declScope,
+				IsAsync:                nsCtx.IsAsync,
+				IsPatMatch:             nsCtx.IsPatMatch,
+				AllowUndefinedTypeRefs: nsCtx.AllowUndefinedTypeRefs,
+				TypeRefsToUpdate:       nsCtx.TypeRefsToUpdate,
+				FileScopes:             ctx.FileScopes,
+				Module:                 ctx.Module,
+			}
+		}
+	}
+
+	return nsCtx
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
@@ -84,7 +122,6 @@ func (c *Checker) InferComponent(
 
 	// Infer placeholders
 	for _, key := range component {
-		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -94,6 +131,9 @@ func (c *Checker) InferComponent(
 				continue
 			}
 			processedPlaceholders[decl] = true
+
+			// Get context for this specific declaration, including file scope for imports
+			nsCtx := GetDeclContext(ctx, depGraph, key, decl)
 
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
@@ -533,7 +573,6 @@ func (c *Checker) InferComponent(
 	// Infer definitions - Pass 1: FuncDecl, ClassDecl, EnumDecl, TypeDecl, InterfaceDecl
 	// These need to be processed first so their inferred types are available for VarDecl
 	for _, key := range component {
-		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -563,6 +602,9 @@ func (c *Checker) InferComponent(
 					continue
 				}
 			}
+
+			// Get context for this specific declaration, including file scope for imports
+			nsCtx := GetDeclContext(ctx, depGraph, key, decl)
 
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
@@ -1035,7 +1077,6 @@ func (c *Checker) InferComponent(
 	// VarDecl initializers are processed after other declarations so that
 	// function/method return types are already inferred and available.
 	for _, key := range component {
-		nsCtx := GetNamespaceCtx(ctx, depGraph, key)
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -1065,6 +1106,9 @@ func (c *Checker) InferComponent(
 				continue
 			}
 
+			// Get context for this specific declaration, including file scope for imports
+			nsCtx := GetDeclContext(ctx, depGraph, key, decl)
+
 			// TODO: if there's a type annotation, unify the initializer with it
 			// Skip if the init has already been inferred (to avoid re-unification errors
 			// when multiple binding keys share the same VarDecl across different components)
@@ -1088,7 +1132,33 @@ func (c *Checker) InferComponent(
 	// to allow for recursive definitions between type and variable declarations.
 	for _, refs := range typeRefsToUpdate {
 		for _, ref := range refs {
-			ref.TypeAlias = resolveQualifiedTypeAlias(ctx, ref.Name)
+			// Get the file-specific context if available (for file-scoped imports)
+			refCtx := ctx
+			if ctx.FileScopes != nil {
+				// Extract SourceID from the type ref's provenance
+				if nodeProv, ok := ref.Provenance().(*ast.NodeProvenance); ok {
+					if node := nodeProv.Node; node != nil {
+						sourceID := node.Span().SourceID
+						if fileScope, ok := ctx.FileScopes[sourceID]; ok {
+							// Create a context with the file scope for proper import resolution
+							refCtx = ctx.WithScope(&Scope{
+								Parent:    fileScope,
+								Namespace: ctx.Scope.Namespace,
+							})
+						}
+					}
+				}
+			}
+			ref.TypeAlias = resolveQualifiedTypeAlias(refCtx, ref.Name)
+
+			// Generate an error if the type reference couldn't be resolved
+			if ref.TypeAlias == nil {
+				typeName := type_system.QualIdentToString(ref.Name)
+				errors = append(errors, &UnknownTypeError{
+					TypeName: typeName,
+					TypeRef:  ref,
+				})
+			}
 		}
 	}
 
@@ -1170,6 +1240,38 @@ const DEBUG = false
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
+	errors := []Error{}
+
+	// Phase 1: Create file scopes and process imports for each file.
+	// Import bindings are file-scoped (not visible to other files).
+	fileScopes := make(map[int]*Scope)
+
+	for _, file := range m.Files {
+		// Create a file scope with the module scope as parent.
+		// This allows file code to access:
+		// - File-scoped imports (in fileScope.Namespace)
+		// - Module-level declarations (via parent chain)
+		// - Global types (via grandparent chain)
+		fileNs := type_system.NewNamespace()
+		fileScope := &Scope{
+			Parent:    ctx.Scope, // Parent is module scope
+			Namespace: fileNs,
+		}
+		fileScopes[file.SourceID] = fileScope
+
+		// Process import statements for this file
+		for _, importStmt := range file.Imports {
+			fileCtx := ctx.WithScope(fileScope)
+			importErrors := c.inferImport(fileCtx, importStmt)
+			errors = append(errors, importErrors...)
+		}
+	}
+
+	// Update context with file scopes and module reference
+	ctx.FileScopes = fileScopes
+	ctx.Module = m
+
+	// Phase 2: Build unified DepGraph for ALL declarations across all files.
 	depGraph := dep_graph.BuildDepGraph(m)
 
 	// print out all of the dependencies in depGraph for debugging
@@ -1190,7 +1292,12 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 		}
 	}
 
-	return c.InferDepGraph(ctx, depGraph)
+	// Phase 3: Infer declarations using unified DepGraph.
+	// Each declaration uses its file-specific scope for import resolution.
+	declErrors := c.InferDepGraph(ctx, depGraph)
+	errors = append(errors, declErrors...)
+
+	return errors
 }
 
 // inferTypeParams infers type parameters from AST type parameters by creating

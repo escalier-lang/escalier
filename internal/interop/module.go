@@ -153,5 +153,5 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 
-	return &ast.Module{Namespaces: namespaces}, nil
+	return ast.NewModule(namespaces), nil
 }
