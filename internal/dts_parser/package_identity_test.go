@@ -36,6 +36,11 @@ func TestDerivePackageIdentifier(t *testing.T) {
 		// Complex cases
 		{"complex scoped subpath", "@my-scope/my-pkg/sub-path", "my_pkg_sub_path"},
 		{"all transformations", "@my-scope/my-pkg.v2/sub-path", "my_pkg_v2_sub_path"},
+
+		// Packages starting with digits
+		{"starts with digit", "7zip-wrapper", "_7zip_wrapper"},
+		{"starts with digit 2", "2fa-auth", "_2fa_auth"},
+		{"scoped starts with digit", "@types/7zip", "_7zip"},
 	}
 
 	for _, tt := range tests {

@@ -11,6 +11,7 @@ import (
 //  1. Strip scope prefix (@scope/pkg → pkg)
 //  2. Replace hyphens and dots with underscores
 //  3. Handle subpath exports (lodash/fp → lodash_fp)
+//  4. Prefix with underscore if name starts with a digit
 //
 // Examples:
 //
@@ -20,6 +21,8 @@ import (
 //	DerivePackageIdentifier("lodash/fp") → "lodash_fp"
 //	DerivePackageIdentifier("date-fns") → "date_fns"
 //	DerivePackageIdentifier("@my-scope/my-pkg") → "my_pkg"
+//	DerivePackageIdentifier("7zip-wrapper") → "_7zip_wrapper"
+//	DerivePackageIdentifier("2fa-auth") → "_2fa_auth"
 func DerivePackageIdentifier(moduleName string) string {
 	name := moduleName
 
@@ -43,6 +46,11 @@ func DerivePackageIdentifier(moduleName string) string {
 
 	// Replace dots with underscores
 	name = strings.ReplaceAll(name, ".", "_")
+
+	// Prefix with underscore if name starts with a digit
+	if len(name) > 0 && name[0] >= '0' && name[0] <= '9' {
+		name = "_" + name
+	}
 
 	return name
 }
