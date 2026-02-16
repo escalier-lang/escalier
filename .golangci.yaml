@@ -1,3 +1,11 @@
+version: "2"
+
+run:
+  issues-exit-code: 0
+
+severity:
+  default: warning
+
 linters:
   enable:
     - exhaustive

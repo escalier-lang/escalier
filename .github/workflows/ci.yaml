@@ -24,6 +24,11 @@ jobs:
       - name: Install Go dependencies
         run: go mod download
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.9
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
