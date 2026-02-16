@@ -183,7 +183,106 @@ func UpdateArrayMutability(namespace *type_system.Namespace) {
 	}
 }
 
+// LoadedPackageResult holds the result of loading and classifying a .d.ts file.
+type LoadedPackageResult struct {
+	// PackageModule is the AST module containing package declarations (exported symbols).
+	// nil if the file has no top-level exports.
+	PackageModule *ast.Module
+
+	// GlobalModule is the AST module containing global declarations.
+	// This includes declarations from `declare global { ... }` blocks,
+	// and all declarations if the file has no top-level exports.
+	GlobalModule *ast.Module
+
+	// NamedModules maps module names to their AST modules.
+	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
+	NamedModules map[string]*ast.Module
+}
+
+// loadClassifiedTypeScriptModule loads a .d.ts file and classifies its contents
+// using the FileClassification system from dts_parser/classifier.go.
+func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, error) {
+	// Check file exists
+	if _, err := os.Lstat(filename); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "DTS file not found: %s\n", filename)
+		return nil, err
+	}
+
+	// Read the file
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading DTS file: %s\n", err.Error())
+		return nil, err
+	}
+
+	source := &ast.Source{
+		Path:     filename,
+		Contents: string(contents),
+		ID:       0,
+	}
+
+	// Parse the module
+	parser := dts_parser.NewDtsParser(source)
+	dtsModule, parseErrors := parser.ParseModule()
+
+	if len(parseErrors) > 0 {
+		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
+		for _, parseErr := range parseErrors {
+			fmt.Fprintf(os.Stderr, "- %s\n", parseErr)
+		}
+		return nil, fmt.Errorf("failed to parse DTS module %s: %d errors", filename, len(parseErrors))
+	}
+
+	// Classify the file using the FileClassification system
+	classification := dts_parser.ClassifyDTSFile(dtsModule)
+
+	result := &LoadedPackageResult{
+		NamedModules: make(map[string]*ast.Module),
+	}
+
+	// Process package declarations (exported symbols)
+	if len(classification.PackageDecls) > 0 {
+		pkgDtsModule := &dts_parser.Module{
+			Statements: classification.PackageDecls,
+		}
+		pkgAstModule, err := interop.ConvertModule(pkgDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting package declarations: %w", err)
+		}
+		result.PackageModule = pkgAstModule
+	}
+
+	// Process global declarations
+	if len(classification.GlobalDecls) > 0 {
+		globalDtsModule := &dts_parser.Module{
+			Statements: classification.GlobalDecls,
+		}
+		globalAstModule, err := interop.ConvertModule(globalDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting global declarations: %w", err)
+		}
+		result.GlobalModule = globalAstModule
+	}
+
+	// Process named modules
+	for _, namedMod := range classification.NamedModules {
+		namedDtsModule := &dts_parser.Module{
+			Statements: namedMod.Decls,
+		}
+		namedAstModule, err := interop.ConvertModule(namedDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
+		}
+		result.NamedModules[namedMod.ModuleName] = namedAstModule
+	}
+
+	return result, nil
+}
+
 // TODO: wrap `error` returns in a proper Error type
+// Deprecated: Use loadClassifiedTypeScriptModule instead.
+// loadTypeScriptModule uses naive module/global separation that doesn't
+// properly handle the FileClassification system.
 // We actually need to return multiple Escalier modules in some cases
 func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 	if _, err := os.Lstat(filename); os.IsNotExist(err) {
@@ -341,22 +440,40 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 
 // loadGlobalFile loads a single .d.ts file and adds its declarations to the appropriate scope:
 // - Global declarations go to globalScope
+// - Package declarations (if any) also go to globalScope for lib files
 // - Named modules (declare module "...") are registered in the PackageRegistry
 func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
-	moduleMap, err := loadTypeScriptModule(filePath)
+	loadResult, err := loadClassifiedTypeScriptModule(filePath)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s", filePath))
 	}
 
 	// Process global declarations
-	if globalModule, ok := moduleMap["global"]; ok {
+	if loadResult.GlobalModule != nil {
 		inferCtx := Context{
 			Scope:      globalScope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
 
-		inferErrors := c.InferModule(inferCtx, globalModule)
+		inferErrors := c.InferModule(inferCtx, loadResult.GlobalModule)
+		if len(inferErrors) > 0 {
+			for _, err := range inferErrors {
+				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
+			}
+			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
+		}
+	}
+
+	// Process package declarations (for lib files, these are also globals)
+	if loadResult.PackageModule != nil {
+		inferCtx := Context{
+			Scope:      globalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		inferErrors := c.InferModule(inferCtx, loadResult.PackageModule)
 		if len(inferErrors) > 0 {
 			for _, err := range inferErrors {
 				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
@@ -366,11 +483,7 @@ func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
 	}
 
 	// Process named modules - register them in the PackageRegistry
-	for moduleName, astModule := range moduleMap {
-		if moduleName == "global" {
-			continue // Already handled above
-		}
-
+	for moduleName, astModule := range loadResult.NamedModules {
 		// Create a namespace for this named module
 		moduleNs := type_system.NewNamespace()
 		moduleScope := &Scope{
