@@ -182,7 +182,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	// return and throws types, then unify with the function signature.
 	if isAsync {
 		// Create a Promise<T, E> type using the inferred components.
-		promiseAlias := ctx.Scope.getTypeAlias("Promise")
+		promiseAlias := ctx.Scope.GetTypeAlias("Promise")
 		if promiseAlias != nil {
 			promiseRef := type_system.NewTypeRefType(nil, "Promise", promiseAlias, returnType, inferredThrowType)
 			// Update the function signature's return type to this Promise.

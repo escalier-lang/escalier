@@ -22,6 +22,41 @@ func getSpanFromType(t type_system.Type) ast.Span {
 	return DEFAULT_SPAN
 }
 
+// isArrayType checks if a TypeRefType refers to the global Array type.
+// This handles both simple names ("Array") and qualified names ("globalThis.Array")
+// by checking the underlying TypeAlias pointer when available.
+func (c *Checker) isArrayType(ref *type_system.TypeRefType) bool {
+	// Check by TypeAlias pointer - both should point to the same global Array alias
+	if ref.TypeAlias != nil && c.GlobalScope != nil {
+		globalArrayAlias := c.GlobalScope.Namespace.Types["Array"]
+		if globalArrayAlias != nil && ref.TypeAlias == globalArrayAlias {
+			return true
+		}
+		// TypeAlias is set but doesn't match global Array - not the global Array
+		return false
+	}
+
+	// Fallback: no TypeAlias set, check by simple name match
+	return type_system.QualIdentToString(ref.Name) == "Array"
+}
+
+// sameTypeRef checks if two TypeRefTypes refer to the same type alias.
+// This handles both same-name cases ("Array" == "Array") and qualified name cases
+// where different names point to the same alias (e.g., "globalThis.Array" and "Array").
+func (c *Checker) sameTypeRef(ref1, ref2 *type_system.TypeRefType) bool {
+	// Check by name match first
+	if type_system.QualIdentToString(ref1.Name) == type_system.QualIdentToString(ref2.Name) {
+		return true
+	}
+
+	// Check by TypeAlias pointer - if both point to the same alias, they're the same type
+	if ref1.TypeAlias != nil && ref2.TypeAlias != nil && ref1.TypeAlias == ref2.TypeAlias {
+		return true
+	}
+
+	return false
+}
+
 // If `Unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
@@ -238,7 +273,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	}
 	// | TupleType, ArrayType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
-		if array2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array2.Name) == "Array" {
+		if array2, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array2) {
 			// A tuple can be unified with an array if all tuple elements
 			// can be unified with the array's element type
 			if len(array2.TypeArgs) == 1 {
@@ -256,7 +291,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 		}
 	}
 	// | ArrayType, TupleType -> ...
-	if array1, ok := t1.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array1.Name) == "Array" {
+	if array1, ok := t1.(*type_system.TypeRefType); ok && c.isArrayType(array1) {
 		if tuple2, ok := t2.(*type_system.TupleType); ok {
 			// An array can be unified with a tuple if the array's element type
 			// can be unified with all tuple elements
@@ -275,8 +310,8 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 		}
 	}
 	// | ArrayType, ArrayType -> ...
-	if array1, ok := t1.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array1.Name) == "Array" {
-		if array2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array2.Name) == "Array" {
+	if array1, ok := t1.(*type_system.TypeRefType); ok && c.isArrayType(array1) {
+		if array2, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array2) {
 			// Both are Array types, unify their element types
 			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
 				return c.Unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
@@ -290,7 +325,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	}
 	// | RestSpreadType, ArrayType -> ...
 	if rest, ok := t1.(*type_system.RestSpreadType); ok {
-		if array, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(array.Name) == "Array" {
+		if array, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array) {
 			return c.Unify(ctx, rest.Type, array)
 		}
 	}
@@ -300,9 +335,11 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 			return c.unifyFuncTypes(ctx, func1, func2)
 		}
 	}
-	// | TypeRefType, TypeRefType (same alias name) -> ...
+	// | TypeRefType, TypeRefType (same alias) -> ...
+	// This handles both same-name cases ("Array" == "Array") and qualified name cases
+	// where different names point to the same alias (e.g., "globalThis.Array" and "Array")
 	if ref1, ok := t1.(*type_system.TypeRefType); ok {
-		if ref2, ok := t2.(*type_system.TypeRefType); ok && type_system.QualIdentToString(ref1.Name) == type_system.QualIdentToString(ref2.Name) {
+		if ref2, ok := t2.(*type_system.TypeRefType); ok && c.sameTypeRef(ref1, ref2) {
 			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
 				// If both type references have no type arguments, we can unify them
 				// directly.

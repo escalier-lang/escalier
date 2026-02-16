@@ -440,18 +440,9 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
 	// IntersectionType, or can't be expanded any further
 	for {
-		expandedType, expandErrors := c.ExpandType(ctx, objType, 1)
-		errors = slices.Concat(errors, expandErrors)
-
-		// If expansion didn't change the type, we're done expanding
-		if expandedType == objType {
-			break
-		}
-
-		objType = expandedType
-
-		// If we've reached an ObjectType, NamespaceType, or IntersectionType, we can stop expanding
-		// since these are the types we can directly get properties from
+		// Check if we've reached a terminal type that we can directly get properties from
+		// before attempting expansion (this avoids infinite recursion on NamespaceType
+		// when globalThis points back to the global namespace)
 		if _, ok := objType.(*type_system.ObjectType); ok {
 			break
 		}
@@ -461,6 +452,16 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		if _, ok := objType.(*type_system.IntersectionType); ok {
 			break
 		}
+
+		expandedType, expandErrors := c.ExpandType(ctx, objType, 1)
+		errors = slices.Concat(errors, expandErrors)
+
+		// If expansion didn't change the type, we're done expanding
+		if expandedType == objType {
+			break
+		}
+
+		objType = expandedType
 	}
 
 	switch t := objType.(type) {

@@ -151,7 +151,7 @@ func resolveQualifiedTypeAlias(ctx Context, qualIdent type_system.QualIdent) *ty
 	switch qi := qualIdent.(type) {
 	case *type_system.Ident:
 		// Simple identifier, use existing scope lookup
-		return ctx.Scope.getTypeAlias(qi.Name)
+		return ctx.Scope.GetTypeAlias(qi.Name)
 	case *type_system.Member:
 		// Qualified identifier like A.B.Type
 		// First resolve the left part (A.B)
@@ -191,12 +191,24 @@ func resolveQualifiedValue(ctx Context, qualIdent type_system.QualIdent) *type_s
 	}
 }
 
-// resolveQualifiedNamespace resolves a qualified identifier to a namespace
+// resolveQualifiedNamespace resolves a qualified identifier to a namespace.
+// It first checks for a namespace binding, then checks for a value binding
+// whose type is NamespaceType (e.g., globalThis).
 func resolveQualifiedNamespace(ctx Context, qualIdent type_system.QualIdent) *type_system.Namespace {
 	switch qi := qualIdent.(type) {
 	case *type_system.Ident:
-		// Simple identifier, check if it's a namespace
-		return ctx.Scope.getNamespace(qi.Name)
+		// First check if it's a namespace binding
+		if ns := ctx.Scope.getNamespace(qi.Name); ns != nil {
+			return ns
+		}
+		// Also check if it's a value binding whose type is NamespaceType
+		// This handles cases like globalThis which is a value with NamespaceType
+		if binding := ctx.Scope.GetValue(qi.Name); binding != nil {
+			if nsType, ok := binding.Type.(*type_system.NamespaceType); ok {
+				return nsType.Namespace
+			}
+		}
+		return nil
 	case *type_system.Member:
 		// Qualified identifier like A.B
 		// First resolve the left part
@@ -207,6 +219,12 @@ func resolveQualifiedNamespace(ctx Context, qualIdent type_system.QualIdent) *ty
 		// Then look for the right part in the resolved namespace
 		if namespace, ok := leftNamespace.GetNamespace(qi.Right.Name); ok {
 			return namespace
+		}
+		// Also check if the right part is a value with NamespaceType
+		if binding, ok := leftNamespace.Values[qi.Right.Name]; ok {
+			if nsType, ok := binding.Type.(*type_system.NamespaceType); ok {
+				return nsType.Namespace
+			}
 		}
 		return nil
 	default:
