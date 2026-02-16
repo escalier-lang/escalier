@@ -171,6 +171,7 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 				fmt.Fprintf(os.Stderr, "Error inferring named module %s: %s\n",
 					moduleName, err.Message())
 			}
+			errors = append(errors, moduleErrors...)
 			continue
 		}
 
@@ -256,15 +257,15 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 
 	// Load the package from file system (or registry by file path)
 	loadedPkg, loadErrors := c.loadPackageForImport(ctx, importStmt)
-	if len(loadErrors) > 0 {
-		return loadErrors
-	}
-
+	errors = append(errors, loadErrors...)
 	if loadedPkg == nil || loadedPkg.Namespace == nil {
-		return []Error{&GenericError{
-			message: "Failed to load package: " + importStmt.PackageName,
-			span:    importStmt.Span(),
-		}}
+		if len(errors) == 0 {
+			errors = append(errors, &GenericError{
+				message: "Failed to load package: " + importStmt.PackageName,
+				span:    importStmt.Span(),
+			})
+		}
+		return errors
 	}
 
 	// Bind import specifiers to the current scope
