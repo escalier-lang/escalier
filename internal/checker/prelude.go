@@ -410,6 +410,10 @@ func (c *Checker) initializeGlobalScope() {
 	// Add Symbol object with iterator and customMatcher unique symbols
 	c.addSymbolBinding(globalNs)
 
+	// Add globalThis binding - provides access to the global namespace
+	// This allows accessing shadowed globals via globalThis.Array, globalThis.Promise, etc.
+	c.addGlobalThisBinding(globalNs)
+
 	// Set the global scope on the Checker
 	c.GlobalScope = globalScope
 }
@@ -651,6 +655,17 @@ func (c *Checker) addSymbolBinding(ns *type_system.Namespace) {
 	ns.Values["Symbol"] = &type_system.Binding{
 		Source:  nil,
 		Type:    type_system.NewObjectType(nil, symbolElems),
+		Mutable: false,
+	}
+}
+
+// addGlobalThisBinding adds the globalThis binding which provides access to the global namespace.
+// This allows accessing shadowed globals via globalThis.Array, globalThis.Promise, etc.
+func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
+	globalThisType := type_system.NewNamespaceType(nil, ns)
+	ns.Values["globalThis"] = &type_system.Binding{
+		Source:  nil,
+		Type:    globalThisType,
 		Mutable: false,
 	}
 }
