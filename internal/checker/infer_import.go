@@ -208,9 +208,9 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 		pkgNs = ns
 	} else if loadResult.GlobalModule != nil {
 		// No top-level exports and no matching named module - use the global module
-		// (This handles .d.ts files that only have global declarations)
-		// GlobalModule was already inferred into c.GlobalScope in Step 4, so reuse it
-		pkgNs = c.GlobalScope.Namespace
+		// Global augmentations are already applied to c.GlobalScope in Step 4.
+		// Use an empty namespace so we don't expose all globals as package exports.
+		pkgNs = type_system.NewNamespace()
 	} else {
 		return nil, []Error{&GenericError{
 			message: "Type definitions for module import do not contain expected module: " + importStmt.PackageName,
