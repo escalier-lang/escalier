@@ -1147,6 +1147,8 @@ func (c *Checker) InferComponent(
 							})
 						}
 					}
+				} else {
+					panic(fmt.Sprintf("Expected NodeProvenance for type reference, got %T", ref.Provenance()))
 				}
 			}
 			ref.TypeAlias = resolveQualifiedTypeAlias(refCtx, ref.Name)

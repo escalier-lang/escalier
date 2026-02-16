@@ -169,6 +169,7 @@ func (p *Parser) parseModuleFile() *ParsedModuleFile {
 
 	// Parse imports first (they must appear at the top)
 	token := p.lexer.peek()
+importLoop:
 	for {
 		// Check if context has been cancelled
 		select {
@@ -190,11 +191,10 @@ func (p *Parser) parseModuleFile() *ParsedModuleFile {
 			token = p.lexer.peek()
 		default:
 			// No more imports, proceed to declarations
-			goto parseDeclsPhase
+			break importLoop
 		}
 	}
 
-parseDeclsPhase:
 	// Parse declarations
 	result.Decls = p.decls()
 	return result

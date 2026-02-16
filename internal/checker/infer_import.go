@@ -114,19 +114,15 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 			} else {
 				// Named import: copy the specific binding
 				found := false
+				name := specifier.Name
+				if specifier.Alias != "" {
+					name = specifier.Alias
+				}
 				if binding, ok := pkgNs.Values[specifier.Name]; ok {
-					name := specifier.Name
-					if specifier.Alias != "" {
-						name = specifier.Alias
-					}
 					ctx.Scope.Namespace.Values[name] = binding
 					found = true
 				}
 				if typeAlias, ok := pkgNs.Types[specifier.Name]; ok {
-					name := specifier.Name
-					if specifier.Alias != "" {
-						name = specifier.Alias
-					}
 					ctx.Scope.Namespace.Types[name] = typeAlias
 					found = true
 				}
