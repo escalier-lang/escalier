@@ -138,6 +138,20 @@ func TestGlobalThisAccessToGlobals(t *testing.T) {
 	// The globalArray binding should exist
 	globalArrayBinding := scope.Namespace.Values["globalArray"]
 	require.NotNil(t, globalArrayBinding, "globalArray binding should exist")
+
+	// globalArray should use the global Array type (via globalThis)
+	globalArrayType := type_system.Prune(globalArrayBinding.Type)
+	globalTypeRef, ok := globalArrayType.(*type_system.TypeRefType)
+	require.True(t, ok, "globalArray should have TypeRefType, got %T", globalArrayType)
+
+	// The qualified name should be "globalThis.Array"
+	assert.Equal(t, "globalThis.Array", type_system.QualIdentToString(globalTypeRef.Name),
+		"Should reference global Array via globalThis")
+
+	// Verify it points to the actual global Array type alias
+	require.NotNil(t, globalTypeRef.TypeAlias, "globalThis.Array should have TypeAlias set")
+	assert.Equal(t, c.GlobalScope.Namespace.Types["Array"], globalTypeRef.TypeAlias,
+		"globalThis.Array should point to the global Array type alias")
 }
 
 // TestGlobalThisAccessWhenShadowed verifies that globalThis.Array provides

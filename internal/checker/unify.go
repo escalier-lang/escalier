@@ -26,21 +26,18 @@ func getSpanFromType(t type_system.Type) ast.Span {
 // This handles both simple names ("Array") and qualified names ("globalThis.Array")
 // by checking the underlying TypeAlias pointer when available.
 func (c *Checker) isArrayType(ref *type_system.TypeRefType) bool {
-	// Check by simple name match
-	name := type_system.QualIdentToString(ref.Name)
-	if name == "Array" {
-		return true
-	}
-
 	// Check by TypeAlias pointer - both should point to the same global Array alias
 	if ref.TypeAlias != nil && c.GlobalScope != nil {
 		globalArrayAlias := c.GlobalScope.Namespace.Types["Array"]
 		if globalArrayAlias != nil && ref.TypeAlias == globalArrayAlias {
 			return true
 		}
+		// TypeAlias is set but doesn't match global Array - not the global Array
+		return false
 	}
 
-	return false
+	// Fallback: no TypeAlias set, check by simple name match
+	return type_system.QualIdentToString(ref.Name) == "Array"
 }
 
 // sameTypeRef checks if two TypeRefTypes refer to the same type alias.
