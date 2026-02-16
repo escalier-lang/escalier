@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -317,7 +318,7 @@ func BenchmarkScopeChainLookup(b *testing.B) {
 
 	// Add local bindings to simulate a realistic scope
 	for i := 0; i < 50; i++ {
-		userScope.Namespace.Values["localVar"+string(rune('a'+i%26))] = &type_system.Binding{
+		userScope.Namespace.Values[fmt.Sprintf("localVar%d", i)] = &type_system.Binding{
 			Type:    type_system.NewNumPrimType(nil),
 			Mutable: false,
 		}
