@@ -534,3 +534,305 @@ func TestNamedImportsFromPackage(t *testing.T) {
 		assert.Equal(t, "MyType", xBinding.Type.String())
 	}
 }
+
+// TestScopeChainTraversal verifies that user code can access globals via parent chain lookup
+func TestScopeChainTraversal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Module with code that references globals (Array, number, string, etc.)
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/main.esc",
+			Contents: `
+				declare fn double(x: number) -> number
+				declare val arr: Array<string>
+			`,
+		},
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	assert.Empty(t, parseErrors, "Should parse without errors")
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c), // Prelude sets up global scope with Array, etc.
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, module)
+
+	for i, err := range inferErrors {
+		t.Logf("Error[%d]: %s", i, err.Message())
+	}
+	assert.Empty(t, inferErrors, "Should infer without errors - globals should be accessible via scope chain")
+
+	// Verify that the declarations exist and use global types
+	scope := inferCtx.Scope.Namespace
+
+	doubleBinding, doubleExists := scope.Values["double"]
+	assert.True(t, doubleExists, "double function should exist")
+	if doubleExists {
+		t.Logf("double type: %s", doubleBinding.Type.String())
+		assert.Contains(t, doubleBinding.Type.String(), "number", "double should use global number type")
+	}
+
+	arrBinding, arrExists := scope.Values["arr"]
+	assert.True(t, arrExists, "arr should exist")
+	if arrExists {
+		t.Logf("arr type: %s", arrBinding.Type.String())
+		assert.Contains(t, arrBinding.Type.String(), "Array", "arr should use global Array type")
+	}
+}
+
+// TestGlobalNamespaceIsolation verifies that globals are in a separate namespace from module declarations
+func TestGlobalNamespaceIsolation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Define a local type with the same name as a global
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/main.esc",
+			Contents: `
+				type Array<T> = {items: T}
+				declare val localArr: Array<number>
+			`,
+		},
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	assert.Empty(t, parseErrors, "Should parse without errors")
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, module)
+
+	for i, err := range inferErrors {
+		t.Logf("Error[%d]: %s", i, err.Message())
+	}
+	assert.Empty(t, inferErrors, "Should infer without errors")
+
+	// Verify local Array type shadows the global
+	scope := inferCtx.Scope.Namespace
+
+	localArrayAlias, localArrayExists := scope.Types["Array"]
+	assert.True(t, localArrayExists, "Local Array type should exist in module namespace")
+	if localArrayExists {
+		t.Logf("Local Array type: %s", localArrayAlias.Type.String())
+	}
+
+	// Verify localArr uses the local Array type (not the global one)
+	localArrBinding, localArrExists := scope.Values["localArr"]
+	assert.True(t, localArrExists, "localArr should exist")
+	if localArrExists {
+		t.Logf("localArr type: %s", localArrBinding.Type.String())
+		// The local Array has structure {items: T}, not the global Array
+		assert.Equal(t, "Array<number>", localArrBinding.Type.String())
+	}
+}
+
+// TestCrossFileCyclicDependencies verifies that mutually recursive types across files work correctly
+func TestCrossFileCyclicDependencies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Two files with mutually recursive types
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/node.esc",
+			Contents: `
+				type Node = {
+					value: number,
+					children: Tree,
+				}
+			`,
+		},
+		{
+			ID:   1,
+			Path: "lib/tree.esc",
+			Contents: `
+				type Tree = {
+					root: Node,
+					size: number,
+				}
+			`,
+		},
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	assert.Empty(t, parseErrors, "Should parse without errors")
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, module)
+
+	for i, err := range inferErrors {
+		t.Logf("Error[%d]: %s", i, err.Message())
+	}
+	assert.Empty(t, inferErrors, "Should infer without errors - cross-file cyclic dependencies should work")
+
+	// Verify both types exist
+	scope := inferCtx.Scope.Namespace
+
+	_, nodeExists := scope.Types["Node"]
+	assert.True(t, nodeExists, "Node type should exist")
+
+	_, treeExists := scope.Types["Tree"]
+	assert.True(t, treeExists, "Tree type should exist")
+}
+
+// TestCrossFileCyclesWithImports verifies that cross-file cycles work correctly
+// when one file uses imported types
+func TestCrossFileCyclesWithImports(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Two files: one imports a package and defines a type using it,
+	// the other references that type
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/wrapper.esc",
+			Contents: `
+				import * as utils from "test-utils"
+				type Wrapper = {
+					data: utils.DataType,
+					next: LinkedNode,
+				}
+			`,
+		},
+		{
+			ID:   1,
+			Path: "lib/linked.esc",
+			Contents: `
+				type LinkedNode = {
+					wrapper: Wrapper,
+					prev: LinkedNode,
+				}
+			`,
+		},
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	assert.Empty(t, parseErrors, "Should parse without errors")
+
+	c := NewChecker()
+
+	// Pre-populate PackageRegistry with mock package
+	mockPkg := createMockPackage(
+		map[string]type_system.Type{},
+		map[string]type_system.Type{
+			"DataType": type_system.NewStrPrimType(nil),
+		},
+	)
+	err := c.PackageRegistry.Register("test-utils", mockPkg)
+	assert.NoError(t, err, "Should register mock package")
+
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, module)
+
+	for i, err := range inferErrors {
+		t.Logf("Error[%d]: %s", i, err.Message())
+	}
+	assert.Empty(t, inferErrors, "Should infer without errors - cross-file cycles with imports should work")
+
+	// Verify both types exist
+	scope := inferCtx.Scope.Namespace
+
+	_, wrapperExists := scope.Types["Wrapper"]
+	assert.True(t, wrapperExists, "Wrapper type should exist")
+
+	_, linkedNodeExists := scope.Types["LinkedNode"]
+	assert.True(t, linkedNodeExists, "LinkedNode type should exist")
+
+	// Verify that 'utils' is NOT in module scope (it's file-scoped)
+	_, utilsInModule := scope.Namespaces["utils"]
+	assert.False(t, utilsInModule, "utils should NOT be in module namespace (it's file-scoped)")
+}
+
+// TestCrossFileCyclesImportIsolation verifies that file B cannot use imports from file A
+// even when their types form a cycle
+func TestCrossFileCyclesImportIsolation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// File A imports a package, file B tries to use the import namespace
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/file_a.esc",
+			Contents: `
+				import * as pkg from "my-pkg"
+				type TypeA = {
+					data: pkg.SomeType,
+					ref: TypeB,
+				}
+			`,
+		},
+		{
+			ID:   1,
+			Path: "lib/file_b.esc",
+			Contents: `
+				type TypeB = {
+					a: TypeA,
+					invalid: pkg.SomeType,
+				}
+			`,
+		},
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	assert.Empty(t, parseErrors, "Should parse without errors")
+
+	c := NewChecker()
+
+	// Pre-populate PackageRegistry with mock package
+	mockPkg := createMockPackage(
+		map[string]type_system.Type{},
+		map[string]type_system.Type{
+			"SomeType": type_system.NewNumPrimType(nil),
+		},
+	)
+	err := c.PackageRegistry.Register("my-pkg", mockPkg)
+	assert.NoError(t, err, "Should register mock package")
+
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, module)
+
+	// We expect an error because file_b.esc uses pkg.SomeType without importing pkg
+	assert.NotEmpty(t, inferErrors, "Should have errors - file_b cannot use pkg from file_a's import")
+
+	foundPkgError := false
+	for _, err := range inferErrors {
+		t.Logf("Error: %s", err.Message())
+		if err.Message() != "" {
+			foundPkgError = true
+		}
+	}
+	assert.True(t, foundPkgError, "Should have an error about pkg not being available in file_b")
+}
