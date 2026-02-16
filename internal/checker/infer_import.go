@@ -142,11 +142,12 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 		}
 		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
 		if len(globalErrors) > 0 {
-			// Log but don't fail - global augmentation errors shouldn't block the import
 			for _, err := range globalErrors {
 				fmt.Fprintf(os.Stderr, "Global augmentation error in %s: %s\n",
 					dtsFilePath, err.Message())
 			}
+			// Surface global augmentation errors so users get diagnostics
+			errors = append(errors, globalErrors...)
 		}
 	}
 
@@ -220,12 +221,10 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 	}
 
 	// Step 7: Register the package in the registry
-	if pkgNs != nil {
-		if regErr := c.PackageRegistry.Register(dtsFilePath, pkgNs); regErr != nil {
-			// This shouldn't happen since we checked Lookup() above
-			fmt.Fprintf(os.Stderr, "Warning: failed to register package %s: %s\n",
-				importStmt.PackageName, regErr.Error())
-		}
+	if regErr := c.PackageRegistry.Register(dtsFilePath, pkgNs); regErr != nil {
+		// This shouldn't happen since we checked Lookup() above
+		fmt.Fprintf(os.Stderr, "Warning: failed to register package %s: %s\n",
+			importStmt.PackageName, regErr.Error())
 	}
 
 	return &LoadedPackage{Namespace: pkgNs, FilePath: dtsFilePath}, errors
