@@ -130,7 +130,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 				// Good, it's a Promise type. Ensure it has the right structure.
 				if len(promiseType.TypeArgs) == 1 {
 					// Promise<T> should become Promise<T, never>
-					promiseAlias := ctx.Scope.getTypeAlias("Promise")
+					promiseAlias := ctx.Scope.GetTypeAlias("Promise")
 					if promiseAlias != nil {
 						// Update the function type to have Promise<T, never>
 						newPromiseType := type_system.NewTypeRefType(
@@ -322,7 +322,7 @@ func (c *Checker) inferInterface(
 	objType.Nominal = true
 
 	// Check if an interface with this name already exists
-	existingAlias := ctx.Scope.getTypeAlias(decl.Name.Name)
+	existingAlias := ctx.Scope.GetTypeAlias(decl.Name.Name)
 	if existingAlias != nil {
 		// Validate that type parameters match
 		validateErrors := c.validateTypeParams(

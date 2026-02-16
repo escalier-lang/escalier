@@ -545,7 +545,7 @@ func (c *Checker) InferComponent(
 				typeParams := c.inferTypeParams(decl.TypeParams)
 
 				// Check if an interface with this name already exists
-				existingAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+				existingAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				if existingAlias == nil {
 					// First declaration - create a fresh type variable for the interface
 					interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
@@ -628,7 +628,7 @@ func (c *Checker) InferComponent(
 				errors = slices.Concat(errors, declErrors)
 
 				// Unify the type alias' inferred type with its placeholder type
-				existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+				existingTypeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				unifyErrors := c.Unify(nsCtx, existingTypeAlias.Type, typeAlias.Type)
 				errors = slices.Concat(errors, unifyErrors)
 
@@ -640,7 +640,7 @@ func (c *Checker) InferComponent(
 				errors = slices.Concat(errors, declErrors)
 
 				// Get the existing type alias (which might be a fresh var or a previous interface)
-				existingTypeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+				existingTypeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				prunedType := type_system.Prune(existingTypeAlias.Type)
 
 				// Check if the pruned type is already an ObjectType (from a previous interface)
@@ -673,7 +673,7 @@ func (c *Checker) InferComponent(
 
 				// Get the namespace and type alias created in the placeholder phase
 				ns := nsCtx.Scope.getNamespace(decl.Name.Name)
-				typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+				typeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				typeParams := typeAlias.TypeParams
 				declCtx := declCtxMap[decl]
 
@@ -812,7 +812,7 @@ func (c *Checker) InferComponent(
 					continue
 				}
 
-				typeAlias := nsCtx.Scope.getTypeAlias(decl.Name.Name)
+				typeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
 				instanceType := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
 
 				// Get the class binding to access static methods

@@ -151,7 +151,7 @@ func resolveQualifiedTypeAlias(ctx Context, qualIdent type_system.QualIdent) *ty
 	switch qi := qualIdent.(type) {
 	case *type_system.Ident:
 		// Simple identifier, use existing scope lookup
-		return ctx.Scope.getTypeAlias(qi.Name)
+		return ctx.Scope.GetTypeAlias(qi.Name)
 	case *type_system.Member:
 		// Qualified identifier like A.B.Type
 		// First resolve the left part (A.B)

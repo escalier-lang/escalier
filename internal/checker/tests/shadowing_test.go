@@ -250,12 +250,12 @@ func TestShadowedGlobalNotAccessibleUnqualified(t *testing.T) {
 	}
 	userScope.Namespace.Types["Array"] = localArrayAlias
 
-	// Unqualified lookup should return the local type
-	localType := userScope.Namespace.Types["Array"]
-	assert.Same(t, localArrayAlias, localType, "Local Array should shadow global")
+	// Unqualified lookup through scope chain should return the local type
+	resolvedType := userScope.GetTypeAlias("Array")
+	assert.Same(t, localArrayAlias, resolvedType, "Scope chain lookup should resolve to local Array")
 
-	// Direct global access should return the global type
-	globalType := c.GlobalScope.Namespace.Types["Array"]
+	// Direct global scope lookup should return the global type (different from local)
+	globalType := c.GlobalScope.GetTypeAlias("Array")
 	assert.NotSame(t, localArrayAlias, globalType, "Global Array should be different from local")
 	assert.NotNil(t, globalType, "Global Array should still exist")
 }

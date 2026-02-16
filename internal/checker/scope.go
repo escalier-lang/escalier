@@ -70,12 +70,12 @@ func (s *Scope) setNamespace(name string, namespace *type_system.Namespace) {
 	}
 }
 
-func (s *Scope) getTypeAlias(name string) *type_system.TypeAlias {
+func (s *Scope) GetTypeAlias(name string) *type_system.TypeAlias {
 	if v, ok := s.Namespace.Types[name]; ok {
 		return v
 	}
 	if s.Parent != nil {
-		return s.Parent.getTypeAlias(name)
+		return s.Parent.GetTypeAlias(name)
 	}
 	return nil
 }

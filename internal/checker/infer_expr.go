@@ -747,7 +747,7 @@ func (c *Checker) inferCallExpr(
 
 	case *type_system.TypeRefType:
 		name := type_system.QualIdentToString(t.Name)
-		typeAlias := ctx.Scope.getTypeAlias(name)
+		typeAlias := ctx.Scope.GetTypeAlias(name)
 
 		if objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType); ok {
 			// Check if ObjectType has a constructor or callable element
