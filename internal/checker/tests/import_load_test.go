@@ -14,6 +14,9 @@ import (
 )
 
 // TestPackageLoadAndRegister verifies that loading a package registers it in the PackageRegistry
+// NOTE: This test assumes "fast-deep-equal" is installed in node_modules and
+// requires that `pnpm install` has been run in the project root before running
+// this test.
 func TestPackageLoadAndRegister(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

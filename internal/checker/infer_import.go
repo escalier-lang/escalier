@@ -209,19 +209,8 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 	} else if loadResult.GlobalModule != nil {
 		// No top-level exports and no matching named module - use the global module
 		// (This handles .d.ts files that only have global declarations)
-		pkgNs = type_system.NewNamespace()
-		pkgScope := &Scope{
-			Parent:    c.GlobalScope,
-			Namespace: pkgNs,
-		}
-		pkgCtx := Context{
-			Scope:      pkgScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-
-		pkgErrors := c.InferModule(pkgCtx, loadResult.GlobalModule)
-		errors = append(errors, pkgErrors...)
+		// GlobalModule was already inferred into c.GlobalScope in Step 4, so reuse it
+		pkgNs = c.GlobalScope.Namespace
 	} else {
 		return nil, []Error{&GenericError{
 			message: "Type definitions for module import do not contain expected module: " + importStmt.PackageName,
@@ -292,7 +281,12 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 	for _, specifier := range importStmt.Specifiers {
 		if specifier.Name == "*" {
 			// Namespace import: import * as alias from "pkg"
-			ctx.Scope.Namespace.SetNamespace(specifier.Alias, pkgNs)
+			if err := ctx.Scope.Namespace.SetNamespace(specifier.Alias, pkgNs); err != nil {
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Cannot bind namespace %q: %s", specifier.Alias, err.Error()),
+					span:    importStmt.Span(),
+				})
+			}
 		} else {
 			// Named import: import { name } from "pkg" or import { name as alias } from "pkg"
 			found := false
@@ -315,7 +309,12 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 
 			// Check for namespace binding
 			if ns, ok := pkgNs.GetNamespace(specifier.Name); ok {
-				ctx.Scope.Namespace.SetNamespace(localName, ns)
+				if err := ctx.Scope.Namespace.SetNamespace(localName, ns); err != nil {
+					errors = append(errors, &GenericError{
+						message: fmt.Sprintf("Cannot bind namespace %q: %s", localName, err.Error()),
+						span:    importStmt.Span(),
+					})
+				}
 				found = true
 			}
 
@@ -329,10 +328,19 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 		}
 	}
 
-	// Log imported values for debugging
-	for name := range ctx.Scope.Namespace.Values {
-		fmt.Fprintf(os.Stderr, "Imported value from module %s: %s\n",
-			importStmt.PackageName, name)
+	// Log imported specifiers for debugging
+	for _, specifier := range importStmt.Specifiers {
+		if specifier.Name == "*" {
+			fmt.Fprintf(os.Stderr, "Imported namespace %q from module %s\n",
+				specifier.Alias, importStmt.PackageName)
+			continue
+		}
+		localName := specifier.Name
+		if specifier.Alias != "" {
+			localName = specifier.Alias
+		}
+		fmt.Fprintf(os.Stderr, "Imported %q as %q from module %s\n",
+			specifier.Name, localName, importStmt.PackageName)
 	}
 
 	return errors

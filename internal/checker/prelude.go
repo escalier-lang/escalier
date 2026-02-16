@@ -202,12 +202,6 @@ type LoadedPackageResult struct {
 // loadClassifiedTypeScriptModule loads a .d.ts file and classifies its contents
 // using the FileClassification system from dts_parser/classifier.go.
 func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, error) {
-	// Check file exists
-	if _, err := os.Lstat(filename); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "DTS file not found: %s\n", filename)
-		return nil, err
-	}
-
 	// Read the file
 	contents, err := os.ReadFile(filename)
 	if err != nil {
