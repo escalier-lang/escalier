@@ -152,15 +152,68 @@ func (p *Parser) decls() []ast.Decl {
 	}
 }
 
+// ParsedModuleFile contains the result of parsing a single module file,
+// including both imports and declarations.
+type ParsedModuleFile struct {
+	Imports []*ast.ImportStmt
+	Decls   []ast.Decl
+}
+
+// parseModuleFile parses a module file, returning both imports and declarations.
+// Import statements must appear at the top of the file before any declarations.
+func (p *Parser) parseModuleFile() *ParsedModuleFile {
+	result := &ParsedModuleFile{
+		Imports: []*ast.ImportStmt{},
+		Decls:   []ast.Decl{},
+	}
+
+	// Parse imports first (they must appear at the top)
+	token := p.lexer.peek()
+importLoop:
+	for {
+		// Check if context has been cancelled
+		select {
+		case <-p.ctx.Done():
+			return result
+		default:
+		}
+
+		//nolint: exhaustive
+		switch token.Type {
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			token = p.lexer.peek()
+		case Import:
+			stmt := p.importStmt()
+			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
+				result.Imports = append(result.Imports, importStmt)
+			}
+			token = p.lexer.peek()
+		default:
+			// No more imports, proceed to declarations
+			break importLoop
+		}
+	}
+
+	// Parse declarations
+	result.Decls = p.decls()
+	return result
+}
+
 func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
 	var namespaces btree.Map[string, *ast.Namespace]
 
 	allErrors := []*Error{}
+	files := []*ast.File{}
+	sourcesMap := make(map[int]*ast.Source)
 
 	for _, source := range sources {
 		if source == nil {
 			continue
 		}
+
+		// Track sources by ID for later lookup
+		sourcesMap[source.ID] = source
 
 		// Determine the namespace based on the source path
 		nsName := deriveNamespaceFromPath(source.Path)
@@ -172,14 +225,24 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		}
 
 		parser := NewParser(ctx, source)
-		decls := parser.decls()
+		parsed := parser.parseModuleFile()
 
+		// Create File entry with imports
+		file := &ast.File{
+			Path:      source.Path,
+			SourceID:  source.ID,
+			Namespace: nsName,
+			Imports:   parsed.Imports,
+		}
+		files = append(files, file)
+
+		// Add declarations to the namespace
 		ns, _ := namespaces.Get(nsName)
-		ns.Decls = append(ns.Decls, decls...)
+		ns.Decls = append(ns.Decls, parsed.Decls...)
 		allErrors = append(allErrors, parser.errors...)
 	}
 
-	return ast.NewModule(namespaces), allErrors
+	return ast.NewModuleWithFiles(namespaces, files, sourcesMap), allErrors
 }
 
 // ParseTypeAnn parses a type annotation string and returns the resulting ast.TypeAnn.

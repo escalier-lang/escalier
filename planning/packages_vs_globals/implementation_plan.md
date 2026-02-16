@@ -661,13 +661,13 @@ func (c *Checker) loadGlobalFile(filename string, globalScope *Scope) error {
 ```
 
 **Tasks**:
-- [ ] Create `initializeGlobalScope()` method
-- [ ] Move prelude loading to use global scope
+- [x] Create `initializeGlobalScope()` method (implemented as `Prelude()` function)
+- [x] Move prelude loading to use global scope
 - [ ] Update `loadGlobalDefinitions()` to separate globals from packages
 - [ ] Ensure named modules in lib files go to package registry
-- [ ] Update Checker initialization to call `initializeGlobalScope()`
-- [ ] Verify global scope is available to all user code scopes
-- [ ] Test that globals are isolated
+- [x] Update Checker initialization to call `initializeGlobalScope()` (via `Prelude()`)
+- [x] Verify global scope is available to all user code scopes
+- [x] Test that globals are isolated (see `global_scope_test.go`)
 
 #### 5.3.2 Update InferModule and InferScript
 **Files**: `internal/checker/infer_module.go`, `internal/checker/infer_script.go`
@@ -907,39 +907,59 @@ scope, errors := c.InferScript(ctx, script)
 ```
 
 **Tasks**:
-- [ ] Update call sites of `InferModule` to pass context with global scope parent
-- [ ] Update call sites of `InferScript` to pass context with global scope parent
-- [ ] Verify parent chain works correctly (user scope → global scope)
-- [ ] Test that user code can access globals via parent chain lookup
-- [ ] Test that lookup traverses parent chain
-- [ ] Modify `InferModule` to use hybrid approach (unified DepGraph + file-scoped imports)
-- [ ] Implement `BuildDepGraphWithFileTracking` to track which file each declaration comes from
-- [ ] Implement `InferDepGraphWithFileScopes` to use file-specific scopes when inferring declarations
-- [ ] Implement `inferDeclWithTargetNs` to infer a declaration using one scope but writing to another namespace
-- [ ] Implement `inferMutuallyRecursiveDecls` for handling SCCs with file-scoped imports
-- [ ] Process imports in Phase 1 (before building unified DepGraph)
-- [ ] Ensure module-level declarations are visible across files in same directory
-- [ ] Ensure import bindings are NOT visible across files
-- [ ] Ensure cross-file cyclic dependencies work correctly
+- [x] Update call sites of `InferModule` to pass context with global scope parent (via `Prelude()`)
+- [x] Update call sites of `InferScript` to pass context with global scope parent (via `Prelude()`)
+- [x] Verify parent chain works correctly (user scope → global scope)
+- [x] Test that user code can access globals via parent chain lookup
+- [x] Test that lookup traverses parent chain
+- [x] Modify `InferModule` to use hybrid approach (unified DepGraph + file-scoped imports)
+- [x] Implement file tracking (using existing `Span.SourceID` instead of new `BuildDepGraphWithFileTracking`)
+- [x] Implement `GetDeclContext` to use file-specific scopes when inferring declarations
+- [x] Implement declaration scope that uses file scope for lookups but writes to module namespace
+- [x] Handle SCCs with file-scoped imports (via deferred type ref resolution with file context)
+- [x] Process imports in Phase 1 (before building unified DepGraph)
+- [x] Ensure module-level declarations are visible across files in same directory
+- [x] Ensure import bindings are NOT visible across files
+- [x] Ensure cross-file cyclic dependencies work correctly
+
+**Implementation Notes**:
+- Used existing `Span.SourceID` to track file provenance instead of creating new `BuildDepGraphWithFileTracking`
+- Added `FileScopes map[int]*Scope` to `Context` for per-file import scopes
+- Added `GetDeclContext()` function that creates a scope with `Parent=fileScope` and `Namespace=moduleNamespace`
+- Added `ast.File` struct to track source files with their imports
+- Modified parser's `ParseLibFiles()` to populate `Module.Files` and `Module.Sources`
+- Added PackageRegistry lookup in `inferImport()` before file system resolution (for testing)
 
 #### 5.3.3 Global Namespace Separation Tests
 
-**Unit Tests**:
-- [ ] Scope chain traversal (Local → Global)
-- [ ] Global namespace isolation
+**Unit Tests** (see `global_scope_test.go` and `file_scope_test.go`):
+- [x] Scope chain traversal (Local → Global) - `TestScopeChainTraversal`
+- [x] Global namespace isolation - `TestGlobalNamespaceIsolation`
 
-**Integration Tests**:
-- [ ] Load lib.es5.d.ts (globals)
-- [ ] Load lib.dom.d.ts (globals)
-- [ ] User code can access globals via parent chain lookup
+**Integration Tests** (see `global_scope_test.go`):
+- [x] Load lib.es5.d.ts (globals) - `TestGlobalScopeContainsBuiltins`
+- [x] Load lib.dom.d.ts (globals) - `TestGlobalScopeContainsBuiltins`
+- [x] User code can access globals via parent chain lookup - `TestGlobalScopeLookupChain`
 
-**File Scope vs Module Namespace Tests**:
-- [ ] Module declarations (types, functions) visible across files in same directory
-- [ ] Import bindings NOT visible across files (file-scoped)
-- [ ] File A declares type T, file B can use type T (shared module namespace)
-- [ ] File A imports "lodash", file B cannot use `lodash.map` (file-scoped imports)
-- [ ] Cross-file cyclic dependencies: file A has type Foo referencing Bar, file B has type Bar referencing Foo
-- [ ] Cross-file cycles with imports: file A imports "lodash" and declares type using lodash types, file B references that type
+**File Scope vs Module Namespace Tests** (see `file_scope_test.go`):
+- [x] Module declarations (types, functions) visible across files in same directory - `TestCrossFileDeclarationVisibility`
+- [x] Import bindings NOT visible across files (file-scoped) - `TestFileScopedImportsIsolation`
+- [x] File A declares type T, file B can use type T (shared module namespace) - `TestCrossFileDeclarationVisibility`
+- [x] File A imports "lodash", file B cannot use `lodash.map` (file-scoped imports) - `TestFileScopedImportsIsolation`
+- [x] Cross-file cyclic dependencies: file A has type Foo referencing Bar, file B has type Bar referencing Foo - `TestCrossFileCyclicDependencies`
+- [x] Cross-file cycles with imports: file A imports "lodash" and declares type using lodash types, file B references that type - `TestCrossFileCyclesWithImports`, `TestCrossFileCyclesImportIsolation`
+
+**Additional Tests**:
+- [x] Module file tracking - `TestModuleFileTracking`
+- [x] Module file imports parsed correctly - `TestModuleFileImports`
+- [x] File namespace derived from path - `TestFileNamespaceFromPath`
+- [x] File-scoped imports basic functionality - `TestFileScopedImportsBasic`
+- [x] Same package imported in different files - `TestFileScopedImportsSamePackageDifferentFiles`
+- [x] Different aliases for same package in different files - `TestFileScopedImportsDifferentAliases`
+- [x] Named imports from package - `TestNamedImportsFromPackage`
+- [x] Global scope initialization - `TestGlobalScopeInitialization`
+- [x] Global scope reuse - `TestGlobalScopeReuse`
+- [x] User scope isolated from global scope - `TestUserScopeIsolatedFromGlobalScope`
 
 ---
 
@@ -1413,21 +1433,21 @@ Create a guide covering:
 
 ### 8.1 Functional Requirements
 
-- [ ] Global namespace is isolated from package namespaces
-- [ ] Package symbols are accessed via qualified identifiers
-- [ ] Local declarations can shadow globals
+- [x] Global namespace is isolated from package namespaces
+- [x] Package symbols are accessed via qualified identifiers
+- [x] Local declarations can shadow globals
 - [ ] `globalThis` provides access to shadowed globals
-- [ ] .d.ts files are correctly classified
-- [ ] `export = Namespace` syntax is handled (expanded to top-level exports)
-- [ ] Imports are file-scoped (each file must import packages it uses)
-- [ ] Error reported when accessing package namespace without import in that file
+- [x] .d.ts files are correctly classified
+- [x] `export = Namespace` syntax is handled (expanded to top-level exports)
+- [x] Imports are file-scoped (each file must import packages it uses)
+- [x] Error reported when accessing package namespace without import in that file
 
 ### 8.2 Quality Requirements
 
-- [ ] All unit tests pass
-- [ ] All integration tests pass
+- [x] All unit tests pass
+- [x] All integration tests pass
 - [ ] No significant performance regression (< 10%)
-- [ ] Error messages are clear and helpful
+- [x] Error messages are clear and helpful
 - [ ] Documentation is complete and accurate
 
 ### 8.3 Acceptance Criteria
@@ -1481,10 +1501,11 @@ From requirements.md section 10:
 ### Milestone 1: Infrastructure
 - [x] Complete 5.1: Package registry and data structures
 - [x] Complete 5.2: .d.ts classification
+- [x] Complete 5.3: Global namespace separation (prelude refactoring, InferModule updates, file-scoped imports)
 
 ### Milestone 2: Core Features
-- [ ] Complete 5.3: Global namespace separation
-- [ ] Complete 5.4: Package registry and imports
+- [x] Complete 5.3: Global namespace separation
+- [ ] Complete 5.4: Package registry and imports (partial - PackageRegistry lookup implemented for testing)
 
 ### Milestone 3: Advanced Features and Testing
 - [ ] Complete 5.5: Shadowing and globalThis

@@ -68,3 +68,21 @@ func (pr *PackageRegistry) Has(dtsFilePath string) bool {
 	_, ok := pr.packages[dtsFilePath]
 	return ok
 }
+
+// CopyFrom copies all entries from another PackageRegistry into this one.
+// This is used to initialize a fresh registry with cached prelude packages.
+func (pr *PackageRegistry) CopyFrom(other *PackageRegistry) {
+	if other == nil {
+		return
+	}
+	for key, ns := range other.packages {
+		pr.packages[key] = ns
+	}
+}
+
+// Copy creates a new PackageRegistry with all entries from this one.
+func (pr *PackageRegistry) Copy() *PackageRegistry {
+	newRegistry := NewPackageRegistry()
+	newRegistry.CopyFrom(pr)
+	return newRegistry
+}

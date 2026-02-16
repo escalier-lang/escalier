@@ -73,14 +73,50 @@ type Namespace struct {
 	Decls []Decl
 }
 
+// File represents a single source file in a module.
+// It tracks the source file path, its imports (which are file-scoped),
+// and which namespace the file's declarations belong to.
+type File struct {
+	Path      string        // The file path (e.g., "lib/foo/bar.esc")
+	SourceID  int           // The Source.ID for this file
+	Namespace string        // The namespace this file belongs to (derived from directory)
+	Imports   []*ImportStmt // Import statements (file-scoped, not visible to other files)
+}
+
 type Module struct {
 	Namespaces btree.Map[string, *Namespace]
+	// Files tracks all source files in the module.
+	// This enables file-scoped import bindings while sharing declarations
+	// across files in the same namespace.
+	Files []*File
+	// Sources maps SourceID to Source for looking up file paths from declaration spans.
+	Sources map[int]*Source
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
 	return &Module{
 		Namespaces: namespaces,
+		Files:      []*File{},
+		Sources:    make(map[int]*Source),
 	}
+}
+
+// NewModuleWithFiles creates a Module with namespaces, files, and source tracking.
+func NewModuleWithFiles(namespaces btree.Map[string, *Namespace], files []*File, sources map[int]*Source) *Module {
+	return &Module{
+		Namespaces: namespaces,
+		Files:      files,
+		Sources:    sources,
+	}
+}
+
+// GetSourcePath returns the file path for a given SourceID.
+// This is useful for determining which file a declaration came from.
+func (m *Module) GetSourcePath(sourceID int) string {
+	if source, ok := m.Sources[sourceID]; ok {
+		return source.Path
+	}
+	return ""
 }
 
 func (m *Module) Accept(v Visitor) {

@@ -119,6 +119,10 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    Files: {
+    },
+    Sources: {
+    },
 }
 ---
 
@@ -213,6 +217,10 @@
         max:           63,
         copyValues:    false,
         isoCopyValues: false,
+    },
+    Files: {
+    },
+    Sources: {
     },
 }
 ---
@@ -312,6 +320,10 @@
         max:           63,
         copyValues:    false,
         isoCopyValues: false,
+    },
+    Files: {
+    },
+    Sources: {
     },
 }
 ---
@@ -447,6 +459,10 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    Files: {
+    },
+    Sources: {
+    },
 }
 ---
 
@@ -546,6 +562,10 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    Files: {
+    },
+    Sources: {
+    },
 }
 ---
 
@@ -637,6 +657,10 @@
         max:           63,
         copyValues:    false,
         isoCopyValues: false,
+    },
+    Files: {
+    },
+    Sources: {
     },
 }
 ---
@@ -756,6 +780,10 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    Files: {
+    },
+    Sources: {
+    },
 }
 ---
 
@@ -816,6 +844,10 @@
         copyValues:    false,
         isoCopyValues: false,
     },
+    Files: {
+    },
+    Sources: {
+    },
 }
 ---
 
@@ -875,6 +907,10 @@
         max:           63,
         copyValues:    false,
         isoCopyValues: false,
+    },
+    Files: {
+    },
+    Sources: {
     },
 }
 ---
