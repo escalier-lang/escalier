@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -324,8 +325,8 @@ func TestFileScopedImportsIsolation(t *testing.T) {
 	// Check that the error is related to 'pkg' not being found
 	foundPkgError := false
 	for _, err := range inferErrors {
-		if err.Message() != "" {
-			t.Logf("Error: %s", err.Message())
+		t.Logf("Error: %s", err.Message())
+		if strings.Contains(err.Message(), "pkg") {
 			foundPkgError = true
 		}
 	}

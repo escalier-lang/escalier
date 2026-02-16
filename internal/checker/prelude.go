@@ -270,6 +270,7 @@ func loadTypeScriptModule(filename string) (map[string]*ast.Module, error) {
 
 var cachedGlobalScope *Scope
 var cachedSymbolIDCounter int
+var cachedPackageRegistry *PackageRegistry
 
 // initializeGlobalScope creates the global scope containing TypeScript built-in types
 // (Array, Promise, etc. from lib.es5.d.ts and lib.dom.d.ts), operator bindings, and
@@ -324,7 +325,10 @@ func (c *Checker) initializeGlobalScope() {
 // and infers their declarations into the global scope.
 // Named modules are registered in the PackageRegistry.
 func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
-	repoRoot, _ := findRepoRoot()
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to find repository root: %s", err))
+	}
 
 	// Load lib.es5.d.ts
 	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
@@ -553,6 +557,7 @@ func Prelude(c *Checker) *Scope {
 	if cachedGlobalScope != nil {
 		c.SymbolID = cachedSymbolIDCounter
 		c.GlobalScope = cachedGlobalScope
+		c.PackageRegistry.CopyFrom(cachedPackageRegistry)
 		return cachedGlobalScope.WithNewScope()
 	}
 
@@ -562,6 +567,7 @@ func Prelude(c *Checker) *Scope {
 	// Cache for subsequent calls
 	cachedGlobalScope = c.GlobalScope
 	cachedSymbolIDCounter = c.SymbolID
+	cachedPackageRegistry = c.PackageRegistry.Copy() // copy to prevent test pollution
 
 	return c.GlobalScope.WithNewScope()
 }
