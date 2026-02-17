@@ -118,6 +118,32 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 			}}
 		}
 	}
+	// | PrimType, ObjectType (empty and non-nominal) -> ...
+	// A primitive type can unify with an empty non-nominal object type.
+	// This is because {} represents "any non-nullish value",
+	// and primitives like string, number, boolean are non-nullish.
+	// This enables branded types like "string & {}".
+	if _, ok := t1.(*type_system.PrimType); ok {
+		if obj, ok := t2.(*type_system.ObjectType); ok {
+			if len(obj.Elems) == 0 && !obj.Nominal {
+				return nil
+			}
+		}
+	}
+	// | LitType (non-nullish), ObjectType (empty and non-nominal) -> ...
+	// Literal types (numbers, strings, booleans) can unify with empty object types
+	// since they are non-nullish values. This supports branded types in unions.
+	if lit, ok := t1.(*type_system.LitType); ok {
+		if obj, ok := t2.(*type_system.ObjectType); ok {
+			if len(obj.Elems) == 0 && !obj.Nominal {
+				// Only allow non-nullish literals
+				switch lit.Lit.(type) {
+				case *type_system.NumLit, *type_system.StrLit, *type_system.BoolLit, *type_system.BigIntLit:
+					return nil
+				}
+			}
+		}
+	}
 	// What's the difference between wildcard and any?
 	// TODO: dedupe these types
 	// | AnyType, _ -> ...

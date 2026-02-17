@@ -321,8 +321,10 @@ func (c *Checker) inferInterface(
 	objType.Interface = true
 	objType.Nominal = true
 
-	// Check if an interface with this name already exists
-	existingAlias := ctx.Scope.GetTypeAlias(decl.Name.Name)
+	// Check if an interface with this name already exists in the CURRENT namespace only.
+	// We don't use GetTypeAlias here because it searches up the scope chain,
+	// which would incorrectly try to merge package-level declarations with global ones.
+	existingAlias := ctx.Scope.Namespace.Types[decl.Name.Name]
 	if existingAlias != nil {
 		// Validate that type parameters match
 		validateErrors := c.validateTypeParams(

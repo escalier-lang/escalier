@@ -1347,6 +1347,34 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"textPromise": "Promise<string>",
 			},
 		},
+		"UnifyBrandedTypes": {
+			input: `
+			declare val x: string & {}
+			fn foo(x: string & {}) {
+				return x
+			}
+			val y = foo(x)
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (x: string & {}) -> string & {} throws never",
+				"y":   "string & {}",
+				"x":   "string & {}",
+			},
+		},
+		"UnifyBrandedTypesInUnion": {
+			input: `
+			declare val x: string & {} | 0
+			fn foo(x: string & {} | 0) {
+				return x
+			}
+			val y = foo(x)
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (x: string & {} | 0) -> string & {} | 0 throws never",
+				"y":   "string & {} | 0",
+				"x":   "string & {} | 0",
+			},
+		},
 	}
 
 	schema := loadSchema(t)

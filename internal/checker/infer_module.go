@@ -544,8 +544,10 @@ func (c *Checker) InferComponent(
 				// Similar to TypeDecl, but we need to handle interface merging
 				typeParams := c.inferTypeParams(decl.TypeParams)
 
-				// Check if an interface with this name already exists
-				existingAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
+				// Check if an interface with this name already exists in the CURRENT namespace only.
+				// We don't use GetTypeAlias here because it searches up the scope chain,
+				// which would incorrectly try to merge package-level declarations with global ones.
+				existingAlias := nsCtx.Scope.Namespace.Types[decl.Name.Name]
 				if existingAlias == nil {
 					// First declaration - create a fresh type variable for the interface
 					interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
@@ -639,8 +641,9 @@ func (c *Checker) InferComponent(
 				interfaceAlias, declErrors := c.inferInterface(nsCtx, decl)
 				errors = slices.Concat(errors, declErrors)
 
-				// Get the existing type alias (which might be a fresh var or a previous interface)
-				existingTypeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
+				// Get the existing type alias from the CURRENT namespace only.
+				// The placeholder phase should have created this in the current namespace.
+				existingTypeAlias := nsCtx.Scope.Namespace.Types[decl.Name.Name]
 				prunedType := type_system.Prune(existingTypeAlias.Type)
 
 				// Check if the pruned type is already an ObjectType (from a previous interface)
