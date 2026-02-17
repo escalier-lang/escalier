@@ -1967,9 +1967,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		return tempVar, stmts
 	case *ast.JSXElementExpr:
-		panic("TODO - buildExpr - JSXElementExpr")
+		return b.buildJSXElement(expr, parent)
 	case *ast.JSXFragmentExpr:
-		panic("TODO - buildExpr - JSXFragmentExpr")
+		return b.buildJSXFragment(expr, parent)
 	case *ast.EmptyExpr:
 		undefined := NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr)
 		return undefined, []Stmt{}

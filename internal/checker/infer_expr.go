@@ -663,9 +663,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			resultType = tryType
 		}
 	case *ast.JSXElementExpr:
-		panic("TODO: infer JSXElementExpr")
+		resultType, errors = c.inferJSXElement(ctx, expr)
 	case *ast.JSXFragmentExpr:
-		panic("TODO: infer JSXFragmentExpr")
+		resultType, errors = c.inferJSXFragment(ctx, expr)
 	default:
 		resultType = type_system.NewNeverType(nil)
 		errors = []Error{

@@ -4,6 +4,76 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// jsxElementOrFragment parses either a JSX element or a JSX fragment.
+// Fragments are detected by <> (LessThan followed immediately by GreaterThan).
+func (p *Parser) jsxElementOrFragment() ast.Expr {
+	// Peek ahead to detect fragment: <>
+	// We need to check if < is followed immediately by >
+	first := p.lexer.peek()
+	if first.Type != LessThan {
+		p.reportError(first.Span, "Expected '<'")
+		return nil
+	}
+
+	// Save position and peek at next token
+	p.lexer.consume() // consume '<'
+	second := p.lexer.peek()
+
+	if second.Type == GreaterThan {
+		// This is a fragment: <>
+		return p.jsxFragmentAfterOpening(first.Span.Start)
+	}
+
+	// This is a regular element, continue parsing
+	return p.jsxElementAfterLessThan(first.Span.Start)
+}
+
+// jsxFragmentAfterOpening parses a fragment after the < has been consumed.
+// Called when we've seen < and peeked > (fragment opening).
+func (p *Parser) jsxFragmentAfterOpening(start ast.Location) *ast.JSXFragmentExpr {
+	// Consume the >
+	token := p.lexer.next()
+	end := token.Span.End
+
+	openingSpan := ast.Span{
+		Start:    start,
+		End:      end,
+		SourceID: p.lexer.source.ID,
+	}
+	opening := ast.NewJSXOpening("", []*ast.JSXAttr{}, false, openingSpan)
+
+	// Parse children
+	children := p.jsxChildren()
+
+	// Parse closing </>
+	closing := p.jsxClosing()
+
+	span := ast.MergeSpans(openingSpan, closing.Span())
+	return ast.NewJSXFragment(opening, closing, children, span)
+}
+
+// jsxElementAfterLessThan parses an element after the < has been consumed.
+func (p *Parser) jsxElementAfterLessThan(start ast.Location) *ast.JSXElementExpr {
+	opening := p.jsxOpeningAfterLessThan(start)
+
+	span := ast.Span{
+		Start:    opening.Span().Start,
+		End:      opening.Span().End,
+		SourceID: p.lexer.source.ID,
+	}
+
+	if !opening.SelfClose {
+		children := p.jsxChildren()
+		closing := p.jsxClosing()
+
+		return ast.NewJSXElement(
+			opening, closing, children, ast.MergeSpans(span, closing.Span()),
+		)
+	}
+
+	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
+}
+
 func (p *Parser) jsxElement() *ast.JSXElementExpr {
 	opening := p.jsxOpening()
 
@@ -50,6 +120,47 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
 	default:
 		p.reportError(token.Span, "Expected an identifier or '>'")
+	}
+
+	attrs := p.jsxAttrs()
+
+	var selfClosing bool
+
+	token = p.lexer.next()
+
+	//nolint: exhaustive
+	switch token.Type {
+	case SlashGreaterThan:
+		selfClosing = true
+	case GreaterThan:
+		// do nothing
+	default:
+		p.reportError(token.Span, "Expected '>' or '/>'")
+	}
+
+	end := token.Span.End
+
+	span := ast.Span{
+		Start:    start,
+		End:      end,
+		SourceID: p.lexer.source.ID,
+	}
+
+	return ast.NewJSXOpening(name, attrs, selfClosing, span)
+}
+
+// jsxOpeningAfterLessThan parses a JSX opening tag after < has been consumed.
+// This is called when we've already determined this is NOT a fragment.
+func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
+	var name string
+	token := p.lexer.next()
+
+	//nolint: exhaustive
+	switch token.Type {
+	case Identifier:
+		name = token.Value
+	default:
+		p.reportError(token.Span, "Expected an identifier")
 	}
 
 	attrs := p.jsxAttrs()
@@ -205,9 +316,9 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 		case LessThanSlash, EndOfFile:
 			return children
 		case LessThan:
-			jsxElement := p.jsxElement()
-			if jsxElement != nil {
-				children = append(children, jsxElement)
+			jsx := p.jsxElementOrFragment()
+			if jsx != nil {
+				children = append(children, jsx.(ast.JSXChild))
 			}
 		case OpenBrace:
 			p.lexer.consume()
