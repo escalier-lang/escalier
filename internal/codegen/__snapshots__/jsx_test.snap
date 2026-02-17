@@ -98,3 +98,33 @@ function Parent() {
 const elem = React.createElement(Parent, null);
 
 ---
+
+[TestJSXTransformBasic/ElementWithBooleanShorthand - 1]
+const elem = React.createElement("input", {disabled: true});
+
+---
+
+[TestJSXTransformSpread/SpreadPropsOnly - 1]
+const props = {className: "foo", id: "bar"};
+const elem = React.createElement("div", {...props});
+
+---
+
+[TestJSXTransformSpread/SpreadWithRegularProps - 1]
+const props = {className: "foo"};
+const elem = React.createElement("div", {...props, id: "bar"});
+
+---
+
+[TestJSXTransformSpread/MultipleSpreadProps - 1]
+const props1 = {className: "foo"};
+const props2 = {id: "bar"};
+const elem = React.createElement("div", {...props1, ...props2});
+
+---
+
+[TestJSXTransformSpread/SpreadWithBooleanShorthand - 1]
+const props = {className: "foo"};
+const elem = React.createElement("input", {...props, disabled: true});
+
+---

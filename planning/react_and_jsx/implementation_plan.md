@@ -209,7 +209,8 @@ func isIntrinsicElement(name string) bool {
 - [x] Implement `buildJSXFragment()` - use React.Fragment
 - [x] Implement `buildJSXProps()` - build props object from attrs
 - [x] Implement `buildJSXChildren()` - transform children array
-- [ ] Handle spread attributes with `Object.assign` (deferred - parser doesn't support spread attributes yet)
+- [x] Handle spread attributes (using object spread syntax in generated output)
+- [x] Handle boolean shorthand attributes (`<input disabled />` → `{disabled: true}`)
 
 ### 1.3 Tests for Phase 1
 
@@ -218,18 +219,27 @@ func isIntrinsicElement(name string) bool {
 **File**: `internal/checker/tests/jsx_test.go` ✅ Created
 
 Contains test functions:
-- `TestJSXElementBasic` - tests self-closing elements, elements with closing tags, props (string, expression, multiple), children (text, expression), and nested elements
+- `TestJSXElementBasic` - tests self-closing elements, elements with closing tags, props (string, expression, multiple, boolean shorthand, spread), children (text, expression), and nested elements
 - `TestJSXFragmentBasic` - tests empty fragments, fragments with children, nested fragments
 - `TestJSXComponent` - tests components without props, with props, and nested components
 
 **File**: `internal/codegen/jsx_test.go` ✅ Created
 
 Contains test functions:
-- `TestJSXTransformBasic` - snapshot tests for element transforms
+- `TestJSXTransformBasic` - snapshot tests for element transforms (includes boolean shorthand)
 - `TestJSXTransformFragment` - snapshot tests for fragment transforms
 - `TestJSXTransformComponent` - snapshot tests for component transforms
+- `TestJSXTransformSpread` - snapshot tests for spread attribute transforms
 
 **Snapshot file**: `internal/codegen/__snapshots__/jsx_test.snap` ✅ Created
+
+**File**: `internal/parser/jsx_test.go` ✅ Updated
+
+Contains test functions:
+- `TestParseJSXNoErrors` - tests for valid JSX parsing (includes spread attributes, boolean shorthand)
+- `TestParseJSXErrors` - tests for JSX parse errors
+
+**Snapshot file**: `internal/parser/__snapshots__/jsx_test.snap` ✅ Created
 
 **Tasks**:
 - [x] Create `internal/checker/tests/jsx_test.go` with basic inference tests
@@ -1317,6 +1327,7 @@ func BenchmarkJSXCodegen(b *testing.B) {
 | `internal/checker/jsx_errors_test.go` | Error message tests | Planned (Phase 7) |
 | `internal/codegen/jsx_test.go` | Code generator unit tests | ✅ Created |
 | `internal/codegen/__snapshots__/jsx_test.snap` | Codegen snapshot test expectations | ✅ Created |
+| `internal/parser/__snapshots__/jsx_test.snap` | Parser snapshot test expectations | ✅ Created |
 
 ### New Test Fixtures
 
@@ -1347,8 +1358,9 @@ testdata/jsx/
 |------|---------|--------|
 | `internal/checker/infer_expr.go` | Add cases for JSXElementExpr, JSXFragmentExpr | ✅ Done |
 | `internal/codegen/builder.go` | Add cases for JSXElementExpr, JSXFragmentExpr | ✅ Done |
-| `internal/parser/jsx.go` | Updated to parse fragments as `JSXFragmentExpr` instead of `JSXElementExpr` with empty name | ✅ Done |
+| `internal/parser/jsx.go` | Updated to parse fragments as `JSXFragmentExpr`, added spread attributes and boolean shorthand parsing | ✅ Done |
 | `internal/parser/expr.go` | Call `jsxElementOrFragment()` instead of `jsxElement()` | ✅ Done |
+| `internal/ast/jsx.go` | Added `JSXAttrElem` interface, `JSXSpreadAttr` type, changed `JSXOpening.Attrs` to `[]JSXAttrElem` | ✅ Done |
 
 ---
 
@@ -1433,7 +1445,8 @@ Phase 8 (Final Verification)
 ### Phase 5 Complete When:
 - [ ] All JSX syntax forms compile correctly
 - [ ] Output matches React's expected format
-- [ ] Spread attributes work
+- [x] Spread attributes work
+- [x] Boolean shorthand attributes work
 - [ ] Clear error when `React` not in scope (classic transform)
 
 ### Phase 6 Complete When:
@@ -1464,9 +1477,11 @@ Phase 8 (Final Verification)
 ## Parser Limitations (to be addressed in future phases)
 
 The following JSX features are not yet supported by the parser:
-- Boolean shorthand attributes (`<input disabled />`) - requires parser update
 - Member expression components (`<Icons.Star />`) - requires parser update
-- Spread attributes (`<Button {...props} />`) - requires parser update
+
+**Recently Added Parser Features**:
+- ✅ Boolean shorthand attributes (`<input disabled />`) - implemented
+- ✅ Spread attributes (`<Button {...props} />`) - implemented
 
 ---
 

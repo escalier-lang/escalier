@@ -81,8 +81,8 @@ func (b *Builder) buildJSXFragment(expr *ast.JSXFragmentExpr, parent ast.Expr) (
 
 // buildJSXProps builds a props object from JSX attributes.
 // Returns null literal if no attributes, otherwise returns an object expression.
-// Note: Spread attributes ({...props}) are not yet supported (planned for Phase 5).
-func (b *Builder) buildJSXProps(attrs []*ast.JSXAttr, source *ast.JSXElementExpr) (Expr, []Stmt) {
+// Supports both regular attributes and spread attributes ({...props}).
+func (b *Builder) buildJSXProps(attrs []ast.JSXAttrElem, source *ast.JSXElementExpr) (Expr, []Stmt) {
 	if len(attrs) == 0 {
 		return NewLitExpr(NewNullLit(source), source), nil
 	}
@@ -90,12 +90,20 @@ func (b *Builder) buildJSXProps(attrs []*ast.JSXAttr, source *ast.JSXElementExpr
 	var stmts []Stmt
 	var props []ObjExprElem
 
-	for _, attr := range attrs {
-		// Regular prop
-		key := NewIdentExpr(attr.Name, "", source)
-		value, valueStmts := b.buildJSXAttrValue(attr, source)
-		stmts = slices.Concat(stmts, valueStmts)
-		props = append(props, NewPropertyExpr(key, value, source))
+	for _, attrElem := range attrs {
+		switch attr := attrElem.(type) {
+		case *ast.JSXAttr:
+			// Regular prop
+			key := NewIdentExpr(attr.Name, "", source)
+			value, valueStmts := b.buildJSXAttrValue(attr, source)
+			stmts = slices.Concat(stmts, valueStmts)
+			props = append(props, NewPropertyExpr(key, value, source))
+		case *ast.JSXSpreadAttr:
+			// Spread prop: {...props}
+			spreadExpr, spreadStmts := b.buildExpr(attr.Expr, source)
+			stmts = slices.Concat(stmts, spreadStmts)
+			props = append(props, NewRestSpreadExpr(spreadExpr, source))
+		}
 	}
 
 	return NewObjectExpr(props, source), stmts

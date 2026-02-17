@@ -33,10 +33,21 @@ func TestJSXElementBasic(t *testing.T) {
 				val elem = <div className={name} />
 			`,
 		},
-		// Boolean shorthand not yet supported by parser
-		// "ElementWithBooleanShorthand": {
-		// 	input: `val elem = <input disabled />`,
-		// },
+		"ElementWithBooleanShorthand": {
+			input: `val elem = <input disabled />`,
+		},
+		"ElementWithSpreadProps": {
+			input: `
+				val props = {className: "foo", id: "bar"}
+				val elem = <div {...props} />
+			`,
+		},
+		"ElementWithSpreadAndRegularProps": {
+			input: `
+				val props = {className: "foo"}
+				val elem = <div {...props} id="bar" />
+			`,
+		},
 		"ElementWithTextChild": {
 			input: `val elem = <div>Hello</div>`,
 		},

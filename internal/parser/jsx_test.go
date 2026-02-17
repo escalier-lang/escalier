@@ -41,6 +41,24 @@ func TestParseJSXNoErrors(t *testing.T) {
 		"Fragment": {
 			input: "<><Foo /><Bar /></>",
 		},
+		"SpreadAttrOnly": {
+			input: "<Foo {...props} />",
+		},
+		"SpreadWithRegularAttrs": {
+			input: "<Foo {...props} bar={5} />",
+		},
+		"MultipleSpreadAttrs": {
+			input: "<Foo {...props1} {...props2} />",
+		},
+		"SpreadBetweenRegularAttrs": {
+			input: "<Foo bar={5} {...props} baz=\"hello\" />",
+		},
+		"BooleanShorthand": {
+			input: "<input disabled />",
+		},
+		"BooleanShorthandWithOtherAttrs": {
+			input: "<input name=\"foo\" disabled checked />",
+		},
 	}
 
 	for name, test := range tests {

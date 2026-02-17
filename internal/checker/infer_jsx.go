@@ -70,40 +70,54 @@ func isIntrinsicElement(name string) bool {
 }
 
 // inferJSXAttributes builds an object type from JSX attributes.
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []*ast.JSXAttr) (type_system.Type, []Error) {
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
 	var errors []Error
 	elems := make([]type_system.ObjTypeElem, 0, len(attrs))
 
-	for _, attr := range attrs {
-		var valueType type_system.Type
+	for _, attrElem := range attrs {
+		switch attr := attrElem.(type) {
+		case *ast.JSXAttr:
+			var valueType type_system.Type
 
-		if attr.Value == nil {
-			// Boolean shorthand: <input disabled />
-			valueType = type_system.NewBoolLitType(nil, true)
-		} else {
-			switch v := (*attr.Value).(type) {
-			case *ast.JSXString:
-				valueType = type_system.NewStrLitType(nil, v.Value)
-			case *ast.JSXExprContainer:
-				var exprErrors []Error
-				valueType, exprErrors = c.inferExpr(ctx, v.Expr)
-				errors = slices.Concat(errors, exprErrors)
-			case *ast.JSXElementExpr:
-				// JSX element as attribute value (rare but possible)
-				var elemErrors []Error
-				valueType, elemErrors = c.inferJSXElement(ctx, v)
-				errors = slices.Concat(errors, elemErrors)
-			case *ast.JSXFragmentExpr:
-				// JSX fragment as attribute value
-				var fragErrors []Error
-				valueType, fragErrors = c.inferJSXFragment(ctx, v)
-				errors = slices.Concat(errors, fragErrors)
+			if attr.Value == nil {
+				// Boolean shorthand: <input disabled />
+				valueType = type_system.NewBoolLitType(nil, true)
+			} else {
+				switch v := (*attr.Value).(type) {
+				case *ast.JSXString:
+					valueType = type_system.NewStrLitType(nil, v.Value)
+				case *ast.JSXExprContainer:
+					var exprErrors []Error
+					valueType, exprErrors = c.inferExpr(ctx, v.Expr)
+					errors = slices.Concat(errors, exprErrors)
+				case *ast.JSXElementExpr:
+					// JSX element as attribute value (rare but possible)
+					var elemErrors []Error
+					valueType, elemErrors = c.inferJSXElement(ctx, v)
+					errors = slices.Concat(errors, elemErrors)
+				case *ast.JSXFragmentExpr:
+					// JSX fragment as attribute value
+					var fragErrors []Error
+					valueType, fragErrors = c.inferJSXFragment(ctx, v)
+					errors = slices.Concat(errors, fragErrors)
+				}
 			}
-		}
 
-		if valueType != nil {
-			key := type_system.NewStrKey(attr.Name)
-			elems = append(elems, type_system.NewPropertyElem(key, valueType))
+			if valueType != nil {
+				key := type_system.NewStrKey(attr.Name)
+				elems = append(elems, type_system.NewPropertyElem(key, valueType))
+			}
+
+		case *ast.JSXSpreadAttr:
+			// Spread attribute: {...props}
+			var spreadType type_system.Type
+			var spreadErrors []Error
+			spreadType, spreadErrors = c.inferExpr(ctx, attr.Expr)
+			errors = slices.Concat(errors, spreadErrors)
+
+			if spreadType != nil {
+				elems = append(elems, type_system.NewRestSpreadElem(spreadType))
+			}
 		}
 	}
 

@@ -31,10 +31,9 @@ func TestJSXTransformBasic(t *testing.T) {
 val name = "foo"
 val elem = <div className={name} />`,
 		},
-		// Boolean shorthand not yet supported by parser
-		// "ElementWithBooleanShorthand": {
-		// 	input: `val elem = <input disabled />`,
-		// },
+		"ElementWithBooleanShorthand": {
+			input: `val elem = <input disabled />`,
+		},
 		"ElementWithTextChild": {
 			input: `val elem = <div>Hello</div>`,
 		},
@@ -172,6 +171,67 @@ val elem = <Parent />`,
 		// "MemberExpressionComponent": {
 		// 	input: `val elem = <Icons.Star size={24} />`,
 		// },
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			if len(parseErrors) > 0 {
+				for _, err := range parseErrors {
+					t.Logf("ParseError: %v", err)
+				}
+				t.FailNow()
+			}
+
+			builder := &Builder{
+				tempId:   0,
+				depGraph: nil,
+			}
+			module := builder.BuildScript(script)
+
+			printer := NewPrinter()
+			printer.PrintModule(module)
+
+			snaps.MatchSnapshot(t, printer.Output)
+		})
+	}
+}
+
+func TestJSXTransformSpread(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"SpreadPropsOnly": {
+			input: `
+val props = {className: "foo", id: "bar"}
+val elem = <div {...props} />`,
+		},
+		"SpreadWithRegularProps": {
+			input: `
+val props = {className: "foo"}
+val elem = <div {...props} id="bar" />`,
+		},
+		"MultipleSpreadProps": {
+			input: `
+val props1 = {className: "foo"}
+val props2 = {id: "bar"}
+val elem = <div {...props1} {...props2} />`,
+		},
+		"SpreadWithBooleanShorthand": {
+			input: `
+val props = {className: "foo"}
+val elem = <input {...props} disabled />`,
+		},
 	}
 
 	for name, test := range tests {

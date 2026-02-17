@@ -40,7 +40,7 @@ func (p *Parser) jsxFragmentAfterOpening(start ast.Location) *ast.JSXFragmentExp
 		End:      end,
 		SourceID: p.lexer.source.ID,
 	}
-	opening := ast.NewJSXOpening("", []*ast.JSXAttr{}, false, openingSpan)
+	opening := ast.NewJSXOpening("", []ast.JSXAttrElem{}, false, openingSpan)
 
 	// Parse children
 	children := p.jsxChildren()
@@ -117,7 +117,7 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 			End:      end,
 			SourceID: p.lexer.source.ID,
 		}
-		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
+		return ast.NewJSXOpening("", []ast.JSXAttrElem{}, false, span)
 	default:
 		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
@@ -190,8 +190,8 @@ func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
 	return ast.NewJSXOpening(name, attrs, selfClosing, span)
 }
 
-func (p *Parser) jsxAttrs() []*ast.JSXAttr {
-	attrs := []*ast.JSXAttr{}
+func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
+	attrs := []ast.JSXAttrElem{}
 
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
@@ -204,6 +204,39 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 		}
 
 		token := p.lexer.peek()
+
+		// Check for spread attribute: {...expr}
+		if token.Type == OpenBrace {
+			start := token.Span.Start
+			p.lexer.consume() // consume '{'
+
+			token = p.lexer.peek()
+			if token.Type == DotDotDot {
+				p.lexer.consume() // consume '...'
+				expr := p.expr()
+				if expr == nil {
+					return attrs
+				}
+
+				token = p.lexer.peek()
+				end := token.Span.End
+				if token.Type == CloseBrace {
+					p.lexer.consume() // consume '}'
+				} else {
+					p.reportError(token.Span, "Expected '}'")
+				}
+
+				span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+				attrs = append(attrs, ast.NewJSXSpreadAttr(expr, span))
+				continue
+			} else {
+				// Not a spread, this is an error - we consumed '{' but didn't find '...'
+				p.reportError(token.Span, "Expected '...' for spread attribute")
+				return attrs
+			}
+		}
+
+		// Regular named attribute
 		name := ""
 		if token.Type == Identifier {
 			p.lexer.consume() // consume identifier
@@ -212,43 +245,45 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 			break
 		}
 
-		// parse attribute value
+		// Check for attribute value (optional for boolean shorthand)
 		token = p.lexer.peek()
 		if token.Type == Equal {
 			p.lexer.consume() // consume equals
-		} else {
-			p.reportError(token.Span, "Expected '='")
-		}
 
-		var value ast.JSXAttrValue
+			var value ast.JSXAttrValue
 
-		// parse attribute value
-		token = p.lexer.peek()
-
-		//nolint: exhaustive
-		switch token.Type {
-		case StrLit:
-			p.lexer.consume() // consume string
-			value = ast.NewJSXString(token.Value, token.Span)
-		case OpenBrace:
-			p.lexer.consume() // consume '{'
-			expr := p.expr()
-			if expr == nil {
-				return attrs
-			}
-			value = ast.NewJSXExprContainer(expr, token.Span)
+			// parse attribute value
 			token = p.lexer.peek()
-			if token.Type == CloseBrace {
-				p.lexer.consume() // consume '}'
-			} else {
-				p.reportError(token.Span, "Expected '}'")
-			}
-		default:
-			p.reportError(token.Span, "Expected a string or an expression")
-		}
 
-		attr := ast.NewJSXAttr(name, &value, token.Span)
-		attrs = append(attrs, attr)
+			//nolint: exhaustive
+			switch token.Type {
+			case StrLit:
+				p.lexer.consume() // consume string
+				value = ast.NewJSXString(token.Value, token.Span)
+			case OpenBrace:
+				p.lexer.consume() // consume '{'
+				expr := p.expr()
+				if expr == nil {
+					return attrs
+				}
+				value = ast.NewJSXExprContainer(expr, token.Span)
+				token = p.lexer.peek()
+				if token.Type == CloseBrace {
+					p.lexer.consume() // consume '}'
+				} else {
+					p.reportError(token.Span, "Expected '}'")
+				}
+			default:
+				p.reportError(token.Span, "Expected a string or an expression")
+			}
+
+			attr := ast.NewJSXAttr(name, &value, token.Span)
+			attrs = append(attrs, attr)
+		} else {
+			// Boolean shorthand: <input disabled />
+			attr := ast.NewJSXAttr(name, nil, token.Span)
+			attrs = append(attrs, attr)
+		}
 	}
 
 	return attrs

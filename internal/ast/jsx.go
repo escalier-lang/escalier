@@ -2,12 +2,12 @@ package ast
 
 type JSXOpening struct {
 	Name      string
-	Attrs     []*JSXAttr
+	Attrs     []JSXAttrElem
 	SelfClose bool
 	span      Span
 }
 
-func NewJSXOpening(name string, attrs []*JSXAttr, selfClose bool, span Span) *JSXOpening {
+func NewJSXOpening(name string, attrs []JSXAttrElem, selfClose bool, span Span) *JSXOpening {
 	return &JSXOpening{Name: name, Attrs: attrs, SelfClose: selfClose, span: span}
 }
 func (n *JSXOpening) Span() Span { return n.span }
@@ -22,16 +22,38 @@ func NewJSXClosing(name string, span Span) *JSXClosing {
 }
 func (n *JSXClosing) Span() Span { return n.span }
 
+// JSXAttrElem is an interface for JSX attribute elements.
+// Both regular attributes and spread attributes implement this interface.
+type JSXAttrElem interface {
+	isJSXAttrElem()
+	Span() Span
+}
+
 type JSXAttr struct {
 	Name  string
 	Value *JSXAttrValue
 	span  Span
 }
 
+func (*JSXAttr) isJSXAttrElem() {}
+
 func NewJSXAttr(name string, value *JSXAttrValue, span Span) *JSXAttr {
 	return &JSXAttr{Name: name, Value: value, span: span}
 }
 func (n *JSXAttr) Span() Span { return n.span }
+
+// JSXSpreadAttr represents a spread attribute in JSX: {...props}
+type JSXSpreadAttr struct {
+	Expr Expr
+	span Span
+}
+
+func (*JSXSpreadAttr) isJSXAttrElem() {}
+
+func NewJSXSpreadAttr(expr Expr, span Span) *JSXSpreadAttr {
+	return &JSXSpreadAttr{Expr: expr, span: span}
+}
+func (n *JSXSpreadAttr) Span() Span { return n.span }
 
 type JSXAttrValue interface{ isJSXAttrValue() }
 
