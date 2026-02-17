@@ -25,16 +25,15 @@ func TestImportInferenceScript(t *testing.T) {
 				"equal": "fn (a: any, b: any) -> boolean throws never",
 			},
 		},
-		// TODO: re-enable once we support shadowing of global interface declarations
-		// "NamespaceImportCsstype": {
-		// 	input: `
-		// 		import * as CSS from "csstype"
-		// 		declare val alignItems: CSS.Property.AlignItems
-		// 	`,
-		// 	expectedValues: map[string]string{
-		// 		"alignItems": "fn (a: any, b: any) -> boolean throws never",
-		// 	},
-		// },
+		"NamespaceImportCsstype": {
+			input: `
+				import * as CSS from "csstype"
+				declare val alignItems: CSS.Property.AlignItems
+			`,
+			expectedValues: map[string]string{
+				"alignItems": "Globals | DataType.SelfPosition | \"anchor-center\" | \"baseline\" | \"normal\" | \"stretch\" | string & {}",
+			},
+		},
 	}
 
 	for testName, testCase := range tests {
@@ -73,7 +72,16 @@ func TestImportInferenceScript(t *testing.T) {
 				binding, exists := resultScope.Namespace.Values[expectedName]
 				assert.True(t, exists, "Expected type alias %s to be declared", expectedName)
 
-				expandedTyped, _ := c.ExpandType(inferCtx, binding.Type, 1)
+				// Use the resultScope for expansion, not the original inferCtx,
+				// because the resultScope has the imported namespaces
+				expandCtx := Context{
+					Scope:                  resultScope,
+					IsAsync:                false,
+					IsPatMatch:             false,
+					AllowUndefinedTypeRefs: false,
+					TypeRefsToUpdate:       nil,
+				}
+				expandedTyped, _ := c.ExpandType(expandCtx, binding.Type, 1)
 				actualType := expandedTyped.String()
 
 				if exists {
