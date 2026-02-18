@@ -9,10 +9,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// buildJSXElement transforms a JSX element into React.createElement call.
+// buildJSXElement transforms a JSX element into a _jsx or _jsxs call.
 // <div className="foo">Hello</div>
 // becomes:
-// React.createElement("div", { className: "foo" }, "Hello")
+// _jsx("div", { className: "foo", children: "Hello" })
+//
+// <div><span>One</span><span>Two</span></div>
+// becomes:
+// _jsxs("div", { children: [_jsx("span", { children: "One" }), _jsx("span", { children: "Two" })] })
 func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr) (Expr, []Stmt) {
 	var stmts []Stmt
 	tagName := expr.Opening.Name
@@ -26,32 +30,33 @@ func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr) (Expr, []Stmt) {
 		elementType = buildTagExpression(tagName, expr)
 	}
 
-	// 2. Build props object (or null if no props)
-	propsExpr, propsStmts := b.buildJSXProps(expr.Opening.Attrs, expr)
-	stmts = slices.Concat(stmts, propsStmts)
-
-	// 3. Build children
+	// 2. Build children
 	childrenExprs, childrenStmts := b.buildJSXChildren(expr.Children, expr)
 	stmts = slices.Concat(stmts, childrenStmts)
 
-	// 4. Build React.createElement call
-	args := []Expr{elementType, propsExpr}
-	args = append(args, childrenExprs...)
+	// 3. Build props object with children included
+	propsExpr, propsStmts := b.buildJSXPropsWithChildren(expr.Opening.Attrs, childrenExprs, expr)
+	stmts = slices.Concat(stmts, propsStmts)
 
-	callee := NewMemberExpr(
-		NewIdentExpr("React", "", expr),
-		NewIdentifier("createElement", expr),
-		false,
-		expr,
-	)
+	// 4. Build _jsx or _jsxs call based on number of children
+	var callee Expr
+	if len(childrenExprs) > 1 {
+		b.hasJsxs = true
+		callee = NewIdentExpr("_jsxs", "", expr)
+	} else {
+		b.hasJsx = true
+		callee = NewIdentExpr("_jsx", "", expr)
+	}
+
+	args := []Expr{elementType, propsExpr}
 
 	return NewCallExpr(callee, args, false, expr), stmts
 }
 
-// buildJSXFragment transforms a JSX fragment into React.createElement(React.Fragment, null, ...).
+// buildJSXFragment transforms a JSX fragment into a _jsx or _jsxs call with _Fragment.
 // <><div /><span /></>
 // becomes:
-// React.createElement(React.Fragment, null, React.createElement("div", null), React.createElement("span", null))
+// _jsxs(_Fragment, { children: [_jsx("div", {}), _jsx("span", {})] })
 func (b *Builder) buildJSXFragment(expr *ast.JSXFragmentExpr) (Expr, []Stmt) {
 	var stmts []Stmt
 
@@ -59,35 +64,41 @@ func (b *Builder) buildJSXFragment(expr *ast.JSXFragmentExpr) (Expr, []Stmt) {
 	childrenExprs, childrenStmts := b.buildJSXChildren(expr.Children, expr)
 	stmts = slices.Concat(stmts, childrenStmts)
 
-	// React.createElement(React.Fragment, null, ...children)
-	callee := NewMemberExpr(
-		NewIdentExpr("React", "", expr),
-		NewIdentifier("createElement", expr),
-		false,
-		expr,
-	)
+	// Build props object with children
+	var props []ObjExprElem
+	if len(childrenExprs) == 1 {
+		key := NewIdentExpr("children", "", expr)
+		props = append(props, NewPropertyExpr(key, childrenExprs[0], expr))
+	} else if len(childrenExprs) > 1 {
+		key := NewIdentExpr("children", "", expr)
+		childrenArray := NewArrayExpr(childrenExprs, expr)
+		props = append(props, NewPropertyExpr(key, childrenArray, expr))
+	}
+	propsExpr := NewObjectExpr(props, expr)
 
-	fragmentType := NewMemberExpr(
-		NewIdentExpr("React", "", expr),
-		NewIdentifier("Fragment", expr),
-		false,
-		expr,
-	)
+	// Track Fragment usage
+	b.hasFragment = true
 
-	args := []Expr{fragmentType, NewLitExpr(NewNullLit(expr), expr)}
-	args = append(args, childrenExprs...)
+	// Use _jsx for 0 or 1 child, _jsxs for multiple children
+	var callee Expr
+	if len(childrenExprs) > 1 {
+		b.hasJsxs = true
+		callee = NewIdentExpr("_jsxs", "", expr)
+	} else {
+		b.hasJsx = true
+		callee = NewIdentExpr("_jsx", "", expr)
+	}
+
+	fragmentType := NewIdentExpr("_Fragment", "", expr)
+	args := []Expr{fragmentType, propsExpr}
 
 	return NewCallExpr(callee, args, false, expr), stmts
 }
 
-// buildJSXProps builds a props object from JSX attributes.
-// Returns null literal if no attributes, otherwise returns an object expression.
-// Supports both regular attributes and spread attributes ({...props}).
-func (b *Builder) buildJSXProps(attrs []ast.JSXAttrElem, source *ast.JSXElementExpr) (Expr, []Stmt) {
-	if len(attrs) == 0 {
-		return NewLitExpr(NewNullLit(source), source), nil
-	}
-
+// buildJSXPropsWithChildren builds a props object from JSX attributes and children.
+// Children are included as a "children" property in the props object.
+// For multiple children, they are wrapped in an array.
+func (b *Builder) buildJSXPropsWithChildren(attrs []ast.JSXAttrElem, children []Expr, source *ast.JSXElementExpr) (Expr, []Stmt) {
 	var stmts []Stmt
 	var props []ObjExprElem
 
@@ -107,6 +118,19 @@ func (b *Builder) buildJSXProps(attrs []ast.JSXAttrElem, source *ast.JSXElementE
 		}
 	}
 
+	// Add children property if there are children
+	if len(children) == 1 {
+		// Single child: children: <child>
+		key := NewIdentExpr("children", "", source)
+		props = append(props, NewPropertyExpr(key, children[0], source))
+	} else if len(children) > 1 {
+		// Multiple children: children: [<child1>, <child2>, ...]
+		key := NewIdentExpr("children", "", source)
+		childrenArray := NewArrayExpr(children, source)
+		props = append(props, NewPropertyExpr(key, childrenArray, source))
+	}
+
+	// Always return an object, even if empty (jsx runtime expects an object, not null)
 	return NewObjectExpr(props, source), stmts
 }
 
