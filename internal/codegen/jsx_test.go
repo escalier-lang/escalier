@@ -169,10 +169,9 @@ fn Parent() {
 }
 val elem = <Parent />`,
 		},
-		// Member expression components not yet supported by parser
-		// "MemberExpressionComponent": {
-		// 	input: `val elem = <Icons.Star size={24} />`,
-		// },
+		"MemberExpressionComponent": {
+			input: `val elem = <Icons.Star size={24} />`,
+		},
 	}
 
 	for name, test := range tests {

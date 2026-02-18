@@ -74,25 +74,48 @@ func (p *Parser) jsxElementAfterLessThan(start ast.Location) *ast.JSXElementExpr
 	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
 }
 
-// jsxOpeningAfterLessThan parses a JSX opening tag after < has been consumed.
-// This is called when we've already determined this is NOT a fragment.
-func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
-	var name string
+// jsxElementName parses a JSX element name, which can be either a simple identifier
+// (e.g., "div", "MyComponent") or a member expression (e.g., "Foo.Bar", "Icons.Star").
+// Returns the full dotted name as a string.
+func (p *Parser) jsxElementName() string {
 	token := p.lexer.next()
 
 	//nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		name = token.Value
+		name := token.Value
+		// Check for member expression: Foo.Bar.Baz
+		for {
+			if p.lexer.peek().Type == Dot {
+				p.lexer.consume() // consume '.'
+				nextToken := p.lexer.next()
+				if nextToken.Type == Identifier {
+					name += "." + nextToken.Value
+				} else {
+					p.reportError(nextToken.Span, "Expected an identifier after '.'")
+					break
+				}
+			} else {
+				break
+			}
+		}
+		return name
 	default:
 		p.reportError(token.Span, "Expected an identifier")
+		return ""
 	}
+}
+
+// jsxOpeningAfterLessThan parses a JSX opening tag after < has been consumed.
+// This is called when we've already determined this is NOT a fragment.
+func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
+	name := p.jsxElementName()
 
 	attrs := p.jsxAttrs()
 
 	var selfClosing bool
 
-	token = p.lexer.next()
+	token := p.lexer.next()
 
 	//nolint: exhaustive
 	switch token.Type {
@@ -143,12 +166,14 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 					return attrs
 				}
 
+				var end ast.Location
 				token = p.lexer.peek()
-				end := token.Span.End
 				if token.Type == CloseBrace {
 					p.lexer.consume() // consume '}'
+					end = token.Span.End
 				} else {
 					p.reportError(token.Span, "Expected '}'")
+					end = token.Span.End // fallback to unexpected token's end
 				}
 
 				span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
@@ -263,6 +288,21 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 	switch token.Type {
 	case Identifier:
 		name = token.Value
+		// Check for member expression: Foo.Bar.Baz
+		for {
+			if p.lexer.peek().Type == Dot {
+				p.lexer.consume() // consume '.'
+				nextToken := p.lexer.next()
+				if nextToken.Type == Identifier {
+					name += "." + nextToken.Value
+				} else {
+					p.reportError(nextToken.Span, "Expected an identifier after '.'")
+					break
+				}
+			} else {
+				break
+			}
+		}
 	case GreaterThan:
 		end := token.Span.End
 		span := ast.Span{
@@ -317,16 +357,21 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 				}
 			}
 		case OpenBrace:
-			p.lexer.consume()
+			openBraceStart := token.Span.Start
+			p.lexer.consume() // consume '{'
 			expr := p.expr()
 			// TODO: handle the case when parseExpr() returns nil
 			token = p.lexer.peek()
+			var spanEnd ast.Location
 			if token.Type == CloseBrace {
-				p.lexer.consume()
+				spanEnd = token.Span.End
+				p.lexer.consume() // consume '}'
 			} else {
 				p.reportError(token.Span, "Expected '}'")
+				spanEnd = token.Span.End
 			}
-			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
+			fullSpan := ast.Span{Start: openBraceStart, End: spanEnd, SourceID: p.lexer.source.ID}
+			children = append(children, ast.NewJSXExprContainer(expr, fullSpan))
 		default:
 			// Try to lex JSX text at the current position
 			jsxToken := p.lexer.lexJSXText()

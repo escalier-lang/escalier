@@ -128,3 +128,8 @@ const props = {className: "foo"};
 const elem = React.createElement("input", {...props, disabled: true});
 
 ---
+
+[TestJSXTransformComponent/MemberExpressionComponent - 1]
+const elem = React.createElement(Icons.Star, {size: 24});
+
+---

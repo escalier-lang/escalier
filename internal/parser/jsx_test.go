@@ -59,6 +59,21 @@ func TestParseJSXNoErrors(t *testing.T) {
 		"BooleanShorthandWithOtherAttrs": {
 			input: "<input name=\"foo\" disabled checked />",
 		},
+		"MemberExprSelfClosing": {
+			input: "<Foo.Bar />",
+		},
+		"MemberExprWithAttrs": {
+			input: "<Foo.Bar baz={5} />",
+		},
+		"MemberExprWithChildren": {
+			input: "<Foo.Bar>hello</Foo.Bar>",
+		},
+		"DeepMemberExpr": {
+			input: "<Foo.Bar.Baz />",
+		},
+		"MemberExprInFragment": {
+			input: "<><Foo.Bar /><Baz.Qux /></>",
+		},
 	}
 
 	for name, test := range tests {
