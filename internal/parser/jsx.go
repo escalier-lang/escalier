@@ -74,81 +74,6 @@ func (p *Parser) jsxElementAfterLessThan(start ast.Location) *ast.JSXElementExpr
 	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
 }
 
-func (p *Parser) jsxElement() *ast.JSXElementExpr {
-	opening := p.jsxOpening()
-
-	span := ast.Span{
-		Start:    opening.Span().Start,
-		End:      opening.Span().End,
-		SourceID: p.lexer.source.ID,
-	}
-
-	if !opening.SelfClose {
-		children := p.jsxChildren()
-		closing := p.jsxClosing()
-
-		return ast.NewJSXElement(
-			opening, closing, children, ast.MergeSpans(span, closing.Span()),
-		)
-	}
-
-	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
-}
-
-func (p *Parser) jsxOpening() *ast.JSXOpening {
-	token := p.lexer.next()
-	if token.Type != LessThan {
-		p.reportError(token.Span, "Expected '<'")
-	}
-
-	start := token.Span.Start
-
-	var name string
-	token = p.lexer.next()
-
-	//nolint: exhaustive
-	switch token.Type {
-	case Identifier:
-		name = token.Value
-	case GreaterThan:
-		end := token.Span.End
-		span := ast.Span{
-			Start:    start,
-			End:      end,
-			SourceID: p.lexer.source.ID,
-		}
-		return ast.NewJSXOpening("", []ast.JSXAttrElem{}, false, span)
-	default:
-		p.reportError(token.Span, "Expected an identifier or '>'")
-	}
-
-	attrs := p.jsxAttrs()
-
-	var selfClosing bool
-
-	token = p.lexer.next()
-
-	//nolint: exhaustive
-	switch token.Type {
-	case SlashGreaterThan:
-		selfClosing = true
-	case GreaterThan:
-		// do nothing
-	default:
-		p.reportError(token.Span, "Expected '>' or '/>'")
-	}
-
-	end := token.Span.End
-
-	span := ast.Span{
-		Start:    start,
-		End:      end,
-		SourceID: p.lexer.source.ID,
-	}
-
-	return ast.NewJSXOpening(name, attrs, selfClosing, span)
-}
-
 // jsxOpeningAfterLessThan parses a JSX opening tag after < has been consumed.
 // This is called when we've already determined this is NOT a fragment.
 func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
@@ -238,6 +163,7 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 
 		// Regular named attribute
 		name := ""
+		nameToken := token
 		if token.Type == Identifier {
 			p.lexer.consume() // consume identifier
 			name = token.Value
@@ -251,6 +177,7 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 			p.lexer.consume() // consume equals
 
 			var value ast.JSXAttrValue
+			var attrEnd ast.Location
 
 			// parse attribute value
 			token = p.lexer.peek()
@@ -260,28 +187,37 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 			case StrLit:
 				p.lexer.consume() // consume string
 				value = ast.NewJSXString(token.Value, token.Span)
+				attrEnd = token.Span.End
 			case OpenBrace:
+				openBraceStart := token.Span.Start
 				p.lexer.consume() // consume '{'
 				expr := p.expr()
 				if expr == nil {
 					return attrs
 				}
-				value = ast.NewJSXExprContainer(expr, token.Span)
 				token = p.lexer.peek()
 				if token.Type == CloseBrace {
 					p.lexer.consume() // consume '}'
+					attrEnd = token.Span.End
 				} else {
 					p.reportError(token.Span, "Expected '}'")
+					attrEnd = token.Span.End
 				}
+				// JSXExprContainer span covers from '{' to '}'
+				containerSpan := ast.Span{Start: openBraceStart, End: attrEnd, SourceID: p.lexer.source.ID}
+				value = ast.NewJSXExprContainer(expr, containerSpan)
 			default:
 				p.reportError(token.Span, "Expected a string or an expression")
+				attrEnd = token.Span.End
 			}
 
-			attr := ast.NewJSXAttr(name, &value, token.Span)
+			// Attribute span covers from name start to value end
+			attrSpan := ast.Span{Start: nameToken.Span.Start, End: attrEnd, SourceID: p.lexer.source.ID}
+			attr := ast.NewJSXAttr(name, &value, attrSpan)
 			attrs = append(attrs, attr)
 		} else {
-			// Boolean shorthand: <input disabled />
-			attr := ast.NewJSXAttr(name, nil, token.Span)
+			// Boolean shorthand: <input disabled /> - span is just the name token
+			attr := ast.NewJSXAttr(name, nil, nameToken.Span)
 			attrs = append(attrs, attr)
 		}
 	}
@@ -353,7 +289,9 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 		case LessThan:
 			jsx := p.jsxElementOrFragment()
 			if jsx != nil {
-				children = append(children, jsx.(ast.JSXChild))
+				if child, ok := jsx.(ast.JSXChild); ok {
+					children = append(children, child)
+				}
 			}
 		case OpenBrace:
 			p.lexer.consume()

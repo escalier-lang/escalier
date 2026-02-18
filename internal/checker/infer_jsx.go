@@ -177,7 +177,7 @@ func normalizeJSXText(text string) string {
 }
 
 // Phase 1 stub - returns nil to allow any props (replaced in Phase 2)
-func (c *Checker) getIntrinsicElementProps(ctx Context, tagName string, expr ast.Expr) (type_system.Type, []Error) {
+func (c *Checker) getIntrinsicElementProps(ctx Context, tagName string, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
 	return nil, nil
 }
 

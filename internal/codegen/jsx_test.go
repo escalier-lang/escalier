@@ -55,6 +55,7 @@ val elem = <div>Hello {name}</div>`,
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",

@@ -82,12 +82,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
+                    Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
                 },
@@ -103,7 +103,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:18},
+                    Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
@@ -154,12 +154,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
+                    Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
                 },
@@ -175,7 +175,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:18},
+                    Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
@@ -429,7 +429,7 @@
 ---
 
 [TestParseJSXNoErrors/Fragment - 1]
-&ast.JSXElementExpr{
+&ast.JSXFragmentExpr{
     Opening: &ast.JSXOpening{
         Name:  "",
         Attrs: {
@@ -513,8 +513,8 @@
                 Name:  "bar",
                 Value: (*ast.JSXAttrValue)(nil),
                 span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:17},
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
                 },
             },
@@ -562,8 +562,8 @@
                 Name:  "bar",
                 Value: (*ast.JSXAttrValue)(nil),
                 span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:11},
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
                 },
             },
@@ -710,12 +710,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:7},
-                        End:      ast.Location{Line:2, Column:8},
+                        End:      ast.Location{Line:2, Column:10},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:2, Column:9},
+                    Start:    ast.Location{Line:2, Column:3},
                     End:      ast.Location{Line:2, Column:10},
                     SourceID: 0,
                 },
@@ -731,7 +731,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:3, Column:7},
+                    Start:    ast.Location{Line:3, Column:3},
                     End:      ast.Location{Line:3, Column:14},
                     SourceID: 0,
                 },
@@ -772,7 +772,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
+                    Start:    ast.Location{Line:1, Column:8},
                     End:      ast.Location{Line:1, Column:18},
                     SourceID: 0,
                 },
@@ -781,8 +781,8 @@
                 Name:  "disabled",
                 Value: (*ast.JSXAttrValue)(nil),
                 span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:28},
-                    End:      ast.Location{Line:1, Column:35},
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:27},
                     SourceID: 0,
                 },
             },
@@ -790,8 +790,8 @@
                 Name:  "checked",
                 Value: (*ast.JSXAttrValue)(nil),
                 span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:36},
-                    End:      ast.Location{Line:1, Column:38},
+                    Start:    ast.Location{Line:1, Column:28},
+                    End:      ast.Location{Line:1, Column:35},
                     SourceID: 0,
                 },
             },
@@ -885,8 +885,8 @@
                 Name:  "disabled",
                 Value: (*ast.JSXAttrValue)(nil),
                 span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:17},
-                    End:      ast.Location{Line:1, Column:19},
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:16},
                     SourceID: 0,
                 },
             },
@@ -997,12 +997,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:21},
-                        End:      ast.Location{Line:1, Column:22},
+                        End:      ast.Location{Line:1, Column:24},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:23},
+                    Start:    ast.Location{Line:1, Column:17},
                     End:      ast.Location{Line:1, Column:24},
                     SourceID: 0,
                 },
@@ -1053,12 +1053,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
+                    Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
                 },
@@ -1092,7 +1092,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:29},
+                    Start:    ast.Location{Line:1, Column:25},
                     End:      ast.Location{Line:1, Column:36},
                     SourceID: 0,
                 },

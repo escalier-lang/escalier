@@ -164,6 +164,87 @@ func TestJSXFragmentBasic(t *testing.T) {
 	}
 }
 
+func TestJSXInferredTypes(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"SelfClosingElement": {
+			input: `val elem = <div />`,
+			expectedTypes: map[string]string{
+				"elem": "{}", // Placeholder type - will be JSX.Element in Phase 4
+			},
+		},
+		"ElementWithProps": {
+			input: `val elem = <div className="foo" id="bar" />`,
+			expectedTypes: map[string]string{
+				"elem": "{}", // Placeholder type - will be JSX.Element in Phase 4
+			},
+		},
+		"Fragment": {
+			input: `val elem = <><div /><span /></>`,
+			expectedTypes: map[string]string{
+				"elem": "{}", // Placeholder type - will be JSX.Element in Phase 4
+			},
+		},
+		"NestedElements": {
+			input: `val elem = <div><span>Hello</span></div>`,
+			expectedTypes: map[string]string{
+				"elem": "{}", // Placeholder type - will be JSX.Element in Phase 4
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			scope, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					t.Logf("Unexpected Error[%d]: %s", i, err.Message())
+				}
+			}
+			assert.Empty(t, inferErrors, "Expected no inference errors for %s", name)
+
+			// Collect actual types for verification
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Namespace.Values {
+				assert.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			// Verify that all expected types match the actual inferred types
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
+				if exists {
+					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+				}
+			}
+		})
+	}
+}
+
 func TestJSXComponent(t *testing.T) {
 	tests := map[string]struct {
 		input string

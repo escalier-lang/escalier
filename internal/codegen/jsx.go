@@ -12,7 +12,7 @@ import (
 // <div className="foo">Hello</div>
 // becomes:
 // React.createElement("div", { className: "foo" }, "Hello")
-func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr, parent ast.Expr) (Expr, []Stmt) {
+func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr) (Expr, []Stmt) {
 	var stmts []Stmt
 	tagName := expr.Opening.Name
 
@@ -51,11 +51,11 @@ func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr, parent ast.Expr) (Ex
 // <><div /><span /></>
 // becomes:
 // React.createElement(React.Fragment, null, React.createElement("div", null), React.createElement("span", null))
-func (b *Builder) buildJSXFragment(expr *ast.JSXFragmentExpr, parent ast.Expr) (Expr, []Stmt) {
+func (b *Builder) buildJSXFragment(expr *ast.JSXFragmentExpr) (Expr, []Stmt) {
 	var stmts []Stmt
 
 	// Build children
-	childrenExprs, childrenStmts := b.buildJSXChildrenForFragment(expr.Children, expr)
+	childrenExprs, childrenStmts := b.buildJSXChildren(expr.Children, expr)
 	stmts = slices.Concat(stmts, childrenStmts)
 
 	// React.createElement(React.Fragment, null, ...children)
@@ -122,9 +122,9 @@ func (b *Builder) buildJSXAttrValue(attr *ast.JSXAttr, source *ast.JSXElementExp
 	case *ast.JSXExprContainer:
 		return b.buildExpr(v.Expr, source)
 	case *ast.JSXElementExpr:
-		return b.buildJSXElement(v, nil)
+		return b.buildJSXElement(v)
 	case *ast.JSXFragmentExpr:
-		return b.buildJSXFragment(v, nil)
+		return b.buildJSXFragment(v)
 	default:
 		// Fallback: should not happen
 		return NewLitExpr(NewNullLit(source), source), nil
@@ -132,7 +132,7 @@ func (b *Builder) buildJSXAttrValue(attr *ast.JSXAttr, source *ast.JSXElementExp
 }
 
 // buildJSXChildren transforms JSX children into an array of expressions.
-func (b *Builder) buildJSXChildren(children []ast.JSXChild, source *ast.JSXElementExpr) ([]Expr, []Stmt) {
+func (b *Builder) buildJSXChildren(children []ast.JSXChild, source ast.Expr) ([]Expr, []Stmt) {
 	var exprs []Expr
 	var stmts []Stmt
 
@@ -149,42 +149,11 @@ func (b *Builder) buildJSXChildren(children []ast.JSXChild, source *ast.JSXEleme
 			exprs = append(exprs, expr)
 			stmts = slices.Concat(stmts, exprStmts)
 		case *ast.JSXElementExpr:
-			expr, exprStmts := b.buildJSXElement(ch, nil)
+			expr, exprStmts := b.buildJSXElement(ch)
 			exprs = append(exprs, expr)
 			stmts = slices.Concat(stmts, exprStmts)
 		case *ast.JSXFragmentExpr:
-			expr, exprStmts := b.buildJSXFragment(ch, nil)
-			exprs = append(exprs, expr)
-			stmts = slices.Concat(stmts, exprStmts)
-		}
-	}
-
-	return exprs, stmts
-}
-
-// buildJSXChildrenForFragment transforms JSX children for a fragment expression.
-func (b *Builder) buildJSXChildrenForFragment(children []ast.JSXChild, source *ast.JSXFragmentExpr) ([]Expr, []Stmt) {
-	var exprs []Expr
-	var stmts []Stmt
-
-	for _, child := range children {
-		switch ch := child.(type) {
-		case *ast.JSXText:
-			// Normalize whitespace and skip empty text
-			text := normalizeJSXText(ch.Value)
-			if text != "" {
-				exprs = append(exprs, NewLitExpr(NewStrLit(text, source), source))
-			}
-		case *ast.JSXExprContainer:
-			expr, exprStmts := b.buildExpr(ch.Expr, source)
-			exprs = append(exprs, expr)
-			stmts = slices.Concat(stmts, exprStmts)
-		case *ast.JSXElementExpr:
-			expr, exprStmts := b.buildJSXElement(ch, nil)
-			exprs = append(exprs, expr)
-			stmts = slices.Concat(stmts, exprStmts)
-		case *ast.JSXFragmentExpr:
-			expr, exprStmts := b.buildJSXFragment(ch, nil)
+			expr, exprStmts := b.buildJSXFragment(ch)
 			exprs = append(exprs, expr)
 			stmts = slices.Concat(stmts, exprStmts)
 		}

@@ -400,28 +400,39 @@ func (c *Checker) getComponentProps(ctx Context, tagName string, expr *ast.JSXEl
 ### 3.2 Props Validation
 
 ```go
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []*ast.JSXAttr) (type_system.Type, []Error) {
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
     var errors []Error
     elems := make([]type_system.ObjTypeElem, 0, len(attrs))
 
-    for _, attr := range attrs {
-        var valueType type_system.Type
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
+            var valueType type_system.Type
 
-        if attr.Value == nil {
-            // Boolean shorthand: <input disabled />
-            valueType = type_system.NewLitType(nil, &type_system.BoolLit{Value: true})
-        } else {
-            switch v := attr.Value.(type) {
-            case *ast.JSXString:
-                valueType = type_system.NewLitType(nil, &type_system.StrLit{Value: v.Value})
-            case *ast.JSXExprContainer:
-                valueType, exprErrors := c.inferExpr(ctx, v.Expr)
-                errors = append(errors, exprErrors...)
+            if attr.Value == nil {
+                // Boolean shorthand: <input disabled />
+                valueType = type_system.NewBoolLitType(nil, true)
+            } else {
+                switch v := (*attr.Value).(type) {
+                case *ast.JSXString:
+                    valueType = type_system.NewStrLitType(nil, v.Value)
+                case *ast.JSXExprContainer:
+                    valueType, exprErrors := c.inferExpr(ctx, v.Expr)
+                    errors = append(errors, exprErrors...)
+                }
+            }
+
+            key := type_system.NewStrKey(attr.Name)
+            elems = append(elems, type_system.NewPropertyElem(key, valueType))
+
+        case *ast.JSXSpreadAttr:
+            // Spread attribute: {...props}
+            spreadType, spreadErrors := c.inferExpr(ctx, attr.Expr)
+            errors = append(errors, spreadErrors...)
+            if spreadType != nil {
+                elems = append(elems, type_system.NewRestSpreadElem(spreadType))
             }
         }
-
-        key := type_system.PropertyKey{Name: attr.Name}
-        elems = append(elems, type_system.NewPropertyElem(key, valueType))
     }
 
     return type_system.NewObjectType(nil, elems), errors
@@ -540,19 +551,25 @@ React treats `key` and `ref` as special props that are not passed to components.
 - For components, only valid if the component uses `forwardRef`
 
 ```go
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []*ast.JSXAttr) (type_system.Type, []Error) {
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
     var errors []Error
     var keyAttr, refAttr *ast.JSXAttr
-    regularAttrs := make([]*ast.JSXAttr, 0, len(attrs))
+    regularAttrs := make([]ast.JSXAttrElem, 0, len(attrs))
 
     // Separate special props from regular props
-    for _, attr := range attrs {
-        switch attr.Name {
-        case "key":
-            keyAttr = attr
-        case "ref":
-            refAttr = attr
-        default:
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
+            switch attr.Name {
+            case "key":
+                keyAttr = attr
+            case "ref":
+                refAttr = attr
+            default:
+                regularAttrs = append(regularAttrs, attr)
+            }
+        case *ast.JSXSpreadAttr:
+            // Spread attrs go to regular attrs
             regularAttrs = append(regularAttrs, attr)
         }
     }
@@ -815,36 +832,31 @@ testdata/jsx/phase4/
 ### 5.2 Props Object Generation
 
 ```go
-func (b *Builder) buildJSXProps(attrs []*ast.JSXAttr, source ast.Node) (Expr, []Stmt) {
+func (b *Builder) buildJSXProps(attrs []ast.JSXAttrElem, source *ast.JSXElementExpr) (Expr, []Stmt) {
     if len(attrs) == 0 {
         return NewLitExpr(NewNullLit(source), source), nil
     }
 
     var stmts []Stmt
-    var spreadAttrs []Expr
-    var regularProps []*ObjectProperty
+    var props []ObjExprElem
 
-    for _, attr := range attrs {
-        if isSpreadAttr(attr) {
-            // Handle {...props}
-            spreadExpr, spreadStmts := b.buildExpr(attr.Value.(*ast.JSXExprContainer).Expr, source)
-            stmts = append(stmts, spreadStmts...)
-            spreadAttrs = append(spreadAttrs, spreadExpr)
-        } else {
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
             // Regular prop
-            key := NewIdentifier(attr.Name, source)
-            value, valueStmts := b.buildJSXAttrValue(attr.Value, source)
-            stmts = append(stmts, valueStmts...)
-            regularProps = append(regularProps, &ObjectProperty{Key: key, Value: value})
+            key := NewIdentExpr(attr.Name, "", source)
+            value, valueStmts := b.buildJSXAttrValue(attr, source)
+            stmts = slices.Concat(stmts, valueStmts)
+            props = append(props, NewPropertyExpr(key, value, source))
+        case *ast.JSXSpreadAttr:
+            // Spread prop: {...props}
+            spreadExpr, spreadStmts := b.buildExpr(attr.Expr, source)
+            stmts = slices.Concat(stmts, spreadStmts)
+            props = append(props, NewRestSpreadExpr(spreadExpr, source))
         }
     }
 
-    if len(spreadAttrs) > 0 {
-        // Use Object.assign for spreads
-        return b.buildObjectAssign(regularProps, spreadAttrs, source), stmts
-    }
-
-    return NewObjectExpr(regularProps, source), stmts
+    return NewObjectExpr(props, source), stmts
 }
 ```
 
