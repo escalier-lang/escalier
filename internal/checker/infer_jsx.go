@@ -63,8 +63,8 @@ func (c *Checker) inferJSXFragment(ctx Context, expr *ast.JSXFragmentExpr) (type
 
 // isIntrinsicElement returns true if the tag name represents an HTML element.
 // Intrinsic elements start with a lowercase letter.
-func isIntrinsicElement(name string) bool {
-	r, _ := utf8.DecodeRuneInString(name)
+func isIntrinsicElement(name ast.QualIdent) bool {
+	r, _ := utf8.DecodeRuneInString(ast.QualIdentToString(name))
 	if r == utf8.RuneError {
 		return false
 	}
@@ -181,12 +181,12 @@ func normalizeJSXText(text string) string {
 }
 
 // Phase 1 stub - returns nil to allow any props (replaced in Phase 2)
-func (c *Checker) getIntrinsicElementProps(ctx Context, tagName string, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
+func (c *Checker) getIntrinsicElementProps(ctx Context, tagName ast.QualIdent, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
 	return nil, nil
 }
 
 // Phase 1 stub - returns nil to allow any props (replaced in Phase 3)
-func (c *Checker) getComponentProps(ctx Context, tagName string, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
+func (c *Checker) getComponentProps(ctx Context, tagName ast.QualIdent, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
 	return nil, nil
 }
 

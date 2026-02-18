@@ -1,23 +1,23 @@
 package ast
 
 type JSXOpening struct {
-	Name      string
+	Name      QualIdent // nil for fragments
 	Attrs     []JSXAttrElem
 	SelfClose bool
 	span      Span
 }
 
-func NewJSXOpening(name string, attrs []JSXAttrElem, selfClose bool, span Span) *JSXOpening {
+func NewJSXOpening(name QualIdent, attrs []JSXAttrElem, selfClose bool, span Span) *JSXOpening {
 	return &JSXOpening{Name: name, Attrs: attrs, SelfClose: selfClose, span: span}
 }
 func (n *JSXOpening) Span() Span { return n.span }
 
 type JSXClosing struct {
-	Name string
+	Name QualIdent // nil for fragments
 	span Span
 }
 
-func NewJSXClosing(name string, span Span) *JSXClosing {
+func NewJSXClosing(name QualIdent, span Span) *JSXClosing {
 	return &JSXClosing{Name: name, span: span}
 }
 func (n *JSXClosing) Span() Span { return n.span }

@@ -40,7 +40,7 @@ func (p *Parser) jsxFragmentAfterOpening(start ast.Location) *ast.JSXFragmentExp
 		End:      end,
 		SourceID: p.lexer.source.ID,
 	}
-	opening := ast.NewJSXOpening("", []ast.JSXAttrElem{}, false, openingSpan)
+	opening := ast.NewJSXOpening(nil, []ast.JSXAttrElem{}, false, openingSpan)
 
 	// Parse children
 	children := p.jsxChildren()
@@ -76,21 +76,22 @@ func (p *Parser) jsxElementAfterLessThan(start ast.Location) *ast.JSXElementExpr
 
 // jsxElementName parses a JSX element name, which can be either a simple identifier
 // (e.g., "div", "MyComponent") or a member expression (e.g., "Foo.Bar", "Icons.Star").
-// Returns the full dotted name as a string.
-func (p *Parser) jsxElementName() string {
+// Returns the name as a QualIdent (either *ast.Ident or *ast.Member).
+func (p *Parser) jsxElementName() ast.QualIdent {
 	token := p.lexer.next()
 
 	//nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		name := token.Value
+		var result ast.QualIdent = ast.NewIdentifier(token.Value, token.Span)
 		// Check for member expression: Foo.Bar.Baz
 		for {
 			if p.lexer.peek().Type == Dot {
 				p.lexer.consume() // consume '.'
 				nextToken := p.lexer.next()
 				if nextToken.Type == Identifier {
-					name += "." + nextToken.Value
+					right := ast.NewIdentifier(nextToken.Value, nextToken.Span)
+					result = &ast.Member{Left: result, Right: right}
 				} else {
 					p.reportError(nextToken.Span, "Expected an identifier after '.'")
 					break
@@ -99,10 +100,10 @@ func (p *Parser) jsxElementName() string {
 				break
 			}
 		}
-		return name
+		return result
 	default:
 		p.reportError(token.Span, "Expected an identifier")
-		return ""
+		return nil
 	}
 }
 
@@ -281,20 +282,21 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 
 	start := token.Span.Start
 
-	var name string
+	var name ast.QualIdent
 	token = p.lexer.next()
 
 	// nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		name = token.Value
+		name = ast.NewIdentifier(token.Value, token.Span)
 		// Check for member expression: Foo.Bar.Baz
 		for {
 			if p.lexer.peek().Type == Dot {
 				p.lexer.consume() // consume '.'
 				nextToken := p.lexer.next()
 				if nextToken.Type == Identifier {
-					name += "." + nextToken.Value
+					right := ast.NewIdentifier(nextToken.Value, nextToken.Span)
+					name = &ast.Member{Left: name, Right: right}
 				} else {
 					p.reportError(nextToken.Span, "Expected an identifier after '.'")
 					break
@@ -310,7 +312,7 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 			End:      end,
 			SourceID: p.lexer.source.ID,
 		}
-		return ast.NewJSXClosing("", span)
+		return ast.NewJSXClosing(nil, span)
 	default:
 		p.reportError(token.Span, "Expected an identifier or '>'")
 	}

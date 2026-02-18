@@ -20,7 +20,7 @@ func (b *Builder) buildJSXElement(expr *ast.JSXElementExpr) (Expr, []Stmt) {
 	// 1. Build the element type (string for intrinsic, identifier for component)
 	var elementType Expr
 	if isIntrinsicElement(tagName) {
-		elementType = NewLitExpr(NewStrLit(tagName, expr), expr)
+		elementType = NewLitExpr(NewStrLit(ast.QualIdentToString(tagName), expr), expr)
 	} else {
 		// Handle member expressions like Ctx.Provider
 		elementType = buildTagExpression(tagName, expr)
@@ -165,24 +165,29 @@ func (b *Builder) buildJSXChildren(children []ast.JSXChild, source ast.Expr) ([]
 
 // buildTagExpression builds an expression for a JSX tag name.
 // Handles simple identifiers and member expressions like "Ctx.Provider".
-func buildTagExpression(tagName string, source *ast.JSXElementExpr) Expr {
-	parts := strings.Split(tagName, ".")
-	if len(parts) == 1 {
-		return NewIdentExpr(tagName, "", source)
+func buildTagExpression(tagName ast.QualIdent, source *ast.JSXElementExpr) Expr {
+	switch t := tagName.(type) {
+	case *ast.Ident:
+		return NewIdentExpr(t.Name, "", source)
+	case *ast.Member:
+		left := buildTagExpression(t.Left, source)
+		return NewMemberExpr(left, NewIdentifier(t.Right.Name, source), false, source)
+	default:
+		// Should not happen
+		return NewIdentExpr("", "", source)
 	}
-
-	// Build member expression chain: Ctx.Provider -> MemberExpr(Ctx, Provider)
-	result := Expr(NewIdentExpr(parts[0], "", source))
-	for _, part := range parts[1:] {
-		result = NewMemberExpr(result, NewIdentifier(part, source), false, source)
-	}
-	return result
 }
 
 // isIntrinsicElement returns true if the tag name represents an HTML element.
 // Intrinsic elements start with a lowercase letter.
-func isIntrinsicElement(name string) bool {
-	r, _ := utf8.DecodeRuneInString(name)
+// Only simple identifiers can be intrinsic (member expressions like Foo.Bar are always components).
+func isIntrinsicElement(name ast.QualIdent) bool {
+	ident, ok := name.(*ast.Ident)
+	if !ok {
+		// Member expressions are never intrinsic elements
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(ident.Name)
 	if r == utf8.RuneError {
 		return false
 	}
