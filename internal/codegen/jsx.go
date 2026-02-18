@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 )
@@ -181,10 +182,11 @@ func buildTagExpression(tagName string, source *ast.JSXElementExpr) Expr {
 // isIntrinsicElement returns true if the tag name represents an HTML element.
 // Intrinsic elements start with a lowercase letter.
 func isIntrinsicElement(name string) bool {
-	if len(name) == 0 {
+	r, _ := utf8.DecodeRuneInString(name)
+	if r == utf8.RuneError {
 		return false
 	}
-	return unicode.IsLower(rune(name[0]))
+	return unicode.IsLower(r)
 }
 
 // normalizeJSXText normalizes whitespace in JSX text content.

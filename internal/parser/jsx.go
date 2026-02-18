@@ -156,8 +156,31 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 				continue
 			} else {
 				// Not a spread, this is an error - we consumed '{' but didn't find '...'
+				// TODO: check jsxOpeningAfterLessThan for overall recovery behavior
+				// References: p.lexer.peek, p.lexer.consume, p.reportError, attrs
 				p.reportError(token.Span, "Expected '...' for spread attribute")
-				return attrs
+
+				// Local recovery: skip tokens until a safe resynchronization point
+				for {
+					token = p.lexer.peek()
+					switch token.Type {
+					case CloseBrace:
+						// Found closing brace, consume it and continue parsing attrs
+						p.lexer.consume()
+						goto continueAttrs
+					case GreaterThan, SlashGreaterThan, EndOfFile:
+						// Hit tag end, let the caller handle it
+						goto continueAttrs
+					case Identifier:
+						// Found potential next attribute, continue parsing
+						goto continueAttrs
+					default:
+						// Skip unexpected token
+						p.lexer.consume()
+					}
+				}
+			continueAttrs:
+				continue
 			}
 		}
 

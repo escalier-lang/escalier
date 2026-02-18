@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -63,10 +64,11 @@ func (c *Checker) inferJSXFragment(ctx Context, expr *ast.JSXFragmentExpr) (type
 // isIntrinsicElement returns true if the tag name represents an HTML element.
 // Intrinsic elements start with a lowercase letter.
 func isIntrinsicElement(name string) bool {
-	if len(name) == 0 {
+	r, _ := utf8.DecodeRuneInString(name)
+	if r == utf8.RuneError {
 		return false
 	}
-	return unicode.IsLower(rune(name[0]))
+	return unicode.IsLower(r)
 }
 
 // inferJSXAttributes builds an object type from JSX attributes.
@@ -103,10 +105,11 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 				}
 			}
 
-			if valueType != nil {
-				key := type_system.NewStrKey(attr.Name)
-				elems = append(elems, type_system.NewPropertyElem(key, valueType))
+			if valueType == nil {
+				valueType = type_system.NewUnknownType(nil)
 			}
+			key := type_system.NewStrKey(attr.Name)
+			elems = append(elems, type_system.NewPropertyElem(key, valueType))
 
 		case *ast.JSXSpreadAttr:
 			// Spread attribute: {...props}
@@ -115,9 +118,10 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 			spreadType, spreadErrors = c.inferExpr(ctx, attr.Expr)
 			errors = slices.Concat(errors, spreadErrors)
 
-			if spreadType != nil {
-				elems = append(elems, type_system.NewRestSpreadElem(spreadType))
+			if spreadType == nil {
+				spreadType = type_system.NewUnknownType(nil)
 			}
+			elems = append(elems, type_system.NewRestSpreadElem(spreadType))
 		}
 	}
 

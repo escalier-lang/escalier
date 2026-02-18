@@ -568,30 +568,15 @@
                 },
             },
         },
-        SelfClose: false,
+        SelfClose: true,
         span:      ast.Span{
             Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
-    },
-    Closing: &ast.JSXClosing{
-        Name: "",
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
             End:      ast.Location{Line:1, Column:16},
             SourceID: 0,
         },
     },
+    Closing:  (*ast.JSXClosing)(nil),
     Children: {
-        &ast.JSXText{
-            Value: "} />",
-            span:  ast.Span{
-                Start:    ast.Location{Line:1, Column:12},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
-        },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
@@ -648,38 +633,6 @@
             SourceID: 0,
         },
         Message: "Expected '...' for spread attribute",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
-        Message: "Expected '>' or '/>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
-        Message: "Expected '</'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
-        Message: "Expected an identifier or '>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
-        Message: "Expected '>'",
     },
 }
 ---
