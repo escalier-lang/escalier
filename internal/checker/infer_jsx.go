@@ -39,7 +39,7 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	errors = slices.Concat(errors, specialPropErrors)
 
 	// 4. Unify each provided attribute with the corresponding expected prop type
-	if propsType != nil && attrResult.PropsType != nil {
+	if propsType != nil {
 		unifyErrors := c.unifyJSXPropsWithAttrs(ctx, propsType, attrResult.PropsType)
 		errors = slices.Concat(errors, unifyErrors)
 	}
@@ -292,7 +292,7 @@ func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_s
 // computeChildrenType returns the appropriate type for children based on the number of children.
 // - No children: returns nil
 // - Single child: returns the child's type directly
-// - Multiple children: returns an array type containing all child types
+// - Multiple children: returns a tuple type containing each child's type
 func (c *Checker) computeChildrenType(childTypes []type_system.Type) type_system.Type {
 	switch len(childTypes) {
 	case 0:
@@ -362,7 +362,7 @@ func (c *Checker) validateChildrenType(
 		if childrenPropInfo.Exists && !childrenPropInfo.Optional {
 			// Children prop is required but not provided
 			return []Error{
-				MissingRequiredPropError{
+				&MissingRequiredPropError{
 					PropName:   "children",
 					ObjectType: propsType,
 					span:       expr.Span(),
@@ -380,7 +380,7 @@ func (c *Checker) validateChildrenType(
 		}
 		// Custom component doesn't have a children prop - report error
 		return []Error{
-			UnexpectedChildrenError{
+			&UnexpectedChildrenError{
 				ComponentName: getComponentName(expr),
 				span:          expr.Span(),
 			},
