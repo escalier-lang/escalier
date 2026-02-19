@@ -29,15 +29,9 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	}
 	errors = slices.Concat(errors, propsErrors)
 
-	// 2. Build props object type from attributes
-	attrType, attrErrors := c.inferJSXAttributes(ctx, expr.Opening.Attrs)
+	// 2. Infer and validate JSX attributes against expected props
+	attrErrors := c.validateJSXAttributes(ctx, expr.Opening.Attrs, propsType)
 	errors = slices.Concat(errors, attrErrors)
-
-	// 3. Unify attribute types with expected props (if we have expected props)
-	if propsType != nil && attrType != nil {
-		unifyErrors := c.Unify(ctx, attrType, propsType)
-		errors = slices.Concat(errors, unifyErrors)
-	}
 
 	// 4. Type check children
 	childErrors := c.inferJSXChildren(ctx, expr.Children)
@@ -71,10 +65,27 @@ func isIntrinsicElement(name ast.QualIdent) bool {
 	return unicode.IsLower(r)
 }
 
-// inferJSXAttributes builds an object type from JSX attributes.
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
+// validateJSXAttributes validates JSX attributes against expected props type.
+// For each provided attribute, it checks that:
+// 1. The attribute name exists in the expected props (if propsType is available)
+// 2. The attribute value type is compatible with the expected prop type
+// This is more lenient than full unification - it doesn't require all expected props to be present.
+func (c *Checker) validateJSXAttributes(ctx Context, attrs []ast.JSXAttrElem, propsType type_system.Type) []Error {
 	var errors []Error
-	elems := make([]type_system.ObjTypeElem, 0, len(attrs))
+
+	// Build a map of expected prop types for quick lookup
+	expectedProps := make(map[string]type_system.Type)
+	if propsType != nil {
+		if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
+			for _, elem := range objType.Elems {
+				if prop, ok := elem.(*type_system.PropertyElem); ok {
+					if prop.Name.Kind == type_system.StrObjTypeKeyKind {
+						expectedProps[prop.Name.Str] = prop.Value
+					}
+				}
+			}
+		}
+	}
 
 	for _, attrElem := range attrs {
 		switch attr := attrElem.(type) {
@@ -108,24 +119,28 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 			if valueType == nil {
 				valueType = type_system.NewUnknownType(nil)
 			}
-			key := type_system.NewStrKey(attr.Name)
-			elems = append(elems, type_system.NewPropertyElem(key, valueType))
+
+			// If we have expected props, validate this attribute against them
+			if propsType != nil {
+				if expectedType, ok := expectedProps[attr.Name]; ok {
+					// Attribute exists in expected props - check type compatibility
+					unifyErrors := c.Unify(ctx, valueType, expectedType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				// Note: If the attribute is not in expectedProps, we allow it
+				// Unknown attribute errors will be added in Phase 7 (error messages)
+			}
 
 		case *ast.JSXSpreadAttr:
 			// Spread attribute: {...props}
-			var spreadType type_system.Type
-			var spreadErrors []Error
-			spreadType, spreadErrors = c.inferExpr(ctx, attr.Expr)
+			// Just infer the type, validation of spread contents is complex
+			// and will be handled in Phase 3
+			_, spreadErrors := c.inferExpr(ctx, attr.Expr)
 			errors = slices.Concat(errors, spreadErrors)
-
-			if spreadType == nil {
-				spreadType = type_system.NewUnknownType(nil)
-			}
-			elems = append(elems, type_system.NewRestSpreadElem(spreadType))
 		}
 	}
 
-	return type_system.NewObjectType(nil, elems), errors
+	return errors
 }
 
 // inferJSXChildren type-checks all children of a JSX element.
@@ -180,9 +195,48 @@ func normalizeJSXText(text string) string {
 	return result.String()
 }
 
-// Phase 1 stub - returns nil to allow any props (replaced in Phase 2)
+// getIntrinsicElementProps looks up the props type for an intrinsic HTML element
+// from JSX.IntrinsicElements. If the JSX namespace is not available or the element
+// is not found, returns nil to allow any props.
 func (c *Checker) getIntrinsicElementProps(ctx Context, tagName ast.QualIdent, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
-	return nil, nil
+	// Get the tag name as a string (handles both simple idents and member expressions)
+	tagNameStr := ast.QualIdentToString(tagName)
+
+	// Look up JSX namespace from scope
+	jsxNamespace := ctx.Scope.getNamespace("JSX")
+	if jsxNamespace == nil {
+		// JSX/React types not loaded - allow any props (permissive fallback)
+		return nil, nil
+	}
+
+	// Look up IntrinsicElements type alias in JSX namespace
+	intrinsicElements, ok := jsxNamespace.Types["IntrinsicElements"]
+	if !ok || intrinsicElements == nil {
+		// IntrinsicElements not defined - allow any props
+		return nil, nil
+	}
+
+	// Get the underlying type (resolve type aliases, type variables, etc.)
+	intrinsicType := type_system.Prune(intrinsicElements.Type)
+
+	// IntrinsicElements should be an object type mapping tag names to prop types
+	switch t := intrinsicType.(type) {
+	case *type_system.ObjectType:
+		// Look for a property matching the tag name
+		for _, elem := range t.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == tagNameStr {
+					return prop.Value, nil
+				}
+			}
+		}
+		// Tag not found in IntrinsicElements - this is an unknown HTML element
+		// For now, allow any props; Phase 7 will add better error messages
+		return nil, nil
+	default:
+		// IntrinsicElements is not an object type - allow any props
+		return nil, nil
+	}
 }
 
 // Phase 1 stub - returns nil to allow any props (replaced in Phase 3)
