@@ -1590,15 +1590,6 @@ func TestComponentWithValidChildren(t *testing.T) {
 				val elem = <Container><span>Child</span></Container>
 			`,
 		},
-		"ComponentWithNoChildrenProp": {
-			// Component doesn't specify children prop - any children should be allowed
-			input: `
-				fn Container(props: {title: string}) {
-					return <div>{props.title}</div>
-				}
-				val elem = <Container title="Title">Any child here</Container>
-			`,
-		},
 		"ComponentWithNoChildren": {
 			input: `
 				fn Container(props: {title: string}) {
@@ -1675,6 +1666,37 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 			`,
 			errorSubstr: "string",
 		},
+		"MultipleChildrenWhenScalarExpected": {
+			// Multiple children produce a tuple type which cannot be assigned to a scalar.
+			// Components wanting multiple children should use Array<T> for the children prop.
+			input: `
+				fn Container(props: {children: string}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container>Hello{" "}World</Container>
+			`,
+			errorSubstr: "string",
+		},
+		"ChildrenProvidedWithoutChildrenProp": {
+			// Component doesn't have a children prop but children are provided
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Container title="Title">Unexpected child</Container>
+			`,
+			errorSubstr: "does not accept children",
+		},
+		"MissingRequiredChildren": {
+			// Component has required children prop but no children provided
+			input: `
+				fn Container(props: {children: string}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container />
+			`,
+			errorSubstr: "Missing required prop 'children'",
+		},
 	}
 
 	for name, test := range tests {
@@ -1723,7 +1745,7 @@ func TestMultipleChildren(t *testing.T) {
 	}{
 		"MultipleTextChildren": {
 			input: `
-				fn Container(props: {title: string}) {
+				fn Container(props: {title: string, children: Array<string>}) {
 					return <div>{props.title}</div>
 				}
 				val elem = <Container title="Title">Hello{" "}World</Container>
@@ -1731,7 +1753,7 @@ func TestMultipleChildren(t *testing.T) {
 		},
 		"MultipleElementChildren": {
 			input: `
-				fn Container(props: {title: string}) {
+				fn Container(props: {title: string, children: Array<{}>}) {
 					return <div>{props.title}</div>
 				}
 				val elem = <Container title="Title"><span>One</span><span>Two</span></Container>
@@ -1739,7 +1761,7 @@ func TestMultipleChildren(t *testing.T) {
 		},
 		"MixedChildren": {
 			input: `
-				fn Container(props: {title: string}) {
+				fn Container(props: {title: string, children: Array<string | {}>}) {
 					return <div>{props.title}</div>
 				}
 				val name = "World"
@@ -1791,7 +1813,7 @@ func TestNestedComponentChildren(t *testing.T) {
 				fn Child() {
 					return <span>Child</span>
 				}
-				fn Parent(props: {title: string}) {
+				fn Parent(props: {title: string, children: {}}) {
 					return <div>{props.title}</div>
 				}
 				val elem = <Parent title="Title"><Child /></Parent>
@@ -1802,10 +1824,10 @@ func TestNestedComponentChildren(t *testing.T) {
 				fn Inner() {
 					return <span>Inner</span>
 				}
-				fn Middle(props: {title: string}) {
+				fn Middle(props: {title: string, children: {}}) {
 					return <div>{props.title}</div>
 				}
-				fn Outer(props: {label: string}) {
+				fn Outer(props: {label: string, children: {}}) {
 					return <div>{props.label}</div>
 				}
 				val elem = <Outer label="Label"><Middle title="Title"><Inner /></Middle></Outer>
@@ -2216,7 +2238,7 @@ func TestKeyPropOnComponent(t *testing.T) {
 		},
 		"KeyOnComponentWithChildren": {
 			input: `
-				fn Container(props: {title: string}) {
+				fn Container(props: {title: string, children: string}) {
 					return <div>{props.title}</div>
 				}
 				val elem = <Container key="container-1" title="Hello">Child content</Container>
@@ -2394,7 +2416,7 @@ func TestRefPropOnComponent(t *testing.T) {
 		},
 		"RefOnComponentWithChildren": {
 			input: `
-				fn Container(props: {title: string}) {
+				fn Container(props: {title: string, children: string}) {
 					return <div>{props.title}</div>
 				}
 				val containerRef = { current: null }
@@ -2478,7 +2500,7 @@ func TestKeyAndRefTogetherOnComponent(t *testing.T) {
 		},
 		"KeyAndRefOnComponentWithChildren": {
 			input: `
-				fn Container(props: {className?: string}) {
+				fn Container(props: {className?: string, children: Array<{}>}) {
 					return <div />
 				}
 				val containerRef = { current: null }

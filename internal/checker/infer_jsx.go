@@ -49,7 +49,7 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	errors = slices.Concat(errors, childErrors)
 
 	// 6. Validate children type against the component's children prop type
-	childValidationErrors := c.validateChildrenType(ctx, childrenType, propsType)
+	childValidationErrors := c.validateChildrenType(ctx, childrenType, propsType, isIntrinsic, expr)
 	errors = slices.Concat(errors, childValidationErrors)
 
 	// 7. Return JSX.Element type
@@ -139,10 +139,7 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	requiredProps.Scan(func(propName string) bool {
 		if propName == "children" {
 			// Skip 'children' - it's validated separately via validateChildrenType
-			// TODO: Include children in required-props checks here. When 'children' is
-			// a required (non-optional) prop, we should verify that children were actually
-			// provided via JSX children syntax. Currently validateChildrenType doesn't
-			// enforce required children - see the TODO there.
+			// which checks for missing required children
 			return true
 		}
 		if !providedProps.Contains(propName) {
@@ -309,58 +306,94 @@ func (c *Checker) computeChildrenType(childTypes []type_system.Type) type_system
 	}
 }
 
-// getChildrenPropType extracts the 'children' prop type from a component's props type.
-// Returns nil if the props type doesn't have a 'children' property.
-func (c *Checker) getChildrenPropType(propsType type_system.Type) type_system.Type {
+// childrenPropInfo holds information about the children prop.
+type childrenPropInfo struct {
+	Type     type_system.Type
+	Optional bool
+	Exists   bool
+}
+
+func (c *Checker) getChildrenPropInfo(propsType type_system.Type) childrenPropInfo {
 	if propsType == nil {
-		return nil
+		return childrenPropInfo{Exists: false}
 	}
 
 	objType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
 	if !ok {
-		return nil
+		return childrenPropInfo{Exists: false}
 	}
 
 	// Look for a 'children' property
 	for _, elem := range objType.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
 			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "children" {
-				return prop.Value
+				return childrenPropInfo{
+					Type:     prop.Value,
+					Optional: prop.Optional,
+					Exists:   true,
+				}
 			}
 		}
 	}
 
-	return nil
+	return childrenPropInfo{Exists: false}
 }
 
 // validateChildrenType validates the actual children type against the expected children prop type.
+// For custom components, it reports an error if children are provided but no `children` prop exists.
+// Intrinsic elements (HTML tags) always allow children.
 func (c *Checker) validateChildrenType(
 	ctx Context,
 	childrenType type_system.Type,
 	propsType type_system.Type,
+	isIntrinsic bool,
+	expr *ast.JSXElementExpr,
 ) []Error {
-	if childrenType == nil {
-		// No children provided - that's fine unless children is required
-		// TODO: Enforce required children. When getChildrenPropType(propsType) returns
-		// a non-optional type, missing children should be an error. Remove this early
-		// return and add children to the required-props checks before calling Unify.
-		return nil
-	}
-
 	if propsType == nil {
 		// No props type - allow any children
 		return nil
 	}
 
-	// Look for 'children' prop in the expected props type
-	expectedChildrenType := c.getChildrenPropType(propsType)
-	if expectedChildrenType == nil {
-		// Component doesn't specify children type - allow any children
+	// Get children prop info (type, optional, exists)
+	childrenPropInfo := c.getChildrenPropInfo(propsType)
+
+	if childrenType == nil {
+		// No children provided - check if children is required
+		if childrenPropInfo.Exists && !childrenPropInfo.Optional {
+			// Children prop is required but not provided
+			return []Error{
+				MissingRequiredPropError{
+					PropName:   "children",
+					ObjectType: propsType,
+					span:       expr.Span(),
+				},
+			}
+		}
 		return nil
 	}
 
+	if !childrenPropInfo.Exists {
+		// Component doesn't specify children type
+		if isIntrinsic {
+			// Intrinsic elements (HTML tags) always allow children
+			return nil
+		}
+		// Custom component doesn't have a children prop - report error
+		return []Error{
+			UnexpectedChildrenError{
+				ComponentName: getComponentName(expr),
+				span:          expr.Span(),
+			},
+		}
+	}
+
 	// Unify actual children type with expected
-	return c.Unify(ctx, childrenType, expectedChildrenType)
+	return c.Unify(ctx, childrenType, childrenPropInfo.Type)
+}
+
+// getComponentName extracts the component name from a JSX element expression.
+func getComponentName(expr *ast.JSXElementExpr) string {
+	return ast.QualIdentToString(expr.Opening.Name)
 }
 
 // validateSpecialProps validates the special props (key and ref) for a JSX element.

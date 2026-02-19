@@ -50,6 +50,7 @@ func (e InvalidExtractorTypeError) isError()                {}
 func (e MissingRequiredPropError) isError()                 {}
 func (e UnknownComponentError) isError()                    {}
 func (e InvalidKeyPropError) isError()                      {}
+func (e UnexpectedChildrenError) isError()                  {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -486,6 +487,18 @@ func (e InvalidKeyPropError) Span() ast.Span {
 }
 func (e InvalidKeyPropError) Message() string {
 	return "Invalid 'key' prop type: expected string | number | null, got " + e.ActualType.String()
+}
+
+type UnexpectedChildrenError struct {
+	ComponentName string
+	span          ast.Span
+}
+
+func (e UnexpectedChildrenError) Span() ast.Span {
+	return e.span
+}
+func (e UnexpectedChildrenError) Message() string {
+	return "Component '" + e.ComponentName + "' does not accept children"
 }
 
 // TODO: make this a sum type so that different error type can reference other

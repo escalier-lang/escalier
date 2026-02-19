@@ -536,6 +536,28 @@ func (c *Checker) validateChildrenType(
 - [x] Validate children type against component's `children` prop type
 - [ ] Support `React.ReactNode` as the general children type (deferred to Phase 4)
 
+**Design Note: Children Type Checking**
+
+**Components must declare a `children` prop to accept children:**
+- If a custom component does not have a `children` prop, passing children to it is an error
+- Intrinsic elements (HTML tags like `<div>`, `<span>`) always allow children
+- This ensures explicit contracts for component children
+
+**Required vs optional children:**
+- If `children` is declared as required (e.g., `children: string`), children must be provided
+- If `children` is declared as optional (e.g., `children?: string`), children are not required
+- Missing required children produce a `MissingRequiredPropError`
+
+**Multiple children produce a tuple type:**
+When a JSX element has multiple children, `computeChildrenType()` returns a tuple type representing the exact types of each child. For example, `<Container>Hello{" "}World</Container>` produces a tuple type `[string, string, string]`.
+
+This means:
+- If `children: string`, only a **single** string child is allowed
+- If a component wants to accept **multiple** children of type `T`, it should declare `children: Array<T>`
+- The tuple type must be assignable to the declared children prop type
+
+This behavior is intentional and provides precise type checking for children.
+
 ### 3.4 Special Props: `key` and `ref`
 
 React treats `key` and `ref` as special props that are not passed to components. They require special handling in type checking.
