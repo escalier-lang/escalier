@@ -417,7 +417,8 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
                 case *ast.JSXString:
                     valueType = type_system.NewStrLitType(nil, v.Value)
                 case *ast.JSXExprContainer:
-                    valueType, exprErrors := c.inferExpr(ctx, v.Expr)
+                    var exprErrors []Error
+                    valueType, exprErrors = c.inferExpr(ctx, v.Expr)
                     errors = append(errors, exprErrors...)
                 }
             }

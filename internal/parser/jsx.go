@@ -257,7 +257,20 @@ func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
 				value = ast.NewJSXExprContainer(expr, containerSpan)
 			default:
 				p.reportError(token.Span, "Expected a string or an expression")
-				attrEnd = token.Span.End
+				p.lexer.consume() // consume the bad token
+				// Skip tokens until we reach a safe recovery point
+				for {
+					token = p.lexer.peek()
+					switch token.Type {
+					case Identifier, StrLit, OpenBrace, SlashGreaterThan, GreaterThan, EndOfFile:
+						// Found a token that can start a new attribute or close the tag
+						goto skipAttr
+					default:
+						p.lexer.consume() // skip unexpected token
+					}
+				}
+			skipAttr:
+				continue
 			}
 
 			// Attribute span covers from name start to value end
