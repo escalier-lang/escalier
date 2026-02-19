@@ -29,15 +29,21 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	}
 	errors = slices.Concat(errors, propsErrors)
 
-	// 2. Infer and validate JSX attributes against expected props
-	attrErrors := c.validateJSXAttributes(ctx, expr.Opening.Attrs, propsType)
+	// 2. Infer JSX attributes as an object type
+	attrType, attrErrors := c.inferJSXAttributes(ctx, expr.Opening.Attrs)
 	errors = slices.Concat(errors, attrErrors)
 
-	// 3. Type check children
+	// 3. Unify each provided attribute with the corresponding expected prop type
+	if propsType != nil && attrType != nil {
+		unifyErrors := c.unifyJSXPropsWithAttrs(ctx, propsType, attrType)
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// 4. Type check children
 	childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
-	// 4. Return JSX.Element type
+	// 5. Return JSX.Element type
 	return c.getJSXElementType(provenance), errors
 }
 
@@ -65,28 +71,56 @@ func isIntrinsicElement(name ast.QualIdent) bool {
 	return unicode.IsLower(r)
 }
 
-// validateJSXAttributes validates JSX attributes against expected props type.
-// For each provided attribute, it checks that:
-// 1. The attribute name exists in the expected props (if propsType is available)
-// 2. The attribute value type is compatible with the expected prop type
-// This is more lenient than full unification - it doesn't require all expected props to be present.
-func (c *Checker) validateJSXAttributes(ctx Context, attrs []ast.JSXAttrElem, propsType type_system.Type) []Error {
+// unifyJSXPropsWithAttrs unifies expected props with provided attributes.
+// For each provided attribute, it finds the corresponding expected prop type and
+// calls Unify to check type compatibility. This uses full unification per-property.
+func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type, attrType type_system.Type) []Error {
 	var errors []Error
 
 	// Build a map of expected prop types for quick lookup
 	expectedProps := make(map[string]type_system.Type)
-	if propsType != nil {
-		if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
-			for _, elem := range objType.Elems {
-				if prop, ok := elem.(*type_system.PropertyElem); ok {
-					if prop.Name.Kind == type_system.StrObjTypeKeyKind {
-						expectedProps[prop.Name.Str] = prop.Value
-					}
+	if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Kind == type_system.StrObjTypeKeyKind {
+					expectedProps[prop.Name.Str] = prop.Value
 				}
 			}
 		}
-		// If propsType is not an ObjectType, we allow any props (permissive fallback)
 	}
+
+	// Get the provided attributes as an object type
+	attrObj, ok := type_system.Prune(attrType).(*type_system.ObjectType)
+	if !ok {
+		return errors
+	}
+
+	// For each provided attribute, unify with the expected prop type
+	for _, elem := range attrObj.Elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			if prop.Name.Kind == type_system.StrObjTypeKeyKind {
+				attrName := prop.Name.Str
+				attrValue := prop.Value
+				if expectedType, ok := expectedProps[attrName]; ok {
+					// Attribute exists in expected props - use full unification
+					unifyErrors := c.Unify(ctx, attrValue, expectedType)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				// Note: If the attribute is not in expectedProps, we allow it for now
+				// Unknown attribute errors will be added in Phase 7 (error messages)
+			}
+		}
+	}
+
+	return errors
+}
+
+// inferJSXAttributes infers the types of JSX attributes and returns an object type
+// representing all the provided attributes. This object type can then be unified
+// with the expected props type for full type checking.
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
+	var errors []Error
+	var elems []type_system.ObjTypeElem
 
 	for _, attrElem := range attrs {
 		switch attr := attrElem.(type) {
@@ -121,27 +155,28 @@ func (c *Checker) validateJSXAttributes(ctx Context, attrs []ast.JSXAttrElem, pr
 				valueType = type_system.NewUnknownType(nil)
 			}
 
-			// If we have expected props, validate this attribute against them
-			if propsType != nil {
-				if expectedType, ok := expectedProps[attr.Name]; ok {
-					// Attribute exists in expected props - check type compatibility
-					unifyErrors := c.Unify(ctx, valueType, expectedType)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-				// Note: If the attribute is not in expectedProps, we allow it
-				// Unknown attribute errors will be added in Phase 7 (error messages)
-			}
+			// Add this attribute as a property element
+			prop := type_system.NewPropertyElem(type_system.NewStrKey(attr.Name), valueType)
+			elems = append(elems, prop)
 
 		case *ast.JSXSpreadAttr:
 			// Spread attribute: {...props}
-			// Just infer the type, validation of spread contents is complex
-			// and will be handled in Phase 3
-			_, spreadErrors := c.inferExpr(ctx, attr.Expr)
+			spreadType, spreadErrors := c.inferExpr(ctx, attr.Expr)
 			errors = slices.Concat(errors, spreadErrors)
+
+			// If the spread type is an object, merge its properties
+			if spreadType != nil {
+				if objType, ok := type_system.Prune(spreadType).(*type_system.ObjectType); ok {
+					elems = append(elems, objType.Elems...)
+				}
+				// For non-object spread types, we could add an error, but for now
+				// we just ignore them (Phase 3 will handle this more thoroughly)
+			}
 		}
 	}
 
-	return errors
+	// Return an object type representing all the provided attributes
+	return type_system.NewObjectType(nil, elems), errors
 }
 
 // inferJSXChildren type-checks all children of a JSX element.
