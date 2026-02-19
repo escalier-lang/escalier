@@ -13,10 +13,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// newOptionalProp creates an optional PropertyElem using the constructor pattern.
+// This is a test helper that wraps NewPropertyElem and sets Optional to true.
+func newOptionalProp(name string, value type_system.Type) *type_system.PropertyElem {
+	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), value)
+	prop.Optional = true
+	return prop
+}
+
 // createJSXNamespaceWithIntrinsicElements creates a JSX namespace with a subset of
 // IntrinsicElements for testing. This simulates what would be loaded from @types/react.
 func createJSXNamespaceWithIntrinsicElements() *type_system.Namespace {
 	jsxNs := type_system.NewNamespace()
+
+	// Common types used across elements
+	strType := type_system.NewStrPrimType(nil)
+	boolType := type_system.NewBoolPrimType(nil)
+	handlerType := type_system.NewFuncType(nil, nil, nil, type_system.NewVoidType(nil), type_system.NewNeverType(nil))
 
 	// Create IntrinsicElements type as an object type mapping tag names to prop types
 	// For example: { div: { className?: string, id?: string, ... }, input: { disabled?: boolean, ... }, ... }
@@ -25,115 +38,47 @@ func createJSXNamespaceWithIntrinsicElements() *type_system.Namespace {
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("div"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("className"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("id"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("onClick"),
-					Value:    type_system.NewFuncType(nil, nil, nil, type_system.NewVoidType(nil), type_system.NewNeverType(nil)),
-					Optional: true,
-				},
+				newOptionalProp("className", strType),
+				newOptionalProp("id", strType),
+				newOptionalProp("onClick", handlerType),
 			}),
 		),
 		// span element props (similar to div)
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("span"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("className"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("id"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
+				newOptionalProp("className", strType),
+				newOptionalProp("id", strType),
 			}),
 		),
 		// button element props
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("button"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("className"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("disabled"),
-					Value:    type_system.NewBoolPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("onClick"),
-					Value:    type_system.NewFuncType(nil, nil, nil, type_system.NewVoidType(nil), type_system.NewNeverType(nil)),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("type"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
+				newOptionalProp("className", strType),
+				newOptionalProp("disabled", boolType),
+				newOptionalProp("onClick", handlerType),
+				newOptionalProp("type", strType),
 			}),
 		),
 		// input element props
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("input"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("className"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("disabled"),
-					Value:    type_system.NewBoolPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("type"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("value"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("onChange"),
-					Value:    type_system.NewFuncType(nil, nil, nil, type_system.NewVoidType(nil), type_system.NewNeverType(nil)),
-					Optional: true,
-				},
+				newOptionalProp("className", strType),
+				newOptionalProp("disabled", boolType),
+				newOptionalProp("type", strType),
+				newOptionalProp("value", strType),
+				newOptionalProp("onChange", handlerType),
 			}),
 		),
 		// a (anchor) element props
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("a"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("href"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("target"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
-				&type_system.PropertyElem{
-					Name:     type_system.NewStrKey("className"),
-					Value:    type_system.NewStrPrimType(nil),
-					Optional: true,
-				},
+				newOptionalProp("href", strType),
+				newOptionalProp("target", strType),
+				newOptionalProp("className", strType),
 			}),
 		),
 	}
@@ -542,6 +487,18 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 		"ButtonDisabledWithString": {
 			input:       `val elem = <button disabled="yes" />`,
 			errorSubstr: "boolean", // Error should mention the expected type
+		},
+		"DivOnClickWithString": {
+			input:       `val elem = <div onClick="notAFunction" />`,
+			errorSubstr: "fn", // Error should mention that a function type was expected
+		},
+		"ButtonOnClickWithNumber": {
+			input:       `val elem = <button onClick={42} />`,
+			errorSubstr: "fn", // Error should mention that a function type was expected
+		},
+		"InputOnChangeWithBoolean": {
+			input:       `val elem = <input onChange={true} />`,
+			errorSubstr: "fn", // Error should mention that a function type was expected
 		},
 	}
 

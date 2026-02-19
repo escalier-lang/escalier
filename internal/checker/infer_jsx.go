@@ -33,11 +33,11 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	attrErrors := c.validateJSXAttributes(ctx, expr.Opening.Attrs, propsType)
 	errors = slices.Concat(errors, attrErrors)
 
-	// 4. Type check children
+	// 3. Type check children
 	childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
-	// 5. Return JSX.Element type
+	// 4. Return JSX.Element type
 	return c.getJSXElementType(provenance), errors
 }
 
@@ -85,6 +85,7 @@ func (c *Checker) validateJSXAttributes(ctx Context, attrs []ast.JSXAttrElem, pr
 				}
 			}
 		}
+		// If propsType is not an ObjectType, we allow any props (permissive fallback)
 	}
 
 	for _, attrElem := range attrs {
