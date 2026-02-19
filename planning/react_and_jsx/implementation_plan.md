@@ -442,11 +442,11 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 ```
 
 **Tasks**:
-- [ ] Implement `inferJSXAttributes()` - build props object type
-- [ ] Handle string attribute values
-- [ ] Handle expression containers `{...}`
-- [ ] Handle boolean shorthand (presence = true)
-- [ ] Handle spread attributes `{...props}`
+- [x] Implement `inferJSXAttributes()` - build props object type
+- [x] Handle string attribute values
+- [x] Handle expression containers `{...}`
+- [x] Handle boolean shorthand (presence = true)
+- [x] Handle spread attributes `{...props}`
 
 ### 3.3 Children Type Checking
 
@@ -527,14 +527,14 @@ func (c *Checker) validateChildrenType(
 ```
 
 **Tasks**:
-- [ ] Implement `inferJSXChildren()` - type check all children and return combined type
-- [ ] Handle text nodes (string type)
-- [ ] Handle expression containers
-- [ ] Handle nested JSX elements
-- [ ] Handle nested fragments
-- [ ] Implement `computeChildrenType()` - single child vs array
-- [ ] Validate children type against component's `children` prop type
-- [ ] Support `React.ReactNode` as the general children type
+- [x] Implement `inferJSXChildren()` - type check all children and return combined type
+- [x] Handle text nodes (string type)
+- [x] Handle expression containers
+- [x] Handle nested JSX elements
+- [x] Handle nested fragments
+- [x] Implement `computeChildrenType()` - single child vs array
+- [x] Validate children type against component's `children` prop type
+- [ ] Support `React.ReactNode` as the general children type (deferred to Phase 4)
 
 ### 3.4 Special Props: `key` and `ref`
 

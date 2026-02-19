@@ -40,11 +40,15 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
-	// 4. Type check children
-	childErrors := c.inferJSXChildren(ctx, expr.Children)
+	// 4. Type check children and get the combined children type
+	childrenType, childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
-	// 5. Return JSX.Element type
+	// 5. Validate children type against the component's children prop type
+	childValidationErrors := c.validateChildrenType(ctx, childrenType, propsType)
+	errors = slices.Concat(errors, childValidationErrors)
+
+	// 6. Return JSX.Element type
 	return c.getJSXElementType(provenance), errors
 }
 
@@ -55,7 +59,8 @@ func (c *Checker) inferJSXFragment(ctx Context, expr *ast.JSXFragmentExpr) (type
 	provenance := &ast.NodeProvenance{Node: expr}
 
 	// Fragments only have children, no props to validate
-	childErrors := c.inferJSXChildren(ctx, expr.Children)
+	// We still type-check the children but don't validate against any expected type
+	_, childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
 	// Return JSX.Element type
@@ -126,7 +131,12 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	}
 
 	// Check for missing required props (iterates in sorted order)
+	// Note: 'children' is handled separately via JSX children, not attributes
 	requiredProps.Scan(func(propName string) bool {
+		if propName == "children" {
+			// Skip 'children' - it's validated separately via validateChildrenType
+			return true
+		}
 		if !providedProps.Contains(propName) {
 			errors = append(errors, &MissingRequiredPropError{
 				PropName:   propName,
@@ -204,29 +214,111 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 	return type_system.NewObjectType(nil, elems), errors
 }
 
-// inferJSXChildren type-checks all children of a JSX element.
-func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) []Error {
+// inferJSXChildren type-checks all children of a JSX element and returns the combined children type.
+func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_system.Type, []Error) {
 	var errors []Error
+	var childTypes []type_system.Type
 
 	for _, child := range children {
 		switch ch := child.(type) {
 		case *ast.JSXText:
-			// Text is always valid - nothing to type check
-			// In a more complete implementation, we might normalize whitespace
-			_ = normalizeJSXText(ch.Value)
+			// Text nodes are always valid and have string type
+			text := normalizeJSXText(ch.Value)
+			if text != "" {
+				childTypes = append(childTypes, type_system.NewStrPrimType(nil))
+			}
 		case *ast.JSXExprContainer:
-			_, exprErrors := c.inferExpr(ctx, ch.Expr)
+			childType, exprErrors := c.inferExpr(ctx, ch.Expr)
 			errors = slices.Concat(errors, exprErrors)
+			if childType != nil {
+				childTypes = append(childTypes, childType)
+			}
 		case *ast.JSXElementExpr:
-			_, elemErrors := c.inferJSXElement(ctx, ch)
+			childType, elemErrors := c.inferJSXElement(ctx, ch)
 			errors = slices.Concat(errors, elemErrors)
+			if childType != nil {
+				childTypes = append(childTypes, childType)
+			}
 		case *ast.JSXFragmentExpr:
-			_, fragErrors := c.inferJSXFragment(ctx, ch)
+			childType, fragErrors := c.inferJSXFragment(ctx, ch)
 			errors = slices.Concat(errors, fragErrors)
+			if childType != nil {
+				childTypes = append(childTypes, childType)
+			}
 		}
 	}
 
-	return errors
+	// Compute the combined children type
+	return c.computeChildrenType(childTypes), errors
+}
+
+// computeChildrenType returns the appropriate type for children based on the number of children.
+// - No children: returns nil
+// - Single child: returns the child's type directly
+// - Multiple children: returns an array type containing all child types
+func (c *Checker) computeChildrenType(childTypes []type_system.Type) type_system.Type {
+	switch len(childTypes) {
+	case 0:
+		return nil // No children
+	case 1:
+		return childTypes[0] // Single child: use its type directly
+	default:
+		// Multiple children: create a tuple type containing all child types
+		// This allows for more precise type checking than a generic array
+		return type_system.NewTupleType(nil, childTypes...)
+	}
+}
+
+// getChildrenPropType extracts the 'children' prop type from a component's props type.
+// Returns nil if the props type doesn't have a 'children' property.
+func (c *Checker) getChildrenPropType(propsType type_system.Type) type_system.Type {
+	if propsType == nil {
+		return nil
+	}
+
+	objType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
+	if !ok {
+		return nil
+	}
+
+	// Look for a 'children' property
+	for _, elem := range objType.Elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "children" {
+				return prop.Value
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateChildrenType validates the actual children type against the expected children prop type.
+func (c *Checker) validateChildrenType(
+	ctx Context,
+	childrenType type_system.Type,
+	propsType type_system.Type,
+) []Error {
+	if childrenType == nil {
+		// No children provided - that's fine unless children is required
+		// For now, we don't enforce required children
+		return nil
+	}
+
+	if propsType == nil {
+		// No props type - allow any children
+		return nil
+	}
+
+	// Look for 'children' prop in the expected props type
+	expectedChildrenType := c.getChildrenPropType(propsType)
+	if expectedChildrenType == nil {
+		// Component doesn't specify children type - allow any children
+		return nil
+	}
+
+	// Unify actual children type with expected
+	return c.Unify(ctx, childrenType, expectedChildrenType)
 }
 
 // normalizeJSXText normalizes whitespace in JSX text content.

@@ -1566,3 +1566,283 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 		})
 	}
 }
+
+// Phase 3.3 Tests: Children Type Checking
+// These tests verify that children types are properly inferred and validated
+
+func TestComponentWithValidChildren(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ComponentWithStringChild": {
+			input: `
+				fn Container(props: {children: string}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container>Hello</Container>
+			`,
+		},
+		"ComponentWithElementChild": {
+			input: `
+				fn Container(props: {children: {}}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container><span>Child</span></Container>
+			`,
+		},
+		"ComponentWithNoChildrenProp": {
+			// Component doesn't specify children prop - any children should be allowed
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Container title="Title">Any child here</Container>
+			`,
+		},
+		"ComponentWithNoChildren": {
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Container title="Title" />
+			`,
+		},
+		"ComponentWithExpressionChild": {
+			input: `
+				fn Container(props: {children: number}) {
+					return <div>{props.children}</div>
+				}
+				val count = 42
+				val elem = <Container>{count}</Container>
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for valid children")
+		})
+	}
+}
+
+func TestComponentWithInvalidChildrenType(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"StringChildWhenNumberExpected": {
+			input: `
+				fn Container(props: {children: number}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container>Hello</Container>
+			`,
+			errorSubstr: "number",
+		},
+		"NumberChildWhenStringExpected": {
+			input: `
+				fn Container(props: {children: string}) {
+					return <div>{props.children}</div>
+				}
+				val elem = <Container>{42}</Container>
+			`,
+			errorSubstr: "string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect type errors for invalid children types
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for invalid children type")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
+
+func TestMultipleChildren(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"MultipleTextChildren": {
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Container title="Title">Hello World</Container>
+			`,
+		},
+		"MultipleElementChildren": {
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Container title="Title"><span>One</span><span>Two</span></Container>
+			`,
+		},
+		"MixedChildren": {
+			input: `
+				fn Container(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val name = "World"
+				val elem = <Container title="Title">Hello {name}<span>!</span></Container>
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for multiple children")
+		})
+	}
+}
+
+func TestNestedComponentChildren(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ComponentAsChild": {
+			input: `
+				fn Child() {
+					return <span>Child</span>
+				}
+				fn Parent(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <Parent title="Title"><Child /></Parent>
+			`,
+		},
+		"DeeplyNestedComponents": {
+			input: `
+				fn Inner() {
+					return <span>Inner</span>
+				}
+				fn Middle(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				fn Outer(props: {label: string}) {
+					return <div>{props.label}</div>
+				}
+				val elem = <Outer label="Label"><Middle title="Title"><Inner /></Middle></Outer>
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for nested component children")
+		})
+	}
+}
