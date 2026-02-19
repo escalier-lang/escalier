@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tidwall/btree"
 )
 
 // inferJSXElement infers the type of a JSX element expression.
@@ -79,16 +80,17 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	var errors []Error
 
 	// Build maps of expected prop types and track which are required
-	expectedProps := make(map[string]type_system.Type)
-	requiredProps := make(map[string]bool)
+	// Using btree for deterministic iteration order
+	var expectedProps btree.Map[string, type_system.Type]
+	var requiredProps btree.Set[string]
 	propsObjType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
 	if ok {
 		for _, elem := range propsObjType.Elems {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
 				if prop.Name.Kind == type_system.StrObjTypeKeyKind {
-					expectedProps[prop.Name.Str] = prop.Value
+					expectedProps.Set(prop.Name.Str, prop.Value)
 					if !prop.Optional {
-						requiredProps[prop.Name.Str] = true
+						requiredProps.Insert(prop.Name.Str)
 					}
 				}
 			}
@@ -102,7 +104,7 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	}
 
 	// Track which props were provided
-	providedProps := make(map[string]bool)
+	var providedProps btree.Set[string]
 
 	// For each provided attribute, unify with the expected prop type
 	for _, elem := range attrObj.Elems {
@@ -110,9 +112,9 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 			if prop.Name.Kind == type_system.StrObjTypeKeyKind {
 				attrName := prop.Name.Str
 				attrValue := prop.Value
-				providedProps[attrName] = true
+				providedProps.Insert(attrName)
 
-				if expectedType, ok := expectedProps[attrName]; ok {
+				if expectedType, ok := expectedProps.Get(attrName); ok {
 					// Attribute exists in expected props - use full unification
 					unifyErrors := c.Unify(ctx, attrValue, expectedType)
 					errors = slices.Concat(errors, unifyErrors)
@@ -123,16 +125,17 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 		}
 	}
 
-	// Check for missing required props
-	for propName := range requiredProps {
-		if !providedProps[propName] {
+	// Check for missing required props (iterates in sorted order)
+	requiredProps.Scan(func(propName string) bool {
+		if !providedProps.Contains(propName) {
 			errors = append(errors, &MissingRequiredPropError{
 				PropName:   propName,
 				ObjectType: propsObjType,
 				span:       getSpanFromType(attrType),
 			})
 		}
-	}
+		return true
+	})
 
 	return errors
 }
