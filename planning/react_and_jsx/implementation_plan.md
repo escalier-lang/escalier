@@ -643,9 +643,9 @@ func (c *Checker) validateRequiredProps(
 ```
 
 **Tasks**:
-- [ ] Distinguish required vs optional props in component types
-- [ ] Only report missing prop errors for required props
-- [ ] Handle `defaultProps` if encountered (lower priority)
+- [x] Distinguish required vs optional props in component types
+- [x] Only report missing prop errors for required props
+- [ ] Handle `defaultProps` if encountered (lower priority, deferred)
 
 ### 3.6 Tests for Phase 3
 
@@ -710,11 +710,11 @@ testdata/jsx/phase3/
 ```
 
 **Tasks**:
-- [ ] Add component prop validation tests
-- [ ] Add tests for key and ref special props
-- [ ] Add optional vs required prop tests
-- [ ] Add children type validation tests
-- [ ] Create `testdata/jsx/phase3/` integration test fixtures
+- [x] Add component prop validation tests
+- [x] Add tests for key and ref special props
+- [x] Add optional vs required prop tests
+- [x] Add children type validation tests
+- [ ] Create `testdata/jsx/phase3/` integration test fixtures (deferred to future phase)
 
 ---
 
