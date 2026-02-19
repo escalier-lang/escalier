@@ -139,6 +139,10 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	requiredProps.Scan(func(propName string) bool {
 		if propName == "children" {
 			// Skip 'children' - it's validated separately via validateChildrenType
+			// TODO: Include children in required-props checks here. When 'children' is
+			// a required (non-optional) prop, we should verify that children were actually
+			// provided via JSX children syntax. Currently validateChildrenType doesn't
+			// enforce required children - see the TODO there.
 			return true
 		}
 		if !providedProps.Contains(propName) {
@@ -337,7 +341,9 @@ func (c *Checker) validateChildrenType(
 ) []Error {
 	if childrenType == nil {
 		// No children provided - that's fine unless children is required
-		// For now, we don't enforce required children
+		// TODO: Enforce required children. When getChildrenPropType(propsType) returns
+		// a non-optional type, missing children should be an error. Remove this early
+		// return and add children to the required-props checks before calling Unify.
 		return nil
 	}
 
@@ -582,7 +588,15 @@ func (c *Checker) extractPropsFromComponentType(componentType type_system.Type) 
 
 	case *type_system.IntersectionType:
 		// Could be an overloaded function component
-		// Try to extract props from each type in the intersection
+		// TODO: The current behavior is a temporary shortcut that returns props from the
+		// first inner type that yields a FuncType. This can miss other overloads.
+		// Overloaded function components should be resolved by checking whether the given
+		// JSX props match any overload, similar to the NoMatchingOverloadError logic for
+		// call expressions in inferCallExpr. Future work should replace this simple
+		// first-match return with full overload resolution that tries each overload and
+		// reports NoMatchingOverloadError if none match.
+		// NOTE: Overloaded functional components usually use a union of prop types
+		// instead of an intersection of function types.
 		for _, innerType := range t.Types {
 			if propsType := c.extractPropsFromComponentType(innerType); propsType != nil {
 				return propsType

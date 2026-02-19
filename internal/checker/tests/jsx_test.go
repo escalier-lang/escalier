@@ -1726,7 +1726,7 @@ func TestMultipleChildren(t *testing.T) {
 				fn Container(props: {title: string}) {
 					return <div>{props.title}</div>
 				}
-				val elem = <Container title="Title">Hello World</Container>
+				val elem = <Container title="Title">Hello{" "}World</Container>
 			`,
 		},
 		"MultipleElementChildren": {
