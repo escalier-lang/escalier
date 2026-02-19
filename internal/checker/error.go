@@ -47,6 +47,7 @@ func (e ExtractorReturnTypeMismatchError) isError()         {}
 func (e ExtractorMustReturnTupleError) isError()            {}
 func (e MissingCustomMatcherError) isError()                {}
 func (e InvalidExtractorTypeError) isError()                {}
+func (e MissingRequiredPropError) isError()                 {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -446,6 +447,19 @@ func (e InvalidExtractorTypeError) Span() ast.Span {
 }
 func (e InvalidExtractorTypeError) Message() string {
 	return "Extractor's extractor must be an object type, but got: " + e.ActualType.String()
+}
+
+type MissingRequiredPropError struct {
+	PropName   string
+	ObjectType type_system.Type
+	span       ast.Span
+}
+
+func (e MissingRequiredPropError) Span() ast.Span {
+	return e.span
+}
+func (e MissingRequiredPropError) Message() string {
+	return "Missing required prop '" + e.PropName + "' for " + e.ObjectType.String()
 }
 
 // TODO: make this a sum type so that different error type can reference other
