@@ -355,6 +355,7 @@ testdata/jsx/phase2/
 - [x] Add event handler type inference tests (`TestIntrinsicElementEventHandlers`)
 - [ ] Create `testdata/jsx/phase2/` integration test fixtures (deferred - unit tests sufficient)
 - [x] Add error case tests for invalid props (`TestIntrinsicElementInvalidPropType`)
+- [x] Add missing required props tests (`TestIntrinsicElementMissingRequiredProp`, `TestIntrinsicElementWithAllRequiredProps`)
 
 ---
 
@@ -1442,11 +1443,12 @@ Phase 8 (Final Verification)
 - [x] Invalid prop types on HTML elements produce errors (e.g., `<div className={123} />`)
 - [x] Event handler types are correctly inferred (e.g., `onClick` accepts function type)
 - [x] Unknown elements and missing JSX namespace fall back to permissive mode (allow any props)
+- [x] Missing required props on intrinsic elements produce errors (e.g., `<img />` missing required `src` and `alt`)
 
 ### Phase 3 Complete When:
 - [ ] Custom components type-check props
-- [ ] Missing required props produce errors
-- [ ] Wrong prop types produce errors
+- [ ] Missing required props on custom components produce errors
+- [ ] Wrong prop types on custom components produce errors
 - [ ] `key` and `ref` props are handled correctly
 - [ ] Optional props don't require values
 

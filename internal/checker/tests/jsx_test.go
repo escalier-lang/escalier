@@ -549,6 +549,153 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 	}
 }
 
+// createJSXNamespaceWithRequiredProps creates a JSX namespace with some required props for testing.
+func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
+	jsxNs := type_system.NewNamespace()
+
+	strType := type_system.NewStrPrimType(nil)
+
+	intrinsicElems := []type_system.ObjTypeElem{
+		// img element with required src and alt props
+		type_system.NewPropertyElem(
+			type_system.NewStrKey("img"),
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(type_system.NewStrKey("src"), strType),  // required
+				type_system.NewPropertyElem(type_system.NewStrKey("alt"), strType),  // required
+				newOptionalProp("className", strType),                                // optional
+			}),
+		),
+	}
+
+	intrinsicElementsType := type_system.NewObjectType(nil, intrinsicElems)
+	jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
+		Type:       intrinsicElementsType,
+		TypeParams: nil,
+	}
+
+	return jsxNs
+}
+
+func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"ImgMissingSrc": {
+			input:       `val elem = <img alt="description" />`,
+			errorSubstr: "src",
+		},
+		"ImgMissingAlt": {
+			input:       `val elem = <img src="image.png" />`,
+			errorSubstr: "alt",
+		},
+		"ImgMissingBothRequired": {
+			input:       `val elem = <img className="photo" />`,
+			errorSubstr: "Missing required prop",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with required props
+			jsxNs := createJSXNamespaceWithRequiredProps()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect errors for missing required props
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for missing required props")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
+
+func TestIntrinsicElementWithAllRequiredProps(t *testing.T) {
+	// Test that providing all required props doesn't produce errors
+	tests := map[string]struct {
+		input string
+	}{
+		"ImgWithAllRequired": {
+			input: `val elem = <img src="image.png" alt="description" />`,
+		},
+		"ImgWithAllRequiredAndOptional": {
+			input: `val elem = <img src="image.png" alt="description" className="photo" />`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with required props
+			jsxNs := createJSXNamespaceWithRequiredProps()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors when all required props are provided")
+		})
+	}
+}
+
 func TestIntrinsicElementUnknownElement(t *testing.T) {
 	// Unknown elements (not in IntrinsicElements) should still allow any props
 	// This is the permissive fallback behavior

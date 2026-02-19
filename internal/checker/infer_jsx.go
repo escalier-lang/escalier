@@ -74,16 +74,22 @@ func isIntrinsicElement(name ast.QualIdent) bool {
 // unifyJSXPropsWithAttrs unifies expected props with provided attributes.
 // For each provided attribute, it finds the corresponding expected prop type and
 // calls Unify to check type compatibility. This uses full unification per-property.
+// It also checks that all required (non-optional) props are provided.
 func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type, attrType type_system.Type) []Error {
 	var errors []Error
 
-	// Build a map of expected prop types for quick lookup
+	// Build maps of expected prop types and track which are required
 	expectedProps := make(map[string]type_system.Type)
-	if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
-		for _, elem := range objType.Elems {
+	requiredProps := make(map[string]bool)
+	propsObjType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
+	if ok {
+		for _, elem := range propsObjType.Elems {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
 				if prop.Name.Kind == type_system.StrObjTypeKeyKind {
 					expectedProps[prop.Name.Str] = prop.Value
+					if !prop.Optional {
+						requiredProps[prop.Name.Str] = true
+					}
 				}
 			}
 		}
@@ -95,12 +101,17 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 		return errors
 	}
 
+	// Track which props were provided
+	providedProps := make(map[string]bool)
+
 	// For each provided attribute, unify with the expected prop type
 	for _, elem := range attrObj.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
 			if prop.Name.Kind == type_system.StrObjTypeKeyKind {
 				attrName := prop.Name.Str
 				attrValue := prop.Value
+				providedProps[attrName] = true
+
 				if expectedType, ok := expectedProps[attrName]; ok {
 					// Attribute exists in expected props - use full unification
 					unifyErrors := c.Unify(ctx, attrValue, expectedType)
@@ -109,6 +120,17 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 				// Note: If the attribute is not in expectedProps, we allow it for now
 				// Unknown attribute errors will be added in Phase 7 (error messages)
 			}
+		}
+	}
+
+	// Check for missing required props
+	for propName := range requiredProps {
+		if !providedProps[propName] {
+			errors = append(errors, &MissingRequiredPropError{
+				PropName:   propName,
+				ObjectType: propsObjType,
+				span:       getSpanFromType(attrType),
+			})
 		}
 	}
 
