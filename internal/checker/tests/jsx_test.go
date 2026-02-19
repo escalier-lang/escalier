@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -532,15 +533,15 @@ func TestIntrinsicElementValidProps(t *testing.T) {
 func TestIntrinsicElementInvalidPropType(t *testing.T) {
 	tests := map[string]struct {
 		input       string
-		errorSubstr string
+		errorSubstr string // Substring expected in at least one error message
 	}{
 		"DivClassNameWithNumber": {
 			input:       `val elem = <div className={123} />`,
-			errorSubstr: "className", // Error should mention className
+			errorSubstr: "string", // Error should mention the expected type
 		},
 		"ButtonDisabledWithString": {
 			input:       `val elem = <button disabled="yes" />`,
-			errorSubstr: "disabled", // Error should mention disabled
+			errorSubstr: "boolean", // Error should mention the expected type
 		},
 	}
 
@@ -577,6 +578,16 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 
 			// We expect type errors for invalid prop types
 			assert.NotEmpty(t, inferErrors, "Expected inference errors for invalid prop types")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
 		})
 	}
 }
