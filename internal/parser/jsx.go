@@ -4,8 +4,57 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-func (p *Parser) jsxElement() *ast.JSXElementExpr {
-	opening := p.jsxOpening()
+// jsxElementOrFragment parses either a JSX element or a JSX fragment.
+// Fragments are detected by <> (LessThan followed immediately by GreaterThan).
+func (p *Parser) jsxElementOrFragment() ast.Expr {
+	// Peek ahead to detect fragment: <>
+	// We need to check if < is followed immediately by >
+	first := p.lexer.peek()
+	if first.Type != LessThan {
+		p.reportError(first.Span, "Expected '<'")
+		return nil
+	}
+
+	// Save position and peek at next token
+	p.lexer.consume() // consume '<'
+	second := p.lexer.peek()
+
+	if second.Type == GreaterThan {
+		// This is a fragment: <>
+		return p.jsxFragmentAfterOpening(first.Span.Start)
+	}
+
+	// This is a regular element, continue parsing
+	return p.jsxElementAfterLessThan(first.Span.Start)
+}
+
+// jsxFragmentAfterOpening parses a fragment after the < has been consumed.
+// Called when we've seen < and peeked > (fragment opening).
+func (p *Parser) jsxFragmentAfterOpening(start ast.Location) *ast.JSXFragmentExpr {
+	// Consume the >
+	token := p.lexer.next()
+	end := token.Span.End
+
+	openingSpan := ast.Span{
+		Start:    start,
+		End:      end,
+		SourceID: p.lexer.source.ID,
+	}
+	opening := ast.NewJSXOpening(nil, []ast.JSXAttrElem{}, false, openingSpan)
+
+	// Parse children
+	children := p.jsxChildren()
+
+	// Parse closing </>
+	closing := p.jsxClosing()
+
+	span := ast.MergeSpans(openingSpan, closing.Span())
+	return ast.NewJSXFragment(opening, closing, children, span)
+}
+
+// jsxElementAfterLessThan parses an element after the < has been consumed.
+func (p *Parser) jsxElementAfterLessThan(start ast.Location) *ast.JSXElementExpr {
+	opening := p.jsxOpeningAfterLessThan(start)
 
 	span := ast.Span{
 		Start:    opening.Span().Start,
@@ -25,38 +74,49 @@ func (p *Parser) jsxElement() *ast.JSXElementExpr {
 	return ast.NewJSXElement(opening, nil, []ast.JSXChild{}, span)
 }
 
-func (p *Parser) jsxOpening() *ast.JSXOpening {
+// jsxElementName parses a JSX element name, which can be either a simple identifier
+// (e.g., "div", "MyComponent") or a member expression (e.g., "Foo.Bar", "Icons.Star").
+// Returns the name as a QualIdent (either *ast.Ident or *ast.Member).
+func (p *Parser) jsxElementName() ast.QualIdent {
 	token := p.lexer.next()
-	if token.Type != LessThan {
-		p.reportError(token.Span, "Expected '<'")
-	}
-
-	start := token.Span.Start
-
-	var name string
-	token = p.lexer.next()
 
 	//nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		name = token.Value
-	case GreaterThan:
-		end := token.Span.End
-		span := ast.Span{
-			Start:    start,
-			End:      end,
-			SourceID: p.lexer.source.ID,
+		var result ast.QualIdent = ast.NewIdentifier(token.Value, token.Span)
+		// Check for member expression: Foo.Bar.Baz
+		for {
+			if p.lexer.peek().Type == Dot {
+				p.lexer.consume() // consume '.'
+				nextToken := p.lexer.next()
+				if nextToken.Type == Identifier {
+					right := ast.NewIdentifier(nextToken.Value, nextToken.Span)
+					result = &ast.Member{Left: result, Right: right}
+				} else {
+					p.reportError(nextToken.Span, "Expected an identifier after '.'")
+					break
+				}
+			} else {
+				break
+			}
 		}
-		return ast.NewJSXOpening("", []*ast.JSXAttr{}, false, span)
+		return result
 	default:
-		p.reportError(token.Span, "Expected an identifier or '>'")
+		p.reportError(token.Span, "Expected an identifier")
+		return nil
 	}
+}
+
+// jsxOpeningAfterLessThan parses a JSX opening tag after < has been consumed.
+// This is called when we've already determined this is NOT a fragment.
+func (p *Parser) jsxOpeningAfterLessThan(start ast.Location) *ast.JSXOpening {
+	name := p.jsxElementName()
 
 	attrs := p.jsxAttrs()
 
 	var selfClosing bool
 
-	token = p.lexer.next()
+	token := p.lexer.next()
 
 	//nolint: exhaustive
 	switch token.Type {
@@ -79,8 +139,8 @@ func (p *Parser) jsxOpening() *ast.JSXOpening {
 	return ast.NewJSXOpening(name, attrs, selfClosing, span)
 }
 
-func (p *Parser) jsxAttrs() []*ast.JSXAttr {
-	attrs := []*ast.JSXAttr{}
+func (p *Parser) jsxAttrs() []ast.JSXAttrElem {
+	attrs := []ast.JSXAttrElem{}
 
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
@@ -93,7 +153,66 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 		}
 
 		token := p.lexer.peek()
+
+		// Check for spread attribute: {...expr}
+		if token.Type == OpenBrace {
+			start := token.Span.Start
+			p.lexer.consume() // consume '{'
+
+			token = p.lexer.peek()
+			if token.Type == DotDotDot {
+				p.lexer.consume() // consume '...'
+				expr := p.expr()
+				if expr == nil {
+					return attrs
+				}
+
+				var end ast.Location
+				token = p.lexer.peek()
+				if token.Type == CloseBrace {
+					p.lexer.consume() // consume '}'
+					end = token.Span.End
+				} else {
+					p.reportError(token.Span, "Expected '}'")
+					end = token.Span.End // fallback to unexpected token's end
+				}
+
+				span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
+				attrs = append(attrs, ast.NewJSXSpreadAttr(expr, span))
+				continue
+			} else {
+				// Not a spread, this is an error - we consumed '{' but didn't find '...'
+				// TODO: check jsxOpeningAfterLessThan for overall recovery behavior
+				// References: p.lexer.peek, p.lexer.consume, p.reportError, attrs
+				p.reportError(token.Span, "Expected '...' for spread attribute")
+
+				// Local recovery: skip tokens until a safe resynchronization point
+				for {
+					token = p.lexer.peek()
+					switch token.Type {
+					case CloseBrace:
+						// Found closing brace, consume it and continue parsing attrs
+						p.lexer.consume()
+						goto continueAttrs
+					case GreaterThan, SlashGreaterThan, EndOfFile:
+						// Hit tag end, let the caller handle it
+						goto continueAttrs
+					case Identifier:
+						// Found potential next attribute, continue parsing
+						goto continueAttrs
+					default:
+						// Skip unexpected token
+						p.lexer.consume()
+					}
+				}
+			continueAttrs:
+				continue
+			}
+		}
+
+		// Regular named attribute
 		name := ""
+		nameToken := token
 		if token.Type == Identifier {
 			p.lexer.consume() // consume identifier
 			name = token.Value
@@ -101,43 +220,68 @@ func (p *Parser) jsxAttrs() []*ast.JSXAttr {
 			break
 		}
 
-		// parse attribute value
+		// Check for attribute value (optional for boolean shorthand)
 		token = p.lexer.peek()
 		if token.Type == Equal {
 			p.lexer.consume() // consume equals
-		} else {
-			p.reportError(token.Span, "Expected '='")
-		}
 
-		var value ast.JSXAttrValue
+			var value ast.JSXAttrValue
+			var attrEnd ast.Location
 
-		// parse attribute value
-		token = p.lexer.peek()
-
-		//nolint: exhaustive
-		switch token.Type {
-		case StrLit:
-			p.lexer.consume() // consume string
-			value = ast.NewJSXString(token.Value, token.Span)
-		case OpenBrace:
-			p.lexer.consume() // consume '{'
-			expr := p.expr()
-			if expr == nil {
-				return attrs
-			}
-			value = ast.NewJSXExprContainer(expr, token.Span)
+			// parse attribute value
 			token = p.lexer.peek()
-			if token.Type == CloseBrace {
-				p.lexer.consume() // consume '}'
-			} else {
-				p.reportError(token.Span, "Expected '}'")
-			}
-		default:
-			p.reportError(token.Span, "Expected a string or an expression")
-		}
 
-		attr := ast.NewJSXAttr(name, &value, token.Span)
-		attrs = append(attrs, attr)
+			//nolint: exhaustive
+			switch token.Type {
+			case StrLit:
+				p.lexer.consume() // consume string
+				value = ast.NewJSXString(token.Value, token.Span)
+				attrEnd = token.Span.End
+			case OpenBrace:
+				openBraceStart := token.Span.Start
+				p.lexer.consume() // consume '{'
+				expr := p.expr()
+				if expr == nil {
+					return attrs
+				}
+				token = p.lexer.peek()
+				if token.Type == CloseBrace {
+					p.lexer.consume() // consume '}'
+					attrEnd = token.Span.End
+				} else {
+					p.reportError(token.Span, "Expected '}'")
+					attrEnd = token.Span.End
+				}
+				// JSXExprContainer span covers from '{' to '}'
+				containerSpan := ast.Span{Start: openBraceStart, End: attrEnd, SourceID: p.lexer.source.ID}
+				value = ast.NewJSXExprContainer(expr, containerSpan)
+			default:
+				p.reportError(token.Span, "Expected a string or an expression")
+				p.lexer.consume() // consume the bad token
+				// Skip tokens until we reach a safe recovery point
+				for {
+					token = p.lexer.peek()
+					switch token.Type {
+					case Identifier, StrLit, OpenBrace, SlashGreaterThan, GreaterThan, EndOfFile:
+						// Found a token that can start a new attribute or close the tag
+						goto skipAttr
+					default:
+						p.lexer.consume() // skip unexpected token
+					}
+				}
+			skipAttr:
+				continue
+			}
+
+			// Attribute span covers from name start to value end
+			attrSpan := ast.Span{Start: nameToken.Span.Start, End: attrEnd, SourceID: p.lexer.source.ID}
+			attr := ast.NewJSXAttr(name, &value, attrSpan)
+			attrs = append(attrs, attr)
+		} else {
+			// Boolean shorthand: <input disabled /> - span is just the name token
+			attr := ast.NewJSXAttr(name, nil, nameToken.Span)
+			attrs = append(attrs, attr)
+		}
 	}
 
 	return attrs
@@ -151,13 +295,29 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 
 	start := token.Span.Start
 
-	var name string
+	var name ast.QualIdent
 	token = p.lexer.next()
 
 	// nolint: exhaustive
 	switch token.Type {
 	case Identifier:
-		name = token.Value
+		name = ast.NewIdentifier(token.Value, token.Span)
+		// Check for member expression: Foo.Bar.Baz
+		for {
+			if p.lexer.peek().Type == Dot {
+				p.lexer.consume() // consume '.'
+				nextToken := p.lexer.next()
+				if nextToken.Type == Identifier {
+					right := ast.NewIdentifier(nextToken.Value, nextToken.Span)
+					name = &ast.Member{Left: name, Right: right}
+				} else {
+					p.reportError(nextToken.Span, "Expected an identifier after '.'")
+					break
+				}
+			} else {
+				break
+			}
+		}
 	case GreaterThan:
 		end := token.Span.End
 		span := ast.Span{
@@ -165,7 +325,7 @@ func (p *Parser) jsxClosing() *ast.JSXClosing {
 			End:      end,
 			SourceID: p.lexer.source.ID,
 		}
-		return ast.NewJSXClosing("", span)
+		return ast.NewJSXClosing(nil, span)
 	default:
 		p.reportError(token.Span, "Expected an identifier or '>'")
 	}
@@ -205,21 +365,28 @@ func (p *Parser) jsxChildren() []ast.JSXChild {
 		case LessThanSlash, EndOfFile:
 			return children
 		case LessThan:
-			jsxElement := p.jsxElement()
-			if jsxElement != nil {
-				children = append(children, jsxElement)
+			jsx := p.jsxElementOrFragment()
+			if jsx != nil {
+				if child, ok := jsx.(ast.JSXChild); ok {
+					children = append(children, child)
+				}
 			}
 		case OpenBrace:
-			p.lexer.consume()
+			openBraceStart := token.Span.Start
+			p.lexer.consume() // consume '{'
 			expr := p.expr()
 			// TODO: handle the case when parseExpr() returns nil
 			token = p.lexer.peek()
+			var spanEnd ast.Location
 			if token.Type == CloseBrace {
-				p.lexer.consume()
+				spanEnd = token.Span.End
+				p.lexer.consume() // consume '}'
 			} else {
 				p.reportError(token.Span, "Expected '}'")
+				spanEnd = token.Span.End
 			}
-			children = append(children, ast.NewJSXExprContainer(expr, token.Span))
+			fullSpan := ast.Span{Start: openBraceStart, End: spanEnd, SourceID: p.lexer.source.ID}
+			children = append(children, ast.NewJSXExprContainer(expr, fullSpan))
 		default:
 			// Try to lex JSX text at the current position
 			jsxToken := p.lexer.lexJSXText()

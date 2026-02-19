@@ -12,11 +12,26 @@ The JSX parser and AST types are already complete. Implementation requires:
 2. **Code Generation** - Add transform logic in `internal/codegen/builder.go`
 3. **Type Definitions** - Use `@types/react` for JSX types (loaded automatically, no explicit import required)
 
+### Implementation Progress
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1 | ✅ Complete | Core infrastructure - basic JSX compiles and type-checks |
+| Phase 2 | Not started | Intrinsic element type validation |
+| Phase 3 | Not started | Component prop type checking |
+| Phase 4 | Not started | React type definitions integration |
+| Phase 5 | Not started | Code generation enhancements |
+| Phase 6 | Not started | Automatic JSX transform |
+| Phase 7 | Not started | Error messages and DX |
+| Phase 8 | Not started | Final verification |
+
 ---
 
-## Phase 1: Minimal Viable JSX (Core Infrastructure)
+## Phase 1: Minimal Viable JSX (Core Infrastructure) ✅ COMPLETE
 
 **Goal**: Get basic JSX elements compiling and type-checking with permissive stub types. This phase focuses on infrastructure; proper type validation comes in later phases.
+
+**Status**: Completed. All basic JSX elements and fragments compile and type-check correctly.
 
 ### 1.1 Type Checker: Basic JSX Element Inference
 
@@ -110,13 +125,13 @@ func (c *Checker) getJSXElementType(provenance *ast.NodeProvenance) type_system.
 ```
 
 **Tasks**:
-- [ ] Create `internal/checker/infer_jsx.go`
-- [ ] Implement `inferJSXElement()` - main entry point
-- [ ] Implement `inferJSXFragment()` - similar but simpler
-- [ ] Implement `isIntrinsicElement()` - check lowercase first char
-- [ ] Implement `inferJSXAttributes()` - build object type from attrs
-- [ ] Implement `inferJSXChildren()` - type check each child
-- [ ] Implement stub versions of `getIntrinsicElementProps()`, `getComponentProps()`, `getJSXElementType()`
+- [x] Create `internal/checker/infer_jsx.go`
+- [x] Implement `inferJSXElement()` - main entry point
+- [x] Implement `inferJSXFragment()` - similar but simpler
+- [x] Implement `isIntrinsicElement()` - check lowercase first char
+- [x] Implement `inferJSXAttributes()` - build object type from attrs
+- [x] Implement `inferJSXChildren()` - type check each child
+- [x] Implement stub versions of `getIntrinsicElementProps()`, `getComponentProps()`, `getJSXElementType()`
 
 ### 1.2 Code Generator: Basic JSX Transform
 
@@ -189,82 +204,48 @@ func isIntrinsicElement(name string) bool {
 ```
 
 **Tasks**:
-- [ ] Create `internal/codegen/jsx.go`
-- [ ] Implement `buildJSXElement()` - main transform
-- [ ] Implement `buildJSXFragment()` - use React.Fragment
-- [ ] Implement `buildJSXProps()` - build props object from attrs
-- [ ] Implement `buildJSXChildren()` - transform children array
-- [ ] Handle spread attributes with `Object.assign`
+- [x] Create `internal/codegen/jsx.go`
+- [x] Implement `buildJSXElement()` - main transform
+- [x] Implement `buildJSXFragment()` - use React.Fragment
+- [x] Implement `buildJSXProps()` - build props object from attrs
+- [x] Implement `buildJSXChildren()` - transform children array
+- [x] Handle spread attributes (using object spread syntax in generated output)
+- [x] Handle boolean shorthand attributes (`<input disabled />` → `{disabled: true}`)
 
 ### 1.3 Tests for Phase 1
 
 **Unit Tests**
 
-**New file**: `internal/checker/infer_jsx_test.go`
+**File**: `internal/checker/tests/jsx_test.go` ✅ Created
 
-```go
-func TestJSXElementBasic(t *testing.T) {
-    // Test: <div />
-    // Expected: No errors, returns a type (placeholder in Phase 1)
-}
+Contains test functions:
+- `TestJSXElementBasic` - tests self-closing elements, elements with closing tags, props (string, expression, multiple, boolean shorthand, spread), children (text, expression), and nested elements
+- `TestJSXFragmentBasic` - tests empty fragments, fragments with children, nested fragments
+- `TestJSXComponent` - tests components without props, with props, and nested components
 
-func TestJSXElementWithProps(t *testing.T) {
-    // Test: <div className="foo" />
-    // Expected: No errors (props not validated in Phase 1)
-}
+**File**: `internal/codegen/jsx_test.go` ✅ Created
 
-func TestJSXElementWithChildren(t *testing.T) {
-    // Test: <div><span>Hello</span></div>
-    // Expected: No errors
-}
+Contains test functions:
+- `TestJSXTransformBasic` - snapshot tests for element transforms (includes boolean shorthand)
+- `TestJSXTransformFragment` - snapshot tests for fragment transforms
+- `TestJSXTransformComponent` - snapshot tests for component transforms
+- `TestJSXTransformSpread` - snapshot tests for spread attribute transforms
 
-func TestJSXFragment(t *testing.T) {
-    // Test: <><div /><span /></>
-    // Expected: No errors
-}
-```
+**Snapshot file**: `internal/codegen/__snapshots__/jsx_test.snap` ✅ Created
 
-**New file**: `internal/codegen/jsx_test.go`
+**File**: `internal/parser/jsx_test.go` ✅ Updated
 
-```go
-func TestJSXTransformBasic(t *testing.T) {
-    // Input: <div />
-    // Output: React.createElement("div", null)
-}
+Contains test functions:
+- `TestParseJSXNoErrors` - tests for valid JSX parsing (includes spread attributes, boolean shorthand)
+- `TestParseJSXErrors` - tests for JSX parse errors
 
-func TestJSXTransformWithProps(t *testing.T) {
-    // Input: <div className="foo" />
-    // Output: React.createElement("div", { className: "foo" })
-}
-
-func TestJSXTransformWithChildren(t *testing.T) {
-    // Input: <div>Hello</div>
-    // Output: React.createElement("div", null, "Hello")
-}
-
-func TestJSXTransformFragment(t *testing.T) {
-    // Input: <><div /></>
-    // Output: React.createElement(React.Fragment, null, React.createElement("div", null))
-}
-```
-
-**Integration Test Fixtures**
-
-```
-testdata/jsx/phase1/
-├── basic_element.esc           # <div />
-├── element_with_props.esc      # <div className="foo" />
-├── element_with_children.esc   # <div><span>Hello</span></div>
-├── nested_elements.esc         # <div><span><a>Link</a></span></div>
-├── fragment.esc                # <>...</>
-└── self_closing.esc            # <input />, <br />
-```
+**Snapshot file**: `internal/parser/__snapshots__/jsx_test.snap` ✅ Created
 
 **Tasks**:
-- [ ] Create `internal/checker/infer_jsx_test.go` with basic inference tests
-- [ ] Create `internal/codegen/jsx_test.go` with transform verification
-- [ ] Create `testdata/jsx/phase1/` integration test fixtures
-- [ ] Add snapshot tests for generated JavaScript output
+- [x] Create `internal/checker/tests/jsx_test.go` with basic inference tests
+- [x] Create `internal/codegen/jsx_test.go` with transform verification
+- [x] Add snapshot tests for generated JavaScript output
+- [ ] Create `testdata/jsx/phase1/` integration test fixtures (deferred - unit tests sufficient for Phase 1)
 
 ---
 
@@ -419,28 +400,40 @@ func (c *Checker) getComponentProps(ctx Context, tagName string, expr *ast.JSXEl
 ### 3.2 Props Validation
 
 ```go
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []*ast.JSXAttr) (type_system.Type, []Error) {
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
     var errors []Error
     elems := make([]type_system.ObjTypeElem, 0, len(attrs))
 
-    for _, attr := range attrs {
-        var valueType type_system.Type
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
+            var valueType type_system.Type
 
-        if attr.Value == nil {
-            // Boolean shorthand: <input disabled />
-            valueType = type_system.NewLitType(nil, &type_system.BoolLit{Value: true})
-        } else {
-            switch v := attr.Value.(type) {
-            case *ast.JSXString:
-                valueType = type_system.NewLitType(nil, &type_system.StrLit{Value: v.Value})
-            case *ast.JSXExprContainer:
-                valueType, exprErrors := c.inferExpr(ctx, v.Expr)
-                errors = append(errors, exprErrors...)
+            if attr.Value == nil {
+                // Boolean shorthand: <input disabled />
+                valueType = type_system.NewBoolLitType(nil, true)
+            } else {
+                switch v := (*attr.Value).(type) {
+                case *ast.JSXString:
+                    valueType = type_system.NewStrLitType(nil, v.Value)
+                case *ast.JSXExprContainer:
+                    var exprErrors []Error
+                    valueType, exprErrors = c.inferExpr(ctx, v.Expr)
+                    errors = append(errors, exprErrors...)
+                }
+            }
+
+            key := type_system.NewStrKey(attr.Name)
+            elems = append(elems, type_system.NewPropertyElem(key, valueType))
+
+        case *ast.JSXSpreadAttr:
+            // Spread attribute: {...props}
+            spreadType, spreadErrors := c.inferExpr(ctx, attr.Expr)
+            errors = append(errors, spreadErrors...)
+            if spreadType != nil {
+                elems = append(elems, type_system.NewRestSpreadElem(spreadType))
             }
         }
-
-        key := type_system.PropertyKey{Name: attr.Name}
-        elems = append(elems, type_system.NewPropertyElem(key, valueType))
     }
 
     return type_system.NewObjectType(nil, elems), errors
@@ -559,19 +552,25 @@ React treats `key` and `ref` as special props that are not passed to components.
 - For components, only valid if the component uses `forwardRef`
 
 ```go
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []*ast.JSXAttr) (type_system.Type, []Error) {
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
     var errors []Error
     var keyAttr, refAttr *ast.JSXAttr
-    regularAttrs := make([]*ast.JSXAttr, 0, len(attrs))
+    regularAttrs := make([]ast.JSXAttrElem, 0, len(attrs))
 
     // Separate special props from regular props
-    for _, attr := range attrs {
-        switch attr.Name {
-        case "key":
-            keyAttr = attr
-        case "ref":
-            refAttr = attr
-        default:
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
+            switch attr.Name {
+            case "key":
+                keyAttr = attr
+            case "ref":
+                refAttr = attr
+            default:
+                regularAttrs = append(regularAttrs, attr)
+            }
+        case *ast.JSXSpreadAttr:
+            // Spread attrs go to regular attrs
             regularAttrs = append(regularAttrs, attr)
         }
     }
@@ -834,36 +833,31 @@ testdata/jsx/phase4/
 ### 5.2 Props Object Generation
 
 ```go
-func (b *Builder) buildJSXProps(attrs []*ast.JSXAttr, source ast.Node) (Expr, []Stmt) {
+func (b *Builder) buildJSXProps(attrs []ast.JSXAttrElem, source *ast.JSXElementExpr) (Expr, []Stmt) {
     if len(attrs) == 0 {
         return NewLitExpr(NewNullLit(source), source), nil
     }
 
     var stmts []Stmt
-    var spreadAttrs []Expr
-    var regularProps []*ObjectProperty
+    var props []ObjExprElem
 
-    for _, attr := range attrs {
-        if isSpreadAttr(attr) {
-            // Handle {...props}
-            spreadExpr, spreadStmts := b.buildExpr(attr.Value.(*ast.JSXExprContainer).Expr, source)
-            stmts = append(stmts, spreadStmts...)
-            spreadAttrs = append(spreadAttrs, spreadExpr)
-        } else {
+    for _, attrElem := range attrs {
+        switch attr := attrElem.(type) {
+        case *ast.JSXAttr:
             // Regular prop
-            key := NewIdentifier(attr.Name, source)
-            value, valueStmts := b.buildJSXAttrValue(attr.Value, source)
-            stmts = append(stmts, valueStmts...)
-            regularProps = append(regularProps, &ObjectProperty{Key: key, Value: value})
+            key := NewIdentExpr(attr.Name, "", source)
+            value, valueStmts := b.buildJSXAttrValue(attr, source)
+            stmts = slices.Concat(stmts, valueStmts)
+            props = append(props, NewPropertyExpr(key, value, source))
+        case *ast.JSXSpreadAttr:
+            // Spread prop: {...props}
+            spreadExpr, spreadStmts := b.buildExpr(attr.Expr, source)
+            stmts = slices.Concat(stmts, spreadStmts)
+            props = append(props, NewRestSpreadExpr(spreadExpr, source))
         }
     }
 
-    if len(spreadAttrs) > 0 {
-        // Use Object.assign for spreads
-        return b.buildObjectAssign(regularProps, spreadAttrs, source), stmts
-    }
-
-    return NewObjectExpr(regularProps, source), stmts
+    return NewObjectExpr(props, source), stmts
 }
 ```
 
@@ -1337,14 +1331,16 @@ func BenchmarkJSXCodegen(b *testing.B) {
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `internal/checker/infer_jsx.go` | JSX type inference logic (including intrinsic element lookup from `@types/react`) |
-| `internal/checker/jsx_errors.go` | JSX-specific error types |
-| `internal/codegen/jsx.go` | JSX code generation |
-| `internal/checker/infer_jsx_test.go` | Type checker unit tests |
-| `internal/checker/jsx_errors_test.go` | Error message tests |
-| `internal/codegen/jsx_test.go` | Code generator unit tests |
+| File | Purpose | Status |
+|------|---------|--------|
+| `internal/checker/infer_jsx.go` | JSX type inference logic (including intrinsic element lookup from `@types/react`) | ✅ Created |
+| `internal/checker/jsx_errors.go` | JSX-specific error types | Planned (Phase 7) |
+| `internal/codegen/jsx.go` | JSX code generation | ✅ Created |
+| `internal/checker/tests/jsx_test.go` | Type checker unit tests | ✅ Created |
+| `internal/checker/jsx_errors_test.go` | Error message tests | Planned (Phase 7) |
+| `internal/codegen/jsx_test.go` | Code generator unit tests | ✅ Created |
+| `internal/codegen/__snapshots__/jsx_test.snap` | Codegen snapshot test expectations | ✅ Created |
+| `internal/parser/__snapshots__/jsx_test.snap` | Parser snapshot test expectations | ✅ Created |
 
 ### New Test Fixtures
 
@@ -1371,10 +1367,13 @@ testdata/jsx/
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `internal/checker/infer_expr.go` | Add cases for JSXElementExpr, JSXFragmentExpr |
-| `internal/codegen/builder.go` | Add cases for JSXElementExpr, JSXFragmentExpr |
+| File | Changes | Status |
+|------|---------|--------|
+| `internal/checker/infer_expr.go` | Add cases for JSXElementExpr, JSXFragmentExpr | ✅ Done |
+| `internal/codegen/builder.go` | Add cases for JSXElementExpr, JSXFragmentExpr | ✅ Done |
+| `internal/parser/jsx.go` | Updated to parse fragments as `JSXFragmentExpr`, added spread attributes and boolean shorthand parsing | ✅ Done |
+| `internal/parser/expr.go` | Call `jsxElementOrFragment()` instead of `jsxElement()` | ✅ Done |
+| `internal/ast/jsx.go` | Added `JSXAttrElem` interface, `JSXSpreadAttr` type, changed `JSXOpening.Attrs` to `[]JSXAttrElem` | ✅ Done |
 
 ---
 
@@ -1433,10 +1432,10 @@ Phase 8 (Final Verification)
 
 ## Success Criteria
 
-### Phase 1 Complete When:
-- [ ] `<div />` compiles without panic
-- [ ] Output is `React.createElement("div", null)`
-- [ ] Basic tests pass
+### Phase 1 Complete When: ✅
+- [x] `<div />` compiles without panic
+- [x] Output is `React.createElement("div", null)`
+- [x] Basic tests pass
 
 ### Phase 2 Complete When:
 - [ ] Intrinsic element props are validated against `@types/react`
@@ -1459,7 +1458,8 @@ Phase 8 (Final Verification)
 ### Phase 5 Complete When:
 - [ ] All JSX syntax forms compile correctly
 - [ ] Output matches React's expected format
-- [ ] Spread attributes work
+- [x] Spread attributes work
+- [x] Boolean shorthand attributes work
 - [ ] Clear error when `React` not in scope (classic transform)
 
 ### Phase 6 Complete When:
@@ -1482,10 +1482,19 @@ Phase 8 (Final Verification)
 
 ## Dependencies
 
-- Existing JSX parser (`internal/parser/jsx.go`) - **Complete**
+- Existing JSX parser (`internal/parser/jsx.go`) - **Complete** (updated to properly distinguish elements from fragments)
 - Existing JSX AST types (`internal/ast/jsx.go`) - **Complete**
 - Package registry for type definitions - **Exists**
 - Unification algorithm - **Exists**
+
+## Parser Limitations (to be addressed in future phases)
+
+All planned parser features have been implemented.
+
+**Recently Added Parser Features**:
+- ✅ Boolean shorthand attributes (`<input disabled />`) - implemented
+- ✅ Spread attributes (`<Button {...props} />`) - implemented
+- ✅ Member expression components (`<Icons.Star />`) - implemented
 
 ---
 

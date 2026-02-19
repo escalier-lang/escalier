@@ -430,9 +430,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 		case Throw:
 			return p.throwExpr()
 		case LessThan:
-			// TODO: figure out how to cast this more directly.
-			jsx := p.jsxElement()
-			return jsx
+			return p.jsxElementOrFragment()
 		case
 			Val, Var, Return,
 			CloseBrace, CloseParen, CloseBracket,

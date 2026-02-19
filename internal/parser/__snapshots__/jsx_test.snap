@@ -2,7 +2,14 @@
 [TestParseJSXNoErrors/SelfClosingNoAttrs - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
         },
         SelfClose: true,
@@ -27,7 +34,14 @@
 [TestParseJSXNoErrors/NoAttrsNoChildren - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
         },
         SelfClose: false,
@@ -38,7 +52,14 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:11},
+                SourceID: 0,
+            },
+        },
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:6},
             End:      ast.Location{Line:1, Column:12},
@@ -59,7 +80,14 @@
 [TestParseJSXNoErrors/SelfClosingAttrs - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
             &ast.JSXAttr{
                 Name:  "bar",
@@ -82,12 +110,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
+                    Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
                 },
@@ -103,7 +131,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:18},
+                    Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
@@ -131,7 +159,14 @@
 [TestParseJSXNoErrors/AttrsNoChildren - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
             &ast.JSXAttr{
                 Name:  "bar",
@@ -154,12 +189,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
+                    Start:    ast.Location{Line:1, Column:6},
                     End:      ast.Location{Line:1, Column:13},
                     SourceID: 0,
                 },
@@ -175,7 +210,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:18},
+                    Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
@@ -189,7 +224,14 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:28},
+                End:      ast.Location{Line:1, Column:31},
+                SourceID: 0,
+            },
+        },
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:26},
             End:      ast.Location{Line:1, Column:32},
@@ -210,7 +252,14 @@
 [TestParseJSXNoErrors/ChildElements - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
         },
         SelfClose: false,
@@ -221,7 +270,14 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:31},
+                End:      ast.Location{Line:1, Column:34},
+                SourceID: 0,
+            },
+        },
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:29},
             End:      ast.Location{Line:1, Column:35},
@@ -231,7 +287,14 @@
     Children: {
         &ast.JSXElementExpr{
             Opening: &ast.JSXOpening{
-                Name:  "span",
+                Name: &ast.Ident{
+                    Name: "span",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:11},
+                        SourceID: 0,
+                    },
+                },
                 Attrs: {
                 },
                 SelfClose: false,
@@ -242,7 +305,14 @@
                 },
             },
             Closing: &ast.JSXClosing{
-                Name: "span",
+                Name: &ast.Ident{
+                    Name: "span",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:19},
+                        End:      ast.Location{Line:1, Column:23},
+                        SourceID: 0,
+                    },
+                },
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:17},
                     End:      ast.Location{Line:1, Column:24},
@@ -287,7 +357,14 @@
 [TestParseJSXNoErrors/ChildExpr - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
         },
         SelfClose: false,
@@ -298,7 +375,14 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:20},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 0,
+            },
+        },
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:18},
             End:      ast.Location{Line:1, Column:24},
@@ -327,7 +411,7 @@
                 inferredType: nil,
             },
             span: ast.Span{
-                Start:    ast.Location{Line:1, Column:17},
+                Start:    ast.Location{Line:1, Column:13},
                 End:      ast.Location{Line:1, Column:18},
                 SourceID: 0,
             },
@@ -345,7 +429,14 @@
 [TestParseJSXNoErrors/Nesting - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
         },
         SelfClose: false,
@@ -356,7 +447,14 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "div",
+        Name: &ast.Ident{
+            Name: "div",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:28},
+                End:      ast.Location{Line:1, Column:31},
+                SourceID: 0,
+            },
+        },
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:26},
             End:      ast.Location{Line:1, Column:32},
@@ -367,7 +465,14 @@
         &ast.JSXExprContainer{
             Expr: &ast.JSXElementExpr{
                 Opening: &ast.JSXOpening{
-                    Name:  "span",
+                    Name: &ast.Ident{
+                        Name: "span",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 0,
+                        },
+                    },
                     Attrs: {
                     },
                     SelfClose: false,
@@ -378,7 +483,14 @@
                     },
                 },
                 Closing: &ast.JSXClosing{
-                    Name: "span",
+                    Name: &ast.Ident{
+                        Name: "span",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:20},
+                            End:      ast.Location{Line:1, Column:24},
+                            SourceID: 0,
+                        },
+                    },
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:25},
@@ -399,7 +511,7 @@
                             inferredType: nil,
                         },
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:17},
+                            Start:    ast.Location{Line:1, Column:13},
                             End:      ast.Location{Line:1, Column:18},
                             SourceID: 0,
                         },
@@ -413,7 +525,7 @@
                 inferredType: nil,
             },
             span: ast.Span{
-                Start:    ast.Location{Line:1, Column:25},
+                Start:    ast.Location{Line:1, Column:6},
                 End:      ast.Location{Line:1, Column:26},
                 SourceID: 0,
             },
@@ -429,9 +541,9 @@
 ---
 
 [TestParseJSXNoErrors/Fragment - 1]
-&ast.JSXElementExpr{
+&ast.JSXFragmentExpr{
     Opening: &ast.JSXOpening{
-        Name:  "",
+        Name:  nil,
         Attrs: {
         },
         SelfClose: false,
@@ -442,7 +554,7 @@
         },
     },
     Closing: &ast.JSXClosing{
-        Name: "",
+        Name: nil,
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:17},
             End:      ast.Location{Line:1, Column:20},
@@ -452,7 +564,14 @@
     Children: {
         &ast.JSXElementExpr{
             Opening: &ast.JSXOpening{
-                Name:  "Foo",
+                Name: &ast.Ident{
+                    Name: "Foo",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:4},
+                        End:      ast.Location{Line:1, Column:7},
+                        SourceID: 0,
+                    },
+                },
                 Attrs: {
                 },
                 SelfClose: true,
@@ -474,7 +593,14 @@
         },
         &ast.JSXElementExpr{
             Opening: &ast.JSXOpening{
-                Name:  "Bar",
+                Name: &ast.Ident{
+                    Name: "Bar",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:14},
+                        SourceID: 0,
+                    },
+                },
                 Attrs: {
                 },
                 SelfClose: true,
@@ -507,34 +633,49 @@
 [TestParseJSXErrors/MissingEqualsInStringAttr - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
             &ast.JSXAttr{
                 Name:  "bar",
-                Value: &&ast.JSXString{
-                    Value: "hello",
-                    span:  ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:17},
-                        SourceID: 0,
-                    },
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:17},
+                Value: (*ast.JSXAttrValue)(nil),
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
                 },
             },
         },
-        SelfClose: true,
+        SelfClose: false,
         span:      ast.Span{
             Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:17},
+            SourceID: 0,
+        },
+    },
+    Closing: &ast.JSXClosing{
+        Name: nil,
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:20},
             End:      ast.Location{Line:1, Column:20},
             SourceID: 0,
         },
     },
-    Closing:  (*ast.JSXClosing)(nil),
     Children: {
+        &ast.JSXText{
+            Value: " />",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:20},
+                SourceID: 0,
+            },
+        },
     },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
@@ -548,36 +689,21 @@
 [TestParseJSXErrors/MissingEqualsInExprAttr - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
             &ast.JSXAttr{
                 Name:  "bar",
-                Value: &&ast.JSXExprContainer{
-                    Expr: &ast.LiteralExpr{
-                        Lit: &ast.NumLit{
-                            Value: 5,
-                            span:  ast.Span{
-                                Start:    ast.Location{Line:1, Column:11},
-                                End:      ast.Location{Line:1, Column:12},
-                                SourceID: 0,
-                            },
-                        },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:11},
-                            End:      ast.Location{Line:1, Column:12},
-                            SourceID: 0,
-                        },
-                        inferredType: nil,
-                    },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:11},
-                        SourceID: 0,
-                    },
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
-                    End:      ast.Location{Line:1, Column:13},
+                Value: (*ast.JSXAttrValue)(nil),
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
                     SourceID: 0,
                 },
             },
@@ -609,7 +735,31 @@
             End:      ast.Location{Line:1, Column:17},
             SourceID: 0,
         },
-        Message: "Expected '='",
+        Message: "Expected '>' or '/>'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:20},
+            End:      ast.Location{Line:1, Column:20},
+            SourceID: 0,
+        },
+        Message: "Expected '</'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:20},
+            End:      ast.Location{Line:1, Column:20},
+            SourceID: 0,
+        },
+        Message: "Expected an identifier or '>'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:20},
+            End:      ast.Location{Line:1, Column:20},
+            SourceID: 0,
+        },
+        Message: "Expected '>'",
     },
 }
 ---
@@ -618,11 +768,11 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:11},
+            Start:    ast.Location{Line:1, Column:11},
+            End:      ast.Location{Line:1, Column:12},
             SourceID: 0,
         },
-        Message: "Expected '='",
+        Message: "Expected '...' for spread attribute",
     },
 }
 ---
@@ -630,7 +780,14 @@
 [TestParseJSXNoErrors/MultipleLines - 1]
 &ast.JSXElementExpr{
     Opening: &ast.JSXOpening{
-        Name:  "Foo",
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
         Attrs: {
             &ast.JSXAttr{
                 Name:  "bar",
@@ -653,12 +810,12 @@
                     },
                     span: ast.Span{
                         Start:    ast.Location{Line:2, Column:7},
-                        End:      ast.Location{Line:2, Column:8},
+                        End:      ast.Location{Line:2, Column:10},
                         SourceID: 0,
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:2, Column:9},
+                    Start:    ast.Location{Line:2, Column:3},
                     End:      ast.Location{Line:2, Column:10},
                     SourceID: 0,
                 },
@@ -674,7 +831,7 @@
                     },
                 },
                 span: ast.Span{
-                    Start:    ast.Location{Line:3, Column:7},
+                    Start:    ast.Location{Line:3, Column:3},
                     End:      ast.Location{Line:3, Column:14},
                     SourceID: 0,
                 },
@@ -693,6 +850,760 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:4, Column:3},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/BooleanShorthandWithOtherAttrs - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "input",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "name",
+                Value: &&ast.JSXString{
+                    Value: "foo",
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:18},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "disabled",
+                Value: (*ast.JSXAttrValue)(nil),
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
+                    End:      ast.Location{Line:1, Column:27},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "checked",
+                Value: (*ast.JSXAttrValue)(nil),
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:28},
+                    End:      ast.Location{Line:1, Column:35},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:38},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:38},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/MultipleSpreadAttrs - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXSpreadAttr{
+                Expr: &ast.IdentExpr{
+                    Name:      "props1",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:16},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXSpreadAttr{
+                Expr: &ast.IdentExpr{
+                    Name:      "props2",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:22},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:29},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:32},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:32},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/BooleanShorthand - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "input",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "disabled",
+                Value: (*ast.JSXAttrValue)(nil),
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:19},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:19},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/SpreadAttrOnly - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXSpreadAttr{
+                Expr: &ast.IdentExpr{
+                    Name:      "props",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:19},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:19},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/SpreadWithRegularAttrs - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXSpreadAttr{
+                Expr: &ast.IdentExpr{
+                    Name:      "props",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:1, Column:22},
+                                End:      ast.Location{Line:1, Column:23},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:22},
+                            End:      ast.Location{Line:1, Column:23},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:21},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:27},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/SpreadBetweenRegularAttrs - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:5},
+                SourceID: 0,
+            },
+        },
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "bar",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:1, Column:11},
+                                End:      ast.Location{Line:1, Column:12},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:12},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:10},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXSpreadAttr{
+                Expr: &ast.IdentExpr{
+                    Name:      "props",
+                    Namespace: 0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:23},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+            &ast.JSXAttr{
+                Name:  "baz",
+                Value: &&ast.JSXString{
+                    Value: "hello",
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:36},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:25},
+                    End:      ast.Location{Line:1, Column:36},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:39},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:39},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/MemberExprSelfClosing - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Member{
+            Left: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:5},
+                    SourceID: 0,
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+        },
+        Attrs: {
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/MemberExprWithAttrs - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Member{
+            Left: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:5},
+                    SourceID: 0,
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+        },
+        Attrs: {
+            &ast.JSXAttr{
+                Name:  "baz",
+                Value: &&ast.JSXExprContainer{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            Value: 5,
+                            span:  ast.Span{
+                                Start:    ast.Location{Line:1, Column:15},
+                                End:      ast.Location{Line:1, Column:16},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:14},
+                        End:      ast.Location{Line:1, Column:17},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:10},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+            },
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:20},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:20},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/MemberExprInFragment - 1]
+&ast.JSXFragmentExpr{
+    Opening: &ast.JSXOpening{
+        Name:  nil,
+        Attrs: {
+        },
+        SelfClose: false,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:3},
+            SourceID: 0,
+        },
+    },
+    Closing: &ast.JSXClosing{
+        Name: nil,
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:25},
+            End:      ast.Location{Line:1, Column:28},
+            SourceID: 0,
+        },
+    },
+    Children: {
+        &ast.JSXElementExpr{
+            Opening: &ast.JSXOpening{
+                Name: &ast.Member{
+                    Left: &ast.Ident{
+                        Name: "Foo",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:4},
+                            End:      ast.Location{Line:1, Column:7},
+                            SourceID: 0,
+                        },
+                    },
+                    Right: &ast.Ident{
+                        Name: "Bar",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:8},
+                            End:      ast.Location{Line:1, Column:11},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                Attrs: {
+                },
+                SelfClose: true,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:14},
+                    SourceID: 0,
+                },
+            },
+            Closing:  (*ast.JSXClosing)(nil),
+            Children: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.JSXElementExpr{
+            Opening: &ast.JSXOpening{
+                Name: &ast.Member{
+                    Left: &ast.Ident{
+                        Name: "Baz",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    Right: &ast.Ident{
+                        Name: "Qux",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:22},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                Attrs: {
+                },
+                SelfClose: true,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:25},
+                    SourceID: 0,
+                },
+            },
+            Closing:  (*ast.JSXClosing)(nil),
+            Children: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:14},
+                End:      ast.Location{Line:1, Column:25},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:28},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/DeepMemberExpr - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Member{
+            Left: &ast.Member{
+                Left: &ast.Ident{
+                    Name: "Foo",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:2},
+                        End:      ast.Location{Line:1, Column:5},
+                        SourceID: 0,
+                    },
+                },
+                Right: &ast.Ident{
+                    Name: "Bar",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:6},
+                        End:      ast.Location{Line:1, Column:9},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Baz",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:10},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+            },
+        },
+        Attrs: {
+        },
+        SelfClose: true,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:16},
+            SourceID: 0,
+        },
+    },
+    Closing:  (*ast.JSXClosing)(nil),
+    Children: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:16},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseJSXNoErrors/MemberExprWithChildren - 1]
+&ast.JSXElementExpr{
+    Opening: &ast.JSXOpening{
+        Name: &ast.Member{
+            Left: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:5},
+                    SourceID: 0,
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+        },
+        Attrs: {
+        },
+        SelfClose: false,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:10},
+            SourceID: 0,
+        },
+    },
+    Closing: &ast.JSXClosing{
+        Name: &ast.Member{
+            Left: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+            },
+            Right: &ast.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:21},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:15},
+            End:      ast.Location{Line:1, Column:25},
+            SourceID: 0,
+        },
+    },
+    Children: {
+        &ast.JSXText{
+            Value: "hello",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:25},
         SourceID: 0,
     },
     inferredType: nil,

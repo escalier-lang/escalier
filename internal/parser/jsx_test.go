@@ -41,6 +41,39 @@ func TestParseJSXNoErrors(t *testing.T) {
 		"Fragment": {
 			input: "<><Foo /><Bar /></>",
 		},
+		"SpreadAttrOnly": {
+			input: "<Foo {...props} />",
+		},
+		"SpreadWithRegularAttrs": {
+			input: "<Foo {...props} bar={5} />",
+		},
+		"MultipleSpreadAttrs": {
+			input: "<Foo {...props1} {...props2} />",
+		},
+		"SpreadBetweenRegularAttrs": {
+			input: "<Foo bar={5} {...props} baz=\"hello\" />",
+		},
+		"BooleanShorthand": {
+			input: "<input disabled />",
+		},
+		"BooleanShorthandWithOtherAttrs": {
+			input: "<input name=\"foo\" disabled checked />",
+		},
+		"MemberExprSelfClosing": {
+			input: "<Foo.Bar />",
+		},
+		"MemberExprWithAttrs": {
+			input: "<Foo.Bar baz={5} />",
+		},
+		"MemberExprWithChildren": {
+			input: "<Foo.Bar>hello</Foo.Bar>",
+		},
+		"DeepMemberExpr": {
+			input: "<Foo.Bar.Baz />",
+		},
+		"MemberExprInFragment": {
+			input: "<><Foo.Bar /><Baz.Qux /></>",
+		},
 	}
 
 	for name, test := range tests {
@@ -55,7 +88,7 @@ func TestParseJSXNoErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			jsx := parser.jsxElement()
+			jsx := parser.jsxElementOrFragment()
 
 			snaps.MatchSnapshot(t, jsx)
 			assert.Len(t, parser.errors, 0)
@@ -87,7 +120,7 @@ func TestParseJSXErrors(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			jsx := parser.jsxElement()
+			jsx := parser.jsxElementOrFragment()
 
 			snaps.MatchSnapshot(t, jsx)
 			assert.Greater(t, len(parser.errors), 0)

@@ -17,6 +17,9 @@ type Builder struct {
 	tempId        int
 	depGraph      *dep_graph.DepGraph
 	hasExtractor  bool
+	hasJsx        bool // tracks if _jsx is used
+	hasJsxs       bool // tracks if _jsxs is used
+	hasFragment   bool // tracks if _Fragment is used
 	isModule      bool
 	inBlockScope  bool
 	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
@@ -192,6 +195,37 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 
 		// Reset hasExtractor for future builds
 		b.hasExtractor = false
+	}
+
+	// Add JSX runtime imports if needed
+	if b.hasJsx || b.hasJsxs || b.hasFragment {
+		var specifiers []string
+		if b.hasJsx {
+			specifiers = append(specifiers, "jsx as _jsx")
+		}
+		if b.hasJsxs {
+			specifiers = append(specifiers, "jsxs as _jsxs")
+		}
+		if b.hasFragment {
+			specifiers = append(specifiers, "Fragment as _Fragment")
+		}
+
+		importDecl := NewImportDecl(
+			specifiers,
+			"react/jsx-runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset JSX flags for future builds
+		b.hasJsx = false
+		b.hasJsxs = false
+		b.hasFragment = false
 	}
 
 	return &Module{
@@ -540,6 +574,37 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 
 		// Reset hasExtractor for future builds
 		b.hasExtractor = false
+	}
+
+	// Add JSX runtime imports if needed
+	if b.hasJsx || b.hasJsxs || b.hasFragment {
+		var specifiers []string
+		if b.hasJsx {
+			specifiers = append(specifiers, "jsx as _jsx")
+		}
+		if b.hasJsxs {
+			specifiers = append(specifiers, "jsxs as _jsxs")
+		}
+		if b.hasFragment {
+			specifiers = append(specifiers, "Fragment as _Fragment")
+		}
+
+		importDecl := NewImportDecl(
+			specifiers,
+			"react/jsx-runtime",
+			nil,
+		)
+		importStmt := &DeclStmt{
+			Decl:   importDecl,
+			span:   nil,
+			source: nil,
+		}
+		stmts = slices.Concat([]Stmt{importStmt}, stmts)
+
+		// Reset JSX flags for future builds
+		b.hasJsx = false
+		b.hasJsxs = false
+		b.hasFragment = false
 	}
 
 	return &Module{
@@ -1967,9 +2032,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		return tempVar, stmts
 	case *ast.JSXElementExpr:
-		panic("TODO - buildExpr - JSXElementExpr")
+		return b.buildJSXElement(expr)
 	case *ast.JSXFragmentExpr:
-		panic("TODO - buildExpr - JSXFragmentExpr")
+		return b.buildJSXFragment(expr)
 	case *ast.EmptyExpr:
 		undefined := NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr)
 		return undefined, []Stmt{}
