@@ -393,10 +393,10 @@ func (c *Checker) getComponentProps(ctx Context, tagName string, expr *ast.JSXEl
 ```
 
 **Tasks**:
-- [ ] Implement `getComponentProps()` - extract props from component type
-- [ ] Handle function components: `fn(props: Props) -> JSX.Element`
-- [ ] Handle member expressions: `<Namespace.Component />`
-- [ ] Report error for unknown components
+- [x] Implement `getComponentProps()` - extract props from component type
+- [x] Handle function components: `fn(props: Props) -> JSX.Element`
+- [x] Handle member expressions: `<Namespace.Component />`
+- [x] Report error for unknown components
 
 ### 3.2 Props Validation
 

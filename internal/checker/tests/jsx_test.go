@@ -1147,3 +1147,422 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 		})
 	}
 }
+
+// Phase 3 Tests: Component Type Checking
+// These tests verify that custom component props are validated correctly
+
+func TestComponentValidProps(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ComponentWithMatchingProps": {
+			input: `
+				fn MyComponent(props: {title: string, count: number}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent title="Hello" count={5} />
+			`,
+		},
+		"ComponentWithOptionalProps": {
+			input: `
+				fn MyComponent(props: {title: string, count?: number}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent title="Hello" />
+			`,
+		},
+		"ComponentWithAllOptionalProps": {
+			input: `
+				fn MyComponent(props: {title?: string, count?: number}) {
+					return <div>Default</div>
+				}
+				val elem = <MyComponent />
+			`,
+		},
+		"ComponentWithNoProps": {
+			input: `
+				fn MyComponent() {
+					return <div>No props</div>
+				}
+				val elem = <MyComponent />
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for valid component props")
+		})
+	}
+}
+
+func TestComponentMissingRequiredProp(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"MissingTitle": {
+			input: `
+				fn MyComponent(props: {title: string, count: number}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent count={5} />
+			`,
+			errorSubstr: "title",
+		},
+		"MissingCount": {
+			input: `
+				fn MyComponent(props: {title: string, count: number}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent title="Hello" />
+			`,
+			errorSubstr: "count",
+		},
+		"MissingAllRequired": {
+			input: `
+				fn MyComponent(props: {title: string, count: number}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent />
+			`,
+			errorSubstr: "Missing required prop",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect errors for missing required props
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for missing required props")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
+
+func TestComponentWrongPropType(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"StringInsteadOfNumber": {
+			input: `
+				fn MyComponent(props: {count: number}) {
+					return <div>{props.count}</div>
+				}
+				val elem = <MyComponent count="five" />
+			`,
+			errorSubstr: "number",
+		},
+		"NumberInsteadOfString": {
+			input: `
+				fn MyComponent(props: {title: string}) {
+					return <div>{props.title}</div>
+				}
+				val elem = <MyComponent title={123} />
+			`,
+			errorSubstr: "string",
+		},
+		"WrongFunctionType": {
+			input: `
+				fn MyComponent(props: {onClick: fn() -> void}) {
+					return <button onClick={props.onClick}>Click</button>
+				}
+				val elem = <MyComponent onClick="not a function" />
+			`,
+			errorSubstr: "fn",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect type errors for wrong prop types
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for wrong prop types")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
+
+func TestUnknownComponent(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"UndefinedComponent": {
+			input:       `val elem = <UnknownComponent />`,
+			errorSubstr: "UnknownComponent",
+		},
+		"UndefinedComponentWithProps": {
+			input:       `val elem = <UnknownComponent title="Hello" />`,
+			errorSubstr: "UnknownComponent",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect errors for unknown components
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for unknown component")
+
+			// Verify the error message mentions the unknown component
+			found := false
+			for _, inferErr := range inferErrors {
+				msg := inferErr.Message()
+				if strings.Contains(msg, test.errorSubstr) && strings.Contains(msg, "not defined") {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected error message to mention %q is not defined", test.errorSubstr)
+		})
+	}
+}
+
+func TestMemberExpressionComponent(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"NamespaceComponent": {
+			input: `
+				val Icons = {
+					Star: fn(props: {size: number}) {
+						return <span>★</span>
+					}
+				}
+				val elem = <Icons.Star size={24} />
+			`,
+		},
+		"NestedNamespaceComponent": {
+			input: `
+				val UI = {
+					Icons: {
+						Star: fn() {
+							return <span>★</span>
+						}
+					}
+				}
+				val elem = <UI.Icons.Star />
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			if len(parseErrors) > 0 {
+				for _, err := range parseErrors {
+					t.Logf("ParseError: %v", err)
+				}
+			}
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for member expression components")
+		})
+	}
+}
+
+func TestMemberExpressionComponentErrors(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"UnknownNamespace": {
+			input:       `val elem = <Unknown.Component />`,
+			errorSubstr: "Unknown",
+		},
+		"UnknownPropertyOnNamespace": {
+			input: `
+				val Icons = {
+					Star: fn() {
+						return <span>★</span>
+					}
+				}
+				val elem = <Icons.Moon />
+			`,
+			errorSubstr: "Moon",
+		},
+		"MemberExpressionWrongPropType": {
+			input: `
+				val Icons = {
+					Star: fn(props: {size: number}) {
+						return <span>★</span>
+					}
+				}
+				val elem = <Icons.Star size="large" />
+			`,
+			errorSubstr: "number",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect errors
+			assert.NotEmpty(t, inferErrors, "Expected inference errors")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}

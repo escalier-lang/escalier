@@ -300,9 +300,106 @@ func (c *Checker) getIntrinsicElementProps(ctx Context, tagName ast.QualIdent, e
 	}
 }
 
-// Phase 1 stub - returns nil to allow any props (replaced in Phase 3)
+// getComponentProps resolves a JSX component and extracts its props type.
+// It handles:
+// - Simple identifiers: <Button /> -> looks up "Button" in scope
+// - Member expressions: <Icons.Star /> -> looks up "Icons" then gets "Star" property
+// For function components, it extracts the first parameter's type as the props type.
 func (c *Checker) getComponentProps(ctx Context, tagName ast.QualIdent, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
-	return nil, nil
+	// Resolve the component type based on the tag name structure
+	componentType, errors := c.resolveJSXComponentType(ctx, tagName)
+	if componentType == nil {
+		// Unknown component - return nil to allow any props (permissive fallback)
+		// The error has already been added by resolveJSXComponentType
+		return nil, errors
+	}
+
+	// Extract props type from the component type
+	propsType := c.extractPropsFromComponentType(componentType)
+	return propsType, errors
+}
+
+// resolveJSXComponentType resolves the type of a JSX component based on its tag name.
+// For simple identifiers, it looks up the binding in scope.
+// For member expressions, it recursively resolves the member chain.
+func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (type_system.Type, []Error) {
+	switch name := tagName.(type) {
+	case *ast.Ident:
+		// Simple identifier: <Button />
+		binding := ctx.Scope.GetValue(name.Name)
+		if binding == nil {
+			// Check if it's a namespace (less common but possible)
+			if namespace := ctx.Scope.getNamespace(name.Name); namespace != nil {
+				return type_system.NewNamespaceType(nil, namespace), nil
+			}
+			// Unknown component
+			return nil, []Error{&UnknownComponentError{
+				Name: name.Name,
+				span: name.Span(),
+			}}
+		}
+		return binding.Type, nil
+
+	case *ast.Member:
+		// Member expression: <Icons.Star /> or <Namespace.Sub.Component />
+		// Resolve the left side first
+		leftType, errors := c.resolveJSXComponentType(ctx, name.Left)
+		if leftType == nil {
+			return nil, errors
+		}
+
+		// Get the property from the resolved type
+		key := PropertyKey{Name: name.Right.Name, OptChain: false, span: name.Right.Span()}
+		propType, propErrors := c.getMemberType(ctx, leftType, key)
+		errors = append(errors, propErrors...)
+
+		if propType == nil {
+			return nil, errors
+		}
+		return propType, errors
+
+	default:
+		// Unknown tag name structure - should not happen
+		return nil, nil
+	}
+}
+
+// extractPropsFromComponentType extracts the props type from a component type.
+// For function components (fn(props: Props) -> JSX.Element), it returns the first parameter's type.
+// For other component patterns (class components, etc.), it returns nil to allow any props.
+func (c *Checker) extractPropsFromComponentType(componentType type_system.Type) type_system.Type {
+	// Prune to get the underlying type (resolve type variables, etc.)
+	prunedType := type_system.Prune(componentType)
+
+	switch t := prunedType.(type) {
+	case *type_system.FuncType:
+		// Function component: fn(props: Props) -> JSX.Element
+		if len(t.Params) > 0 {
+			// The first parameter is the props
+			return t.Params[0].Type
+		}
+		// No parameters - component doesn't accept props
+		return type_system.NewObjectType(nil, nil)
+
+	case *type_system.ObjectType:
+		// Could be a class component or an object with a call signature
+		// For now, allow any props - class component support can be added later
+		return nil
+
+	case *type_system.IntersectionType:
+		// Could be an overloaded function component
+		// Try to extract props from each type in the intersection
+		for _, innerType := range t.Types {
+			if propsType := c.extractPropsFromComponentType(innerType); propsType != nil {
+				return propsType
+			}
+		}
+		return nil
+
+	default:
+		// Unknown component type - allow any props
+		return nil
+	}
 }
 
 // Phase 1 stub - returns empty object type (replaced in Phase 4)
