@@ -853,3 +853,297 @@ func TestIntrinsicElementEventHandlers(t *testing.T) {
 		})
 	}
 }
+
+// Tests for spread props type checking
+
+func TestSpreadPropsValidTypes(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"SpreadWithCorrectTypes": {
+			input: `
+				val props = { className: "foo", id: "bar" }
+				val elem = <div {...props} />
+			`,
+		},
+		"SpreadWithExplicitProp": {
+			input: `
+				val props = { className: "foo" }
+				val elem = <div {...props} id="bar" />
+			`,
+		},
+		"SpreadOverridesExplicit": {
+			input: `
+				val props = { className: "override" }
+				val elem = <div className="base" {...props} />
+			`,
+		},
+		"ExplicitOverridesSpread": {
+			input: `
+				val props = { className: "base" }
+				val elem = <div {...props} className="override" />
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with IntrinsicElements to the scope
+			jsxNs := createJSXNamespaceWithIntrinsicElements()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors for valid spread props")
+		})
+	}
+}
+
+func TestSpreadPropsInvalidTypes(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"SpreadWithWrongClassNameType": {
+			input: `
+				val props = { className: 123 }
+				val elem = <div {...props} />
+			`,
+			errorSubstr: "string",
+		},
+		"SpreadWithWrongDisabledType": {
+			input: `
+				val props = { disabled: "yes" }
+				val elem = <button {...props} />
+			`,
+			errorSubstr: "boolean",
+		},
+		"SpreadWithWrongEventHandlerType": {
+			input: `
+				val props = { onClick: "notAFunction" }
+				val elem = <div {...props} />
+			`,
+			errorSubstr: "fn",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with IntrinsicElements to the scope
+			jsxNs := createJSXNamespaceWithIntrinsicElements()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect type errors for invalid spread prop types
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for invalid spread prop types")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
+
+func TestSpreadPropsSatisfyRequired(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"SpreadProvidesAllRequired": {
+			input: `
+				val props = { src: "image.png", alt: "description" }
+				val elem = <img {...props} />
+			`,
+		},
+		"SpreadProvidesRequiredWithOptional": {
+			input: `
+				val props = { src: "image.png", alt: "description", className: "photo" }
+				val elem = <img {...props} />
+			`,
+		},
+		"SpreadProvidesOneRequiredExplicitProvidesOther": {
+			input: `
+				val props = { src: "image.png" }
+				val elem = <img {...props} alt="description" />
+			`,
+		},
+		"ExplicitProvidesOneRequiredSpreadProvidesOther": {
+			input: `
+				val props = { alt: "description" }
+				val elem = <img src="image.png" {...props} />
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with required props
+			jsxNs := createJSXNamespaceWithRequiredProps()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			if len(inferErrors) > 0 {
+				for _, err := range inferErrors {
+					t.Logf("InferError: %v", err.Message())
+				}
+			}
+			assert.Len(t, inferErrors, 0, "Expected no inference errors when spread props satisfy required props")
+		})
+	}
+}
+
+func TestSpreadPropsMissingRequired(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		errorSubstr string
+	}{
+		"SpreadMissingSrc": {
+			input: `
+				val props = { alt: "description" }
+				val elem = <img {...props} />
+			`,
+			errorSubstr: "src",
+		},
+		"SpreadMissingAlt": {
+			input: `
+				val props = { src: "image.png" }
+				val elem = <img {...props} />
+			`,
+			errorSubstr: "alt",
+		},
+		"SpreadWithOnlyOptional": {
+			input: `
+				val props = { className: "photo" }
+				val elem = <img {...props} />
+			`,
+			errorSubstr: "Missing required prop",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			c := NewChecker()
+			scope := Prelude(c)
+
+			// Add JSX namespace with required props
+			jsxNs := createJSXNamespaceWithRequiredProps()
+			err := scope.Namespace.SetNamespace("JSX", jsxNs)
+			assert.NoError(t, err, "Should set JSX namespace without error")
+
+			inferCtx := Context{
+				Scope:      scope,
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			_, inferErrors := c.InferScript(inferCtx, script)
+
+			// We expect errors for missing required props
+			assert.NotEmpty(t, inferErrors, "Expected inference errors for missing required props in spread")
+
+			// Verify at least one error message contains the expected substring
+			found := false
+			for _, inferErr := range inferErrors {
+				if strings.Contains(inferErr.Message(), test.errorSubstr) {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "Expected at least one error message to contain %q", test.errorSubstr)
+		})
+	}
+}
