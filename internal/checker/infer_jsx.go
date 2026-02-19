@@ -30,25 +30,29 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	}
 	errors = slices.Concat(errors, propsErrors)
 
-	// 2. Infer JSX attributes as an object type
-	attrType, attrErrors := c.inferJSXAttributes(ctx, expr.Opening.Attrs)
+	// 2. Infer JSX attributes (separates key/ref from regular props)
+	attrResult, attrErrors := c.inferJSXAttributes(ctx, expr.Opening.Attrs)
 	errors = slices.Concat(errors, attrErrors)
 
-	// 3. Unify each provided attribute with the corresponding expected prop type
-	if propsType != nil && attrType != nil {
-		unifyErrors := c.unifyJSXPropsWithAttrs(ctx, propsType, attrType)
+	// 3. Validate special props (key and ref)
+	specialPropErrors := c.validateSpecialProps(ctx, attrResult, isIntrinsic)
+	errors = slices.Concat(errors, specialPropErrors)
+
+	// 4. Unify each provided attribute with the corresponding expected prop type
+	if propsType != nil && attrResult.PropsType != nil {
+		unifyErrors := c.unifyJSXPropsWithAttrs(ctx, propsType, attrResult.PropsType)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
-	// 4. Type check children and get the combined children type
+	// 5. Type check children and get the combined children type
 	childrenType, childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
-	// 5. Validate children type against the component's children prop type
+	// 6. Validate children type against the component's children prop type
 	childValidationErrors := c.validateChildrenType(ctx, childrenType, propsType)
 	errors = slices.Concat(errors, childValidationErrors)
 
-	// 6. Return JSX.Element type
+	// 7. Return JSX.Element type
 	return c.getJSXElementType(provenance), errors
 }
 
@@ -150,12 +154,29 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	return errors
 }
 
+// JSXAttributeResult holds the result of inferring JSX attributes.
+// It separates special props (key, ref) from regular props.
+type JSXAttributeResult struct {
+	// Regular props (excludes key and ref)
+	PropsType type_system.Type
+	// Type of the key attribute, if provided
+	KeyType type_system.Type
+	// Type of the ref attribute, if provided
+	RefType type_system.Type
+	// Span of the key attribute for error reporting
+	KeySpan *ast.Span
+	// Span of the ref attribute for error reporting
+	RefSpan *ast.Span
+}
+
 // inferJSXAttributes infers the types of JSX attributes and returns an object type
 // representing all the provided attributes. This object type can then be unified
 // with the expected props type for full type checking.
-func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type_system.Type, []Error) {
+// Special props (key, ref) are separated and returned in JSXAttributeResult.
+func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (JSXAttributeResult, []Error) {
 	var errors []Error
 	var elems []type_system.ObjTypeElem
+	var result JSXAttributeResult
 
 	for _, attrElem := range attrs {
 		switch attr := attrElem.(type) {
@@ -190,9 +211,21 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 				valueType = type_system.NewUnknownType(nil)
 			}
 
-			// Add this attribute as a property element
-			prop := type_system.NewPropertyElem(type_system.NewStrKey(attr.Name), valueType)
-			elems = append(elems, prop)
+			// Handle special props: key and ref
+			switch attr.Name {
+			case "key":
+				result.KeyType = valueType
+				span := attr.Span()
+				result.KeySpan = &span
+			case "ref":
+				result.RefType = valueType
+				span := attr.Span()
+				result.RefSpan = &span
+			default:
+				// Regular attribute - add as a property element
+				prop := type_system.NewPropertyElem(type_system.NewStrKey(attr.Name), valueType)
+				elems = append(elems, prop)
+			}
 
 		case *ast.JSXSpreadAttr:
 			// Spread attribute: {...props}
@@ -200,6 +233,8 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 			errors = slices.Concat(errors, spreadErrors)
 
 			// If the spread type is an object, merge its properties
+			// Note: key and ref in spread objects are passed through to regular props
+			// (this matches React's behavior - only explicit key/ref are special)
 			if spreadType != nil {
 				if objType, ok := type_system.Prune(spreadType).(*type_system.ObjectType); ok {
 					elems = append(elems, objType.Elems...)
@@ -210,8 +245,9 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 		}
 	}
 
-	// Return an object type representing all the provided attributes
-	return type_system.NewObjectType(nil, elems), errors
+	// Return an object type representing all the provided attributes (excluding key/ref)
+	result.PropsType = type_system.NewObjectType(nil, elems)
+	return result, errors
 }
 
 // inferJSXChildren type-checks all children of a JSX element and returns the combined children type.
@@ -319,6 +355,72 @@ func (c *Checker) validateChildrenType(
 
 	// Unify actual children type with expected
 	return c.Unify(ctx, childrenType, expectedChildrenType)
+}
+
+// validateSpecialProps validates the special props (key and ref) for a JSX element.
+// - key: must be string | number | null
+// - ref: for intrinsic elements, allowed; for components, requires forwardRef (not fully implemented yet)
+func (c *Checker) validateSpecialProps(ctx Context, attrResult JSXAttributeResult, isIntrinsic bool) []Error {
+	var errors []Error
+
+	// Validate key prop if present
+	if attrResult.KeyType != nil {
+		keyErrors := c.validateKeyProp(ctx, attrResult.KeyType, *attrResult.KeySpan)
+		errors = slices.Concat(errors, keyErrors)
+	}
+
+	// Validate ref prop if present
+	if attrResult.RefType != nil {
+		refErrors := c.validateRefProp(ctx, attrResult.RefType, *attrResult.RefSpan, isIntrinsic)
+		errors = slices.Concat(errors, refErrors)
+	}
+
+	return errors
+}
+
+// validateKeyProp validates that the key prop has an acceptable type.
+// Valid types: string, number, null (and their literal types)
+func (c *Checker) validateKeyProp(ctx Context, keyType type_system.Type, span ast.Span) []Error {
+	// Create the expected type: string | number | null
+	expectedKeyType := type_system.NewUnionType(
+		nil,
+		type_system.NewStrPrimType(nil),
+		type_system.NewNumPrimType(nil),
+		type_system.NewNullType(nil),
+	)
+
+	// Unify the provided key type with the expected type
+	unifyErrors := c.Unify(ctx, keyType, expectedKeyType)
+	if len(unifyErrors) > 0 {
+		// Replace with a more specific error message
+		return []Error{&InvalidKeyPropError{
+			ActualType: keyType,
+			span:       span,
+		}}
+	}
+
+	return nil
+}
+
+// validateRefProp validates the ref prop for a JSX element.
+// For intrinsic elements, ref is allowed and typically refers to the DOM element.
+// For components, ref is only valid if the component uses forwardRef (not fully implemented).
+func (c *Checker) validateRefProp(ctx Context, refType type_system.Type, span ast.Span, isIntrinsic bool) []Error {
+	// For now, we allow ref on intrinsic elements without strict type checking
+	// Full ref type checking would require:
+	// 1. For intrinsic elements: validate against RefObject<HTMLElement> | RefCallback<HTMLElement> | null
+	// 2. For components: check if component uses forwardRef and validate accordingly
+	//
+	// This is a basic implementation that accepts refs without strict validation
+	if isIntrinsic {
+		// Allow refs on intrinsic elements - React handles these
+		return nil
+	}
+
+	// For components, we currently allow refs but don't validate forwardRef usage
+	// A more complete implementation would check if the component type includes forwardRef
+	// For now, we just allow it (permissive behavior)
+	return nil
 }
 
 // normalizeJSXText normalizes whitespace in JSX text content.

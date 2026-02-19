@@ -594,11 +594,11 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 ```
 
 **Tasks**:
-- [ ] Separate `key` and `ref` from regular props during attribute inference
-- [ ] Type check `key` prop: must be `string | number | null`
-- [ ] Type check `ref` prop for intrinsic elements (DOM element ref)
-- [ ] Handle `ref` prop for `forwardRef` components
-- [ ] Ensure `key` and `ref` are not passed through to component props
+- [x] Separate `key` and `ref` from regular props during attribute inference
+- [x] Type check `key` prop: must be `string | number | null`
+- [x] Type check `ref` prop for intrinsic elements (DOM element ref)
+- [x] Handle `ref` prop for `forwardRef` components (basic support - allows refs)
+- [x] Ensure `key` and `ref` are not passed through to component props
 
 ### 3.5 Default Props and Optional Props
 

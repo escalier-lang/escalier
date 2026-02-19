@@ -49,6 +49,7 @@ func (e MissingCustomMatcherError) isError()                {}
 func (e InvalidExtractorTypeError) isError()                {}
 func (e MissingRequiredPropError) isError()                 {}
 func (e UnknownComponentError) isError()                    {}
+func (e InvalidKeyPropError) isError()                      {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -473,6 +474,18 @@ func (e UnknownComponentError) Span() ast.Span {
 }
 func (e UnknownComponentError) Message() string {
 	return "Component '" + e.Name + "' is not defined"
+}
+
+type InvalidKeyPropError struct {
+	ActualType type_system.Type
+	span       ast.Span
+}
+
+func (e InvalidKeyPropError) Span() ast.Span {
+	return e.span
+}
+func (e InvalidKeyPropError) Message() string {
+	return "Invalid 'key' prop type: expected string | number | null, got " + e.ActualType.String()
 }
 
 // TODO: make this a sum type so that different error type can reference other
