@@ -35,8 +35,14 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	errors = slices.Concat(errors, attrErrors)
 
 	// 3. Validate special props (key and ref)
-	specialPropErrors := c.validateSpecialProps(ctx, attrResult, isIntrinsic)
-	errors = slices.Concat(errors, specialPropErrors)
+	if attrResult.KeyType != nil {
+		keyErrors := c.validateKeyProp(ctx, attrResult.KeyType, *attrResult.KeySpan)
+		errors = slices.Concat(errors, keyErrors)
+	}
+	if attrResult.RefType != nil {
+		refErrors := c.validateRefProp(ctx, attrResult.RefType, *attrResult.RefSpan, isIntrinsic)
+		errors = slices.Concat(errors, refErrors)
+	}
 
 	// 4. Unify each provided attribute with the corresponding expected prop type
 	if propsType != nil {
@@ -285,58 +291,16 @@ func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_s
 		}
 	}
 
-	// Compute the combined children type
-	return c.computeChildrenType(childTypes), errors
-}
-
-// computeChildrenType returns the appropriate type for children based on the number of children.
-// - No children: returns nil
-// - Single child: returns the child's type directly
-// - Multiple children: returns a tuple type containing each child's type
-func (c *Checker) computeChildrenType(childTypes []type_system.Type) type_system.Type {
 	switch len(childTypes) {
 	case 0:
-		return nil // No children
+		return nil, errors // No children
 	case 1:
-		return childTypes[0] // Single child: use its type directly
+		return childTypes[0], errors // Single child: use its type directly
 	default:
 		// Multiple children: create a tuple type containing all child types
 		// This allows for more precise type checking than a generic array
-		return type_system.NewTupleType(nil, childTypes...)
+		return type_system.NewTupleType(nil, childTypes...), errors
 	}
-}
-
-// childrenPropInfo holds information about the children prop.
-type childrenPropInfo struct {
-	Type     type_system.Type
-	Optional bool
-	Exists   bool
-}
-
-func (c *Checker) getChildrenPropInfo(propsType type_system.Type) childrenPropInfo {
-	if propsType == nil {
-		return childrenPropInfo{Exists: false}
-	}
-
-	objType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
-	if !ok {
-		return childrenPropInfo{Exists: false}
-	}
-
-	// Look for a 'children' property
-	for _, elem := range objType.Elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "children" {
-				return childrenPropInfo{
-					Type:     prop.Value,
-					Optional: prop.Optional,
-					Exists:   true,
-				}
-			}
-		}
-	}
-
-	return childrenPropInfo{Exists: false}
 }
 
 // validateChildrenType validates the actual children type against the expected children prop type.
@@ -354,12 +318,27 @@ func (c *Checker) validateChildrenType(
 		return nil
 	}
 
-	// Get children prop info (type, optional, exists)
-	childrenPropInfo := c.getChildrenPropInfo(propsType)
+	// Find the 'children' prop in the props type
+	var childrenPropType type_system.Type
+	var childrenPropOptional bool
+	var childrenPropExists bool
+
+	if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "children" {
+					childrenPropType = prop.Value
+					childrenPropOptional = prop.Optional
+					childrenPropExists = true
+					break
+				}
+			}
+		}
+	}
 
 	if childrenType == nil {
 		// No children provided - check if children is required
-		if childrenPropInfo.Exists && !childrenPropInfo.Optional {
+		if childrenPropExists && !childrenPropOptional {
 			// Children prop is required but not provided
 			return []Error{
 				&MissingRequiredPropError{
@@ -372,7 +351,7 @@ func (c *Checker) validateChildrenType(
 		return nil
 	}
 
-	if !childrenPropInfo.Exists {
+	if !childrenPropExists {
 		// Component doesn't specify children type
 		if isIntrinsic {
 			// Intrinsic elements (HTML tags) always allow children
@@ -381,40 +360,14 @@ func (c *Checker) validateChildrenType(
 		// Custom component doesn't have a children prop - report error
 		return []Error{
 			&UnexpectedChildrenError{
-				ComponentName: getComponentName(expr),
+				ComponentName: ast.QualIdentToString(expr.Opening.Name),
 				span:          expr.Span(),
 			},
 		}
 	}
 
 	// Unify actual children type with expected
-	return c.Unify(ctx, childrenType, childrenPropInfo.Type)
-}
-
-// getComponentName extracts the component name from a JSX element expression.
-func getComponentName(expr *ast.JSXElementExpr) string {
-	return ast.QualIdentToString(expr.Opening.Name)
-}
-
-// validateSpecialProps validates the special props (key and ref) for a JSX element.
-// - key: must be string | number | null
-// - ref: for intrinsic elements, allowed; for components, requires forwardRef (not fully implemented yet)
-func (c *Checker) validateSpecialProps(ctx Context, attrResult JSXAttributeResult, isIntrinsic bool) []Error {
-	var errors []Error
-
-	// Validate key prop if present
-	if attrResult.KeyType != nil {
-		keyErrors := c.validateKeyProp(ctx, attrResult.KeyType, *attrResult.KeySpan)
-		errors = slices.Concat(errors, keyErrors)
-	}
-
-	// Validate ref prop if present
-	if attrResult.RefType != nil {
-		refErrors := c.validateRefProp(ctx, attrResult.RefType, *attrResult.RefSpan, isIntrinsic)
-		errors = slices.Concat(errors, refErrors)
-	}
-
-	return errors
+	return c.Unify(ctx, childrenType, childrenPropType)
 }
 
 // validateKeyProp validates that the key prop has an acceptable type.
@@ -592,8 +545,7 @@ func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (t
 		return propType, errors
 
 	default:
-		// Unknown tag name structure - should not happen
-		return nil, nil
+		panic("unexpected tag name type in resolveJSXComponentType")
 	}
 }
 
