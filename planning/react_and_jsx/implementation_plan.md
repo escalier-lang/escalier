@@ -744,15 +744,544 @@ testdata/jsx/phase3/
 
 **Goal**: Use real React types from `@types/react`.
 
-### 4.1 Load React Type Definitions
+### 4.1 Resolve `@types/react` Package Location
 
-The compiler already has infrastructure for loading TypeScript type definitions via the package registry. For JSX support, the compiler will **automatically load `@types/react` types** when JSX syntax is detected, without requiring an explicit import from the developer.
+Before loading type definitions, the compiler must locate the `@types/react` package on disk. This follows Node.js module resolution conventions.
+
+**Resolution algorithm**:
+
+1. Starting from the source file's directory, look for `node_modules/@types/react`
+2. Walk up parent directories, checking each `node_modules/@types/react`
+3. Stop when found or when reaching the filesystem root
+
+```go
+// ResolveTypesPackage finds the @types package for a given module name.
+// Returns the path to the package directory, or empty string if not found.
+// This is a standalone function (not a method) for simplicity.
+func ResolveTypesPackage(moduleName string, fromDir string) (string, error) {
+    typesPackage := "@types/" + moduleName
+
+    dir := fromDir
+    for {
+        candidate := filepath.Join(dir, "node_modules", typesPackage)
+        if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+            return candidate, nil
+        }
+
+        parent := filepath.Dir(dir)
+        if parent == dir {
+            // Reached filesystem root
+            return "", fmt.Errorf("@types/%s not found", moduleName)
+        }
+        dir = parent
+    }
+}
+```
+
+**Finding the entry point `.d.ts` file**:
+
+Once the package directory is found, determine which `.d.ts` file to load:
+
+1. Read `package.json` from the package directory
+2. Check for `types` or `typings` field → use that file
+3. If not present, check for `main` field and replace extension with `.d.ts`
+4. Fall back to `index.d.ts`
+
+```go
+// GetTypesEntryPoint returns the main .d.ts file for a types package.
+// Returns an error if the resolved entry point file does not exist.
+// This is a standalone function (not a method) for simplicity.
+func GetTypesEntryPoint(packageDir string) (string, error) {
+    pkgJsonPath := filepath.Join(packageDir, "package.json")
+
+    data, err := os.ReadFile(pkgJsonPath)
+    if err != nil {
+        // No package.json, try index.d.ts
+        indexPath := filepath.Join(packageDir, "index.d.ts")
+        if _, statErr := os.Stat(indexPath); statErr != nil {
+            return "", fmt.Errorf("types entry point not found: %s", indexPath)
+        }
+        return indexPath, nil
+    }
+
+    var pkg struct {
+        Types    string                 `json:"types"`
+        Typings  string                 `json:"typings"`
+        Main     string                 `json:"main"`
+        Exports  interface{}            `json:"exports"` // Can be string, object, or nested
+    }
+    if err := json.Unmarshal(data, &pkg); err != nil {
+        return "", err
+    }
+
+    // Priority: exports["types"] > exports["."]["types"] > types > typings > main > index.d.ts
+
+    // Check exports field for types (handles modern package.json exports)
+    if pkg.Exports != nil {
+        if typesPath := resolveExportsTypes(pkg.Exports); typesPath != "" {
+            fullPath := filepath.Join(packageDir, typesPath)
+            if _, statErr := os.Stat(fullPath); statErr != nil {
+                return "", fmt.Errorf("types entry point from exports not found: %s", fullPath)
+            }
+            return fullPath, nil
+        }
+    }
+
+    if pkg.Types != "" {
+        fullPath := filepath.Join(packageDir, pkg.Types)
+        if _, statErr := os.Stat(fullPath); statErr != nil {
+            return "", fmt.Errorf("types entry point not found: %s (from 'types' field)", fullPath)
+        }
+        return fullPath, nil
+    }
+    if pkg.Typings != "" {
+        fullPath := filepath.Join(packageDir, pkg.Typings)
+        if _, statErr := os.Stat(fullPath); statErr != nil {
+            return "", fmt.Errorf("types entry point not found: %s (from 'typings' field)", fullPath)
+        }
+        return fullPath, nil
+    }
+    if pkg.Main != "" {
+        // Strip any JS-type extension (.js, .cjs, .mjs) before appending .d.ts
+        mainWithoutExt := pkg.Main
+        for _, ext := range []string{".mjs", ".cjs", ".js"} {
+            if strings.HasSuffix(mainWithoutExt, ext) {
+                mainWithoutExt = strings.TrimSuffix(mainWithoutExt, ext)
+                break
+            }
+        }
+        dtsMain := mainWithoutExt + ".d.ts"
+        fullPath := filepath.Join(packageDir, dtsMain)
+        if _, statErr := os.Stat(fullPath); statErr != nil {
+            return "", fmt.Errorf("types entry point not found: %s (derived from 'main' field)", fullPath)
+        }
+        return fullPath, nil
+    }
+
+    // Fallback to index.d.ts
+    indexPath := filepath.Join(packageDir, "index.d.ts")
+    if _, statErr := os.Stat(indexPath); statErr != nil {
+        return "", fmt.Errorf("types entry point not found: %s (fallback)", indexPath)
+    }
+    return indexPath, nil
+}
+
+// resolveExportsTypes extracts the types path from package.json exports field.
+// Handles various shapes:
+//   - exports: "./index.d.ts" (string - if ends in .d.ts)
+//   - exports: { "types": "./index.d.ts" }
+//   - exports: { ".": { "types": "./index.d.ts" } }
+//   - exports: { ".": { "import": { "types": "./index.d.ts" }, "require": { "types": "./index.d.ts" } } }
+func resolveExportsTypes(exports interface{}) string {
+    switch e := exports.(type) {
+    case string:
+        // Direct string export - only use if it's a .d.ts file
+        if strings.HasSuffix(e, ".d.ts") {
+            return e
+        }
+        return ""
+    case map[string]interface{}:
+        // Check for direct "types" key
+        if types, ok := e["types"].(string); ok {
+            return types
+        }
+        // Check for "." entry (main entry point)
+        if dot, ok := e["."]; ok {
+            return resolveExportsTypes(dot)
+        }
+        // Check for nested condition maps (import/require/default)
+        for _, key := range []string{"import", "require", "default"} {
+            if nested, ok := e[key]; ok {
+                if result := resolveExportsTypes(nested); result != "" {
+                    return result
+                }
+            }
+        }
+    }
+    return ""
+}
+```
+
+**Tasks**:
+- [ ] Implement `ResolveTypesPackage()` to locate `@types/react` directory
+- [ ] Implement `GetTypesEntryPoint()` to find the main `.d.ts` file
+- [ ] Handle resolution from different starting directories (source file location)
+- [ ] Cache resolved paths to avoid repeated filesystem lookups
+
+### 4.2 Load and Infer TypeScript Definition Files
+
+The existing infrastructure already handles parsing and inferring `.d.ts` files. We can reuse:
+
+- **`loadClassifiedTypeScriptModule()`** in [prelude.go:202-274](internal/checker/prelude.go#L202-L274) - parses `.d.ts` files using `dts_parser`, classifies them into package/global/named modules using `ClassifyDTSFile()`, and converts to AST via `interop.ConvertModule()`
+- **`loadPackageForImport()`** in [infer_import.go:108-231](internal/checker/infer_import.go#L108-L231) - infers modules using `c.InferModule()`, handles global augmentations, and registers in `PackageRegistry`
+
+**Using existing infrastructure for `@types/react`**:
+
+```go
+// LoadReactTypes loads @types/react and injects types into scope.
+// Reuses existing loadClassifiedTypeScriptModule infrastructure.
+func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
+    var errors []Error
+
+    // 1. Resolve @types/react location (new function from 4.1)
+    reactTypesDir, err := resolver.ResolveTypesPackage("react", sourceDir)
+    if err != nil {
+        // Emit warning, not error - fall back to permissive mode
+        return []Error{&Warning{message: "Install @types/react for JSX type checking"}}
+    }
+
+    // 2. Find entry point (new function from 4.1)
+    entryPoint, err := resolver.GetTypesEntryPoint(reactTypesDir)
+    if err != nil {
+        return []Error{&TypesLoadError{pkg: "@types/react", cause: err}}
+    }
+
+    // 3. Check if already loaded (use PackageRegistry for caching)
+    if pkgNs, found := c.PackageRegistry.Lookup(entryPoint); found {
+        // Already loaded - inject into current scope
+        c.injectReactTypes(ctx, pkgNs)
+        return nil
+    }
+
+    // 4. Load and classify using existing infrastructure
+    loadResult, loadErr := loadClassifiedTypeScriptModule(entryPoint)
+    if loadErr != nil {
+        return []Error{&GenericError{
+            message: "Could not load @types/react: " + loadErr.Error(),
+        }}
+    }
+
+    // 5. Process global augmentations (JSX namespace lives here)
+    if loadResult.GlobalModule != nil {
+        globalCtx := Context{
+            Scope:      c.GlobalScope,
+            IsAsync:    false,
+            IsPatMatch: false,
+        }
+        globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
+        errors = append(errors, globalErrors...)
+    }
+
+    // 6. Process package module (React namespace with FC, Component, etc.)
+    var pkgNs *type_system.Namespace
+    if loadResult.PackageModule != nil {
+        pkgNs = type_system.NewNamespace()
+        pkgScope := &Scope{
+            Parent:    c.GlobalScope,
+            Namespace: pkgNs,
+        }
+        pkgCtx := Context{
+            Scope:      pkgScope,
+            IsAsync:    false,
+            IsPatMatch: false,
+        }
+
+        pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
+        errors = append(errors, pkgErrors...)
+    }
+
+    // 6b. Process named modules (e.g., declare module "react" { ... })
+    // Check if there's a "react" named module that should be used as the package namespace
+    if reactModule, ok := loadResult.NamedModules["react"]; ok {
+        if pkgNs == nil {
+            pkgNs = type_system.NewNamespace()
+        }
+        namedScope := &Scope{
+            Parent:    c.GlobalScope,
+            Namespace: pkgNs,
+        }
+        namedCtx := Context{
+            Scope:      namedScope,
+            IsAsync:    false,
+            IsPatMatch: false,
+        }
+        namedErrors := c.InferModule(namedCtx, reactModule)
+        errors = append(errors, namedErrors...)
+    }
+
+    // 7. Always register in PackageRegistry for caching (even if partially populated)
+    // This prevents re-parsing on subsequent calls
+    if pkgNs == nil {
+        pkgNs = type_system.NewNamespace() // Empty namespace for caching
+    }
+    c.PackageRegistry.Register(entryPoint, pkgNs)
+
+    // 8. Inject types into current scope
+    c.injectReactTypes(ctx, pkgNs)
+
+    return errors
+}
+
+// injectReactTypes adds React types to the current scope.
+func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) {
+    // React namespace is available as a value (for React.createElement, etc.)
+    if pkgNs != nil {
+        ctx.Scope.Namespace.SetNamespace("React", pkgNs)
+    }
+
+    // JSX namespace should already be in GlobalScope from global augmentations
+    // It's accessible via ctx.Scope since GlobalScope is the parent
+}
+```
+
+**New error types** (add to `internal/checker/error.go`):
+
+```go
+// Warning represents a non-fatal diagnostic that doesn't block compilation.
+type Warning struct {
+    message string
+    span    ast.Span
+}
+
+func (w *Warning) Error() string   { return w.message }
+func (w *Warning) Message() string { return w.message }
+func (w *Warning) Span() ast.Span  { return w.span }
+func (w *Warning) IsWarning() bool { return true }
+
+// TypesLoadError indicates a failure to load type definitions.
+type TypesLoadError struct {
+    pkg   string
+    cause error
+    span  ast.Span
+}
+
+func (e *TypesLoadError) Error() string {
+    return fmt.Sprintf("failed to load types for %s: %v", e.pkg, e.cause)
+}
+func (e *TypesLoadError) Message() string { return e.Error() }
+func (e *TypesLoadError) Span() ast.Span  { return e.span }
+```
+
+**Add Warnings field to Checker struct** (in `internal/checker/checker.go`):
+
+```go
+type Checker struct {
+    // ... existing fields ...
+    Warnings []*Warning // Accumulated warnings (non-fatal diagnostics)
+}
+```
+
+**Helper to separate warnings from errors** (add to `internal/checker/checker.go`):
+
+```go
+// accumulateWarnings separates warnings from errors.
+// Warnings are appended to c.Warnings; non-warning errors are returned.
+func (c *Checker) accumulateWarnings(errs []Error) []Error {
+    var nonWarnings []Error
+    for _, err := range errs {
+        if w, ok := err.(*Warning); ok {
+            c.Warnings = append(c.Warnings, w)
+        } else {
+            nonWarnings = append(nonWarnings, err)
+        }
+    }
+    return nonWarnings
+}
+```
+
+**Key differences from `loadPackageForImport()`**:
+
+1. Uses `ResolveTypesPackage()` instead of `resolveImport()` to find `@types/*` packages
+2. Injects types directly into scope without requiring an import statement
+3. The JSX namespace comes from `declare global` blocks in `@types/react`
+
+**Handling `/// <reference types="..." />` directives**:
+
+`@types/react` may include reference directives like `/// <reference types="scheduler" />`.
+These need to be followed to load dependent type packages.
+
+**Add `ReferenceTypes` field to `LoadedPackageResult`** (in `internal/checker/prelude.go`):
+
+```go
+// ReferenceDirective represents a /// <reference types="..." /> directive.
+type ReferenceDirective struct {
+    Path string // The referenced package name (e.g., "scheduler")
+}
+
+type LoadedPackageResult struct {
+    // ... existing fields ...
+
+    // ReferenceTypes contains parsed /// <reference types="..." /> directives.
+    // These should be followed to load dependent type packages.
+    ReferenceTypes []ReferenceDirective
+}
+```
+
+The `dts_parser` should extract reference directives during parsing and populate
+this field. The `loadClassifiedTypeScriptModule` function should pass them through.
+
+**Processing reference directives in LoadReactTypes**:
+
+```go
+// In LoadReactTypes, after step 7 (register in PackageRegistry), process references.
+// This must happen AFTER registration to prevent infinite loops on circular refs.
+
+// 9. Process reference type directives (e.g., /// <reference types="scheduler" />)
+for _, ref := range loadResult.ReferenceTypes {
+    // Check if already loaded to prevent circular references
+    // Use a composite key: we don't know the exact path yet, so check by package name
+    refTypesDir, err := resolver.ResolveTypesPackage(ref.Path, sourceDir)
+    if err != nil {
+        // Reference not found - emit warning but continue
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Referenced types package %q not found", ref.Path),
+        })
+        continue
+    }
+
+    refEntryPoint, err := resolver.GetTypesEntryPoint(refTypesDir)
+    if err != nil {
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Could not find entry point for %q: %v", ref.Path, err),
+        })
+        continue
+    }
+
+    // Check PackageRegistry to avoid re-loading (and circular refs)
+    if _, found := c.PackageRegistry.Lookup(refEntryPoint); found {
+        continue // Already loaded
+    }
+
+    // Recursively load the referenced types package
+    // Note: This is a simplified approach - for full support, factor out
+    // the loading logic into a shared helper that both LoadReactTypes and
+    // this loop can use.
+    refLoadResult, loadErr := loadClassifiedTypeScriptModule(refEntryPoint)
+    if loadErr != nil {
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Could not load referenced types %q: %v", ref.Path, loadErr),
+        })
+        continue
+    }
+
+    // Process global augmentations from the referenced package
+    if refLoadResult.GlobalModule != nil {
+        globalCtx := Context{
+            Scope:      c.GlobalScope,
+            IsAsync:    false,
+            IsPatMatch: false,
+        }
+        globalErrors := c.InferModule(globalCtx, refLoadResult.GlobalModule)
+        errors = append(errors, globalErrors...)
+    }
+
+    // Register the referenced package to prevent re-loading
+    refNs := type_system.NewNamespace()
+    if refLoadResult.PackageModule != nil {
+        refScope := &Scope{Parent: c.GlobalScope, Namespace: refNs}
+        refCtx := Context{Scope: refScope, IsAsync: false, IsPatMatch: false}
+        refErrors := c.InferModule(refCtx, refLoadResult.PackageModule)
+        errors = append(errors, refErrors...)
+    }
+    c.PackageRegistry.Register(refEntryPoint, refNs)
+}
+```
+
+**Note on package location**: `ResolveTypesPackage` and `GetTypesEntryPoint` are
+defined as standalone functions in `internal/resolver/types_resolver.go`. All call
+sites use the `resolver.` package qualifier for consistency.
+
+**Tasks**:
+- [ ] Implement `LoadReactTypes()` using existing `loadClassifiedTypeScriptModule()`
+- [ ] Implement `injectReactTypes()` to add React/JSX types to scope
+- [ ] Handle `declare global` blocks (already supported by `loadClassifiedTypeScriptModule`)
+- [ ] Handle `declare module "react"` named modules in addition to PackageModule
+- [ ] Cache loaded modules in `PackageRegistry` to avoid re-parsing
+- [ ] Add `ReferenceDirective` type and `ReferenceTypes` field to `LoadedPackageResult`
+- [ ] Update `dts_parser` to extract `/// <reference types="..." />` directives
+- [ ] Update `loadClassifiedTypeScriptModule()` to populate `ReferenceTypes` field
+- [ ] Handle `/// <reference types="..." />` directives to load dependent types
+- [ ] Guard against circular references via `PackageRegistry.Lookup()` checks
+- [ ] Add `Warnings` field to Checker struct for non-fatal diagnostics
+
+### 4.3 Automatic Loading for JSX Files
+
+The compiler will **automatically load `@types/react` types** when JSX syntax is detected, without requiring an explicit import from the developer.
 
 **Implementation approach**:
 - During parsing or early checking, detect if the file contains JSX syntax
 - If JSX is present, automatically load `@types/react` types into the module's scope
 - The `JSX` namespace and `React` types become implicitly available
 - This is similar to TypeScript's behavior where JSX types are resolved based on compiler configuration
+
+**Detection of JSX usage**:
+
+```go
+// JSXDetector implements ast.Visitor to detect JSX syntax in AST nodes.
+// Embeds DefaultVisitor to inherit no-op implementations of all Enter*/Exit* methods.
+// Using the Visitor pattern ensures we catch JSX nested in any expression,
+// including ternaries, closures, and method chains.
+type JSXDetector struct {
+    ast.DefaultVisitor
+    Found bool
+}
+
+// EnterExpr is called for each expression node during traversal.
+// Returns false to stop traversal when JSX is found, true to continue.
+func (d *JSXDetector) EnterExpr(e ast.Expr) bool {
+    if d.Found {
+        return false // Stop traversal once JSX is found
+    }
+    switch e.(type) {
+    case *ast.JSXElementExpr, *ast.JSXFragmentExpr:
+        d.Found = true
+        return false // No need to traverse children
+    }
+    return true // Continue traversing children
+}
+
+// hasJSXSyntax checks if an AST module contains any JSX expressions.
+// Iterates over module.Namespaces and traverses each declaration using Accept.
+func hasJSXSyntax(module *ast.Module) bool {
+    detector := &JSXDetector{}
+
+    // Iterate over all namespaces in the module
+    module.Namespaces.Scan(func(name string, ns *ast.Namespace) bool {
+        if detector.Found {
+            return false // Stop scanning namespaces
+        }
+        // Traverse each declaration in the namespace
+        for _, decl := range ns.Decls {
+            decl.Accept(detector)
+            if detector.Found {
+                return false // Stop scanning namespaces
+            }
+        }
+        return true // Continue scanning namespaces
+    })
+
+    return detector.Found
+}
+```
+
+**Integration with checker**:
+
+The actual integration point depends on the checker's structure. The checker likely processes
+modules via `InferModule`, so JSX detection should happen early in that flow:
+
+```go
+// In InferModule or a similar entry point
+func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
+    var errors []Error
+
+    // Auto-load React types if JSX is present (check once per module)
+    if hasJSXSyntax(module) {
+        // Get source directory from the first file in the module.
+        // ast.Module has Files []*File where each File has a Path field.
+        var sourceDir string
+        if len(module.Files) > 0 {
+            sourceDir = filepath.Dir(module.Files[0].Path)
+        } else {
+            // Fallback: use current working directory if no files (shouldn't happen)
+            sourceDir, _ = os.Getwd()
+        }
+        loadErrors := c.LoadReactTypes(ctx, sourceDir)
+        errors = append(errors, c.accumulateWarnings(loadErrors)...)
+    }
+
+    // ... continue with normal inference ...
+}
+```
 
 **Fallback behavior when `@types/react` is unavailable**:
 - If `@types/react` is not installed, the compiler should emit a warning (not an error)
@@ -761,38 +1290,198 @@ The compiler already has infrastructure for loading TypeScript type definitions 
 - The warning message should suggest: "Install @types/react for JSX type checking"
 
 **Tasks**:
-- [ ] Detect JSX usage in source files (can check AST for JSX nodes)
-- [ ] Automatically load `@types/react` types when JSX is detected
+- [ ] Implement `hasJSXSyntax()` to detect JSX in AST
+- [ ] Integrate JSX detection into `InferModule()` or appropriate entry point
+- [ ] Call `LoadReactTypes()` automatically when JSX is detected
 - [ ] Inject `JSX` namespace and `React` types into scope without explicit import
-- [ ] Map React types to Escalier type system
-- [ ] Handle `React.FC`, `React.Component` types
 - [ ] Implement graceful fallback when `@types/react` is missing (warn + permissive typing)
 
-### 4.2 JSX.Element Type
+### 4.4 JSX.Element Type
+
+Once React types are loaded, the checker can resolve proper JSX types.
 
 ```go
-func (c *Checker) getJSXElementType(provenance *ast.NodeProvenance) type_system.Type {
+func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance) type_system.Type {
     // Try to resolve JSX.Element from React types
-    jsxNamespace := ctx.Scope.getNamespace("JSX")
-    if jsxNamespace != nil {
-        if elemType := jsxNamespace.GetTypeAlias("Element"); elemType != nil {
-            return elemType.Type
-        }
+    // JSX namespace is in GlobalScope (from declare global), so check there first
+    // then fall back to checking the current scope chain
+    var jsxNamespace *type_system.Namespace
+    var found bool
+
+    // Check GlobalScope first (JSX is typically a global namespace)
+    if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
+        jsxNamespace, found = c.GlobalScope.Namespace.GetNamespace("JSX")
+    }
+
+    // Fall back to current scope chain if not in GlobalScope
+    if !found || jsxNamespace == nil {
+        jsxNamespace, found = ctx.Scope.Namespace.GetNamespace("JSX")
+    }
+
+    if !found || jsxNamespace == nil {
+        // Fallback: use a placeholder type
+        return type_system.NewObjectType(provenance, nil)
+    }
+
+    // Look up Element in the namespace's Types map (which stores *TypeAlias values)
+    if elementAlias, ok := jsxNamespace.Types["Element"]; ok {
+        // Return the underlying type from the TypeAlias
+        return elementAlias.Type
     }
 
     // Fallback: use a placeholder type
     return type_system.NewObjectType(provenance, nil)
 }
+
+func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
+    // Try to resolve React.ReactNode for children types
+    // React namespace may be in GlobalScope (if injected globally) or in current scope
+    var reactNamespace *type_system.Namespace
+    var found bool
+
+    // Check GlobalScope first (React may be injected globally by LoadReactTypes)
+    if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
+        reactNamespace, found = c.GlobalScope.Namespace.GetNamespace("React")
+    }
+
+    // Fall back to current scope chain if not in GlobalScope
+    if !found || reactNamespace == nil {
+        reactNamespace, found = ctx.Scope.Namespace.GetNamespace("React")
+    }
+
+    if !found || reactNamespace == nil {
+        // Fallback: allow any type for children
+        return type_system.UnknownType
+    }
+
+    // Look up ReactNode in the namespace's Types map (which stores *TypeAlias values)
+    if reactNodeAlias, ok := reactNamespace.Types["ReactNode"]; ok {
+        // Return the underlying type from the TypeAlias
+        return reactNodeAlias.Type
+    }
+
+    // Fallback: allow any type for children
+    return type_system.UnknownType
+}
+
+// computeChildrenType determines the type for JSX children.
+// Accepts ctx to resolve React.ReactNode from loaded types.
+func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
+    if len(childTypes) == 0 {
+        return nil // No children
+    }
+    if len(childTypes) == 1 {
+        return childTypes[0]
+    }
+    // Multiple children: wrap in array or use ReactNode union
+    // For now, return a union of all child types
+    // A more complete implementation would use React.ReactNode
+    expectedChildType := c.getReactNodeType(ctx)
+    if expectedChildType != type_system.UnknownType {
+        // Validate each child against ReactNode
+        // For now, just return the expected type
+        return expectedChildType
+    }
+    // Fallback: return union of child types
+    return type_system.NewUnionType(nil, childTypes)
+}
+```
+
+**Call site updates required**:
+
+Adding `ctx Context` parameters to `getJSXElementType`, `getReactNodeType`, and `computeChildrenType` requires updating their call sites:
+
+1. `inferJSXElement()` already has `ctx` - update call: `c.getJSXElementType(ctx, provenance)`
+2. `computeChildrenType(ctx, childTypes)` - now accepts `ctx Context` as first parameter
+3. `inferJSXChildren()` needs to pass `ctx` to `computeChildrenType(ctx, childTypes)`
+4. Any other callers of these functions need `ctx` threaded through
+
+Example call site in `inferJSXChildren`:
+```go
+func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) ([]type_system.Type, []Error) {
+    var childTypes []type_system.Type
+    var errors []Error
+    // ... infer each child ...
+    return childTypes, errors
+}
+
+// In inferJSXElement:
+childTypes, childErrors := c.inferJSXChildren(ctx, element.Children)
+errors = append(errors, childErrors...)
+childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
 ```
 
 **Tasks**:
-- [ ] Implement `getJSXElementType()` - resolve JSX.Element
-- [ ] Handle case where React types aren't available
-- [ ] Support `React.ReactNode` for children types
+- [ ] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
+- [ ] Implement `getReactNodeType()` - resolve React.ReactNode for children
+- [ ] Update `computeChildrenType()` signature to accept `ctx Context`
+- [ ] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
+- [ ] Handle case where React types aren't available (use fallback types)
+- [ ] Map `React.FC`, `React.Component` types to Escalier type-system
 
-### 4.3 Tests for Phase 4
+### 4.5 Tests for Phase 4
 
-**Unit Tests** (add to `internal/checker/infer_jsx_test.go`)
+**Unit Tests for Resolution** (new file: `internal/resolver/types_resolver_test.go`)
+
+```go
+func TestResolveTypesPackage(t *testing.T) {
+    // Test: Find @types/react in node_modules
+    // Setup: Create temp directory with node_modules/@types/react
+    // Expected: Returns correct path to package directory
+}
+
+func TestResolveTypesPackageWalkUp(t *testing.T) {
+    // Test: Find @types/react in parent directory's node_modules
+    // Setup: Source file in nested directory, @types/react in root node_modules
+    // Expected: Walks up and finds the package
+}
+
+func TestResolveTypesPackageNotFound(t *testing.T) {
+    // Test: @types/react not installed
+    // Expected: Returns error, not panic
+}
+
+func TestGetTypesEntryPointFromTypes(t *testing.T) {
+    // Test: package.json has "types" field
+    // Expected: Returns path specified in "types"
+}
+
+func TestGetTypesEntryPointFromTypings(t *testing.T) {
+    // Test: package.json has "typings" field (older convention)
+    // Expected: Returns path specified in "typings"
+}
+
+func TestGetTypesEntryPointFallback(t *testing.T) {
+    // Test: package.json has no types field
+    // Expected: Returns index.d.ts
+}
+
+func TestGetTypesEntryPointFromExports(t *testing.T) {
+    // Test: package.json has exports field with types
+    // Input: { "exports": { ".": { "types": "./dist/index.d.ts" } } }
+    // Expected: Returns path specified in exports
+}
+
+func TestGetTypesEntryPointFromExportsNested(t *testing.T) {
+    // Test: package.json has nested exports with import/require conditions
+    // Input: { "exports": { ".": { "import": { "types": "./esm/index.d.ts" } } } }
+    // Expected: Returns types path from nested condition
+}
+
+func TestGetTypesEntryPointFromMain(t *testing.T) {
+    // Test: package.json has main field with various extensions
+    // Input: { "main": "./dist/index.cjs" }
+    // Expected: Returns ./dist/index.d.ts (strips .cjs, adds .d.ts)
+}
+
+func TestGetTypesEntryPointFileNotFound(t *testing.T) {
+    // Test: package.json points to non-existent file
+    // Input: { "types": "./missing.d.ts" }
+    // Expected: Returns descriptive error mentioning the missing file
+}
+```
+
+**Unit Tests for React Type Loading** (add to `internal/checker/tests/jsx_test.go`)
 
 ```go
 func TestJSXElementTypeResolution(t *testing.T) {
@@ -819,6 +1508,11 @@ func TestFallbackWithoutReactTypes(t *testing.T) {
     // Test: JSX without @types/react installed
     // Expected: Warning emitted, permissive typing allows compilation
 }
+
+func TestAutoLoadReactTypesForJSX(t *testing.T) {
+    // Test: File with JSX automatically loads @types/react
+    // Expected: JSX namespace available without explicit import
+}
 ```
 
 **Integration Test Fixtures**
@@ -828,13 +1522,17 @@ testdata/jsx/phase4/
 ├── jsx_element_type.esc            # Verify return type is JSX.Element
 ├── react_fc_component.esc          # React.FC<Props> component
 ├── react_node_children.esc         # Children typed as ReactNode
+├── auto_load_types.esc             # JSX without explicit import (types auto-loaded)
 └── no_react_types/
     └── permissive_fallback.esc     # Should compile with warning
 ```
 
 **Tasks**:
+- [ ] Create `internal/resolver/types_resolver_test.go` for resolution tests
+- [ ] Add tests for `LoadReactTypes()` integration
 - [ ] Add tests verifying JSX.Element type resolution
 - [ ] Add tests for React.FC and React.Component types
+- [ ] Add tests for automatic type loading when JSX is detected
 - [ ] Add tests for fallback behavior without @types/react
 - [ ] Create `testdata/jsx/phase4/` integration test fixtures
 
@@ -1364,6 +2062,9 @@ func BenchmarkJSXCodegen(b *testing.B) {
 | `internal/codegen/jsx_test.go` | Code generator unit tests | ✅ Created |
 | `internal/codegen/__snapshots__/jsx_test.snap` | Codegen snapshot test expectations | ✅ Created |
 | `internal/parser/__snapshots__/jsx_test.snap` | Parser snapshot test expectations | ✅ Created |
+| `internal/resolver/types_resolver.go` | Resolution of `@types/*` packages from node_modules | Planned (Phase 4) |
+| `internal/resolver/types_resolver_test.go` | Tests for types package resolution | Planned (Phase 4) |
+| `internal/checker/react_types.go` | `LoadReactTypes()` and `injectReactTypes()` for auto-loading React types | Planned (Phase 4) |
 
 ### New Test Fixtures
 
@@ -1475,10 +2176,13 @@ Phase 8 (Final Verification)
 - [ ] Optional props don't require values
 
 ### Phase 4 Complete When:
-- [ ] `@types/react` loads automatically for JSX files
+- [ ] `@types/react` package can be resolved from `node_modules/@types/react`
+- [ ] `.d.ts` entry point file is correctly identified from `package.json`
+- [ ] `.d.ts` files load via existing `loadClassifiedTypeScriptModule()` infrastructure
+- [ ] `@types/react` loads automatically for JSX files (no explicit import needed)
 - [ ] `JSX.Element` type is resolved from React types
 - [ ] `React.FC` and `React.Component` types work
-- [ ] Graceful fallback when `@types/react` is missing
+- [ ] Graceful fallback when `@types/react` is missing (warning + permissive mode)
 
 ### Phase 5 Complete When:
 - [ ] All JSX syntax forms compile correctly
