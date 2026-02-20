@@ -798,15 +798,24 @@ func (r *Resolver) GetTypesEntryPoint(packageDir string) (string, error) {
     }
 
     var pkg struct {
-        Types    string `json:"types"`
-        Typings  string `json:"typings"`
-        Main     string `json:"main"`
+        Types    string                 `json:"types"`
+        Typings  string                 `json:"typings"`
+        Main     string                 `json:"main"`
+        Exports  interface{}            `json:"exports"` // Can be string, object, or nested
     }
     if err := json.Unmarshal(data, &pkg); err != nil {
         return "", err
     }
 
-    // Priority: types > typings > main with .d.ts extension > index.d.ts
+    // Priority: exports["types"] > exports["."]["types"] > types > typings > main > index.d.ts
+
+    // Check exports field for types (handles modern package.json exports)
+    if pkg.Exports != nil {
+        if typesPath := resolveExportsTypes(pkg.Exports); typesPath != "" {
+            return filepath.Join(packageDir, typesPath), nil
+        }
+    }
+
     if pkg.Types != "" {
         return filepath.Join(packageDir, pkg.Types), nil
     }
@@ -819,6 +828,41 @@ func (r *Resolver) GetTypesEntryPoint(packageDir string) (string, error) {
     }
 
     return filepath.Join(packageDir, "index.d.ts"), nil
+}
+
+// resolveExportsTypes extracts the types path from package.json exports field.
+// Handles various shapes:
+//   - exports: "./index.d.ts" (string - if ends in .d.ts)
+//   - exports: { "types": "./index.d.ts" }
+//   - exports: { ".": { "types": "./index.d.ts" } }
+//   - exports: { ".": { "import": { "types": "./index.d.ts" }, "require": { "types": "./index.d.ts" } } }
+func resolveExportsTypes(exports interface{}) string {
+    switch e := exports.(type) {
+    case string:
+        // Direct string export - only use if it's a .d.ts file
+        if strings.HasSuffix(e, ".d.ts") {
+            return e
+        }
+        return ""
+    case map[string]interface{}:
+        // Check for direct "types" key
+        if types, ok := e["types"].(string); ok {
+            return types
+        }
+        // Check for "." entry (main entry point)
+        if dot, ok := e["."]; ok {
+            return resolveExportsTypes(dot)
+        }
+        // Check for nested condition maps (import/require/default)
+        for _, key := range []string{"import", "require", "default"} {
+            if nested, ok := e[key]; ok {
+                if result := resolveExportsTypes(nested); result != "" {
+                    return result
+                }
+            }
+        }
+    }
+    return ""
 }
 ```
 
@@ -842,14 +886,14 @@ The existing infrastructure already handles parsing and inferring `.d.ts` files.
 // Reuses existing loadClassifiedTypeScriptModule infrastructure.
 func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
     // 1. Resolve @types/react location (new function from 4.1)
-    reactTypesDir, err := ResolveTypesPackage("react", sourceDir)
+    reactTypesDir, err := c.resolver.ResolveTypesPackage("react", sourceDir)
     if err != nil {
         // Emit warning, not error - fall back to permissive mode
         return []Error{&Warning{Message: "Install @types/react for JSX type checking"}}
     }
 
     // 2. Find entry point (new function from 4.1)
-    entryPoint, err := GetTypesEntryPoint(reactTypesDir)
+    entryPoint, err := c.resolver.GetTypesEntryPoint(reactTypesDir)
     if err != nil {
         return []Error{&TypesLoadError{Package: "@types/react", Cause: err}}
     }
@@ -1015,11 +1059,17 @@ func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance)
 
 func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
     // Try to resolve React.ReactNode for children types
-    reactNamespace := ctx.Scope.GetValue("React")
-    if reactNamespace != nil {
-        if nodeType := reactNamespace.GetType("ReactNode"); nodeType != nil {
-            return nodeType
-        }
+    // Use ctx.Scope.Namespace.GetNamespace to get the React namespace
+    reactNamespace, found := ctx.Scope.Namespace.GetNamespace("React")
+    if !found || reactNamespace == nil {
+        // Fallback: allow any type for children
+        return type_system.UnknownType
+    }
+
+    // Look up ReactNode in the namespace's Types map (which stores *TypeAlias values)
+    if reactNodeAlias, ok := reactNamespace.Types["ReactNode"]; ok {
+        // Return the underlying type from the TypeAlias
+        return reactNodeAlias.Type
     }
 
     // Fallback: allow any type for children
