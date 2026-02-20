@@ -1266,8 +1266,15 @@ func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
 
     // Auto-load React types if JSX is present (check once per module)
     if hasJSXSyntax(module) {
-        // Use the module's source path to resolve @types/react
-        sourceDir := filepath.Dir(module.Source.Path)
+        // Get source directory from the first file in the module.
+        // ast.Module has Files []*File where each File has a Path field.
+        var sourceDir string
+        if len(module.Files) > 0 {
+            sourceDir = filepath.Dir(module.Files[0].Path)
+        } else {
+            // Fallback: use current working directory if no files (shouldn't happen)
+            sourceDir, _ = os.Getwd()
+        }
         loadErrors := c.LoadReactTypes(ctx, sourceDir)
         errors = append(errors, c.accumulateWarnings(loadErrors)...)
     }
@@ -1283,7 +1290,7 @@ func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
 - The warning message should suggest: "Install @types/react for JSX type checking"
 
 **Tasks**:
-- [ ] Implement `hasJSXSyntax()` and `containsJSX()` to detect JSX in AST
+- [ ] Implement `hasJSXSyntax()` to detect JSX in AST
 - [ ] Integrate JSX detection into `InferModule()` or appropriate entry point
 - [ ] Call `LoadReactTypes()` automatically when JSX is detected
 - [ ] Inject `JSX` namespace and `React` types into scope without explicit import
@@ -1328,8 +1335,20 @@ func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance)
 
 func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
     // Try to resolve React.ReactNode for children types
-    // Use ctx.Scope.Namespace.GetNamespace to get the React namespace
-    reactNamespace, found := ctx.Scope.Namespace.GetNamespace("React")
+    // React namespace may be in GlobalScope (if injected globally) or in current scope
+    var reactNamespace *type_system.Namespace
+    var found bool
+
+    // Check GlobalScope first (React may be injected globally by LoadReactTypes)
+    if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
+        reactNamespace, found = c.GlobalScope.Namespace.GetNamespace("React")
+    }
+
+    // Fall back to current scope chain if not in GlobalScope
+    if !found || reactNamespace == nil {
+        reactNamespace, found = ctx.Scope.Namespace.GetNamespace("React")
+    }
+
     if !found || reactNamespace == nil {
         // Fallback: allow any type for children
         return type_system.UnknownType
@@ -1344,16 +1363,53 @@ func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
     // Fallback: allow any type for children
     return type_system.UnknownType
 }
+
+// computeChildrenType determines the type for JSX children.
+// Accepts ctx to resolve React.ReactNode from loaded types.
+func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
+    if len(childTypes) == 0 {
+        return nil // No children
+    }
+    if len(childTypes) == 1 {
+        return childTypes[0]
+    }
+    // Multiple children: wrap in array or use ReactNode union
+    // For now, return a union of all child types
+    // A more complete implementation would use React.ReactNode
+    expectedChildType := c.getReactNodeType(ctx)
+    if expectedChildType != type_system.UnknownType {
+        // Validate each child against ReactNode
+        // For now, just return the expected type
+        return expectedChildType
+    }
+    // Fallback: return union of child types
+    return type_system.NewUnionType(nil, childTypes)
+}
 ```
 
 **Call site updates required**:
 
-Adding `ctx Context` parameters to `getJSXElementType` and `getReactNodeType` requires updating their call sites:
+Adding `ctx Context` parameters to `getJSXElementType`, `getReactNodeType`, and `computeChildrenType` requires updating their call sites:
 
 1. `inferJSXElement()` already has `ctx` - update call: `c.getJSXElementType(ctx, provenance)`
-2. `computeChildrenType()` needs `ctx Context` parameter added to its signature
+2. `computeChildrenType(ctx, childTypes)` - now accepts `ctx Context` as first parameter
 3. `inferJSXChildren()` needs to pass `ctx` to `computeChildrenType(ctx, childTypes)`
 4. Any other callers of these functions need `ctx` threaded through
+
+Example call site in `inferJSXChildren`:
+```go
+func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) ([]type_system.Type, []Error) {
+    var childTypes []type_system.Type
+    var errors []Error
+    // ... infer each child ...
+    return childTypes, errors
+}
+
+// In inferJSXElement:
+childTypes, childErrors := c.inferJSXChildren(ctx, element.Children)
+errors = append(errors, childErrors...)
+childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
+```
 
 **Tasks**:
 - [ ] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
