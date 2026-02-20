@@ -641,6 +641,14 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 
 	members := make([]ClassMember, 0, 8) // pre-allocate for typical class size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		// Skip any comments before class members (JSDoc, etc.)
+		p.skipComments()
+
+		// Check again for closing brace after skipping comments
+		if p.peek().Type == CloseBrace {
+			break
+		}
+
 		member := p.parseClassMember()
 		if member != nil {
 			members = append(members, member)
@@ -651,8 +659,8 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 			p.skipToNextMember()
 		}
 
-		// Consume optional separator (comma)
-		if p.peek().Type == Comma {
+		// Consume optional separator (semicolon or comma)
+		if p.peek().Type == Semicolon || p.peek().Type == Comma {
 			p.consume()
 		}
 	}

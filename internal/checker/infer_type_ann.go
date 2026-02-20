@@ -218,6 +218,11 @@ func (c *Checker) inferTypeAnn(
 		argType, argErrors := c.inferTypeAnn(ctx, typeAnn.Value)
 		errors = slices.Concat(errors, argErrors)
 		t = type_system.NewRestSpreadType(provenance, argType)
+	case *ast.IntrinsicTypeAnn:
+		// The 'intrinsic' keyword in TypeScript indicates a built-in type
+		// that is handled specially by the compiler. We represent it as an
+		// IntrinsicType which is essentially a placeholder.
+		t = &type_system.IntrinsicType{Name: "intrinsic"}
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}

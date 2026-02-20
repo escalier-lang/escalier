@@ -355,7 +355,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
 	loadResult, err := loadClassifiedTypeScriptModule(filePath)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s", filePath))
+		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", filePath, err))
 	}
 
 	// Process global declarations
