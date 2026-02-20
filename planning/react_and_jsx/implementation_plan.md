@@ -393,10 +393,10 @@ func (c *Checker) getComponentProps(ctx Context, tagName string, expr *ast.JSXEl
 ```
 
 **Tasks**:
-- [ ] Implement `getComponentProps()` - extract props from component type
-- [ ] Handle function components: `fn(props: Props) -> JSX.Element`
-- [ ] Handle member expressions: `<Namespace.Component />`
-- [ ] Report error for unknown components
+- [x] Implement `getComponentProps()` - extract props from component type
+- [x] Handle function components: `fn(props: Props) -> JSX.Element`
+- [x] Handle member expressions: `<Namespace.Component />`
+- [x] Report error for unknown components
 
 ### 3.2 Props Validation
 
@@ -442,11 +442,11 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 ```
 
 **Tasks**:
-- [ ] Implement `inferJSXAttributes()` - build props object type
-- [ ] Handle string attribute values
-- [ ] Handle expression containers `{...}`
-- [ ] Handle boolean shorthand (presence = true)
-- [ ] Handle spread attributes `{...props}`
+- [x] Implement `inferJSXAttributes()` - build props object type
+- [x] Handle string attribute values
+- [x] Handle expression containers `{...}`
+- [x] Handle boolean shorthand (presence = true)
+- [x] Handle spread attributes `{...props}`
 
 ### 3.3 Children Type Checking
 
@@ -527,14 +527,36 @@ func (c *Checker) validateChildrenType(
 ```
 
 **Tasks**:
-- [ ] Implement `inferJSXChildren()` - type check all children and return combined type
-- [ ] Handle text nodes (string type)
-- [ ] Handle expression containers
-- [ ] Handle nested JSX elements
-- [ ] Handle nested fragments
-- [ ] Implement `computeChildrenType()` - single child vs array
-- [ ] Validate children type against component's `children` prop type
-- [ ] Support `React.ReactNode` as the general children type
+- [x] Implement `inferJSXChildren()` - type check all children and return combined type
+- [x] Handle text nodes (string type)
+- [x] Handle expression containers
+- [x] Handle nested JSX elements
+- [x] Handle nested fragments
+- [x] Implement `computeChildrenType()` - single child vs array
+- [x] Validate children type against component's `children` prop type
+- [ ] Support `React.ReactNode` as the general children type (deferred to Phase 4)
+
+**Design Note: Children Type Checking**
+
+**Components must declare a `children` prop to accept children:**
+- If a custom component does not have a `children` prop, passing children to it is an error
+- Intrinsic elements (HTML tags like `<div>`, `<span>`) always allow children
+- This ensures explicit contracts for component children
+
+**Required vs optional children:**
+- If `children` is declared as required (e.g., `children: string`), children must be provided
+- If `children` is declared as optional (e.g., `children?: string`), children are not required
+- Missing required children produce a `MissingRequiredPropError`
+
+**Multiple children produce a tuple type:**
+When a JSX element has multiple children, `computeChildrenType()` returns a tuple type representing the exact types of each child. For example, `<Container>Hello{" "}World</Container>` produces a tuple type `[string, string, string]`.
+
+This means:
+- If `children: string`, only a **single** string child is allowed
+- If a component wants to accept **multiple** children of type `T`, it should declare `children: Array<T>`
+- The tuple type must be assignable to the declared children prop type
+
+This behavior is intentional and provides precise type checking for children.
 
 ### 3.4 Special Props: `key` and `ref`
 
@@ -594,11 +616,11 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (type
 ```
 
 **Tasks**:
-- [ ] Separate `key` and `ref` from regular props during attribute inference
-- [ ] Type check `key` prop: must be `string | number | null`
-- [ ] Type check `ref` prop for intrinsic elements (DOM element ref)
-- [ ] Handle `ref` prop for `forwardRef` components
-- [ ] Ensure `key` and `ref` are not passed through to component props
+- [x] Separate `key` and `ref` from regular props during attribute inference
+- [x] Type check `key` prop: must be `string | number | null`
+- [x] Type check `ref` prop for intrinsic elements (DOM element ref)
+- [x] Handle `ref` prop for `forwardRef` components (basic support - allows refs)
+- [x] Ensure `key` and `ref` are not passed through to component props
 
 ### 3.5 Default Props and Optional Props
 
@@ -643,9 +665,9 @@ func (c *Checker) validateRequiredProps(
 ```
 
 **Tasks**:
-- [ ] Distinguish required vs optional props in component types
-- [ ] Only report missing prop errors for required props
-- [ ] Handle `defaultProps` if encountered (lower priority)
+- [x] Distinguish required vs optional props in component types
+- [x] Only report missing prop errors for required props
+- [ ] Handle `defaultProps` if encountered (lower priority, deferred)
 
 ### 3.6 Tests for Phase 3
 
@@ -710,11 +732,11 @@ testdata/jsx/phase3/
 ```
 
 **Tasks**:
-- [ ] Add component prop validation tests
-- [ ] Add tests for key and ref special props
-- [ ] Add optional vs required prop tests
-- [ ] Add children type validation tests
-- [ ] Create `testdata/jsx/phase3/` integration test fixtures
+- [x] Add component prop validation tests
+- [x] Add tests for key and ref special props
+- [x] Add optional vs required prop tests
+- [x] Add children type validation tests
+- [ ] Create `testdata/jsx/phase3/` integration test fixtures (deferred to future phase)
 
 ---
 
