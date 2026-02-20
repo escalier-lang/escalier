@@ -1088,23 +1088,98 @@ func (c *Checker) accumulateWarnings(errs []Error) []Error {
 **Handling `/// <reference types="..." />` directives**:
 
 `@types/react` may include reference directives like `/// <reference types="scheduler" />`.
-These need to be followed to load dependent type packages:
+These need to be followed to load dependent type packages.
+
+**Add `ReferenceTypes` field to `LoadedPackageResult`** (in `internal/checker/prelude.go`):
 
 ```go
-// In LoadReactTypes, after loading the main file, check for reference directives
-// The dts_parser should extract these during parsing. If loadResult includes
-// reference directives, recursively load those packages:
-for _, ref := range loadResult.ReferenceTypes {
-    // ref.Path might be "scheduler" or "@types/scheduler"
-    refDir, err := ResolveTypesPackage(ref.Path, sourceDir)
-    if err != nil {
-        // Reference not found - this may be optional, log warning
-        continue
-    }
-    // Recursively load the referenced types
-    // (Need to handle circular references via PackageRegistry check)
+// ReferenceDirective represents a /// <reference types="..." /> directive.
+type ReferenceDirective struct {
+    Path string // The referenced package name (e.g., "scheduler")
+}
+
+type LoadedPackageResult struct {
+    // ... existing fields ...
+
+    // ReferenceTypes contains parsed /// <reference types="..." /> directives.
+    // These should be followed to load dependent type packages.
+    ReferenceTypes []ReferenceDirective
 }
 ```
+
+The `dts_parser` should extract reference directives during parsing and populate
+this field. The `loadClassifiedTypeScriptModule` function should pass them through.
+
+**Processing reference directives in LoadReactTypes**:
+
+```go
+// In LoadReactTypes, after step 7 (register in PackageRegistry), process references.
+// This must happen AFTER registration to prevent infinite loops on circular refs.
+
+// 9. Process reference type directives (e.g., /// <reference types="scheduler" />)
+for _, ref := range loadResult.ReferenceTypes {
+    // Check if already loaded to prevent circular references
+    // Use a composite key: we don't know the exact path yet, so check by package name
+    refTypesDir, err := resolver.ResolveTypesPackage(ref.Path, sourceDir)
+    if err != nil {
+        // Reference not found - emit warning but continue
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Referenced types package %q not found", ref.Path),
+        })
+        continue
+    }
+
+    refEntryPoint, err := resolver.GetTypesEntryPoint(refTypesDir)
+    if err != nil {
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Could not find entry point for %q: %v", ref.Path, err),
+        })
+        continue
+    }
+
+    // Check PackageRegistry to avoid re-loading (and circular refs)
+    if _, found := c.PackageRegistry.Lookup(refEntryPoint); found {
+        continue // Already loaded
+    }
+
+    // Recursively load the referenced types package
+    // Note: This is a simplified approach - for full support, factor out
+    // the loading logic into a shared helper that both LoadReactTypes and
+    // this loop can use.
+    refLoadResult, loadErr := loadClassifiedTypeScriptModule(refEntryPoint)
+    if loadErr != nil {
+        c.Warnings = append(c.Warnings, &Warning{
+            message: fmt.Sprintf("Could not load referenced types %q: %v", ref.Path, loadErr),
+        })
+        continue
+    }
+
+    // Process global augmentations from the referenced package
+    if refLoadResult.GlobalModule != nil {
+        globalCtx := Context{
+            Scope:      c.GlobalScope,
+            IsAsync:    false,
+            IsPatMatch: false,
+        }
+        globalErrors := c.InferModule(globalCtx, refLoadResult.GlobalModule)
+        errors = append(errors, globalErrors...)
+    }
+
+    // Register the referenced package to prevent re-loading
+    refNs := type_system.NewNamespace()
+    if refLoadResult.PackageModule != nil {
+        refScope := &Scope{Parent: c.GlobalScope, Namespace: refNs}
+        refCtx := Context{Scope: refScope, IsAsync: false, IsPatMatch: false}
+        refErrors := c.InferModule(refCtx, refLoadResult.PackageModule)
+        errors = append(errors, refErrors...)
+    }
+    c.PackageRegistry.Register(refEntryPoint, refNs)
+}
+```
+
+**Note on package location**: `ResolveTypesPackage` and `GetTypesEntryPoint` are
+defined as standalone functions in `internal/resolver/types_resolver.go`. All call
+sites use the `resolver.` package qualifier for consistency.
 
 **Tasks**:
 - [ ] Implement `LoadReactTypes()` using existing `loadClassifiedTypeScriptModule()`
@@ -1112,7 +1187,11 @@ for _, ref := range loadResult.ReferenceTypes {
 - [ ] Handle `declare global` blocks (already supported by `loadClassifiedTypeScriptModule`)
 - [ ] Handle `declare module "react"` named modules in addition to PackageModule
 - [ ] Cache loaded modules in `PackageRegistry` to avoid re-parsing
+- [ ] Add `ReferenceDirective` type and `ReferenceTypes` field to `LoadedPackageResult`
+- [ ] Update `dts_parser` to extract `/// <reference types="..." />` directives
+- [ ] Update `loadClassifiedTypeScriptModule()` to populate `ReferenceTypes` field
 - [ ] Handle `/// <reference types="..." />` directives to load dependent types
+- [ ] Guard against circular references via `PackageRegistry.Lookup()` checks
 - [ ] Add `Warnings` field to Checker struct for non-fatal diagnostics
 
 ### 4.3 Automatic Loading for JSX Files
@@ -1128,41 +1207,49 @@ The compiler will **automatically load `@types/react` types** when JSX syntax is
 **Detection of JSX usage**:
 
 ```go
-// hasJSXSyntax checks if an AST module contains any JSX expressions.
-// Note: If ast.Walk doesn't exist, implement a simple recursive walker
-// or check the module's statements directly for JSX expressions.
-func hasJSXSyntax(module *ast.Module) bool {
-    for _, stmt := range module.Stmts {
-        if containsJSX(stmt) {
-            return true
-        }
-    }
-    return false
-}
-
 // JSXDetector implements ast.Visitor to detect JSX syntax in AST nodes.
+// Embeds DefaultVisitor to inherit no-op implementations of all Enter*/Exit* methods.
 // Using the Visitor pattern ensures we catch JSX nested in any expression,
 // including ternaries, closures, and method chains.
 type JSXDetector struct {
+    ast.DefaultVisitor
     Found bool
 }
 
-func (d *JSXDetector) Visit(node ast.Node) ast.Visitor {
+// EnterExpr is called for each expression node during traversal.
+// Returns false to stop traversal when JSX is found, true to continue.
+func (d *JSXDetector) EnterExpr(e ast.Expr) bool {
     if d.Found {
-        return nil // Stop traversal once JSX is found
+        return false // Stop traversal once JSX is found
     }
-    switch node.(type) {
+    switch e.(type) {
     case *ast.JSXElementExpr, *ast.JSXFragmentExpr:
         d.Found = true
-        return nil
+        return false // No need to traverse children
     }
-    return d // Continue traversing children
+    return true // Continue traversing children
 }
 
-// containsJSX checks if an AST node contains JSX syntax anywhere in its tree.
-func containsJSX(node ast.Node) bool {
+// hasJSXSyntax checks if an AST module contains any JSX expressions.
+// Iterates over module.Namespaces and traverses each declaration using Accept.
+func hasJSXSyntax(module *ast.Module) bool {
     detector := &JSXDetector{}
-    ast.Walk(detector, node)
+
+    // Iterate over all namespaces in the module
+    module.Namespaces.Scan(func(name string, ns *ast.Namespace) bool {
+        if detector.Found {
+            return false // Stop scanning namespaces
+        }
+        // Traverse each declaration in the namespace
+        for _, decl := range ns.Decls {
+            decl.Accept(detector)
+            if detector.Found {
+                return false // Stop scanning namespaces
+            }
+        }
+        return true // Continue scanning namespaces
+    })
+
     return detector.Found
 }
 ```
