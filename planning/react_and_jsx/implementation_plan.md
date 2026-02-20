@@ -924,14 +924,14 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
     var errors []Error
 
     // 1. Resolve @types/react location (new function from 4.1)
-    reactTypesDir, err := ResolveTypesPackage("react", sourceDir)
+    reactTypesDir, err := resolver.ResolveTypesPackage("react", sourceDir)
     if err != nil {
         // Emit warning, not error - fall back to permissive mode
         return []Error{&Warning{message: "Install @types/react for JSX type checking"}}
     }
 
     // 2. Find entry point (new function from 4.1)
-    entryPoint, err := GetTypesEntryPoint(reactTypesDir)
+    entryPoint, err := resolver.GetTypesEntryPoint(reactTypesDir)
     if err != nil {
         return []Error{&TypesLoadError{pkg: "@types/react", cause: err}}
     }
@@ -1140,31 +1140,30 @@ func hasJSXSyntax(module *ast.Module) bool {
     return false
 }
 
-// containsJSX recursively checks if an AST node contains JSX.
-// This is a simplified check - a full implementation would walk all expressions.
-func containsJSX(node ast.Node) bool {
-    switch n := node.(type) {
-    case *ast.JSXElementExpr, *ast.JSXFragmentExpr:
-        return true
-    case *ast.ExprStmt:
-        return containsJSX(n.Expr)
-    case *ast.VarDecl:
-        if n.Init != nil {
-            return containsJSX(*n.Init)
-        }
-    case *ast.FuncDecl:
-        // Check function body for JSX
-        for _, stmt := range n.Body.Stmts {
-            if containsJSX(stmt) {
-                return true
-            }
-        }
-    case *ast.ReturnStmt:
-        if n.Expr != nil {
-            return containsJSX(*n.Expr)
-        }
+// JSXDetector implements ast.Visitor to detect JSX syntax in AST nodes.
+// Using the Visitor pattern ensures we catch JSX nested in any expression,
+// including ternaries, closures, and method chains.
+type JSXDetector struct {
+    Found bool
+}
+
+func (d *JSXDetector) Visit(node ast.Node) ast.Visitor {
+    if d.Found {
+        return nil // Stop traversal once JSX is found
     }
-    return false
+    switch node.(type) {
+    case *ast.JSXElementExpr, *ast.JSXFragmentExpr:
+        d.Found = true
+        return nil
+    }
+    return d // Continue traversing children
+}
+
+// containsJSX checks if an AST node contains JSX syntax anywhere in its tree.
+func containsJSX(node ast.Node) bool {
+    detector := &JSXDetector{}
+    ast.Walk(detector, node)
+    return detector.Found
 }
 ```
 
@@ -1275,7 +1274,7 @@ Adding `ctx Context` parameters to `getJSXElementType` and `getReactNodeType` re
 - [ ] Update `computeChildrenType()` signature to accept `ctx Context`
 - [ ] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
 - [ ] Handle case where React types aren't available (use fallback types)
-- [ ] Map `React.FC`, `React.Component` types to Escalier type system
+- [ ] Map `React.FC`, `React.Component` types to Escalier type-system
 
 ### 4.5 Tests for Phase 4
 
