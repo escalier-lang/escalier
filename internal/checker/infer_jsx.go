@@ -630,15 +630,6 @@ func (c *Checker) collectPropsFromType(
 	expectedProps *btree.Map[string, type_system.Type],
 	requiredProps *btree.Set[string],
 ) {
-	c.collectPropsFromTypeWithDepth(ctx, t, expectedProps, requiredProps)
-}
-
-func (c *Checker) collectPropsFromTypeWithDepth(
-	ctx Context,
-	t type_system.Type,
-	expectedProps *btree.Map[string, type_system.Type],
-	requiredProps *btree.Set[string],
-) {
 	t = type_system.Prune(t)
 
 	switch typ := t.(type) {
@@ -650,9 +641,10 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 					// Only add if not already present (first definition wins)
 					if _, exists := expectedProps.Get(prop.Name.Str); !exists {
 						expectedProps.Set(prop.Name.Str, prop.Value)
-						if !prop.Optional {
-							requiredProps.Insert(prop.Name.Str)
-						}
+					}
+					// Requiredness should be upgraded if any source marks it required
+					if !prop.Optional {
+						requiredProps.Insert(prop.Name.Str)
 					}
 				}
 			}
@@ -660,16 +652,10 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 
 		// Recursively collect properties from extended interfaces
 		for _, extendsTypeRef := range typ.Extends {
-			c.collectPropsFromTypeWithDepth(ctx, extendsTypeRef, expectedProps, requiredProps)
+			c.collectPropsFromType(ctx, extendsTypeRef, expectedProps, requiredProps)
 		}
 
 	case *type_system.TypeRefType:
-		// Skip DOM element types - they're used as type parameters but shouldn't contribute props
-		typeName := type_system.QualIdentToString(typ.Name)
-		if isDOMElementTypeName(typeName) {
-			return
-		}
-
 		// For TypeRefType, try to resolve the TypeAlias directly first
 		// This handles nominal interfaces that ExpandType won't expand
 		if typ.TypeAlias != nil {
@@ -679,43 +665,19 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 				substitutions := createTypeParamSubstitutions(typ.TypeArgs, typ.TypeAlias.TypeParams)
 				underlyingType = SubstituteTypeParams(underlyingType, substitutions)
 			}
-			c.collectPropsFromTypeWithDepth(ctx, underlyingType, expectedProps, requiredProps)
+			c.collectPropsFromType(ctx, underlyingType, expectedProps, requiredProps)
 		} else {
 			// TypeAlias not set, try ExpandType to resolve it
 			expandedType, _ := c.ExpandType(ctx, typ, 1)
 			if expandedType != typ {
-				c.collectPropsFromTypeWithDepth(ctx, expandedType, expectedProps, requiredProps)
+				c.collectPropsFromType(ctx, expandedType, expectedProps, requiredProps)
 			}
 		}
 
 	case *type_system.IntersectionType:
 		// Collect properties from all parts of the intersection
 		for _, part := range typ.Types {
-			c.collectPropsFromTypeWithDepth(ctx, part, expectedProps, requiredProps)
+			c.collectPropsFromType(ctx, part, expectedProps, requiredProps)
 		}
 	}
-}
-
-// isDOMElementTypeName checks if a type name represents a DOM element type
-// that should not contribute props to JSX elements.
-// These types are used as type parameters (e.g., HTMLDivElement in HTMLAttributes<HTMLDivElement>)
-// but their properties are not valid JSX props.
-func isDOMElementTypeName(name string) bool {
-	// HTML element types
-	if strings.HasPrefix(name, "HTML") && strings.HasSuffix(name, "Element") {
-		return true
-	}
-	// SVG element types
-	if strings.HasPrefix(name, "SVG") && strings.HasSuffix(name, "Element") {
-		return true
-	}
-	// Core DOM types
-	switch name {
-	case "Element", "Node", "Document", "DocumentFragment", "EventTarget",
-		"Window", "Event", "UIEvent", "MouseEvent", "KeyboardEvent",
-		"TouchEvent", "FocusEvent", "InputEvent", "DragEvent", "WheelEvent",
-		"AnimationEvent", "TransitionEvent", "ClipboardEvent", "PointerEvent":
-		return true
-	}
-	return false
 }

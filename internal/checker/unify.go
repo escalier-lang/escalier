@@ -63,6 +63,8 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	return c.unifyWithDepth(ctx, t1, t2, 0)
 }
 
+const maxUnifyDepth = 50
+
 func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
@@ -86,7 +88,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	//
 	// The depth limit stops recursion when types can't be unified after reasonable
 	// expansion attempts, returning a unification error instead of stack overflow.
-	if depth > 50 {
+	if depth > maxUnifyDepth {
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 

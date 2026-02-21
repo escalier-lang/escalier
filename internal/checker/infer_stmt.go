@@ -169,90 +169,33 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	return errors
 }
 
-func (c *Checker) inferTypeDecl(
-	ctx Context,
-	decl *ast.TypeDecl,
-) (*type_system.TypeAlias, []Error) {
-	errors := []Error{}
-
-	// Sort type parameters topologically so dependencies come first for processing
-	sortedTypeParams := ast.SortTypeParamsTopologically(decl.TypeParams)
-
-	// Map to store inferred type params by name (for lookup by declaration order later)
-	typeParamMap := make(map[string]*type_system.TypeParam)
-
-	// Create a context that accumulates type parameters as we process them
-	// This allows later type parameters to reference earlier ones in their constraints
-	paramCtx := ctx
-	paramScope := ctx.Scope.WithNewScope()
-
-	// Process in topologically sorted order (so constraints can reference earlier params)
-	for _, typeParam := range sortedTypeParams {
-		var constraintType type_system.Type
-		var defaultType type_system.Type
-		if typeParam.Constraint != nil {
-			var constraintErrors []Error
-			// Use paramCtx which includes previously defined type parameters
-			constraintType, constraintErrors = c.inferTypeAnn(paramCtx, typeParam.Constraint)
-			errors = slices.Concat(errors, constraintErrors)
-		}
-		if typeParam.Default != nil {
-			var defaultErrors []Error
-			// Use paramCtx which includes previously defined type parameters
-			defaultType, defaultErrors = c.inferTypeAnn(paramCtx, typeParam.Default)
-			errors = slices.Concat(errors, defaultErrors)
-		}
-		typeParamMap[typeParam.Name] = &type_system.TypeParam{
-			Name:       typeParam.Name,
-			Constraint: constraintType,
-			Default:    defaultType,
-		}
-
-		// Add this type parameter to the scope for subsequent parameters
-		typeParamTypeRef := type_system.NewTypeRefType(nil, typeParam.Name, nil)
-		typeParamAlias := &type_system.TypeAlias{
-			Type:       typeParamTypeRef,
-			TypeParams: []*type_system.TypeParam{},
-		}
-		paramScope.SetTypeAlias(typeParam.Name, typeParamAlias)
-
-		// Update the context to include this type parameter
-		paramCtx = Context{
-			Scope:      paramScope,
-			IsAsync:    ctx.IsAsync,
-			IsPatMatch: ctx.IsPatMatch,
-		}
-	}
-
-	// Build final typeParams in DECLARATION order (not sorted order)
-	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-	for i, astParam := range decl.TypeParams {
-		typeParams[i] = typeParamMap[astParam.Name]
-	}
-
-	// Use the context with all type parameters for inferring the type annotation
-	typeCtx := paramCtx
-
-	t, typeErrors := c.inferTypeAnn(typeCtx, decl.TypeAnn)
-	errors = slices.Concat(errors, typeErrors)
-
-	typeAlias := type_system.TypeAlias{
-		Type:       t,
-		TypeParams: typeParams,
-	}
-
-	return &typeAlias, errors
+// TypeParamsResult contains the result of processing type parameters.
+type TypeParamsResult struct {
+	// TypeParams in declaration order (critical for correct substitution)
+	TypeParams []*type_system.TypeParam
+	// Context with all type parameters in scope
+	Ctx Context
+	// Errors collected during processing
+	Errors []Error
 }
 
-func (c *Checker) inferInterface(
+// buildTypeParams processes AST type parameters and returns them in declaration order,
+// along with a context that has all type parameters in scope.
+//
+// This handles:
+// - Topological sorting so constraints can reference earlier params
+// - Inferring constraint and default types
+// - Registering type aliases for each parameter in scope
+// - Optionally registering a "Self" type alias (for interfaces)
+func (c *Checker) buildTypeParams(
 	ctx Context,
-	decl *ast.InterfaceDecl,
-) (*type_system.TypeAlias, []Error) {
-	errors := []Error{}
+	astTypeParams []*ast.TypeParam,
+	selfTypeAlias *type_system.TypeAlias, // optional, pass nil for non-interface types
+) TypeParamsResult {
+	var errors []Error
 
 	// Sort type parameters topologically so dependencies come first for processing
-	sortedTypeParams := ast.SortTypeParamsTopologically(decl.TypeParams)
+	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
 	// Map to store inferred type params by name (for lookup by declaration order later)
 	typeParamMap := make(map[string]*type_system.TypeParam)
@@ -261,14 +204,10 @@ func (c *Checker) inferInterface(
 	// This allows later type parameters to reference earlier ones in their constraints
 	typeCtx := ctx.WithNewScope()
 
-	// Build typeArgs in declaration order for the Self type
-	typeArgs := make([]type_system.Type, len(decl.TypeParams))
-	for i, typeParam := range decl.TypeParams {
-		typeArgs[i] = type_system.NewTypeRefType(nil, typeParam.Name, nil)
+	// Register Self type alias if provided (for interfaces)
+	if selfTypeAlias != nil {
+		typeCtx.Scope.SetTypeAlias("Self", selfTypeAlias)
 	}
-	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...)
-	selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
-	typeCtx.Scope.SetTypeAlias("Self", &selfTypeAlias)
 
 	// Process in topologically sorted order (so constraints can reference earlier params)
 	for _, typeParam := range sortedTypeParams {
@@ -276,13 +215,11 @@ func (c *Checker) inferInterface(
 		var defaultType type_system.Type
 		if typeParam.Constraint != nil {
 			var constraintErrors []Error
-			// Use paramCtx which includes previously defined type parameters
 			constraintType, constraintErrors = c.inferTypeAnn(typeCtx, typeParam.Constraint)
 			errors = slices.Concat(errors, constraintErrors)
 		}
 		if typeParam.Default != nil {
 			var defaultErrors []Error
-			// Use paramCtx which includes previously defined type parameters
 			defaultType, defaultErrors = c.inferTypeAnn(typeCtx, typeParam.Default)
 			errors = slices.Concat(errors, defaultErrors)
 		}
@@ -303,10 +240,52 @@ func (c *Checker) inferInterface(
 
 	// Build final typeParams in DECLARATION order (not sorted order)
 	// This is critical for correct substitution when the type is instantiated
-	typeParams := make([]*type_system.TypeParam, len(decl.TypeParams))
-	for i, astParam := range decl.TypeParams {
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, astParam := range astTypeParams {
 		typeParams[i] = typeParamMap[astParam.Name]
 	}
+
+	return TypeParamsResult{
+		TypeParams: typeParams,
+		Ctx:        typeCtx,
+		Errors:     errors,
+	}
+}
+
+func (c *Checker) inferTypeDecl(
+	ctx Context,
+	decl *ast.TypeDecl,
+) (*type_system.TypeAlias, []Error) {
+	result := c.buildTypeParams(ctx, decl.TypeParams, nil)
+	errors := result.Errors
+
+	t, typeErrors := c.inferTypeAnn(result.Ctx, decl.TypeAnn)
+	errors = slices.Concat(errors, typeErrors)
+
+	typeAlias := type_system.TypeAlias{
+		Type:       t,
+		TypeParams: result.TypeParams,
+	}
+
+	return &typeAlias, errors
+}
+
+func (c *Checker) inferInterface(
+	ctx Context,
+	decl *ast.InterfaceDecl,
+) (*type_system.TypeAlias, []Error) {
+	// Build typeArgs in declaration order for the Self type
+	typeArgs := make([]type_system.Type, len(decl.TypeParams))
+	for i, typeParam := range decl.TypeParams {
+		typeArgs[i] = type_system.NewTypeRefType(nil, typeParam.Name, nil)
+	}
+	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...)
+	selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
+
+	result := c.buildTypeParams(ctx, decl.TypeParams, &selfTypeAlias)
+	errors := result.Errors
+	typeParams := result.TypeParams
+	typeCtx := result.Ctx
 
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)

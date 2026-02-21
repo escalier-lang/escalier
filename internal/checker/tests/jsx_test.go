@@ -271,7 +271,6 @@ func TestJSXElementBasic(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -329,7 +328,6 @@ func TestJSXFragmentBasic(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -399,7 +397,6 @@ func TestJSXInferredTypes(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -482,7 +479,6 @@ func TestJSXComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -557,7 +553,6 @@ func TestIntrinsicElementValidProps(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -620,7 +615,6 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -717,7 +711,6 @@ func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -734,7 +727,7 @@ func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
 			c := NewChecker()
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
-			scope := c.GlobalScope.WithNewScope()
+			scope := Prelude(c)
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
 			assert.NoError(t, err)
 
@@ -776,7 +769,6 @@ func TestIntrinsicElementWithAllRequiredProps(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -826,7 +818,6 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -873,7 +864,6 @@ func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -929,7 +919,6 @@ func TestIntrinsicElementEventHandlers(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -997,7 +986,6 @@ func TestSpreadPropsValidTypes(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1061,7 +1049,6 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1135,7 +1122,6 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1152,7 +1138,7 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 			c := NewChecker()
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
-			scope := c.GlobalScope.WithNewScope()
+			scope := Prelude(c)
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
 			assert.NoError(t, err)
 
@@ -1205,7 +1191,6 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1222,7 +1207,7 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 			c := NewChecker()
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
-			scope := c.GlobalScope.WithNewScope()
+			scope := Prelude(c)
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
 			assert.NoError(t, err)
 
@@ -1292,7 +1277,6 @@ func TestComponentValidProps(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1360,7 +1344,6 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1434,7 +1417,6 @@ func TestComponentWrongPropType(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1489,7 +1471,6 @@ func TestUnknownComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1558,7 +1539,6 @@ func TestMemberExpressionComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1630,7 +1610,6 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1712,7 +1691,6 @@ func TestComponentWithValidChildren(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1802,7 +1780,6 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1873,7 +1850,6 @@ func TestMultipleChildren(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -1938,7 +1914,6 @@ func TestNestedComponentChildren(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2015,7 +1990,6 @@ func TestKeyPropValid(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2071,7 +2045,6 @@ func TestKeyPropInvalid(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2135,7 +2108,6 @@ func TestKeyNotPassedToProps(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2202,7 +2174,6 @@ func TestRefPropOnIntrinsicElement(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2259,7 +2230,6 @@ func TestRefNotPassedToProps(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2355,7 +2325,6 @@ func TestKeyPropOnComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2426,7 +2395,6 @@ func TestKeyPropInvalidOnComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2511,7 +2479,6 @@ func TestRefPropOnComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2588,7 +2555,6 @@ func TestKeyAndRefTogetherOnComponent(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2643,7 +2609,6 @@ func TestKeyAndRefTogether(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2751,7 +2716,6 @@ func TestHasJSXSyntax(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
@@ -2916,7 +2880,6 @@ func TestHasJSXSyntaxModule(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			source := &ast.Source{
 				ID:       0,
 				Path:     "input.esc",
