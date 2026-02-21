@@ -18,8 +18,8 @@ The JSX parser and AST types are already complete. Implementation requires:
 |-------|--------|-------------|
 | Phase 1 | ✅ Complete | Core infrastructure - basic JSX compiles and type-checks |
 | Phase 2 | ✅ Complete | Intrinsic element type validation |
-| Phase 3 | Not started | Component prop type checking |
-| Phase 4 | Not started | React type definitions integration |
+| Phase 3 | ✅ Complete | Component prop type checking |
+| Phase 4 | 🔄 In Progress (4.1 ✅) | React type definitions integration |
 | Phase 5 | Not started | Code generation enhancements |
 | Phase 6 | Not started | Automatic JSX transform |
 | Phase 7 | Not started | Error messages and DX |
@@ -903,10 +903,30 @@ func resolveExportsTypes(exports interface{}) string {
 ```
 
 **Tasks**:
-- [ ] Implement `ResolveTypesPackage()` to locate `@types/react` directory
-- [ ] Implement `GetTypesEntryPoint()` to find the main `.d.ts` file
-- [ ] Handle resolution from different starting directories (source file location)
+- [x] Implement `ResolveTypesPackage()` to locate `@types/react` directory
+- [x] Implement `GetTypesEntryPoint()` to find the main `.d.ts` file
+- [x] Handle resolution from different starting directories (source file location)
 - [ ] Cache resolved paths to avoid repeated filesystem lookups
+
+**Tests** (file: `internal/resolver/types_resolver_test.go`):
+
+| Test | Description | Status |
+|------|-------------|--------|
+| `TestResolveTypesPackage` | Find @types/react in node_modules | ✅ |
+| `TestResolveTypesPackageWalkUp` | Find @types/react in parent directory's node_modules | ✅ |
+| `TestResolveTypesPackageNotFound` | @types/react not installed returns error | ✅ |
+| `TestGetTypesEntryPointFromTypes` | package.json has "types" field | ✅ |
+| `TestGetTypesEntryPointFromTypings` | package.json has "typings" field (older convention) | ✅ |
+| `TestGetTypesEntryPointFallback` | package.json has no types field, fallback to index.d.ts | ✅ |
+| `TestGetTypesEntryPointFromExports` | package.json has exports field with types | ✅ |
+| `TestGetTypesEntryPointFromExportsNested` | package.json has nested exports with import/require conditions | ✅ |
+| `TestGetTypesEntryPointFromMain` | package.json has main field, derive .d.ts path | ✅ |
+| `TestGetTypesEntryPointFileNotFound` | package.json points to non-existent file | ✅ |
+| `TestGetTypesEntryPointNoPackageJson` | No package.json, fallback to index.d.ts | ✅ |
+| `TestGetTypesEntryPointFromExportsDirectString` | exports is direct .d.ts string | ✅ |
+| `TestGetTypesEntryPointTypesHasPriorityOverTypings` | types field takes priority over typings | ✅ |
+| `TestResolveExportsTypes` | Table-driven tests for resolveExportsTypes helper | ✅ |
+| `TestIntegrationWithRealTypesReact` | Integration test with actual @types/react package | ✅ |
 
 ### 4.2 Load and Infer TypeScript Definition Files
 
@@ -1194,6 +1214,25 @@ sites use the `resolver.` package qualifier for consistency.
 - [ ] Guard against circular references via `PackageRegistry.Lookup()` checks
 - [ ] Add `Warnings` field to Checker struct for non-fatal diagnostics
 
+**Tests** (add to `internal/checker/tests/jsx_test.go`):
+
+```go
+func TestLoadReactTypesIntegration(t *testing.T) {
+    // Test: LoadReactTypes() successfully loads @types/react
+    // Expected: JSX namespace and React types available in scope
+}
+
+func TestLoadReactTypesWithReferenceDirectives(t *testing.T) {
+    // Test: @types/react references other packages (e.g., scheduler)
+    // Expected: Referenced packages are also loaded
+}
+
+func TestLoadReactTypesCaching(t *testing.T) {
+    // Test: Calling LoadReactTypes() twice doesn't re-parse
+    // Expected: Second call uses cached namespace from PackageRegistry
+}
+```
+
 ### 4.3 Automatic Loading for JSX Files
 
 The compiler will **automatically load `@types/react` types** when JSX syntax is detected, without requiring an explicit import from the developer.
@@ -1295,6 +1334,29 @@ func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
 - [ ] Call `LoadReactTypes()` automatically when JSX is detected
 - [ ] Inject `JSX` namespace and `React` types into scope without explicit import
 - [ ] Implement graceful fallback when `@types/react` is missing (warn + permissive typing)
+
+**Tests** (add to `internal/checker/tests/jsx_test.go`):
+
+```go
+func TestAutoLoadReactTypesForJSX(t *testing.T) {
+    // Test: File with JSX automatically loads @types/react
+    // Expected: JSX namespace available without explicit import
+}
+
+func TestFallbackWithoutReactTypes(t *testing.T) {
+    // Test: JSX without @types/react installed
+    // Expected: Warning emitted, permissive typing allows compilation
+}
+
+func TestHasJSXSyntax(t *testing.T) {
+    // Test: hasJSXSyntax() correctly detects JSX in various positions
+    // - Top-level JSX element
+    // - JSX in function body
+    // - JSX in ternary expression
+    // - JSX in nested closure
+    // - File without JSX returns false
+}
+```
 
 ### 4.4 JSX.Element Type
 
@@ -1419,69 +1481,7 @@ childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
 - [ ] Handle case where React types aren't available (use fallback types)
 - [ ] Map `React.FC`, `React.Component` types to Escalier type-system
 
-### 4.5 Tests for Phase 4
-
-**Unit Tests for Resolution** (new file: `internal/resolver/types_resolver_test.go`)
-
-```go
-func TestResolveTypesPackage(t *testing.T) {
-    // Test: Find @types/react in node_modules
-    // Setup: Create temp directory with node_modules/@types/react
-    // Expected: Returns correct path to package directory
-}
-
-func TestResolveTypesPackageWalkUp(t *testing.T) {
-    // Test: Find @types/react in parent directory's node_modules
-    // Setup: Source file in nested directory, @types/react in root node_modules
-    // Expected: Walks up and finds the package
-}
-
-func TestResolveTypesPackageNotFound(t *testing.T) {
-    // Test: @types/react not installed
-    // Expected: Returns error, not panic
-}
-
-func TestGetTypesEntryPointFromTypes(t *testing.T) {
-    // Test: package.json has "types" field
-    // Expected: Returns path specified in "types"
-}
-
-func TestGetTypesEntryPointFromTypings(t *testing.T) {
-    // Test: package.json has "typings" field (older convention)
-    // Expected: Returns path specified in "typings"
-}
-
-func TestGetTypesEntryPointFallback(t *testing.T) {
-    // Test: package.json has no types field
-    // Expected: Returns index.d.ts
-}
-
-func TestGetTypesEntryPointFromExports(t *testing.T) {
-    // Test: package.json has exports field with types
-    // Input: { "exports": { ".": { "types": "./dist/index.d.ts" } } }
-    // Expected: Returns path specified in exports
-}
-
-func TestGetTypesEntryPointFromExportsNested(t *testing.T) {
-    // Test: package.json has nested exports with import/require conditions
-    // Input: { "exports": { ".": { "import": { "types": "./esm/index.d.ts" } } } }
-    // Expected: Returns types path from nested condition
-}
-
-func TestGetTypesEntryPointFromMain(t *testing.T) {
-    // Test: package.json has main field with various extensions
-    // Input: { "main": "./dist/index.cjs" }
-    // Expected: Returns ./dist/index.d.ts (strips .cjs, adds .d.ts)
-}
-
-func TestGetTypesEntryPointFileNotFound(t *testing.T) {
-    // Test: package.json points to non-existent file
-    // Input: { "types": "./missing.d.ts" }
-    // Expected: Returns descriptive error mentioning the missing file
-}
-```
-
-**Unit Tests for React Type Loading** (add to `internal/checker/tests/jsx_test.go`)
+**Tests** (add to `internal/checker/tests/jsx_test.go`):
 
 ```go
 func TestJSXElementTypeResolution(t *testing.T) {
@@ -1503,19 +1503,9 @@ func TestReactNodeChildren(t *testing.T) {
     // Test: Component with children: React.ReactNode
     // Expected: Accepts strings, numbers, elements, arrays
 }
-
-func TestFallbackWithoutReactTypes(t *testing.T) {
-    // Test: JSX without @types/react installed
-    // Expected: Warning emitted, permissive typing allows compilation
-}
-
-func TestAutoLoadReactTypesForJSX(t *testing.T) {
-    // Test: File with JSX automatically loads @types/react
-    // Expected: JSX namespace available without explicit import
-}
 ```
 
-**Integration Test Fixtures**
+**Integration Test Fixtures**:
 
 ```
 testdata/jsx/phase4/
@@ -1526,15 +1516,6 @@ testdata/jsx/phase4/
 └── no_react_types/
     └── permissive_fallback.esc     # Should compile with warning
 ```
-
-**Tasks**:
-- [ ] Create `internal/resolver/types_resolver_test.go` for resolution tests
-- [ ] Add tests for `LoadReactTypes()` integration
-- [ ] Add tests verifying JSX.Element type resolution
-- [ ] Add tests for React.FC and React.Component types
-- [ ] Add tests for automatic type loading when JSX is detected
-- [ ] Add tests for fallback behavior without @types/react
-- [ ] Create `testdata/jsx/phase4/` integration test fixtures
 
 ---
 
@@ -2062,8 +2043,8 @@ func BenchmarkJSXCodegen(b *testing.B) {
 | `internal/codegen/jsx_test.go` | Code generator unit tests | ✅ Created |
 | `internal/codegen/__snapshots__/jsx_test.snap` | Codegen snapshot test expectations | ✅ Created |
 | `internal/parser/__snapshots__/jsx_test.snap` | Parser snapshot test expectations | ✅ Created |
-| `internal/resolver/types_resolver.go` | Resolution of `@types/*` packages from node_modules | Planned (Phase 4) |
-| `internal/resolver/types_resolver_test.go` | Tests for types package resolution | Planned (Phase 4) |
+| `internal/resolver/types_resolver.go` | Resolution of `@types/*` packages from node_modules | ✅ Created |
+| `internal/resolver/types_resolver_test.go` | Tests for types package resolution | ✅ Created |
 | `internal/checker/react_types.go` | `LoadReactTypes()` and `injectReactTypes()` for auto-loading React types | Planned (Phase 4) |
 
 ### New Test Fixtures
@@ -2176,8 +2157,8 @@ Phase 8 (Final Verification)
 - [ ] Optional props don't require values
 
 ### Phase 4 Complete When:
-- [ ] `@types/react` package can be resolved from `node_modules/@types/react`
-- [ ] `.d.ts` entry point file is correctly identified from `package.json`
+- [x] `@types/react` package can be resolved from `node_modules/@types/react`
+- [x] `.d.ts` entry point file is correctly identified from `package.json`
 - [ ] `.d.ts` files load via existing `loadClassifiedTypeScriptModule()` infrastructure
 - [ ] `@types/react` loads automatically for JSX files (no explicit import needed)
 - [ ] `JSX.Element` type is resolved from React types

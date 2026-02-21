@@ -262,8 +262,12 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 			return ast.NewBigintTypeAnn(span), nil
 		case dts_parser.PrimSymbol:
 			return ast.NewSymbolTypeAnn(span), nil
+		case dts_parser.PrimUniqueSymbol:
+			return ast.NewUniqueSymbolTypeAnn(span), nil
 		case dts_parser.PrimObject:
 			return ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{}, span), nil
+		case dts_parser.PrimIntrinsic:
+			return ast.NewIntrinsicTypeAnn(span), nil
 		default:
 			return nil, fmt.Errorf("convertTypeAnn: unknown primitive type %d", t.Kind)
 		}

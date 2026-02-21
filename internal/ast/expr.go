@@ -366,7 +366,9 @@ func (e *FuncExpr) Accept(v Visitor) {
 		if e.Throws != nil {
 			e.Throws.Accept(v)
 		}
-		e.Body.Accept(v)
+		if e.Body != nil {
+			e.Body.Accept(v)
+		}
 	}
 	v.ExitExpr(e)
 }

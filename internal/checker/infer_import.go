@@ -1,12 +1,12 @@
 package checker
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -34,64 +34,74 @@ func findPackageJsonFile(startDir string) (string, bool) {
 	return "", false
 }
 
-func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
-	cwd, err := os.Getwd()
+// resolveModuleDir resolves a module directory path, following symlinks if necessary.
+// Returns the resolved directory path, or an error if the module doesn't exist or symlink resolution fails.
+func resolveModuleDir(moduleDir string) (string, error) {
+	fileInfo, err := os.Lstat(moduleDir)
 	if err != nil {
-		return "", &GenericError{message: "Could not get current working directory for import", span: importStmt.Span()}
+		return "", err
 	}
 
-	packageJsonDir, found := findPackageJsonFile(cwd)
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		resolvedPath, err := os.Readlink(moduleDir)
+		if err != nil {
+			return "", err
+		}
+		if filepath.IsAbs(resolvedPath) {
+			return resolvedPath, nil
+		}
+		return filepath.Join(filepath.Dir(moduleDir), resolvedPath), nil
+	}
 
+	return moduleDir, nil
+}
+
+func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
+	// Derive the start directory from the source file path
+	var startDir string
+	if ctx.Module != nil {
+		sourceID := importStmt.Span().SourceID
+		if source, ok := ctx.Module.Sources[sourceID]; ok && source.Path != "" {
+			startDir = filepath.Dir(source.Path)
+		}
+	}
+
+	// Fallback to current working directory if source path not available
+	if startDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", &GenericError{message: "Could not get current working directory for import", span: importStmt.Span()}
+		}
+		startDir = cwd
+	}
+
+	packageJsonDir, found := findPackageJsonFile(startDir)
 	if !found {
 		return "", &GenericError{message: "Could not find package.json for import", span: importStmt.Span()}
 	}
 
+	// First, try to find types in the main package (node_modules/<pkg_name>)
 	moduleDir := filepath.Join(packageJsonDir, "node_modules", importStmt.PackageName)
-
-	// Check if moduleDir is a symlink
-	fileInfo, err := os.Lstat(moduleDir)
-
-	if err != nil {
-		return "", &GenericError{message: "Could not locate module for import: " + importStmt.PackageName, span: importStmt.Span()}
-	}
-
-	if fileInfo.Mode()&os.ModeSymlink != 0 {
-		// Resolve the symlink
-		resolvedPath, err := os.Readlink(moduleDir)
-		if err != nil {
-			return "", &GenericError{message: "Could not resolve symlink for module import: " + importStmt.PackageName, span: importStmt.Span()}
-		}
-		if filepath.IsAbs(resolvedPath) {
-			moduleDir = resolvedPath
-		} else {
-			moduleDir = filepath.Join(packageJsonDir, "node_modules", resolvedPath)
+	if resolvedDir, err := resolveModuleDir(moduleDir); err == nil {
+		if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
+			return typesPath, nil
 		}
 	}
 
-	// Read package.json in moduleDir to find the main entry point
-	pkgJsonPath := filepath.Join(moduleDir, "package.json")
-	fmt.Fprintf(os.Stderr, "Reading package.json for module import at %s\n", pkgJsonPath)
-	pkgJsonBytes, err := os.ReadFile(pkgJsonPath)
-	if err != nil {
-		return "", &GenericError{message: "Could not read package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
-	}
-
-	var pkgJsonMap map[string]any
-	err = json.Unmarshal(pkgJsonBytes, &pkgJsonMap)
-	if err != nil {
-		return "", &GenericError{message: "Could not parse package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
-	}
-
-	if typesField, ok := pkgJsonMap["types"]; ok {
-		typesStr, isString := typesField.(string)
-		if !isString {
-			return "", &GenericError{message: "Invalid types field in package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
+	// Fallback: try @types/<pkg_name> for packages that ship types separately
+	// (e.g., @types/react for the react package)
+	typesModuleDir := filepath.Join(packageJsonDir, "node_modules", "@types", importStmt.PackageName)
+	if resolvedDir, err := resolveModuleDir(typesModuleDir); err == nil {
+		if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
+			return typesPath, nil
 		}
-		// Use typesField as the entry point for type definitions
-		return filepath.Join(moduleDir, typesStr), nil
 	}
 
-	return "", &GenericError{message: "No types field found in package.json for module import: " + importStmt.PackageName, span: importStmt.Span()}
+	return "", &GenericError{
+		message: "Could not find types for module import: " + importStmt.PackageName +
+			" (checked node_modules/" + importStmt.PackageName + " and node_modules/@types/" + importStmt.PackageName + ")",
+		span: importStmt.Span(),
+	}
 }
 
 // LoadedPackage represents a loaded npm package with its resolved file path.

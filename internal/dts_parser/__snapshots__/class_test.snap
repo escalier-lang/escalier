@@ -1555,7 +1555,7 @@
                         },
                     },
                     ReturnType: &dts_parser.PrimitiveType{
-                        Kind: 11,
+                        Kind: 12,
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:50},
                             End:      ast.Location{Line:1, Column:56},
@@ -2090,7 +2090,7 @@
                                 },
                             },
                             Constraint: &dts_parser.PrimitiveType{
-                                Kind: 11,
+                                Kind: 12,
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:47},
                                     End:      ast.Location{Line:1, Column:53},
@@ -3513,7 +3513,7 @@
                         },
                     },
                     ValueType: &dts_parser.PrimitiveType{
-                        Kind: 11,
+                        Kind: 12,
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:42},
                             End:      ast.Location{Line:1, Column:48},
@@ -5145,7 +5145,7 @@
                         },
                     },
                     TypeAnn: &dts_parser.PrimitiveType{
-                        Kind: 11,
+                        Kind: 12,
                         span: ast.Span{
                             Start:    ast.Location{Line:6, Column:21},
                             End:      ast.Location{Line:6, Column:27},

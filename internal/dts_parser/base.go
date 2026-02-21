@@ -184,6 +184,16 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 		p.consume()
 		return &PrimitiveType{Kind: PrimSymbol, span: token.Span}
 
+	case Unique:
+		startSpan := p.consume().Span // consume 'unique'
+		if p.peek().Type == Symbol {
+			endSpan := p.consume().Span // consume 'symbol'
+			span := ast.Span{Start: startSpan.Start, End: endSpan.End, SourceID: startSpan.SourceID}
+			return &PrimitiveType{Kind: PrimUniqueSymbol, span: span}
+		}
+		p.reportError(startSpan, "Expected 'symbol' after 'unique'")
+		return nil
+
 	case Null:
 		p.consume()
 		return &PrimitiveType{Kind: PrimNull, span: token.Span}

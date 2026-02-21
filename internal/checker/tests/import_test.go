@@ -34,6 +34,15 @@ func TestImportInferenceScript(t *testing.T) {
 				"alignItems": "Globals | DataType.SelfPosition | \"anchor-center\" | \"baseline\" | \"normal\" | \"stretch\" | string & {}",
 			},
 		},
+		// "NamespaceImportReact": {
+		// 	input: `
+		// 		import * as React from "react"
+		// 		declare val useState: React.UseState
+		// 	`,
+		// 	expectedValues: map[string]string{
+		// 		"useState": "fn (initialState: any) -> [any, fn (newState: any) -> void] throws never",
+		// 	},
+		// },
 	}
 
 	for testName, testCase := range tests {

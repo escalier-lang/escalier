@@ -55,14 +55,18 @@ func (p *DtsParser) parseUnionType() TypeAnn {
 		types[0] = left
 
 		// Continue parsing union members (expecting | between each)
+		// Skip comments between union members
+		p.skipComments()
 		for p.peek().Type == Pipe {
 			p.consume() // consume '|'
+			p.skipComments()
 			right := p.parseIntersectionType()
 			if right == nil {
 				p.reportError(p.peek().Span, "Expected type after '|'")
 				return nil
 			}
 			types = append(types, right)
+			p.skipComments()
 		}
 
 		span := ast.MergeSpans(firstSpan, types[len(types)-1].Span())
@@ -70,18 +74,22 @@ func (p *DtsParser) parseUnionType() TypeAnn {
 	}
 
 	// No leading pipe, check for union operator after first type
+	// Skip comments between union members
+	p.skipComments()
 	if p.peek().Type == Pipe {
 		types = make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 union members
 		types[0] = left
 
 		for p.peek().Type == Pipe {
 			p.consume() // consume '|'
+			p.skipComments()
 			right := p.parseIntersectionType()
 			if right == nil {
 				p.reportError(p.peek().Span, "Expected type after '|'")
 				return nil
 			}
 			types = append(types, right)
+			p.skipComments()
 		}
 
 		span := ast.MergeSpans(types[0].Span(), types[len(types)-1].Span())
@@ -91,26 +99,67 @@ func (p *DtsParser) parseUnionType() TypeAnn {
 	return left
 }
 
-// parseIntersectionType parses intersection types (T & U & ...)
+// parseIntersectionType parses intersection types (T & U & ...) or (& T & U & ...)
 func (p *DtsParser) parseIntersectionType() TypeAnn {
+	var types []TypeAnn
+	var firstSpan ast.Span
+
+	// Check for leading ampersand (optional in intersection types)
+	hasLeadingAmpersand := false
+	if p.peek().Type == Ampersand {
+		hasLeadingAmpersand = true
+		firstSpan = p.consume().Span // consume leading '&'
+		p.skipComments()
+	}
+
+	// Parse first type
 	left := p.parsePostfixType()
 	if left == nil {
+		if hasLeadingAmpersand {
+			p.reportError(p.peek().Span, "Expected type after leading '&'")
+		}
 		return nil
 	}
 
-	// Check for intersection operator
-	if p.peek().Type == Ampersand {
-		types := make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 intersection members
+	// If we had a leading ampersand, we're definitely in intersection mode
+	if hasLeadingAmpersand {
+		types = make([]TypeAnn, 1, 4)
 		types[0] = left
 
+		// Continue parsing intersection members (expecting & between each)
+		p.skipComments()
 		for p.peek().Type == Ampersand {
 			p.consume() // consume '&'
+			p.skipComments()
 			right := p.parsePostfixType()
 			if right == nil {
 				p.reportError(p.peek().Span, "Expected type after '&'")
 				return nil
 			}
 			types = append(types, right)
+			p.skipComments()
+		}
+
+		span := ast.MergeSpans(firstSpan, types[len(types)-1].Span())
+		return &IntersectionType{Types: types, span: span}
+	}
+
+	// No leading ampersand, check for intersection operator after first type
+	p.skipComments()
+	if p.peek().Type == Ampersand {
+		types = make([]TypeAnn, 1, 4) // pre-allocate for common case of 2-4 intersection members
+		types[0] = left
+
+		for p.peek().Type == Ampersand {
+			p.consume() // consume '&'
+			p.skipComments()
+			right := p.parsePostfixType()
+			if right == nil {
+				p.reportError(p.peek().Span, "Expected type after '&'")
+				return nil
+			}
+			types = append(types, right)
+			p.skipComments()
 		}
 
 		span := ast.MergeSpans(types[0].Span(), types[len(types)-1].Span())

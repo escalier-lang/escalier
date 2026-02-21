@@ -442,6 +442,7 @@ const (
 	PrimBoolean                        // TypeScript 'boolean' type
 	PrimBigInt                         // TypeScript 'bigint' type
 	PrimSymbol                         // TypeScript 'symbol' type
+	PrimUniqueSymbol                   // TypeScript 'unique symbol' type
 	PrimObject                         // TypeScript 'object' type
 	PrimIntrinsic                      // TypeScript intrinsic types, e.g. Uppercase<T>, etc.
 )

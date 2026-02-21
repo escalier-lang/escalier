@@ -1141,7 +1141,7 @@
                         },
                     },
                     ExtendsType: &dts_parser.PrimitiveType{
-                        Kind: 11,
+                        Kind: 12,
                         span: ast.Span{
                             Start:    ast.Location{Line:2, Column:15},
                             End:      ast.Location{Line:2, Column:21},
@@ -1303,7 +1303,7 @@
                     ExtendsType: &dts_parser.IntersectionType{
                         Types: {
                             &dts_parser.PrimitiveType{
-                                Kind: 11,
+                                Kind: 12,
                                 span: ast.Span{
                                     Start:    ast.Location{Line:2, Column:15},
                                     End:      ast.Location{Line:2, Column:21},

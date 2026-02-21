@@ -119,6 +119,7 @@ func (p *DtsParser) parseTypeParams() []*TypeParam {
 	typeParams := make([]*TypeParam, 0, 2) // pre-allocate for common case of 1-2 type parameters
 
 	// Parse first type parameter
+	p.skipComments()
 	typeParam := p.parseTypeParam()
 	if typeParam == nil {
 		p.reportError(p.peek().Span, "Expected type parameter")
@@ -130,12 +131,23 @@ func (p *DtsParser) parseTypeParams() []*TypeParam {
 	for p.peek().Type == Comma {
 		p.consume() // consume ','
 
+		// Skip comments after comma
+		p.skipComments()
+
+		// Allow trailing comma
+		if p.peek().Type == GreaterThan {
+			break
+		}
+
 		typeParam := p.parseTypeParam()
 		if typeParam == nil {
 			p.reportError(p.peek().Span, "Expected type parameter")
 			break
 		}
 		typeParams = append(typeParams, typeParam)
+
+		// Skip comments after type parameter
+		p.skipComments()
 	}
 
 	p.expect(GreaterThan)
@@ -202,6 +214,9 @@ func (p *DtsParser) parseParams() []*Param {
 
 	params := make([]*Param, 0, 4) // pre-allocate for common case of 2-4 parameters
 
+	// Skip any leading comments inside parameter list
+	p.skipComments()
+
 	// Handle empty parameter list
 	if p.peek().Type == CloseParen {
 		p.consume()
@@ -216,9 +231,15 @@ func (p *DtsParser) parseParams() []*Param {
 		p.reportError(p.peek().Span, "Expected parameter")
 	}
 
+	// Skip comments after parameter
+	p.skipComments()
+
 	// Parse remaining parameters
 	for p.peek().Type == Comma {
 		p.consume() // consume ','
+
+		// Skip comments after comma
+		p.skipComments()
 
 		// Allow trailing comma
 		if p.peek().Type == CloseParen {
@@ -232,6 +253,9 @@ func (p *DtsParser) parseParams() []*Param {
 			p.reportError(p.peek().Span, "Expected parameter")
 			break
 		}
+
+		// Skip comments after parameter
+		p.skipComments()
 	}
 
 	p.expect(CloseParen)
