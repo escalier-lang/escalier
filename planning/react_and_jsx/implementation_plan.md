@@ -19,7 +19,7 @@ The JSX parser and AST types are already complete. Implementation requires:
 | Phase 1 | ✅ Complete | Core infrastructure - basic JSX compiles and type-checks |
 | Phase 2 | ✅ Complete | Intrinsic element type validation |
 | Phase 3 | ✅ Complete | Component prop type checking |
-| Phase 4 | 🔄 In Progress (4.1 ✅) | React type definitions integration |
+| Phase 4 | 🔄 In Progress (4.1 ✅, 4.2 ✅, 4.3 ✅) | React type definitions integration |
 | Phase 5 | Not started | Code generation enhancements |
 | Phase 6 | Not started | Automatic JSX transform |
 | Phase 7 | Not started | Error messages and DX |
@@ -1178,9 +1178,9 @@ func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
 
 **Tasks**:
 - [x] Implement `hasJSXSyntax()` to detect JSX in AST
-- [ ] Integrate JSX detection into `InferModule()` or appropriate entry point
-- [ ] Call `LoadReactTypes()` automatically when JSX is detected
-- [ ] Inject `JSX` namespace and `React` types into scope without explicit import
+- [x] Integrate JSX detection into `InferModule()` or appropriate entry point
+- [x] Call `LoadReactTypes()` automatically when JSX is detected
+- [x] Inject `JSX` namespace and `React` types into scope without explicit import
 
 **Tests** (add to `internal/checker/tests/jsx_test.go`):
 

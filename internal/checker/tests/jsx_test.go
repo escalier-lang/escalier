@@ -2866,3 +2866,140 @@ func TestWarningType(t *testing.T) {
 		assert.Equal(t, span, warning.Span())
 	})
 }
+
+// Phase 4.3 Tests: Automatic JSX Type Loading
+
+// TestHasJSXSyntaxModule tests HasJSXSyntax with Module ASTs (as opposed to Script ASTs).
+func TestHasJSXSyntaxModule(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected bool
+	}{
+		"ModuleWithJSX": {
+			input:    `val elem = <div />`,
+			expected: true,
+		},
+		"ModuleWithJSXFragment": {
+			input:    `val elem = <><span /></>`,
+			expected: true,
+		},
+		"ModuleWithoutJSX": {
+			input:    `val x = 42`,
+			expected: false,
+		},
+		"ModuleWithJSXInFunction": {
+			input: `
+				fn render() {
+					return <div>Hello</div>
+				}
+			`,
+			expected: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			result := HasJSXSyntax(module)
+
+			assert.Equal(t, test.expected, result, "JSX syntax detection mismatch for %s", name)
+		})
+	}
+}
+
+// TestAutoLoadReactTypesForJSX tests that InferModule automatically attempts to load
+// React types when JSX syntax is detected in the module.
+func TestAutoLoadReactTypesForJSX(t *testing.T) {
+	t.Run("JSXModuleAttemptsReactTypesLoad", func(t *testing.T) {
+		// Use a temp directory without @types/react to verify the loading is attempted
+		tempDir := t.TempDir()
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     filepath.Join(tempDir, "input.esc"),
+			Contents: `val elem = <div />`,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// InferModule should attempt to load React types and return an error
+		// because @types/react is not installed in tempDir
+		errors := c.InferModule(checkerCtx, module)
+
+		// Should return an error about @types/react not being found
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected error about missing @types/react when JSX is detected")
+	})
+
+	t.Run("NonJSXModuleDoesNotLoadReactTypes", func(t *testing.T) {
+		// Use a temp directory without @types/react
+		tempDir := t.TempDir()
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     filepath.Join(tempDir, "input.esc"),
+			Contents: `val x = 42`,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// InferModule should NOT attempt to load React types for non-JSX modules
+		errors := c.InferModule(checkerCtx, module)
+
+		// Should NOT have any errors about @types/react
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.False(t, found, "Non-JSX module should not trigger @types/react loading")
+	})
+}
