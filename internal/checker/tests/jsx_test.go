@@ -114,21 +114,21 @@ func setupJSXTestScope(c *Checker) *Scope {
 }
 
 // getProjectRoot returns the project root directory (where go.mod is located).
-func getProjectRoot(t *testing.T) string {
+// Returns an error if the current directory cannot be determined or go.mod is not found.
+func getProjectRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
+		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
 
 	projectRoot := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
-			return projectRoot
+			return projectRoot, nil
 		}
 		parent := filepath.Dir(projectRoot)
 		if parent == projectRoot {
-			t.Fatalf("Could not find project root with go.mod")
-			return ""
+			return "", fmt.Errorf("could not find project root with go.mod")
 		}
 		projectRoot = parent
 	}
@@ -156,23 +156,10 @@ func loadReactTypesOnce() {
 			IsPatMatch: false,
 		}
 
-		cwd, err := os.Getwd()
+		projectRoot, err := getProjectRoot()
 		if err != nil {
-			cachedReactTypesErr = fmt.Errorf("failed to get current directory: %w", err)
+			cachedReactTypesErr = err
 			return
-		}
-
-		projectRoot := cwd
-		for {
-			if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
-				break
-			}
-			parent := filepath.Dir(projectRoot)
-			if parent == projectRoot {
-				cachedReactTypesErr = fmt.Errorf("could not find project root with go.mod")
-				return
-			}
-			projectRoot = parent
 		}
 
 		errors := c.LoadReactTypes(ctx, projectRoot)
@@ -2759,24 +2746,9 @@ func TestHasJSXSyntax(t *testing.T) {
 // TestLoadReactTypesIntegration tests loading @types/react with the real package.
 // This test is skipped if @types/react is not installed.
 func TestLoadReactTypesIntegration(t *testing.T) {
-	// Skip if @types/react is not installed
-	cwd, err := os.Getwd()
+	projectRoot, err := getProjectRoot()
 	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-
-	// Walk up to find the project root
-	projectRoot := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
-			break
-		}
-		parent := filepath.Dir(projectRoot)
-		if parent == projectRoot {
-			t.Fatalf("Could not find project root with go.mod")
-			return
-		}
-		projectRoot = parent
+		t.Fatalf("Failed to find project root: %v", err)
 	}
 
 	// Check if @types/react is installed
