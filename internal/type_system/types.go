@@ -1280,6 +1280,10 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 
 	newExtends := make([]*TypeRefType, len(t.Extends))
 	for i, ext := range t.Extends {
+		if ext == nil {
+			newExtends[i] = nil
+			continue
+		}
 		newExt := ext.Accept(v).(*TypeRefType)
 		if newExt != ext {
 			changed = true
@@ -1289,6 +1293,10 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 
 	newImplements := make([]*TypeRefType, len(t.Implements))
 	for i, impl := range t.Implements {
+		if impl == nil {
+			newImplements[i] = nil
+			continue
+		}
 		newImpl := impl.Accept(v).(*TypeRefType)
 		if newImpl != impl {
 			changed = true

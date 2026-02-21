@@ -294,8 +294,8 @@ func (c *Checker) inferInterface(
 
 	// Infer the Extends clause if present
 	if decl.Extends != nil {
-		extendsTypes := make([]*type_system.TypeRefType, len(decl.Extends))
-		for i, extends := range decl.Extends {
+		var extendsTypes []*type_system.TypeRefType
+		for _, extends := range decl.Extends {
 			extendsType, extendsErrors := c.inferTypeAnn(typeCtx, extends)
 			errors = slices.Concat(errors, extendsErrors)
 
@@ -305,13 +305,13 @@ func (c *Checker) inferInterface(
 
 			// The extends type should be a TypeRefType
 			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
-				extendsTypes[i] = typeRef
+				extendsTypes = append(extendsTypes, typeRef)
 			} else {
 				// If it's not a TypeRefType, we still set it but wrap it if needed
 				// This handles cases where the type might be pruned or indirect
 				prunedType := type_system.Prune(extendsType)
 				if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
-					extendsTypes[i] = typeRef
+					extendsTypes = append(extendsTypes, typeRef)
 				}
 			}
 		}

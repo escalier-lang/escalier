@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -1275,6 +1276,23 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	// Update context with file scopes and module reference
 	ctx.FileScopes = fileScopes
 	ctx.Module = m
+
+	// Phase 1.5: Auto-load React types if JSX is detected
+	// This allows JSX code to type-check without an explicit import of React types.
+	if HasJSXSyntax(m) {
+		var sourceDir string
+		if len(m.Files) > 0 {
+			sourceDir = filepath.Dir(m.Files[0].Path)
+			loadErrors := c.LoadReactTypes(ctx, sourceDir)
+			errors = append(errors, loadErrors...)
+
+			// If there were errors loading React types, we can stop here since
+			// JSX code won't type-check without them.
+			if len(loadErrors) > 0 {
+				return errors
+			}
+		}
+	}
 
 	// Phase 2: Build unified DepGraph for ALL declarations across all files.
 	depGraph := dep_graph.BuildDepGraph(m)

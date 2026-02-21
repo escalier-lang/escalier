@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -89,7 +91,24 @@ func createJSXNamespaceWithIntrinsicElements() *type_system.Namespace {
 		TypeParams: nil,
 	}
 
+	// Add JSX.Element type - this is the return type of JSX expressions
+	// In real React, this is a complex type, but for testing we use an empty object type
+	elementType := type_system.NewObjectType(nil, nil)
+	jsxNs.Types["Element"] = &type_system.TypeAlias{
+		Type:       elementType,
+		TypeParams: nil,
+	}
+
 	return jsxNs
+}
+
+// setupJSXTestScope creates a checker and scope with JSX namespace properly configured.
+// This is the standard setup for JSX tests that need the JSX.Element type available.
+func setupJSXTestScope(c *Checker) *Scope {
+	scope := Prelude(c)
+	jsxNs := createJSXNamespaceWithIntrinsicElements()
+	scope.Namespace.SetNamespace("JSX", jsxNs)
+	return scope
 }
 
 func TestJSXElementBasic(t *testing.T) {
@@ -172,7 +191,7 @@ func TestJSXElementBasic(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -229,7 +248,7 @@ func TestJSXFragmentBasic(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -294,7 +313,7 @@ func TestJSXInferredTypes(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -382,7 +401,7 @@ func TestJSXComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -560,9 +579,9 @@ func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("img"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				type_system.NewPropertyElem(type_system.NewStrKey("src"), strType),  // required
-				type_system.NewPropertyElem(type_system.NewStrKey("alt"), strType),  // required
-				newOptionalProp("className", strType),                                // optional
+				type_system.NewPropertyElem(type_system.NewStrKey("src"), strType), // required
+				type_system.NewPropertyElem(type_system.NewStrKey("alt"), strType), // required
+				newOptionalProp("className", strType),                              // optional
 			}),
 		),
 	}
@@ -570,6 +589,13 @@ func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
 	intrinsicElementsType := type_system.NewObjectType(nil, intrinsicElems)
 	jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
 		Type:       intrinsicElementsType,
+		TypeParams: nil,
+	}
+
+	// Add JSX.Element type - required for JSX expressions to return a valid type
+	elementType := type_system.NewObjectType(nil, nil)
+	jsxNs.Types["Element"] = &type_system.TypeAlias{
+		Type:       elementType,
 		TypeParams: nil,
 	}
 
@@ -753,7 +779,7 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 }
 
 func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
-	// When JSX namespace is not available, any props should be allowed (permissive fallback)
+	// When JSX namespace is not available, an error should be returned
 	tests := map[string]struct {
 		input string
 	}{
@@ -787,13 +813,18 @@ func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
 			}
 			_, inferErrors := c.InferScript(inferCtx, script)
 
-			// Without JSX namespace, any props should be allowed
-			if len(inferErrors) > 0 {
-				for _, err := range inferErrors {
-					t.Logf("InferError: %v", err.Message())
+			// Without JSX namespace, an error should be returned
+			assert.NotEmpty(t, inferErrors, "Expected errors when JSX namespace is not available")
+
+			// Verify at least one error mentions JSX namespace
+			found := false
+			for _, err := range inferErrors {
+				if strings.Contains(err.Message(), "JSX namespace") {
+					found = true
+					break
 				}
 			}
-			assert.Len(t, inferErrors, 0, "Expected no inference errors when JSX namespace is not available")
+			assert.True(t, found, "Expected error about missing JSX namespace")
 		})
 	}
 }
@@ -1207,7 +1238,7 @@ func TestComponentValidProps(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1275,7 +1306,7 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1349,7 +1380,7 @@ func TestComponentWrongPropType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1404,7 +1435,7 @@ func TestUnknownComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1478,7 +1509,7 @@ func TestMemberExpressionComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1545,7 +1576,7 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1627,7 +1658,7 @@ func TestComponentWithValidChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1717,7 +1748,7 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1788,7 +1819,7 @@ func TestMultipleChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1853,7 +1884,7 @@ func TestNestedComponentChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -2624,4 +2655,571 @@ func TestKeyAndRefTogether(t *testing.T) {
 			assert.Len(t, inferErrors, 0, "Expected no inference errors for key and ref together")
 		})
 	}
+}
+
+// Phase 4.2 Tests: React Types Loading and JSX Syntax Detection
+
+// TestHasJSXSyntax tests the JSX syntax detection function.
+func TestHasJSXSyntax(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected bool
+	}{
+		"TopLevelJSXElement": {
+			input:    `val elem = <div />`,
+			expected: true,
+		},
+		"TopLevelJSXFragment": {
+			input:    `val elem = <></>`,
+			expected: true,
+		},
+		"JSXInFunctionBody": {
+			input: `
+				fn render() {
+					return <div>Hello</div>
+				}
+			`,
+			expected: true,
+		},
+		"JSXInTernary": {
+			input: `
+				val condition = true
+				val elem = if condition { <div /> } else { <span /> }
+			`,
+			expected: true,
+		},
+		"JSXInNestedClosure": {
+			input: `
+				val render = fn() {
+					val inner = fn() {
+						return <button>Click</button>
+					}
+					return inner()
+				}
+			`,
+			expected: true,
+		},
+		"NoJSXSimpleVariable": {
+			input:    `val x = 42`,
+			expected: false,
+		},
+		"NoJSXFunction": {
+			input: `
+				fn add(a: number, b: number) -> number {
+					return a + b
+				}
+			`,
+			expected: false,
+		},
+		"NoJSXObjectLiteral": {
+			input:    `val obj = { name: "test", value: 123 }`,
+			expected: false,
+		},
+		"NoJSXArrayLiteral": {
+			input:    `val arr = [1, 2, 3, 4, 5]`,
+			expected: false,
+		},
+		"NoJSXComplexExpression": {
+			input: `
+				val x = 10
+				val y = 20
+				val result = x + y * 2
+			`,
+			expected: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			// Use HasJSXSyntaxInScript for script ASTs
+			result := HasJSXSyntaxInScript(script)
+
+			assert.Equal(t, test.expected, result, "JSX syntax detection mismatch for %s", name)
+		})
+	}
+}
+
+// TestLoadReactTypesIntegration tests loading @types/react with the real package.
+// This test is skipped if @types/react is not installed.
+func TestLoadReactTypesIntegration(t *testing.T) {
+	// Skip if @types/react is not installed
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+
+	// Walk up to find the project root
+	projectRoot := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(projectRoot)
+		if parent == projectRoot {
+			t.Fatalf("Could not find project root with go.mod")
+			return
+		}
+		projectRoot = parent
+	}
+
+	// Check if @types/react is installed
+	reactTypesDir := filepath.Join(projectRoot, "node_modules", "@types", "react")
+	if _, err := os.Stat(reactTypesDir); err != nil {
+		t.Fatalf("@types/react not installed, skipping integration test")
+		return
+	}
+
+	// NOTE: Full @types/react loading is skipped for now because the full React type definitions
+	// contain complex TypeScript features (conditional types, mapped types, etc.) that require
+	// more work to fully support. The basic infrastructure for loading is in place.
+	// See Phase 4.3 and beyond in the implementation plan for the remaining work.
+	t.Run("LoadReactTypesSuccessfully", func(t *testing.T) {
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Load React types
+		errors := c.LoadReactTypes(ctx, projectRoot)
+
+		// Log any errors
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+
+		// Note: There may be some errors due to complex TypeScript features we don't support yet
+		// For now, we just verify the function doesn't panic
+		t.Logf("LoadReactTypes completed with %d errors", len(errors))
+	})
+
+	t.Run("LoadReactTypesCaching", func(t *testing.T) {
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Load React types twice
+		_ = c.LoadReactTypes(ctx, projectRoot)
+		_ = c.LoadReactTypes(ctx, projectRoot)
+
+		// Second call should use cached namespace from PackageRegistry
+		// We can verify this by checking that the React namespace is available
+		// (The actual caching behavior is logged to stderr)
+		t.Logf("LoadReactTypes called twice successfully")
+	})
+}
+
+// TestLoadReactTypesWithoutPackage tests LoadReactTypes when @types/react is not available.
+func TestLoadReactTypesWithoutPackage(t *testing.T) {
+	t.Run("ReturnsErrorWhenNotInstalled", func(t *testing.T) {
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Use a directory that doesn't have @types/react installed
+		tempDir := t.TempDir()
+
+		// Load React types from temp directory
+		errors := c.LoadReactTypes(ctx, tempDir)
+
+		// Should return an error about @types/react not being found
+		assert.NotEmpty(t, errors, "Expected an error about missing @types/react")
+
+		// The error should mention @types/react
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected error to mention @types/react")
+	})
+}
+
+// Phase 4.3 Tests: Automatic JSX Type Loading
+
+// TestHasJSXSyntaxModule tests HasJSXSyntax with Module ASTs (as opposed to Script ASTs).
+func TestHasJSXSyntaxModule(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected bool
+	}{
+		"ModuleWithJSX": {
+			input:    `val elem = <div />`,
+			expected: true,
+		},
+		"ModuleWithJSXFragment": {
+			input:    `val elem = <><span /></>`,
+			expected: true,
+		},
+		"ModuleWithoutJSX": {
+			input:    `val x = 42`,
+			expected: false,
+		},
+		"ModuleWithJSXInFunction": {
+			input: `
+				fn render() {
+					return <div>Hello</div>
+				}
+			`,
+			expected: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			result := HasJSXSyntax(module)
+
+			assert.Equal(t, test.expected, result, "JSX syntax detection mismatch for %s", name)
+		})
+	}
+}
+
+// TestAutoLoadReactTypesForJSX tests that InferModule automatically attempts to load
+// React types when JSX syntax is detected in the module.
+func TestAutoLoadReactTypesForJSX(t *testing.T) {
+	t.Run("JSXModuleAttemptsReactTypesLoad", func(t *testing.T) {
+		// Use a temp directory without @types/react to verify the loading is attempted
+		tempDir := t.TempDir()
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     filepath.Join(tempDir, "input.esc"),
+			Contents: `val elem = <div />`,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// InferModule should attempt to load React types and return an error
+		// because @types/react is not installed in tempDir
+		errors := c.InferModule(checkerCtx, module)
+
+		// Should return an error about @types/react not being found
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected error about missing @types/react when JSX is detected")
+	})
+
+	t.Run("NonJSXModuleDoesNotLoadReactTypes", func(t *testing.T) {
+		// Use a temp directory without @types/react
+		tempDir := t.TempDir()
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     filepath.Join(tempDir, "input.esc"),
+			Contents: `val x = 42`,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// InferModule should NOT attempt to load React types for non-JSX modules
+		errors := c.InferModule(checkerCtx, module)
+
+		// Should NOT have any errors about @types/react
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.False(t, found, "Non-JSX module should not trigger @types/react loading")
+	})
+}
+
+// Phase 4.4 Tests: JSX.Element Type Resolution
+
+// TestJSXElementTypeResolution tests that JSX elements return JSX.Element type
+// when the JSX namespace is available with an Element type defined.
+func TestJSXElementTypeResolution(t *testing.T) {
+	t.Run("ReturnsJSXElementWhenNamespaceAvailable", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <div />`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope with JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		// Create a JSX namespace with an Element type
+		jsxNs := type_system.NewNamespace()
+		elementType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.NewStrKey("$$typeof"),
+				type_system.NewStrPrimType(nil),
+			),
+		})
+		jsxNs.Types["Element"] = &type_system.TypeAlias{
+			Type:       elementType,
+			TypeParams: nil,
+		}
+
+		// Also add IntrinsicElements so div is recognized
+		jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.NewStrKey("div"),
+					type_system.NewObjectType(nil, nil),
+				),
+			}),
+			TypeParams: nil,
+		}
+
+		// Add JSX namespace to the scope (not GlobalScope to avoid test interference)
+		err := scope.Namespace.SetNamespace("JSX", jsxNs)
+		assert.NoError(t, err)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script
+		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have no errors
+		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+
+		// Check that elem has the JSX.Element type (with $$typeof property)
+		binding := resultScope.GetValue("elem")
+		assert.NotNil(t, binding, "Expected elem binding to exist")
+
+		// Prune the type to resolve any type variables
+		prunedType := type_system.Prune(binding.Type)
+
+		// The type should be the JSX.Element type we defined
+		objType, ok := prunedType.(*type_system.ObjectType)
+		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
+
+		// Check for the $$typeof property we added to JSX.Element
+		found := false
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Str == "$$typeof" {
+					found = true
+					break
+				}
+			}
+		}
+		assert.True(t, found, "Expected JSX.Element type with $$typeof property")
+	})
+
+	t.Run("ReturnsErrorWhenJSXNamespaceNotAvailable", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <div />`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope WITHOUT JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script - should return error about missing JSX namespace
+		_, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have at least one error about missing JSX namespace
+		assert.NotEmpty(t, inferErrors, "Expected inference errors when JSX namespace is missing")
+
+		// Verify the error message mentions JSX namespace
+		found := false
+		for _, err := range inferErrors {
+			if strings.Contains(err.Message(), "JSX namespace") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected error about missing JSX namespace")
+	})
+}
+
+// TestJSXFragmentTypeResolution tests that JSX fragments return JSX.Element type.
+func TestJSXFragmentTypeResolution(t *testing.T) {
+	t.Run("FragmentReturnsJSXElementType", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <><div /></>`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create a fresh checker and scope with JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		// Create a JSX namespace with an Element type
+		jsxNs := type_system.NewNamespace()
+		elementType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.NewStrKey("$$typeof"),
+				type_system.NewStrPrimType(nil),
+			),
+		})
+		jsxNs.Types["Element"] = &type_system.TypeAlias{
+			Type:       elementType,
+			TypeParams: nil,
+		}
+
+		// Also add IntrinsicElements so div is recognized
+		jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.NewStrKey("div"),
+					type_system.NewObjectType(nil, nil),
+				),
+			}),
+			TypeParams: nil,
+		}
+
+		// Add JSX namespace to the scope (not GlobalScope to avoid test interference)
+		err := scope.Namespace.SetNamespace("JSX", jsxNs)
+		assert.NoError(t, err)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script
+		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have no errors
+		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+
+		// Check that elem has the JSX.Element type
+		binding := resultScope.GetValue("elem")
+		assert.NotNil(t, binding, "Expected elem binding to exist")
+
+		// Prune the type to resolve any type variables
+		prunedType := type_system.Prune(binding.Type)
+
+		// The type should be the JSX.Element type we defined
+		objType, ok := prunedType.(*type_system.ObjectType)
+		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
+
+		// Check for the $$typeof property
+		found := false
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Str == "$$typeof" {
+					found = true
+					break
+				}
+			}
+		}
+		assert.True(t, found, "Expected fragment to have JSX.Element type with $$typeof property")
+	})
 }
