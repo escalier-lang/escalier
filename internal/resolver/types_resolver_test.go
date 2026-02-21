@@ -84,7 +84,7 @@ func TestGetTypesEntryPointFromTypes(t *testing.T) {
 	// Test: should return path from "types" field
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s, got %s", typesPath, result)
@@ -113,7 +113,7 @@ func TestGetTypesEntryPointFromTypings(t *testing.T) {
 	// Test: should return path from "typings" field
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typingsPath {
 		t.Errorf("Expected %s, got %s", typingsPath, result)
@@ -139,7 +139,7 @@ func TestGetTypesEntryPointFallback(t *testing.T) {
 	// Test: should fallback to index.d.ts
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != indexPath {
 		t.Errorf("Expected %s, got %s", indexPath, result)
@@ -168,7 +168,7 @@ func TestGetTypesEntryPointFromExports(t *testing.T) {
 	// Test: should return path from exports
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s, got %s", typesPath, result)
@@ -197,7 +197,7 @@ func TestGetTypesEntryPointFromExportsNested(t *testing.T) {
 	// Test: should return types path from nested condition
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s, got %s", typesPath, result)
@@ -226,7 +226,7 @@ func TestGetTypesEntryPointFromMain(t *testing.T) {
 	// Test: should return .d.ts path derived from main field
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s, got %s", typesPath, result)
@@ -263,7 +263,7 @@ func TestGetTypesEntryPointNoPackageJson(t *testing.T) {
 	// Test: should fallback to index.d.ts when no package.json
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != indexPath {
 		t.Errorf("Expected %s, got %s", indexPath, result)
@@ -289,7 +289,7 @@ func TestGetTypesEntryPointFromExportsDirectString(t *testing.T) {
 	// Test: should return path from direct exports string
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s, got %s", typesPath, result)
@@ -321,7 +321,7 @@ func TestGetTypesEntryPointTypesHasPriorityOverTypings(t *testing.T) {
 	// Test: should prefer types over typings
 	result, err := GetTypesEntryPoint(tmpDir)
 	if err != nil {
-		t.Errorf("Expected to find entry point, got error: %v", err)
+		t.Fatalf("Expected to find entry point, got error: %v", err)
 	}
 	if result != typesPath {
 		t.Errorf("Expected %s (from 'types'), got %s", typesPath, result)
@@ -369,7 +369,7 @@ func TestIntegrationWithRealTypesReact(t *testing.T) {
 	// Get the entry point
 	entryPoint, err := GetTypesEntryPoint(reactDir)
 	if err != nil {
-		t.Errorf("Failed to get entry point for @types/react: %v", err)
+		t.Fatalf("Failed to get entry point for @types/react: %v", err)
 	}
 
 	t.Logf("Entry point: %s", entryPoint)
