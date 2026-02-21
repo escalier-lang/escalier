@@ -41,7 +41,12 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 3. Check if already loaded (use PackageRegistry for caching)
 	if pkgNs, found := c.PackageRegistry.Lookup(entryPoint); found {
 		fmt.Fprintf(os.Stderr, "@types/react already loaded, injecting into scope\n")
-		c.injectReactTypes(ctx, pkgNs)
+		if err := c.injectReactTypes(ctx, pkgNs); err != nil {
+			return []Error{&GenericError{
+				message: "Failed to inject cached React types: " + err.Error(),
+				span:    DEFAULT_SPAN,
+			}}
+		}
 		return nil
 	}
 
@@ -135,7 +140,12 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	// 10. Inject types into current scope
-	c.injectReactTypes(ctx, pkgNs)
+	if err := c.injectReactTypes(ctx, pkgNs); err != nil {
+		errors = append(errors, &GenericError{
+			message: "Failed to inject React types: " + err.Error(),
+			span:    DEFAULT_SPAN,
+		})
+	}
 
 	fmt.Fprintf(os.Stderr, "@types/react loaded successfully\n")
 	return errors
@@ -181,15 +191,23 @@ func (c *Checker) loadReactGlobalFile(filePath string) []Error {
 // injectReactTypes adds React types to the current scope.
 // The React namespace is made available as a value (for React.createElement, etc.).
 // The JSX namespace should already be in GlobalScope from global augmentations.
-func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) {
-	if pkgNs != nil && ctx.Scope != nil && ctx.Scope.Namespace != nil {
-		// Make React namespace available in the current scope
-		if err := ctx.Scope.Namespace.SetNamespace("React", pkgNs); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not inject React namespace: %s\n", err.Error())
-		}
-	} else {
-		panic("injectReactTypes called with nil pkgNs or ctx.Scope.Namespace")
+// Returns an error if the namespace cannot be injected.
+func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) error {
+	if pkgNs == nil {
+		return fmt.Errorf("injectReactTypes: pkgNs is nil")
 	}
+	if ctx.Scope == nil {
+		return fmt.Errorf("injectReactTypes: ctx.Scope is nil")
+	}
+	if ctx.Scope.Namespace == nil {
+		return fmt.Errorf("injectReactTypes: ctx.Scope.Namespace is nil")
+	}
+
+	// Make React namespace available in the current scope
+	if err := ctx.Scope.Namespace.SetNamespace("React", pkgNs); err != nil {
+		return fmt.Errorf("could not inject React namespace: %w", err)
+	}
+	return nil
 }
 
 // JSXDetector implements ast.Visitor to detect JSX syntax in AST nodes.

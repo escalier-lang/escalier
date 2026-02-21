@@ -488,15 +488,15 @@ func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_s
 }
 
 // computeChildrenType returns the appropriate type for children based on count.
-func (c *Checker) computeChildrenType(childTypes []type_system.Type) type_system.Type {
+func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
     switch len(childTypes) {
     case 0:
         return nil // No children
     case 1:
         return childTypes[0] // Single child: use its type directly
     default:
-        // Multiple children: array of ReactNode or union
-        return type_system.NewArrayType(nil, c.getReactNodeType())
+        // Multiple children: create a tuple type containing all child types
+        return type_system.NewTupleType(nil, childTypes...)
     }
 }
 ```
@@ -1242,63 +1242,23 @@ func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance)
     return type_system.NewObjectType(provenance, nil)
 }
 
-func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
-    // Try to resolve React.ReactNode for children types
-    // React namespace may be in GlobalScope (if injected globally) or in current scope
-    var reactNamespace *type_system.Namespace
-    var found bool
-
-    // Check GlobalScope first (React may be injected globally by LoadReactTypes)
-    if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
-        reactNamespace, found = c.GlobalScope.Namespace.GetNamespace("React")
-    }
-
-    // Fall back to current scope chain if not in GlobalScope
-    if !found || reactNamespace == nil {
-        reactNamespace, found = ctx.Scope.Namespace.GetNamespace("React")
-    }
-
-    if !found || reactNamespace == nil {
-        // Fallback: allow any type for children
-        return type_system.UnknownType
-    }
-
-    // Look up ReactNode in the namespace's Types map (which stores *TypeAlias values)
-    if reactNodeAlias, ok := reactNamespace.Types["ReactNode"]; ok {
-        // Return the underlying type from the TypeAlias
-        return reactNodeAlias.Type
-    }
-
-    // Fallback: allow any type for children
-    return type_system.UnknownType
-}
-
 // computeChildrenType determines the type for JSX children.
-// Accepts ctx to resolve React.ReactNode from loaded types.
 func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
-    if len(childTypes) == 0 {
+    switch len(childTypes) {
+    case 0:
         return nil // No children
+    case 1:
+        return childTypes[0] // Single child: use its type directly
+    default:
+        // Multiple children: create a tuple type containing all child types
+        return type_system.NewTupleType(nil, childTypes...)
     }
-    if len(childTypes) == 1 {
-        return childTypes[0]
-    }
-    // Multiple children: wrap in array or use ReactNode union
-    // For now, return a union of all child types
-    // A more complete implementation would use React.ReactNode
-    expectedChildType := c.getReactNodeType(ctx)
-    if expectedChildType != type_system.UnknownType {
-        // Validate each child against ReactNode
-        // For now, just return the expected type
-        return expectedChildType
-    }
-    // Fallback: return union of child types
-    return type_system.NewUnionType(nil, childTypes)
 }
 ```
 
 **Call site updates required**:
 
-Adding `ctx Context` parameters to `getJSXElementType`, `getReactNodeType`, and `computeChildrenType` requires updating their call sites:
+Adding `ctx Context` parameters to `getJSXElementType` and `computeChildrenType` requires updating their call sites:
 
 1. `inferJSXElement()` already has `ctx` - update call: `c.getJSXElementType(ctx, provenance)`
 2. `computeChildrenType(ctx, childTypes)` - now accepts `ctx Context` as first parameter
@@ -1322,7 +1282,6 @@ childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
 
 **Tasks**:
 - [x] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
-- [x] Implement `getReactNodeType()` - resolve React.ReactNode for children
 - [x] Update `computeChildrenType()` signature to accept `ctx Context`
 - [x] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
 - [x] Handle case where React types aren't available (use fallback types)

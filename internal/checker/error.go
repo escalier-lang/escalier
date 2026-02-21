@@ -51,7 +51,6 @@ func (e MissingRequiredPropError) isError()                 {}
 func (e UnknownComponentError) isError()                    {}
 func (e InvalidKeyPropError) isError()                      {}
 func (e UnexpectedChildrenError) isError()                  {}
-func (e Warning) isError()                                  {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -500,34 +499,6 @@ func (e UnexpectedChildrenError) Span() ast.Span {
 }
 func (e UnexpectedChildrenError) Message() string {
 	return "Component '" + e.ComponentName + "' does not accept children"
-}
-
-// Warning represents a non-fatal diagnostic that doesn't block compilation.
-// Warnings are accumulated separately from errors and reported to the user
-// without failing the type-checking process.
-type Warning struct {
-	message string
-	span    ast.Span
-}
-
-func (w Warning) Span() ast.Span {
-	return w.span
-}
-func (w Warning) Message() string {
-	return w.message
-}
-
-// IsWarning returns true to distinguish warnings from errors.
-func (w Warning) IsWarning() bool {
-	return true
-}
-
-// NewWarning creates a new warning with the given message and span.
-func NewWarning(message string, span ast.Span) Warning {
-	return Warning{
-		message: message,
-		span:    span,
-	}
 }
 
 // TODO: make this a sum type so that different error type can reference other

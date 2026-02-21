@@ -1283,11 +1283,13 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 		var sourceDir string
 		if len(m.Files) > 0 {
 			sourceDir = filepath.Dir(m.Files[0].Path)
-		} else {
-			sourceDir, _ = os.Getwd()
+			loadErrors := c.LoadReactTypes(ctx, sourceDir)
+			errors = append(errors, loadErrors...)
+
+			// If there were errors loading React types, we can stop here since
+			// JSX code won't type-check without them.
+			return errors
 		}
-		loadErrors := c.LoadReactTypes(ctx, sourceDir)
-		errors = append(errors, loadErrors...)
 	}
 
 	// Phase 2: Build unified DepGraph for ALL declarations across all files.

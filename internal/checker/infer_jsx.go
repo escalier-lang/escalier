@@ -620,39 +620,6 @@ func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance)
 	return type_system.NewObjectType(provenance, nil)
 }
 
-// getReactNodeType resolves the React.ReactNode type for children types.
-// If React types are not available, returns nil to allow any type for children.
-func (c *Checker) getReactNodeType(ctx Context) type_system.Type {
-	// Try to resolve React.ReactNode for children types
-	// React namespace may be in GlobalScope (if injected globally) or in current scope
-	var reactNamespace *type_system.Namespace
-	var found bool
-
-	// Check GlobalScope first (React may be injected globally by LoadReactTypes)
-	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
-		reactNamespace, found = c.GlobalScope.Namespace.GetNamespace("React")
-	}
-
-	// Fall back to current scope chain if not in GlobalScope
-	if !found || reactNamespace == nil {
-		reactNamespace = ctx.Scope.getNamespace("React")
-	}
-
-	if reactNamespace == nil {
-		// Fallback: allow any type for children
-		return nil
-	}
-
-	// Look up ReactNode in the namespace's Types map (which stores *TypeAlias values)
-	if reactNodeAlias, ok := reactNamespace.Types["ReactNode"]; ok {
-		// Return the underlying type from the TypeAlias
-		return reactNodeAlias.Type
-	}
-
-	// Fallback: allow any type for children
-	return nil
-}
-
 // computeChildrenType determines the type for JSX children.
 // Accepts ctx to resolve React.ReactNode from loaded types.
 func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {

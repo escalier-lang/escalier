@@ -2839,34 +2839,6 @@ func TestLoadReactTypesWithoutPackage(t *testing.T) {
 	})
 }
 
-// TestWarningType tests the Warning type implementation.
-func TestWarningType(t *testing.T) {
-	t.Run("ImplementsErrorInterface", func(t *testing.T) {
-		warning := NewWarning("Test warning message", DEFAULT_SPAN)
-
-		// Warning should implement the Error interface
-		var err Error = warning
-		assert.Equal(t, "Test warning message", err.Message())
-		assert.Equal(t, DEFAULT_SPAN, err.Span())
-	})
-
-	t.Run("IsWarningReturnsTrue", func(t *testing.T) {
-		warning := NewWarning("Test warning", DEFAULT_SPAN)
-		assert.True(t, warning.IsWarning())
-	})
-
-	t.Run("PreservesSpan", func(t *testing.T) {
-		span := ast.Span{
-			Start:    ast.Location{Line: 10, Column: 5},
-			End:      ast.Location{Line: 10, Column: 15},
-			SourceID: 1,
-		}
-		warning := NewWarning("Warning with span", span)
-
-		assert.Equal(t, span, warning.Span())
-	})
-}
-
 // Phase 4.3 Tests: Automatic JSX Type Loading
 
 // TestHasJSXSyntaxModule tests HasJSXSyntax with Module ASTs (as opposed to Script ASTs).
