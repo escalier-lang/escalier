@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,12 +138,14 @@ func getProjectRoot(t *testing.T) string {
 var (
 	cachedJSXNamespace   *type_system.Namespace
 	cachedReactNamespace *type_system.Namespace
-	reactTypesLoaded     bool
+	cachedReactTypesErr  error // Error from loading, if any
+	reactTypesLoaded     bool  // True only if loading succeeded
 	reactTypesLoadOnce   sync.Once
 )
 
 // loadReactTypesOnce loads React types once and caches them for reuse across tests.
-func loadReactTypesOnce(t *testing.T) {
+// If loading fails, cachedReactTypesErr is set and reactTypesLoaded remains false.
+func loadReactTypesOnce() {
 	reactTypesLoadOnce.Do(func() {
 		// Create a temporary checker just for loading types
 		c := NewChecker()
@@ -155,7 +158,7 @@ func loadReactTypesOnce(t *testing.T) {
 
 		cwd, err := os.Getwd()
 		if err != nil {
-			t.Logf("Failed to get current directory: %v", err)
+			cachedReactTypesErr = fmt.Errorf("failed to get current directory: %w", err)
 			return
 		}
 
@@ -166,47 +169,63 @@ func loadReactTypesOnce(t *testing.T) {
 			}
 			parent := filepath.Dir(projectRoot)
 			if parent == projectRoot {
-				t.Logf("Could not find project root with go.mod")
+				cachedReactTypesErr = fmt.Errorf("could not find project root with go.mod")
 				return
 			}
 			projectRoot = parent
 		}
 
 		errors := c.LoadReactTypes(ctx, projectRoot)
+		// Log errors but don't fail - some TypeScript features aren't supported yet
 		if len(errors) > 0 {
-			t.Logf("LoadReactTypes had %d errors (some TypeScript features are not yet supported)", len(errors))
+			// These are expected errors from unsupported features, not fatal
+			_ = errors
 		}
 
-		// Cache the JSX namespace
-		if jsxNs, ok := scope.Namespace.GetNamespace("JSX"); ok {
-			cachedJSXNamespace = jsxNs
+		// Cache the JSX namespace - this is required for tests to work
+		jsxNs, jsxOk := scope.Namespace.GetNamespace("JSX")
+		if !jsxOk {
+			cachedReactTypesErr = fmt.Errorf("JSX namespace not found after loading @types/react")
+			return
 		}
+		cachedJSXNamespace = jsxNs
 
-		// Cache the React namespace
-		if reactNs, ok := scope.Namespace.GetNamespace("React"); ok {
-			cachedReactNamespace = reactNs
+		// Cache the React namespace - also required
+		reactNs, reactOk := scope.Namespace.GetNamespace("React")
+		if !reactOk {
+			cachedReactTypesErr = fmt.Errorf("React namespace not found after loading @types/react")
+			return
 		}
+		cachedReactNamespace = reactNs
 
+		// Only mark as loaded if we successfully got both namespaces
 		reactTypesLoaded = true
 	})
 }
 
 // setupReactTypesScope creates a checker and scope with the official @types/react types loaded.
 // This uses cached React type definitions for fast test execution.
-// Returns the scope. Note: Some types may not load due to unsupported TypeScript features,
-// but the JSX namespace and IntrinsicElements should be available for basic usage.
+// Fails the test immediately if React types could not be loaded.
 func setupReactTypesScope(t *testing.T, c *Checker) *Scope {
 	// Load React types once (cached across all tests)
-	loadReactTypesOnce(t)
+	loadReactTypesOnce()
+
+	// Fail fast if loading failed
+	if cachedReactTypesErr != nil {
+		t.Fatalf("Failed to load React types: %v", cachedReactTypesErr)
+	}
+	if !reactTypesLoaded {
+		t.Fatalf("React types not loaded (unknown error)")
+	}
 
 	scope := Prelude(c)
 
 	// Copy cached namespaces to this scope
-	if cachedJSXNamespace != nil {
-		scope.Namespace.SetNamespace("JSX", cachedJSXNamespace)
+	if err := scope.Namespace.SetNamespace("JSX", cachedJSXNamespace); err != nil {
+		t.Fatalf("Failed to set JSX namespace: %v", err)
 	}
-	if cachedReactNamespace != nil {
-		scope.Namespace.SetNamespace("React", cachedReactNamespace)
+	if err := scope.Namespace.SetNamespace("React", cachedReactNamespace); err != nil {
+		t.Fatalf("Failed to set React namespace: %v", err)
 	}
 
 	return scope
