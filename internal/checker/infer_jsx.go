@@ -15,7 +15,6 @@ import (
 // Returns JSX.Element type and any type errors.
 func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_system.Type, []Error) {
 	var errors []Error
-	provenance := &ast.NodeProvenance{Node: expr}
 
 	tagName := expr.Opening.Name
 	isIntrinsic := isIntrinsicElement(tagName)
@@ -58,23 +57,32 @@ func (c *Checker) inferJSXElement(ctx Context, expr *ast.JSXElementExpr) (type_s
 	childValidationErrors := c.validateChildrenType(ctx, childrenType, propsType, isIntrinsic, expr)
 	errors = slices.Concat(errors, childValidationErrors)
 
-	// 7. Return JSX.Element type
-	return c.getJSXElementType(ctx, provenance), errors
+	// 7. Return JSX.Element type (or UnknownType if JSX namespace is not available)
+	elementType, elementErrors := c.getJSXElementType(ctx, expr.Span())
+	errors = slices.Concat(errors, elementErrors)
+	if elementType == nil {
+		elementType = type_system.NewUnknownType(nil)
+	}
+	return elementType, errors
 }
 
 // inferJSXFragment infers the type of a JSX fragment expression.
 // Returns JSX.Element type and any type errors.
 func (c *Checker) inferJSXFragment(ctx Context, expr *ast.JSXFragmentExpr) (type_system.Type, []Error) {
 	var errors []Error
-	provenance := &ast.NodeProvenance{Node: expr}
 
 	// Fragments only have children, no props to validate
 	// We still type-check the children but don't validate against any expected type
 	_, childErrors := c.inferJSXChildren(ctx, expr.Children)
 	errors = slices.Concat(errors, childErrors)
 
-	// Return JSX.Element type
-	return c.getJSXElementType(ctx, provenance), errors
+	// Return JSX.Element type (or UnknownType if JSX namespace is not available)
+	elementType, elementErrors := c.getJSXElementType(ctx, expr.Span())
+	errors = slices.Concat(errors, elementErrors)
+	if elementType == nil {
+		elementType = type_system.NewUnknownType(nil)
+	}
+	return elementType, errors
 }
 
 // isIntrinsicElement returns true if the tag name represents an HTML element.
@@ -291,8 +299,17 @@ func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_s
 		}
 	}
 
-	// Use computeChildrenType to determine the combined children type
-	return c.computeChildrenType(ctx, childTypes), errors
+	switch len(childTypes) {
+	case 0:
+		return nil, errors // No children
+	case 1:
+		return childTypes[0], errors // Single child: use its type directly
+	default:
+		// Multiple children: create a tuple type containing all child types
+		// This allows for more precise type checking than a generic array
+		// In the future, we may want to use React.ReactNode for validation
+		return type_system.NewTupleType(nil, childTypes...), errors
+	}
 }
 
 // validateChildrenType validates the actual children type against the expected children prop type.
@@ -588,50 +605,26 @@ func (c *Checker) extractPropsFromComponentType(componentType type_system.Type) 
 }
 
 // getJSXElementType resolves the JSX.Element type from loaded React types.
-// If React types are not available, returns a fallback empty object type.
-func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance) type_system.Type {
-	// Try to resolve JSX.Element from React types
-	// JSX namespace is in GlobalScope (from declare global), so check there first
-	var jsxNamespace *type_system.Namespace
-	var found bool
-
-	// Check GlobalScope first (JSX is typically a global namespace)
-	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
-		jsxNamespace, found = c.GlobalScope.Namespace.GetNamespace("JSX")
-	}
-
-	// Fall back to current scope chain if not in GlobalScope
-	if !found || jsxNamespace == nil {
-		jsxNamespace = ctx.Scope.getNamespace("JSX")
-	}
+// Returns an error if the JSX namespace or JSX.Element type is not available.
+func (c *Checker) getJSXElementType(ctx Context, span ast.Span) (type_system.Type, []Error) {
+	// JSX is auto-imported into files that contain JSX elements.
+	jsxNamespace := ctx.Scope.getNamespace("JSX")
 
 	if jsxNamespace == nil {
-		// Fallback: use a placeholder type when JSX types are not available
-		return type_system.NewObjectType(provenance, nil)
+		return nil, []Error{&GenericError{
+			message: "JSX namespace not found. Make sure @types/react is installed.",
+			span:    span,
+		}}
 	}
 
 	// Look up Element in the namespace's Types map (which stores *TypeAlias values)
 	if elementAlias, ok := jsxNamespace.Types["Element"]; ok {
 		// Return the underlying type from the TypeAlias
-		return elementAlias.Type
+		return elementAlias.Type, nil
 	}
 
-	// Fallback: use a placeholder type if JSX.Element is not defined
-	return type_system.NewObjectType(provenance, nil)
-}
-
-// computeChildrenType determines the type for JSX children.
-// Accepts ctx to resolve React.ReactNode from loaded types.
-func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
-	switch len(childTypes) {
-	case 0:
-		return nil // No children
-	case 1:
-		return childTypes[0] // Single child: use its type directly
-	default:
-		// Multiple children: create a tuple type containing all child types
-		// This allows for more precise type checking than a generic array
-		// In the future, we may want to use React.ReactNode for validation
-		return type_system.NewTupleType(nil, childTypes...)
-	}
+	return nil, []Error{&GenericError{
+		message: "JSX.Element type not found in JSX namespace.",
+		span:    span,
+	}}
 }

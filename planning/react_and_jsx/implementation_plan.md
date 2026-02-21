@@ -484,19 +484,14 @@ func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) (type_s
     }
 
     // Compute combined children type
-    return c.computeChildrenType(childTypes), errors
-}
-
-// computeChildrenType returns the appropriate type for children based on count.
-func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
     switch len(childTypes) {
     case 0:
-        return nil // No children
+        return nil, errors // No children
     case 1:
-        return childTypes[0] // Single child: use its type directly
+        return childTypes[0], errors // Single child: use its type directly
     default:
         // Multiple children: create a tuple type containing all child types
-        return type_system.NewTupleType(nil, childTypes...)
+        return type_system.NewTupleType(nil, childTypes...), errors
     }
 }
 ```
@@ -532,7 +527,6 @@ func (c *Checker) validateChildrenType(
 - [x] Handle expression containers
 - [x] Handle nested JSX elements
 - [x] Handle nested fragments
-- [x] Implement `computeChildrenType()` - single child vs array
 - [x] Validate children type against component's `children` prop type
 - [ ] Support `React.ReactNode` as the general children type (deferred to Phase 4)
 
@@ -549,7 +543,7 @@ func (c *Checker) validateChildrenType(
 - Missing required children produce a `MissingRequiredPropError`
 
 **Multiple children produce a tuple type:**
-When a JSX element has multiple children, `computeChildrenType()` returns a tuple type representing the exact types of each child. For example, `<Container>Hello{" "}World</Container>` produces a tuple type `[string, string, string]`.
+When a JSX element has multiple children, `inferJSXChildren()` returns a tuple type representing the exact types of each child. For example, `<Container>Hello{" "}World</Container>` produces a tuple type `[string, string, string]`.
 
 This means:
 - If `children: string`, only a **single** string child is allowed
@@ -1241,49 +1235,17 @@ func (c *Checker) getJSXElementType(ctx Context, provenance *ast.NodeProvenance)
     // Fallback: use a placeholder type
     return type_system.NewObjectType(provenance, nil)
 }
-
-// computeChildrenType determines the type for JSX children.
-func (c *Checker) computeChildrenType(ctx Context, childTypes []type_system.Type) type_system.Type {
-    switch len(childTypes) {
-    case 0:
-        return nil // No children
-    case 1:
-        return childTypes[0] // Single child: use its type directly
-    default:
-        // Multiple children: create a tuple type containing all child types
-        return type_system.NewTupleType(nil, childTypes...)
-    }
-}
 ```
 
 **Call site updates required**:
 
-Adding `ctx Context` parameters to `getJSXElementType` and `computeChildrenType` requires updating their call sites:
+Adding `ctx Context` parameter to `getJSXElementType` requires updating its call sites:
 
 1. `inferJSXElement()` already has `ctx` - update call: `c.getJSXElementType(ctx, provenance)`
-2. `computeChildrenType(ctx, childTypes)` - now accepts `ctx Context` as first parameter
-3. `inferJSXChildren()` needs to pass `ctx` to `computeChildrenType(ctx, childTypes)`
-4. Any other callers of these functions need `ctx` threaded through
-
-Example call site in `inferJSXChildren`:
-```go
-func (c *Checker) inferJSXChildren(ctx Context, children []ast.JSXChild) ([]type_system.Type, []Error) {
-    var childTypes []type_system.Type
-    var errors []Error
-    // ... infer each child ...
-    return childTypes, errors
-}
-
-// In inferJSXElement:
-childTypes, childErrors := c.inferJSXChildren(ctx, element.Children)
-errors = append(errors, childErrors...)
-childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
-```
+2. `inferJSXFragment()` already has `ctx` - update call: `c.getJSXElementType(ctx, provenance)`
 
 **Tasks**:
 - [x] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
-- [x] Update `computeChildrenType()` signature to accept `ctx Context`
-- [x] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
 - [x] Handle case where React types aren't available (use fallback types)
 - [ ] Map `React.FC`, `React.Component` types to Escalier type-system
 

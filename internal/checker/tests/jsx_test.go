@@ -91,7 +91,24 @@ func createJSXNamespaceWithIntrinsicElements() *type_system.Namespace {
 		TypeParams: nil,
 	}
 
+	// Add JSX.Element type - this is the return type of JSX expressions
+	// In real React, this is a complex type, but for testing we use an empty object type
+	elementType := type_system.NewObjectType(nil, nil)
+	jsxNs.Types["Element"] = &type_system.TypeAlias{
+		Type:       elementType,
+		TypeParams: nil,
+	}
+
 	return jsxNs
+}
+
+// setupJSXTestScope creates a checker and scope with JSX namespace properly configured.
+// This is the standard setup for JSX tests that need the JSX.Element type available.
+func setupJSXTestScope(c *Checker) *Scope {
+	scope := Prelude(c)
+	jsxNs := createJSXNamespaceWithIntrinsicElements()
+	scope.Namespace.SetNamespace("JSX", jsxNs)
+	return scope
 }
 
 func TestJSXElementBasic(t *testing.T) {
@@ -174,7 +191,7 @@ func TestJSXElementBasic(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -231,7 +248,7 @@ func TestJSXFragmentBasic(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -296,7 +313,7 @@ func TestJSXInferredTypes(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -384,7 +401,7 @@ func TestJSXComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -575,6 +592,13 @@ func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
 		TypeParams: nil,
 	}
 
+	// Add JSX.Element type - required for JSX expressions to return a valid type
+	elementType := type_system.NewObjectType(nil, nil)
+	jsxNs.Types["Element"] = &type_system.TypeAlias{
+		Type:       elementType,
+		TypeParams: nil,
+	}
+
 	return jsxNs
 }
 
@@ -755,7 +779,7 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 }
 
 func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
-	// When JSX namespace is not available, any props should be allowed (permissive fallback)
+	// When JSX namespace is not available, an error should be returned
 	tests := map[string]struct {
 		input string
 	}{
@@ -789,13 +813,18 @@ func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
 			}
 			_, inferErrors := c.InferScript(inferCtx, script)
 
-			// Without JSX namespace, any props should be allowed
-			if len(inferErrors) > 0 {
-				for _, err := range inferErrors {
-					t.Logf("InferError: %v", err.Message())
+			// Without JSX namespace, an error should be returned
+			assert.NotEmpty(t, inferErrors, "Expected errors when JSX namespace is not available")
+
+			// Verify at least one error mentions JSX namespace
+			found := false
+			for _, err := range inferErrors {
+				if strings.Contains(err.Message(), "JSX namespace") {
+					found = true
+					break
 				}
 			}
-			assert.Len(t, inferErrors, 0, "Expected no inference errors when JSX namespace is not available")
+			assert.True(t, found, "Expected error about missing JSX namespace")
 		})
 	}
 }
@@ -1209,7 +1238,7 @@ func TestComponentValidProps(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1277,7 +1306,7 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1351,7 +1380,7 @@ func TestComponentWrongPropType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1406,7 +1435,7 @@ func TestUnknownComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1480,7 +1509,7 @@ func TestMemberExpressionComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1547,7 +1576,7 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1629,7 +1658,7 @@ func TestComponentWithValidChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1719,7 +1748,7 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1790,7 +1819,7 @@ func TestMultipleChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1855,7 +1884,7 @@ func TestNestedComponentChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      Prelude(c),
+				Scope:      setupJSXTestScope(c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -3066,7 +3095,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 		assert.True(t, found, "Expected JSX.Element type with $$typeof property")
 	})
 
-	t.Run("ReturnsFallbackWhenJSXNamespaceNotAvailable", func(t *testing.T) {
+	t.Run("ReturnsErrorWhenJSXNamespaceNotAvailable", func(t *testing.T) {
 		t.Parallel()
 		input := `val elem = <div />`
 
@@ -3093,35 +3122,21 @@ func TestJSXElementTypeResolution(t *testing.T) {
 			IsPatMatch: false,
 		}
 
-		// Infer the script (should not crash, should use fallback)
-		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+		// Infer the script - should return error about missing JSX namespace
+		_, inferErrors := c.InferScript(checkerCtx, script)
 
-		// Should have no errors (permissive mode without JSX types)
-		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+		// Should have at least one error about missing JSX namespace
+		assert.NotEmpty(t, inferErrors, "Expected inference errors when JSX namespace is missing")
 
-		// Check that elem has a type (could be fallback object type)
-		binding := resultScope.GetValue("elem")
-		assert.NotNil(t, binding, "Expected elem binding to exist")
-
-		// Prune the type to resolve any type variables
-		prunedType := type_system.Prune(binding.Type)
-
-		// The type should be an ObjectType (either empty fallback or inferred)
-		// We just verify it's an ObjectType and doesn't have our custom $$typeof property
-		objType, ok := prunedType.(*type_system.ObjectType)
-		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
-
-		// The fallback type should NOT have $$typeof property (since JSX namespace wasn't set)
-		hasCustomProp := false
-		for _, elem := range objType.Elems {
-			if prop, ok := elem.(*type_system.PropertyElem); ok {
-				if prop.Name.Str == "$$typeof" {
-					hasCustomProp = true
-					break
-				}
+		// Verify the error message mentions JSX namespace
+		found := false
+		for _, err := range inferErrors {
+			if strings.Contains(err.Message(), "JSX namespace") {
+				found = true
+				break
 			}
 		}
-		assert.False(t, hasCustomProp, "Fallback type should not have $$typeof property")
+		assert.True(t, found, "Expected error about missing JSX namespace")
 	})
 }
 
