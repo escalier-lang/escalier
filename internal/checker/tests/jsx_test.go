@@ -104,15 +104,6 @@ func createJSXNamespaceWithIntrinsicElements() *type_system.Namespace {
 	return jsxNs
 }
 
-// setupJSXTestScope creates a checker and scope with JSX namespace properly configured.
-// This is the standard setup for JSX tests that need the JSX.Element type available.
-func setupJSXTestScope(c *Checker) *Scope {
-	scope := Prelude(c)
-	jsxNs := createJSXNamespaceWithIntrinsicElements()
-	scope.Namespace.SetNamespace("JSX", jsxNs)
-	return scope
-}
-
 // getProjectRoot returns the project root directory (where go.mod is located).
 // Returns an error if the current directory cannot be determined or go.mod is not found.
 func getProjectRoot() (string, error) {
