@@ -106,19 +106,10 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	// Using btree for deterministic iteration order
 	var expectedProps btree.Map[string, type_system.Type]
 	var requiredProps btree.Set[string]
-	propsObjType, ok := type_system.Prune(propsType).(*type_system.ObjectType)
-	if ok {
-		for _, elem := range propsObjType.Elems {
-			if prop, ok := elem.(*type_system.PropertyElem); ok {
-				if prop.Name.Kind == type_system.StrObjTypeKeyKind {
-					expectedProps.Set(prop.Name.Str, prop.Value)
-					if !prop.Optional {
-						requiredProps.Insert(prop.Name.Str)
-					}
-				}
-			}
-		}
-	}
+
+	// Collect all properties from the props type, handling type references,
+	// intersection types, and interface extends
+	c.collectPropsFromType(ctx, propsType, &expectedProps, &requiredProps)
 
 	// Get the provided attributes as an object type
 	attrObj, ok := type_system.Prune(attrType).(*type_system.ObjectType)
@@ -159,7 +150,7 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 		if !providedProps.Contains(propName) {
 			errors = append(errors, &MissingRequiredPropError{
 				PropName:   propName,
-				ObjectType: propsObjType,
+				ObjectType: propsType,
 				span:       getSpanFromType(attrType),
 			})
 		}
@@ -627,4 +618,66 @@ func (c *Checker) getJSXElementType(ctx Context, span ast.Span) (type_system.Typ
 		message: "JSX.Element type not found in JSX namespace.",
 		span:    span,
 	}}
+}
+
+// collectPropsFromType recursively collects all properties from a type,
+// handling type references, intersection types, and interface extends.
+// Properties are added to expectedProps map, and required (non-optional) props
+// are tracked in requiredProps set.
+func (c *Checker) collectPropsFromType(
+	ctx Context,
+	t type_system.Type,
+	expectedProps *btree.Map[string, type_system.Type],
+	requiredProps *btree.Set[string],
+) {
+	t = type_system.Prune(t)
+
+	switch typ := t.(type) {
+	case *type_system.ObjectType:
+		// Collect direct properties
+		for _, elem := range typ.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Kind == type_system.StrObjTypeKeyKind {
+					// Only add if not already present (first definition wins)
+					if _, exists := expectedProps.Get(prop.Name.Str); !exists {
+						expectedProps.Set(prop.Name.Str, prop.Value)
+					}
+					// Requiredness should be upgraded if any source marks it required
+					if !prop.Optional {
+						requiredProps.Insert(prop.Name.Str)
+					}
+				}
+			}
+		}
+
+		// Recursively collect properties from extended interfaces
+		for _, extendsTypeRef := range typ.Extends {
+			c.collectPropsFromType(ctx, extendsTypeRef, expectedProps, requiredProps)
+		}
+
+	case *type_system.TypeRefType:
+		// For TypeRefType, try to resolve the TypeAlias directly first
+		// This handles nominal interfaces that ExpandType won't expand
+		if typ.TypeAlias != nil {
+			// Substitute type parameters if there are type arguments
+			underlyingType := typ.TypeAlias.Type
+			if len(typ.TypeAlias.TypeParams) > 0 && len(typ.TypeArgs) > 0 {
+				substitutions := createTypeParamSubstitutions(typ.TypeArgs, typ.TypeAlias.TypeParams)
+				underlyingType = SubstituteTypeParams(underlyingType, substitutions)
+			}
+			c.collectPropsFromType(ctx, underlyingType, expectedProps, requiredProps)
+		} else {
+			// TypeAlias not set, try ExpandType to resolve it
+			expandedType, _ := c.ExpandType(ctx, typ, 1)
+			if expandedType != typ {
+				c.collectPropsFromType(ctx, expandedType, expectedProps, requiredProps)
+			}
+		}
+
+	case *type_system.IntersectionType:
+		// Collect properties from all parts of the intersection
+		for _, part := range typ.Types {
+			c.collectPropsFromType(ctx, part, expectedProps, requiredProps)
+		}
+	}
 }

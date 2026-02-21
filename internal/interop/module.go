@@ -2,6 +2,7 @@ package interop
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -103,9 +104,12 @@ func processNamespace(
 
 		default:
 			// Convert regular declarations
+			// Skip declarations that fail to convert (e.g., due to unsupported features)
 			decl, err := convertStatement(s)
 			if err != nil {
-				return fmt.Errorf("converting statement: %w", err)
+				// Log the error but continue processing other declarations
+				fmt.Fprintf(os.Stderr, "Warning: skipping statement due to conversion error: %v\n", err)
+				continue
 			}
 			if decl != nil {
 				decls = append(decls, decl)
