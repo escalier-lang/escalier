@@ -1288,7 +1288,9 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 
 			// If there were errors loading React types, we can stop here since
 			// JSX code won't type-check without them.
-			return errors
+			if len(loadErrors) > 0 {
+				return errors
+			}
 		}
 	}
 
