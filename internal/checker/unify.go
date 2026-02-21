@@ -60,8 +60,17 @@ func (c *Checker) sameTypeRef(ref1, ref2 *type_system.TypeRefType) bool {
 // If `Unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
+	return c.unifyWithDepth(ctx, t1, t2, 0)
+}
+
+func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
+	}
+
+	// Limit recursion depth to prevent stack overflow from infinite expansion
+	if depth > 50 {
+		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 
 	t1 = type_system.Prune(t1)
@@ -1261,7 +1270,7 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	}
 
 	if retry {
-		return c.Unify(ctx, t1, t2)
+		return c.unifyWithDepth(ctx, t1, t2, depth+1)
 	}
 
 	return []Error{&CannotUnifyTypesError{
@@ -1427,19 +1436,21 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 			}}
 		}
 	} else {
-		// Neither function has rest parameters, use original logic
-		// func2 can have fewer parameters than func1
-		if len(func2.Params) > len(func1.Params) {
-			return []Error{&CannotUnifyTypesError{
-				T1: func1,
-				T2: func2,
-			}}
+		// Neither function has rest parameters
+		// In TypeScript, a function with fewer parameters can be assigned to a function
+		// type expecting more parameters (e.g., () => {} is valid for (event) => void).
+		// This is because when the function is called, extra arguments are simply ignored.
+
+		// Determine the minimum number of parameters to check
+		minParams := len(func1.Params)
+		if len(func2.Params) < minParams {
+			minParams = len(func2.Params)
 		}
 
-		// For each parameter in func2, the corresponding parameter in func1
-		// must be unifiable (contravariant: func2 param type must be supertype of func1 param type)
-		for i, param2 := range func2.Params {
+		// For each parameter in both functions, check type compatibility
+		for i := 0; i < minParams; i++ {
 			param1 := func1.Params[i]
+			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
 			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
@@ -1458,6 +1469,19 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 				}}
 			}
 		}
+
+		// If func1 has more parameters than func2, those extra params must be optional
+		// Otherwise func1 would require arguments that func2 callers won't provide
+		for i := len(func2.Params); i < len(func1.Params); i++ {
+			if !func1.Params[i].Optional {
+				return []Error{&CannotUnifyTypesError{
+					T1: func1,
+					T2: func2,
+				}}
+			}
+		}
+
+		// If func1 has fewer parameters than func2, that's fine - extra args are ignored
 	}
 
 	// Check return types (covariant)

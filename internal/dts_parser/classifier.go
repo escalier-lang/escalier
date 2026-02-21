@@ -20,6 +20,12 @@ type FileClassification struct {
 	// PackageDecls contains top-level exported declarations when HasTopLevelExports is true.
 	// These form the public API of the package.
 	PackageDecls []Statement
+
+	// InternalDecls contains non-exported declarations in a module file.
+	// These are file-scoped type aliases, imports, etc. that are used internally
+	// by the exported declarations. They need to be processed before PackageDecls
+	// so that type references can be resolved.
+	InternalDecls []Statement
 }
 
 // NamedModuleDecl represents a named module declaration (`declare module "name" { ... }`).
@@ -39,6 +45,7 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		NamedModules:       make([]NamedModuleDecl, 0),
 		GlobalDecls:        make([]Statement, 0),
 		PackageDecls:       make([]Statement, 0),
+		InternalDecls:      make([]Statement, 0),
 	}
 
 	// First pass: detect if there are any top-level exports
@@ -63,15 +70,18 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 			continue
 		}
 
-		// If the file has top-level exports, non-module declarations are package exports
+		// If the file has top-level exports, classify as package or internal
 		if classification.HasTopLevelExports {
-			// Only exported declarations go to PackageDecls
 			if isTopLevelExport(stmt) {
+				// Exported declarations go to PackageDecls
 				// Expand export = Namespace if needed
 				expanded := expandExportEquals(stmt, module)
 				classification.PackageDecls = append(classification.PackageDecls, expanded...)
+			} else {
+				// Non-exported declarations go to InternalDecls
+				// These are file-scoped types needed for type resolution
+				classification.InternalDecls = append(classification.InternalDecls, stmt)
 			}
-			// Non-exported declarations in a module file are internal and not exposed
 		} else {
 			// No top-level exports means all declarations are globals
 			classification.GlobalDecls = append(classification.GlobalDecls, stmt)

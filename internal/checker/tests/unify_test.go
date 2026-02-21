@@ -231,24 +231,28 @@ func TestUnifyFuncTypes(t *testing.T) {
 		assert.NotEmpty(t, errors, "Expected errors for incompatible parameter types")
 	})
 
-	t.Run("fewer parameters in target function", func(t *testing.T) {
+	t.Run("source function with more required params should fail", func(t *testing.T) {
 		// fn (x: number, y: string) -> boolean  vs  fn (x: number) -> boolean
-		// func1 takes more params than func2 expects - this should work
+		// func1 has more required params than func2 expects - this should fail
+		// because callers of func2 won't provide the extra required params
 		func1 := test_util.ParseTypeAnn("fn(x: number, y: string) -> boolean")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> boolean")
 
 		errors := checker.Unify(ctx, func1, func2)
-		assert.Empty(t, errors, "Expected no errors when target function has fewer parameters")
+		assert.NotEmpty(t, errors, "Expected errors when source function has more required parameters")
 	})
 
-	t.Run("more parameters in target function should fail", func(t *testing.T) {
+	t.Run("more parameters in target function should succeed", func(t *testing.T) {
 		// fn (x: number) -> boolean  vs  fn (x: number, y: string) -> boolean
-		// func2 expects more params than func1 provides - this should fail
+		// In TypeScript, a function with fewer parameters can be assigned to a function
+		// type that expects more parameters. The extra arguments are simply ignored.
+		// This is essential for callback semantics (e.g., Array.forEach callback can
+		// ignore index and array parameters).
 		func1 := test_util.ParseTypeAnn("fn(x: number) -> boolean")
 		func2 := test_util.ParseTypeAnn("fn(x: number, y: string) -> boolean")
 
 		errors := checker.Unify(ctx, func1, func2)
-		assert.NotEmpty(t, errors, "Expected errors when target function has more parameters")
+		assert.Empty(t, errors, "Expected no errors when source function has fewer parameters")
 	})
 
 	t.Run("optional parameters", func(t *testing.T) {

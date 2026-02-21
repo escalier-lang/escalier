@@ -194,6 +194,11 @@ type LoadedPackageResult struct {
 	// and all declarations if the file has no top-level exports.
 	GlobalModule *ast.Module
 
+	// InternalModule is the AST module containing non-exported declarations in a module file.
+	// These are file-scoped type aliases, imports, etc. that are used internally
+	// by the exported declarations. Should be processed before PackageModule.
+	InternalModule *ast.Module
+
 	// NamedModules maps module names to their AST modules.
 	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
 	NamedModules map[string]*ast.Module
@@ -232,6 +237,18 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 
 	result := &LoadedPackageResult{
 		NamedModules: make(map[string]*ast.Module),
+	}
+
+	// Process internal declarations (non-exported types needed for type resolution)
+	if len(classification.InternalDecls) > 0 {
+		internalDtsModule := &dts_parser.Module{
+			Statements: classification.InternalDecls,
+		}
+		internalAstModule, err := interop.ConvertModule(internalDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting internal declarations: %w", err)
+		}
+		result.InternalModule = internalAstModule
 	}
 
 	// Process package declarations (exported symbols)

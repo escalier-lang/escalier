@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,6 +112,106 @@ func setupJSXTestScope(c *Checker) *Scope {
 	return scope
 }
 
+// getProjectRoot returns the project root directory (where go.mod is located).
+func getProjectRoot(t *testing.T) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+
+	projectRoot := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+			return projectRoot
+		}
+		parent := filepath.Dir(projectRoot)
+		if parent == projectRoot {
+			t.Fatalf("Could not find project root with go.mod")
+			return ""
+		}
+		projectRoot = parent
+	}
+}
+
+// Cached React types - loaded once and reused across all tests
+var (
+	cachedJSXNamespace   *type_system.Namespace
+	cachedReactNamespace *type_system.Namespace
+	reactTypesLoaded     bool
+	reactTypesLoadOnce   sync.Once
+)
+
+// loadReactTypesOnce loads React types once and caches them for reuse across tests.
+func loadReactTypesOnce(t *testing.T) {
+	reactTypesLoadOnce.Do(func() {
+		// Create a temporary checker just for loading types
+		c := NewChecker()
+		scope := Prelude(c)
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Logf("Failed to get current directory: %v", err)
+			return
+		}
+
+		projectRoot := cwd
+		for {
+			if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+				break
+			}
+			parent := filepath.Dir(projectRoot)
+			if parent == projectRoot {
+				t.Logf("Could not find project root with go.mod")
+				return
+			}
+			projectRoot = parent
+		}
+
+		errors := c.LoadReactTypes(ctx, projectRoot)
+		if len(errors) > 0 {
+			t.Logf("LoadReactTypes had %d errors (some TypeScript features are not yet supported)", len(errors))
+		}
+
+		// Cache the JSX namespace
+		if jsxNs, ok := scope.Namespace.GetNamespace("JSX"); ok {
+			cachedJSXNamespace = jsxNs
+		}
+
+		// Cache the React namespace
+		if reactNs, ok := scope.Namespace.GetNamespace("React"); ok {
+			cachedReactNamespace = reactNs
+		}
+
+		reactTypesLoaded = true
+	})
+}
+
+// setupReactTypesScope creates a checker and scope with the official @types/react types loaded.
+// This uses cached React type definitions for fast test execution.
+// Returns the scope. Note: Some types may not load due to unsupported TypeScript features,
+// but the JSX namespace and IntrinsicElements should be available for basic usage.
+func setupReactTypesScope(t *testing.T, c *Checker) *Scope {
+	// Load React types once (cached across all tests)
+	loadReactTypesOnce(t)
+
+	scope := Prelude(c)
+
+	// Copy cached namespaces to this scope
+	if cachedJSXNamespace != nil {
+		scope.Namespace.SetNamespace("JSX", cachedJSXNamespace)
+	}
+	if cachedReactNamespace != nil {
+		scope.Namespace.SetNamespace("React", cachedReactNamespace)
+	}
+
+	return scope
+}
+
 func TestJSXElementBasic(t *testing.T) {
 	tests := map[string]struct {
 		input string
@@ -190,8 +291,9 @@ func TestJSXElementBasic(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
+			scope := setupReactTypesScope(t, c)
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      scope,
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -248,7 +350,7 @@ func TestJSXFragmentBasic(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -313,7 +415,7 @@ func TestJSXInferredTypes(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -401,7 +503,7 @@ func TestJSXComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -470,12 +572,7 @@ func TestIntrinsicElementValidProps(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -509,15 +606,15 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 		},
 		"DivOnClickWithString": {
 			input:       `val elem = <div onClick="notAFunction" />`,
-			errorSubstr: "fn", // Error should mention that a function type was expected
+			errorSubstr: "EventHandler", // Error should mention the event handler type
 		},
 		"ButtonOnClickWithNumber": {
 			input:       `val elem = <button onClick={42} />`,
-			errorSubstr: "fn", // Error should mention that a function type was expected
+			errorSubstr: "EventHandler", // Error should mention the event handler type
 		},
 		"InputOnChangeWithBoolean": {
 			input:       `val elem = <input onChange={true} />`,
-			errorSubstr: "fn", // Error should mention that a function type was expected
+			errorSubstr: "EventHandler", // Error should mention the event handler type
 		},
 	}
 
@@ -538,12 +635,7 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -603,6 +695,8 @@ func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
 }
 
 func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
+	// This test uses a custom JSX namespace with required props (src, alt on img)
+	// because @types/react makes all HTML element props optional
 	tests := map[string]struct {
 		input       string
 		errorSubstr string
@@ -638,12 +732,11 @@ func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with required props
+			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
+			scope := c.GlobalScope.WithNewScope()
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			assert.NoError(t, err)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -698,12 +791,7 @@ func TestIntrinsicElementWithAllRequiredProps(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with required props
-			jsxNs := createJSXNamespaceWithRequiredProps()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -753,12 +841,7 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -861,12 +944,7 @@ func TestIntrinsicElementEventHandlers(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -934,12 +1012,7 @@ func TestSpreadPropsValidTypes(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -982,7 +1055,7 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 				val props = { onClick: "notAFunction" }
 				val elem = <div {...props} />
 			`,
-			errorSubstr: "fn",
+			errorSubstr: "EventHandler", // Error should mention the event handler type
 		},
 	}
 
@@ -1003,12 +1076,7 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with IntrinsicElements to the scope
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -1034,6 +1102,8 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 }
 
 func TestSpreadPropsSatisfyRequired(t *testing.T) {
+	// This test uses a custom JSX namespace with required props (src, alt on img)
+	// because @types/react makes all HTML element props optional
 	tests := map[string]struct {
 		input string
 	}{
@@ -1080,12 +1150,11 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with required props
+			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
+			scope := c.GlobalScope.WithNewScope()
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			assert.NoError(t, err)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -1105,6 +1174,8 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 }
 
 func TestSpreadPropsMissingRequired(t *testing.T) {
+	// This test uses a custom JSX namespace with required props (src, alt on img)
+	// because @types/react makes all HTML element props optional
 	tests := map[string]struct {
 		input       string
 		errorSubstr string
@@ -1149,12 +1220,11 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace with required props
+			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
+			scope := c.GlobalScope.WithNewScope()
 			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			assert.NoError(t, err)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -1238,7 +1308,7 @@ func TestComponentValidProps(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1306,7 +1376,7 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1380,7 +1450,7 @@ func TestComponentWrongPropType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1435,7 +1505,7 @@ func TestUnknownComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1509,7 +1579,7 @@ func TestMemberExpressionComponent(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1576,7 +1646,7 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1658,7 +1728,7 @@ func TestComponentWithValidChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1748,7 +1818,7 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1819,7 +1889,7 @@ func TestMultipleChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1884,7 +1954,7 @@ func TestNestedComponentChildren(t *testing.T) {
 
 			c := NewChecker()
 			inferCtx := Context{
-				Scope:      setupJSXTestScope(c),
+				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
@@ -1960,12 +2030,7 @@ func TestKeyPropValid(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2021,12 +2086,7 @@ func TestKeyPropInvalid(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2090,12 +2150,7 @@ func TestKeyNotPassedToProps(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2162,12 +2217,7 @@ func TestRefPropOnIntrinsicElement(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2224,12 +2274,7 @@ func TestRefNotPassedToProps(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2325,12 +2370,7 @@ func TestKeyPropOnComponent(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2401,12 +2441,7 @@ func TestKeyPropInvalidOnComponent(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2491,12 +2526,7 @@ func TestRefPropOnComponent(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2573,12 +2603,7 @@ func TestKeyAndRefTogetherOnComponent(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,
@@ -2633,12 +2658,7 @@ func TestKeyAndRefTogether(t *testing.T) {
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 			c := NewChecker()
-			scope := Prelude(c)
-
-			// Add JSX namespace
-			jsxNs := createJSXNamespaceWithIntrinsicElements()
-			err := scope.Namespace.SetNamespace("JSX", jsxNs)
-			assert.NoError(t, err, "Should set JSX namespace without error")
+			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
 				Scope:      scope,

@@ -322,7 +322,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			return nil
 		}
 
-		typeAlias := resolveQualifiedTypeAlias(v.ctx, t.Name)
+		// First, check if TypeAlias is already set on the TypeRefType
+		typeAlias := t.TypeAlias
+		if typeAlias == nil {
+			typeAlias = resolveQualifiedTypeAlias(v.ctx, t.Name)
+		}
 		// TODO: Check if the qualifier is a type.  If it is, we can treat this
 		// as a member access type.
 		if typeAlias == nil {
@@ -330,7 +334,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			neverType := type_system.NewNeverType(nil)
 			neverType.SetProvenance(&type_system.TypeProvenance{Type: t})
 			return neverType
-		} // Replace type params with type args if the type is generic
+		}
+		// Replace type params with type args if the type is generic
 		expandedType := typeAlias.Type
 
 		// Don't expand nominal object types

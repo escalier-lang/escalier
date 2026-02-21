@@ -83,20 +83,32 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}
 	}
 
-	// 7. Process package module (React namespace with FC, Component, etc.)
+	// 7. Process internal declarations first (file-scoped types like Booleanish, NativeAnimationEvent, etc.)
+	// These need to be in scope before package declarations are processed.
 	var pkgNs *type_system.Namespace
-	if loadResult.PackageModule != nil {
-		pkgNs = type_system.NewNamespace()
-		pkgScope := &Scope{
-			Parent:    c.GlobalScope,
-			Namespace: pkgNs,
-		}
-		pkgCtx := Context{
-			Scope:      pkgScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
+	pkgNs = type_system.NewNamespace()
+	pkgScope := &Scope{
+		Parent:    c.GlobalScope,
+		Namespace: pkgNs,
+	}
+	pkgCtx := Context{
+		Scope:      pkgScope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
 
+	if loadResult.InternalModule != nil {
+		internalErrors := c.InferModule(pkgCtx, loadResult.InternalModule)
+		if len(internalErrors) > 0 {
+			for _, err := range internalErrors {
+				fmt.Fprintf(os.Stderr, "Internal module error in @types/react: %s\n", err.Message())
+			}
+			errors = append(errors, internalErrors...)
+		}
+	}
+
+	// 8. Process package module (React namespace with FC, Component, etc.)
+	if loadResult.PackageModule != nil {
 		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
 		if len(pkgErrors) > 0 {
 			for _, err := range pkgErrors {
@@ -106,22 +118,10 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}
 	}
 
-	// 8. Process named modules (e.g., declare module "react" { ... })
+	// 9. Process named modules (e.g., declare module "react" { ... })
 	// Check if there's a "react" named module that should be used as the package namespace
 	if reactModule, ok := loadResult.NamedModules["react"]; ok {
-		if pkgNs == nil {
-			pkgNs = type_system.NewNamespace()
-		}
-		namedScope := &Scope{
-			Parent:    c.GlobalScope,
-			Namespace: pkgNs,
-		}
-		namedCtx := Context{
-			Scope:      namedScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		namedErrors := c.InferModule(namedCtx, reactModule)
+		namedErrors := c.InferModule(pkgCtx, reactModule)
 		if len(namedErrors) > 0 {
 			for _, err := range namedErrors {
 				fmt.Fprintf(os.Stderr, "Named module error in @types/react: %s\n", err.Message())
@@ -130,16 +130,24 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}
 	}
 
-	// 9. Always register in PackageRegistry for caching (even if partially populated)
-	// This prevents re-parsing on subsequent calls
-	if pkgNs == nil {
-		pkgNs = type_system.NewNamespace() // Empty namespace for caching
+	// 10. Copy JSX namespace from React to the current scope
+	// In @types/react, JSX is nested inside React (React.JSX), but the JSX type checker
+	// expects it at the top level as "JSX". Copy it to the current scope's namespace.
+	if jsxNs, ok := pkgNs.GetNamespace("JSX"); ok {
+		if err := ctx.Scope.Namespace.SetNamespace("JSX", jsxNs); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set JSX namespace in scope: %s\n", err.Error())
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "Warning: JSX namespace not found in React package namespace\n")
 	}
+
+	// 11. Always register in PackageRegistry for caching (even if partially populated)
+	// This prevents re-parsing on subsequent calls
 	if regErr := c.PackageRegistry.Register(entryPoint, pkgNs); regErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to register @types/react: %s\n", regErr.Error())
 	}
 
-	// 10. Inject types into current scope
+	// 12. Inject types into current scope
 	if err := c.injectReactTypes(ctx, pkgNs); err != nil {
 		errors = append(errors, &GenericError{
 			message: "Failed to inject React types: " + err.Error(),

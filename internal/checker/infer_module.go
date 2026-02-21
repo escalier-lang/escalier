@@ -1337,11 +1337,12 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 //   - is NOT a replacement for inferFuncTypeParams, which is responsible for
 //     function-level generic parameter handling and associated diagnostics.
 func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system.TypeParam {
-	// Sort type parameters topologically so dependencies come first
+	// Sort type parameters topologically for processing (so constraints can reference earlier params)
 	sortedTypeParams := ast.SortTypeParamsTopologically(astTypeParams)
 
-	typeParams := make([]*type_system.TypeParam, len(sortedTypeParams))
-	for i, typeParam := range sortedTypeParams {
+	// Create a map to store type params by name
+	typeParamMap := make(map[string]*type_system.TypeParam)
+	for _, typeParam := range sortedTypeParams {
 		var constraintType type_system.Type
 		var defaultType type_system.Type
 		if typeParam.Constraint != nil {
@@ -1350,11 +1351,18 @@ func (c *Checker) inferTypeParams(astTypeParams []*ast.TypeParam) []*type_system
 		if typeParam.Default != nil {
 			defaultType = c.FreshVar(&ast.NodeProvenance{Node: typeParam.Default})
 		}
-		typeParams[i] = &type_system.TypeParam{
+		typeParamMap[typeParam.Name] = &type_system.TypeParam{
 			Name:       typeParam.Name,
 			Constraint: constraintType,
 			Default:    defaultType,
 		}
+	}
+
+	// Build result in DECLARATION order (not sorted order)
+	// This is critical for correct substitution when the type is instantiated
+	typeParams := make([]*type_system.TypeParam, len(astTypeParams))
+	for i, astParam := range astTypeParams {
+		typeParams[i] = typeParamMap[astParam.Name]
 	}
 	return typeParams
 }
