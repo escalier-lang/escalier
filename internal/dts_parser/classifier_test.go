@@ -160,7 +160,7 @@ func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 			export { Foo, bar }`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  1,
+			packageDeclsCount:  3, // Foo, bar, and the export statement
 			namedModulesCount:  0,
 		},
 		{
@@ -399,7 +399,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = Foo;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  2,
+			packageDeclsCount:  3, // namespace Foo + expanded bar and baz
 			namedModulesCount:  0,
 		},
 		{
@@ -412,7 +412,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = MyLib;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  3,
+			packageDeclsCount:  4, // namespace MyLib + expanded Options, configure, VERSION
 			namedModulesCount:  0,
 		},
 	}

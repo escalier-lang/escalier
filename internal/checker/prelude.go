@@ -185,19 +185,15 @@ func UpdateArrayMutability(namespace *type_system.Namespace) {
 
 // LoadedPackageResult holds the result of loading and classifying a .d.ts file.
 type LoadedPackageResult struct {
-	// PackageModule is the AST module containing package declarations (exported symbols).
-	// nil if the file has no top-level exports.
+	// PackageModule is the AST module containing package declarations.
+	// Contains both exported and non-exported declarations; the Export() method
+	// on each declaration distinguishes them. nil if the file has no top-level exports.
 	PackageModule *ast.Module
 
 	// GlobalModule is the AST module containing global declarations.
 	// This includes declarations from `declare global { ... }` blocks,
 	// and all declarations if the file has no top-level exports.
 	GlobalModule *ast.Module
-
-	// InternalModule is the AST module containing non-exported declarations in a module file.
-	// These are file-scoped type aliases, imports, etc. that are used internally
-	// by the exported declarations. Should be processed before PackageModule.
-	InternalModule *ast.Module
 
 	// NamedModules maps module names to their AST modules.
 	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
@@ -239,19 +235,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 		NamedModules: make(map[string]*ast.Module),
 	}
 
-	// Process internal declarations (non-exported types needed for type resolution)
-	if len(classification.InternalDecls) > 0 {
-		internalDtsModule := &dts_parser.Module{
-			Statements: classification.InternalDecls,
-		}
-		internalAstModule, err := interop.ConvertModule(internalDtsModule)
-		if err != nil {
-			return nil, fmt.Errorf("converting internal declarations: %w", err)
-		}
-		result.InternalModule = internalAstModule
-	}
-
-	// Process package declarations (exported symbols)
+	// Process package declarations (both exported and non-exported)
 	if len(classification.PackageDecls) > 0 {
 		pkgDtsModule := &dts_parser.Module{
 			Statements: classification.PackageDecls,

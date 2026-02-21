@@ -156,7 +156,8 @@ func (c *Checker) InferComponent(
 					nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
 						Source:  &ast.NodeProvenance{Node: decl},
 						Type:    funcType,
-						Mutable: false,
+						Mutable:  false,
+						Exported: decl.Export(),
 					})
 				} else {
 					// Merge with existing overload by creating a new intersection type
@@ -197,6 +198,7 @@ func (c *Checker) InferComponent(
 
 				var names []string
 				for name, binding := range bindings {
+					binding.Exported = decl.Export()
 					nsCtx.Scope.setValue(name, binding)
 					names = append(names, name)
 				}
@@ -241,6 +243,7 @@ func (c *Checker) InferComponent(
 				typeAlias := &type_system.TypeAlias{
 					Type:       c.FreshVar(&ast.NodeProvenance{Node: decl}),
 					TypeParams: typeParams,
+					Exported:   decl.Export(),
 				}
 
 				nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
@@ -262,6 +265,7 @@ func (c *Checker) InferComponent(
 				typeAlias := &type_system.TypeAlias{
 					Type:       instanceType,
 					TypeParams: typeParams,
+					Exported:   decl.Export(),
 				}
 
 				nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
@@ -495,6 +499,7 @@ func (c *Checker) InferComponent(
 					Source:  &ast.NodeProvenance{Node: decl},
 					Type:    classObjType,
 					Mutable: false,
+					Exported: decl.Export(),
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
 			case *ast.EnumDecl:
@@ -521,6 +526,7 @@ func (c *Checker) InferComponent(
 				typeAlias := &type_system.TypeAlias{
 					Type:       enumType,
 					TypeParams: typeParams,
+					Exported:   decl.Export(),
 				}
 
 				nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
@@ -556,6 +562,7 @@ func (c *Checker) InferComponent(
 					typeAlias := &type_system.TypeAlias{
 						Type:       interfaceType,
 						TypeParams: typeParams,
+						Exported:   decl.Export(),
 					}
 
 					// Directly set in the namespace to allow interface merging

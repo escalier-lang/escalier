@@ -291,7 +291,9 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 	for _, specifier := range importStmt.Specifiers {
 		if specifier.Name == "*" {
 			// Namespace import: import * as alias from "pkg"
-			if err := ctx.Scope.Namespace.SetNamespace(specifier.Alias, pkgNs); err != nil {
+			// Filter to only include exported items
+			filteredNs := filterExportedNamespace(pkgNs)
+			if err := ctx.Scope.Namespace.SetNamespace(specifier.Alias, filteredNs); err != nil {
 				errors = append(errors, &GenericError{
 					message: fmt.Sprintf("Cannot bind namespace %q: %s", specifier.Alias, err.Error()),
 					span:    importStmt.Span(),
@@ -305,14 +307,14 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 				localName = specifier.Alias
 			}
 
-			// Check for value binding
-			if binding, ok := pkgNs.Values[specifier.Name]; ok {
+			// Check for value binding (only if exported)
+			if binding, ok := pkgNs.Values[specifier.Name]; ok && binding.Exported {
 				ctx.Scope.Namespace.Values[localName] = binding
 				found = true
 			}
 
-			// Check for type binding
-			if typeAlias, ok := pkgNs.Types[specifier.Name]; ok {
+			// Check for type binding (only if exported)
+			if typeAlias, ok := pkgNs.Types[specifier.Name]; ok && typeAlias.Exported {
 				ctx.Scope.Namespace.Types[localName] = typeAlias
 				found = true
 			}
@@ -354,4 +356,33 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 	}
 
 	return errors
+}
+
+// filterExportedNamespace creates a new namespace containing only exported items from the original.
+// This is used for namespace imports (import * as alias) to hide non-exported internals.
+func filterExportedNamespace(ns *type_system.Namespace) *type_system.Namespace {
+	filtered := type_system.NewNamespace()
+
+	for name, binding := range ns.Values {
+		if binding.Exported {
+			filtered.Values[name] = binding
+		}
+	}
+
+	for name, typeAlias := range ns.Types {
+		if typeAlias.Exported {
+			filtered.Types[name] = typeAlias
+		}
+	}
+
+	// Recursively filter nested namespaces
+	for name, subNs := range ns.Namespaces {
+		filteredSub := filterExportedNamespace(subNs)
+		// Only include if the filtered namespace has any items
+		if len(filteredSub.Values) > 0 || len(filteredSub.Types) > 0 || len(filteredSub.Namespaces) > 0 {
+			filtered.Namespaces[name] = filteredSub
+		}
+	}
+
+	return filtered
 }

@@ -57,8 +57,9 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 	c := NewChecker()
 	mockNs := type_system.NewNamespace()
 	mockNs.Values["helper"] = &type_system.Binding{
-		Type:    type_system.NewNumPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 
 	// Register with package name (for backwards compatibility with test patterns)
@@ -109,11 +110,13 @@ func TestNamedImportFromRegisteredPackage(t *testing.T) {
 			type_system.NewNumPrimType(nil),
 			type_system.NewNeverType(nil),
 		),
-		Mutable: false,
+		Mutable:  false,
+		Exported: true,
 	}
 	mockNs.Types["MyType"] = &type_system.TypeAlias{
 		Type:       type_system.NewStrPrimType(nil),
 		TypeParams: nil,
+		Exported:   true,
 	}
 
 	err := c.PackageRegistry.Register("test-pkg", mockNs)
@@ -157,8 +160,9 @@ func TestNamedImportWithAlias(t *testing.T) {
 	// Pre-register a mock package
 	mockNs := type_system.NewNamespace()
 	mockNs.Values["originalName"] = &type_system.Binding{
-		Type:    type_system.NewNumPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 
 	err := c.PackageRegistry.Register("alias-pkg", mockNs)
@@ -201,8 +205,9 @@ func TestNamedImportNotFound(t *testing.T) {
 	// Pre-register a mock package with limited exports
 	mockNs := type_system.NewNamespace()
 	mockNs.Values["exists"] = &type_system.Binding{
-		Type:    type_system.NewNumPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 
 	err := c.PackageRegistry.Register("limited-pkg", mockNs)
@@ -244,14 +249,16 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 	// Pre-register mock packages for main and subpath with different types
 	mainNs := type_system.NewNamespace()
 	mainNs.Values["mainExport"] = &type_system.Binding{
-		Type:    type_system.NewStrPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewStrPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 
 	fpNs := type_system.NewNamespace()
 	fpNs.Values["fpExport"] = &type_system.Binding{
-		Type:    type_system.NewNumPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 
 	err := c.PackageRegistry.Register("lodash", mainNs)
@@ -300,8 +307,9 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 	mockNs := type_system.NewNamespace()
 	subNs := type_system.NewNamespace()
 	subNs.Values["nestedFunc"] = &type_system.Binding{
-		Type:    type_system.NewNumPrimType(nil),
-		Mutable: false,
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
 	}
 	mockNs.SetNamespace("nested", subNs)
 

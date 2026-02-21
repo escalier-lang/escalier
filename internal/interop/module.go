@@ -28,6 +28,7 @@ func processNamespace(
 	namespaces *btree.Map[string, *ast.Namespace],
 ) error {
 	var decls []ast.Decl
+	var exportedNames []string // Track names from "export = X" patterns
 
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
@@ -70,9 +71,14 @@ func processNamespace(
 						return fmt.Errorf("converting exported declaration: %w", err)
 					}
 					if decl != nil {
+						decl.SetExport(true)
 						decls = append(decls, decl)
 					}
 				}
+			} else if s.ExportAssignment && len(s.NamedExports) > 0 {
+				// Handle "export = identifier" pattern
+				// Track the identifier to mark as exported later
+				exportedNames = append(exportedNames, s.NamedExports[0].Local.Name)
 			}
 			// For other export forms (export {}, export * from "...", etc.), skip for now
 			continue
@@ -117,12 +123,54 @@ func processNamespace(
 		}
 	}
 
+	// Post-process: Mark declarations that were export-assigned as exported
+	// This handles "export = identifier" patterns
+	for _, exportName := range exportedNames {
+		for _, decl := range decls {
+			if getDeclName(decl) == exportName {
+				decl.SetExport(true)
+				break
+			}
+		}
+	}
+
 	// Merge the declarations into the namespace
 	if len(decls) > 0 {
 		mergeNamespace(name, decls, namespaces)
 	}
 
 	return nil
+}
+
+// getDeclName returns the name of a declaration, or empty string if unnamed.
+func getDeclName(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.VarDecl:
+		if ident, ok := d.Pattern.(*ast.IdentPat); ok {
+			return ident.Name
+		}
+	case *ast.FuncDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	case *ast.TypeDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	case *ast.InterfaceDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	case *ast.ClassDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	case *ast.EnumDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	}
+	return ""
 }
 
 // mergeNamespace merges declarations into an existing namespace or creates a new one.

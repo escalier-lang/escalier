@@ -17,15 +17,9 @@ type FileClassification struct {
 	// If HasTopLevelExports is true, only `declare global { ... }` contents go here.
 	GlobalDecls []Statement
 
-	// PackageDecls contains top-level exported declarations when HasTopLevelExports is true.
-	// These form the public API of the package.
+	// PackageDecls contains all declarations when HasTopLevelExports is true.
+	// The export flag on ast.Decl distinguishes exported from non-exported declarations.
 	PackageDecls []Statement
-
-	// InternalDecls contains non-exported declarations in a module file.
-	// These are file-scoped type aliases, imports, etc. that are used internally
-	// by the exported declarations. They need to be processed before PackageDecls
-	// so that type references can be resolved.
-	InternalDecls []Statement
 }
 
 // NamedModuleDecl represents a named module declaration (`declare module "name" { ... }`).
@@ -45,7 +39,6 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		NamedModules:       make([]NamedModuleDecl, 0),
 		GlobalDecls:        make([]Statement, 0),
 		PackageDecls:       make([]Statement, 0),
-		InternalDecls:      make([]Statement, 0),
 	}
 
 	// First pass: detect if there are any top-level exports
@@ -70,17 +63,16 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 			continue
 		}
 
-		// If the file has top-level exports, classify as package or internal
+		// If the file has top-level exports, all declarations go to PackageDecls
+		// The export flag on ast.Decl will distinguish exported from non-exported
 		if classification.HasTopLevelExports {
 			if isTopLevelExport(stmt) {
-				// Exported declarations go to PackageDecls
-				// Expand export = Namespace if needed
+				// Exported declarations - expand export = Namespace if needed
 				expanded := expandExportEquals(stmt, module)
 				classification.PackageDecls = append(classification.PackageDecls, expanded...)
 			} else {
-				// Non-exported declarations go to InternalDecls
-				// These are file-scoped types needed for type resolution
-				classification.InternalDecls = append(classification.InternalDecls, stmt)
+				// Non-exported declarations also go to PackageDecls
+				classification.PackageDecls = append(classification.PackageDecls, stmt)
 			}
 		} else {
 			// No top-level exports means all declarations are globals

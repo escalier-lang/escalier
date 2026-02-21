@@ -4,6 +4,7 @@ import "github.com/escalier-lang/escalier/internal/provenance"
 
 type DeclGetters interface {
 	Export() bool
+	SetExport(bool)
 	Declare() bool
 	Provenance() provenance.Provenance
 	SetProvenance(p provenance.Provenance)
@@ -63,8 +64,9 @@ func NewVarDecl(
 		provenance:   nil,
 	}
 }
-func (d *VarDecl) Export() bool  { return d.export }
-func (d *VarDecl) Declare() bool { return d.declare }
+func (d *VarDecl) Export() bool      { return d.export }
+func (d *VarDecl) SetExport(e bool)  { d.export = e }
+func (d *VarDecl) Declare() bool     { return d.declare }
 func (d *VarDecl) Span() Span    { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
@@ -130,8 +132,9 @@ func NewFuncDecl(
 		provenance: nil,
 	}
 }
-func (d *FuncDecl) Export() bool  { return d.export }
-func (d *FuncDecl) Declare() bool { return d.declare }
+func (d *FuncDecl) Export() bool      { return d.export }
+func (d *FuncDecl) SetExport(e bool)  { d.export = e }
+func (d *FuncDecl) Declare() bool     { return d.declare }
 func (d *FuncDecl) Span() Span    { return d.span }
 func (d *FuncDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
@@ -175,8 +178,9 @@ func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, 
 		provenance: nil,
 	}
 }
-func (d *TypeDecl) Export() bool  { return d.export }
-func (d *TypeDecl) Declare() bool { return d.declare }
+func (d *TypeDecl) Export() bool      { return d.export }
+func (d *TypeDecl) SetExport(e bool)  { d.export = e }
+func (d *TypeDecl) Declare() bool     { return d.declare }
 func (d *TypeDecl) Span() Span    { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
@@ -215,8 +219,9 @@ func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, extends []*TypeRefTy
 		provenance: nil,
 	}
 }
-func (d *InterfaceDecl) Export() bool  { return d.export }
-func (d *InterfaceDecl) Declare() bool { return d.declare }
+func (d *InterfaceDecl) Export() bool      { return d.export }
+func (d *InterfaceDecl) SetExport(e bool)  { d.export = e }
+func (d *InterfaceDecl) Declare() bool     { return d.declare }
 func (d *InterfaceDecl) Span() Span    { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
@@ -312,8 +317,9 @@ func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export,
 		provenance: nil,
 	}
 }
-func (d *EnumDecl) Export() bool  { return d.export }
-func (d *EnumDecl) Declare() bool { return d.declare }
+func (d *EnumDecl) Export() bool      { return d.export }
+func (d *EnumDecl) SetExport(e bool)  { d.export = e }
+func (d *EnumDecl) Declare() bool     { return d.declare }
 func (d *EnumDecl) Span() Span    { return d.span }
 func (d *EnumDecl) Accept(v Visitor) {
 	// TODO: visit type params

@@ -35,9 +35,10 @@ func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn,
 	}
 }
 
-func (*ClassDecl) isDecl()         {}
-func (d *ClassDecl) Export() bool  { return d.export }
-func (d *ClassDecl) Declare() bool { return d.declare }
+func (*ClassDecl) isDecl()             {}
+func (d *ClassDecl) Export() bool      { return d.export }
+func (d *ClassDecl) SetExport(e bool)  { d.export = e }
+func (d *ClassDecl) Declare() bool     { return d.declare }
 func (d *ClassDecl) Span() Span    { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
