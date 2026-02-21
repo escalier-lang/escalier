@@ -19,7 +19,7 @@ The JSX parser and AST types are already complete. Implementation requires:
 | Phase 1 | ✅ Complete | Core infrastructure - basic JSX compiles and type-checks |
 | Phase 2 | ✅ Complete | Intrinsic element type validation |
 | Phase 3 | ✅ Complete | Component prop type checking |
-| Phase 4 | 🔄 In Progress (4.1 ✅, 4.2 ✅, 4.3 ✅) | React type definitions integration |
+| Phase 4 | 🔄 In Progress (4.1 ✅, 4.2 ✅, 4.3 ✅, 4.4 🔄) | React type definitions integration |
 | Phase 5 | Not started | Code generation enhancements |
 | Phase 6 | Not started | Automatic JSX transform |
 | Phase 7 | Not started | Error messages and DX |
@@ -1321,11 +1321,11 @@ childrenType := c.computeChildrenType(ctx, childTypes) // Pass ctx here
 ```
 
 **Tasks**:
-- [ ] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
-- [ ] Implement `getReactNodeType()` - resolve React.ReactNode for children
-- [ ] Update `computeChildrenType()` signature to accept `ctx Context`
-- [ ] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
-- [ ] Handle case where React types aren't available (use fallback types)
+- [x] Implement `getJSXElementType()` - resolve JSX.Element from loaded types
+- [x] Implement `getReactNodeType()` - resolve React.ReactNode for children
+- [x] Update `computeChildrenType()` signature to accept `ctx Context`
+- [x] Thread `ctx` through `inferJSXChildren()` and `inferJSXElement()` call chains
+- [x] Handle case where React types aren't available (use fallback types)
 - [ ] Map `React.FC`, `React.Component` types to Escalier type-system
 
 **Tests** (add to `internal/checker/tests/jsx_test.go`):

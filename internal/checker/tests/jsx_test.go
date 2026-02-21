@@ -3003,3 +3003,240 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 		assert.False(t, found, "Non-JSX module should not trigger @types/react loading")
 	})
 }
+
+// Phase 4.4 Tests: JSX.Element Type Resolution
+
+// TestJSXElementTypeResolution tests that JSX elements return JSX.Element type
+// when the JSX namespace is available with an Element type defined.
+func TestJSXElementTypeResolution(t *testing.T) {
+	t.Run("ReturnsJSXElementWhenNamespaceAvailable", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <div />`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope with JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		// Create a JSX namespace with an Element type
+		jsxNs := type_system.NewNamespace()
+		elementType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.NewStrKey("$$typeof"),
+				type_system.NewStrPrimType(nil),
+			),
+		})
+		jsxNs.Types["Element"] = &type_system.TypeAlias{
+			Type:       elementType,
+			TypeParams: nil,
+		}
+
+		// Also add IntrinsicElements so div is recognized
+		jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.NewStrKey("div"),
+					type_system.NewObjectType(nil, nil),
+				),
+			}),
+			TypeParams: nil,
+		}
+
+		// Add JSX namespace to the scope (not GlobalScope to avoid test interference)
+		err := scope.Namespace.SetNamespace("JSX", jsxNs)
+		assert.NoError(t, err)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script
+		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have no errors
+		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+
+		// Check that elem has the JSX.Element type (with $$typeof property)
+		binding := resultScope.GetValue("elem")
+		assert.NotNil(t, binding, "Expected elem binding to exist")
+
+		// Prune the type to resolve any type variables
+		prunedType := type_system.Prune(binding.Type)
+
+		// The type should be the JSX.Element type we defined
+		objType, ok := prunedType.(*type_system.ObjectType)
+		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
+
+		// Check for the $$typeof property we added to JSX.Element
+		found := false
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Str == "$$typeof" {
+					found = true
+					break
+				}
+			}
+		}
+		assert.True(t, found, "Expected JSX.Element type with $$typeof property")
+	})
+
+	t.Run("ReturnsFallbackWhenJSXNamespaceNotAvailable", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <div />`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create checker and scope WITHOUT JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script (should not crash, should use fallback)
+		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have no errors (permissive mode without JSX types)
+		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+
+		// Check that elem has a type (could be fallback object type)
+		binding := resultScope.GetValue("elem")
+		assert.NotNil(t, binding, "Expected elem binding to exist")
+
+		// Prune the type to resolve any type variables
+		prunedType := type_system.Prune(binding.Type)
+
+		// The type should be an ObjectType (either empty fallback or inferred)
+		// We just verify it's an ObjectType and doesn't have our custom $$typeof property
+		objType, ok := prunedType.(*type_system.ObjectType)
+		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
+
+		// The fallback type should NOT have $$typeof property (since JSX namespace wasn't set)
+		hasCustomProp := false
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Str == "$$typeof" {
+					hasCustomProp = true
+					break
+				}
+			}
+		}
+		assert.False(t, hasCustomProp, "Fallback type should not have $$typeof property")
+	})
+}
+
+// TestJSXFragmentTypeResolution tests that JSX fragments return JSX.Element type.
+func TestJSXFragmentTypeResolution(t *testing.T) {
+	t.Run("FragmentReturnsJSXElementType", func(t *testing.T) {
+		t.Parallel()
+		input := `val elem = <><div /></>`
+
+		source := &ast.Source{
+			ID:       0,
+			Path:     "input.esc",
+			Contents: input,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		p := parser.NewParser(ctx, source)
+		script, parseErrors := p.ParseScript()
+
+		assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+		// Create a fresh checker and scope with JSX namespace
+		c := NewChecker()
+		scope := Prelude(c)
+
+		// Create a JSX namespace with an Element type
+		jsxNs := type_system.NewNamespace()
+		elementType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.NewStrKey("$$typeof"),
+				type_system.NewStrPrimType(nil),
+			),
+		})
+		jsxNs.Types["Element"] = &type_system.TypeAlias{
+			Type:       elementType,
+			TypeParams: nil,
+		}
+
+		// Also add IntrinsicElements so div is recognized
+		jsxNs.Types["IntrinsicElements"] = &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.NewStrKey("div"),
+					type_system.NewObjectType(nil, nil),
+				),
+			}),
+			TypeParams: nil,
+		}
+
+		// Add JSX namespace to the scope (not GlobalScope to avoid test interference)
+		err := scope.Namespace.SetNamespace("JSX", jsxNs)
+		assert.NoError(t, err)
+
+		checkerCtx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Infer the script
+		resultScope, inferErrors := c.InferScript(checkerCtx, script)
+
+		// Should have no errors
+		assert.Len(t, inferErrors, 0, "Expected no inference errors")
+
+		// Check that elem has the JSX.Element type
+		binding := resultScope.GetValue("elem")
+		assert.NotNil(t, binding, "Expected elem binding to exist")
+
+		// Prune the type to resolve any type variables
+		prunedType := type_system.Prune(binding.Type)
+
+		// The type should be the JSX.Element type we defined
+		objType, ok := prunedType.(*type_system.ObjectType)
+		assert.True(t, ok, "Expected ObjectType, got %T", prunedType)
+
+		// Check for the $$typeof property
+		found := false
+		for _, elem := range objType.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				if prop.Name.Str == "$$typeof" {
+					found = true
+					break
+				}
+			}
+		}
+		assert.True(t, found, "Expected fragment to have JSX.Element type with $$typeof property")
+	})
+}
