@@ -630,7 +630,7 @@ func (c *Checker) collectPropsFromType(
 	expectedProps *btree.Map[string, type_system.Type],
 	requiredProps *btree.Set[string],
 ) {
-	c.collectPropsFromTypeWithDepth(ctx, t, expectedProps, requiredProps, 0)
+	c.collectPropsFromTypeWithDepth(ctx, t, expectedProps, requiredProps)
 }
 
 func (c *Checker) collectPropsFromTypeWithDepth(
@@ -638,25 +638,11 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 	t type_system.Type,
 	expectedProps *btree.Map[string, type_system.Type],
 	requiredProps *btree.Set[string],
-	depth int,
 ) {
-	// Prevent infinite recursion and limit depth
-	if depth > 20 {
-		return
-	}
-
 	t = type_system.Prune(t)
-
 
 	switch typ := t.(type) {
 	case *type_system.ObjectType:
-		// Only skip DOM element types that have many readonly non-optional properties
-		// (like Node.ELEMENT_NODE, Node.ATTRIBUTE_NODE, etc.)
-		// React interfaces like HTMLAttributes have many properties but they're optional
-		if isDOMInterfaceName(typ) {
-			return
-		}
-
 		// Collect direct properties
 		for _, elem := range typ.Elems {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
@@ -674,7 +660,7 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 
 		// Recursively collect properties from extended interfaces
 		for _, extendsTypeRef := range typ.Extends {
-			c.collectPropsFromTypeWithDepth(ctx, extendsTypeRef, expectedProps, requiredProps, depth+1)
+			c.collectPropsFromTypeWithDepth(ctx, extendsTypeRef, expectedProps, requiredProps)
 		}
 
 	case *type_system.TypeRefType:
@@ -693,44 +679,21 @@ func (c *Checker) collectPropsFromTypeWithDepth(
 				substitutions := createTypeParamSubstitutions(typ.TypeArgs, typ.TypeAlias.TypeParams)
 				underlyingType = SubstituteTypeParams(underlyingType, substitutions)
 			}
-			c.collectPropsFromTypeWithDepth(ctx, underlyingType, expectedProps, requiredProps, depth+1)
+			c.collectPropsFromTypeWithDepth(ctx, underlyingType, expectedProps, requiredProps)
 		} else {
 			// TypeAlias not set, try ExpandType to resolve it
 			expandedType, _ := c.ExpandType(ctx, typ, 1)
 			if expandedType != typ {
-				c.collectPropsFromTypeWithDepth(ctx, expandedType, expectedProps, requiredProps, depth+1)
+				c.collectPropsFromTypeWithDepth(ctx, expandedType, expectedProps, requiredProps)
 			}
 		}
 
 	case *type_system.IntersectionType:
 		// Collect properties from all parts of the intersection
 		for _, part := range typ.Types {
-			c.collectPropsFromTypeWithDepth(ctx, part, expectedProps, requiredProps, depth+1)
+			c.collectPropsFromTypeWithDepth(ctx, part, expectedProps, requiredProps)
 		}
 	}
-}
-
-// countReadonlyNonOptional counts the number of readonly non-optional properties in an ObjectType.
-func countReadonlyNonOptional(obj *type_system.ObjectType) int {
-	count := 0
-	for _, elem := range obj.Elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if !prop.Optional && prop.Readonly {
-				count++
-			}
-		}
-	}
-	return count
-}
-
-// isDOMInterfaceName checks if an ObjectType represents a DOM interface
-// that should not contribute props to JSX elements.
-// DOM interfaces are used as type parameters (e.g., HTMLDivElement in HTMLAttributes<HTMLDivElement>)
-// but their properties (like Node.ELEMENT_NODE) are not JSX props.
-func isDOMInterfaceName(obj *type_system.ObjectType) bool {
-	// DOM interfaces like Node have many readonly constants (ELEMENT_NODE, ATTRIBUTE_NODE, etc.)
-	// React interfaces like HTMLAttributes have many properties but they're optional
-	return countReadonlyNonOptional(obj) > 10
 }
 
 // isDOMElementTypeName checks if a type name represents a DOM element type

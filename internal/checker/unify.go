@@ -68,7 +68,24 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		panic("Cannot unify nil types")
 	}
 
-	// Limit recursion depth to prevent stack overflow from infinite expansion
+	// Limit recursion depth to prevent stack overflow from infinite expansion.
+	//
+	// This is necessary because the retry loop at the end of this function calls
+	// ExpandType on both types and retries if either expanded to a different object.
+	// The problem is that each call to Unify passes ExpandType a fresh count of 1,
+	// so types can keep expanding indefinitely when:
+	//
+	// 1. TypeRefType with TypeAlias set (e.g., HTMLAttributeAnchorTarget, Array<any>)
+	//    - ExpandType creates new type objects each time, so expandedT2 != t2 is true
+	//
+	// 2. TupleType with rest spreads (e.g., [...Array<any>, ...Array<any>])
+	//    - Expansion includes the full Array interface with all its methods
+	//
+	// 3. Large ObjectType instances (e.g., React SVG attributes with 200+ properties)
+	//    - Nested type references keep creating new objects during expansion
+	//
+	// The depth limit stops recursion when types can't be unified after reasonable
+	// expansion attempts, returning a unification error instead of stack overflow.
 	if depth > 50 {
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
