@@ -2770,7 +2770,7 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 		}
 		parent := filepath.Dir(projectRoot)
 		if parent == projectRoot {
-			t.Skip("Could not find project root with go.mod")
+			t.Fatalf("Could not find project root with go.mod")
 			return
 		}
 		projectRoot = parent
@@ -2779,7 +2779,7 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	// Check if @types/react is installed
 	reactTypesDir := filepath.Join(projectRoot, "node_modules", "@types", "react")
 	if _, err := os.Stat(reactTypesDir); err != nil {
-		t.Skip("@types/react not installed, skipping integration test")
+		t.Fatalf("@types/react not installed, skipping integration test")
 		return
 	}
 
@@ -2788,8 +2788,6 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	// more work to fully support. The basic infrastructure for loading is in place.
 	// See Phase 4.3 and beyond in the implementation plan for the remaining work.
 	t.Run("LoadReactTypesSuccessfully", func(t *testing.T) {
-		t.Skip("Skipping full @types/react loading test - requires more TypeScript feature support")
-
 		c := NewChecker()
 		scope := Prelude(c)
 
@@ -2813,8 +2811,6 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	})
 
 	t.Run("LoadReactTypesCaching", func(t *testing.T) {
-		t.Skip("Skipping full @types/react loading test - requires more TypeScript feature support")
-
 		c := NewChecker()
 		scope := Prelude(c)
 
