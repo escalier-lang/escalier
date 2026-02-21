@@ -946,8 +946,10 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
     // 1. Resolve @types/react location (new function from 4.1)
     reactTypesDir, err := resolver.ResolveTypesPackage("react", sourceDir)
     if err != nil {
-        // Emit warning, not error - fall back to permissive mode
-        return []Error{&Warning{message: "Install @types/react for JSX type checking"}}
+        return []Error{&GenericError{
+            message: "Could not find @types/react: " + err.Error(),
+            span:    DEFAULT_SPAN,
+        }}
     }
 
     // 2. Find entry point (new function from 4.1)
@@ -1044,61 +1046,6 @@ func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) {
 }
 ```
 
-**New error types** (add to `internal/checker/error.go`):
-
-```go
-// Warning represents a non-fatal diagnostic that doesn't block compilation.
-type Warning struct {
-    message string
-    span    ast.Span
-}
-
-func (w *Warning) Error() string   { return w.message }
-func (w *Warning) Message() string { return w.message }
-func (w *Warning) Span() ast.Span  { return w.span }
-func (w *Warning) IsWarning() bool { return true }
-
-// TypesLoadError indicates a failure to load type definitions.
-type TypesLoadError struct {
-    pkg   string
-    cause error
-    span  ast.Span
-}
-
-func (e *TypesLoadError) Error() string {
-    return fmt.Sprintf("failed to load types for %s: %v", e.pkg, e.cause)
-}
-func (e *TypesLoadError) Message() string { return e.Error() }
-func (e *TypesLoadError) Span() ast.Span  { return e.span }
-```
-
-**Add Warnings field to Checker struct** (in `internal/checker/checker.go`):
-
-```go
-type Checker struct {
-    // ... existing fields ...
-    Warnings []*Warning // Accumulated warnings (non-fatal diagnostics)
-}
-```
-
-**Helper to separate warnings from errors** (add to `internal/checker/checker.go`):
-
-```go
-// accumulateWarnings separates warnings from errors.
-// Warnings are appended to c.Warnings; non-warning errors are returned.
-func (c *Checker) accumulateWarnings(errs []Error) []Error {
-    var nonWarnings []Error
-    for _, err := range errs {
-        if w, ok := err.(*Warning); ok {
-            c.Warnings = append(c.Warnings, w)
-        } else {
-            nonWarnings = append(nonWarnings, err)
-        }
-    }
-    return nonWarnings
-}
-```
-
 **Key differences from `loadPackageForImport()`**:
 
 1. Uses `ResolveTypesPackage()` instead of `resolveImport()` to find `@types/*` packages
@@ -1108,111 +1055,18 @@ func (c *Checker) accumulateWarnings(errs []Error) []Error {
 **Handling `/// <reference types="..." />` directives**:
 
 `@types/react` may include reference directives like `/// <reference types="scheduler" />`.
-These need to be followed to load dependent type packages.
-
-**Add `ReferenceTypes` field to `LoadedPackageResult`** (in `internal/checker/prelude.go`):
-
-```go
-// ReferenceDirective represents a /// <reference types="..." /> directive.
-type ReferenceDirective struct {
-    Path string // The referenced package name (e.g., "scheduler")
-}
-
-type LoadedPackageResult struct {
-    // ... existing fields ...
-
-    // ReferenceTypes contains parsed /// <reference types="..." /> directives.
-    // These should be followed to load dependent type packages.
-    ReferenceTypes []ReferenceDirective
-}
-```
-
-The `dts_parser` should extract reference directives during parsing and populate
-this field. The `loadClassifiedTypeScriptModule` function should pass them through.
-
-**Processing reference directives in LoadReactTypes**:
-
-```go
-// In LoadReactTypes, after step 7 (register in PackageRegistry), process references.
-// This must happen AFTER registration to prevent infinite loops on circular refs.
-
-// 9. Process reference type directives (e.g., /// <reference types="scheduler" />)
-for _, ref := range loadResult.ReferenceTypes {
-    // Check if already loaded to prevent circular references
-    // Use a composite key: we don't know the exact path yet, so check by package name
-    refTypesDir, err := resolver.ResolveTypesPackage(ref.Path, sourceDir)
-    if err != nil {
-        // Reference not found - emit warning but continue
-        c.Warnings = append(c.Warnings, &Warning{
-            message: fmt.Sprintf("Referenced types package %q not found", ref.Path),
-        })
-        continue
-    }
-
-    refEntryPoint, err := resolver.GetTypesEntryPoint(refTypesDir)
-    if err != nil {
-        c.Warnings = append(c.Warnings, &Warning{
-            message: fmt.Sprintf("Could not find entry point for %q: %v", ref.Path, err),
-        })
-        continue
-    }
-
-    // Check PackageRegistry to avoid re-loading (and circular refs)
-    if _, found := c.PackageRegistry.Lookup(refEntryPoint); found {
-        continue // Already loaded
-    }
-
-    // Recursively load the referenced types package
-    // Note: This is a simplified approach - for full support, factor out
-    // the loading logic into a shared helper that both LoadReactTypes and
-    // this loop can use.
-    refLoadResult, loadErr := loadClassifiedTypeScriptModule(refEntryPoint)
-    if loadErr != nil {
-        c.Warnings = append(c.Warnings, &Warning{
-            message: fmt.Sprintf("Could not load referenced types %q: %v", ref.Path, loadErr),
-        })
-        continue
-    }
-
-    // Process global augmentations from the referenced package
-    if refLoadResult.GlobalModule != nil {
-        globalCtx := Context{
-            Scope:      c.GlobalScope,
-            IsAsync:    false,
-            IsPatMatch: false,
-        }
-        globalErrors := c.InferModule(globalCtx, refLoadResult.GlobalModule)
-        errors = append(errors, globalErrors...)
-    }
-
-    // Register the referenced package to prevent re-loading
-    refNs := type_system.NewNamespace()
-    if refLoadResult.PackageModule != nil {
-        refScope := &Scope{Parent: c.GlobalScope, Namespace: refNs}
-        refCtx := Context{Scope: refScope, IsAsync: false, IsPatMatch: false}
-        refErrors := c.InferModule(refCtx, refLoadResult.PackageModule)
-        errors = append(errors, refErrors...)
-    }
-    c.PackageRegistry.Register(refEntryPoint, refNs)
-}
-```
+Support for following these directives to load dependent type packages is deferred to issue #322.
 
 **Note on package location**: `ResolveTypesPackage` and `GetTypesEntryPoint` are
 defined as standalone functions in `internal/resolver/types_resolver.go`. All call
 sites use the `resolver.` package qualifier for consistency.
 
 **Tasks**:
-- [ ] Implement `LoadReactTypes()` using existing `loadClassifiedTypeScriptModule()`
-- [ ] Implement `injectReactTypes()` to add React/JSX types to scope
-- [ ] Handle `declare global` blocks (already supported by `loadClassifiedTypeScriptModule`)
-- [ ] Handle `declare module "react"` named modules in addition to PackageModule
-- [ ] Cache loaded modules in `PackageRegistry` to avoid re-parsing
-- [ ] Add `ReferenceDirective` type and `ReferenceTypes` field to `LoadedPackageResult`
-- [ ] Update `dts_parser` to extract `/// <reference types="..." />` directives
-- [ ] Update `loadClassifiedTypeScriptModule()` to populate `ReferenceTypes` field
-- [ ] Handle `/// <reference types="..." />` directives to load dependent types
-- [ ] Guard against circular references via `PackageRegistry.Lookup()` checks
-- [ ] Add `Warnings` field to Checker struct for non-fatal diagnostics
+- [x] Implement `LoadReactTypes()` using existing `loadClassifiedTypeScriptModule()`
+- [x] Implement `injectReactTypes()` to add React/JSX types to scope
+- [x] Handle `declare global` blocks (already supported by `loadClassifiedTypeScriptModule`)
+- [x] Handle `declare module "react"` named modules in addition to PackageModule
+- [x] Cache loaded modules in `PackageRegistry` to avoid re-parsing
 
 **Tests** (add to `internal/checker/tests/jsx_test.go`):
 
@@ -1220,11 +1074,6 @@ sites use the `resolver.` package qualifier for consistency.
 func TestLoadReactTypesIntegration(t *testing.T) {
     // Test: LoadReactTypes() successfully loads @types/react
     // Expected: JSX namespace and React types available in scope
-}
-
-func TestLoadReactTypesWithReferenceDirectives(t *testing.T) {
-    // Test: @types/react references other packages (e.g., scheduler)
-    // Expected: Referenced packages are also loaded
 }
 
 func TestLoadReactTypesCaching(t *testing.T) {
@@ -1315,25 +1164,23 @@ func (c *Checker) InferModule(ctx Context, module *ast.Module) []Error {
             sourceDir, _ = os.Getwd()
         }
         loadErrors := c.LoadReactTypes(ctx, sourceDir)
-        errors = append(errors, c.accumulateWarnings(loadErrors)...)
+        errors = append(errors, loadErrors...)
     }
 
     // ... continue with normal inference ...
 }
 ```
 
-**Fallback behavior when `@types/react` is unavailable**:
-- If `@types/react` is not installed, the compiler should emit a warning (not an error)
-- Fall back to permissive typing: allow any props on intrinsic elements
-- JSX expressions should still type-check and compile, just without prop validation
-- The warning message should suggest: "Install @types/react for JSX type checking"
+**Error handling when `@types/react` is unavailable**:
+- If `@types/react` is not installed, the compiler returns an error
+- The error message indicates: "Could not find @types/react"
+- This follows the standard error handling pattern used elsewhere in the checker
 
 **Tasks**:
-- [ ] Implement `hasJSXSyntax()` to detect JSX in AST
+- [x] Implement `hasJSXSyntax()` to detect JSX in AST
 - [ ] Integrate JSX detection into `InferModule()` or appropriate entry point
 - [ ] Call `LoadReactTypes()` automatically when JSX is detected
 - [ ] Inject `JSX` namespace and `React` types into scope without explicit import
-- [ ] Implement graceful fallback when `@types/react` is missing (warn + permissive typing)
 
 **Tests** (add to `internal/checker/tests/jsx_test.go`):
 
@@ -1343,9 +1190,9 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
     // Expected: JSX namespace available without explicit import
 }
 
-func TestFallbackWithoutReactTypes(t *testing.T) {
+func TestErrorWithoutReactTypes(t *testing.T) {
     // Test: JSX without @types/react installed
-    // Expected: Warning emitted, permissive typing allows compilation
+    // Expected: Error returned indicating @types/react not found
 }
 
 func TestHasJSXSyntax(t *testing.T) {

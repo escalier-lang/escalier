@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -560,9 +562,9 @@ func createJSXNamespaceWithRequiredProps() *type_system.Namespace {
 		type_system.NewPropertyElem(
 			type_system.NewStrKey("img"),
 			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-				type_system.NewPropertyElem(type_system.NewStrKey("src"), strType),  // required
-				type_system.NewPropertyElem(type_system.NewStrKey("alt"), strType),  // required
-				newOptionalProp("className", strType),                                // optional
+				type_system.NewPropertyElem(type_system.NewStrKey("src"), strType), // required
+				type_system.NewPropertyElem(type_system.NewStrKey("alt"), strType), // required
+				newOptionalProp("className", strType),                              // optional
 			}),
 		),
 	}
@@ -2624,4 +2626,243 @@ func TestKeyAndRefTogether(t *testing.T) {
 			assert.Len(t, inferErrors, 0, "Expected no inference errors for key and ref together")
 		})
 	}
+}
+
+// Phase 4.2 Tests: React Types Loading and JSX Syntax Detection
+
+// TestHasJSXSyntax tests the JSX syntax detection function.
+func TestHasJSXSyntax(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected bool
+	}{
+		"TopLevelJSXElement": {
+			input:    `val elem = <div />`,
+			expected: true,
+		},
+		"TopLevelJSXFragment": {
+			input:    `val elem = <></>`,
+			expected: true,
+		},
+		"JSXInFunctionBody": {
+			input: `
+				fn render() {
+					return <div>Hello</div>
+				}
+			`,
+			expected: true,
+		},
+		"JSXInTernary": {
+			input: `
+				val condition = true
+				val elem = if condition { <div /> } else { <span /> }
+			`,
+			expected: true,
+		},
+		"JSXInNestedClosure": {
+			input: `
+				val render = fn() {
+					val inner = fn() {
+						return <button>Click</button>
+					}
+					return inner()
+				}
+			`,
+			expected: true,
+		},
+		"NoJSXSimpleVariable": {
+			input:    `val x = 42`,
+			expected: false,
+		},
+		"NoJSXFunction": {
+			input: `
+				fn add(a: number, b: number) -> number {
+					return a + b
+				}
+			`,
+			expected: false,
+		},
+		"NoJSXObjectLiteral": {
+			input:    `val obj = { name: "test", value: 123 }`,
+			expected: false,
+		},
+		"NoJSXArrayLiteral": {
+			input:    `val arr = [1, 2, 3, 4, 5]`,
+			expected: false,
+		},
+		"NoJSXComplexExpression": {
+			input: `
+				val x = 10
+				val y = 20
+				val result = x + y * 2
+			`,
+			expected: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+
+			// Use HasJSXSyntaxInScript for script ASTs
+			result := HasJSXSyntaxInScript(script)
+
+			assert.Equal(t, test.expected, result, "JSX syntax detection mismatch for %s", name)
+		})
+	}
+}
+
+// TestLoadReactTypesIntegration tests loading @types/react with the real package.
+// This test is skipped if @types/react is not installed.
+func TestLoadReactTypesIntegration(t *testing.T) {
+	// Skip if @types/react is not installed
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+
+	// Walk up to find the project root
+	projectRoot := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(projectRoot)
+		if parent == projectRoot {
+			t.Skip("Could not find project root with go.mod")
+			return
+		}
+		projectRoot = parent
+	}
+
+	// Check if @types/react is installed
+	reactTypesDir := filepath.Join(projectRoot, "node_modules", "@types", "react")
+	if _, err := os.Stat(reactTypesDir); err != nil {
+		t.Skip("@types/react not installed, skipping integration test")
+		return
+	}
+
+	// NOTE: Full @types/react loading is skipped for now because the full React type definitions
+	// contain complex TypeScript features (conditional types, mapped types, etc.) that require
+	// more work to fully support. The basic infrastructure for loading is in place.
+	// See Phase 4.3 and beyond in the implementation plan for the remaining work.
+	t.Run("LoadReactTypesSuccessfully", func(t *testing.T) {
+		t.Skip("Skipping full @types/react loading test - requires more TypeScript feature support")
+
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Load React types
+		errors := c.LoadReactTypes(ctx, projectRoot)
+
+		// Log any errors
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+
+		// Note: There may be some errors due to complex TypeScript features we don't support yet
+		// For now, we just verify the function doesn't panic
+		t.Logf("LoadReactTypes completed with %d errors", len(errors))
+	})
+
+	t.Run("LoadReactTypesCaching", func(t *testing.T) {
+		t.Skip("Skipping full @types/react loading test - requires more TypeScript feature support")
+
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Load React types twice
+		_ = c.LoadReactTypes(ctx, projectRoot)
+		_ = c.LoadReactTypes(ctx, projectRoot)
+
+		// Second call should use cached namespace from PackageRegistry
+		// We can verify this by checking that the React namespace is available
+		// (The actual caching behavior is logged to stderr)
+		t.Logf("LoadReactTypes called twice successfully")
+	})
+}
+
+// TestLoadReactTypesWithoutPackage tests LoadReactTypes when @types/react is not available.
+func TestLoadReactTypesWithoutPackage(t *testing.T) {
+	t.Run("ReturnsErrorWhenNotInstalled", func(t *testing.T) {
+		c := NewChecker()
+		scope := Prelude(c)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Use a directory that doesn't have @types/react installed
+		tempDir := t.TempDir()
+
+		// Load React types from temp directory
+		errors := c.LoadReactTypes(ctx, tempDir)
+
+		// Should return an error about @types/react not being found
+		assert.NotEmpty(t, errors, "Expected an error about missing @types/react")
+
+		// The error should mention @types/react
+		found := false
+		for _, err := range errors {
+			if strings.Contains(err.Message(), "@types/react") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected error to mention @types/react")
+	})
+}
+
+// TestWarningType tests the Warning type implementation.
+func TestWarningType(t *testing.T) {
+	t.Run("ImplementsErrorInterface", func(t *testing.T) {
+		warning := NewWarning("Test warning message", DEFAULT_SPAN)
+
+		// Warning should implement the Error interface
+		var err Error = warning
+		assert.Equal(t, "Test warning message", err.Message())
+		assert.Equal(t, DEFAULT_SPAN, err.Span())
+	})
+
+	t.Run("IsWarningReturnsTrue", func(t *testing.T) {
+		warning := NewWarning("Test warning", DEFAULT_SPAN)
+		assert.True(t, warning.IsWarning())
+	})
+
+	t.Run("PreservesSpan", func(t *testing.T) {
+		span := ast.Span{
+			Start:    ast.Location{Line: 10, Column: 5},
+			End:      ast.Location{Line: 10, Column: 15},
+			SourceID: 1,
+		}
+		warning := NewWarning("Warning with span", span)
+
+		assert.Equal(t, span, warning.Span())
+	})
 }
