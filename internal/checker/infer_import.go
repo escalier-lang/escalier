@@ -1,12 +1,12 @@
 package checker
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -56,41 +56,26 @@ func resolveModuleDir(moduleDir string) (string, error) {
 	return moduleDir, nil
 }
 
-// getTypesFromPackageJson reads a package.json file and returns the types entry point path.
-// Returns the full path to the types file, or an error if the package.json doesn't exist,
-// can't be parsed, or doesn't have a types field.
-func getTypesFromPackageJson(moduleDir string) (string, error) {
-	pkgJsonPath := filepath.Join(moduleDir, "package.json")
-	fmt.Fprintf(os.Stderr, "Reading package.json for module import at %s\n", pkgJsonPath)
-
-	pkgJsonBytes, err := os.ReadFile(pkgJsonPath)
-	if err != nil {
-		return "", err
-	}
-
-	var pkgJsonMap map[string]any
-	if err := json.Unmarshal(pkgJsonBytes, &pkgJsonMap); err != nil {
-		return "", err
-	}
-
-	if typesField, ok := pkgJsonMap["types"]; ok {
-		typesStr, isString := typesField.(string)
-		if !isString {
-			return "", fmt.Errorf("invalid types field")
-		}
-		return filepath.Join(moduleDir, typesStr), nil
-	}
-
-	return "", fmt.Errorf("no types field")
-}
-
 func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", &GenericError{message: "Could not get current working directory for import", span: importStmt.Span()}
+	// Derive the start directory from the source file path
+	var startDir string
+	if ctx.Module != nil {
+		sourceID := importStmt.Span().SourceID
+		if source, ok := ctx.Module.Sources[sourceID]; ok && source.Path != "" {
+			startDir = filepath.Dir(source.Path)
+		}
 	}
 
-	packageJsonDir, found := findPackageJsonFile(cwd)
+	// Fallback to current working directory if source path not available
+	if startDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", &GenericError{message: "Could not get current working directory for import", span: importStmt.Span()}
+		}
+		startDir = cwd
+	}
+
+	packageJsonDir, found := findPackageJsonFile(startDir)
 	if !found {
 		return "", &GenericError{message: "Could not find package.json for import", span: importStmt.Span()}
 	}
@@ -98,7 +83,7 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	// First, try to find types in the main package (node_modules/<pkg_name>)
 	moduleDir := filepath.Join(packageJsonDir, "node_modules", importStmt.PackageName)
 	if resolvedDir, err := resolveModuleDir(moduleDir); err == nil {
-		if typesPath, err := getTypesFromPackageJson(resolvedDir); err == nil {
+		if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
 			return typesPath, nil
 		}
 	}
@@ -107,7 +92,7 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	// (e.g., @types/react for the react package)
 	typesModuleDir := filepath.Join(packageJsonDir, "node_modules", "@types", importStmt.PackageName)
 	if resolvedDir, err := resolveModuleDir(typesModuleDir); err == nil {
-		if typesPath, err := getTypesFromPackageJson(resolvedDir); err == nil {
+		if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
 			return typesPath, nil
 		}
 	}

@@ -3,6 +3,7 @@ package resolver
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -382,7 +383,7 @@ func TestIntegrationWithRealTypesReact(t *testing.T) {
 		t.Errorf("Entry point should be an absolute path, got: %s", entryPoint)
 	}
 
-	if filepath.Ext(entryPoint) != ".ts" {
+	if !strings.HasSuffix(entryPoint, ".d.ts") {
 		t.Errorf("Entry point should be a .d.ts file, got: %s", entryPoint)
 	}
 }

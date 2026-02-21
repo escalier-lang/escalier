@@ -644,8 +644,8 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 		// Skip any comments before class members (JSDoc, etc.)
 		p.skipComments()
 
-		// Check again for closing brace after skipping comments
-		if p.peek().Type == CloseBrace {
+		// Check again for closing brace or EOF after skipping comments
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 

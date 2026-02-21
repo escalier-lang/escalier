@@ -84,26 +84,7 @@ func TestParseTypesReact(t *testing.T) {
 		t.Skip("Could not find repository root:", err)
 	}
 
-	// The @types/react package is installed via pnpm, so we need to find it
-	// in the pnpm store location
-	possiblePaths := []string{
-		// Direct path (for npm/yarn)
-		filepath.Join(repoRoot, "node_modules", "@types", "react", "index.d.ts"),
-		// pnpm symlink path
-		filepath.Join(repoRoot, "node_modules", ".pnpm", "@types+react@19.0.10", "node_modules", "@types", "react", "index.d.ts"),
-	}
-
-	var reactDtsPath string
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			reactDtsPath = path
-			break
-		}
-	}
-
-	if reactDtsPath == "" {
-		t.Skip("@types/react not found in node_modules")
-	}
+	reactDtsPath := filepath.Join(repoRoot, "node_modules", "@types", "react", "index.d.ts")
 
 	// Read the file
 	contents, err := os.ReadFile(reactDtsPath)
