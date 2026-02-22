@@ -154,8 +154,8 @@ func (c *Checker) InferComponent(
 				binding := nsCtx.Scope.GetValue(decl.Name.Name)
 				if binding == nil {
 					nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
-						Source:  &ast.NodeProvenance{Node: decl},
-						Type:    funcType,
+						Source:   &ast.NodeProvenance{Node: decl},
+						Type:     funcType,
 						Mutable:  false,
 						Exported: decl.Export(),
 					})
@@ -496,9 +496,9 @@ func (c *Checker) InferComponent(
 				classObjType.SymbolKeyMap = staticSymbolKeyMap
 
 				ctor := &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: decl},
-					Type:    classObjType,
-					Mutable: false,
+					Source:   &ast.NodeProvenance{Node: decl},
+					Type:     classObjType,
+					Mutable:  false,
 					Exported: decl.Export(),
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
@@ -1141,19 +1141,6 @@ func (c *Checker) InferComponent(
 		}
 	}
 
-	// Process ExportAssignmentStmt declarations
-	// This must happen after all other declarations are processed so we can look up
-	// the referenced binding and determine what to export.
-	for _, key := range component {
-		decls := depGraph.GetDecls(key)
-		for _, decl := range decls {
-			if exportAssign, ok := decl.(*ast.ExportAssignmentStmt); ok {
-				nsCtx := GetDeclContext(ctx, depGraph, key, decl)
-				c.processExportAssignment(exportAssign, nsCtx)
-			}
-		}
-	}
-
 	// Resolve any type references that were deferred during type annotation inference
 	// to allow for recursive definitions between type and variable declarations.
 	for _, refs := range typeRefsToUpdate {
@@ -1345,7 +1332,8 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	// Phase 4: Process ExportAssignmentStmt declarations.
 	// These are not in the dep_graph since they don't create bindings,
 	// but they control what gets exported from the module.
-	c.processModuleExportAssignments(ctx, m)
+	exportErrors := c.processModuleExportAssignments(ctx, m)
+	errors = append(errors, exportErrors...)
 
 	return errors
 }
@@ -1424,7 +1412,9 @@ func (c *Checker) unifyTypeParams(
 
 // processModuleExportAssignments iterates over all namespaces in the module
 // and processes any ExportAssignmentStmt declarations.
-func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) {
+func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) []Error {
+	var errors []Error
+
 	// Iterate over all namespaces in the module
 	iter := m.Namespaces.Iter()
 	for ok := iter.First(); ok; ok = iter.Next() {
@@ -1450,16 +1440,21 @@ func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) {
 		// Process ExportAssignmentStmt declarations in this namespace
 		for _, decl := range ns.Decls {
 			if exportAssign, ok := decl.(*ast.ExportAssignmentStmt); ok {
-				c.processExportAssignment(exportAssign, nsCtx)
+				if err := c.processExportAssignment(exportAssign, nsCtx); err != nil {
+					errors = append(errors, err)
+				}
 			}
 		}
 	}
+
+	return errors
 }
 
 // processExportAssignment handles "export = identifier" patterns from TypeScript interop.
 // If the identifier refers to a namespace, all exported members are re-exported.
 // For everything else (functions, objects, primitives), a default export is created.
-func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Context) {
+// Returns an error if the identifier cannot be resolved.
+func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Context) Error {
 	name := stmt.Name.Name
 
 	// Check if it's a namespace (from declare namespace Foo)
@@ -1475,14 +1470,16 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 				ctx.Scope.SetTypeAlias(typeName, typeAlias)
 			}
 		}
-		return
+		return nil
 	}
 
 	// For everything else, look up the value binding and create default export
 	binding := ctx.Scope.GetValue(name)
 	if binding == nil {
-		// TODO: Add diagnostic for unresolved identifier
-		return
+		return UnresolvedExportAssignmentError{
+			Name: name,
+			span: stmt.Name.Span(),
+		}
 	}
 
 	// Create default export
@@ -1491,6 +1488,7 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 		Mutable:  false,
 		Exported: true,
 	})
+	return nil
 }
 
 // validateInterfaceMerge checks that when merging interface declarations,
