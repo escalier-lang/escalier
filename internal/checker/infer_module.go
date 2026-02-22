@@ -1494,6 +1494,7 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 
 	// Create default export
 	ctx.Scope.setValue("default", &type_system.Binding{
+		Source:   &ast.NodeProvenance{Node: stmt},
 		Type:     binding.Type,
 		Mutable:  false,
 		Exported: true,
