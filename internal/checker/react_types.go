@@ -97,16 +97,6 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		IsPatMatch: false,
 	}
 
-	if loadResult.InternalModule != nil {
-		internalErrors := c.InferModule(pkgCtx, loadResult.InternalModule)
-		if len(internalErrors) > 0 {
-			for _, err := range internalErrors {
-				fmt.Fprintf(os.Stderr, "Internal module error in @types/react: %s\n", err.Message())
-			}
-			errors = append(errors, internalErrors...)
-		}
-	}
-
 	// 8. Process package module (React namespace with FC, Component, etc.)
 	if loadResult.PackageModule != nil {
 		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)

@@ -193,15 +193,17 @@ func createMockPackage(values map[string]type_system.Type, types map[string]type
 	ns := type_system.NewNamespace()
 	for name, t := range values {
 		ns.Values[name] = &type_system.Binding{
-			Source:  nil,
-			Type:    t,
-			Mutable: false,
+			Source:   nil,
+			Type:     t,
+			Mutable:  false,
+			Exported: true,
 		}
 	}
 	for name, t := range types {
 		ns.Types[name] = &type_system.TypeAlias{
 			Type:       t,
 			TypeParams: nil,
+			Exported:   true,
 		}
 	}
 	return ns

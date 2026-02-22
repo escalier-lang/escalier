@@ -173,6 +173,7 @@ func (t *TypeVarType) String() string {
 type TypeAlias struct {
 	Type       Type
 	TypeParams []*TypeParam
+	Exported   bool
 }
 
 type TypeRefType struct {
@@ -2342,9 +2343,10 @@ func (t *IntrinsicType) String() string {
 
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
-	Source  provenance.Provenance // optional
-	Type    Type
-	Mutable bool
+	Source   provenance.Provenance // optional
+	Type     Type
+	Mutable  bool
+	Exported bool
 }
 
 // This is similar to Scope, but instead of inheriting from a parent scope,

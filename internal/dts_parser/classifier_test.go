@@ -160,7 +160,7 @@ func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 			export { Foo, bar }`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  1,
+			packageDeclsCount:  3, // Foo, bar, and the export statement
 			namedModulesCount:  0,
 		},
 		{
@@ -399,7 +399,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = Foo;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  2,
+			packageDeclsCount:  3, // namespace Foo + expanded bar and baz
 			namedModulesCount:  0,
 		},
 		{
@@ -412,7 +412,7 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			export = MyLib;`,
 			hasTopLevelExports: true,
 			globalDeclsCount:   0,
-			packageDeclsCount:  3,
+			packageDeclsCount:  4, // namespace MyLib + expanded Options, configure, VERSION
 			namedModulesCount:  0,
 		},
 	}
@@ -448,6 +448,177 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestExpandExportEqualsPreservesExportFlags verifies that when using
+// "export = Namespace" pattern, the per-member export flags are preserved.
+// Exported members (marked with `export` keyword) should remain exported,
+// while non-exported members should remain non-exported.
+func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
+	input := `declare namespace Mixed {
+		export const exported: number;
+		export function exportedFunc(): void;
+		function nonExported(): void;
+		const nonExportedConst: string;
+		export interface ExportedType { x: number }
+		interface NonExportedType { y: string }
+	}
+	export = Mixed;`
+
+	source := &ast.Source{
+		Path:     "test.d.ts",
+		Contents: input,
+		ID:       0,
+	}
+	parser := NewDtsParser(source)
+	module, errors := parser.ParseModule()
+
+	if len(errors) > 0 {
+		t.Errorf("Unexpected parse errors: %v", errors)
+		return
+	}
+
+	classification := ClassifyDTSFile(module)
+
+	// Should have top-level exports due to "export = Mixed"
+	if !classification.HasTopLevelExports {
+		t.Error("Expected HasTopLevelExports to be true")
+	}
+
+	// Should have 7 package declarations:
+	// - the namespace Mixed declaration itself
+	// - 6 expanded members from the namespace (3 exported + 3 non-exported)
+	expectedPackageDeclCount := 7
+	if len(classification.PackageDecls) != expectedPackageDeclCount {
+		t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), expectedPackageDeclCount)
+	}
+
+	// Track which declarations we found and their export status
+	exportedDecls := make(map[string]bool)   // name -> isExported
+	declsFound := make(map[string]bool)      // name -> found
+
+	for _, stmt := range classification.PackageDecls {
+		// Skip the namespace declaration itself
+		if _, isNs := stmt.(*NamespaceDecl); isNs {
+			continue
+		}
+		if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
+			if _, isNs := ambient.Declaration.(*NamespaceDecl); isNs {
+				continue
+			}
+		}
+
+		// Check if the statement is wrapped in ExportDecl (exported)
+		// or is a direct declaration (non-exported)
+		switch s := stmt.(type) {
+		case *ExportDecl:
+			// Exported declaration
+			if s.Declaration != nil {
+				name := getDeclName(s.Declaration)
+				if name != "" {
+					exportedDecls[name] = true
+					declsFound[name] = true
+				}
+			}
+		case *VarDecl:
+			// Non-exported var
+			if s.Name != nil {
+				exportedDecls[s.Name.Name] = false
+				declsFound[s.Name.Name] = true
+			}
+		case *FuncDecl:
+			// Non-exported function
+			if s.Name != nil {
+				exportedDecls[s.Name.Name] = false
+				declsFound[s.Name.Name] = true
+			}
+		case *InterfaceDecl:
+			// Non-exported interface
+			if s.Name != nil {
+				exportedDecls[s.Name.Name] = false
+				declsFound[s.Name.Name] = true
+			}
+		case *AmbientDecl:
+			// Check what's inside the ambient declaration
+			switch inner := s.Declaration.(type) {
+			case *ExportDecl:
+				// Exported declaration inside ambient
+				if inner.Declaration != nil {
+					name := getDeclName(inner.Declaration)
+					if name != "" {
+						exportedDecls[name] = true
+						declsFound[name] = true
+					}
+				}
+			case *VarDecl:
+				if inner.Name != nil {
+					exportedDecls[inner.Name.Name] = false
+					declsFound[inner.Name.Name] = true
+				}
+			case *FuncDecl:
+				if inner.Name != nil {
+					exportedDecls[inner.Name.Name] = false
+					declsFound[inner.Name.Name] = true
+				}
+			case *InterfaceDecl:
+				if inner.Name != nil {
+					exportedDecls[inner.Name.Name] = false
+					declsFound[inner.Name.Name] = true
+				}
+			}
+		}
+	}
+
+	// Verify exported items
+	expectedExported := []string{"exported", "exportedFunc", "ExportedType"}
+	for _, name := range expectedExported {
+		if !declsFound[name] {
+			t.Errorf("Expected to find declaration %q but it was not found", name)
+			continue
+		}
+		if !exportedDecls[name] {
+			t.Errorf("Expected %q to be exported but it was not", name)
+		}
+	}
+
+	// Verify non-exported items
+	expectedNonExported := []string{"nonExported", "nonExportedConst", "NonExportedType"}
+	for _, name := range expectedNonExported {
+		if !declsFound[name] {
+			t.Errorf("Expected to find declaration %q but it was not found", name)
+			continue
+		}
+		if exportedDecls[name] {
+			t.Errorf("Expected %q to NOT be exported but it was", name)
+		}
+	}
+}
+
+// getDeclName is a helper to extract the name from a declaration for testing.
+func getDeclName(stmt Statement) string {
+	switch s := stmt.(type) {
+	case *VarDecl:
+		if s.Name != nil {
+			return s.Name.Name
+		}
+	case *FuncDecl:
+		if s.Name != nil {
+			return s.Name.Name
+		}
+	case *InterfaceDecl:
+		if s.Name != nil {
+			return s.Name.Name
+		}
+	case *TypeDecl:
+		if s.Name != nil {
+			return s.Name.Name
+		}
+	case *ClassDecl:
+		if s.Name != nil {
+			return s.Name.Name
+		}
+	}
+	return ""
 }
 
 func TestClassifyDTSFile_MixedFile(t *testing.T) {
