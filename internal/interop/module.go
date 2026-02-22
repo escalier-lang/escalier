@@ -129,7 +129,6 @@ func processNamespace(
 		for _, decl := range decls {
 			if getDeclName(decl) == exportName {
 				decl.SetExport(true)
-				break
 			}
 		}
 	}
