@@ -703,6 +703,7 @@ func (c *Checker) InferComponent(
 						instanceTypeAlias := &type_system.TypeAlias{
 							Type:       instanceType,
 							TypeParams: typeParams,
+							Exported:   decl.Export(),
 						}
 						ns.Types[elem.Name.Name] = instanceTypeAlias
 
@@ -784,9 +785,10 @@ func (c *Checker) InferComponent(
 						classObjType.SymbolKeyMap = symbolKeyMap
 
 						ctor := &type_system.Binding{
-							Source:  provenance,
-							Type:    classObjType,
-							Mutable: false,
+							Source:   provenance,
+							Type:     classObjType,
+							Mutable:  false,
+							Exported: decl.Export(),
 						}
 
 						ns.Values[elem.Name.Name] = ctor

@@ -296,6 +296,127 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 	assert.Empty(t, inferErrors, "Subpath imports should work and be separate entries")
 }
 
+// TestNonExportedItemsAreFilteredFromNamespaceImport verifies that non-exported
+// items in a package are not accessible via namespace imports (import * as alias).
+func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	c := NewChecker()
+
+	// Create a package with both exported and non-exported items
+	mockNs := type_system.NewNamespace()
+
+	// Exported items - should be accessible
+	mockNs.Values["publicFunc"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+	mockNs.Types["PublicType"] = &type_system.TypeAlias{
+		Type:       type_system.NewStrPrimType(nil),
+		TypeParams: nil,
+		Exported:   true,
+	}
+
+	// Non-exported items - should NOT be accessible
+	mockNs.Values["internalHelper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: false,
+	}
+	mockNs.Types["InternalType"] = &type_system.TypeAlias{
+		Type:       type_system.NewStrPrimType(nil),
+		TypeParams: nil,
+		Exported:   false,
+	}
+
+	err := c.PackageRegistry.Register("mixed-exports-pkg", mockNs)
+	require.NoError(t, err)
+
+	// Test that exported items are accessible
+	sourcesGood := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/good.esc",
+			Contents: `
+				import * as pkg from "mixed-exports-pkg"
+				val x = pkg.publicFunc
+				declare val y: pkg.PublicType
+			`,
+		},
+	}
+
+	moduleGood, parseErrors := parser.ParseLibFiles(ctx, sourcesGood)
+	require.Empty(t, parseErrors)
+
+	inferCtx := Context{
+		Scope:   Prelude(c),
+		IsAsync: false,
+	}
+
+	inferErrors := c.InferModule(inferCtx, moduleGood)
+	assert.Empty(t, inferErrors, "Exported items should be accessible via namespace import")
+
+	// Test that non-exported items cause errors when accessed
+	c2 := NewChecker()
+	err = c2.PackageRegistry.Register("mixed-exports-pkg", mockNs)
+	require.NoError(t, err)
+
+	sourcesBadValue := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/bad_value.esc",
+			Contents: `
+				import * as pkg from "mixed-exports-pkg"
+				val x = pkg.internalHelper
+			`,
+		},
+	}
+
+	moduleBadValue, parseErrors := parser.ParseLibFiles(ctx, sourcesBadValue)
+	require.Empty(t, parseErrors)
+
+	inferCtx2 := Context{
+		Scope:   Prelude(c2),
+		IsAsync: false,
+	}
+
+	inferErrorsBadValue := c2.InferModule(inferCtx2, moduleBadValue)
+	require.NotEmpty(t, inferErrorsBadValue, "Non-exported value should not be accessible via namespace import")
+	assert.Contains(t, inferErrorsBadValue[0].Message(), "internalHelper",
+		"Error should mention the non-exported value")
+
+	// Test that non-exported types cause errors when accessed
+	c3 := NewChecker()
+	err = c3.PackageRegistry.Register("mixed-exports-pkg", mockNs)
+	require.NoError(t, err)
+
+	sourcesBadType := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/bad_type.esc",
+			Contents: `
+				import * as pkg from "mixed-exports-pkg"
+				declare val x: pkg.InternalType
+			`,
+		},
+	}
+
+	moduleBadType, parseErrors := parser.ParseLibFiles(ctx, sourcesBadType)
+	require.Empty(t, parseErrors)
+
+	inferCtx3 := Context{
+		Scope:   Prelude(c3),
+		IsAsync: false,
+	}
+
+	inferErrorsBadType := c3.InferModule(inferCtx3, moduleBadType)
+	require.NotEmpty(t, inferErrorsBadType, "Non-exported type should not be accessible via namespace import")
+	assert.Contains(t, inferErrorsBadType[0].Message(), "InternalType",
+		"Error should mention the non-exported type")
+}
+
 // TestNamespaceImportFromSubNamespace verifies importing a sub-namespace from a package
 func TestNamespaceImportFromSubNamespace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)

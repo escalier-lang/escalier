@@ -10,6 +10,7 @@ type FileClassification struct {
 
 	// NamedModules contains declarations from `declare module "name" { ... }` blocks.
 	// Each entry maps a module name to its declarations.
+	// The export flag on ast.Decl distinguishes exported from non-exported declarations.
 	NamedModules []NamedModuleDecl
 
 	// GlobalDecls contains declarations that should be added to the global namespace.
@@ -28,6 +29,7 @@ type NamedModuleDecl struct {
 	ModuleName string
 
 	// Decls contains the declarations within the module
+	// The export flag on ast.Decl distinguishes exported from non-exported declarations.
 	Decls []Statement
 }
 

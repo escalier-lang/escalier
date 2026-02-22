@@ -197,6 +197,8 @@ type LoadedPackageResult struct {
 
 	// NamedModules maps module names to their AST modules.
 	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
+	// Contains both exported and non-exported declarations; the Export() method
+	// on each declaration distinguishes them. nil if the file has no top-level exports.
 	NamedModules map[string]*ast.Module
 }
 
