@@ -23,8 +23,10 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 		return convertClassDecl(s)
 	case *dts_parser.InterfaceDecl:
 		return convertInterfaceDecl(s)
-	case *dts_parser.ImportDecl, *dts_parser.ExportDecl:
-		// Skip imports and exports for now
+	case *dts_parser.ImportDecl,
+		*dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt,
+		*dts_parser.ExportAssignmentStmt, *dts_parser.ExportAsNamespaceStmt:
+		// Skip imports and standalone export statements
 		return nil, nil
 	case *dts_parser.AmbientDecl:
 		// Unwrap and recursively convert the inner declaration

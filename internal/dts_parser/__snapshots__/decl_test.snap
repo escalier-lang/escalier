@@ -20,6 +20,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:22},
@@ -51,6 +53,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:22},
@@ -82,6 +86,8 @@
                 },
             },
             Readonly: true,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:25},
@@ -106,6 +112,8 @@
             },
             TypeAnn:  nil,
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:14},
@@ -188,6 +196,8 @@
                 },
             },
             Readonly: true,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:53},
@@ -236,6 +246,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:35},
@@ -275,6 +287,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:28},
@@ -308,7 +322,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:29},
                 SourceID: 0,
@@ -391,7 +407,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:51},
                 SourceID: 0,
@@ -483,7 +501,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:42},
                 SourceID: 0,
@@ -541,7 +561,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -607,7 +629,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:51},
                 SourceID: 0,
@@ -691,7 +715,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:57},
                 SourceID: 0,
@@ -878,7 +904,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:66},
                 SourceID: 0,
@@ -909,7 +937,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:19},
                 SourceID: 0,
@@ -957,7 +987,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:38},
                 SourceID: 0,
@@ -1021,7 +1053,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:22},
                 SourceID: 0,
@@ -1104,7 +1138,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:27},
                 SourceID: 0,
@@ -1217,7 +1253,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:61},
                 SourceID: 0,
@@ -1346,7 +1384,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:53},
                 SourceID: 0,
@@ -1414,7 +1454,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
@@ -1480,7 +1522,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:39},
                 SourceID: 0,
@@ -1556,7 +1600,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:47},
                 SourceID: 0,
@@ -1736,7 +1782,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:99},
                 SourceID: 0,
@@ -1848,7 +1896,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:45},
                 SourceID: 0,
@@ -1916,7 +1966,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:57},
                 SourceID: 0,
@@ -2000,7 +2052,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:66},
                 SourceID: 0,
@@ -2076,7 +2130,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -2152,7 +2208,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:59},
                 SourceID: 0,
@@ -2210,7 +2268,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -2279,7 +2339,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:43},
                 SourceID: 0,
@@ -2356,7 +2418,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:55},
                 SourceID: 0,
@@ -2428,8 +2492,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:32},
                 SourceID: 0,
@@ -2499,8 +2565,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:41},
                 SourceID: 0,
@@ -2570,8 +2638,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -2643,8 +2713,10 @@
                     },
                 },
             },
-            Const: true,
-            span:  ast.Span{
+            Const:    true,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:7},
                 End:      ast.Location{Line:1, Column:41},
                 SourceID: 0,
@@ -2714,8 +2786,10 @@
                     },
                 },
             },
-            Const: true,
-            span:  ast.Span{
+            Const:    true,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:7},
                 End:      ast.Location{Line:1, Column:51},
                 SourceID: 0,
@@ -2793,6 +2867,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:51},
@@ -2881,6 +2957,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:58},
@@ -3065,6 +3143,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:103},
@@ -3180,6 +3260,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:49},
@@ -3248,6 +3330,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:61},
@@ -3334,6 +3418,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:73},
@@ -3440,6 +3526,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:78},
@@ -3521,6 +3609,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:72},
@@ -3602,6 +3692,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:68},
@@ -3683,6 +3775,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:67},
@@ -3736,6 +3830,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:48},
@@ -3814,6 +3910,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:53},
@@ -3898,6 +3996,8 @@
                 },
             },
             Abstract: true,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:18},
                 End:      ast.Location{Line:1, Column:75},
@@ -3991,6 +4091,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:69},
@@ -4051,6 +4153,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:48},
@@ -4074,47 +4178,38 @@
                 },
             },
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.FuncDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "foo",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:41},
-                                End:      ast.Location{Line:1, Column:44},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeParams: nil,
-                        Params:     {
-                        },
-                        ReturnType: &dts_parser.PrimitiveType{
-                            Kind: 2,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:48},
-                                End:      ast.Location{Line:1, Column:52},
-                                SourceID: 0,
-                            },
-                        },
+                &dts_parser.FuncDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "foo",
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:32},
+                            Start:    ast.Location{Line:1, Column:41},
+                            End:      ast.Location{Line:1, Column:44},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:48},
                             End:      ast.Location{Line:1, Column:52},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:1, Column:25},
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:32},
                         End:      ast.Location{Line:1, Column:52},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:54},
                 SourceID: 0,
@@ -4147,52 +4242,45 @@
                         },
                     },
                     Statements: {
-                        &dts_parser.ExportDecl{
-                            Declaration: &dts_parser.VarDecl{
-                                Name: &dts_parser.Ident{
-                                    Name: "x",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:50},
-                                        End:      ast.Location{Line:1, Column:51},
-                                        SourceID: 0,
-                                    },
+                        &dts_parser.VarDecl{
+                            Name: &dts_parser.Ident{
+                                Name: "x",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:50},
+                                    End:      ast.Location{Line:1, Column:51},
+                                    SourceID: 0,
                                 },
-                                TypeAnn: &dts_parser.PrimitiveType{
-                                    Kind: 7,
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:53},
-                                        End:      ast.Location{Line:1, Column:59},
-                                        SourceID: 0,
-                                    },
-                                },
-                                Readonly: true,
-                                span:     ast.Span{
-                                    Start:    ast.Location{Line:1, Column:44},
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 7,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:53},
                                     End:      ast.Location{Line:1, Column:59},
                                     SourceID: 0,
                                 },
                             },
-                            NamedExports:     nil,
-                            From:             "",
-                            ExportDefault:    false,
-                            ExportAll:        false,
-                            ExportAssignment: false,
-                            TypeOnly:         false,
-                            span:             ast.Span{
-                                Start:    ast.Location{Line:1, Column:37},
+                            Readonly: true,
+                            export:   true,
+                            default_: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:44},
                                 End:      ast.Location{Line:1, Column:59},
                                 SourceID: 0,
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:19},
                         End:      ast.Location{Line:1, Column:61},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:63},
                 SourceID: 0,
@@ -4215,65 +4303,56 @@
                 },
             },
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.InterfaceDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "Person",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:36},
-                                End:      ast.Location{Line:1, Column:42},
-                                SourceID: 0,
-                            },
+                &dts_parser.InterfaceDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "Person",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:36},
+                            End:      ast.Location{Line:1, Column:42},
+                            SourceID: 0,
                         },
-                        TypeParams: nil,
-                        Extends:    nil,
-                        Members:    {
-                            &dts_parser.PropertySignature{
-                                Name: &dts_parser.Ident{
-                                    Name: "name",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:45},
-                                        End:      ast.Location{Line:1, Column:49},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeAnn: &dts_parser.PrimitiveType{
-                                    Kind: 6,
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:51},
-                                        End:      ast.Location{Line:1, Column:57},
-                                        SourceID: 0,
-                                    },
-                                },
-                                Optional: false,
-                                Readonly: false,
-                                span:     ast.Span{
+                    },
+                    TypeParams: nil,
+                    Extends:    nil,
+                    Members:    {
+                        &dts_parser.PropertySignature{
+                            Name: &dts_parser.Ident{
+                                Name: "name",
+                                span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:45},
+                                    End:      ast.Location{Line:1, Column:49},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeAnn: &dts_parser.PrimitiveType{
+                                Kind: 6,
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:51},
                                     End:      ast.Location{Line:1, Column:57},
                                     SourceID: 0,
                                 },
                             },
-                        },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:26},
-                            End:      ast.Location{Line:1, Column:59},
-                            SourceID: 0,
+                            Optional: false,
+                            Readonly: false,
+                            span:     ast.Span{
+                                Start:    ast.Location{Line:1, Column:45},
+                                End:      ast.Location{Line:1, Column:57},
+                                SourceID: 0,
+                            },
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:1, Column:19},
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:59},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:61},
                 SourceID: 0,
@@ -4289,41 +4368,30 @@
         &dts_parser.ModuleDecl{
             Name:       "my-library",
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.FuncDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "doSomething",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:47},
-                                End:      ast.Location{Line:1, Column:58},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeParams: nil,
-                        Params:     {
-                        },
-                        ReturnType: &dts_parser.PrimitiveType{
-                            Kind: 2,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:62},
-                                End:      ast.Location{Line:1, Column:66},
-                                SourceID: 0,
-                            },
-                        },
+                &dts_parser.FuncDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "doSomething",
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:38},
+                            Start:    ast.Location{Line:1, Column:47},
+                            End:      ast.Location{Line:1, Column:58},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:62},
                             End:      ast.Location{Line:1, Column:66},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:1, Column:31},
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:38},
                         End:      ast.Location{Line:1, Column:66},
                         SourceID: 0,
                     },
@@ -4360,6 +4428,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:9},
                 End:      ast.Location{Line:2, Column:28},
@@ -4386,7 +4456,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:3, Column:9},
                 End:      ast.Location{Line:3, Column:30},
                 SourceID: 0,
@@ -4436,7 +4508,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:4, Column:1},
                 End:      ast.Location{Line:4, Column:31},
                 SourceID: 0,
@@ -4480,7 +4554,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:5, Column:1},
                 End:      ast.Location{Line:5, Column:34},
                 SourceID: 0,
@@ -4529,8 +4605,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:6, Column:1},
                 End:      ast.Location{Line:6, Column:26},
                 SourceID: 0,
@@ -4579,6 +4657,8 @@
                 },
             },
             Abstract: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:7, Column:9},
                 End:      ast.Location{Line:7, Column:34},
@@ -4595,45 +4675,36 @@
                 },
             },
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.VarDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "PI",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:8, Column:32},
-                                End:      ast.Location{Line:8, Column:34},
-                                SourceID: 0,
-                            },
+                &dts_parser.VarDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "PI",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:8, Column:32},
+                            End:      ast.Location{Line:8, Column:34},
+                            SourceID: 0,
                         },
-                        TypeAnn: &dts_parser.PrimitiveType{
-                            Kind: 7,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:8, Column:36},
-                                End:      ast.Location{Line:8, Column:42},
-                                SourceID: 0,
-                            },
-                        },
-                        Readonly: true,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:8, Column:26},
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 7,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:8, Column:36},
                             End:      ast.Location{Line:8, Column:42},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:8, Column:19},
+                    Readonly: true,
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:8, Column:26},
                         End:      ast.Location{Line:8, Column:42},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:8, Column:1},
                 End:      ast.Location{Line:8, Column:44},
                 SourceID: 0,
@@ -4664,7 +4735,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:27},
                 SourceID: 0,
@@ -4747,7 +4820,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:35},
                 SourceID: 0,
@@ -4795,7 +4870,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:46},
                 SourceID: 0,
@@ -4908,7 +4985,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:69},
                 SourceID: 0,
@@ -4984,7 +5063,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:55},
                 SourceID: 0,
@@ -5061,7 +5142,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:38},
                 SourceID: 0,
@@ -5129,7 +5212,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:65},
                 SourceID: 0,
@@ -5201,8 +5286,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:40},
                 SourceID: 0,
@@ -5272,8 +5359,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -5343,8 +5432,10 @@
                     },
                 },
             },
-            Const: false,
-            span:  ast.Span{
+            Const:    false,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:52},
                 SourceID: 0,
@@ -5416,8 +5507,10 @@
                     },
                 },
             },
-            Const: true,
-            span:  ast.Span{
+            Const:    true,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:15},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -5487,8 +5580,10 @@
                     },
                 },
             },
-            Const: true,
-            span:  ast.Span{
+            Const:    true,
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:15},
                 End:      ast.Location{Line:1, Column:59},
                 SourceID: 0,
@@ -5519,6 +5614,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:25},
@@ -5550,6 +5647,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:25},
@@ -5581,6 +5680,8 @@
                 },
             },
             Readonly: true,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:28},
@@ -5605,6 +5706,8 @@
             },
             TypeAnn:  nil,
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:17},
@@ -5636,6 +5739,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:23},
@@ -5660,6 +5765,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:9},
                 End:      ast.Location{Line:2, Column:23},
@@ -5708,6 +5815,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:36},
@@ -5747,6 +5856,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:29},
@@ -5804,6 +5915,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:38},
@@ -5860,6 +5973,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:38},
@@ -5928,6 +6043,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:37},
@@ -5959,6 +6076,8 @@
                 },
             },
             Readonly: true,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:31},
@@ -6033,6 +6152,8 @@
                 },
             },
             Readonly: false,
+            export:   false,
+            default_: false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:45},
@@ -6066,7 +6187,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
@@ -6149,7 +6272,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:52},
                 SourceID: 0,
@@ -6241,7 +6366,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:43},
                 SourceID: 0,
@@ -6317,7 +6444,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:47},
                 SourceID: 0,
@@ -6418,7 +6547,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:63},
                 SourceID: 0,
@@ -6494,7 +6625,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:42},
                 SourceID: 0,
@@ -6574,7 +6707,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:96},
                 SourceID: 0,
@@ -6650,7 +6785,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:74},
                 SourceID: 0,
@@ -6681,7 +6818,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:20},
                 SourceID: 0,
@@ -6729,7 +6868,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:39},
                 SourceID: 0,
@@ -6812,7 +6953,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:28},
                 SourceID: 0,
@@ -6843,7 +6986,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:28},
                 SourceID: 0,
@@ -6926,7 +7071,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:36},
                 SourceID: 0,
@@ -7055,7 +7202,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -7184,7 +7333,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -7375,7 +7526,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:136},
                 SourceID: 0,
@@ -7424,6 +7577,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:59},
@@ -7431,7 +7586,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:61},
                 SourceID: 0,
@@ -7480,6 +7637,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:60},
@@ -7512,6 +7671,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:61},
                         End:      ast.Location{Line:1, Column:102},
@@ -7519,7 +7680,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:104},
                 SourceID: 0,
@@ -7568,6 +7731,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:60},
@@ -7575,7 +7740,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:62},
                 SourceID: 0,
@@ -7616,6 +7783,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:44},
@@ -7623,7 +7792,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:46},
                 SourceID: 0,
@@ -7664,6 +7835,8 @@
                         },
                     },
                     Readonly: true,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:43},
@@ -7671,7 +7844,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:45},
                 SourceID: 0,
@@ -7720,6 +7895,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:60},
@@ -7752,6 +7929,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:61},
                         End:      ast.Location{Line:1, Column:103},
@@ -7759,7 +7938,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:105},
                 SourceID: 0,
@@ -7802,14 +7983,18 @@
                             SourceID: 0,
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:47},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -7847,6 +8032,8 @@
                     Members:    {
                     },
                     Abstract: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:43},
@@ -7854,7 +8041,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:45},
                 SourceID: 0,
@@ -7877,45 +8066,36 @@
                 },
             },
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.VarDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "x",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:37},
-                                End:      ast.Location{Line:1, Column:38},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeAnn: &dts_parser.PrimitiveType{
-                            Kind: 7,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:40},
-                                End:      ast.Location{Line:1, Column:46},
-                                SourceID: 0,
-                            },
-                        },
-                        Readonly: false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:33},
-                            End:      ast.Location{Line:1, Column:47},
+                &dts_parser.VarDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "x",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:37},
+                            End:      ast.Location{Line:1, Column:38},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:1, Column:26},
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 7,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:40},
+                            End:      ast.Location{Line:1, Column:46},
+                            SourceID: 0,
+                        },
+                    },
+                    Readonly: false,
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
                         End:      ast.Location{Line:1, Column:47},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -7938,47 +8118,38 @@
                 },
             },
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.FuncDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "foo",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:42},
-                                End:      ast.Location{Line:1, Column:45},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeParams: nil,
-                        Params:     {
-                        },
-                        ReturnType: &dts_parser.PrimitiveType{
-                            Kind: 2,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:49},
-                                End:      ast.Location{Line:1, Column:53},
-                                SourceID: 0,
-                            },
-                        },
+                &dts_parser.FuncDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "foo",
                         span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:33},
-                            End:      ast.Location{Line:1, Column:54},
+                            Start:    ast.Location{Line:1, Column:42},
+                            End:      ast.Location{Line:1, Column:45},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:1, Column:26},
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:49},
+                            End:      ast.Location{Line:1, Column:53},
+                            SourceID: 0,
+                        },
+                    },
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
                         End:      ast.Location{Line:1, Column:54},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:56},
                 SourceID: 0,
@@ -8029,6 +8200,8 @@
                                 },
                             },
                             Readonly: false,
+                            export:   false,
+                            default_: false,
                             span:     ast.Span{
                                 Start:    ast.Location{Line:1, Column:45},
                                 End:      ast.Location{Line:1, Column:59},
@@ -8036,14 +8209,18 @@
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:27},
                         End:      ast.Location{Line:1, Column:61},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:63},
                 SourceID: 0,
@@ -8077,6 +8254,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:30},
                         End:      ast.Location{Line:1, Column:44},
@@ -8133,6 +8312,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:66},
                         End:      ast.Location{Line:1, Column:100},
@@ -8192,14 +8373,18 @@
                             SourceID: 0,
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:121},
                         End:      ast.Location{Line:1, Column:162},
                         SourceID: 0,
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:164},
                 SourceID: 0,
@@ -8293,45 +8478,24 @@
                         },
                     },
                     Readonly: true,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:2, Column:5},
                         End:      ast.Location{Line:2, Column:46},
                         SourceID: 0,
                     },
                 },
-                &dts_parser.ExportDecl{
-                    Declaration:  nil,
-                    NamedExports: {
-                        &dts_parser.ExportSpecifier{
-                            Local: &dts_parser.Ident{
-                                Name: "equal",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:3, Column:14},
-                                    End:      ast.Location{Line:3, Column:19},
-                                    SourceID: 0,
-                                },
-                            },
-                            Exported: &dts_parser.Ident{
-                                Name: "equal",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:3, Column:14},
-                                    End:      ast.Location{Line:3, Column:19},
-                                    SourceID: 0,
-                                },
-                            },
-                            span: ast.Span{
-                                Start:    ast.Location{Line:3, Column:14},
-                                End:      ast.Location{Line:3, Column:19},
-                                SourceID: 0,
-                            },
+                &dts_parser.ExportAssignmentStmt{
+                    Name: &dts_parser.Ident{
+                        Name: "equal",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:14},
+                            End:      ast.Location{Line:3, Column:19},
+                            SourceID: 0,
                         },
                     },
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: true,
-                    TypeOnly:         false,
-                    span:             ast.Span{
+                    span: ast.Span{
                         Start:    ast.Location{Line:3, Column:5},
                         End:      ast.Location{Line:3, Column:20},
                         SourceID: 0,
@@ -8372,45 +8536,24 @@
                         },
                     },
                     Readonly: true,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:2, Column:5},
                         End:      ast.Location{Line:2, Column:25},
                         SourceID: 0,
                     },
                 },
-                &dts_parser.ExportDecl{
-                    Declaration:  nil,
-                    NamedExports: {
-                        &dts_parser.ExportSpecifier{
-                            Local: &dts_parser.Ident{
-                                Name: "value",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:3, Column:14},
-                                    End:      ast.Location{Line:3, Column:19},
-                                    SourceID: 0,
-                                },
-                            },
-                            Exported: &dts_parser.Ident{
-                                Name: "value",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:3, Column:14},
-                                    End:      ast.Location{Line:3, Column:19},
-                                    SourceID: 0,
-                                },
-                            },
-                            span: ast.Span{
-                                Start:    ast.Location{Line:3, Column:14},
-                                End:      ast.Location{Line:3, Column:19},
-                                SourceID: 0,
-                            },
+                &dts_parser.ExportAssignmentStmt{
+                    Name: &dts_parser.Ident{
+                        Name: "value",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:14},
+                            End:      ast.Location{Line:3, Column:19},
+                            SourceID: 0,
                         },
                     },
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: true,
-                    TypeOnly:         false,
-                    span:             ast.Span{
+                    span: ast.Span{
                         Start:    ast.Location{Line:3, Column:5},
                         End:      ast.Location{Line:3, Column:20},
                         SourceID: 0,
@@ -8433,41 +8576,30 @@
         &dts_parser.ModuleDecl{
             Name:       "my-lib",
             Statements: {
-                &dts_parser.ExportDecl{
-                    Declaration: &dts_parser.FuncDecl{
-                        Name: &dts_parser.Ident{
-                            Name: "foo",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:2, Column:21},
-                                End:      ast.Location{Line:2, Column:24},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeParams: nil,
-                        Params:     {
-                        },
-                        ReturnType: &dts_parser.PrimitiveType{
-                            Kind: 2,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:2, Column:28},
-                                End:      ast.Location{Line:2, Column:32},
-                                SourceID: 0,
-                            },
-                        },
+                &dts_parser.FuncDecl{
+                    Name: &dts_parser.Ident{
+                        Name: "foo",
                         span: ast.Span{
-                            Start:    ast.Location{Line:2, Column:12},
-                            End:      ast.Location{Line:2, Column:33},
+                            Start:    ast.Location{Line:2, Column:21},
+                            End:      ast.Location{Line:2, Column:24},
                             SourceID: 0,
                         },
                     },
-                    NamedExports:     nil,
-                    From:             "",
-                    ExportDefault:    false,
-                    ExportAll:        false,
-                    ExportAssignment: false,
-                    TypeOnly:         false,
-                    span:             ast.Span{
-                        Start:    ast.Location{Line:2, Column:5},
+                    TypeParams: nil,
+                    Params:     {
+                    },
+                    ReturnType: &dts_parser.PrimitiveType{
+                        Kind: 2,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:28},
+                            End:      ast.Location{Line:2, Column:32},
+                            SourceID: 0,
+                        },
+                    },
+                    export:   true,
+                    default_: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:2, Column:12},
                         End:      ast.Location{Line:2, Column:33},
                         SourceID: 0,
                     },
@@ -8535,7 +8667,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
@@ -8597,7 +8731,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:3, Column:10},
                 SourceID: 0,
@@ -8650,7 +8786,9 @@
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:53},
                         SourceID: 0,
@@ -8710,7 +8848,9 @@
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:50},
                         SourceID: 0,
@@ -8754,7 +8894,9 @@
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:51},
                         End:      ast.Location{Line:1, Column:85},
                         SourceID: 0,
@@ -8794,6 +8936,8 @@
                         },
                     },
                     Readonly: false,
+                    export:   false,
+                    default_: false,
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:39},
@@ -8836,7 +8980,9 @@
                             SourceID: 0,
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:45},
                         SourceID: 0,
@@ -8906,14 +9052,18 @@
                                     },
                                 },
                             },
-                            span: ast.Span{
+                            export:   false,
+                            default_: false,
+                            span:     ast.Span{
                                 Start:    ast.Location{Line:1, Column:37},
                                 End:      ast.Location{Line:1, Column:78},
                                 SourceID: 0,
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:80},
                         SourceID: 0,
@@ -8973,7 +9123,9 @@
                             },
                         },
                     },
-                    span: ast.Span{
+                    export:   false,
+                    default_: false,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:2, Column:2},
                         End:      ast.Location{Line:4, Column:3},
                         SourceID: 0,

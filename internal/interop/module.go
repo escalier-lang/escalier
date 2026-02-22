@@ -48,39 +48,14 @@ func processNamespace(
 			// Skip imports for now
 			continue
 
-		case *dts_parser.ExportDecl:
-			// Handle export declarations
-			if s.Declaration != nil {
-				// Export wraps another declaration (e.g., export interface Foo {}, export namespace Bar {})
-				switch inner := s.Declaration.(type) {
-				case *dts_parser.NamespaceDecl:
-					// Process exported namespace
-					nestedName := qualifiedName(name, inner.Name.Name)
-					if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
-						return fmt.Errorf("processing exported namespace %s: %w", inner.Name.Name, err)
-					}
+		case *dts_parser.ExportAssignmentStmt:
+			// Handle "export = identifier" pattern
+			// Track the identifier to mark as exported later
+			exportedNames = append(exportedNames, s.Name.Name)
+			continue
 
-				case *dts_parser.ModuleDecl:
-					// Module declarations are not supported
-					return fmt.Errorf("module declarations are not supported: %s", inner.Name)
-
-				default:
-					// Convert the exported declaration like any other statement
-					decl, err := convertStatement(inner)
-					if err != nil {
-						return fmt.Errorf("converting exported declaration: %w", err)
-					}
-					if decl != nil {
-						decl.SetExport(true)
-						decls = append(decls, decl)
-					}
-				}
-			} else if s.ExportAssignment && len(s.NamedExports) > 0 {
-				// Handle "export = identifier" pattern
-				// Track the identifier to mark as exported later
-				exportedNames = append(exportedNames, s.NamedExports[0].Local.Name)
-			}
-			// For other export forms (export {}, export * from "...", etc.), skip for now
+		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
+			// Skip these export forms for now (re-exports, named exports, UMD namespace)
 			continue
 
 		case *dts_parser.AmbientDecl:
@@ -104,6 +79,10 @@ func processNamespace(
 					return fmt.Errorf("converting ambient declaration: %w", err)
 				}
 				if decl != nil {
+					// Check if the inner declaration has export flag set
+					if dtsDecl, ok := inner.(dts_parser.Decl); ok && dtsDecl.Export() {
+						decl.SetExport(true)
+					}
 					decls = append(decls, decl)
 				}
 			}
@@ -118,6 +97,10 @@ func processNamespace(
 				continue
 			}
 			if decl != nil {
+				// Check if the declaration has export flag set
+				if dtsDecl, ok := s.(dts_parser.Decl); ok && dtsDecl.Export() {
+					decl.SetExport(true)
+				}
 				decls = append(decls, decl)
 			}
 		}

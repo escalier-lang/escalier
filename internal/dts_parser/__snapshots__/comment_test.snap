@@ -69,7 +69,9 @@
                     },
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:7, Column:2},
                 SourceID: 0,
@@ -126,7 +128,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:36},
                 SourceID: 0,
@@ -183,7 +187,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:39},
                 SourceID: 0,
@@ -240,7 +246,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:46},
                 SourceID: 0,
@@ -322,7 +330,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:50},
                 SourceID: 0,
@@ -404,7 +414,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:44},
                 SourceID: 0,
@@ -461,7 +473,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:7, Column:2},
                 SourceID: 0,
@@ -520,7 +534,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:49},
                 SourceID: 0,
@@ -584,7 +600,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:48},
                 SourceID: 0,
@@ -672,7 +690,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:61},
                 SourceID: 0,
@@ -760,7 +780,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:61},
                 SourceID: 0,
@@ -848,7 +870,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:67},
                 SourceID: 0,
@@ -936,7 +960,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:2, Column:21},
                 SourceID: 0,
@@ -1024,7 +1050,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:2, Column:12},
                 SourceID: 0,
@@ -1184,7 +1212,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:3, Column:6},
                 SourceID: 0,
@@ -1482,7 +1512,9 @@
                     SourceID: 0,
                 },
             },
-            span: ast.Span{
+            export:   false,
+            default_: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:6, Column:7},
                 SourceID: 0,
