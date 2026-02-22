@@ -1141,6 +1141,19 @@ func (c *Checker) InferComponent(
 		}
 	}
 
+	// Process ExportAssignmentStmt declarations
+	// This must happen after all other declarations are processed so we can look up
+	// the referenced binding and determine what to export.
+	for _, key := range component {
+		decls := depGraph.GetDecls(key)
+		for _, decl := range decls {
+			if exportAssign, ok := decl.(*ast.ExportAssignmentStmt); ok {
+				nsCtx := GetDeclContext(ctx, depGraph, key, decl)
+				c.processExportAssignment(exportAssign, nsCtx)
+			}
+		}
+	}
+
 	// Resolve any type references that were deferred during type annotation inference
 	// to allow for recursive definitions between type and variable declarations.
 	for _, refs := range typeRefsToUpdate {
@@ -1329,6 +1342,11 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	declErrors := c.InferDepGraph(ctx, depGraph)
 	errors = append(errors, declErrors...)
 
+	// Phase 4: Process ExportAssignmentStmt declarations.
+	// These are not in the dep_graph since they don't create bindings,
+	// but they control what gets exported from the module.
+	c.processModuleExportAssignments(ctx, m)
+
 	return errors
 }
 
@@ -1402,6 +1420,77 @@ func (c *Checker) unifyTypeParams(
 	}
 
 	return errors
+}
+
+// processModuleExportAssignments iterates over all namespaces in the module
+// and processes any ExportAssignmentStmt declarations.
+func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) {
+	// Iterate over all namespaces in the module
+	iter := m.Namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		nsName := iter.Key()
+		ns := iter.Value()
+
+		// Get the corresponding type_system.Namespace from the scope
+		var tsNs *type_system.Namespace
+		if nsName == "" {
+			// Root namespace
+			tsNs = ctx.Scope.Namespace
+		} else {
+			tsNs = ctx.Scope.getNamespace(nsName)
+		}
+
+		if tsNs == nil {
+			continue
+		}
+
+		// Create a context for this namespace
+		nsCtx := ctx.WithNewScopeAndNamespace(tsNs)
+
+		// Process ExportAssignmentStmt declarations in this namespace
+		for _, decl := range ns.Decls {
+			if exportAssign, ok := decl.(*ast.ExportAssignmentStmt); ok {
+				c.processExportAssignment(exportAssign, nsCtx)
+			}
+		}
+	}
+}
+
+// processExportAssignment handles "export = identifier" patterns from TypeScript interop.
+// If the identifier refers to a namespace, all exported members are re-exported.
+// For everything else (functions, objects, primitives), a default export is created.
+func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Context) {
+	name := stmt.Name.Name
+
+	// Check if it's a namespace (from declare namespace Foo)
+	if ns := ctx.Scope.getNamespace(name); ns != nil {
+		// Re-export all exported members of the namespace
+		for memberName, binding := range ns.Values {
+			if binding.Exported {
+				ctx.Scope.setValue(memberName, binding)
+			}
+		}
+		for typeName, typeAlias := range ns.Types {
+			if typeAlias.Exported {
+				ctx.Scope.SetTypeAlias(typeName, typeAlias)
+			}
+		}
+		return
+	}
+
+	// For everything else, look up the value binding and create default export
+	binding := ctx.Scope.GetValue(name)
+	if binding == nil {
+		// TODO: Add diagnostic for unresolved identifier
+		return
+	}
+
+	// Create default export
+	ctx.Scope.setValue("default", &type_system.Binding{
+		Type:     binding.Type,
+		Mutable:  false,
+		Exported: true,
+	})
 }
 
 // validateInterfaceMerge checks that when merging interface declarations,

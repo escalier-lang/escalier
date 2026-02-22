@@ -28,7 +28,6 @@ func processNamespace(
 	namespaces *btree.Map[string, *ast.Namespace],
 ) error {
 	var decls []ast.Decl
-	var exportAssignmentName string // Track name from "export = X" pattern
 
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
@@ -50,14 +49,13 @@ func processNamespace(
 
 		case *dts_parser.ExportAssignmentStmt:
 			// Convert "export = identifier" to ast.ExportAssignmentStmt
+			// The checker will process this to determine what gets exported
 			exportAssignment := ast.NewExportAssignmentStmt(
 				ast.NewIdentifier(s.Name.Name, convertSpan(s.Name.Span())),
 				true, // declare is always true for .d.ts files
 				convertSpan(s.Span()),
 			)
 			decls = append(decls, exportAssignment)
-			// Track the name so we can mark the referenced declaration as exported
-			exportAssignmentName = s.Name.Name
 			continue
 
 		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
@@ -112,51 +110,12 @@ func processNamespace(
 		}
 	}
 
-	// Post-process: Mark the declaration referenced by export assignment as exported
-	// This handles "export = identifier" patterns - the referenced declaration
-	// needs to be marked as exported for the type system to see it
-	if exportAssignmentName != "" {
-		for _, decl := range decls {
-			if getDeclName(decl) == exportAssignmentName {
-				decl.SetExport(true)
-				break // Only mark the first matching declaration
-			}
-		}
-	}
-
 	// Merge the declarations into the namespace
 	if len(decls) > 0 {
 		mergeNamespace(name, decls, namespaces)
 	}
 
 	return nil
-}
-
-// getDeclName returns the name of a declaration, or empty string if unnamed.
-func getDeclName(decl ast.Decl) string {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		if ident, ok := d.Pattern.(*ast.IdentPat); ok {
-			return ident.Name
-		}
-	case *ast.FuncDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.TypeDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.InterfaceDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.EnumDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	}
-	return ""
 }
 
 // mergeNamespace merges declarations into an existing namespace or creates a new one.
