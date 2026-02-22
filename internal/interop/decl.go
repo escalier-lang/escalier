@@ -25,7 +25,7 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 		return convertInterfaceDecl(s)
 	case *dts_parser.ImportDecl,
 		*dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt,
-		*dts_parser.ExportAssignmentStmt, *dts_parser.ExportAsNamespaceStmt:
+		*dts_parser.ExportAsNamespaceStmt:
 		// Skip imports and standalone export statements
 		return nil, nil
 	case *dts_parser.AmbientDecl:

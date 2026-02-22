@@ -18,11 +18,12 @@ type Decl interface {
 	Node
 }
 
-func (*VarDecl) isDecl()       {}
-func (*FuncDecl) isDecl()      {}
-func (*TypeDecl) isDecl()      {}
-func (*InterfaceDecl) isDecl() {}
-func (*EnumDecl) isDecl()      {}
+func (*VarDecl) isDecl()              {}
+func (*FuncDecl) isDecl()             {}
+func (*TypeDecl) isDecl()             {}
+func (*InterfaceDecl) isDecl()        {}
+func (*EnumDecl) isDecl()             {}
+func (*ExportAssignmentStmt) isDecl() {}
 
 type VariableKind int
 
@@ -344,3 +345,29 @@ func (d *EnumDecl) Provenance() provenance.Provenance {
 func (d *EnumDecl) SetProvenance(p provenance.Provenance) {
 	d.provenance = p
 }
+
+// ExportAssignmentStmt represents: export = identifier (TypeScript interop only)
+// This is used when converting TypeScript .d.ts files that use the CommonJS-style
+// export assignment pattern. Escalier's parser does not produce this node.
+type ExportAssignmentStmt struct {
+	Name       *Ident
+	declare    bool
+	span       Span
+	provenance provenance.Provenance
+}
+
+func NewExportAssignmentStmt(name *Ident, declare bool, span Span) *ExportAssignmentStmt {
+	return &ExportAssignmentStmt{
+		Name:       name,
+		declare:    declare,
+		span:       span,
+		provenance: nil,
+	}
+}
+func (e *ExportAssignmentStmt) Export() bool                          { return true } // Always exported
+func (e *ExportAssignmentStmt) SetExport(bool)                        {}              // No-op, always exported
+func (e *ExportAssignmentStmt) Declare() bool                         { return e.declare }
+func (e *ExportAssignmentStmt) Span() Span                            { return e.span }
+func (e *ExportAssignmentStmt) Accept(v Visitor)                      { v.EnterDecl(e); v.ExitDecl(e) }
+func (e *ExportAssignmentStmt) Provenance() provenance.Provenance     { return e.provenance }
+func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.provenance = p }
