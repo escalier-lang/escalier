@@ -154,8 +154,8 @@ func (c *Checker) InferComponent(
 				binding := nsCtx.Scope.GetValue(decl.Name.Name)
 				if binding == nil {
 					nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
-						Source:  &ast.NodeProvenance{Node: decl},
-						Type:    funcType,
+						Source:   &ast.NodeProvenance{Node: decl},
+						Type:     funcType,
 						Mutable:  false,
 						Exported: decl.Export(),
 					})
@@ -496,9 +496,9 @@ func (c *Checker) InferComponent(
 				classObjType.SymbolKeyMap = staticSymbolKeyMap
 
 				ctor := &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: decl},
-					Type:    classObjType,
-					Mutable: false,
+					Source:   &ast.NodeProvenance{Node: decl},
+					Type:     classObjType,
+					Mutable:  false,
 					Exported: decl.Export(),
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
@@ -1329,6 +1329,12 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	declErrors := c.InferDepGraph(ctx, depGraph)
 	errors = append(errors, declErrors...)
 
+	// Phase 4: Process ExportAssignmentStmt declarations.
+	// These are not in the dep_graph since they don't create bindings,
+	// but they control what gets exported from the module.
+	exportErrors := c.processModuleExportAssignments(ctx, m)
+	errors = append(errors, exportErrors...)
+
 	return errors
 }
 
@@ -1402,6 +1408,98 @@ func (c *Checker) unifyTypeParams(
 	}
 
 	return errors
+}
+
+// processModuleExportAssignments iterates over all namespaces in the module
+// and processes any ExportAssignmentStmt declarations.
+func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) []Error {
+	var errors []Error
+
+	// Iterate over all namespaces in the module
+	iter := m.Namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		nsName := iter.Key()
+		ns := iter.Value()
+
+		// Get the corresponding type_system.Namespace from the scope
+		// Handle dot-qualified names by traversing nested namespaces
+		var tsNs *type_system.Namespace
+		if nsName == "" {
+			// Root namespace
+			tsNs = ctx.Scope.Namespace
+		} else {
+			// Traverse nested namespaces for dot-qualified names (e.g., "Foo.Bar.Baz")
+			tsNs = ctx.Scope.Namespace
+			for part := range strings.SplitSeq(nsName, ".") {
+				var ok bool
+				tsNs, ok = tsNs.GetNamespace(part)
+				if !ok {
+					tsNs = nil
+					break
+				}
+			}
+		}
+
+		if tsNs == nil {
+			continue
+		}
+
+		// Create a context for this namespace
+		nsCtx := ctx.WithNewScopeAndNamespace(tsNs)
+
+		// Process ExportAssignmentStmt declarations in this namespace
+		for _, decl := range ns.Decls {
+			if exportAssign, ok := decl.(*ast.ExportAssignmentStmt); ok {
+				if err := c.processExportAssignment(exportAssign, nsCtx); err != nil {
+					errors = append(errors, err)
+				}
+			}
+		}
+	}
+
+	return errors
+}
+
+// processExportAssignment handles "export = identifier" patterns from TypeScript interop.
+// If the identifier refers to a namespace, all exported members are re-exported.
+// For everything else (functions, objects, primitives), a default export is created.
+// Returns an error if the identifier cannot be resolved.
+func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Context) Error {
+	name := stmt.Name.Name
+
+	// Check if it's a namespace (from declare namespace Foo)
+	if ns := ctx.Scope.getNamespace(name); ns != nil {
+		// Re-export all exported members of the namespace
+		for memberName, binding := range ns.Values {
+			if binding.Exported {
+				ctx.Scope.setValue(memberName, binding)
+			}
+		}
+		for typeName, typeAlias := range ns.Types {
+			if typeAlias.Exported {
+				ctx.Scope.SetTypeAlias(typeName, typeAlias)
+			}
+		}
+		return nil
+	}
+
+	// For everything else, look up the value binding and create default export
+	binding := ctx.Scope.GetValue(name)
+	if binding == nil {
+		return UnresolvedExportAssignmentError{
+			Name: name,
+			span: stmt.Name.Span(),
+		}
+	}
+
+	// Create default export
+	ctx.Scope.setValue("default", &type_system.Binding{
+		Source:   &ast.NodeProvenance{Node: stmt},
+		Type:     binding.Type,
+		Mutable:  false,
+		Exported: true,
+	})
+	return nil
 }
 
 // validateInterfaceMerge checks that when merging interface declarations,

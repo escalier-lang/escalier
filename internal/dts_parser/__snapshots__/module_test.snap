@@ -532,39 +532,28 @@
 [TestExportDeclarations/export_variable - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.VarDecl{
-                Name: &dts_parser.Ident{
-                    Name: "x",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:20},
-                        End:      ast.Location{Line:1, Column:21},
-                        SourceID: 0,
-                    },
+        &dts_parser.VarDecl{
+            Name: &dts_parser.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:20},
+                    End:      ast.Location{Line:1, Column:21},
+                    SourceID: 0,
                 },
-                TypeAnn: &dts_parser.PrimitiveType{
-                    Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:23},
-                        End:      ast.Location{Line:1, Column:29},
-                        SourceID: 0,
-                    },
-                },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
+            },
+            TypeAnn: &dts_parser.PrimitiveType{
+                Kind: 6,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
                     End:      ast.Location{Line:1, Column:29},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            Readonly: false,
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:29},
                 SourceID: 0,
             },
@@ -576,41 +565,30 @@
 [TestExportDeclarations/export_function - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.FuncDecl{
-                Name: &dts_parser.Ident{
-                    Name: "foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:25},
-                        End:      ast.Location{Line:1, Column:28},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                Params:     {
-                },
-                ReturnType: &dts_parser.PrimitiveType{
-                    Kind: 2,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:32},
-                        End:      ast.Location{Line:1, Column:36},
-                        SourceID: 0,
-                    },
-                },
+        &dts_parser.FuncDecl{
+            Name: &dts_parser.Ident{
+                Name: "foo",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
+                    Start:    ast.Location{Line:1, Column:25},
+                    End:      ast.Location{Line:1, Column:28},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            Params:     {
+            },
+            ReturnType: &dts_parser.PrimitiveType{
+                Kind: 2,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:32},
                     End:      ast.Location{Line:1, Column:36},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:36},
                 SourceID: 0,
             },
@@ -622,39 +600,28 @@
 [TestExportDeclarations/export_type_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.TypeDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                TypeAnn:    &dts_parser.PrimitiveType{
-                    Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:19},
-                        End:      ast.Location{Line:1, Column:25},
-                        SourceID: 0,
-                    },
-                },
+        &dts_parser.TypeDecl{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.PrimitiveType{
+                Kind: 6,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:19},
                     End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:25},
                 SourceID: 0,
             },
@@ -666,59 +633,48 @@
 [TestExportDeclarations/export_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.InterfaceDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Bar",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:18},
-                        End:      ast.Location{Line:1, Column:21},
-                        SourceID: 0,
-                    },
+        &dts_parser.InterfaceDecl{
+            Name: &dts_parser.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:21},
+                    SourceID: 0,
                 },
-                TypeParams: nil,
-                Extends:    nil,
-                Members:    {
-                    &dts_parser.PropertySignature{
-                        Name: &dts_parser.Ident{
-                            Name: "x",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:24},
-                                End:      ast.Location{Line:1, Column:25},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeAnn: &dts_parser.PrimitiveType{
-                            Kind: 7,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:27},
-                                End:      ast.Location{Line:1, Column:33},
-                                SourceID: 0,
-                            },
-                        },
-                        Optional: false,
-                        Readonly: false,
-                        span:     ast.Span{
+            },
+            TypeParams: nil,
+            Extends:    nil,
+            Members:    {
+                &dts_parser.PropertySignature{
+                    Name: &dts_parser.Ident{
+                        Name: "x",
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:24},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeAnn: &dts_parser.PrimitiveType{
+                        Kind: 7,
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
                             End:      ast.Location{Line:1, Column:33},
                             SourceID: 0,
                         },
                     },
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
-                    End:      ast.Location{Line:1, Column:35},
-                    SourceID: 0,
+                    Optional: false,
+                    Readonly: false,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:33},
+                        SourceID: 0,
+                    },
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:35},
                 SourceID: 0,
             },
@@ -730,36 +686,25 @@
 [TestExportDeclarations/export_class - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.ClassDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Baz",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:22},
-                        End:      ast.Location{Line:1, Column:25},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                Extends:    nil,
-                Implements: nil,
-                Members:    {
-                },
-                Abstract: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:28},
+        &dts_parser.ClassDecl{
+            Name: &dts_parser.Ident{
+                Name: "Baz",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:25},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            TypeParams: nil,
+            Extends:    nil,
+            Implements: nil,
+            Members:    {
+            },
+            Abstract: false,
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:28},
                 SourceID: 0,
             },
@@ -771,81 +716,70 @@
 [TestExportDeclarations/export_enum - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.EnumDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Color",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:18},
-                        SourceID: 0,
-                    },
+        &dts_parser.EnumDecl{
+            Name: &dts_parser.Ident{
+                Name: "Color",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:18},
+                    SourceID: 0,
                 },
-                Members: {
-                    &dts_parser.EnumMember{
-                        Name: &dts_parser.Ident{
-                            Name: "Red",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:21},
-                                End:      ast.Location{Line:1, Column:24},
-                                SourceID: 0,
-                            },
-                        },
-                        Value: nil,
-                        span:  ast.Span{
+            },
+            Members: {
+                &dts_parser.EnumMember{
+                    Name: &dts_parser.Ident{
+                        Name: "Red",
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:21},
                             End:      ast.Location{Line:1, Column:24},
                             SourceID: 0,
                         },
                     },
-                    &dts_parser.EnumMember{
-                        Name: &dts_parser.Ident{
-                            Name: "Green",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:26},
-                                End:      ast.Location{Line:1, Column:31},
-                                SourceID: 0,
-                            },
-                        },
-                        Value: nil,
-                        span:  ast.Span{
+                    Value: nil,
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:21},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.EnumMember{
+                    Name: &dts_parser.Ident{
+                        Name: "Green",
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:26},
                             End:      ast.Location{Line:1, Column:31},
                             SourceID: 0,
                         },
                     },
-                    &dts_parser.EnumMember{
-                        Name: &dts_parser.Ident{
-                            Name: "Blue",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:33},
-                                End:      ast.Location{Line:1, Column:37},
-                                SourceID: 0,
-                            },
-                        },
-                        Value: nil,
-                        span:  ast.Span{
+                    Value: nil,
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:26},
+                        End:      ast.Location{Line:1, Column:31},
+                        SourceID: 0,
+                    },
+                },
+                &dts_parser.EnumMember{
+                    Name: &dts_parser.Ident{
+                        Name: "Blue",
+                        span: ast.Span{
                             Start:    ast.Location{Line:1, Column:33},
                             End:      ast.Location{Line:1, Column:37},
                             SourceID: 0,
                         },
                     },
-                },
-                Const: false,
-                span:  ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
-                    End:      ast.Location{Line:1, Column:39},
-                    SourceID: 0,
+                    Value: nil,
+                    span:  ast.Span{
+                        Start:    ast.Location{Line:1, Column:33},
+                        End:      ast.Location{Line:1, Column:37},
+                        SourceID: 0,
+                    },
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            Const:    false,
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:39},
                 SourceID: 0,
             },
@@ -857,32 +791,21 @@
 [TestExportDeclarations/export_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.NamespaceDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Utils",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:18},
-                        End:      ast.Location{Line:1, Column:23},
-                        SourceID: 0,
-                    },
-                },
-                Statements: {
-                },
+        &dts_parser.NamespaceDecl{
+            Name: &dts_parser.Ident{
+                Name: "Utils",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
-                    End:      ast.Location{Line:1, Column:27},
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:23},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            Statements: {
+            },
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:27},
                 SourceID: 0,
             },
@@ -894,9 +817,8 @@
 [TestExportDeclarations/named_export_single - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -921,12 +843,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:13},
                 SourceID: 0,
@@ -939,9 +858,8 @@
 [TestExportDeclarations/named_export_multiple - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1012,12 +930,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:23},
                 SourceID: 0,
@@ -1030,9 +945,8 @@
 [TestExportDeclarations/named_export_with_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1057,12 +971,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:20},
                 SourceID: 0,
@@ -1075,9 +986,8 @@
 [TestExportDeclarations/named_export_mixed - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1125,12 +1035,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:25},
                 SourceID: 0,
@@ -1143,15 +1050,11 @@
 [TestExportDeclarations/export_all - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:      nil,
-            NamedExports:     nil,
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        true,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+        &dts_parser.ExportAllStmt{
+            AsName:   (*dts_parser.Ident)(nil),
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:23},
                 SourceID: 0,
@@ -1164,39 +1067,18 @@
 [TestExportDeclarations/export_all_as_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
-                &dts_parser.ExportSpecifier{
-                    Local: &dts_parser.Ident{
-                        Name: "foo",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:13},
-                            End:      ast.Location{Line:1, Column:16},
-                            SourceID: 0,
-                        },
-                    },
-                    Exported: &dts_parser.Ident{
-                        Name: "foo",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:13},
-                            End:      ast.Location{Line:1, Column:16},
-                            SourceID: 0,
-                        },
-                    },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
+        &dts_parser.ExportAllStmt{
+            AsName: &dts_parser.Ident{
+                Name: "foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:16},
+                    SourceID: 0,
                 },
             },
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:30},
                 SourceID: 0,
@@ -1209,9 +1091,8 @@
 [TestExportDeclarations/export_from_module - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1236,12 +1117,9 @@
                     },
                 },
             },
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:29},
                 SourceID: 0,
@@ -1254,9 +1132,8 @@
 [TestExportDeclarations/export_from_with_alias - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1281,12 +1158,9 @@
                     },
                 },
             },
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:36},
                 SourceID: 0,
@@ -1299,34 +1173,23 @@
 [TestExportDeclarations/export_default_interface - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.InterfaceDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:26},
-                        End:      ast.Location{Line:1, Column:29},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                Extends:    nil,
-                Members:    {
-                },
+        &dts_parser.InterfaceDecl{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:33},
+                    Start:    ast.Location{Line:1, Column:26},
+                    End:      ast.Location{Line:1, Column:29},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    true,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            TypeParams: nil,
+            Extends:    nil,
+            Members:    {
+            },
+            export:   true,
+            default_: true,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:33},
                 SourceID: 0,
             },
@@ -1338,39 +1201,28 @@
 [TestExportDeclarations/export_default_type - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.TypeDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:21},
-                        End:      ast.Location{Line:1, Column:24},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                TypeAnn:    &dts_parser.PrimitiveType{
-                    Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:27},
-                        End:      ast.Location{Line:1, Column:33},
-                        SourceID: 0,
-                    },
-                },
+        &dts_parser.TypeDecl{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
+                    Start:    ast.Location{Line:1, Column:21},
+                    End:      ast.Location{Line:1, Column:24},
+                    SourceID: 0,
+                },
+            },
+            TypeParams: nil,
+            TypeAnn:    &dts_parser.PrimitiveType{
+                Kind: 6,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:27},
                     End:      ast.Location{Line:1, Column:33},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    true,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            export:   true,
+            default_: true,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:33},
                 SourceID: 0,
             },
@@ -1382,39 +1234,16 @@
 [TestExportDeclarations/export_assignment - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
-                &dts_parser.ExportSpecifier{
-                    Local: &dts_parser.Ident{
-                        Name: "foo",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:10},
-                            End:      ast.Location{Line:1, Column:13},
-                            SourceID: 0,
-                        },
-                    },
-                    Exported: &dts_parser.Ident{
-                        Name: "foo",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:10},
-                            End:      ast.Location{Line:1, Column:13},
-                            SourceID: 0,
-                        },
-                    },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:13},
-                        SourceID: 0,
-                    },
+        &dts_parser.ExportAssignmentStmt{
+            Name: &dts_parser.Ident{
+                Name: "foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:10},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: true,
-            TypeOnly:         false,
-            span:             ast.Span{
+            span: ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:13},
                 SourceID: 0,
@@ -1427,39 +1256,16 @@
 [TestExportDeclarations/export_as_namespace - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
-                &dts_parser.ExportSpecifier{
-                    Local: &dts_parser.Ident{
-                        Name: "MyLib",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:21},
-                            End:      ast.Location{Line:1, Column:26},
-                            SourceID: 0,
-                        },
-                    },
-                    Exported: &dts_parser.Ident{
-                        Name: "MyLib",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:21},
-                            End:      ast.Location{Line:1, Column:26},
-                            SourceID: 0,
-                        },
-                    },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:21},
-                        End:      ast.Location{Line:1, Column:26},
-                        SourceID: 0,
-                    },
+        &dts_parser.ExportAsNamespaceStmt{
+            Name: &dts_parser.Ident{
+                Name: "MyLib",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:21},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            span: ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:26},
                 SourceID: 0,
@@ -1472,9 +1278,8 @@
 [TestExportDeclarations/type-only_export - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "Foo",
@@ -1499,12 +1304,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         true,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: true,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:18},
                 SourceID: 0,
@@ -1517,9 +1319,8 @@
 [TestExportDeclarations/trailing_comma - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1567,12 +1368,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:18},
                 SourceID: 0,
@@ -1719,51 +1517,40 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.InterfaceDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Bar",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:21},
-                        End:      ast.Location{Line:2, Column:24},
-                        SourceID: 0,
-                    },
+        &dts_parser.InterfaceDecl{
+            Name: &dts_parser.Ident{
+                Name: "Bar",
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:21},
+                    End:      ast.Location{Line:2, Column:24},
+                    SourceID: 0,
                 },
-                TypeParams: nil,
-                Extends:    {
-                    &dts_parser.TypeReference{
-                        Name: &dts_parser.Ident{
-                            Name: "Foo",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:2, Column:33},
-                                End:      ast.Location{Line:2, Column:36},
-                                SourceID: 0,
-                            },
-                        },
-                        TypeArgs: nil,
-                        span:     ast.Span{
+            },
+            TypeParams: nil,
+            Extends:    {
+                &dts_parser.TypeReference{
+                    Name: &dts_parser.Ident{
+                        Name: "Foo",
+                        span: ast.Span{
                             Start:    ast.Location{Line:2, Column:33},
                             End:      ast.Location{Line:2, Column:36},
                             SourceID: 0,
                         },
                     },
-                },
-                Members: {
-                },
-                span: ast.Span{
-                    Start:    ast.Location{Line:2, Column:11},
-                    End:      ast.Location{Line:2, Column:40},
-                    SourceID: 0,
+                    TypeArgs: nil,
+                    span:     ast.Span{
+                        Start:    ast.Location{Line:2, Column:33},
+                        End:      ast.Location{Line:2, Column:36},
+                        SourceID: 0,
+                    },
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:2, Column:4},
+            Members: {
+            },
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:2, Column:11},
                 End:      ast.Location{Line:2, Column:40},
                 SourceID: 0,
             },
@@ -1775,9 +1562,8 @@
 [TestComplexImportExportScenarios/re-export_pattern - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -1825,26 +1611,19 @@
                     },
                 },
             },
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:34},
                 SourceID: 0,
             },
         },
-        &dts_parser.ExportDecl{
-            Declaration:      nil,
-            NamedExports:     nil,
-            From:             "other",
-            ExportDefault:    false,
-            ExportAll:        true,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+        &dts_parser.ExportAllStmt{
+            AsName:   (*dts_parser.Ident)(nil),
+            From:     "other",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:4},
                 End:      ast.Location{Line:2, Column:25},
                 SourceID: 0,
@@ -1916,9 +1695,8 @@
                 SourceID: 0,
             },
         },
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "A",
@@ -1966,12 +1744,9 @@
                     },
                 },
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         true,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: true,
+            span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:4},
                 End:      ast.Location{Line:2, Column:22},
                 SourceID: 0,
@@ -1984,41 +1759,29 @@
 [TestComplexImportExportScenarios/mixed_exports - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.InterfaceDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:18},
-                        End:      ast.Location{Line:1, Column:21},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                Extends:    nil,
-                Members:    {
-                },
+        &dts_parser.InterfaceDecl{
+            Name: &dts_parser.Ident{
+                Name: "Foo",
                 span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
-                    End:      ast.Location{Line:1, Column:25},
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:21},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
+            TypeParams: nil,
+            Extends:    nil,
+            Members:    {
+            },
+            export:   true,
+            default_: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:25},
                 SourceID: 0,
             },
         },
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "bar",
@@ -2043,47 +1806,33 @@
                     },
                 },
             },
-            From:             "lib",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "lib",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:4},
                 End:      ast.Location{Line:2, Column:29},
                 SourceID: 0,
             },
         },
-        &dts_parser.ExportDecl{
-            Declaration: &dts_parser.ClassDecl{
-                Name: &dts_parser.Ident{
-                    Name: "Baz",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:3, Column:25},
-                        End:      ast.Location{Line:3, Column:28},
-                        SourceID: 0,
-                    },
-                },
-                TypeParams: nil,
-                Extends:    nil,
-                Implements: nil,
-                Members:    {
-                },
-                Abstract: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:3, Column:19},
-                    End:      ast.Location{Line:3, Column:32},
+        &dts_parser.ClassDecl{
+            Name: &dts_parser.Ident{
+                Name: "Baz",
+                span: ast.Span{
+                    Start:    ast.Location{Line:3, Column:25},
+                    End:      ast.Location{Line:3, Column:28},
                     SourceID: 0,
                 },
             },
-            NamedExports:     nil,
-            From:             "",
-            ExportDefault:    true,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
-                Start:    ast.Location{Line:3, Column:4},
+            TypeParams: nil,
+            Extends:    nil,
+            Implements: nil,
+            Members:    {
+            },
+            Abstract: false,
+            export:   true,
+            default_: true,
+            span:     ast.Span{
+                Start:    ast.Location{Line:3, Column:19},
                 End:      ast.Location{Line:3, Column:32},
                 SourceID: 0,
             },
@@ -2286,16 +2035,12 @@ map[string]interface {}{
 [TestExportDeclarations/export_without_any_exports - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
             },
-            From:             "",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:7},
                 SourceID: 0,
@@ -2419,15 +2164,11 @@ map[string]interface {}{
 [TestExportDeclarations/single_quote_export_all - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:      nil,
-            NamedExports:     nil,
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        true,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+        &dts_parser.ExportAllStmt{
+            AsName:   (*dts_parser.Ident)(nil),
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:23},
                 SourceID: 0,
@@ -2440,9 +2181,8 @@ map[string]interface {}{
 [TestExportDeclarations/single_quote_export_from - 1]
 &dts_parser.Module{
     Statements: {
-        &dts_parser.ExportDecl{
-            Declaration:  nil,
-            NamedExports: {
+        &dts_parser.NamedExportStmt{
+            Specifiers: {
                 &dts_parser.ExportSpecifier{
                     Local: &dts_parser.Ident{
                         Name: "foo",
@@ -2490,12 +2230,9 @@ map[string]interface {}{
                     },
                 },
             },
-            From:             "module",
-            ExportDefault:    false,
-            ExportAll:        false,
-            ExportAssignment: false,
-            TypeOnly:         false,
-            span:             ast.Span{
+            From:     "module",
+            TypeOnly: false,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:34},
                 SourceID: 0,

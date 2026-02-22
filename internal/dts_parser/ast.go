@@ -66,9 +66,26 @@ func (*EnumDecl) isStatement()      {}
 func (*NamespaceDecl) isStatement() {}
 func (*ModuleDecl) isStatement()    {}
 func (*GlobalDecl) isStatement()    {}
-func (*ExportDecl) isStatement()    {}
 func (*ImportDecl) isStatement()    {}
 func (*AmbientDecl) isStatement()   {}
+
+// Decl is an interface for declaration types that can be exported
+type Decl interface {
+	isDecl()
+	Export() bool
+	SetExport(bool)
+	Default() bool
+	SetDefault(bool)
+	Node
+}
+
+func (*VarDecl) isDecl()       {}
+func (*FuncDecl) isDecl()      {}
+func (*ClassDecl) isDecl()     {}
+func (*InterfaceDecl) isDecl() {}
+func (*TypeDecl) isDecl()      {}
+func (*EnumDecl) isDecl()      {}
+func (*NamespaceDecl) isDecl() {}
 
 // ============================================================================
 // Declarations
@@ -78,20 +95,32 @@ type VarDecl struct {
 	Name     *Ident
 	TypeAnn  TypeAnn
 	Readonly bool // for const declarations
+	export   bool
+	default_ bool
 	span     ast.Span
 }
 
-func (d *VarDecl) Span() ast.Span { return d.span }
+func (d *VarDecl) Span() ast.Span      { return d.span }
+func (d *VarDecl) Export() bool        { return d.export }
+func (d *VarDecl) SetExport(e bool)    { d.export = e }
+func (d *VarDecl) Default() bool       { return d.default_ }
+func (d *VarDecl) SetDefault(def bool) { d.default_ = def }
 
 type FuncDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Params     []*Param
 	ReturnType TypeAnn
+	export     bool
+	default_   bool
 	span       ast.Span
 }
 
-func (d *FuncDecl) Span() ast.Span { return d.span }
+func (d *FuncDecl) Span() ast.Span      { return d.span }
+func (d *FuncDecl) Export() bool        { return d.export }
+func (d *FuncDecl) SetExport(e bool)    { d.export = e }
+func (d *FuncDecl) Default() bool       { return d.default_ }
+func (d *FuncDecl) SetDefault(def bool) { d.default_ = def }
 
 type ClassDecl struct {
 	Name       *Ident
@@ -100,38 +129,62 @@ type ClassDecl struct {
 	Implements []TypeAnn
 	Members    []ClassMember
 	Abstract   bool
+	export     bool
+	default_   bool
 	span       ast.Span
 }
 
-func (d *ClassDecl) Span() ast.Span { return d.span }
+func (d *ClassDecl) Span() ast.Span      { return d.span }
+func (d *ClassDecl) Export() bool        { return d.export }
+func (d *ClassDecl) SetExport(e bool)    { d.export = e }
+func (d *ClassDecl) Default() bool       { return d.default_ }
+func (d *ClassDecl) SetDefault(def bool) { d.default_ = def }
 
 type InterfaceDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Extends    []TypeAnn
 	Members    []InterfaceMember
+	export     bool
+	default_   bool
 	span       ast.Span
 }
 
-func (d *InterfaceDecl) Span() ast.Span { return d.span }
+func (d *InterfaceDecl) Span() ast.Span      { return d.span }
+func (d *InterfaceDecl) Export() bool        { return d.export }
+func (d *InterfaceDecl) SetExport(e bool)    { d.export = e }
+func (d *InterfaceDecl) Default() bool       { return d.default_ }
+func (d *InterfaceDecl) SetDefault(def bool) { d.default_ = def }
 
 type TypeDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
+	export     bool
+	default_   bool
 	span       ast.Span
 }
 
-func (d *TypeDecl) Span() ast.Span { return d.span }
+func (d *TypeDecl) Span() ast.Span      { return d.span }
+func (d *TypeDecl) Export() bool        { return d.export }
+func (d *TypeDecl) SetExport(e bool)    { d.export = e }
+func (d *TypeDecl) Default() bool       { return d.default_ }
+func (d *TypeDecl) SetDefault(def bool) { d.default_ = def }
 
 type EnumDecl struct {
 	Name    *Ident
 	Members []*EnumMember
 	Const   bool
+	export  bool
+	default_ bool
 	span    ast.Span
 }
 
-func (d *EnumDecl) Span() ast.Span { return d.span }
+func (d *EnumDecl) Span() ast.Span      { return d.span }
+func (d *EnumDecl) Export() bool        { return d.export }
+func (d *EnumDecl) SetExport(e bool)    { d.export = e }
+func (d *EnumDecl) Default() bool       { return d.default_ }
+func (d *EnumDecl) SetDefault(def bool) { d.default_ = def }
 
 type EnumMember struct {
 	Name  *Ident
@@ -144,10 +197,16 @@ func (e *EnumMember) Span() ast.Span { return e.span }
 type NamespaceDecl struct {
 	Name       *Ident
 	Statements []Statement
+	export     bool
+	default_   bool
 	span       ast.Span
 }
 
-func (d *NamespaceDecl) Span() ast.Span { return d.span }
+func (d *NamespaceDecl) Span() ast.Span      { return d.span }
+func (d *NamespaceDecl) Export() bool        { return d.export }
+func (d *NamespaceDecl) SetExport(e bool)    { d.export = e }
+func (d *NamespaceDecl) Default() bool       { return d.default_ }
+func (d *NamespaceDecl) SetDefault(def bool) { d.default_ = def }
 
 type ModuleDecl struct {
 	Name       string // module name as string literal
@@ -194,19 +253,6 @@ type ImportSpecifier struct {
 
 func (i *ImportSpecifier) Span() ast.Span { return i.span }
 
-type ExportDecl struct {
-	Declaration      Statement          // optional, for `export ...`
-	NamedExports     []*ExportSpecifier // optional, for `export { ... }`
-	From             string             // optional, for re-exports
-	ExportDefault    bool               // for `export default`
-	ExportAll        bool               // for `export *`
-	ExportAssignment bool               // for `export = foo`
-	TypeOnly         bool
-	span             ast.Span
-}
-
-func (e *ExportDecl) Span() ast.Span { return e.span }
-
 type ExportSpecifier struct {
 	Local    *Ident
 	Exported *Ident // optional, same as Local if not aliased
@@ -214,6 +260,46 @@ type ExportSpecifier struct {
 }
 
 func (e *ExportSpecifier) Span() ast.Span { return e.span }
+
+// NamedExportStmt represents: export { foo, bar } or export { foo } from "module"
+type NamedExportStmt struct {
+	Specifiers []*ExportSpecifier
+	From       string // module path for re-exports, empty for local
+	TypeOnly   bool
+	span       ast.Span
+}
+
+func (n *NamedExportStmt) Span() ast.Span  { return n.span }
+func (*NamedExportStmt) isStatement()      {}
+
+// ExportAllStmt represents: export * from "module" or export * as foo from "module"
+type ExportAllStmt struct {
+	AsName   *Ident // optional, for "export * as foo from ..."
+	From     string
+	TypeOnly bool
+	span     ast.Span
+}
+
+func (e *ExportAllStmt) Span() ast.Span { return e.span }
+func (*ExportAllStmt) isStatement()     {}
+
+// ExportAssignmentStmt represents: export = identifier
+type ExportAssignmentStmt struct {
+	Name *Ident
+	span ast.Span
+}
+
+func (e *ExportAssignmentStmt) Span() ast.Span { return e.span }
+func (*ExportAssignmentStmt) isStatement()     {}
+
+// ExportAsNamespaceStmt represents: export as namespace MyLib
+type ExportAsNamespaceStmt struct {
+	Name *Ident
+	span ast.Span
+}
+
+func (e *ExportAsNamespaceStmt) Span() ast.Span { return e.span }
+func (*ExportAsNamespaceStmt) isStatement()     {}
 
 // ============================================================================
 // Class and Interface Members

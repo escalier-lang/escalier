@@ -94,19 +94,22 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 // - export default ...
 func isTopLevelExport(stmt Statement) bool {
 	switch s := stmt.(type) {
-	case *ExportDecl:
-		// Any export declaration counts as a top-level export
+	case *NamedExportStmt, *ExportAllStmt, *ExportAssignmentStmt, *ExportAsNamespaceStmt:
+		// Standalone export statement types
 		return true
 
 	case *AmbientDecl:
-		// Check if the ambient declaration wraps an export
-		// e.g., declare export ...
-		if _, ok := s.Declaration.(*ExportDecl); ok {
-			return true
+		// Check if inner declaration is exported
+		if decl, ok := s.Declaration.(Decl); ok {
+			return decl.Export()
 		}
 		return false
 
 	default:
+		// Check if the statement is a declaration with Export flag set
+		if decl, ok := stmt.(Decl); ok {
+			return decl.Export()
+		}
 		return false
 	}
 }
@@ -166,23 +169,13 @@ func extractGlobalAugmentation(stmt Statement) []Statement {
 //
 // Returns the expanded declarations, or the original statement in a slice if not an export = pattern.
 func expandExportEquals(stmt Statement, module *Module) []Statement {
-	exportDecl, ok := stmt.(*ExportDecl)
+	exportAssignment, ok := stmt.(*ExportAssignmentStmt)
 	if !ok {
 		return []Statement{stmt}
 	}
 
-	// Check if this is an `export = Identifier` pattern
-	// The parser represents this as an ExportDecl with a single NamedExport
-	// where Local == Exported (same identifier)
-	if !isExportAssignment(exportDecl) {
-		return []Statement{stmt}
-	}
-
-	// Get the identifier being exported
-	exportedName := exportDecl.NamedExports[0].Local.Name
-
 	// Find the namespace/interface/type with that name in the module
-	ns := findNamespaceDecl(exportedName, module)
+	ns := findNamespaceDecl(exportAssignment.Name.Name, module)
 	if ns == nil {
 		// Not a namespace export, just return the original
 		return []Statement{stmt}
@@ -191,11 +184,6 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 	// Return the namespace's statements as top-level exports
 	// Each statement from the namespace becomes a package declaration
 	return ns.Statements
-}
-
-// isExportAssignment checks if an ExportDecl represents `export = Identifier` syntax.
-func isExportAssignment(exportDecl *ExportDecl) bool {
-	return exportDecl.ExportAssignment
 }
 
 // findNamespaceDecl searches for a namespace declaration with the given name in the module.

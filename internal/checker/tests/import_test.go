@@ -16,10 +16,10 @@ func TestImportInferenceScript(t *testing.T) {
 		input          string
 		expectedValues map[string]string // expected inferred types for values
 	}{
-		"NamespaceImportOfPackageWithNoDeps": {
+		"NamespaceImportOfPackageWithExportAssignment": {
 			input: `
 				import * as fde from "fast-deep-equal"
-				val equal = fde.equal
+				val equal = fde.default
 			`,
 			expectedValues: map[string]string{
 				"equal": "fn (a: any, b: any) -> boolean throws never",

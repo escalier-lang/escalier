@@ -28,7 +28,6 @@ func processNamespace(
 	namespaces *btree.Map[string, *ast.Namespace],
 ) error {
 	var decls []ast.Decl
-	var exportedNames []string // Track names from "export = X" patterns
 
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
@@ -48,39 +47,19 @@ func processNamespace(
 			// Skip imports for now
 			continue
 
-		case *dts_parser.ExportDecl:
-			// Handle export declarations
-			if s.Declaration != nil {
-				// Export wraps another declaration (e.g., export interface Foo {}, export namespace Bar {})
-				switch inner := s.Declaration.(type) {
-				case *dts_parser.NamespaceDecl:
-					// Process exported namespace
-					nestedName := qualifiedName(name, inner.Name.Name)
-					if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
-						return fmt.Errorf("processing exported namespace %s: %w", inner.Name.Name, err)
-					}
+		case *dts_parser.ExportAssignmentStmt:
+			// Convert "export = identifier" to ast.ExportAssignmentStmt
+			// The checker will process this to determine what gets exported
+			exportAssignment := ast.NewExportAssignmentStmt(
+				ast.NewIdentifier(s.Name.Name, convertSpan(s.Name.Span())),
+				true, // declare is always true for .d.ts files
+				convertSpan(s.Span()),
+			)
+			decls = append(decls, exportAssignment)
+			continue
 
-				case *dts_parser.ModuleDecl:
-					// Module declarations are not supported
-					return fmt.Errorf("module declarations are not supported: %s", inner.Name)
-
-				default:
-					// Convert the exported declaration like any other statement
-					decl, err := convertStatement(inner)
-					if err != nil {
-						return fmt.Errorf("converting exported declaration: %w", err)
-					}
-					if decl != nil {
-						decl.SetExport(true)
-						decls = append(decls, decl)
-					}
-				}
-			} else if s.ExportAssignment && len(s.NamedExports) > 0 {
-				// Handle "export = identifier" pattern
-				// Track the identifier to mark as exported later
-				exportedNames = append(exportedNames, s.NamedExports[0].Local.Name)
-			}
-			// For other export forms (export {}, export * from "...", etc.), skip for now
+		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
+			// Skip these export forms for now (re-exports, named exports, UMD namespace)
 			continue
 
 		case *dts_parser.AmbientDecl:
@@ -104,6 +83,10 @@ func processNamespace(
 					return fmt.Errorf("converting ambient declaration: %w", err)
 				}
 				if decl != nil {
+					// Check if the inner declaration has export flag set
+					if dtsDecl, ok := inner.(dts_parser.Decl); ok && dtsDecl.Export() {
+						decl.SetExport(true)
+					}
 					decls = append(decls, decl)
 				}
 			}
@@ -118,17 +101,11 @@ func processNamespace(
 				continue
 			}
 			if decl != nil {
+				// Check if the declaration has export flag set
+				if dtsDecl, ok := s.(dts_parser.Decl); ok && dtsDecl.Export() {
+					decl.SetExport(true)
+				}
 				decls = append(decls, decl)
-			}
-		}
-	}
-
-	// Post-process: Mark declarations that were export-assigned as exported
-	// This handles "export = identifier" patterns
-	for _, exportName := range exportedNames {
-		for _, decl := range decls {
-			if getDeclName(decl) == exportName {
-				decl.SetExport(true)
 			}
 		}
 	}
@@ -139,37 +116,6 @@ func processNamespace(
 	}
 
 	return nil
-}
-
-// getDeclName returns the name of a declaration, or empty string if unnamed.
-func getDeclName(decl ast.Decl) string {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		if ident, ok := d.Pattern.(*ast.IdentPat); ok {
-			return ident.Name
-		}
-	case *ast.FuncDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.TypeDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.InterfaceDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.ClassDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.EnumDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	}
-	return ""
 }
 
 // mergeNamespace merges declarations into an existing namespace or creates a new one.

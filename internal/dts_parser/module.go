@@ -256,35 +256,24 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 				SourceID: startToken.Span.SourceID,
 			}
 
-			// Represent 'export as namespace X' as a special export
-			return &ExportDecl{
-				NamedExports: []*ExportSpecifier{
-					{
-						Local:    name,
-						Exported: name,
-						span:     name.Span(),
-					},
-				},
-				TypeOnly: false,
-				span:     span,
+			return &ExportAsNamespaceStmt{
+				Name: name,
+				span: span,
 			}
 		}
 		p.lexer.RestoreState(nextToken)
 	}
 
-	var declaration Statement
 	var namedExports []*ExportSpecifier
 	var from string
-	var exportDefault bool
-	var exportAll bool
 
 	// Check for 'export default'
 	if p.peek().Type == Identifier && p.peek().Value == "default" {
 		p.consume() // consume 'default'
-		exportDefault = true
 
 		// Parse the default export declaration
 		// For export default, we also allow class declarations (with or without declare)
+		var declaration Statement
 		nextToken := p.peek()
 		if nextToken.Type == Declare {
 			p.consume() // consume 'declare'
@@ -301,24 +290,18 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			return nil
 		}
 
-		span := ast.Span{
-			Start:    startToken.Span.Start,
-			End:      declaration.Span().End,
-			SourceID: startToken.Span.SourceID,
+		// Set export and default flags on the declaration
+		if decl, ok := declaration.(Decl); ok {
+			decl.SetExport(true)
+			decl.SetDefault(true)
 		}
 
-		return &ExportDecl{
-			Declaration:   declaration,
-			ExportDefault: exportDefault,
-			TypeOnly:      typeOnly,
-			span:          span,
-		}
+		return declaration
 	}
 
 	// Check for 'export *'
 	if p.peek().Type == Asterisk {
 		p.consume() // consume '*'
-		exportAll = true
 
 		// Check for 'export * as foo from "module"'
 		var asName *Ident
@@ -339,7 +322,6 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 		if fromToken == nil {
 			return nil
 		}
-		from = fromToken.Value
 
 		span := ast.Span{
 			Start:    startToken.Span.Start,
@@ -347,27 +329,11 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			SourceID: startToken.Span.SourceID,
 		}
 
-		// If there's an 'as' name, treat it as a named export
-		if asName != nil {
-			return &ExportDecl{
-				NamedExports: []*ExportSpecifier{
-					{
-						Local:    asName,
-						Exported: asName,
-						span:     asName.Span(),
-					},
-				},
-				From:     from,
-				TypeOnly: typeOnly,
-				span:     span,
-			}
-		}
-
-		return &ExportDecl{
-			ExportAll: exportAll,
-			From:      from,
-			TypeOnly:  typeOnly,
-			span:      span,
+		return &ExportAllStmt{
+			AsName:   asName,
+			From:     fromToken.Value,
+			TypeOnly: typeOnly,
+			span:     span,
 		}
 	}
 
@@ -403,16 +369,17 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			SourceID: startToken.Span.SourceID,
 		}
 
-		return &ExportDecl{
-			NamedExports: namedExports,
-			From:         from,
-			TypeOnly:     typeOnly,
-			span:         span,
+		return &NamedExportStmt{
+			Specifiers: namedExports,
+			From:       from,
+			TypeOnly:   typeOnly,
+			span:       span,
 		}
 	}
 
 	// Export a declaration: export var/let/const/function/class/interface/type/enum/namespace
 	// Also handles: export declare var/let/const/function/class
+	var declaration Statement
 	if p.peek().Type == Declare {
 		p.consume() // consume 'declare'
 		declaration = p.parseAmbientDeclaration()
@@ -424,17 +391,12 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 		return nil
 	}
 
-	span := ast.Span{
-		Start:    startToken.Span.Start,
-		End:      declaration.Span().End,
-		SourceID: startToken.Span.SourceID,
+	// Set export flag on the declaration
+	if decl, ok := declaration.(Decl); ok {
+		decl.SetExport(true)
 	}
 
-	return &ExportDecl{
-		Declaration: declaration,
-		TypeOnly:    typeOnly,
-		span:        span,
-	}
+	return declaration
 }
 
 // parseNamedExports parses: { foo, bar as baz, ... }
@@ -527,16 +489,8 @@ func (p *DtsParser) parseExportAssignment(startToken *Token) Statement {
 		span.End = semiToken.Span.End
 	}
 
-	// Represent 'export = X' as a special export
-	return &ExportDecl{
-		NamedExports: []*ExportSpecifier{
-			{
-				Local:    name,
-				Exported: name,
-				span:     name.Span(),
-			},
-		},
-		ExportAssignment: true,
-		span:             span,
+	return &ExportAssignmentStmt{
+		Name: name,
+		span: span,
 	}
 }

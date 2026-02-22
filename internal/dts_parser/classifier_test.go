@@ -508,62 +508,20 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 			}
 		}
 
-		// Check if the statement is wrapped in ExportDecl (exported)
-		// or is a direct declaration (non-exported)
-		switch s := stmt.(type) {
-		case *ExportDecl:
-			// Exported declaration
-			if s.Declaration != nil {
-				name := getDeclName(s.Declaration)
-				if name != "" {
-					exportedDecls[name] = true
-					declsFound[name] = true
-				}
+		// Check the declaration's Export() flag directly
+		if decl, ok := stmt.(Decl); ok {
+			name := getDeclName(stmt)
+			if name != "" {
+				exportedDecls[name] = decl.Export()
+				declsFound[name] = true
 			}
-		case *VarDecl:
-			// Non-exported var
-			if s.Name != nil {
-				exportedDecls[s.Name.Name] = false
-				declsFound[s.Name.Name] = true
-			}
-		case *FuncDecl:
-			// Non-exported function
-			if s.Name != nil {
-				exportedDecls[s.Name.Name] = false
-				declsFound[s.Name.Name] = true
-			}
-		case *InterfaceDecl:
-			// Non-exported interface
-			if s.Name != nil {
-				exportedDecls[s.Name.Name] = false
-				declsFound[s.Name.Name] = true
-			}
-		case *AmbientDecl:
+		} else if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
 			// Check what's inside the ambient declaration
-			switch inner := s.Declaration.(type) {
-			case *ExportDecl:
-				// Exported declaration inside ambient
-				if inner.Declaration != nil {
-					name := getDeclName(inner.Declaration)
-					if name != "" {
-						exportedDecls[name] = true
-						declsFound[name] = true
-					}
-				}
-			case *VarDecl:
-				if inner.Name != nil {
-					exportedDecls[inner.Name.Name] = false
-					declsFound[inner.Name.Name] = true
-				}
-			case *FuncDecl:
-				if inner.Name != nil {
-					exportedDecls[inner.Name.Name] = false
-					declsFound[inner.Name.Name] = true
-				}
-			case *InterfaceDecl:
-				if inner.Name != nil {
-					exportedDecls[inner.Name.Name] = false
-					declsFound[inner.Name.Name] = true
+			if innerDecl, ok := ambient.Declaration.(Decl); ok {
+				name := getDeclName(ambient.Declaration)
+				if name != "" {
+					exportedDecls[name] = innerDecl.Export()
+					declsFound[name] = true
 				}
 			}
 		}

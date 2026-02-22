@@ -51,6 +51,7 @@ func (e MissingRequiredPropError) isError()                 {}
 func (e UnknownComponentError) isError()                    {}
 func (e InvalidKeyPropError) isError()                      {}
 func (e UnexpectedChildrenError) isError()                  {}
+func (e UnresolvedExportAssignmentError) isError()          {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -499,6 +500,18 @@ func (e UnexpectedChildrenError) Span() ast.Span {
 }
 func (e UnexpectedChildrenError) Message() string {
 	return "Component '" + e.ComponentName + "' does not accept children"
+}
+
+type UnresolvedExportAssignmentError struct {
+	Name string
+	span ast.Span
+}
+
+func (e UnresolvedExportAssignmentError) Span() ast.Span {
+	return e.span
+}
+func (e UnresolvedExportAssignmentError) Message() string {
+	return "Unresolved identifier in export assignment: " + e.Name
 }
 
 // TODO: make this a sum type so that different error type can reference other
