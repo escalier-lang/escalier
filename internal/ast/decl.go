@@ -368,6 +368,11 @@ func (e *ExportAssignmentStmt) Export() bool                          { return t
 func (e *ExportAssignmentStmt) SetExport(bool)                        {}              // No-op, always exported
 func (e *ExportAssignmentStmt) Declare() bool                         { return e.declare }
 func (e *ExportAssignmentStmt) Span() Span                            { return e.span }
-func (e *ExportAssignmentStmt) Accept(v Visitor)                      { v.EnterDecl(e); v.ExitDecl(e) }
+func (e *ExportAssignmentStmt) Accept(v Visitor) {
+	if v.EnterDecl(e) {
+		// Nothing to walk - ExportAssignmentStmt has no child nodes to visit
+	}
+	v.ExitDecl(e)
+}
 func (e *ExportAssignmentStmt) Provenance() provenance.Provenance     { return e.provenance }
 func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.provenance = p }

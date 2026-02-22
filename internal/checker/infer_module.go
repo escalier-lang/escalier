@@ -1422,12 +1422,22 @@ func (c *Checker) processModuleExportAssignments(ctx Context, m *ast.Module) []E
 		ns := iter.Value()
 
 		// Get the corresponding type_system.Namespace from the scope
+		// Handle dot-qualified names by traversing nested namespaces
 		var tsNs *type_system.Namespace
 		if nsName == "" {
 			// Root namespace
 			tsNs = ctx.Scope.Namespace
 		} else {
-			tsNs = ctx.Scope.getNamespace(nsName)
+			// Traverse nested namespaces for dot-qualified names (e.g., "Foo.Bar.Baz")
+			tsNs = ctx.Scope.Namespace
+			for part := range strings.SplitSeq(nsName, ".") {
+				var ok bool
+				tsNs, ok = tsNs.GetNamespace(part)
+				if !ok {
+					tsNs = nil
+					break
+				}
+			}
 		}
 
 		if tsNs == nil {
