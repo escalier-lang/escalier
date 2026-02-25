@@ -231,7 +231,7 @@ lib.es2020.number.d.ts
 **Success criteria for Increment 4:**
 - [ ] All ES2020 lib files parse without errors
 - [ ] `BigInt(123)` type-checks correctly
-- [ ] `Promise.allSettled()` returns `Promise<PromiseSettledResult<T>[], never>`
+- [ ] `Promise.allSettled()` preserves tuple structure with error type `never`
 - [ ] `globalThis` is accessible
 
 ### Increment 5: ES2021
@@ -560,7 +560,7 @@ Identify all Promise-related declarations that need augmentation:
 |----------|--------------|----------------------|
 | `lib.es2015.promise.d.ts` | `Promise<T>`, `PromiseLike<T>`, `PromiseConstructorLike` | Already handled ✅ |
 | `lib.es2018.promise.d.ts` | `Promise.finally()` method | Return type should preserve error type |
-| `lib.es2020.promise.d.ts` | `Promise.allSettled()` | Returns `Promise<PromiseSettledResult<T>[], never>` |
+| `lib.es2020.promise.d.ts` | `Promise.allSettled()`, `PromiseSettledResult<T>`, `PromiseRejectedResult` | Augment `PromiseRejectedResult<E>` and `PromiseSettledResult<T, E>` for typed errors |
 | `lib.es2021.promise.d.ts` | `Promise.any()` | Returns `Promise<T, AggregateError>` |
 
 #### Task 2.5.2: Static Methods Must Preserve Error Types
@@ -577,6 +577,14 @@ type AwaitedError<T> =
     T extends Promise<any, infer E> ? E :
     T extends PromiseLike<any, infer E> ? E :
     never;  // Non-promise values contribute no error type
+
+// Escalier's augmented PromiseSettledResult types (TypeScript's PromiseRejectedResult has untyped `reason: any`)
+interface PromiseRejectedResult<E> {
+    status: "rejected";
+    reason: E;
+}
+
+type PromiseSettledResult<T, E> = PromiseFulfilledResult<T> | PromiseRejectedResult<E>;
 ```
 
 **Simple methods:**
@@ -623,19 +631,19 @@ These methods use TypeScript's mapped types to preserve heterogeneous tuple stru
    - The first promise to settle (resolve or reject) determines the result
    - Example: `Promise.race([fetchUser(1), fetchPost(1)])` → `Promise<User | Post, UserFetchError | PostFetchError>`
 
-3. **Promise.allSettled**: Uses mapped type to preserve tuple structure for settled results
+3. **Promise.allSettled**: Uses mapped type to preserve tuple structure for settled results with typed errors
    ```typescript
    // TypeScript's official signature (lib.es2020.promise.d.ts):
    // allSettled<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }>;
 
    // Escalier's augmented signature:
    allSettled<T extends readonly unknown[] | []>(values: T): Promise<
-       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; },  // Value: tuple of settled results
-       never                                                                 // Error: always succeeds
+       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>, AwaitedError<T[P]>>; },  // Value: tuple of settled results with typed errors
+       never                                                                                     // Error: always succeeds
    >;
    ```
-   - Always resolves, never rejects (rejections become `PromiseRejectedResult` objects)
-   - Example: `Promise.allSettled([fetchUser(1), fetchPost(1)])` → `Promise<[PromiseSettledResult<User>, PromiseSettledResult<Post>], never>`
+   - Always resolves, never rejects (rejections become `PromiseRejectedResult<E>` objects with typed `reason`)
+   - Example: `Promise.allSettled([fetchUser(1), fetchPost(1)])` → `Promise<[PromiseSettledResult<User, UserFetchError>, PromiseSettledResult<Post, PostFetchError>], never>`
 
 **How the mapped types work:**
 - `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure
@@ -811,7 +819,7 @@ Common TypeScript syntax that may appear in ES2015+ lib files:
 | `satisfies` keyword | Not in lib files | N/A | N/A |
 | Index signature syntax | `[K: string]: V` | Various | Already supported? |
 | `asserts` return type | `asserts condition` | lib.es2019+ | Medium |
-| `is` type predicate | `x is T` | Various | Meidum |
+| `is` type predicate | `x is T` | Various | Medium |
 
 **Note on `infer` keyword support**: The dts_parser already supports the `infer` keyword, as evidenced by:
 - Lexer token: `INFER` in `dts_parser/lexer.go`
@@ -1271,7 +1279,7 @@ Correctly inferring these requires understanding the semantics of each method.
 - [ ] **[BLOCKER]** All 8 ES2020 lib files parse without errors
 - [ ] **[BLOCKER]** `BigInt` primitive type working
 - [ ] **[NICE-TO-HAVE]** `BigInt64Array`, `BigUint64Array` available
-- [ ] **[BLOCKER]** `Promise.allSettled()` returns `Promise<PromiseSettledResult<T>[], never>`
+- [ ] **[BLOCKER]** `Promise.allSettled()` preserves tuple structure with error type `never`
 - [ ] **[BLOCKER]** `globalThis` accessible
 - [ ] **[NICE-TO-HAVE]** `String.prototype.matchAll()` available
 
@@ -1295,9 +1303,9 @@ Correctly inferring these requires understanding the semantics of each method.
 ### Promise<T, E> Specific Criteria (Across All Increments)
 
 - [ ] **[BLOCKER]** `Promise<T, E>` augmentation works for all lib files (not just lib.es5.d.ts)
-- [ ] **[BLOCKER]** `Promise.all()` returns `Promise<T[], E>` where `E` is union of input promise error types
-- [ ] **[BLOCKER]** `Promise.race()` returns `Promise<T, E>` where `E` is union of input promise error types
-- [ ] **[BLOCKER]** `Promise.allSettled()` returns `Promise<PromiseSettledResult<T>[], never>` (ES2020)
+- [ ] **[BLOCKER]** `Promise.all()` preserves tuple structure: `Promise.all([Promise<A, E1>, Promise<B, E2>])` returns `Promise<[A, B], E1 | E2>`
+- [ ] **[BLOCKER]** `Promise.race()` unions value and error types: `Promise.race([Promise<A, E1>, Promise<B, E2>])` returns `Promise<A | B, E1 | E2>`
+- [ ] **[BLOCKER]** `Promise.allSettled()` preserves tuple structure with typed errors: `Promise.allSettled([Promise<A, E1>, Promise<B, E2>])` returns `Promise<[PromiseSettledResult<A, E1>, PromiseSettledResult<B, E2>], never>` (ES2020)
 - [ ] **[BLOCKER]** `Promise.any()` returns `Promise<T, AggregateError>` (ES2021)
 - [ ] **[BLOCKER]** `Promise.resolve()` returns `Promise<T, never>`
 - [ ] **[BLOCKER]** `Promise.reject()` returns `Promise<never, E>` where E is inferred from argument

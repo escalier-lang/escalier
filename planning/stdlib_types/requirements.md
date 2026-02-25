@@ -197,6 +197,14 @@ async fn processData(url: string) {
        T extends PromiseLike<any, infer E> ? E :
        never;  // Non-promise values contribute no error type
 
+   // Escalier's augmented PromiseSettledResult types (TypeScript's PromiseRejectedResult has untyped `reason: any`)
+   interface PromiseRejectedResult<E> {
+       status: "rejected";
+       reason: E;
+   }
+
+   type PromiseSettledResult<T, E> = PromiseFulfilledResult<T> | PromiseRejectedResult<E>;
+
    // Escalier's augmented Promise.all signature
    all<T extends readonly unknown[] | []>(values: T): Promise<
        { -readonly [P in keyof T]: Awaited<T[P]>; },           // Value: tuple of awaited values
@@ -213,8 +221,8 @@ async fn processData(url: string) {
    // TypeScript's official signature (lib.es2020.promise.d.ts):
    // allSettled<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }>;
    allSettled<T extends readonly unknown[] | []>(values: T): Promise<
-       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; },  // Value: tuple of settled results
-       never                                                                 // Error: always succeeds
+       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>, AwaitedError<T[P]>>; },  // Value: tuple of settled results with typed errors
+       never                                                                                     // Error: always succeeds
    >;
    ```
 
@@ -222,7 +230,7 @@ async fn processData(url: string) {
    - `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure and removing `readonly`
    - `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]` - Maps each element to its error type, then indexes with `keyof T` to get the union of all error types
    - `Awaited<T[number]>` - For `Promise.race`, gets the union of all awaited value types
-   - `{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }` - For `Promise.allSettled`, maps each element to its settled result type (either `PromiseFulfilledResult<T>` or `PromiseRejectedResult`), preserving tuple structure
+   - `{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>, AwaitedError<T[P]>>; }` - For `Promise.allSettled`, maps each element to its settled result type (either `PromiseFulfilledResult<T>` or `PromiseRejectedResult<E>`), preserving both value and error types in the tuple structure
 
    **Concrete examples:**
 
@@ -246,10 +254,11 @@ async fn processData(url: string) {
    // user: User, name: string, count: number
    // Error type: UserFetchError (only the promise contributes an error type)
 
-   // Promise.allSettled preserves tuple structure for settled results
+   // Promise.allSettled preserves tuple structure for settled results with typed errors
    val [userResult, postResult] = await Promise.allSettled([fetchUser(1), fetchPost(1)])
-   // userResult: PromiseSettledResult<User>, postResult: PromiseSettledResult<Post>
-   // Error type: never (allSettled always succeeds - rejections become PromiseRejectedResult objects)
+   // userResult: PromiseSettledResult<User, UserFetchError>
+   // postResult: PromiseSettledResult<Post, PostFetchError>
+   // Error type: never (allSettled always succeeds - rejections become PromiseRejectedResult<E> objects)
    ```
 
    **Implementation note:** The `AwaitedError<T>` helper must return `never` for non-promise values, so they don't pollute the error type union. Since `never | T = T`, non-promise values are effectively ignored in the error union.
