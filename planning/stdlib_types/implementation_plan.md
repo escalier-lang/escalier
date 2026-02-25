@@ -326,9 +326,11 @@ Rather than hardcoding the list of lib files, discover them from the TypeScript 
 // Compiled once at package level for efficiency.
 var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)
 
-// bundleFilePattern matches bundle files like lib.es2015.d.ts or lib.es5.d.ts
+// bundleFilePattern matches ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
+// These bundle files contain only /// <reference> directives pointing to sub-libraries.
+// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
 // Compiled once at package level for efficiency.
-var bundleFilePattern = regexp.MustCompile(`^lib\.es(5|20\d{2})\.d\.ts$`)
+var bundleFilePattern = regexp.MustCompile(`^lib\.es20\d{2}\.d\.ts$`)
 
 // discoverESLibFiles returns ES lib files from the TypeScript lib directory,
 // sorted in dependency order based on reference directives in bundle files.
@@ -339,7 +341,8 @@ var bundleFilePattern = regexp.MustCompile(`^lib\.es(5|20\d{2})\.d\.ts$`)
 // 3. Sub-libraries referenced by lib.es2016.d.ts (in order)
 // 4. ... and so on for each ES version
 func discoverESLibFiles(libDir string) ([]string, error) {
-    // Find all bundle files (lib.es5.d.ts, lib.es2015.d.ts, etc.)
+    // Find all ES2015+ bundle files (lib.es2015.d.ts, lib.es2016.d.ts, etc.)
+    // These contain /// <reference> directives pointing to sub-libraries.
     entries, err := os.ReadDir(libDir)
     if err != nil {
         return nil, fmt.Errorf("failed to read lib directory: %w", err)
@@ -353,7 +356,7 @@ func discoverESLibFiles(libDir string) ([]string, error) {
         }
     }
 
-    // Sort bundle files by ES version (es5, es2015, es2016, ...)
+    // Sort bundle files by ES version (es2015, es2016, ...)
     sort.Slice(bundleFiles, func(i, j int) bool {
         return compareESVersions(extractESVersion(bundleFiles[i]), extractESVersion(bundleFiles[j]))
     })
@@ -361,17 +364,14 @@ func discoverESLibFiles(libDir string) ([]string, error) {
     var orderedLibFiles []string
     seen := make(map[string]bool)
 
-    for _, bundleFile := range bundleFiles {
-        if bundleFile == "lib.es5.d.ts" {
-            // lib.es5.d.ts contains actual type definitions, not just references.
-            // Load it directly as the base of all ES types.
-            orderedLibFiles = append(orderedLibFiles, bundleFile)
-            seen[bundleFile] = true
-            continue
-        }
+    // lib.es5.d.ts contains actual type definitions (not just references).
+    // Load it first as the base of all ES types.
+    orderedLibFiles = append(orderedLibFiles, "lib.es5.d.ts")
+    seen["lib.es5.d.ts"] = true
 
-        // For ES2015+, bundle files contain only /// <reference> directives.
-        // Parse these to get the sub-libraries in the correct order.
+    // For each ES2015+ bundle, parse its /// <reference> directives
+    // to get sub-libraries in the correct order.
+    for _, bundleFile := range bundleFiles {
         bundlePath := filepath.Join(libDir, bundleFile)
         refs, err := parseReferenceDirectives(bundlePath)
         if err != nil {
@@ -409,8 +409,9 @@ func parseReferenceDirectives(bundlePath string) ([]string, error) {
     return refs, nil
 }
 
-// isBundleFile returns true for bundle files like lib.es2015.d.ts
-// (these contain /// <reference> directives to sub-libraries)
+// isBundleFile returns true for ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
+// These bundle files contain only /// <reference> directives to sub-libraries.
+// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
 func isBundleFile(name string) bool {
     return bundleFilePattern.MatchString(name)
 }
@@ -434,17 +435,11 @@ func extractESVersion(filename string) string {
 }
 
 // compareESVersions returns true if version a should be loaded before version b.
-// "es5" < "es2015" < "es2016" < ... < "es2023"
+// Only used for ES2015+ versions: "es2015" < "es2016" < ... < "es2023"
+// (lib.es5.d.ts is handled separately, not via this comparison)
 func compareESVersions(a, b string) bool {
-    // es5 always comes first
-    if a == "es5" {
-        return b != "es5"
-    }
-    if b == "es5" {
-        return false
-    }
-    // Both are es20XX, compare numerically
-    return a < b // Works because es2015 < es2016 < ... lexicographically
+    // Both are es20XX, compare lexicographically (works because es2015 < es2016 < ...)
+    return a < b
 }
 ```
 
@@ -904,7 +899,7 @@ For each unsupported syntax, document:
 
 ### Phase 4: Handle Reference Directives
 
-**Location**: `internal/dts_parser/`
+**Location**: `internal/dts_parser/` and `internal/checker/prelude.go`
 
 TypeScript lib files use triple-slash reference directives:
 
@@ -913,19 +908,19 @@ TypeScript lib files use triple-slash reference directives:
 /// <reference lib="es2015.iterable" />
 ```
 
-**Task 4.1**: Decide on handling strategy
+**Task 4.1**: Parse and follow reference directives
 
-Two options:
-1. **Ignore references, load files explicitly** (Recommended for initial implementation)
-   - Load all desired lib files in the correct order
-   - Don't parse or follow reference directives
+The implementation should parse and follow `/// <reference lib="..." />` directives in `.d.ts` files to ensure correct load order. This is already implemented in Phase 1 (Task 1.1) for bundle files.
 
-2. **Parse and follow references** (Future enhancement)
-   - Parse `/// <reference lib="..." />` directives
-   - Automatically load referenced lib files
-   - Track which files have been loaded to avoid duplicates
+**How reference following works:**
 
-For the initial implementation, use option 1 (explicit loading).
+1. **Bundle files** (`lib.es2015.d.ts`, `lib.es2016.d.ts`, etc.) contain only reference directives pointing to sub-libraries. These are parsed by `parseReferenceDirectives()` to discover sub-libraries in the correct order.
+
+2. **Sub-library files** (`lib.es2015.core.d.ts`, `lib.es2015.collection.d.ts`, etc.) contain actual type definitions. Some sub-libraries may also contain reference directives to other sub-libraries they depend on.
+
+3. **The `seen` map** in `discoverESLibFiles()` tracks which files have been loaded to avoid duplicates (e.g., `es5` referenced by `lib.es2015.d.ts` is skipped since `lib.es5.d.ts` is loaded first).
+
+**Future enhancement**: If sub-library files contain reference directives (e.g., `lib.es2015.iterable.d.ts` referencing `lib.es2015.symbol.d.ts`), these could be followed recursively. Currently, the bundle file's reference order is assumed to handle intra-version dependencies correctly.
 
 ### Phase 5: Testing
 
@@ -1126,7 +1121,7 @@ These phases span all increments:
 Some lib files may have circular references. The existing `expandedTypes` tracking in `ExpandType` should handle this, but verify with complex types like `Promise`.
 
 ### Issue 2: Large Type Graphs
-Loading many lib files increases memory usage and type checking time. Monitor performance with all libs loaded.
+Loading many lib files increases memory usage and type-checking time. Monitor performance with all libs loaded.
 
 ### Issue 3: Parser Gaps and Cascade Effects
 
