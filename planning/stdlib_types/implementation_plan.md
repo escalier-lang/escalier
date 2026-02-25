@@ -317,51 +317,101 @@ lib.es2023.intl.d.ts
 
 **Task 1.1**: Discover and filter lib files dynamically
 
-Rather than hardcoding the list of lib files, discover them from the TypeScript installation:
+Rather than hardcoding the list of lib files, discover them from the TypeScript installation. The dependency order is determined by:
+1. Loading `lib.es5.d.ts` first (it contains actual type definitions)
+2. For each subsequent ES version bundle (lib.es2015.d.ts, lib.es2016.d.ts, ...), parsing `/// <reference lib="..." />` directives to get sub-libraries in the correct order
 
 ```go
+// referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
+// Compiled once at package level for efficiency.
+var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)
+
+// bundleFilePattern matches bundle files like lib.es2015.d.ts or lib.es5.d.ts
+// Compiled once at package level for efficiency.
+var bundleFilePattern = regexp.MustCompile(`^lib\.es(5|20\d{2})\.d\.ts$`)
+
 // discoverESLibFiles returns ES lib files from the TypeScript lib directory,
-// sorted in dependency order (es5 first, then by ES version).
+// sorted in dependency order based on reference directives in bundle files.
+//
+// Load order:
+// 1. lib.es5.d.ts (contains actual types, loaded first)
+// 2. Sub-libraries referenced by lib.es2015.d.ts (in order)
+// 3. Sub-libraries referenced by lib.es2016.d.ts (in order)
+// 4. ... and so on for each ES version
 func discoverESLibFiles(libDir string) ([]string, error) {
+    // Find all bundle files (lib.es5.d.ts, lib.es2015.d.ts, etc.)
     entries, err := os.ReadDir(libDir)
     if err != nil {
         return nil, fmt.Errorf("failed to read lib directory: %w", err)
     }
 
-    var esLibFiles []string
+    var bundleFiles []string
     for _, entry := range entries {
         name := entry.Name()
-        // Match lib.es*.d.ts files (e.g., lib.es5.d.ts, lib.es2015.core.d.ts)
-        // Exclude bundle files (lib.es2015.d.ts) - we load sub-libraries directly
-        // Exclude esnext files (unstable/experimental)
-        if isESLibFile(name) && !isBundleFile(name) && !isESNextFile(name) {
-            esLibFiles = append(esLibFiles, name)
+        if isBundleFile(name) && !isESNextFile(name) {
+            bundleFiles = append(bundleFiles, name)
         }
     }
 
-    // Sort by ES version to ensure correct dependency order
-    sort.Slice(esLibFiles, func(i, j int) bool {
-        return compareESLibFiles(esLibFiles[i], esLibFiles[j])
+    // Sort bundle files by ES version (es5, es2015, es2016, ...)
+    sort.Slice(bundleFiles, func(i, j int) bool {
+        return compareESVersions(extractESVersion(bundleFiles[i]), extractESVersion(bundleFiles[j]))
     })
 
-    return esLibFiles, nil
+    var orderedLibFiles []string
+    seen := make(map[string]bool)
+
+    for _, bundleFile := range bundleFiles {
+        if bundleFile == "lib.es5.d.ts" {
+            // lib.es5.d.ts contains actual type definitions, not just references.
+            // Load it directly as the base of all ES types.
+            orderedLibFiles = append(orderedLibFiles, bundleFile)
+            seen[bundleFile] = true
+            continue
+        }
+
+        // For ES2015+, bundle files contain only /// <reference> directives.
+        // Parse these to get the sub-libraries in the correct order.
+        bundlePath := filepath.Join(libDir, bundleFile)
+        refs, err := parseReferenceDirectives(bundlePath)
+        if err != nil {
+            return nil, fmt.Errorf("failed to parse %s: %w", bundleFile, err)
+        }
+
+        for _, ref := range refs {
+            // Convert reference name to filename: "es2015.core" -> "lib.es2015.core.d.ts"
+            filename := "lib." + ref + ".d.ts"
+            if !seen[filename] && !isESNextFile(filename) {
+                orderedLibFiles = append(orderedLibFiles, filename)
+                seen[filename] = true
+            }
+        }
+    }
+
+    return orderedLibFiles, nil
 }
 
-// isESLibFile returns true for files like lib.es5.d.ts, lib.es2015.core.d.ts
-func isESLibFile(name string) bool {
-    return strings.HasPrefix(name, "lib.es") && strings.HasSuffix(name, ".d.ts")
-}
+// parseReferenceDirectives extracts lib references from a bundle file.
+// Example: /// <reference lib="es2015.core" /> -> "es2015.core"
+func parseReferenceDirectives(bundlePath string) ([]string, error) {
+    content, err := os.ReadFile(bundlePath)
+    if err != nil {
+        return nil, err
+    }
 
-// bundleFilePattern matches bundle files like lib.es2015.d.ts or lib.es5.d.ts
-// (these just contain /// <reference> directives to sub-libraries)
-// Compiled once at package level for efficiency.
-var bundleFilePattern = regexp.MustCompile(`^lib\.es(5|20\d{2})\.d\.ts$`)
+    matches := referenceDirectivePattern.FindAllStringSubmatch(string(content), -1)
+    var refs []string
+    for _, match := range matches {
+        if len(match) >= 2 {
+            refs = append(refs, match[1])
+        }
+    }
+    return refs, nil
+}
 
 // isBundleFile returns true for bundle files like lib.es2015.d.ts
-// (these just contain /// <reference> directives to sub-libraries)
+// (these contain /// <reference> directives to sub-libraries)
 func isBundleFile(name string) bool {
-    // Bundle files match pattern: lib.es20XX.d.ts or lib.es5.d.ts (no sub-name)
-    // We want to load sub-libraries directly for better control
     return bundleFilePattern.MatchString(name)
 }
 
@@ -370,21 +420,61 @@ func isESNextFile(name string) bool {
     return strings.HasPrefix(name, "lib.esnext")
 }
 
-// compareESLibFiles returns true if file a should be loaded before file b
-func compareESLibFiles(a, b string) bool {
-    // Extract ES version (e.g., "es5", "es2015", "es2020")
-    versionA := extractESVersion(a)
-    versionB := extractESVersion(b)
-
-    if versionA != versionB {
-        return compareESVersions(versionA, versionB)
+// extractESVersion extracts the ES version from a filename.
+// "lib.es2015.core.d.ts" -> "es2015", "lib.es5.d.ts" -> "es5"
+func extractESVersion(filename string) string {
+    // Remove "lib." prefix and ".d.ts" suffix, then take first segment
+    name := strings.TrimPrefix(filename, "lib.")
+    name = strings.TrimSuffix(name, ".d.ts")
+    parts := strings.Split(name, ".")
+    if len(parts) > 0 {
+        return parts[0]
     }
+    return name
+}
 
-    // Same version: use alphabetical order for sub-libraries
-    // This works because TypeScript names sub-libraries sensibly
-    return a < b
+// compareESVersions returns true if version a should be loaded before version b.
+// "es5" < "es2015" < "es2016" < ... < "es2023"
+func compareESVersions(a, b string) bool {
+    // es5 always comes first
+    if a == "es5" {
+        return b != "es5"
+    }
+    if b == "es5" {
+        return false
+    }
+    // Both are es20XX, compare numerically
+    return a < b // Works because es2015 < es2016 < ... lexicographically
 }
 ```
+
+**Why this approach?**
+
+TypeScript's lib files have two distinct patterns:
+
+1. **`lib.es5.d.ts`** - Contains actual type definitions (Array, Object, String, Function, etc.). This is the base of the type hierarchy and must be loaded first.
+
+2. **ES2015+ bundle files** (`lib.es2015.d.ts`, `lib.es2016.d.ts`, etc.) - These are pure reference files that only contain `/// <reference lib="..." />` directives pointing to sub-libraries. For example, `lib.es2015.d.ts` contains:
+
+```typescript
+/// <reference lib="es5" />
+/// <reference lib="es2015.core" />
+/// <reference lib="es2015.collection" />
+/// <reference lib="es2015.iterable" />
+/// <reference lib="es2015.generator" />
+/// <reference lib="es2015.promise" />
+/// <reference lib="es2015.proxy" />
+/// <reference lib="es2015.reflect" />
+/// <reference lib="es2015.symbol" />
+/// <reference lib="es2015.symbol.wellknown" />
+```
+
+By processing bundle files in version order and extracting their references:
+1. **Guarantees correct order**: Dependencies are defined by TypeScript itself
+2. **Handles intra-version dependencies**: References are listed in the order TypeScript expects (e.g., `es2015.symbol` before `es2015.iterable` which uses Symbol)
+3. **Automatically adapts**: When TypeScript adds new lib files, they'll be discovered via their bundle
+4. **Avoids guessing**: No need to infer order from naming conventions
+5. **Deduplicates automatically**: The `seen` map ensures each file is loaded only once (e.g., `es5` referenced by `lib.es2015.d.ts` is skipped since we already loaded `lib.es5.d.ts`)
 
 **Task 1.2**: Update `loadGlobalDefinitions()` to use dynamic discovery
 
@@ -398,12 +488,15 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
     libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
 
     // Verify TypeScript is installed
-    if _, err := os.Stat(libDir); os.IsNotExist(err) {
-        panic(fmt.Sprintf(
-            "TypeScript lib directory not found at %s. "+
-            "Please install TypeScript: npm install typescript",
-            libDir,
-        ))
+    if _, statErr := os.Stat(libDir); statErr != nil {
+        if os.IsNotExist(statErr) {
+            panic(fmt.Sprintf(
+                "TypeScript lib directory not found at %s. "+
+                "Please install TypeScript: npm install typescript",
+                libDir,
+            ))
+        }
+        panic(fmt.Sprintf("cannot access TypeScript lib directory %s: %v", libDir, statErr))
     }
 
     // Discover and load ES lib files
@@ -474,58 +567,88 @@ Identify all Promise-related declarations that need augmentation:
 
 Promise static methods must propagate error types from their input promises. This is essential for Escalier's typed error handling.
 
-**Methods that propagate error types:**
+**Helper type for extracting error types:**
 
-1. **Promise.all**: Returns `Promise<T[], E>` where `E` is the union of all input promise error types
-   - If any input promise rejects, the entire operation rejects with that error
-   - Example: `Promise.all([Promise<A, E1>, Promise<B, E2>])` → `Promise<[A, B], E1 | E2>`
-   - Requires type-level logic to extract and union error types from input array
+Escalier needs an `AwaitedError<T>` helper type (analogous to TypeScript's `Awaited<T>` for values):
 
-2. **Promise.race**: Returns `Promise<T, E>` where `E` is the union of all input promise error types
-   - The first promise to settle (resolve or reject) determines the result
-   - Example: `Promise.race([Promise<A, E1>, Promise<B, E2>])` → `Promise<A | B, E1 | E2>`
-   - Same implementation approach as `Promise.all`
+```typescript
+// Escalier helper type for extracting error types from promises
+type AwaitedError<T> =
+    T extends Promise<any, infer E> ? E :
+    T extends PromiseLike<any, infer E> ? E :
+    never;  // Non-promise values contribute no error type
+```
 
-3. **Promise.reject**: Returns `Promise<never, E>` where `E` is the rejection type
-   - Example: `Promise.reject(new Error("fail"))` → `Promise<never, Error>`
-   - Requires capturing the argument type as `E`
-
-4. **Promise.any**: Returns `Promise<T, AggregateError>`
-   - Resolves with the first fulfilled promise's value
-   - Rejects with `AggregateError` only if ALL promises reject
-   - Example: `Promise.any([Promise<A, E1>, Promise<B, E2>])` → `Promise<A | B, AggregateError>`
-
-**Methods that always succeed (error type is `never`):**
+**Simple methods:**
 
 1. **Promise.resolve**: Returns `Promise<T, never>`
    - Wrapping a value in a resolved promise never throws
    - Example: `Promise.resolve(42)` → `Promise<number, never>`
 
-2. **Promise.allSettled**: Returns `Promise<PromiseSettledResult<T>[], never>`
+2. **Promise.reject**: Returns `Promise<never, E>` where `E` is the rejection type
+   - Example: `Promise.reject(new Error("fail"))` → `Promise<never, Error>`
+   - Requires capturing the argument type as `E`
+
+3. **Promise.any**: Returns `Promise<T, AggregateError>`
+   - Resolves with the first fulfilled promise's value
+   - Rejects with `AggregateError` only if ALL promises reject
+   - Example: `Promise.any([Promise<A, E1>, Promise<B, E2>])` → `Promise<A | B, AggregateError>`
+
+**Methods with mapped type signatures (preserve tuple structure):**
+
+These methods use TypeScript's mapped types to preserve heterogeneous tuple structure. Escalier extends them to also extract and union error types.
+
+1. **Promise.all**: Uses mapped type to preserve tuple structure for values
+   ```typescript
+   // TypeScript's official signature (lib.es2015.promise.d.ts):
+   // all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;
+
+   // Escalier's augmented signature:
+   all<T extends readonly unknown[] | []>(values: T): Promise<
+       { -readonly [P in keyof T]: Awaited<T[P]>; },           // Value: tuple of awaited values
+       { [P in keyof T]: AwaitedError<T[P]> }[keyof T]         // Error: union of all error types
+   >;
+   ```
+   - If any input promise rejects, the entire operation rejects with that error
+   - Example: `Promise.all([fetchUser(1), fetchPost(1)])` → `Promise<[User, Post], UserFetchError | PostFetchError>`
+
+2. **Promise.race**: Uses mapped type to union values, extracts error types
+   ```typescript
+   // Escalier's augmented signature:
+   race<T extends readonly unknown[] | []>(values: T): Promise<
+       Awaited<T[number]>,                                      // Value: union of awaited values
+       { [P in keyof T]: AwaitedError<T[P]> }[keyof T]         // Error: union of all error types
+   >;
+   ```
+   - The first promise to settle (resolve or reject) determines the result
+   - Example: `Promise.race([fetchUser(1), fetchPost(1)])` → `Promise<User | Post, UserFetchError | PostFetchError>`
+
+3. **Promise.allSettled**: Uses mapped type to preserve tuple structure for settled results
+   ```typescript
+   // TypeScript's official signature (lib.es2020.promise.d.ts):
+   // allSettled<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }>;
+
+   // Escalier's augmented signature:
+   allSettled<T extends readonly unknown[] | []>(values: T): Promise<
+       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; },  // Value: tuple of settled results
+       never                                                                 // Error: always succeeds
+   >;
+   ```
    - Always resolves, never rejects (rejections become `PromiseRejectedResult` objects)
-   - Example: `Promise.allSettled([p1, p2])` → `Promise<PromiseSettledResult<T>[], never>`
+   - Example: `Promise.allSettled([fetchUser(1), fetchPost(1)])` → `Promise<[PromiseSettledResult<User>, PromiseSettledResult<Post>], never>`
 
-**Implementation approach:**
-
-For `Promise.all` and `Promise.race`, we need type-level utilities to extract error types:
-
-```typescript
-// Conceptual type-level logic (may be implemented in checker)
-type ExtractPromiseError<P> = P extends Promise<any, infer E> ? E : never;
-type UnionOfErrors<T extends Promise<any, any>[]> = ExtractPromiseError<T[number]>;
-
-// Promise.all signature
-all<T extends Promise<any, any>[]>(promises: T): Promise<AwaitedTuple<T>, UnionOfErrors<T>>;
-```
-
-This may require:
-- Extending the `PromiseVisitor` to handle `PromiseConstructor` interface methods
-- Adding checker logic to compute error type unions from tuple/array types
-- Special-casing these methods during type inference
+**How the mapped types work:**
+- `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure
+- `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]` - Maps each element to its error type, then indexes with `keyof T` to get the union
+- `Awaited<T[number]>` - For `Promise.race`, gets the union of all awaited value types
+- `AwaitedError<T>` returns `never` for non-promise values, so they don't pollute the error type union
 
 #### Task 2.5.3: Instance Methods Must Preserve Error Types
 
 Promise instance methods must properly track error types through promise chains.
+
+**TODO:** Figure out the correct types for `then`, `catch`, and `finally` to
+correctly propagate error types in different situations.
 
 **Method signatures with error type tracking:**
 
@@ -591,21 +714,32 @@ To properly track error types through Promise operations, the `PromiseVisitor` m
    - `finally()`: Preserve `E` in return type
 
 3. **Transform static method signatures**: Update `PromiseConstructor` methods:
-   - `Promise.all()`: Return `Promise<T[], E>` where `E` is union of input error types
-   - `Promise.race()`: Return `Promise<T, E>` where `E` is union of input error types
-   - `Promise.any()`: Return `Promise<T, AggregateError>`
-   - `Promise.reject()`: Return `Promise<never, E>` capturing argument type
    - `Promise.resolve()`: Return `Promise<T, never>`
-   - `Promise.allSettled()`: Return `Promise<PromiseSettledResult<T>[], never>`
+   - `Promise.reject()`: Return `Promise<never, E>` capturing argument type
+   - `Promise.any()`: Return `Promise<T, AggregateError>`
+   - `Promise.all()`: Use mapped type signature with `AwaitedError<T>` for error union
+   - `Promise.race()`: Use mapped type signature with `AwaitedError<T>` for error union
+   - `Promise.allSettled()`: Use mapped type signature with error type `never`
 
-4. **PromiseVisitor responsibilities**:
+4. **Implement `AwaitedError<T>` helper type**:
+   ```typescript
+   type AwaitedError<T> =
+       T extends Promise<any, infer E> ? E :
+       T extends PromiseLike<any, infer E> ? E :
+       never;
+   ```
+   This type extracts the error type from a promise, returning `never` for non-promise values.
+
+5. **PromiseVisitor responsibilities**:
    - Add `E` type parameter to interface declarations
    - Transform method return types to reference `E` appropriately
    - Handle `PromiseConstructor` interface (static methods)
-   - Add type-level logic for extracting/unioning error types from arrays
+   - Transform mapped type signatures to include error type extraction
+   - Ensure `AwaitedError<T>` helper type is available in global scope
 
-5. **Checker support**: May need checker-level logic for:
-   - Extracting `E` from `Promise<T, E>` types (similar to `Awaited<T>` for values)
+6. **Checker support**: May need checker-level logic for:
+   - Extracting `E` from `Promise<T, E>` types via `AwaitedError<T>`
+   - Evaluating mapped types like `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]`
    - Computing union of error types from tuple/array of promises
    - Inferring error types from callback return types in `then`/`catch`
 
@@ -671,13 +805,20 @@ Common TypeScript syntax that may appear in ES2015+ lib files:
 | `unique symbol` | `declare const iterator: unique symbol` | lib.es2015.symbol.d.ts | Medium |
 | `readonly` arrays | `readonly T[]` | lib.es2019+ | Low |
 | Template literal types | `` `${string}px` `` | lib.es2021+ | High |
-| `infer` keyword | `T extends Promise<infer U> ? U : T` | lib.es5.d.ts (Awaited) | High |
+| `infer` keyword | `T extends Promise<infer U> ? U : T` | lib.es5.d.ts (Awaited) | Already supported ✓ |
 | Mapped type modifiers | `+readonly`, `-optional` | Various | Medium |
 | `const` type parameters | `<const T>` | lib.es2022+ | Medium |
 | `satisfies` keyword | Not in lib files | N/A | N/A |
 | Index signature syntax | `[K: string]: V` | Various | Already supported? |
 | `asserts` return type | `asserts condition` | lib.es2019+ | Medium |
-| `is` type predicate | `x is T` | Various | Already supported? |
+| `is` type predicate | `x is T` | Various | Meidum |
+
+**Note on `infer` keyword support**: The dts_parser already supports the `infer` keyword, as evidenced by:
+- Lexer token: `INFER` in `dts_parser/lexer.go`
+- AST node: `InferType` in `dts_parser/types.go`
+- Parser function: `parseInferType()` in `dts_parser/parser.go`
+- Tests: `infer` parsing tests in `dts_parser/parser_test.go`
+- Real-world usage: Successfully parses `Awaited<T>` type in `lib.es5.d.ts` which uses `infer` in its conditional type definition
 
 #### Task 3.3: Implement Missing Parser Support
 

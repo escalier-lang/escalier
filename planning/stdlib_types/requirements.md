@@ -48,22 +48,41 @@ The compiler must dynamically discover and load ES lib files from the TypeScript
 | ... | (all other lib.es*.d.ts sub-libraries) |
 
 #### FR2: Correct Load Order
-Lib files must be loaded in correct dependency order. Later ES versions depend on types defined in earlier versions:
-- ES2016 depends on ES2015
-- ES2017 depends on ES2016
-- And so on...
+Lib files must be loaded in correct dependency order. Each ES version's types must be fully loaded before proceeding to the next version, as later versions depend on types defined in earlier versions.
 
-Example dependency chain:
+**Load order algorithm:**
+1. Load `lib.es5.d.ts` first (contains actual type definitions, not just references)
+2. For each subsequent ES version (ES2015, ES2016, ..., ES2023) in order:
+   - Parse the bundle file (e.g., `lib.es2015.d.ts`) to extract `/// <reference lib="..." />` directives
+   - Load each referenced sub-library in the order they appear (e.g., `lib.es2015.core.d.ts`, `lib.es2015.collection.d.ts`, etc.)
+3. Load `lib.dom.d.ts` last (DOM types may reference ES2015+ types like Promise, Symbol)
+
+**Example load sequence:**
 ```
-lib.es5.d.ts (base)
-    ↓
-lib.es2015.d.ts (references lib.es2015.*.d.ts sub-libraries)
-    ↓
-lib.es2016.d.ts
-    ↓
-lib.es2017.d.ts
-    ...
+1. lib.es5.d.ts                    ← Base types (Array, Object, String, etc.)
+2. lib.es2015.d.ts references:
+   ├── lib.es2015.core.d.ts        ← Array.find, Object.assign, etc.
+   ├── lib.es2015.collection.d.ts  ← Map, Set, WeakMap, WeakSet
+   ├── lib.es2015.iterable.d.ts    ← Iterable, Iterator
+   ├── lib.es2015.generator.d.ts   ← Generator
+   ├── lib.es2015.promise.d.ts     ← Promise static methods
+   ├── lib.es2015.proxy.d.ts       ← Proxy, Reflect
+   ├── lib.es2015.symbol.d.ts      ← Symbol
+   └── lib.es2015.symbol.wellknown.d.ts
+3. lib.es2016.d.ts references:
+   └── lib.es2016.array.include.d.ts ← Array.includes
+4. lib.es2017.d.ts references:
+   ├── lib.es2017.object.d.ts      ← Object.values, Object.entries
+   ├── lib.es2017.string.d.ts      ← padStart, padEnd
+   └── ...
+5. ... (ES2018 through ES2023)
+6. lib.dom.d.ts                    ← DOM types (loaded last)
 ```
+
+**Why this order matters:**
+- `lib.es2015.iterable.d.ts` depends on `Symbol` from `lib.es2015.symbol.d.ts`
+- `lib.es2015.promise.d.ts` depends on `PromiseLike` from `lib.es5.d.ts`
+- `lib.dom.d.ts` uses `Promise`, `Symbol`, and other ES2015+ types
 
 #### FR3: Declaration Merging
 Multiple lib files may extend the same interfaces (e.g., `Array`, `String`, `Object`). The compiler must correctly merge these declarations:
@@ -153,13 +172,87 @@ async fn processData(url: string) {
    - `lib.es2020.promise.d.ts`: `Promise.allSettled()`
    - `lib.es2021.promise.d.ts`: `Promise.any()`
 
-3. **Static method return types**: Static methods must properly propagate error types:
+3. **Static method return types**: Static methods must properly propagate error types.
+
+   **Simple methods:**
    - `Promise.resolve<T>(value: T): Promise<T, never>` - always succeeds
    - `Promise.reject<E>(reason: E): Promise<never, E>` - captures rejection type as E *(Note: TypeScript uses `any` for the reason parameter; Escalier intentionally captures the actual type for better error tracking)*
-   - `Promise.all<T, E>(promises: Promise<T, E>[]): Promise<T[], E>` - unions error types from inputs
-   - `Promise.race<T, E>(promises: Promise<T, E>[]): Promise<T, E>` - unions error types from inputs
-   - `Promise.allSettled<T>(promises: Promise<T>[]): Promise<PromiseSettledResult<T>[], never>` - always succeeds
    - `Promise.any<T>(promises: Promise<T>[]): Promise<T, AggregateError>` - throws AggregateError if all reject
+
+   **`Promise.all`, `Promise.race`, and `Promise.allSettled` with mapped type signatures:**
+
+   TypeScript's official signature for `Promise.all` uses mapped types to preserve heterogeneous tuple structure:
+
+   ```typescript
+   // TypeScript's official signature (lib.es2015.promise.d.ts)
+   all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;
+   ```
+
+   Escalier must extend this to also extract and union error types. This requires a companion helper type `AwaitedError<T>`:
+
+   ```typescript
+   // Escalier helper type for extracting error types from promises
+   type AwaitedError<T> =
+       T extends Promise<any, infer E> ? E :
+       T extends PromiseLike<any, infer E> ? E :
+       never;  // Non-promise values contribute no error type
+
+   // Escalier's augmented Promise.all signature
+   all<T extends readonly unknown[] | []>(values: T): Promise<
+       { -readonly [P in keyof T]: Awaited<T[P]>; },           // Value: tuple of awaited values
+       { [P in keyof T]: AwaitedError<T[P]> }[keyof T]         // Error: union of all error types
+   >;
+
+   // Escalier's augmented Promise.race signature
+   race<T extends readonly unknown[] | []>(values: T): Promise<
+       Awaited<T[number]>,                                      // Value: union of awaited values
+       { [P in keyof T]: AwaitedError<T[P]> }[keyof T]         // Error: union of all error types
+   >;
+
+   // Escalier's augmented Promise.allSettled signature
+   // TypeScript's official signature (lib.es2020.promise.d.ts):
+   // allSettled<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }>;
+   allSettled<T extends readonly unknown[] | []>(values: T): Promise<
+       { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; },  // Value: tuple of settled results
+       never                                                                 // Error: always succeeds
+   >;
+   ```
+
+   **How the mapped types work:**
+   - `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure and removing `readonly`
+   - `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]` - Maps each element to its error type, then indexes with `keyof T` to get the union of all error types
+   - `Awaited<T[number]>` - For `Promise.race`, gets the union of all awaited value types
+   - `{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>>; }` - For `Promise.allSettled`, maps each element to its settled result type (either `PromiseFulfilledResult<T>` or `PromiseRejectedResult`), preserving tuple structure
+
+   **Concrete examples:**
+
+   ```
+   // Given these function signatures:
+   fn fetchUser(id: number) -> Promise<User, UserFetchError>
+   fn fetchPost(id: number) -> Promise<Post, PostFetchError>
+
+   // Promise.all preserves tuple structure for values, unions errors
+   val [user, post] = await Promise.all([fetchUser(1), fetchPost(1)])
+   // user: User, post: Post (tuple destructuring works!)
+   // Error type: UserFetchError | PostFetchError
+
+   // Promise.race unions both values and errors
+   val first = await Promise.race([fetchUser(1), fetchPost(1)])
+   // first: User | Post
+   // Error type: UserFetchError | PostFetchError
+
+   // Works with mixed promise and non-promise values
+   val [user, name, count] = await Promise.all([fetchUser(1), "literal", 42])
+   // user: User, name: string, count: number
+   // Error type: UserFetchError (only the promise contributes an error type)
+
+   // Promise.allSettled preserves tuple structure for settled results
+   val [userResult, postResult] = await Promise.allSettled([fetchUser(1), fetchPost(1)])
+   // userResult: PromiseSettledResult<User>, postResult: PromiseSettledResult<Post>
+   // Error type: never (allSettled always succeeds - rejections become PromiseRejectedResult objects)
+   ```
+
+   **Implementation note:** The `AwaitedError<T>` helper must return `never` for non-promise values, so they don't pollute the error type union. Since `never | T = T`, non-promise values are effectively ignored in the error union.
 
 4. **Backward compatibility**: By using a default type parameter (`E = never`), code using `Promise<T>` (single parameter) automatically works as `Promise<T, never>`. No transformation of existing `Promise<T>` references is needed.
 
