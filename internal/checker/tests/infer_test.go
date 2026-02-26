@@ -4344,6 +4344,33 @@ func TestInterfaceMerging(t *testing.T) {
 				"email": "string | undefined",
 			},
 		},
+		// Note: Method overloading (same name, different signatures) is supported for
+		// TypeScript-style method declarations (MethodElem) but not for Escalier property
+		// declarations (PropertyElem). This test verifies that type parameter defaults
+		// can be omitted in interface extensions, similar to how TypeScript lib files
+		// extend interfaces like Float32Array where the original has a default
+		// (TArrayBuffer = ArrayBufferLike) but extensions omit it.
+		"TypeParamDefaultOmitted": {
+			input: `
+				interface Container<T = string> {
+					value: T,
+				}
+
+				interface Container<T> {
+					getValue: fn () -> T,
+				}
+
+				declare val container: Container<number>
+
+				val value = container.value
+				val result = container.getValue()
+			`,
+			expectedTypes: map[string]string{
+				"container": "Container<number>",
+				"value":     "number",
+				"result":    "number",
+			},
+		},
 	}
 
 	for name, test := range tests {

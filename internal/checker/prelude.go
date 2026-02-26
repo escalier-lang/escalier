@@ -502,9 +502,9 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 	}
 
 	// Discover and load ES lib files
-	// Currently limited to ES5 to maintain backward compatibility.
-	// As declaration merging issues are resolved (Phase 3), this can be
-	// expanded to include ES2015+ lib files.
+	// Currently limited to ES5 because ES2015+ lib files use ComputedKey (e.g., [Symbol.iterator])
+	// which is not yet implemented in the interop layer. Declaration merging is now supported,
+	// so once ComputedKey is implemented, ES2015+ can be enabled.
 	targetVersion := "es5"
 	esLibFiles, err := discoverESLibFiles(libDir, targetVersion)
 	if err != nil {
