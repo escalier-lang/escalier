@@ -29,23 +29,15 @@ The compiler must dynamically discover and load ES lib files from the TypeScript
 - Consistent behavior across different TypeScript versions
 
 **Discovery rules:**
-- Include files matching `lib.es*.d.ts` pattern (e.g., `lib.es5.d.ts`, `lib.es2015.core.d.ts`)
-- Exclude bundle files (`lib.es2015.d.ts`, `lib.es2020.d.ts`, etc.) - load sub-libraries directly instead
+- Load `lib.es5.d.ts` first (contains actual type definitions, not references)
+- Parse bundle files (`lib.es2015.d.ts`, `lib.es2020.d.ts`, etc.) for `/// <reference lib="..." />` directives
+- Load sub-library files in the order specified by reference directives in each bundle file
 - Exclude `lib.esnext.*.d.ts` files (unstable/experimental features)
-- Sort by ES version to ensure correct dependency order
 
-**Example lib files that will be loaded:**
-
-| File | Features |
-|------|----------|
-| `lib.es5.d.ts` | Base ES5 types (Array, Object, String, etc.) |
-| `lib.es2015.collection.d.ts` | Map, Set, WeakMap, WeakSet |
-| `lib.es2015.promise.d.ts` | Promise, PromiseLike, PromiseConstructorLike |
-| `lib.es2015.symbol.d.ts` | Symbol, unique symbol |
-| `lib.es2016.array.include.d.ts` | Array.prototype.includes |
-| `lib.es2020.bigint.d.ts` | BigInt, BigInt64Array |
-| `lib.es2021.promise.d.ts` | Promise.any, AggregateError |
-| ... | (all other lib.es*.d.ts sub-libraries) |
+**Load order determination:**
+Bundle files (e.g., `lib.es2015.d.ts`) contain only `/// <reference lib="..." />` directives that specify sub-libraries. We parse these directives to determine:
+1. Which sub-library files to load for each ES version
+2. The correct order to load them (respecting dependencies between sub-libraries)
 
 #### FR2: Correct Load Order
 Lib files must be loaded in correct dependency order. Each ES version's types must be fully loaded before proceeding to the next version, as later versions depend on types defined in earlier versions.
@@ -126,10 +118,7 @@ val promise = Promise.resolve(42)    // Promise from lib.es2015.promise.d.ts
 val sym = Symbol("key")              // Symbol from lib.es2015.symbol.d.ts
 ```
 
-#### FR5: Named Module Support
-Some lib files define named modules (e.g., `declare module "dom"`). These must be properly registered in the package registry.
-
-#### FR5.1: DOM Lib File Load Order
+#### FR5: DOM Lib File Load Order
 The `lib.dom.d.ts` file must be loaded **after** all ES lib files. DOM types may reference ES2015+ types (e.g., `Promise` in fetch API, `Symbol` in iterables). Loading DOM before ES2015+ would result in unresolved type references.
 
 #### FR6: Preserve Escalier's Two-Parameter Promise Type
@@ -164,22 +153,27 @@ async fn processData(url: string) {
 
 **Requirements:**
 
-1. **Augmentation of TypeScript Promise**: When loading `Promise` and `PromiseLike` interfaces from TypeScript lib files, the compiler must add the second type parameter `E` with a default value (e.g., `E = never` or `E = any`). This allows existing `Promise<T>` references to work without modification.
+**FR6.1: Augmentation of TypeScript Promise**
 
-2. **Consistent augmentation across all lib files**: Promise-related types in ES2015+ lib files must also be augmented:
+When loading `Promise` and `PromiseLike` interfaces from TypeScript lib files, the compiler must add the second type parameter `E` with a default value (e.g., `E = never` or `E = any`). This allows existing `Promise<T>` references to work without modification.
+
+**FR6.2: Consistent augmentation across all lib files**
+
+Promise-related types in ES2015+ lib files must also be augmented:
    - `lib.es2015.promise.d.ts`: `Promise<T>`, `PromiseLike<T>`, `PromiseConstructorLike`
    - `lib.es2018.promise.d.ts`: `Promise.finally()`
    - `lib.es2020.promise.d.ts`: `Promise.allSettled()`
    - `lib.es2021.promise.d.ts`: `Promise.any()`
 
-3. **Static method return types**: Static methods must properly propagate error types.
+**FR6.3: Static method return types**
+
+Static methods must properly propagate error types.
 
    **Simple methods:**
    - `Promise.resolve<T>(value: T): Promise<T, never>` - always succeeds
    - `Promise.reject<E>(reason: E): Promise<never, E>` - captures rejection type as E *(Note: TypeScript uses `any` for the reason parameter; Escalier intentionally captures the actual type for better error tracking)*
-   - `Promise.any<T>(promises: Promise<T>[]): Promise<T, AggregateError>` - throws AggregateError if all reject
 
-   **`Promise.all`, `Promise.race`, and `Promise.allSettled` with mapped type signatures:**
+   **`Promise.all`, `Promise.race`, `Promise.allSettled`, and `Promise.any` with mapped type signatures:**
 
    TypeScript's official signature for `Promise.all` uses mapped types to preserve heterogeneous tuple structure:
 
@@ -205,6 +199,12 @@ async fn processData(url: string) {
 
    type PromiseSettledResult<T, E> = PromiseFulfilledResult<T> | PromiseRejectedResult<E>;
 
+   // Escalier's augmented AggregateError (TypeScript's AggregateError has untyped `errors: any[]`)
+   // Uses a tuple type parameter to preserve the structure of error types from input promises
+   interface AggregateError<Errors extends any[]> extends Error {
+       errors: Errors;
+   }
+
    // Escalier's augmented Promise.all signature
    all<T extends readonly unknown[] | []>(values: T): Promise<
        { -readonly [P in keyof T]: Awaited<T[P]>; },           // Value: tuple of awaited values
@@ -224,13 +224,22 @@ async fn processData(url: string) {
        { -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>, AwaitedError<T[P]>>; },  // Value: tuple of settled results with typed errors
        never                                                                                     // Error: always succeeds
    >;
+
+   // Escalier's augmented Promise.any signature
+   // TypeScript's official signature (lib.es2021.promise.d.ts):
+   // any<T>(values: Iterable<T | PromiseLike<T>>): Promise<Awaited<T>>;
+   any<T extends readonly unknown[] | []>(values: T): Promise<
+       Awaited<T[number]>,                                         // Value: union of awaited values (first to resolve)
+       AggregateError<{ -readonly [P in keyof T]: AwaitedError<T[P]> }>  // Error: AggregateError with tuple of error types
+   >;
    ```
 
    **How the mapped types work:**
    - `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure and removing `readonly`
    - `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]` - Maps each element to its error type, then indexes with `keyof T` to get the union of all error types
-   - `Awaited<T[number]>` - For `Promise.race`, gets the union of all awaited value types
+   - `Awaited<T[number]>` - For `Promise.race` and `Promise.any`, gets the union of all awaited value types
    - `{ -readonly [P in keyof T]: PromiseSettledResult<Awaited<T[P]>, AwaitedError<T[P]>>; }` - For `Promise.allSettled`, maps each element to its settled result type (either `PromiseFulfilledResult<T>` or `PromiseRejectedResult<E>`), preserving both value and error types in the tuple structure
+   - `AggregateError<{ -readonly [P in keyof T]: AwaitedError<T[P]> }>` - For `Promise.any`, wraps the tuple of error types in `AggregateError<Errors>`, preserving the structure so `errors[0]` has the error type of the first promise, `errors[1]` has the error type of the second, etc.
 
    **Concrete examples:**
 
@@ -259,11 +268,23 @@ async fn processData(url: string) {
    // userResult: PromiseSettledResult<User, UserFetchError>
    // postResult: PromiseSettledResult<Post, PostFetchError>
    // Error type: never (allSettled always succeeds - rejections become PromiseRejectedResult<E> objects)
+
+   // Promise.any resolves with first fulfilled value, rejects with AggregateError if all reject
+   val first = await Promise.any([fetchUser(1), fetchPost(1)])
+   // first: User | Post (first promise to fulfill)
+   // Error type: AggregateError<[UserFetchError, PostFetchError]>
+   // The tuple-typed AggregateError preserves error structure, allowing typed access:
+   // catch (e: AggregateError<[UserFetchError, PostFetchError]>) {
+   //     e.errors[0]  // UserFetchError
+   //     e.errors[1]  // PostFetchError
+   // }
    ```
 
    **Implementation note:** The `AwaitedError<T>` helper must return `never` for non-promise values, so they don't pollute the error type union. Since `never | T = T`, non-promise values are effectively ignored in the error union.
 
-4. **Backward compatibility**: By using a default type parameter (`E = never`), code using `Promise<T>` (single parameter) automatically works as `Promise<T, never>`. No transformation of existing `Promise<T>` references is needed.
+**FR6.4: Backward compatibility**
+
+By using a default type parameter (`E = never`), code using `Promise<T>` (single parameter) automatically works as `Promise<T, never>`. No transformation of existing `Promise<T>` references is needed.
 
 ### Non-Functional Requirements
 
@@ -373,13 +394,13 @@ async fn fetchUsersSettled(ids: number[]) {
     // This await never throws, so function error type is never
 }
 
-// Promise.any may throw AggregateError
+// Promise.any may throw AggregateError<Errors> containing all error types as a tuple
 async fn fetchFirstUser(ids: number[]) {
     val promises = ids.map(fn(id) { fetchUser(id) })
     val first = await Promise.any(promises)
-    // If all promises reject, throws AggregateError
+    // If all promises reject, throws AggregateError<FetchError[]>
 }
-// Inferred: fn (ids: number[]) -> Promise<User, AggregateError>
+// Inferred: fn (ids: number[]) -> Promise<User, AggregateError<FetchError[]>>
 
 // Chaining with .then() and .catch()
 val handled = fetchUser(1)

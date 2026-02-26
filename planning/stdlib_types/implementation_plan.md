@@ -245,18 +245,18 @@ lib.es2021.intl.d.ts
 ```
 
 **Key types unlocked:**
-- `Promise.any()` - returns `Promise<T, AggregateError>`
+- `Promise.any()` - returns `Promise<T, AggregateError<Errors>>` with tuple-typed errors
 - `AggregateError`
 - `String.prototype.replaceAll()`
 - `WeakRef<T>`, `FinalizationRegistry<T>`
 - `Intl.ListFormat`, `Intl.DateTimeFormat` improvements
 
 **Expected parser challenges:**
-- `Promise.any()` needs special handling to return `AggregateError` instead of `never`
+- `Promise.any()` needs special handling to return `AggregateError<Errors>` (with tuple-typed errors) instead of `never`
 
 **Success criteria for Increment 5:**
 - [ ] All ES2021 lib files parse without errors
-- [ ] `Promise.any()` returns `Promise<T, AggregateError>`
+- [ ] `Promise.any()` returns `Promise<T, AggregateError<Errors>>` with tuple-typed errors
 - [ ] `WeakRef<T>` and `FinalizationRegistry<T>` available
 - [ ] `"hello".replaceAll("l", "x")` type-checks correctly
 
@@ -556,7 +556,7 @@ Identify all Promise-related declarations that need augmentation:
 | `lib.es2015.promise.d.ts` | `Promise<T>`, `PromiseLike<T>`, `PromiseConstructorLike` | Already handled ✅ |
 | `lib.es2018.promise.d.ts` | `Promise.finally()` method | Return type should preserve error type |
 | `lib.es2020.promise.d.ts` | `Promise.allSettled()`, `PromiseSettledResult<T>`, `PromiseRejectedResult` | Augment `PromiseRejectedResult<E>` and `PromiseSettledResult<T, E>` for typed errors |
-| `lib.es2021.promise.d.ts` | `Promise.any()` | Returns `Promise<T, AggregateError>` |
+| `lib.es2021.promise.d.ts` | `Promise.any()`, `AggregateError` | Augment `AggregateError<Errors>` for tuple-typed errors, returns `Promise<T, AggregateError<Errors>>` |
 
 #### Task 2.5.2: Static Methods Must Preserve Error Types
 
@@ -580,6 +580,12 @@ interface PromiseRejectedResult<E> {
 }
 
 type PromiseSettledResult<T, E> = PromiseFulfilledResult<T> | PromiseRejectedResult<E>;
+
+// Escalier's augmented AggregateError (TypeScript's AggregateError has untyped `errors: any[]`)
+// Uses a tuple type parameter to preserve the structure of error types from input promises
+interface AggregateError<Errors extends any[]> extends Error {
+    errors: Errors;
+}
 ```
 
 **Simple methods:**
@@ -592,12 +598,7 @@ type PromiseSettledResult<T, E> = PromiseFulfilledResult<T> | PromiseRejectedRes
    - Example: `Promise.reject(new Error("fail"))` → `Promise<never, Error>`
    - Requires capturing the argument type as `E`
 
-3. **Promise.any**: Returns `Promise<T, AggregateError>`
-   - Resolves with the first fulfilled promise's value
-   - Rejects with `AggregateError` only if ALL promises reject
-   - Example: `Promise.any([Promise<A, E1>, Promise<B, E2>])` → `Promise<A | B, AggregateError>`
-
-**Methods with mapped type signatures (preserve tuple structure):**
+**`Promise.all`, `Promise.race`, `Promise.allSettled`, and `Promise.any` with mapped type signatures:**
 
 These methods use TypeScript's mapped types to preserve heterogeneous tuple structure. Escalier extends them to also extract and union error types.
 
@@ -640,10 +641,25 @@ These methods use TypeScript's mapped types to preserve heterogeneous tuple stru
    - Always resolves, never rejects (rejections become `PromiseRejectedResult<E>` objects with typed `reason`)
    - Example: `Promise.allSettled([fetchUser(1), fetchPost(1)])` → `Promise<[PromiseSettledResult<User, UserFetchError>, PromiseSettledResult<Post, PostFetchError>], never>`
 
+4. **Promise.any**: Uses mapped type to produce tuple-typed AggregateError
+   ```typescript
+   // TypeScript's official signature (lib.es2021.promise.d.ts):
+   // any<T>(values: Iterable<T | PromiseLike<T>>): Promise<Awaited<T>>;
+
+   // Escalier's augmented signature:
+   any<T extends readonly unknown[] | []>(values: T): Promise<
+       Awaited<T[number]>,                                         // Value: union of awaited values (first to resolve)
+       AggregateError<{ -readonly [P in keyof T]: AwaitedError<T[P]> }>  // Error: AggregateError with tuple of error types
+   >;
+   ```
+   - Resolves with the first fulfilled promise's value; rejects with `AggregateError<Errors>` only if ALL promises reject
+   - Example: `Promise.any([fetchUser(1), fetchPost(1)])` → `Promise<User | Post, AggregateError<[UserFetchError, PostFetchError]>>`
+
 **How the mapped types work:**
 - `{ -readonly [P in keyof T]: Awaited<T[P]>; }` - Maps each tuple element to its awaited value type, preserving tuple structure
 - `{ [P in keyof T]: AwaitedError<T[P]> }[keyof T]` - Maps each element to its error type, then indexes with `keyof T` to get the union
-- `Awaited<T[number]>` - For `Promise.race`, gets the union of all awaited value types
+- `Awaited<T[number]>` - For `Promise.race` and `Promise.any`, gets the union of all awaited value types
+- `AggregateError<{ -readonly [P in keyof T]: AwaitedError<T[P]> }>` - For `Promise.any`, wraps the tuple of error types in `AggregateError<Errors>`, preserving the structure so `errors[0]` has the error type of the first promise, `errors[1]` has the error type of the second, etc.
 - `AwaitedError<T>` returns `never` for non-promise values, so they don't pollute the error type union
 
 #### Task 2.5.3: Instance Methods Must Preserve Error Types
@@ -719,7 +735,7 @@ To properly track error types through Promise operations, the `PromiseVisitor` m
 3. **Transform static method signatures**: Update `PromiseConstructor` methods:
    - `Promise.resolve()`: Return `Promise<T, never>`
    - `Promise.reject()`: Return `Promise<never, E>` capturing argument type
-   - `Promise.any()`: Return `Promise<T, AggregateError>`
+   - `Promise.any()`: Return `Promise<T, AggregateError<Errors>>` with tuple of error types
    - `Promise.all()`: Use mapped type signature with `AwaitedError<T>` for error union
    - `Promise.race()`: Use mapped type signature with `AwaitedError<T>` for error union
    - `Promise.allSettled()`: Use mapped type signature with error type `never`
@@ -1092,7 +1108,7 @@ For each increment (ES2015, then ES2016-ES2017, etc.):
 #### Increment 5: ES2021
 
 1. **Phase 1**: Add 4 lib files to loading list
-2. **Phase 2.5**: Special handling for `Promise.any()` → `AggregateError`
+2. **Phase 2.5**: Special handling for `Promise.any()` → `AggregateError<Errors>`
 3. **Phase 5**: Add tests for `Promise.any`, `WeakRef`, `replaceAll`
 4. **Checkpoint**: ES2021 complete ✅
 
@@ -1164,7 +1180,7 @@ Promise static methods like `all`, `race`, `allSettled`, and `any` have complex 
 - `Promise.all` should union error types from all input promises
 - `Promise.race` should union error types from all input promises
 - `Promise.allSettled` should have error type `never` (always succeeds)
-- `Promise.any` should have error type `AggregateError` (throws when all reject)
+- `Promise.any` should have error type `AggregateError<Errors>` where `Errors` is a tuple of input error types (throws when all reject)
 
 Correctly inferring these requires understanding the semantics of each method.
 
@@ -1281,8 +1297,8 @@ Correctly inferring these requires understanding the semantics of each method.
 #### Increment 5: ES2021
 
 - [ ] **[BLOCKER]** All 4 ES2021 lib files parse without errors
-- [ ] **[BLOCKER]** `Promise.any()` returns `Promise<T, AggregateError>`
-- [ ] **[BLOCKER]** `AggregateError` type available
+- [ ] **[BLOCKER]** `Promise.any()` returns `Promise<T, AggregateError<Errors>>` with tuple-typed errors
+- [ ] **[BLOCKER]** `AggregateError<Errors>` type available
 - [ ] **[NICE-TO-HAVE]** `WeakRef<T>`, `FinalizationRegistry<T>` available
 - [ ] **[BLOCKER]** `String.prototype.replaceAll()` available
 
@@ -1301,7 +1317,7 @@ Correctly inferring these requires understanding the semantics of each method.
 - [ ] **[BLOCKER]** `Promise.all()` preserves tuple structure: `Promise.all([Promise<A, E1>, Promise<B, E2>])` returns `Promise<[A, B], E1 | E2>`
 - [ ] **[BLOCKER]** `Promise.race()` unions value and error types: `Promise.race([Promise<A, E1>, Promise<B, E2>])` returns `Promise<A | B, E1 | E2>`
 - [ ] **[BLOCKER]** `Promise.allSettled()` preserves tuple structure with typed errors: `Promise.allSettled([Promise<A, E1>, Promise<B, E2>])` returns `Promise<[PromiseSettledResult<A, E1>, PromiseSettledResult<B, E2>], never>` (ES2020)
-- [ ] **[BLOCKER]** `Promise.any()` returns `Promise<T, AggregateError>` (ES2021)
+- [ ] **[BLOCKER]** `Promise.any()` returns `Promise<T, AggregateError<Errors>>` with tuple-typed errors (ES2021)
 - [ ] **[BLOCKER]** `Promise.resolve()` returns `Promise<T, never>`
 - [ ] **[BLOCKER]** `Promise.reject()` returns `Promise<never, E>` where E is inferred from argument
 - [ ] **[NICE-TO-HAVE]** `promise.then()` correctly transforms both value and error types
@@ -1325,7 +1341,7 @@ Correctly inferring these requires understanding the semantics of each method.
 - **Default type parameter**: `Promise<T, E = never>` uses a default so that `Promise<T>` references resolve to `Promise<T, never>`
 - **Full error propagation**: Static and instance methods must be transformed to properly track error types:
   - `Promise.all/race`: Extract and union error types from input promise array
-  - `Promise.any`: Returns `Promise<T, AggregateError>`
+  - `Promise.any`: Returns `Promise<T, AggregateError<Errors>>` where `Errors` is tuple of input error types
   - `Promise.reject`: Captures argument type as error type
   - `then/catch`: Compute new error type based on handler presence and return types
   - `finally`: Preserves original error type
