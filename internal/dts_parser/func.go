@@ -263,7 +263,7 @@ func (p *DtsParser) parseParams() []*Param {
 	return params
 }
 
-// parseParam parses a single parameter: name?: Type or ...rest: Type
+// parseParam parses a single parameter: name?: Type or ...rest: Type or ...[name]: Type
 func (p *DtsParser) parseParam() *Param {
 	startSpan := p.peek().Span
 	rest := false
@@ -275,13 +275,35 @@ func (p *DtsParser) parseParam() *Param {
 		p.consume() // consume '...'
 	}
 
-	// Parse parameter name
-	name := p.parseIdent()
-	if name == nil {
-		return nil
-	}
+	var name *Ident
+	var endSpan ast.Span
 
-	endSpan := name.Span()
+	// Check for array destructuring pattern: ...[name]
+	// This is used in TypeScript for variadic tuple types, e.g., next(...[value]: [] | [TNext])
+	if rest && p.peek().Type == OpenBracket {
+		p.consume() // consume '['
+
+		// Parse the identifier inside the brackets
+		name = p.parseIdent()
+		if name == nil {
+			p.reportError(p.peek().Span, "Expected identifier inside destructuring pattern")
+			return nil
+		}
+
+		// Expect closing bracket
+		closeBracket := p.expect(CloseBracket)
+		if closeBracket == nil {
+			return nil
+		}
+		endSpan = closeBracket.Span
+	} else {
+		// Parse regular parameter name
+		name = p.parseIdent()
+		if name == nil {
+			return nil
+		}
+		endSpan = name.Span()
+	}
 
 	// Check for optional marker
 	if p.peek().Type == Question {

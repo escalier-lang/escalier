@@ -597,9 +597,10 @@ type ArrayType struct {
 
 func (a *ArrayType) Span() ast.Span { return a.span }
 
-// TupleType represents [T1, T2, ...]
+// TupleType represents [T1, T2, ...] or readonly [T1, T2, ...]
 type TupleType struct {
 	Elements []TupleElement
+	Readonly bool
 	span     ast.Span
 }
 
