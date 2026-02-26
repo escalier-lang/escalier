@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -12,6 +14,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
+
+// referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
+// Compiled once at package level for efficiency.
+var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)
+
+// bundleFilePattern matches ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
+// These bundle files contain only /// <reference> directives pointing to sub-libraries.
+// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
+// Compiled once at package level for efficiency.
+var bundleFilePattern = regexp.MustCompile(`^lib\.es20\d{2}\.d\.ts$`)
 
 // findRepoRoot walks up the directory tree to find the repository root
 func findRepoRoot() (string, error) {
@@ -36,6 +48,135 @@ func findRepoRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// discoverESLibFiles returns ES lib files from the TypeScript lib directory,
+// sorted in dependency order based on reference directives in bundle files.
+//
+// The targetVersion parameter limits which ES versions are included:
+// - "es5" - only lib.es5.d.ts
+// - "es2015" - ES5 + ES2015 files
+// - "es2016" - ES5 + ES2015 + ES2016 files
+// - "" (empty) - all ES versions
+//
+// Load order:
+// 1. lib.es5.d.ts (contains actual types, loaded first)
+// 2. Sub-libraries referenced by lib.es2015.d.ts (in order)
+// 3. Sub-libraries referenced by lib.es2016.d.ts (in order)
+// 4. ... and so on for each ES version up to targetVersion
+func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
+	// Find all ES2015+ bundle files (lib.es2015.d.ts, lib.es2016.d.ts, etc.)
+	// These contain /// <reference> directives pointing to sub-libraries.
+	entries, err := os.ReadDir(libDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read lib directory: %w", err)
+	}
+
+	var bundleFiles []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if isBundleFile(name) && !isESNextFile(name) {
+			bundleFiles = append(bundleFiles, name)
+		}
+	}
+
+	// Sort bundle files by ES version (es2015, es2016, ...)
+	sort.Slice(bundleFiles, func(i, j int) bool {
+		return compareESVersions(extractESVersion(bundleFiles[i]), extractESVersion(bundleFiles[j]))
+	})
+
+	var orderedLibFiles []string
+	seen := make(map[string]bool)
+
+	// lib.es5.d.ts contains actual type definitions (not just references).
+	// Load it first as the base of all ES types.
+	orderedLibFiles = append(orderedLibFiles, "lib.es5.d.ts")
+	seen["lib.es5.d.ts"] = true
+
+	// If targetVersion is "es5", we're done - only ES5 is requested
+	if targetVersion == "es5" {
+		return orderedLibFiles, nil
+	}
+
+	// For each ES2015+ bundle, parse its /// <reference> directives
+	// to get sub-libraries in the correct order.
+	for _, bundleFile := range bundleFiles {
+		bundleVersion := extractESVersion(bundleFile)
+
+		// If targetVersion is set and this bundle is newer than target, skip it
+		if targetVersion != "" && compareESVersions(targetVersion, bundleVersion) {
+			continue
+		}
+
+		bundlePath := filepath.Join(libDir, bundleFile)
+		refs, err := parseReferenceDirectives(bundlePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s: %w", bundleFile, err)
+		}
+
+		for _, ref := range refs {
+			// Convert reference name to filename: "es2015.core" -> "lib.es2015.core.d.ts"
+			filename := "lib." + ref + ".d.ts"
+			// Skip if already seen, is ESNext, or is a bundle file (which only contains references)
+			if !seen[filename] && !isESNextFile(filename) && !isBundleFile(filename) {
+				orderedLibFiles = append(orderedLibFiles, filename)
+				seen[filename] = true
+			}
+		}
+	}
+
+	return orderedLibFiles, nil
+}
+
+// parseReferenceDirectives extracts lib references from a bundle file.
+// Example: /// <reference lib="es2015.core" /> -> "es2015.core"
+func parseReferenceDirectives(bundlePath string) ([]string, error) {
+	content, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := referenceDirectivePattern.FindAllStringSubmatch(string(content), -1)
+	var refs []string
+	for _, match := range matches {
+		if len(match) >= 2 {
+			refs = append(refs, match[1])
+		}
+	}
+	return refs, nil
+}
+
+// isBundleFile returns true for ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
+// These bundle files contain only /// <reference> directives to sub-libraries.
+// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
+func isBundleFile(name string) bool {
+	return bundleFilePattern.MatchString(name)
+}
+
+// isESNextFile returns true for lib.esnext.*.d.ts files (unstable features)
+func isESNextFile(name string) bool {
+	return strings.HasPrefix(name, "lib.esnext")
+}
+
+// extractESVersion extracts the ES version from a filename.
+// "lib.es2015.core.d.ts" -> "es2015", "lib.es5.d.ts" -> "es5"
+func extractESVersion(filename string) string {
+	// Remove "lib." prefix and ".d.ts" suffix, then take first segment
+	name := strings.TrimPrefix(filename, "lib.")
+	name = strings.TrimSuffix(name, ".d.ts")
+	parts := strings.Split(name, ".")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return name
+}
+
+// compareESVersions returns true if version a should be loaded before version b.
+// Only used for ES2015+ versions: "es2015" < "es2016" < ... < "es2023"
+// (lib.es5.d.ts is handled separately, not via this comparison)
+func compareESVersions(a, b string) bool {
+	// Both are es20XX, compare lexicographically (works because es2015 < es2016 < ...)
+	return a < b
 }
 
 // the key is the method name
@@ -334,21 +475,60 @@ func (c *Checker) initializeGlobalScope() {
 	c.GlobalScope = globalScope
 }
 
-// loadGlobalDefinitions loads TypeScript lib files (lib.es5.d.ts, lib.dom.d.ts)
-// and infers their declarations into the global scope.
-// Named modules are registered in the PackageRegistry.
+// loadGlobalDefinitions loads TypeScript lib files and infers their declarations
+// into the global scope. Named modules are registered in the PackageRegistry.
+//
+// Load order:
+// 1. ES lib files (lib.es5.d.ts, lib.es2015.*.d.ts, lib.es2016.*.d.ts, etc.)
+// 2. DOM lib file (lib.dom.d.ts) - loaded after ES libs since DOM types may reference ES2015+ types
 func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
-		panic(fmt.Sprintf("Failed to find repository root: %s", err))
+		panic(fmt.Sprintf("failed to find repository root: %v", err))
 	}
 
-	// Load lib.es5.d.ts
-	libES5Path := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.es5.d.ts")
-	c.loadGlobalFile(libES5Path, globalScope)
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
 
-	// Load lib.dom.d.ts
-	libDOMPath := filepath.Join(repoRoot, "node_modules", "typescript", "lib", "lib.dom.d.ts")
+	// Verify TypeScript is installed
+	if _, statErr := os.Stat(libDir); statErr != nil {
+		if os.IsNotExist(statErr) {
+			panic(fmt.Sprintf(
+				"TypeScript lib directory not found at %s. "+
+					"Please install TypeScript: npm install typescript",
+				libDir,
+			))
+		}
+		panic(fmt.Sprintf("cannot access TypeScript lib directory %s: %v", libDir, statErr))
+	}
+
+	// Discover and load ES lib files
+	// Currently limited to ES5 to maintain backward compatibility.
+	// As declaration merging issues are resolved (Phase 3), this can be
+	// expanded to include ES2015+ lib files.
+	targetVersion := "es5"
+	esLibFiles, err := discoverESLibFiles(libDir, targetVersion)
+	if err != nil {
+		// Hard error - can't proceed without lib files
+		panic(fmt.Sprintf("failed to discover ES lib files: %v", err))
+	}
+
+	if len(esLibFiles) == 0 {
+		panic(fmt.Sprintf(
+			"no ES lib files found in %s. "+
+				"TypeScript installation may be corrupted. "+
+				"Try: rm -rf node_modules && npm install",
+			libDir,
+		))
+	}
+
+	for _, filename := range esLibFiles {
+		libPath := filepath.Join(libDir, filename)
+		c.loadGlobalFile(libPath, globalScope)
+	}
+
+	// Load DOM lib file after ES lib files
+	// DOM types may reference ES2015+ types (e.g., Promise, Symbol)
+	libDOMPath := filepath.Join(libDir, "lib.dom.d.ts")
 	c.loadGlobalFile(libDOMPath, globalScope)
 }
 
