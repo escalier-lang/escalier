@@ -12,7 +12,8 @@ const buffer = fs.readFileSync(
 );
 
 beforeEach(() => {
-    client = new Client(buffer, fs);
+    const cwd = process.cwd();
+    client = new Client(buffer, cwd, fs);
     client.run();
 });
 
@@ -308,7 +309,8 @@ test('multi-chunk message handling', async () => {
         read: vi.fn(),
     };
 
-    const testClient = new Client(buffer, mockFS as any);
+    const cwd = process.cwd();
+    const testClient = new Client(buffer, cwd, mockFS as any);
 
     // Don't call run() or initialize() to avoid interference from the real server
 
@@ -383,7 +385,8 @@ test('multi-chunk message with exact boundary split', async () => {
         read: vi.fn(),
     };
 
-    const testClient = new Client(buffer, mockFS as any);
+    const cwd = process.cwd();
+    const testClient = new Client(buffer, cwd, mockFS as any);
 
     const responseObject = {
         jsonrpc: '2.0',

@@ -6,9 +6,17 @@ import type { FSDir, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
 
+const constants = {
+    O_DIRECTORY: 1048576,
+};
+
+function assertNever(x: never): never {
+    throw new Error(`Unexpected value: ${x}`);
+}
+
 export class BrowserFS implements FSAPI {
     fileID: number;
-    openFiles: Map<number, Uint8Array> = new Map();
+    openFiles: Map<number, FSNode> = new Map();
     readPositions: Map<number, number> = new Map();
     rootDir: FSDir;
 
@@ -18,23 +26,13 @@ export class BrowserFS implements FSAPI {
     }
 
     /**
-     * Locate a file within the in‑memory directory tree.
-     *
-     * @param pathStr Absolute or relative path string (e.g. "/foo/bar.txt").
-     * @returns The file's Uint8Array content if found, otherwise `undefined`.
-     */
-    private findFileInRootDir(pathStr: string): Uint8Array | undefined {
-        const node = this.findNodeInRootDir(pathStr);
-        return node && node.type === 'file' ? node.content : undefined;
-    }
-
-    /**
      * Locate any node (file or directory) within the in‑memory directory tree.
      *
      * @param pathStr Path string (e.g. "/foo/bar").
      * @returns The FSNode if found, otherwise undefined.
      */
     private findNodeInRootDir(pathStr: string): FSNode | undefined {
+        console.log(`Finding node for path: ${pathStr}`);
         const parts = pathStr.split('/').filter((p) => p.length > 0);
         let node: FSNode | undefined = this.rootDir;
         for (const part of parts) {
@@ -64,12 +62,28 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        const stats = new SimpleStats(
-            fileData.length,
-            true,
-            false,
-        ) as unknown as Stats;
-        callback(null, stats);
+        switch (fileData.type) {
+            case 'dir': {
+                const stats = new SimpleStats(
+                    0,
+                    false,
+                    true,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            case 'file': {
+                const stats = new SimpleStats(
+                    fileData.content.length,
+                    true,
+                    false,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            default:
+                assertNever(fileData);
+        }
     }
 
     lstat(
@@ -105,12 +119,58 @@ export class BrowserFS implements FSAPI {
         callback(null, stats);
     }
 
+    stat(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
+    ) {
+        const pathStr = String(path);
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'stat',
+                    path: pathStr,
+                }),
+                null as any,
+            );
+            return;
+        }
+
+        switch (node.type) {
+            case 'file': {
+                const stats = new SimpleStats(
+                    node.content.length,
+                    true,
+                    false,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            case 'dir': {
+                const stats = new SimpleStats(
+                    0,
+                    false,
+                    true,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            default:
+                assertNever(node);
+        }
+    }
+
     open(
         path: PathLike,
         _flags: OpenMode | undefined,
         _mode: Mode | undefined,
         callback: (err: NodeJS.ErrnoException | null, fd: number) => void,
     ) {
+        console.log(
+            `open called with path: ${path}, flags: ${_flags}, mode: ${_mode}`,
+        );
         // Basic validation: path must be a non‑empty string
         const pathStr = String(path);
         if (pathStr.length === 0) {
@@ -125,9 +185,36 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
+        if (
+            typeof _flags === 'number' &&
+            (_flags & constants.O_DIRECTORY) !== 0
+        ) {
+            const node = this.findNodeInRootDir(pathStr);
+            if (node && node.type === 'dir') {
+                // Allocate a new file descriptor
+                const fd = this.fileID++;
+                console.log(
+                    `Opening directory at path: ${pathStr}, assigned fd: ${fd}`,
+                );
+                this.openFiles.set(fd, node);
+                callback(null, fd);
+            } else {
+                callback(
+                    new ErrnoException('Not a directory', {
+                        code: 'ENOTDIR',
+                        errno: -20,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+            }
+            return;
+        }
+
         // Resolve the file in the in‑memory directory tree
-        const fileData = this.findFileInRootDir(pathStr);
-        if (!fileData) {
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
             // File does not exist
             callback(
                 new ErrnoException('No such file or directory', {
@@ -141,10 +228,35 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        // Allocate a new file descriptor
-        const fd = this.fileID++;
-        this.openFiles.set(fd, fileData);
-        callback(null, fd);
+        switch (node.type) {
+            case 'dir':
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+                break;
+            case 'file': {
+                // Allocate a new file descriptor
+                const fd = this.fileID++;
+                this.openFiles.set(fd, node);
+                callback(null, fd);
+                break;
+            }
+            default:
+                assertNever(node);
+        }
+    }
+
+    close(_fd: number, callback: (error: Error | null) => void) {
+        // For simplicity, we won't actually track open file descriptors in this example.
+        // In a real implementation, you'd want to remove the fd from `openFiles` and
+        // perform any necessary cleanup.
+        callback(null);
     }
 
     read(
@@ -203,8 +315,8 @@ export class BrowserFS implements FSAPI {
                 ? this.readPositions.get(fd) || 0
                 : Number(position);
 
-        const fileData = this.openFiles.get(fd);
-        if (!fileData) {
+        const file = this.openFiles.get(fd);
+        if (!file) {
             callback(
                 new ErrnoException('File not open', {
                     code: 'EBADF',
@@ -216,22 +328,83 @@ export class BrowserFS implements FSAPI {
             );
             return;
         }
-        const bytesToRead = Math.min(length, fileData.length - readPosition);
 
-        if (bytesToRead <= 0) {
-            callback(null, 0, buffer);
+        switch (file.type) {
+            case 'dir':
+                // Reading from a directory is not supported in this simple implementation.
+                throw new ErrnoException('Is a directory', {
+                    code: 'EISDIR',
+                    errno: -21,
+                    syscall: 'read',
+                });
+            case 'file': {
+                const bytesToRead = Math.min(
+                    length,
+                    file.content.length - readPosition,
+                );
+
+                if (bytesToRead <= 0) {
+                    callback(null, 0, buffer);
+                    return;
+                }
+
+                buffer.set(
+                    file.content.subarray(
+                        readPosition,
+                        readPosition + bytesToRead,
+                    ),
+                    offset,
+                );
+
+                if (position == null) {
+                    this.readPositions.set(fd, readPosition + bytesToRead);
+                }
+
+                callback(null, bytesToRead, buffer);
+                break;
+            }
+            default:
+                assertNever(file);
+        }
+    }
+
+    readdir(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null, files: string[]) => void,
+    ) {
+        console.log(`readdir called with path: ${path}`);
+        const pathStr = String(path);
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'readdir',
+                    path: pathStr,
+                }),
+                [],
+            );
             return;
         }
 
-        buffer.set(
-            fileData.subarray(readPosition, readPosition + bytesToRead),
-            offset,
-        );
-
-        if (position == null) {
-            this.readPositions.set(fd, readPosition + bytesToRead);
+        if (node.type !== 'dir') {
+            callback(
+                new ErrnoException('Not a directory', {
+                    code: 'ENOTDIR',
+                    errno: -20,
+                    syscall: 'readdir',
+                    path: pathStr,
+                }),
+                [],
+            );
+            return;
         }
 
-        callback(null, bytesToRead, buffer);
+        const files = Array.from(node.children.keys());
+        console.log(
+            `readdir called on path: ${pathStr}, returning files: ${files}`,
+        );
+        callback(null, files);
     }
 }

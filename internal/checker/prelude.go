@@ -65,6 +65,20 @@ func findRepoRoot() (string, error) {
 // 3. Sub-libraries referenced by lib.es2016.d.ts (in order)
 // 4. ... and so on for each ES version up to targetVersion
 func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
+	var orderedLibFiles []string
+	seen := make(map[string]bool)
+
+	// lib.es5.d.ts contains actual type definitions (not just references).
+	// Load it first as the base of all ES types.
+	orderedLibFiles = append(orderedLibFiles, "lib.es5.d.ts")
+	seen["lib.es5.d.ts"] = true
+
+	// If targetVersion is "es5", we're done - only ES5 is requested.
+	// This early return avoids calling os.ReadDir which is not available in WASM.
+	if targetVersion == "es5" {
+		return orderedLibFiles, nil
+	}
+
 	// Find all ES2015+ bundle files (lib.es2015.d.ts, lib.es2016.d.ts, etc.)
 	// These contain /// <reference> directives pointing to sub-libraries.
 	entries, err := os.ReadDir(libDir)
@@ -84,19 +98,6 @@ func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
 	sort.Slice(bundleFiles, func(i, j int) bool {
 		return compareESVersions(extractESVersion(bundleFiles[i]), extractESVersion(bundleFiles[j]))
 	})
-
-	var orderedLibFiles []string
-	seen := make(map[string]bool)
-
-	// lib.es5.d.ts contains actual type definitions (not just references).
-	// Load it first as the base of all ES types.
-	orderedLibFiles = append(orderedLibFiles, "lib.es5.d.ts")
-	seen["lib.es5.d.ts"] = true
-
-	// If targetVersion is "es5", we're done - only ES5 is requested
-	if targetVersion == "es5" {
-		return orderedLibFiles, nil
-	}
 
 	// For each ES2015+ bundle, parse its /// <reference> directives
 	// to get sub-libraries in the correct order.
