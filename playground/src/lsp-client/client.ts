@@ -138,14 +138,15 @@ export class Client {
         // };
 
         globalThis.fs = {
+            // Defined in src/syscall/syscall_js.go in https://github.com/golang
             constants: {
-                O_WRONLY: -1,
-                O_RDWR: -1,
-                O_CREAT: -1,
-                O_TRUNC: -1,
-                O_APPEND: -1,
-                O_EXCL: -1,
-                O_DIRECTORY: 1048576, // we need this for vscode-languageserver to work, but it's not supported in the browser so we set it to -1
+                O_WRONLY: 1,
+                O_RDWR: 2,
+                O_CREAT: 64,
+                O_TRUNC: 512,
+                O_APPEND: 1024,
+                O_EXCL: 128,
+                O_DIRECTORY: 8192, // we need this for vscode-languageserver to work, but it's not supported in the browser so we set it to -1
             }, // unused
             // writeSync(fd, buf) {
             //     outputBuf += decoder.decode(buf);

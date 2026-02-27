@@ -6,8 +6,15 @@ import type { FSDir, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
 
+// Defined in src/syscall/syscall_js.go in https://github.com/golang
 const constants = {
-    O_DIRECTORY: 1048576,
+    O_WRONLY: 1,
+    O_RDWR: 2,
+    O_CREAT: 64,
+    O_TRUNC: 512,
+    O_APPEND: 1024,
+    O_EXCL: 128,
+    O_DIRECTORY: 8192, // we need this for vscode-languageserver to work, but it's not supported in the browser so we set it to -1
 };
 
 function assertNever(x: never): never {
@@ -183,10 +190,23 @@ export class BrowserFS implements FSAPI {
 
         if (
             typeof _flags === 'number' &&
+            constants.O_DIRECTORY !== undefined &&
             (_flags & constants.O_DIRECTORY) !== 0
         ) {
             const node = this.findNodeInRootDir(pathStr);
-            if (node && node.type === 'dir') {
+            if (!node) {
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+                return;
+            }
+            if (node.type === 'dir') {
                 // Allocate a new file descriptor
                 const fd = this.fileID++;
                 this.openFiles.set(fd, node);

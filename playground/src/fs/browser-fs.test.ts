@@ -92,7 +92,7 @@ function close(fs: BrowserFS, fd: number): Promise<void> {
     });
 }
 
-const O_DIRECTORY = 1048576;
+const O_DIRECTORY = 8192;
 
 describe('BrowserFS', () => {
     let fs: BrowserFS;
@@ -174,6 +174,14 @@ describe('BrowserFS', () => {
                 open(fs, '/hello.txt', O_DIRECTORY),
             ).rejects.toMatchObject({
                 code: 'ENOTDIR',
+            });
+        });
+
+        test('returns ENOENT when using O_DIRECTORY on non-existent path', async () => {
+            await expect(
+                open(fs, '/does-not-exist', O_DIRECTORY),
+            ).rejects.toMatchObject({
+                code: 'ENOENT',
             });
         });
 
