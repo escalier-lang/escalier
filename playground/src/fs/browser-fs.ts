@@ -246,9 +246,8 @@ export class BrowserFS implements FSAPI {
     }
 
     close(_fd: number, callback: (error: Error | null) => void) {
-        // For simplicity, we won't actually track open file descriptors in this example.
-        // In a real implementation, you'd want to remove the fd from `openFiles` and
-        // perform any necessary cleanup.
+        this.openFiles.delete(_fd);
+        this.readPositions.delete(_fd);
         callback(null);
     }
 
@@ -324,12 +323,16 @@ export class BrowserFS implements FSAPI {
 
         switch (file.type) {
             case 'dir':
-                // Reading from a directory is not supported in this simple implementation.
-                throw new ErrnoException('Is a directory', {
-                    code: 'EISDIR',
-                    errno: -21,
-                    syscall: 'read',
-                });
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'read',
+                    }),
+                    0,
+                    buffer,
+                );
+                break;
             case 'file': {
                 const bytesToRead = Math.min(
                     length,

@@ -327,9 +327,11 @@ describe('BrowserFS', () => {
         test('throws EISDIR when reading from directory', async () => {
             const fd = await open(fs, '/foo', O_DIRECTORY);
             const buffer = new Uint8Array(10);
-            expect(() => {
-                fs.read(fd, buffer, 0, 10, null, () => {});
-            }).toThrow();
+            await expect(
+                read(fs, fd, buffer, 0, 10, null),
+            ).rejects.toMatchObject({
+                code: 'EISDIR',
+            });
         });
     });
 

@@ -2,7 +2,7 @@
   "mcpServers": {
     "mcp-debugger": {
       "command": "node",
-      "args": ["node_modules/@debugmcp/mcp-debugger/dist/cli"],
+      "args": ["node_modules/@debugmcp/mcp-debugger/dist/cli", "stdio"],
       "disabled": false
     }
   }
