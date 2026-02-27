@@ -13,7 +13,9 @@ fs.copyFileSync(
 );
 
 const libDir = 'node_modules/typescript/lib';
-const es2015Files = fs.readdirSync(libDir).filter(file => file.startsWith('lib.es2015.'));
+const es2015Files = fs
+    .readdirSync(libDir)
+    .filter((file) => file.startsWith('lib.es2015.'));
 for (const file of es2015Files) {
     fs.copyFileSync(`${libDir}/${file}`, `public/types/${file}`);
 }

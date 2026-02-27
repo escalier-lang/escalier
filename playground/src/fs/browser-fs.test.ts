@@ -1,5 +1,5 @@
 import type { Stats } from 'node:fs';
-import { describe, expect, test, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 import { BrowserFS } from './browser-fs';
 import type { Volume } from './volume';
@@ -46,11 +46,7 @@ function fstat(fs: BrowserFS, fd: number): Promise<Stats> {
 }
 
 // Helper to promisify open
-function open(
-    fs: BrowserFS,
-    path: string,
-    flags?: number,
-): Promise<number> {
+function open(fs: BrowserFS, path: string, flags?: number): Promise<number> {
     return new Promise((resolve, reject) => {
         fs.open(path, flags, undefined, (err, fd) => {
             if (err) reject(err);
@@ -174,7 +170,9 @@ describe('BrowserFS', () => {
         });
 
         test('returns ENOTDIR when using O_DIRECTORY on a file', async () => {
-            await expect(open(fs, '/hello.txt', O_DIRECTORY)).rejects.toMatchObject({
+            await expect(
+                open(fs, '/hello.txt', O_DIRECTORY),
+            ).rejects.toMatchObject({
                 code: 'ENOTDIR',
             });
         });
@@ -211,31 +209,58 @@ describe('BrowserFS', () => {
         test('reads entire file content', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(20);
-            const { bytesRead, buffer: buf } = await read(fs, fd, buffer, 0, 20, null);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                0,
+                20,
+                null,
+            );
             expect(bytesRead).toBe(13);
-            const content = new TextDecoder().decode(buf.subarray(0, bytesRead));
+            const content = new TextDecoder().decode(
+                buf.subarray(0, bytesRead),
+            );
             expect(content).toBe('Hello, World!');
         });
 
         test('reads file with offset in buffer', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(20);
-            const { bytesRead, buffer: buf } = await read(fs, fd, buffer, 5, 10, null);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                5,
+                10,
+                null,
+            );
             expect(bytesRead).toBe(10);
             // First 5 bytes should be 0
             expect(buf[0]).toBe(0);
             expect(buf[4]).toBe(0);
             // Content starts at offset 5
-            const content = new TextDecoder().decode(buf.subarray(5, 5 + bytesRead));
+            const content = new TextDecoder().decode(
+                buf.subarray(5, 5 + bytesRead),
+            );
             expect(content).toBe('Hello, Wor');
         });
 
         test('reads file from specific position', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(10);
-            const { bytesRead, buffer: buf } = await read(fs, fd, buffer, 0, 10, 7);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                0,
+                10,
+                7,
+            );
             expect(bytesRead).toBe(6); // "World!" from position 7
-            const content = new TextDecoder().decode(buf.subarray(0, bytesRead));
+            const content = new TextDecoder().decode(
+                buf.subarray(0, bytesRead),
+            );
             expect(content).toBe('World!');
         });
 
@@ -262,7 +287,9 @@ describe('BrowserFS', () => {
 
         test('returns EBADF for invalid fd', async () => {
             const buffer = new Uint8Array(10);
-            await expect(read(fs, 999, buffer, 0, 10, null)).rejects.toMatchObject({
+            await expect(
+                read(fs, 999, buffer, 0, 10, null),
+            ).rejects.toMatchObject({
                 code: 'EBADF',
             });
         });
@@ -270,7 +297,9 @@ describe('BrowserFS', () => {
         test('returns EINVAL for negative offset', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(10);
-            await expect(read(fs, fd, buffer, -1, 10, null)).rejects.toMatchObject({
+            await expect(
+                read(fs, fd, buffer, -1, 10, null),
+            ).rejects.toMatchObject({
                 code: 'EINVAL',
             });
         });
@@ -278,7 +307,9 @@ describe('BrowserFS', () => {
         test('returns EINVAL for negative length', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(10);
-            await expect(read(fs, fd, buffer, 0, -1, null)).rejects.toMatchObject({
+            await expect(
+                read(fs, fd, buffer, 0, -1, null),
+            ).rejects.toMatchObject({
                 code: 'EINVAL',
             });
         });
@@ -286,9 +317,11 @@ describe('BrowserFS', () => {
         test('returns EINVAL for negative position', async () => {
             const fd = await open(fs, '/hello.txt');
             const buffer = new Uint8Array(10);
-            await expect(read(fs, fd, buffer, 0, 10, -1)).rejects.toMatchObject({
-                code: 'EINVAL',
-            });
+            await expect(read(fs, fd, buffer, 0, 10, -1)).rejects.toMatchObject(
+                {
+                    code: 'EINVAL',
+                },
+            );
         });
 
         test('throws EISDIR when reading from directory', async () => {
