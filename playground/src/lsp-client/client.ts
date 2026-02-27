@@ -146,8 +146,8 @@ export class Client {
                 O_TRUNC: 512,
                 O_APPEND: 1024,
                 O_EXCL: 128,
-                O_DIRECTORY: 8192, // we need this for vscode-languageserver to work, but it's not supported in the browser so we set it to -1
-            }, // unused
+                O_DIRECTORY: 8192,
+            },
             // writeSync(fd, buf) {
             //     outputBuf += decoder.decode(buf);
             //     const nl = outputBuf.lastIndexOf("\n");
