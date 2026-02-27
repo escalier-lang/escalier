@@ -32,7 +32,6 @@ export class BrowserFS implements FSAPI {
      * @returns The FSNode if found, otherwise undefined.
      */
     private findNodeInRootDir(pathStr: string): FSNode | undefined {
-        console.log(`Finding node for path: ${pathStr}`);
         const parts = pathStr.split('/').filter((p) => p.length > 0);
         let node: FSNode | undefined = this.rootDir;
         for (const part of parts) {
@@ -168,9 +167,6 @@ export class BrowserFS implements FSAPI {
         _mode: Mode | undefined,
         callback: (err: NodeJS.ErrnoException | null, fd: number) => void,
     ) {
-        console.log(
-            `open called with path: ${path}, flags: ${_flags}, mode: ${_mode}`,
-        );
         // Basic validation: path must be a non‑empty string
         const pathStr = String(path);
         if (pathStr.length === 0) {
@@ -193,9 +189,6 @@ export class BrowserFS implements FSAPI {
             if (node && node.type === 'dir') {
                 // Allocate a new file descriptor
                 const fd = this.fileID++;
-                console.log(
-                    `Opening directory at path: ${pathStr}, assigned fd: ${fd}`,
-                );
                 this.openFiles.set(fd, node);
                 callback(null, fd);
             } else {
@@ -372,7 +365,6 @@ export class BrowserFS implements FSAPI {
         path: PathLike,
         callback: (err: NodeJS.ErrnoException | null, files: string[]) => void,
     ) {
-        console.log(`readdir called with path: ${path}`);
         const pathStr = String(path);
         const node = this.findNodeInRootDir(pathStr);
         if (!node) {
@@ -402,9 +394,6 @@ export class BrowserFS implements FSAPI {
         }
 
         const files = Array.from(node.children.keys());
-        console.log(
-            `readdir called on path: ${pathStr}, returning files: ${files}`,
-        );
         callback(null, files);
     }
 }
