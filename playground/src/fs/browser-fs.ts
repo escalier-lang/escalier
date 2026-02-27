@@ -6,26 +6,30 @@ import type { FSDir, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
 
+// Defined in src/syscall/syscall_js.go in https://github.com/golang
+const constants = {
+    O_WRONLY: 1,
+    O_RDWR: 2,
+    O_CREAT: 64,
+    O_TRUNC: 512,
+    O_APPEND: 1024,
+    O_EXCL: 128,
+    O_DIRECTORY: 8192,
+};
+
+function assertNever(x: never): never {
+    throw new Error(`Unexpected value: ${x}`);
+}
+
 export class BrowserFS implements FSAPI {
     fileID: number;
-    openFiles: Map<number, Uint8Array> = new Map();
+    openFiles: Map<number, FSNode> = new Map();
     readPositions: Map<number, number> = new Map();
     rootDir: FSDir;
 
     constructor(volume: Volume) {
         this.fileID = 3;
         this.rootDir = volumeToDir(volume);
-    }
-
-    /**
-     * Locate a file within the in‑memory directory tree.
-     *
-     * @param pathStr Absolute or relative path string (e.g. "/foo/bar.txt").
-     * @returns The file's Uint8Array content if found, otherwise `undefined`.
-     */
-    private findFileInRootDir(pathStr: string): Uint8Array | undefined {
-        const node = this.findNodeInRootDir(pathStr);
-        return node && node.type === 'file' ? node.content : undefined;
     }
 
     /**
@@ -64,12 +68,28 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        const stats = new SimpleStats(
-            fileData.length,
-            true,
-            false,
-        ) as unknown as Stats;
-        callback(null, stats);
+        switch (fileData.type) {
+            case 'dir': {
+                const stats = new SimpleStats(
+                    0,
+                    false,
+                    true,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            case 'file': {
+                const stats = new SimpleStats(
+                    fileData.content.length,
+                    true,
+                    false,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            default:
+                assertNever(fileData);
+        }
     }
 
     lstat(
@@ -105,6 +125,49 @@ export class BrowserFS implements FSAPI {
         callback(null, stats);
     }
 
+    stat(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
+    ) {
+        const pathStr = String(path);
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'stat',
+                    path: pathStr,
+                }),
+                null as any,
+            );
+            return;
+        }
+
+        switch (node.type) {
+            case 'file': {
+                const stats = new SimpleStats(
+                    node.content.length,
+                    true,
+                    false,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            case 'dir': {
+                const stats = new SimpleStats(
+                    0,
+                    false,
+                    true,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
+            default:
+                assertNever(node);
+        }
+    }
+
     open(
         path: PathLike,
         _flags: OpenMode | undefined,
@@ -125,9 +188,46 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
+        if (
+            typeof _flags === 'number' &&
+            constants.O_DIRECTORY !== undefined &&
+            (_flags & constants.O_DIRECTORY) !== 0
+        ) {
+            const node = this.findNodeInRootDir(pathStr);
+            if (!node) {
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+                return;
+            }
+            if (node.type === 'dir') {
+                // Allocate a new file descriptor
+                const fd = this.fileID++;
+                this.openFiles.set(fd, node);
+                callback(null, fd);
+            } else {
+                callback(
+                    new ErrnoException('Not a directory', {
+                        code: 'ENOTDIR',
+                        errno: -20,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+            }
+            return;
+        }
+
         // Resolve the file in the in‑memory directory tree
-        const fileData = this.findFileInRootDir(pathStr);
-        if (!fileData) {
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
             // File does not exist
             callback(
                 new ErrnoException('No such file or directory', {
@@ -141,10 +241,34 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        // Allocate a new file descriptor
-        const fd = this.fileID++;
-        this.openFiles.set(fd, fileData);
-        callback(null, fd);
+        switch (node.type) {
+            case 'dir':
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+                break;
+            case 'file': {
+                // Allocate a new file descriptor
+                const fd = this.fileID++;
+                this.openFiles.set(fd, node);
+                callback(null, fd);
+                break;
+            }
+            default:
+                assertNever(node);
+        }
+    }
+
+    close(_fd: number, callback: (error: Error | null) => void) {
+        this.openFiles.delete(_fd);
+        this.readPositions.delete(_fd);
+        callback(null);
     }
 
     read(
@@ -203,8 +327,8 @@ export class BrowserFS implements FSAPI {
                 ? this.readPositions.get(fd) || 0
                 : Number(position);
 
-        const fileData = this.openFiles.get(fd);
-        if (!fileData) {
+        const file = this.openFiles.get(fd);
+        if (!file) {
             callback(
                 new ErrnoException('File not open', {
                     code: 'EBADF',
@@ -216,22 +340,83 @@ export class BrowserFS implements FSAPI {
             );
             return;
         }
-        const bytesToRead = Math.min(length, fileData.length - readPosition);
 
-        if (bytesToRead <= 0) {
-            callback(null, 0, buffer);
+        switch (file.type) {
+            case 'dir':
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'read',
+                    }),
+                    0,
+                    buffer,
+                );
+                break;
+            case 'file': {
+                const bytesToRead = Math.min(
+                    length,
+                    file.content.length - readPosition,
+                );
+
+                if (bytesToRead <= 0) {
+                    callback(null, 0, buffer);
+                    return;
+                }
+
+                buffer.set(
+                    file.content.subarray(
+                        readPosition,
+                        readPosition + bytesToRead,
+                    ),
+                    offset,
+                );
+
+                if (position == null) {
+                    this.readPositions.set(fd, readPosition + bytesToRead);
+                }
+
+                callback(null, bytesToRead, buffer);
+                break;
+            }
+            default:
+                assertNever(file);
+        }
+    }
+
+    readdir(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null, files: string[]) => void,
+    ) {
+        const pathStr = String(path);
+        const node = this.findNodeInRootDir(pathStr);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'readdir',
+                    path: pathStr,
+                }),
+                [],
+            );
             return;
         }
 
-        buffer.set(
-            fileData.subarray(readPosition, readPosition + bytesToRead),
-            offset,
-        );
-
-        if (position == null) {
-            this.readPositions.set(fd, readPosition + bytesToRead);
+        if (node.type !== 'dir') {
+            callback(
+                new ErrnoException('Not a directory', {
+                    code: 'ENOTDIR',
+                    errno: -20,
+                    syscall: 'readdir',
+                    path: pathStr,
+                }),
+                [],
+            );
+            return;
         }
 
-        callback(null, bytesToRead, buffer);
+        const files = Array.from(node.children.keys());
+        callback(null, files);
     }
 }

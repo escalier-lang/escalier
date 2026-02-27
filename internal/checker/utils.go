@@ -300,13 +300,9 @@ func (c *Checker) validateTypeParams(
 		}
 
 		// Check if defaults match
-		if (existing.Default == nil) != (new.Default == nil) {
-			errors = append(errors, &TypeParamMismatchError{
-				InterfaceName: interfaceName,
-				message:       fmt.Sprintf("Type parameter '%s' default mismatch in interface '%s'", new.Name, interfaceName),
-				span:          span,
-			})
-		} else if existing.Default != nil && new.Default != nil {
+		// TypeScript allows extensions to omit defaults if the original has them.
+		// The original's default is used. Only error if extension provides a DIFFERENT default.
+		if existing.Default != nil && new.Default != nil {
 			// Both have defaults, check if they're compatible
 			unifyErrors := c.Unify(ctx, existing.Default, new.Default)
 			if len(unifyErrors) > 0 {

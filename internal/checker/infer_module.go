@@ -1504,6 +1504,7 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 
 // validateInterfaceMerge checks that when merging interface declarations,
 // properties with the same name have compatible (identical) types as required by TypeScript.
+// Methods are allowed to have different signatures (method overloading).
 func (c *Checker) validateInterfaceMerge(
 	ctx Context,
 	existingInterface *type_system.ObjectType,
@@ -1513,13 +1514,16 @@ func (c *Checker) validateInterfaceMerge(
 	errors := []Error{}
 
 	// Build a map of property names to their types from the existing interface
+	// Track whether each name is a method (allows overloading) or a property (must be identical)
 	existingProps := make(map[type_system.ObjTypeKey]type_system.Type)
+	existingMethods := make(map[type_system.ObjTypeKey]bool)
 	for _, elem := range existingInterface.Elems {
 		switch elem := elem.(type) {
 		case *type_system.PropertyElem:
 			existingProps[elem.Name] = elem.Value
 		case *type_system.MethodElem:
 			existingProps[elem.Name] = elem.Fn
+			existingMethods[elem.Name] = true
 		case *type_system.GetterElem:
 			existingProps[elem.Name] = elem.Fn.Return
 		case *type_system.SetterElem:
@@ -1531,6 +1535,7 @@ func (c *Checker) validateInterfaceMerge(
 	for _, elem := range newInterface.Elems {
 		var name type_system.ObjTypeKey
 		var newType type_system.Type
+		isMethod := false
 
 		switch elem := elem.(type) {
 		case *type_system.PropertyElem:
@@ -1539,6 +1544,7 @@ func (c *Checker) validateInterfaceMerge(
 		case *type_system.MethodElem:
 			name = elem.Name
 			newType = elem.Fn
+			isMethod = true
 		case *type_system.GetterElem:
 			name = elem.Name
 			newType = elem.Fn.Return
@@ -1551,6 +1557,13 @@ func (c *Checker) validateInterfaceMerge(
 
 		// If a property with this name already exists, check type compatibility
 		if existingType, exists := existingProps[name]; exists {
+			// TypeScript allows method overloading - methods with different signatures
+			// are allowed and become overloads. Only check compatibility for non-methods.
+			if isMethod && existingMethods[name] {
+				// Both are methods - allow different signatures (method overloading)
+				continue
+			}
+
 			// Properties with the same name must have identical types
 			unifyErrors := c.Unify(ctx, newType, existingType)
 			if len(unifyErrors) > 0 {

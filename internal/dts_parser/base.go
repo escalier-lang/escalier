@@ -363,11 +363,13 @@ func (p *DtsParser) parsePrimaryType() TypeAnn {
 	}
 }
 
-// parseReadonlyArrayType parses readonly array types: readonly T[]
-// The readonly modifier creates a readonly array with element type T
+// parseReadonlyArrayType parses readonly array and tuple types:
+// - readonly T[] -> ArrayType{ElementType: T, Readonly: true}
+// - readonly [K, V] -> TupleType{Elements: [K, V], Readonly: true}
 // Examples:
 // - readonly string[] -> ArrayType{ElementType: PrimitiveType(string), Readonly: true}
-// - readonly string[][] -> outer non-readonly ArrayType containing inner readonly ArrayType{ElementType: PrimitiveType(string), Readonly: true}
+// - readonly [string, number] -> TupleType{Elements: [string, number], Readonly: true}
+// - readonly (readonly [K, V])[] -> ArrayType with readonly tuple element type
 func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
 	start := p.expect(Readonly)
 	if start == nil {
@@ -381,7 +383,21 @@ func (p *DtsParser) parseReadonlyArrayType() TypeAnn {
 		return nil
 	}
 
-	// Expect at least one array bracket []
+	// If the element type is a tuple, mark it as readonly and return it
+	// This handles: readonly [K, V]
+	if tupleType, ok := elementType.(*TupleType); ok {
+		tupleType.Readonly = true
+		// Update span to include the 'readonly' keyword
+		tupleType.span = ast.Span{
+			Start:    start.Span.Start,
+			End:      tupleType.span.End,
+			SourceID: start.Span.SourceID,
+		}
+		return tupleType
+	}
+
+	// For non-tuple types, expect array brackets []
+	// This handles: readonly T[]
 	if p.peek().Type != OpenBracket {
 		p.reportError(p.peek().Span, "Expected '[]' after 'readonly T' to form readonly array type")
 		return nil

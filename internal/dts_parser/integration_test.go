@@ -77,6 +77,72 @@ func TestParseTypeScriptLibDts(t *testing.T) {
 	}
 }
 
+func TestParseES2015LibFiles(t *testing.T) {
+	// Find the repo root by looking for go.mod
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Fatal("Could not find repository root:", err)
+	}
+
+	// ES2015 sub-library files (not the bundle file lib.es2015.d.ts)
+	es2015Files := []string{
+		"lib.es2015.core.d.ts",
+		"lib.es2015.collection.d.ts",
+		"lib.es2015.iterable.d.ts",
+		"lib.es2015.generator.d.ts",
+		"lib.es2015.promise.d.ts",
+		"lib.es2015.proxy.d.ts",
+		"lib.es2015.reflect.d.ts",
+		"lib.es2015.symbol.d.ts",
+		"lib.es2015.symbol.wellknown.d.ts",
+	}
+
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+
+	for _, filename := range es2015Files {
+		t.Run(filename, func(t *testing.T) {
+			libPath := filepath.Join(libDir, filename)
+
+			// Check if the file exists
+			if _, err := os.Stat(libPath); os.IsNotExist(err) {
+				t.Skipf("TypeScript %s not found at: %s", filename, libPath)
+			}
+
+			// Read the file
+			contents, err := os.ReadFile(libPath)
+			if err != nil {
+				t.Fatalf("Failed to read %s: %v", filename, err)
+			}
+
+			source := &ast.Source{
+				Path:     libPath,
+				Contents: string(contents),
+				ID:       0,
+			}
+
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+
+			// Log statistics
+			t.Logf("Parsed %s: %d bytes", filename, len(contents))
+
+			if len(errors) > 0 {
+				// Log first 20 errors for debugging
+				maxErrors := 20
+				if len(errors) < maxErrors {
+					maxErrors = len(errors)
+				}
+				t.Errorf("Got %d parse errors. First %d:", len(errors), maxErrors)
+				for i := 0; i < maxErrors; i++ {
+					t.Errorf("  %v", errors[i])
+				}
+			} else {
+				t.Logf("Parsed successfully: %d statements", len(module.Statements))
+			}
+		})
+	}
+}
+
 func TestParseTypesReact(t *testing.T) {
 	// Find the repo root by looking for go.mod
 	repoRoot, err := findRepoRoot()

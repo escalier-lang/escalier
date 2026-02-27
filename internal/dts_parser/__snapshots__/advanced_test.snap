@@ -1489,7 +1489,8 @@
                 },
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:40},
             End:      ast.Location{Line:1, Column:46},
             SourceID: 0,
@@ -1934,7 +1935,8 @@
                 },
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:49},
             End:      ast.Location{Line:1, Column:58},
             SourceID: 0,
@@ -6993,7 +6995,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:10},
         SourceID: 0,
@@ -7041,7 +7044,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:18},
         SourceID: 0,
@@ -7107,7 +7111,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
         SourceID: 0,
@@ -7144,7 +7149,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:13},
         SourceID: 0,
@@ -7206,7 +7212,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:24},
         SourceID: 0,
@@ -7260,7 +7267,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:21},
         SourceID: 0,
@@ -7314,7 +7322,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:21},
         SourceID: 0,
@@ -7352,7 +7361,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:12},
         SourceID: 0,
@@ -7407,7 +7417,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:12},
         SourceID: 0,
@@ -7479,7 +7490,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:27},
         SourceID: 0,
@@ -7535,7 +7547,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:17},
         SourceID: 0,
@@ -7587,7 +7600,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                         },
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
                     End:      ast.Location{Line:1, Column:18},
                     SourceID: 0,
@@ -7602,7 +7616,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
@@ -7708,7 +7723,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             },
         },
     },
-    span: ast.Span{
+    Readonly: false,
+    span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
         SourceID: 0,
@@ -8562,7 +8578,8 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                 },
             },
         },
-        span: ast.Span{
+        Readonly: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:79},
             End:      ast.Location{Line:1, Column:88},
             SourceID: 0,

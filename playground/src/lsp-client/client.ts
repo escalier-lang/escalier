@@ -13,6 +13,13 @@ const Go = globalThis.Go;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const enosys = () => {
+    const err = new Error('not implemented');
+    // @ts-ignore
+    err.code = 'ENOSYS';
+    return err;
+};
+
 class SimpleStream {
     private chunks: Array<Uint8Array>;
     private emitter: EventEmitter;
@@ -48,7 +55,7 @@ export class Client {
     private contentLength: number;
     private messageBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer, fs: FSAPI) {
+    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: FSAPI) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -131,15 +138,16 @@ export class Client {
         // };
 
         globalThis.fs = {
+            // Defined in src/syscall/syscall_js.go in https://github.com/golang
             constants: {
-                O_WRONLY: -1,
-                O_RDWR: -1,
-                O_CREAT: -1,
-                O_TRUNC: -1,
-                O_APPEND: -1,
-                O_EXCL: -1,
-                O_DIRECTORY: -1,
-            }, // unused
+                O_WRONLY: 1,
+                O_RDWR: 2,
+                O_CREAT: 64,
+                O_TRUNC: 512,
+                O_APPEND: 1024,
+                O_EXCL: 128,
+                O_DIRECTORY: 8192,
+            },
             // writeSync(fd, buf) {
             //     outputBuf += decoder.decode(buf);
             //     const nl = outputBuf.lastIndexOf("\n");
@@ -290,15 +298,61 @@ export class Client {
                 }
             },
             // readSync(...args) {console.log('readFileSync:', args)},
-            // readdir(path, callback) {callback(enosys())},
+            readdir(
+                path: PathLike,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    files: string[],
+                ) => void,
+            ) {
+                return fs.readdir(path, callback);
+            },
             // readlink(path, callback) {callback(enosys())},
             // rename(from, to, callback) {callback(enosys())},
             // rmdir(path, callback) {callback(enosys())},
-            // stat(path, callback) {callback(enosys())},
+            stat(
+                path: PathLike,
+                callback: (
+                    err: NodeJS.ErrnoException | null,
+                    stats: Stats,
+                ) => void,
+            ) {
+                return fs.stat(path, callback);
+            },
             // symlink(path, link, callback) {callback(enosys())},
             // truncate(path, length, callback) {callback(enosys())},
             // unlink(path, callback) {callback(enosys())},
             // utimes(path, atime, mtime, callback) {callback(enosys())},
+        };
+
+        // @ts-ignore
+        globalThis.process = {
+            getuid() {
+                return -1;
+            },
+            getgid() {
+                return -1;
+            },
+            geteuid() {
+                return -1;
+            },
+            getegid() {
+                return -1;
+            },
+            getgroups() {
+                throw enosys();
+            },
+            pid: -1,
+            ppid: -1,
+            umask() {
+                throw enosys();
+            },
+            cwd() {
+                return cwd;
+            },
+            chdir() {
+                throw enosys();
+            },
         };
 
         // TODO: make this a proxy object so that we can trap other fs methods

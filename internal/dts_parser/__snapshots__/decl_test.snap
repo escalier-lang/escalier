@@ -1448,7 +1448,8 @@
                         },
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:30},
                     SourceID: 0,
@@ -6036,7 +6037,8 @@
                         },
                     },
                 },
-                span: ast.Span{
+                Readonly: false,
+                span:     ast.Span{
                     Start:    ast.Location{Line:1, Column:20},
                     End:      ast.Location{Line:1, Column:36},
                     SourceID: 0,
