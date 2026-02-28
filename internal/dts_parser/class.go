@@ -155,10 +155,10 @@ func (p *DtsParser) parsePropertyName() PropertyKey {
 		// Computed property name [expr]
 		startToken := p.consume() // consume '['
 
-		// Parse the type expression inside brackets
-		expr := p.parseTypeAnn()
+		// Parse the expression inside brackets
+		expr := p.parseExpr()
 		if expr == nil {
-			p.reportError(p.peek().Span, "Expected type expression in computed property name")
+			p.reportError(p.peek().Span, "Expected expression in computed property name")
 			return nil
 		}
 

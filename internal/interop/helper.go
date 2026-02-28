@@ -81,6 +81,32 @@ func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 	}, nil
 }
 
+// convertExpr converts a dts_parser.Expr to an ast.Expr
+func convertExpr(expr dts_parser.Expr) (ast.Expr, error) {
+	switch e := expr.(type) {
+	case *dts_parser.IdentExpr:
+		return ast.NewIdent(e.Name, e.Span()), nil
+	case *dts_parser.MemberExpr:
+		obj, err := convertExpr(e.Object)
+		if err != nil {
+			return nil, err
+		}
+		prop := ast.NewIdentifier(e.Prop.Name, e.Prop.Span())
+		return ast.NewMember(obj, prop, false, e.Span()), nil
+	case *dts_parser.LitExpr:
+		switch lit := e.Lit.(type) {
+		case *dts_parser.StringLiteral:
+			return ast.NewLitExpr(ast.NewString(lit.Value, lit.Span())), nil
+		case *dts_parser.NumberLiteral:
+			return ast.NewLitExpr(ast.NewNumber(lit.Value, lit.Span())), nil
+		default:
+			return nil, fmt.Errorf("convertExpr: unsupported literal type %T", lit)
+		}
+	default:
+		return nil, fmt.Errorf("convertExpr: unsupported expression type %T", expr)
+	}
+}
+
 func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error) {
 	switch k := pk.(type) {
 	case *dts_parser.Ident:
@@ -90,11 +116,11 @@ func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error) {
 	case *dts_parser.NumberLiteral:
 		return ast.NewNumber(k.Value, k.Span()), nil
 	case *dts_parser.ComputedKey:
-		// In dts_parser, ComputedKey.Expr is a TypeAnn
-		// In ast, ComputedKey.Expr is an Expr
-		// We need to handle this conversion somehow
-		// TODO: implement conversion for computed keys
-		return nil, fmt.Errorf("convertPropertyKey: ComputedKey not yet implemented")
+		expr, err := convertExpr(k.Expr)
+		if err != nil {
+			return nil, fmt.Errorf("converting computed key: %w", err)
+		}
+		return ast.NewComputedKey(expr), nil
 	default:
 		return nil, fmt.Errorf("convertPropertyKey: unknown property key type %T", pk)
 	}

@@ -10,21 +10,21 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 | Phase | Description | Status | Progress | Blocking Issues |
 |-------|-------------|--------|----------|-----------------|
-| **1** | Recursive Lib File Loading | 🔒 Blocked | 80% | Awaiting Phase 3 |
+| **1** | Recursive Lib File Loading | 🚧 In Progress | 90% | Task 1.3: Enable ES2015 target |
 | **2** | Parse `unique symbol` Type | ✅ Done | 100% | None |
-| **3** | Convert Computed Property Keys | 🚧 In Progress | 25% | **CRITICAL BLOCKER** (Task 3.3 done) |
+| **3** | Convert Computed Property Keys | ✅ Done | 100% | None |
 | **4** | Dependency Graph for Computed Keys | 🚧 In Progress | 70% | Needs computed key tracking |
 | **5** | Infer Symbol-Keyed Properties | 🚧 In Progress | 60% | Task 5.4 needs verification |
 | **6** | Symbol Key Property Access | 🚧 In Progress | 30% | Needs verification |
-| **7** | Testing | ⬜ Not Started | 0% | Awaiting implementation |
+| **7** | Testing | 🚧 In Progress | 15% | Interop tests added |
 
 **Legend:** ✅ Done | 🚧 In Progress | ⬜ Not Started | 🔒 Blocked
 
 **Task Breakdown:**
 - **Phase 1:** 1.1-1.3 ✅ | 1.4 ⬜ Config | 1.5 ✅ Refactor
-- **Phase 3:** 3.1 ⬜ | 3.2 ⬜ | 3.3 ✅ | 3.4 ⬜ Validation
+- **Phase 3:** 3.0 ✅ Expr types | 3.1 ✅ parseExpr | 3.2 ✅ convertExpr | 3.3 ✅ | 3.4 ✅ Validation
 - **Phase 5:** 5.1-5.3 ✅ | 5.4 ⬜ Interface verification
-- **Phase 7:** 7.1-7.5 ⬜ | 7.6 ⬜ Lib discovery tests
+- **Phase 7:** 7.1-7.5 ⬜ | 7.3 ✅ Interop tests | 7.6 ⬜ Lib discovery tests
 
 ---
 
@@ -46,8 +46,9 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 ### What's Missing
 - ~~Parsing `unique symbol` type in dts_parser~~ ✅ Done
-- Converting `ComputedKey` in interop layer (returns error) ❌ **BLOCKER**
-- ~~Recursive lib file loading with reference following~~ ✅ Done (disabled pending Phase 3)
+- ~~Converting `ComputedKey` in interop layer~~ ✅ Done
+- ~~Recursive lib file loading with reference following~~ ✅ Done (disabled pending ES2015 enable)
+- Enable ES2015 target in prelude.go (Task 1.3)
 - Dependency graph awareness of computed keys (partial)
 - Type inference for symbol-keyed properties in interfaces (works for classes)
 
@@ -55,11 +56,13 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `internal/dts_parser/ast.go` | Contains `ComputedKey` struct | ✅ |
-| `internal/dts_parser/object.go` | Parses object type members | ✅ |
+| `internal/dts_parser/ast.go` | `ComputedKey`, `Expr` interface, `IdentExpr`, `MemberExpr`, `LitExpr` | ✅ |
+| `internal/dts_parser/object.go` | Parses object type members, `parseExpr()`, `parseIdentOrMemberExpr()` | ✅ |
+| `internal/dts_parser/class.go` | Class computed key parsing uses `parseExpr()` | ✅ |
 | `internal/dts_parser/lexer.go` | `unique` keyword token | ✅ |
 | `internal/dts_parser/base.go` | Parses `unique symbol` | ✅ |
-| `internal/interop/helper.go` | `convertPropertyKey()` - needs ComputedKey support | ❌ |
+| `internal/interop/helper.go` | `convertExpr()`, `convertPropertyKey()` with ComputedKey support | ✅ |
+| `internal/interop/helper_test.go` | ComputedKey validation tests | ✅ |
 | `internal/checker/prelude.go` | Lib file loading via `discoverESLibFiles()` | ✅ (ES2015 disabled) |
 | `internal/checker/infer_module.go` | Declaration processing and merging | 🚧 |
 | `internal/type_system/types.go` | `ObjectType` with `SymbolKeyMap` | ✅ |
@@ -230,80 +233,137 @@ type UniqueSymbolTypeAnn struct {
 
 ## Phase 3: Convert Computed Property Keys (FR4)
 
-**Status:** 🚧 IN PROGRESS (25% complete - Task 3.3 done) - **CRITICAL BLOCKER**
+**Status:** ✅ DONE (100% complete)
 **Difficulty:** Medium
 **Risk:** Medium (must handle all valid computed key patterns)
 
 **Goal:** Convert `ComputedKey` from dts_parser AST to Escalier AST.
 
-**This phase is the critical blocker preventing ES2015+ support.**
+**This phase was the critical blocker preventing ES2015+ support - now resolved.**
 
-### Task 3.1: Add `convertTypeAnnToExpr` Helper ⬜ NOT STARTED
+### Task 3.0: Add Expr Interface to dts_parser ✅ DONE
 
-**Location:** `internal/interop/helper.go`
+**Location:** `internal/dts_parser/ast.go:46-81`
 **Difficulty:** Medium
-**Risk:** Medium
+**Risk:** Low
 
-This helper converts type annotations used in computed key contexts to expressions:
+**Implementation completed:**
+
+Added proper `Expr` interface and expression types to `dts_parser/ast.go`:
 
 ```go
-// convertTypeAnnToExpr converts a type annotation (used in computed key context)
-// to an expression. Only supports patterns valid in computed keys.
-func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
-    switch t := typeAnn.(type) {
-    case *dts_parser.IdentTypeAnn:
-        // [foo] -> Ident("foo")
-        return ast.NewIdent(t.Name.Name, convertSpan(t.Span())), nil
+// Expr represents an expression in computed keys
+type Expr interface {
+    isExpr()
+    Node
+}
 
-    case *dts_parser.MemberTypeAnn:
-        // [Symbol.iterator] -> Member(Ident("Symbol"), Ident("iterator"))
-        left, err := convertTypeAnnToExpr(t.Left)
-        if err != nil {
-            return nil, err
-        }
-        right := ast.NewIdent(t.Right.Name, convertSpan(t.Right.Span()))
-        return ast.NewMember(left, right, convertSpan(t.Span())), nil
+func (*LitExpr) isExpr()    {}
+func (*IdentExpr) isExpr()  {}
+func (*MemberExpr) isExpr() {}
 
-    case *dts_parser.TypeofTypeAnn:
-        // [typeof foo] -> needs special handling
-        return nil, fmt.Errorf("typeof in computed key not yet supported")
+// LitExpr wraps a Literal as an expression
+type LitExpr struct {
+    Lit  Literal
+    span ast.Span
+}
 
-    default:
-        return nil, fmt.Errorf("unsupported type annotation in computed key: %T", typeAnn)
-    }
+type IdentExpr struct {
+    Name string
+    span ast.Span
+}
+
+type MemberExpr struct {
+    Object Expr
+    Prop   *Ident
+    span   ast.Span
 }
 ```
 
-**Patterns to handle:**
-1. `IdentTypeAnn` → Simple identifier like `[foo]` (required)
-2. `MemberTypeAnn` → Member access like `[Symbol.iterator]` (required, most common)
-3. `TypeofTypeAnn` → Typeof expression (**deferred per FR4** - return error if encountered)
+**Updated `ComputedKey` struct** (`internal/dts_parser/ast.go:457-460`):
+```go
+type ComputedKey struct {
+    Expr Expr // expression inside [...] (was TypeAnn)
+    span ast.Span
+}
+```
 
-### Task 3.2: Implement ComputedKey Conversion ⬜ NOT STARTED
+### Task 3.1: Add `parseExpr()` Function ✅ DONE
 
-**Location:** `internal/interop/helper.go` - `convertPropertyKey()` function, `ComputedKey` case
-**Difficulty:** Easy (once Task 3.1 is done)
+**Location:** `internal/dts_parser/object.go:601-648`
+**Difficulty:** Medium
 **Risk:** Low
 
-**Current code (blocking):**
+**Implementation completed:**
+
+Added expression parsing functions for computed keys:
+
 ```go
-case *dts_parser.ComputedKey:
-    // In dts_parser, ComputedKey.Expr is a TypeAnn
-    // In ast, ComputedKey.Expr is an Expr
-    // We need to handle this conversion somehow
-    // TODO: implement conversion for computed keys
-    return nil, fmt.Errorf("convertPropertyKey: ComputedKey not yet implemented")
+// parseExpr parses an expression for computed keys.
+// Supports: identifiers, member expressions (a.b.c), string literals, number literals
+func (p *DtsParser) parseExpr() Expr {
+    switch token.Type {
+    case StrLit:
+        return &LitExpr{Lit: &StringLiteral{...}, span: tok.Span}
+    case NumLit:
+        return &LitExpr{Lit: &NumberLiteral{...}, span: tok.Span}
+    case Identifier:
+        return p.parseIdentOrMemberExpr()
+    default:
+        return nil
+    }
+}
+
+// parseIdentOrMemberExpr parses identifier or member expression (a.b.c)
+func (p *DtsParser) parseIdentOrMemberExpr() Expr {
+    // Parses chains like Symbol.iterator into MemberExpr
+}
 ```
 
-**Required change:**
+**Also updated:**
+- `internal/dts_parser/object.go:582` - `parseComputedPropertyKey()` uses `parseExpr()`
+- `internal/dts_parser/class.go:159` - Class computed key parsing uses `parseExpr()`
+
+### Task 3.2: Implement `convertExpr()` Helper ✅ DONE
+
+**Location:** `internal/interop/helper.go:84-107`
+**Difficulty:** Easy
+**Risk:** Low
+
+**Implementation completed:**
+
+Single `convertExpr()` function replaces previous `convertQualIdentToExpr` and `convertTypeAnnToExpr`:
+
 ```go
-case *dts_parser.ComputedKey:
-    expr, err := convertTypeAnnToExpr(k.Expr)
-    if err != nil {
-        return nil, fmt.Errorf("converting computed key: %w", err)
+// convertExpr converts a dts_parser.Expr to an ast.Expr
+func convertExpr(expr dts_parser.Expr) (ast.Expr, error) {
+    switch e := expr.(type) {
+    case *dts_parser.IdentExpr:
+        return ast.NewIdent(e.Name, e.Span()), nil
+    case *dts_parser.MemberExpr:
+        obj, err := convertExpr(e.Object)
+        if err != nil {
+            return nil, err
+        }
+        prop := ast.NewIdentifier(e.Prop.Name, e.Prop.Span())
+        return ast.NewMember(obj, prop, false, e.Span()), nil
+    case *dts_parser.LitExpr:
+        switch lit := e.Lit.(type) {
+        case *dts_parser.StringLiteral:
+            return ast.NewLitExpr(ast.NewString(lit.Value, lit.Span())), nil
+        case *dts_parser.NumberLiteral:
+            return ast.NewLitExpr(ast.NewNumber(lit.Value, lit.Span())), nil
+        }
     }
-    return ast.NewComputedKey(expr, convertSpan(k.Span())), nil
+    return nil, fmt.Errorf("convertExpr: unsupported expression type %T", expr)
+}
 ```
+
+**Patterns handled:**
+1. ✅ `IdentExpr` → Simple identifier like `[foo]`
+2. ✅ `MemberExpr` → Member access like `[Symbol.iterator]`
+3. ✅ `LitExpr` with `StringLiteral` → String literal like `["key"]`
+4. ✅ `LitExpr` with `NumberLiteral` → Number literal like `[42]`
 
 ### Task 3.3: Verify AST ComputedKey Exists ✅ DONE
 
@@ -319,49 +379,41 @@ type ComputedKey struct {
 
 The AST `ComputedKey` already exists and can be used as an `ObjKey`.
 
-### Task 3.4: Validate ComputedKey Conversion ⬜ NOT STARTED
+### Task 3.4: Validate ComputedKey Conversion ✅ DONE
 
+**Location:** `internal/interop/helper_test.go:745-925`
 **Difficulty:** Easy
 **Risk:** Low
 
-**Purpose:** Before enabling ES2015+ globally, validate that ComputedKey conversion works correctly on a single lib file.
+**Purpose:** Validate that ComputedKey conversion works correctly before enabling ES2015+ globally.
 
-**Validation steps:**
+**Tests implemented:**
 
-1. **Write a minimal test:**
-```go
-func TestConvertComputedKey(t *testing.T) {
-    source := `interface Iterable<T> {
-        [Symbol.iterator](): Iterator<T>;
-    }`
-    module, err := dts_parser.Parse(source)
-    require.NoError(t, err)
+1. **`TestConvertComputedKey`** - Validates member access computed keys:
+   - Tests `[Symbol.iterator]` method conversion
+   - Tests `[Symbol.toStringTag]` property conversion
+   - Tests `[Symbol.hasInstance]` method conversion
+   - Verifies `ComputedKey` contains `MemberExpr` with correct object/property names
 
-    converted, err := interop.ConvertModule(module)
-    require.NoError(t, err)
+2. **`TestConvertComputedKeySimpleIdent`** - Validates simple identifier computed keys:
+   - Tests `[key]` property conversion
+   - Verifies `ComputedKey` contains `IdentExpr` with correct name
 
-    // Verify the interface has a method with ComputedKey
-    iface := converted.Stmts[0].(*ast.InterfaceDecl)
-    method := iface.Body.Elems[0].(*ast.MethodTypeAnn)
-    _, ok := method.Name.(*ast.ComputedKey)
-    assert.True(t, ok, "expected ComputedKey")
-}
-```
+3. **`TestConvertES2015LibFiles`** - Tests all ES2015 lib files convert without errors:
+   - `lib.es2015.symbol.d.ts` ✅
+   - `lib.es2015.iterable.d.ts` ✅
+   - All 9 ES2015 lib files ✅
 
-2. **Test against real lib file:**
+**Verification:**
 ```bash
-# Create a simple test that parses and converts lib.es2015.symbol.d.ts
-go test ./internal/interop/... -run TestConvertES2015Symbol -v
+go test ./internal/interop/... -run TestConvertComputedKey -v
+go test ./internal/interop/... -run TestConvertES2015LibFiles -v
 ```
-
-3. **If validation passes:** Proceed to enable ES2015 target (Task 1.3)
-
-4. **If validation fails:** Debug the specific failure before proceeding
 
 **Success criteria:**
-- [ ] `lib.es2015.symbol.d.ts` converts without errors
-- [ ] `lib.es2015.iterable.d.ts` converts without errors
-- [ ] ComputedKey expressions are correctly converted to `ast.ComputedKey`
+- [x] `lib.es2015.symbol.d.ts` converts without errors ✅
+- [x] `lib.es2015.iterable.d.ts` converts without errors ✅
+- [x] ComputedKey expressions are correctly converted to `ast.ComputedKey` ✅
 
 ---
 
@@ -680,13 +732,13 @@ func TestDiscoverESLibFilesNoCycles(t *testing.T) {
 ### Recommended Sequence (Updated)
 
 ```
-Task 3.1-3.2: ComputedKey conversion ← CRITICAL, do this first!
+Task 3.1-3.2: ComputedKey conversion ✅ DONE
     ↓
-Task 3.4: Validate conversion works on ES2015 lib files
+Task 3.4: Validate conversion works on ES2015 lib files ✅ DONE
     ↓
-Task 1.5: Refactor discoverESLibFiles (optional, simplifies code)
+Task 1.5: Refactor discoverESLibFiles ✅ DONE
     ↓
-Task 1.3: Enable ES2015 target (flip targetVersion)
+Task 1.3: Enable ES2015 target (flip targetVersion) ← NEXT STEP
     ↓
 Task 5.4: Verify/implement interface symbol key inference
     ↓
@@ -699,10 +751,10 @@ Phase 7: Testing (throughout)
 
 ### Rationale (Updated)
 
-1. **Tasks 3.1-3.2 first**: This is the **critical blocker**. ~35 lines of code unlocks ES2015+
-2. **Task 3.4**: Validate the conversion works on actual ES2015 lib files before proceeding
-3. **Task 1.5 (optional)**: Simplify `discoverESLibFiles` to use recursive loading. Simpler code will be easier to debug.
-4. **Task 1.3**: Change `targetVersion := "es5"` to `"es2015"` in prelude.go
+1. ~~**Tasks 3.1-3.2 first**: This is the **critical blocker**. ~35 lines of code unlocks ES2015+~~ ✅ Done
+2. ~~**Task 3.4**: Validate the conversion works on actual ES2015 lib files before proceeding~~ ✅ Done
+3. ~~**Task 1.5**: Simplify `discoverESLibFiles` to use recursive loading~~ ✅ Done
+4. **Task 1.3**: Change `targetVersion := "es5"` to `"es2015"` in prelude.go ← **NEXT**
 5. **Task 5.4**: Verify interface symbol key inference works (may already work based on class implementation)
 6. **Task 4.1**: May not be needed if lib file loading order already handles Symbol being defined first
 7. **Phase 6**: Verify existing property access infrastructure works
@@ -712,45 +764,46 @@ Phase 7: Testing (throughout)
 
 ## Effort Estimates
 
-| Task | Difficulty | Lines of Code | Risk |
-|------|------------|---------------|------|
-| Task 3.1: convertTypeAnnToExpr | Medium | ~30 | Medium |
-| Task 3.2: ComputedKey conversion | Easy | ~5 | Low |
-| Task 3.4: Validation tests | Easy | ~30 | Low |
-| Task 1.3: Enable ES2015 | Trivial | ~1 | Low |
-| Task 1.5: Refactor discoverESLibFiles | Medium | ~30 (net reduction) | Low |
-| Task 4.1: Computed key deps | Medium | ~40 | Medium |
-| Task 5.4: Interface symbol keys | Medium | ~20-40 | Medium |
-| Task 6.1: Verify property access | Unknown | TBD | Low |
-| Task 7.6: Lib discovery tests | Easy | ~50 | Low |
+| Task | Difficulty | Lines of Code | Risk | Status |
+|------|------------|---------------|------|--------|
+| Task 3.0: Add Expr types to dts_parser | Medium | ~35 | Low | ✅ Done |
+| Task 3.1: Add parseExpr() | Medium | ~45 | Low | ✅ Done |
+| Task 3.2: Add convertExpr() | Easy | ~25 | Low | ✅ Done |
+| Task 3.4: Validation tests | Easy | ~180 | Low | ✅ Done |
+| Task 1.3: Enable ES2015 | Trivial | ~1 | Low | ⬜ Next |
+| Task 1.5: Refactor discoverESLibFiles | Medium | ~30 (net reduction) | Low | ✅ Done |
+| Task 4.1: Computed key deps | Medium | ~40 | Medium | ⬜ |
+| Task 5.4: Interface symbol keys | Medium | ~20-40 | Medium | ⬜ |
+| Task 6.1: Verify property access | Unknown | TBD | Low | ⬜ |
+| Task 7.6: Lib discovery tests | Easy | ~50 | Low | ⬜ |
 
-**Total estimated effort for Phase 3:** ~65 lines (including validation tests)
+**Phase 3 completed:** ~285 lines added (including new Expr types, parseExpr, convertExpr, and tests)
 **Task 1.5 simplification:** Removes ~60 lines, adds ~30 lines (net -30 lines)
 
 ---
 
 ## Checkpoints
 
-### Checkpoint 1: Parsing Works
+### Checkpoint 1: Parsing Works ✅ COMPLETE
 - [x] `unique symbol` parses correctly ✅
 - [x] `[Symbol.iterator]` parses as ComputedKey ✅ (dts_parser)
-- [ ] All ES2015 lib files parse without errors (blocked by Phase 3)
+- [x] All ES2015 lib files parse without errors ✅
 
 **Verification:**
 ```bash
 go test ./internal/dts_parser/... -run TestParse -v
+go test ./internal/interop/... -run TestConvertES2015LibFiles -v
 ```
 
-### Checkpoint 2: Interop Works
-- [ ] ComputedKey converts to Escalier AST ❌ **BLOCKER**
+### Checkpoint 2: Interop Works ✅ COMPLETE
+- [x] ComputedKey converts to Escalier AST ✅
 - [x] UniqueSymbolType converts correctly ✅
-- [ ] No errors when converting ES2015 lib files
+- [x] No errors when converting ES2015 lib files ✅
 
 **Verification:**
 ```bash
-# After implementing Task 3.1 and 3.2:
 go test ./internal/interop/... -run TestConvertComputedKey -v
-go test ./internal/interop/... -run TestConvertES2015 -v
+go test ./internal/interop/... -run TestConvertES2015LibFiles -v
 ```
 
 ### Checkpoint 3: Loading Works
@@ -868,9 +921,9 @@ All items from requirements.md Success Criteria section:
 4. [x] All 9 ES2015 lib files parse without errors ✅ (dts_parser)
 
 ### Interop Criteria
-5. [ ] Computed keys with `Symbol.X` expressions convert correctly ❌ **BLOCKER**
+5. [x] Computed keys with `Symbol.X` expressions convert correctly ✅
 6. [x] `unique symbol` type converts to a distinct type representation ✅
-7. [ ] Interface declarations with symbol keys produce correct Escalier AST
+7. [x] Interface declarations with symbol keys produce correct Escalier AST ✅
 
 ### Type System Criteria
 8. [x] `ObjectType.SymbolKeyMap` is populated for ~~interfaces~~ classes with symbol keys ✅
@@ -886,8 +939,10 @@ All items from requirements.md Success Criteria section:
 
 ## Next Steps
 
-1. **Immediate:** Implement `convertTypeAnnToExpr` helper in `internal/interop/helper.go`
-2. **Immediate:** Update `convertPropertyKey` to handle `ComputedKey`
-3. **Test:** Verify ES2015 lib files convert without errors
-4. **Enable:** Change `targetVersion` to `"es2015"` in prelude.go
-5. **Verify:** Run type inference tests to confirm symbol-keyed properties work
+1. ~~**Immediate:** Implement `convertTypeAnnToExpr` helper in `internal/interop/helper.go`~~ ✅ Done
+2. ~~**Immediate:** Update `convertPropertyKey` to handle `ComputedKey`~~ ✅ Done
+3. ~~**Test:** Verify ES2015 lib files convert without errors~~ ✅ Done
+4. **Enable:** Change `targetVersion` to `"es2015"` in `internal/checker/prelude.go` (Task 1.3)
+5. **Verify:** Run type inference tests to confirm symbol-keyed properties work (Task 5.4)
+6. **Verify:** Test computed key dependency tracking if needed (Task 4.1)
+7. **Verify:** Test property access via symbol keys (Phase 6)

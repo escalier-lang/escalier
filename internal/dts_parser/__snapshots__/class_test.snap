@@ -3242,27 +3242,24 @@
             Members:    {
                 &dts_parser.GetterDecl{
                     Name: &dts_parser.ComputedKey{
-                        Expr: &dts_parser.TypeReference{
-                            Name: &dts_parser.Member{
-                                Left: &dts_parser.Ident{
-                                    Name: "Symbol",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:31},
-                                        End:      ast.Location{Line:1, Column:37},
-                                        SourceID: 0,
-                                    },
-                                },
-                                Right: &dts_parser.Ident{
-                                    Name: "toStringTag",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:38},
-                                        End:      ast.Location{Line:1, Column:49},
-                                        SourceID: 0,
-                                    },
+                        Expr: &dts_parser.MemberExpr{
+                            Object: &dts_parser.IdentExpr{
+                                Name: "Symbol",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:31},
+                                    End:      ast.Location{Line:1, Column:37},
+                                    SourceID: 0,
                                 },
                             },
-                            TypeArgs: nil,
-                            span:     ast.Span{
+                            Prop: &dts_parser.Ident{
+                                Name: "toStringTag",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:38},
+                                    End:      ast.Location{Line:1, Column:49},
+                                    SourceID: 0,
+                                },
+                            },
+                            span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:31},
                                 End:      ast.Location{Line:1, Column:49},
                                 SourceID: 0,
@@ -3321,27 +3318,24 @@
             Members:    {
                 &dts_parser.SetterDecl{
                     Name: &dts_parser.ComputedKey{
-                        Expr: &dts_parser.TypeReference{
-                            Name: &dts_parser.Member{
-                                Left: &dts_parser.Ident{
-                                    Name: "Symbol",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:31},
-                                        End:      ast.Location{Line:1, Column:37},
-                                        SourceID: 0,
-                                    },
-                                },
-                                Right: &dts_parser.Ident{
-                                    Name: "toStringTag",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:38},
-                                        End:      ast.Location{Line:1, Column:49},
-                                        SourceID: 0,
-                                    },
+                        Expr: &dts_parser.MemberExpr{
+                            Object: &dts_parser.IdentExpr{
+                                Name: "Symbol",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:31},
+                                    End:      ast.Location{Line:1, Column:37},
+                                    SourceID: 0,
                                 },
                             },
-                            TypeArgs: nil,
-                            span:     ast.Span{
+                            Prop: &dts_parser.Ident{
+                                Name: "toStringTag",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:38},
+                                    End:      ast.Location{Line:1, Column:49},
+                                    SourceID: 0,
+                                },
+                            },
+                            span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:31},
                                 End:      ast.Location{Line:1, Column:49},
                                 SourceID: 0,

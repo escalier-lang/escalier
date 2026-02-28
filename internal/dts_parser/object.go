@@ -578,10 +578,9 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 		return nil
 	}
 
-	// In .d.ts files, computed keys use type expressions
-	expr := p.parseTypeAnn()
+	expr := p.parseExpr()
 	if expr == nil {
-		p.reportError(p.peek().Span, "Expected type expression in computed key")
+		p.reportError(p.peek().Span, "Expected expression in computed key")
 		return nil
 	}
 
@@ -597,4 +596,84 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 	}
 
 	return &ComputedKey{Expr: expr, span: span}
+}
+
+// isIdentifierName returns true if the token type can be used as an IdentifierName
+// (identifiers and reserved words that can appear in member expressions per ECMAScript spec)
+func isIdentifierName(t TokenType) bool {
+	switch t {
+	case Identifier,
+		// Keywords allowed as property names per ECMAScript IdentifierName
+		// (matches the set allowed by parsePropertyKey)
+		String, Number, Boolean, Bigint,
+		Get, Set,
+		Catch, Try, Throw, Throws, Return, If, Else, Do, For,
+		New, Function, Var, Let, Const, Class, Extends,
+		Implements, Interface, Private, Protected, Public, Static, Yield, Await, Async,
+		Enum, Export, Import, As, From, Null, True, False,
+		Typeof, In, Namespace, ModuleKeyword, Declare, Type, Readonly,
+		Never, Unknown, Any, Undefined, Symbol, Unique, Abstract, Is, Asserts, Infer, Keyof,
+		Fn, Gen, Mut, Val, Void, Object, Intrinsic, Global:
+		return true
+	default:
+		return false
+	}
+}
+
+// parseExpr parses an expression for computed keys.
+// Supports: identifiers, member expressions (a.b.c), string literals, number literals
+func (p *DtsParser) parseExpr() Expr {
+	token := p.peek()
+
+	switch {
+	case token.Type == StrLit:
+		tok := p.consume()
+		return &LitExpr{
+			Lit:  &StringLiteral{Value: tok.Value, span: tok.Span},
+			span: tok.Span,
+		}
+	case token.Type == NumLit:
+		tok := p.consume()
+		val, err := strconv.ParseFloat(tok.Value, 64)
+		if err != nil {
+			p.reportError(tok.Span, "Invalid number literal in computed key")
+			return nil
+		}
+		return &LitExpr{
+			Lit:  &NumberLiteral{Value: val, span: tok.Span},
+			span: tok.Span,
+		}
+	case isIdentifierName(token.Type):
+		return p.parseIdentOrMemberExpr()
+	default:
+		return nil
+	}
+}
+
+// parseIdentOrMemberExpr parses identifier or member expression (a.b.c)
+// Accepts IdentifierName tokens (identifiers and reserved words) as roots and property names
+func (p *DtsParser) parseIdentOrMemberExpr() Expr {
+	tok := p.consume()
+	var expr Expr = &IdentExpr{Name: tok.Value, span: tok.Span}
+
+	for p.peek().Type == Dot {
+		p.consume() // consume '.'
+		propTok := p.peek()
+		if !isIdentifierName(propTok.Type) {
+			p.reportError(propTok.Span, "Expected identifier after '.'")
+			return nil
+		}
+		p.consume()
+		expr = &MemberExpr{
+			Object: expr,
+			Prop:   NewIdent(propTok.Value, propTok.Span),
+			span: ast.Span{
+				Start:    expr.Span().Start,
+				End:      propTok.Span.End,
+				SourceID: expr.Span().SourceID,
+			},
+		}
+	}
+
+	return expr
 }

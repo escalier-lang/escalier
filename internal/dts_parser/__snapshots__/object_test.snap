@@ -4543,8 +4543,8 @@
     Members: {
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.LiteralType{
-                    Literal: &dts_parser.StringLiteral{
+                Expr: &dts_parser.LitExpr{
+                    Lit: &dts_parser.StringLiteral{
                         Value: "computed",
                         span:  ast.Span{
                             Start:    ast.Location{Line:1, Column:4},
@@ -4594,8 +4594,8 @@
     Members: {
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.LiteralType{
-                    Literal: &dts_parser.NumberLiteral{
+                Expr: &dts_parser.LitExpr{
+                    Lit: &dts_parser.NumberLiteral{
                         Value: 42,
                         span:  ast.Span{
                             Start:    ast.Location{Line:1, Column:4},
@@ -4645,17 +4645,9 @@
     Members: {
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "K",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:4},
-                            End:      ast.Location{Line:1, Column:5},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                Expr: &dts_parser.IdentExpr{
+                    Name: "K",
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:4},
                         End:      ast.Location{Line:1, Column:5},
                         SourceID: 0,
@@ -4758,17 +4750,9 @@
     Members: {
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "K",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:4},
-                            End:      ast.Location{Line:1, Column:5},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                Expr: &dts_parser.IdentExpr{
+                    Name: "K",
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:4},
                         End:      ast.Location{Line:1, Column:5},
                         SourceID: 0,
@@ -4798,17 +4782,9 @@
         },
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "P",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:17},
-                            End:      ast.Location{Line:1, Column:18},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                Expr: &dts_parser.IdentExpr{
+                    Name: "P",
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:17},
                         End:      ast.Location{Line:1, Column:18},
                         SourceID: 0,
@@ -4875,17 +4851,9 @@
         },
         &dts_parser.PropertySignature{
             Name: &dts_parser.ComputedKey{
-                Expr: &dts_parser.TypeReference{
-                    Name: &dts_parser.Ident{
-                        Name: "K",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:18},
-                            End:      ast.Location{Line:1, Column:19},
-                            SourceID: 0,
-                        },
-                    },
-                    TypeArgs: nil,
-                    span:     ast.Span{
+                Expr: &dts_parser.IdentExpr{
+                    Name: "K",
+                    span: ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:19},
                         SourceID: 0,
@@ -4963,17 +4931,9 @@
                 Members: {
                     &dts_parser.PropertySignature{
                         Name: &dts_parser.ComputedKey{
-                            Expr: &dts_parser.TypeReference{
-                                Name: &dts_parser.Ident{
-                                    Name: "K",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:1, Column:13},
-                                        End:      ast.Location{Line:1, Column:14},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeArgs: nil,
-                                span:     ast.Span{
+                            Expr: &dts_parser.IdentExpr{
+                                Name: "K",
+                                span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:13},
                                     End:      ast.Location{Line:1, Column:14},
                                     SourceID: 0,
@@ -7385,6 +7345,109 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:105},
+        SourceID: 0,
+    },
+}
+---
+
+[TestComputedKeys/computed_identifier - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.PropertySignature{
+            Name: &dts_parser.ComputedKey{
+                Expr: &dts_parser.IdentExpr{
+                    Name: "K",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:4},
+                        End:      ast.Location{Line:1, Column:5},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:6},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &dts_parser.PrimitiveType{
+                Kind: 6,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:14},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:16},
+        SourceID: 0,
+    },
+}
+---
+
+[TestComputedKeys/computed_member_expression - 1]
+&dts_parser.ObjectType{
+    Members: {
+        &dts_parser.PropertySignature{
+            Name: &dts_parser.ComputedKey{
+                Expr: &dts_parser.MemberExpr{
+                    Object: &dts_parser.IdentExpr{
+                        Name: "Symbol",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:4},
+                            End:      ast.Location{Line:1, Column:10},
+                            SourceID: 0,
+                        },
+                    },
+                    Prop: &dts_parser.Ident{
+                        Name: "iterator",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:11},
+                            End:      ast.Location{Line:1, Column:19},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:4},
+                        End:      ast.Location{Line:1, Column:19},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:3},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+            },
+            TypeAnn: &dts_parser.PrimitiveType{
+                Kind: 0,
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:22},
+                    End:      ast.Location{Line:1, Column:25},
+                    SourceID: 0,
+                },
+            },
+            Optional: false,
+            Readonly: false,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:3},
+                End:      ast.Location{Line:1, Column:25},
+                SourceID: 0,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
         SourceID: 0,
     },
 }

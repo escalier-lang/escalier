@@ -741,3 +741,185 @@ func TestConvertSetterDecl(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertComputedKey validates that computed keys are correctly converted
+// from dts_parser AST to Escalier AST. This is Task 3.4 from the implementation plan.
+func TestConvertComputedKey(t *testing.T) {
+	tests := []struct {
+		name           string
+		source         string
+		expectedObject string // Expected object name (e.g., "Symbol")
+		expectedProp   string // Expected property name (e.g., "iterator")
+	}{
+		{
+			name: "Symbol.iterator method",
+			source: `interface Iterable<T> {
+				[Symbol.iterator](): Iterator<T>;
+			}`,
+			expectedObject: "Symbol",
+			expectedProp:   "iterator",
+		},
+		{
+			name: "Symbol.toStringTag property",
+			source: `interface Object {
+				readonly [Symbol.toStringTag]: string;
+			}`,
+			expectedObject: "Symbol",
+			expectedProp:   "toStringTag",
+		},
+		{
+			name: "Symbol.hasInstance method",
+			source: `interface Function {
+				[Symbol.hasInstance](value: any): boolean;
+			}`,
+			expectedObject: "Symbol",
+			expectedProp:   "hasInstance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{
+				Path:     "test.d.ts",
+				Contents: tt.source,
+				ID:       0,
+			}
+			parser := dts_parser.NewDtsParser(source)
+			module, parseErrors := parser.ParseModule()
+
+			if len(parseErrors) > 0 {
+				t.Fatalf("Parse errors: %v", parseErrors)
+			}
+
+			if len(module.Statements) == 0 {
+				t.Fatal("No statements parsed")
+			}
+
+			// Convert the module
+			converted, err := ConvertModule(module)
+			if err != nil {
+				t.Fatalf("ConvertModule failed: %v", err)
+			}
+
+			// Get declarations from root namespace
+			rootNS, exists := converted.Namespaces.Get("")
+			if !exists {
+				t.Fatal("Root namespace not found")
+			}
+
+			if len(rootNS.Decls) == 0 {
+				t.Fatal("No declarations in root namespace")
+			}
+
+			// Get the interface declaration
+			ifaceDecl, ok := rootNS.Decls[0].(*ast.InterfaceDecl)
+			if !ok {
+				t.Fatalf("Expected InterfaceDecl, got %T", rootNS.Decls[0])
+			}
+
+			if len(ifaceDecl.TypeAnn.Elems) == 0 {
+				t.Fatal("Interface has no elements")
+			}
+
+			// Get the key from the first element (method or property)
+			var key ast.ObjKey
+			switch elem := ifaceDecl.TypeAnn.Elems[0].(type) {
+			case *ast.MethodTypeAnn:
+				key = elem.Name
+			case *ast.PropertyTypeAnn:
+				key = elem.Name
+			default:
+				t.Fatalf("Expected MethodTypeAnn or PropertyTypeAnn, got %T", ifaceDecl.TypeAnn.Elems[0])
+			}
+
+			// Verify the key is a ComputedKey
+			computedKey, ok := key.(*ast.ComputedKey)
+			if !ok {
+				t.Fatalf("Expected ComputedKey, got %T", key)
+			}
+
+			// Verify the computed key expression is a MemberExpr
+			memberExpr, ok := computedKey.Expr.(*ast.MemberExpr)
+			if !ok {
+				t.Fatalf("Expected MemberExpr in ComputedKey, got %T", computedKey.Expr)
+			}
+
+			// Verify the object (left side) is an IdentExpr
+			objectIdent, ok := memberExpr.Object.(*ast.IdentExpr)
+			if !ok {
+				t.Fatalf("Expected IdentExpr as object, got %T", memberExpr.Object)
+			}
+
+			if objectIdent.Name != tt.expectedObject {
+				t.Errorf("Expected object name %q, got %q", tt.expectedObject, objectIdent.Name)
+			}
+
+			// Verify the property (right side) is correct
+			if memberExpr.Prop.Name != tt.expectedProp {
+				t.Errorf("Expected property name %q, got %q", tt.expectedProp, memberExpr.Prop.Name)
+			}
+		})
+	}
+}
+
+// TestConvertComputedKeySimpleIdent validates that simple identifiers as computed keys
+// are correctly converted (e.g., [key] where key is a variable).
+func TestConvertComputedKeySimpleIdent(t *testing.T) {
+	source := &ast.Source{
+		Path: "test.d.ts",
+		Contents: `interface Dynamic {
+			[key]: string;
+		}`,
+		ID: 0,
+	}
+	parser := dts_parser.NewDtsParser(source)
+	module, parseErrors := parser.ParseModule()
+
+	if len(parseErrors) > 0 {
+		t.Fatalf("Parse errors: %v", parseErrors)
+	}
+
+	// Convert the module
+	converted, err := ConvertModule(module)
+	if err != nil {
+		t.Fatalf("ConvertModule failed: %v", err)
+	}
+
+	// Get declarations from root namespace
+	rootNS, exists := converted.Namespaces.Get("")
+	if !exists {
+		t.Fatal("Root namespace not found")
+	}
+
+	if len(rootNS.Decls) == 0 {
+		t.Fatal("No declarations in root namespace")
+	}
+
+	// Get the interface declaration
+	ifaceDecl, ok := rootNS.Decls[0].(*ast.InterfaceDecl)
+	if !ok {
+		t.Fatalf("Expected InterfaceDecl, got %T", rootNS.Decls[0])
+	}
+
+	// Get the property
+	propTypeAnn, ok := ifaceDecl.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+	if !ok {
+		t.Fatalf("Expected PropertyTypeAnn, got %T", ifaceDecl.TypeAnn.Elems[0])
+	}
+
+	// Verify the key is a ComputedKey
+	computedKey, ok := propTypeAnn.Name.(*ast.ComputedKey)
+	if !ok {
+		t.Fatalf("Expected ComputedKey, got %T", propTypeAnn.Name)
+	}
+
+	// Verify the computed key expression is an IdentExpr
+	identExpr, ok := computedKey.Expr.(*ast.IdentExpr)
+	if !ok {
+		t.Fatalf("Expected IdentExpr in ComputedKey, got %T", computedKey.Expr)
+	}
+
+	if identExpr.Name != "key" {
+		t.Errorf("Expected identifier name %q, got %q", "key", identExpr.Name)
+	}
+}
