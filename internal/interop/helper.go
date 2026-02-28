@@ -81,6 +81,36 @@ func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 	}, nil
 }
 
+// convertQualIdentToExpr converts a dts_parser.QualIdent to an ast.Expr.
+// QualIdent can be either an Ident or a Member (for dotted names like Symbol.iterator).
+func convertQualIdentToExpr(qi dts_parser.QualIdent) (ast.Expr, error) {
+	switch q := qi.(type) {
+	case *dts_parser.Ident:
+		return ast.NewIdent(q.Name, q.Span()), nil
+	case *dts_parser.Member:
+		left, err := convertQualIdentToExpr(q.Left)
+		if err != nil {
+			return nil, err
+		}
+		right := ast.NewIdentifier(q.Right.Name, q.Right.Span())
+		return ast.NewMember(left, right, false, q.Span()), nil
+	default:
+		return nil, fmt.Errorf("convertQualIdentToExpr: unknown QualIdent type %T", qi)
+	}
+}
+
+// convertTypeAnnToExpr converts a type annotation (used in computed key context)
+// to an expression. Only supports patterns valid in computed keys.
+func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
+	switch t := typeAnn.(type) {
+	case *dts_parser.TypeReference:
+		// [Symbol.iterator] or [foo] -> convert the QualIdent name to an expression
+		return convertQualIdentToExpr(t.Name)
+	default:
+		return nil, fmt.Errorf("convertTypeAnnToExpr: unsupported type annotation in computed key: %T", typeAnn)
+	}
+}
+
 func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error) {
 	switch k := pk.(type) {
 	case *dts_parser.Ident:
@@ -90,11 +120,11 @@ func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error) {
 	case *dts_parser.NumberLiteral:
 		return ast.NewNumber(k.Value, k.Span()), nil
 	case *dts_parser.ComputedKey:
-		// In dts_parser, ComputedKey.Expr is a TypeAnn
-		// In ast, ComputedKey.Expr is an Expr
-		// We need to handle this conversion somehow
-		// TODO: implement conversion for computed keys
-		return nil, fmt.Errorf("convertPropertyKey: ComputedKey not yet implemented")
+		expr, err := convertTypeAnnToExpr(k.Expr)
+		if err != nil {
+			return nil, fmt.Errorf("converting computed key: %w", err)
+		}
+		return ast.NewComputedKey(expr), nil
 	default:
 		return nil, fmt.Errorf("convertPropertyKey: unknown property key type %T", pk)
 	}
