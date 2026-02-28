@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -18,12 +17,6 @@ import (
 // referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
 // Compiled once at package level for efficiency.
 var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)
-
-// bundleFilePattern matches ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
-// These bundle files contain only /// <reference> directives pointing to sub-libraries.
-// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
-// Compiled once at package level for efficiency.
-var bundleFilePattern = regexp.MustCompile(`^lib\.es20\d{2}\.d\.ts$`)
 
 // findRepoRoot walks up the directory tree to find the repository root
 func findRepoRoot() (string, error) {
@@ -50,89 +43,27 @@ func findRepoRoot() (string, error) {
 	}
 }
 
-// discoverESLibFiles returns ES lib files from the TypeScript lib directory,
-// sorted in dependency order based on reference directives in bundle files.
+// discoverESLibFiles returns ES lib files for the given target version,
+// sorted in dependency order by recursively following reference directives.
 //
-// The targetVersion parameter limits which ES versions are included:
+// The targetVersion parameter specifies which ES version to load:
 // - "es5" - only lib.es5.d.ts
-// - "es2015" - ES5 + ES2015 files
+// - "es2015" - ES5 + ES2015 files (via references in lib.es2015.d.ts)
 // - "es2016" - ES5 + ES2015 + ES2016 files
-// - "" (empty) - all ES versions
+// - etc.
 //
-// Load order:
-// 1. lib.es5.d.ts (contains actual types, loaded first)
-// 2. Sub-libraries referenced by lib.es2015.d.ts (in order)
-// 3. Sub-libraries referenced by lib.es2016.d.ts (in order)
-// 4. ... and so on for each ES version up to targetVersion
+// The function starts with lib.<targetVersion>.d.ts and recursively follows
+// /// <reference lib="..." /> directives, returning files in dependency order
+// (dependencies before the files that reference them).
 func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
-	var orderedLibFiles []string
-	seen := make(map[string]bool)
-
-	// lib.es5.d.ts contains actual type definitions (not just references).
-	// Load it first as the base of all ES types.
-	orderedLibFiles = append(orderedLibFiles, "lib.es5.d.ts")
-	seen["lib.es5.d.ts"] = true
-
-	// If targetVersion is "es5", we're done - only ES5 is requested.
-	// This early return avoids calling os.ReadDir which is not available in WASM.
-	if targetVersion == "es5" {
-		return orderedLibFiles, nil
-	}
-
-	// Find all ES2015+ bundle files (lib.es2015.d.ts, lib.es2016.d.ts, etc.)
-	// These contain /// <reference> directives pointing to sub-libraries.
-	entries, err := os.ReadDir(libDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read lib directory: %w", err)
-	}
-
-	var bundleFiles []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if isBundleFile(name) && !isESNextFile(name) {
-			bundleFiles = append(bundleFiles, name)
-		}
-	}
-
-	// Sort bundle files by ES version (es2015, es2016, ...)
-	sort.Slice(bundleFiles, func(i, j int) bool {
-		return compareESVersions(extractESVersion(bundleFiles[i]), extractESVersion(bundleFiles[j]))
-	})
-
-	// For each ES2015+ bundle, parse its /// <reference> directives
-	// to get sub-libraries in the correct order.
-	for _, bundleFile := range bundleFiles {
-		bundleVersion := extractESVersion(bundleFile)
-
-		// If targetVersion is set and this bundle is newer than target, skip it
-		if targetVersion != "" && compareESVersions(targetVersion, bundleVersion) {
-			continue
-		}
-
-		bundlePath := filepath.Join(libDir, bundleFile)
-		refs, err := parseReferenceDirectives(bundlePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s: %w", bundleFile, err)
-		}
-
-		for _, ref := range refs {
-			// Convert reference name to filename: "es2015.core" -> "lib.es2015.core.d.ts"
-			filename := "lib." + ref + ".d.ts"
-			// Skip if already seen, is ESNext, or is a bundle file (which only contains references)
-			if !seen[filename] && !isESNextFile(filename) && !isBundleFile(filename) {
-				orderedLibFiles = append(orderedLibFiles, filename)
-				seen[filename] = true
-			}
-		}
-	}
-
-	return orderedLibFiles, nil
+	visited := make(map[string]bool)
+	return loadLibFilesRecursive(libDir, targetVersion, visited)
 }
 
-// parseReferenceDirectives extracts lib references from a bundle file.
+// parseReferenceDirectives extracts lib references from a .d.ts file.
 // Example: /// <reference lib="es2015.core" /> -> "es2015.core"
-func parseReferenceDirectives(bundlePath string) ([]string, error) {
-	content, err := os.ReadFile(bundlePath)
+func parseReferenceDirectives(filePath string) ([]string, error) {
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -147,37 +78,57 @@ func parseReferenceDirectives(bundlePath string) ([]string, error) {
 	return refs, nil
 }
 
-// isBundleFile returns true for ES2015+ bundle files like lib.es2015.d.ts, lib.es2016.d.ts, etc.
-// These bundle files contain only /// <reference> directives to sub-libraries.
-// Note: lib.es5.d.ts is NOT a bundle - it contains actual type definitions.
-func isBundleFile(name string) bool {
-	return bundleFilePattern.MatchString(name)
+// loadLibFilesRecursive loads a lib file and all its references recursively.
+// Returns filenames in dependency order (dependencies first).
+func loadLibFilesRecursive(libDir string, libName string, visited map[string]bool) ([]string, error) {
+	filename := "lib." + libName + ".d.ts"
+	if visited[filename] {
+		return nil, nil // Already processed
+	}
+	visited[filename] = true
+
+	filePath := filepath.Join(libDir, filename)
+	refs, err := parseReferenceDirectives(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", filename, err)
+	}
+
+	var result []string
+
+	// Process dependencies first (depth-first)
+	for _, ref := range refs {
+		refFilename := "lib." + ref + ".d.ts"
+		// Skip unstable ESNext features
+		if isESNextFile(refFilename) {
+			continue
+		}
+		// Only follow ES-related references (es5, es2015, es2016, etc.)
+		// Skip non-ES references like decorators, scripthost, webworker, etc.
+		if !isESLibReference(ref) {
+			continue
+		}
+		refFiles, err := loadLibFilesRecursive(libDir, ref, visited)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, refFiles...)
+	}
+
+	// Add this file after its dependencies
+	result = append(result, filename)
+
+	return result, nil
+}
+
+// isESLibReference returns true if the reference is an ES-related lib (es5, es2015.core, etc.)
+// This filters out non-ES libs like decorators, scripthost, webworker, dom, etc.
+func isESLibReference(ref string) bool {
+	return strings.HasPrefix(ref, "es")
 }
 
 // isESNextFile returns true for lib.esnext.*.d.ts files (unstable features)
 func isESNextFile(name string) bool {
 	return strings.HasPrefix(name, "lib.esnext")
-}
-
-// extractESVersion extracts the ES version from a filename.
-// "lib.es2015.core.d.ts" -> "es2015", "lib.es5.d.ts" -> "es5"
-func extractESVersion(filename string) string {
-	// Remove "lib." prefix and ".d.ts" suffix, then take first segment
-	name := strings.TrimPrefix(filename, "lib.")
-	name = strings.TrimSuffix(name, ".d.ts")
-	parts := strings.Split(name, ".")
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return name
-}
-
-// compareESVersions returns true if version a should be loaded before version b.
-// Only used for ES2015+ versions: "es2015" < "es2016" < ... < "es2023"
-// (lib.es5.d.ts is handled separately, not via this comparison)
-func compareESVersions(a, b string) bool {
-	// Both are es20XX, compare lexicographically (works because es2015 < es2016 < ...)
-	return a < b
 }
 
 // the key is the method name
