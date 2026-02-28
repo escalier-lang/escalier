@@ -501,7 +501,7 @@ func extractRootIdent(expr ast.Expr) string {
 
 ## Phase 5: Infer Symbol-Keyed Properties (FR6)
 
-**Status:** 🚧 IN PROGRESS (50% complete)
+**Status:** 🚧 IN PROGRESS (60% complete - Tasks 5.1-5.3 done, Task 5.4 needs verification)
 **Difficulty:** Medium
 **Risk:** Medium
 
