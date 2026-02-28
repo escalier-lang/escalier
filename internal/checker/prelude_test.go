@@ -3,35 +3,9 @@ package checker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
-
-func TestIsBundleFile(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     bool
-	}{
-		{"ES2015 bundle", "lib.es2015.d.ts", true},
-		{"ES2016 bundle", "lib.es2016.d.ts", true},
-		{"ES2017 bundle", "lib.es2017.d.ts", true},
-		{"ES2020 bundle", "lib.es2020.d.ts", true},
-		{"ES2023 bundle", "lib.es2023.d.ts", true},
-		{"ES5 is not a bundle", "lib.es5.d.ts", false},
-		{"ES2015 core is not a bundle", "lib.es2015.core.d.ts", false},
-		{"ES2015 collection is not a bundle", "lib.es2015.collection.d.ts", false},
-		{"DOM is not a bundle", "lib.dom.d.ts", false},
-		{"ESNext is not a bundle", "lib.esnext.d.ts", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isBundleFile(tt.filename); got != tt.want {
-				t.Errorf("isBundleFile(%q) = %v, want %v", tt.filename, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestIsESNextFile(t *testing.T) {
 	tests := []struct {
@@ -57,48 +31,29 @@ func TestIsESNextFile(t *testing.T) {
 	}
 }
 
-func TestExtractESVersion(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     string
-	}{
-		{"ES5 file", "lib.es5.d.ts", "es5"},
-		{"ES2015 bundle", "lib.es2015.d.ts", "es2015"},
-		{"ES2015 core", "lib.es2015.core.d.ts", "es2015"},
-		{"ES2015 collection", "lib.es2015.collection.d.ts", "es2015"},
-		{"ES2020 bundle", "lib.es2020.d.ts", "es2020"},
-		{"ES2020 promise", "lib.es2020.promise.d.ts", "es2020"},
-		{"ESNext bundle", "lib.esnext.d.ts", "esnext"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := extractESVersion(tt.filename); got != tt.want {
-				t.Errorf("extractESVersion(%q) = %v, want %v", tt.filename, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCompareESVersions(t *testing.T) {
+func TestIsESLibReference(t *testing.T) {
 	tests := []struct {
 		name string
-		a    string
-		b    string
+		ref  string
 		want bool
 	}{
-		{"ES2015 before ES2016", "es2015", "es2016", true},
-		{"ES2016 not before ES2015", "es2016", "es2015", false},
-		{"ES2015 before ES2020", "es2015", "es2020", true},
-		{"ES2020 before ES2021", "es2020", "es2021", true},
-		{"Same version", "es2015", "es2015", false},
+		{"ES5", "es5", true},
+		{"ES2015", "es2015", true},
+		{"ES2015 core", "es2015.core", true},
+		{"ES2015 collection", "es2015.collection", true},
+		{"ES2020", "es2020", true},
+		{"ESNext", "esnext", true},
+		{"Decorators is not ES", "decorators", false},
+		{"Decorators.legacy is not ES", "decorators.legacy", false},
+		{"DOM is not ES", "dom", false},
+		{"Scripthost is not ES", "scripthost", false},
+		{"Webworker is not ES", "webworker", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := compareESVersions(tt.a, tt.b); got != tt.want {
-				t.Errorf("compareESVersions(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			if got := isESLibReference(tt.ref); got != tt.want {
+				t.Errorf("isESLibReference(%q) = %v, want %v", tt.ref, got, tt.want)
 			}
 		})
 	}
@@ -137,7 +92,7 @@ func TestParseReferenceDirectives(t *testing.T) {
 	}
 }
 
-func TestDiscoverESLibFiles(t *testing.T) {
+func TestDiscoverESLibFilesES2015(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		t.Fatal("Could not find repository root:", err)
@@ -148,8 +103,8 @@ func TestDiscoverESLibFiles(t *testing.T) {
 		t.Fatal("TypeScript lib directory not found:", libDir)
 	}
 
-	// Test with empty targetVersion (all versions)
-	libFiles, err := discoverESLibFiles(libDir, "")
+	// Test with ES2015 target version
+	libFiles, err := discoverESLibFiles(libDir, "es2015")
 	if err != nil {
 		t.Fatalf("discoverESLibFiles() error = %v", err)
 	}
@@ -159,11 +114,6 @@ func TestDiscoverESLibFiles(t *testing.T) {
 		t.Error("discoverESLibFiles() returned 0 files")
 	}
 
-	// Verify lib.es5.d.ts is first
-	if len(libFiles) > 0 && libFiles[0] != "lib.es5.d.ts" {
-		t.Errorf("discoverESLibFiles()[0] = %q, want %q", libFiles[0], "lib.es5.d.ts")
-	}
-
 	// Verify no ESNext files are included
 	for _, f := range libFiles {
 		if isESNextFile(f) {
@@ -171,31 +121,20 @@ func TestDiscoverESLibFiles(t *testing.T) {
 		}
 	}
 
-	// Verify no bundle files are included (they only contain references)
+	// Verify lib.es5.d.ts is included (ES2015 references ES5)
+	hasES5 := false
 	for _, f := range libFiles {
-		if isBundleFile(f) {
-			t.Errorf("discoverESLibFiles() included bundle file: %s", f)
+		if f == "lib.es5.d.ts" {
+			hasES5 = true
+			break
 		}
 	}
-
-	// Verify ES2015 files come before ES2016 files
-	var lastES2015Index, firstES2016Index int = -1, -1
-	for i, f := range libFiles {
-		version := extractESVersion(f)
-		if version == "es2015" {
-			lastES2015Index = i
-		}
-		if version == "es2016" && firstES2016Index == -1 {
-			firstES2016Index = i
-		}
-	}
-	if lastES2015Index != -1 && firstES2016Index != -1 && lastES2015Index > firstES2016Index {
-		t.Errorf("ES2015 files should come before ES2016 files, but last ES2015 at %d, first ES2016 at %d",
-			lastES2015Index, firstES2016Index)
+	if !hasES5 {
+		t.Error("discoverESLibFiles() should include lib.es5.d.ts")
 	}
 
 	// Log discovered files for debugging
-	t.Logf("Discovered %d ES lib files (all versions)", len(libFiles))
+	t.Logf("Discovered %d ES lib files (es2015)", len(libFiles))
 	for i, f := range libFiles {
 		t.Logf("  [%d] %s", i, f)
 	}
@@ -254,6 +193,16 @@ func TestDiscoverESLibFilesWithTargetVersion(t *testing.T) {
 		t.Fatal("TypeScript lib directory not found:", libDir)
 	}
 
+	// Helper to check if filename contains a version prefix
+	containsVersion := func(files []string, prefix string) bool {
+		for _, f := range files {
+			if strings.Contains(f, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
 	tests := []struct {
 		name          string
 		targetVersion string
@@ -282,13 +231,6 @@ func TestDiscoverESLibFilesWithTargetVersion(t *testing.T) {
 			wantES2015:    true,
 			wantES2016:    true,
 		},
-		{
-			name:          "All versions (empty)",
-			targetVersion: "",
-			wantES5:       true,
-			wantES2015:    true,
-			wantES2016:    true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -298,21 +240,9 @@ func TestDiscoverESLibFilesWithTargetVersion(t *testing.T) {
 				t.Fatalf("discoverESLibFiles() error = %v", err)
 			}
 
-			hasES5 := false
-			hasES2015 := false
-			hasES2016 := false
-
-			for _, f := range libFiles {
-				version := extractESVersion(f)
-				switch version {
-				case "es5":
-					hasES5 = true
-				case "es2015":
-					hasES2015 = true
-				case "es2016":
-					hasES2016 = true
-				}
-			}
+			hasES5 := containsVersion(libFiles, "es5")
+			hasES2015 := containsVersion(libFiles, "es2015")
+			hasES2016 := containsVersion(libFiles, "es2016")
 
 			if hasES5 != tt.wantES5 {
 				t.Errorf("ES5 files: got %v, want %v", hasES5, tt.wantES5)

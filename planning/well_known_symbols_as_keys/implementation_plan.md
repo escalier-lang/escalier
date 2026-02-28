@@ -10,7 +10,7 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 | Phase | Description | Status | Progress | Blocking Issues |
 |-------|-------------|--------|----------|-----------------|
-| **1** | Recursive Lib File Loading | 🔒 Blocked | 60% | Awaiting Phase 3; Task 1.5 refactor pending |
+| **1** | Recursive Lib File Loading | 🔒 Blocked | 80% | Awaiting Phase 3 |
 | **2** | Parse `unique symbol` Type | ✅ Done | 100% | None |
 | **3** | Convert Computed Property Keys | 🚧 In Progress | 25% | **CRITICAL BLOCKER** (Task 3.3 done) |
 | **4** | Dependency Graph for Computed Keys | 🚧 In Progress | 70% | Needs computed key tracking |
@@ -21,7 +21,7 @@ This plan outlines the implementation steps for supporting well-known symbols as
 **Legend:** ✅ Done | 🚧 In Progress | ⬜ Not Started | 🔒 Blocked
 
 **Task Breakdown:**
-- **Phase 1:** 1.1-1.3 ✅ | 1.4 ⬜ Config | 1.5 ⬜ Refactor
+- **Phase 1:** 1.1-1.3 ✅ | 1.4 ⬜ Config | 1.5 ✅ Refactor
 - **Phase 3:** 3.1 ⬜ | 3.2 ⬜ | 3.3 ✅ | 3.4 ⬜ Validation
 - **Phase 5:** 5.1-5.3 ✅ | 5.4 ⬜ Interface verification
 - **Phase 7:** 7.1-7.5 ⬜ | 7.6 ⬜ Lib discovery tests
@@ -71,7 +71,7 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 ## Phase 1: Recursive Lib File Loading (FR1)
 
-**Status:** 🔒 Blocked (60% complete - awaiting Phase 3)
+**Status:** 🔒 Blocked (80% complete - awaiting Phase 3)
 **Difficulty:** ~~Medium~~ → Mostly Done
 **Risk:** Low
 
@@ -123,85 +123,25 @@ Add a way to specify the target ES version (currently hard-coded to `es5`).
 
 **Note:** Low priority - can be done after core functionality works.
 
-### Task 1.5: Refactor `discoverESLibFiles` to Use Recursive Loading ⬜ NOT STARTED
+### Task 1.5: Refactor `discoverESLibFiles` to Use Recursive Loading ✅ DONE
 
 **Location:** `internal/checker/prelude.go` - `discoverESLibFiles()` and related helper functions
 **Difficulty:** Medium
 **Risk:** Low
 
-**Current approach (overly complex):**
-1. Starts with `lib.es5.d.ts`
-2. Reads directory to find all bundle files (`lib.es2015.d.ts`, `lib.es2016.d.ts`, etc.)
-3. Sorts bundle files by version
-4. Filters to only include versions up to `targetVersion`
-5. Parses each bundle to extract reference directives
-6. Builds a flat list of sub-libraries, excluding bundle files themselves
+**Implementation completed:**
+- Replaced iterative directory-scanning approach with recursive reference-following
+- Added `loadLibFilesRecursive()` function that processes dependencies depth-first
+- Added `isESLibReference()` to filter out non-ES references (decorators, dom, scripthost, etc.)
+- Removed unused functions: `bundleFilePattern`, `isBundleFile`, `extractESVersion`, `compareESVersions`
+- Updated tests to reflect new behavior
 
-**Problems with current approach:**
-- Requires `os.ReadDir` which may not work in WASM
-- Complex bundle file detection logic (`bundleFilePattern`, `isBundleFile`)
-- Version comparison and filtering logic
-- Special-casing of ES5 vs ES2015+
-
-**Proposed simpler approach:**
-1. Start with `lib.<targetVersion>.d.ts` (e.g., `lib.es2015.d.ts`)
-2. Parse the file to extract reference directives AND any declarations
-3. Recursively process each referenced file (following `/// <reference lib="..." />`)
-4. Track visited files to avoid duplicates
-5. Return declarations in dependency order (referenced files before the referencing file)
-
-```go
-// loadLibFilesRecursive loads a lib file and all its references recursively.
-// Returns filenames in dependency order (dependencies first).
-func loadLibFilesRecursive(libDir string, libName string, visited map[string]bool) ([]string, error) {
-    filename := "lib." + libName + ".d.ts"
-    if visited[filename] {
-        return nil, nil // Already processed
-    }
-    visited[filename] = true
-
-    filePath := filepath.Join(libDir, filename)
-    refs, err := parseReferenceDirectives(filePath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse %s: %w", filename, err)
-    }
-
-    var result []string
-
-    // Process dependencies first (depth-first)
-    for _, ref := range refs {
-        if isESNextFile("lib." + ref + ".d.ts") {
-            continue // Skip unstable ESNext features
-        }
-        refFiles, err := loadLibFilesRecursive(libDir, ref, visited)
-        if err != nil {
-            return nil, err
-        }
-        result = append(result, refFiles...)
-    }
-
-    // Add this file after its dependencies
-    result = append(result, filename)
-
-    return result, nil
-}
-
-// discoverESLibFiles returns ES lib files for the given target version.
-func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
-    visited := make(map[string]bool)
-    return loadLibFilesRecursive(libDir, targetVersion, visited)
-}
-```
-
-**Benefits:**
+**Benefits achieved:**
 - No directory scanning required (WASM-friendly)
 - No bundle file detection logic needed
 - No version comparison/filtering
 - Naturally handles the dependency tree
-- Simpler, more maintainable code
-- Can be removed: `bundleFilePattern`, `isBundleFile`, `extractESVersion`, `compareESVersions`
-
-**Note:** This refactoring can be done independently of ComputedKey support, but is blocked by the same issue (ES2015+ files use computed keys).
+- Simpler, more maintainable code (~40 lines vs ~70 lines)
 
 ---
 
