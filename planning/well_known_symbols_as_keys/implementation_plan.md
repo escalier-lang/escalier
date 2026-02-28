@@ -12,15 +12,19 @@ This plan outlines the implementation steps for supporting well-known symbols as
 |-------|-------------|--------|----------|-----------------|
 | **1** | Recursive Lib File Loading | 🔒 Blocked | 60% | Awaiting Phase 3; Task 1.5 refactor pending |
 | **2** | Parse `unique symbol` Type | ✅ Done | 100% | None |
-| **3** | Convert Computed Property Keys | ⬜ Not Started | 0% | **CRITICAL BLOCKER** |
+| **3** | Convert Computed Property Keys | ⬜ Not Started | 25% | **CRITICAL BLOCKER** (Task 3.3 done) |
 | **4** | Dependency Graph for Computed Keys | 🚧 In Progress | 70% | Needs computed key tracking |
-| **5** | Infer Symbol-Keyed Properties | 🚧 In Progress | 50% | Interface support incomplete |
+| **5** | Infer Symbol-Keyed Properties | 🚧 In Progress | 60% | Task 5.4 needs verification |
 | **6** | Symbol Key Property Access | 🚧 In Progress | 30% | Needs verification |
 | **7** | Testing | ⬜ Not Started | 0% | Awaiting implementation |
 
 **Legend:** ✅ Done | 🚧 In Progress | ⬜ Not Started | 🔒 Blocked
 
-**Phase 1 Tasks:** 1.1-1.3 ✅ Done (but ES2015 disabled) | 1.4 ⬜ Config | 1.5 ⬜ Refactor `discoverESLibFiles`
+**Task Breakdown:**
+- **Phase 1:** 1.1-1.3 ✅ | 1.4 ⬜ Config | 1.5 ⬜ Refactor
+- **Phase 3:** 3.1 ⬜ | 3.2 ⬜ | 3.3 ✅ | 3.4 ⬜ Validation
+- **Phase 5:** 5.1-5.3 ✅ | 5.4 ⬜ Interface verification
+- **Phase 7:** 7.1-7.5 ⬜ | 7.6 ⬜ Lib discovery tests
 
 ---
 
@@ -37,6 +41,9 @@ This plan outlines the implementation steps for supporting well-known symbols as
 - Recursive lib file loading infrastructure ✅ (disabled for ES2015+)
 - Symbol binding in global scope with `iterator` and `customMatcher` ✅
 
+### Note: `lib.dom.d.ts` Handling
+`lib.dom.d.ts` is loaded separately from the ES version hierarchy. It is loaded unconditionally alongside the ES lib files in `loadGlobalDefinitions()`. The DOM lib does NOT use computed symbol keys, so it is unaffected by this work. The recursive loading refactor (Task 1.5) should preserve this behavior by loading DOM separately.
+
 ### What's Missing
 - ~~Parsing `unique symbol` type in dts_parser~~ ✅ Done
 - Converting `ComputedKey` in interop layer (returns error) ❌ **BLOCKER**
@@ -52,53 +59,57 @@ This plan outlines the implementation steps for supporting well-known symbols as
 | `internal/dts_parser/object.go` | Parses object type members | ✅ |
 | `internal/dts_parser/lexer.go` | `unique` keyword token | ✅ |
 | `internal/dts_parser/base.go` | Parses `unique symbol` | ✅ |
-| `internal/interop/helper.go` | `convertPropertyKey` - needs ComputedKey support | ❌ Line 92-97 |
-| `internal/checker/prelude.go` | Lib file loading (recursive) | ✅ (ES2015 disabled) |
+| `internal/interop/helper.go` | `convertPropertyKey()` - needs ComputedKey support | ❌ |
+| `internal/checker/prelude.go` | Lib file loading via `discoverESLibFiles()` | ✅ (ES2015 disabled) |
 | `internal/checker/infer_module.go` | Declaration processing and merging | 🚧 |
 | `internal/type_system/types.go` | `ObjectType` with `SymbolKeyMap` | ✅ |
 | `internal/ast/type_ann.go` | `UniqueSymbolTypeAnn` | ✅ |
+
+> **Note:** Line numbers throughout this document are approximate and may shift as code evolves. Use function/type names (e.g., `convertPropertyKey`, `discoverESLibFiles`) when searching.
 
 ---
 
 ## Phase 1: Recursive Lib File Loading (FR1)
 
-**Status:** 🔒 Blocked (95% complete - awaiting Phase 3)
-**Difficulty:** ~~Medium~~ → Already Done
+**Status:** 🔒 Blocked (60% complete - awaiting Phase 3)
+**Difficulty:** ~~Medium~~ → Mostly Done
 **Risk:** Low
 
 **Goal:** Load lib files by following `/// <reference lib="..." />` directives recursively.
 
+> **Note:** Line numbers in this section are approximate and may shift as code changes. Use function names for navigation.
+
 ### Task 1.1: Parse Reference Directives ✅ DONE
 
-**Location:** `internal/checker/prelude.go:20`
+**Location:** `internal/checker/prelude.go` - `referenceDirectivePattern` variable and `parseReferenceDirectives()` function
 
 **What exists:**
-- Regex pattern: `var libRefPattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)`
-- Bundle file pattern for ES2015+ detection at line 26
+- Regex pattern: `var referenceDirectivePattern = regexp.MustCompile(...)`
+- Bundle file pattern for ES2015+ detection
 - Reference extraction works correctly
 
-~~Add support for extracting `/// <reference lib="..." />` directives from parsed files.~~
+### Task 1.2: Implement Lib File Discovery ✅ DONE (iterative approach)
 
-### Task 1.2: Implement Recursive Loading ✅ DONE
-
-**Location:** `internal/checker/prelude.go:67-130`
+**Location:** `internal/checker/prelude.go` - `discoverESLibFiles()` function
 
 **What exists:**
 - `discoverESLibFiles()` function loads ES lib files in dependency order
-- Follows reference directives and discovers sub-libraries
+- Uses directory scanning to find bundle files, then parses their reference directives
 - Handles ES5 as special case (loaded first)
 - Supports version filtering (es5, es2015, es2016, etc.)
 
+**Note:** This is an *iterative* implementation that scans the directory. Task 1.5 proposes a simpler *recursive* approach that follows references directly without directory scanning.
+
 ### Task 1.3: Update Prelude Loading ✅ DONE (but ES2015 disabled)
 
-**Location:** `internal/checker/prelude.go:505-534`
+**Location:** `internal/checker/prelude.go` - `loadGlobalDefinitions()` function
 
 **What exists:**
 - `loadGlobalDefinitions()` calls `discoverESLibFiles()`
 - Successfully loads `lib.es5.d.ts` and `lib.dom.d.ts`
 
 **What's blocking:**
-- Line 509: `targetVersion := "es5"` is hard-coded
+- `targetVersion := "es5"` is hard-coded in the function
 - Comment states: "Currently limited to ES5 because ES2015+ lib files use ComputedKey"
 - **Action required:** Change to `"es2015"` once Phase 3 is complete
 
@@ -114,7 +125,7 @@ Add a way to specify the target ES version (currently hard-coded to `es5`).
 
 ### Task 1.5: Refactor `discoverESLibFiles` to Use Recursive Loading ⬜ NOT STARTED
 
-**Location:** `internal/checker/prelude.go:67-130`
+**Location:** `internal/checker/prelude.go` - `discoverESLibFiles()` and related helper functions
 **Difficulty:** Medium
 **Risk:** Low
 
@@ -201,6 +212,8 @@ func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
 **Risk:** N/A
 
 **Goal:** Parse and represent `unique symbol` as a distinct type.
+
+> **Note:** Line numbers below are from when these tasks were implemented and serve as historical reference. Use type/function names when searching.
 
 ### Task 2.1: Add Lexer Support ✅ DONE
 
@@ -328,7 +341,7 @@ func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
 
 ### Task 3.2: Implement ComputedKey Conversion ⬜ NOT STARTED
 
-**Location:** `internal/interop/helper.go:92-97`
+**Location:** `internal/interop/helper.go` - `convertPropertyKey()` function, `ComputedKey` case
 **Difficulty:** Easy (once Task 3.1 is done)
 **Risk:** Low
 
@@ -365,6 +378,50 @@ type ComputedKey struct {
 ```
 
 The AST `ComputedKey` already exists and can be used as an `ObjKey`.
+
+### Task 3.4: Validate ComputedKey Conversion ⬜ NOT STARTED
+
+**Difficulty:** Easy
+**Risk:** Low
+
+**Purpose:** Before enabling ES2015+ globally, validate that ComputedKey conversion works correctly on a single lib file.
+
+**Validation steps:**
+
+1. **Write a minimal test:**
+```go
+func TestConvertComputedKey(t *testing.T) {
+    source := `interface Iterable<T> {
+        [Symbol.iterator](): Iterator<T>;
+    }`
+    module, err := dts_parser.Parse(source)
+    require.NoError(t, err)
+
+    converted, err := interop.ConvertModule(module)
+    require.NoError(t, err)
+
+    // Verify the interface has a method with ComputedKey
+    iface := converted.Stmts[0].(*ast.InterfaceDecl)
+    method := iface.Body.Elems[0].(*ast.MethodTypeAnn)
+    _, ok := method.Name.(*ast.ComputedKey)
+    assert.True(t, ok, "expected ComputedKey")
+}
+```
+
+2. **Test against real lib file:**
+```bash
+# Create a simple test that parses and converts lib.es2015.symbol.d.ts
+go test ./internal/interop/... -run TestConvertES2015Symbol -v
+```
+
+3. **If validation passes:** Proceed to enable ES2015 target (Task 1.3)
+
+4. **If validation fails:** Debug the specific failure before proceeding
+
+**Success criteria:**
+- [ ] `lib.es2015.symbol.d.ts` converts without errors
+- [ ] `lib.es2015.iterable.d.ts` converts without errors
+- [ ] ComputedKey expressions are correctly converted to `ast.ComputedKey`
 
 ---
 
@@ -425,11 +482,11 @@ func extractRootIdent(expr ast.Expr) string {
 
 ### Task 4.2: Group Same-Named Interface Declarations ✅ DONE
 
-**Location:** `internal/checker/infer_module.go:102,551,568`
+**Location:** `internal/checker/infer_module.go` - SCC processing logic
 
 **What exists:**
 - Comments indicate interface merging is already handled
-- Line 102: "even when multiple declarations share the same binding key (overloads, interface merging)"
+- Comment: "even when multiple declarations share the same binding key (overloads, interface merging)"
 - Same-named interfaces are processed together
 
 ### Task 4.3: Process Interface Groups Together ✅ DONE
@@ -452,7 +509,7 @@ func extractRootIdent(expr ast.Expr) string {
 
 ### Task 5.1: Evaluate Computed Key Expressions ✅ DONE (for classes)
 
-**Location:** `internal/checker/utils.go:80-100`
+**Location:** `internal/checker/utils.go` - `astKeyToTypeKey()` function
 
 **What exists:**
 ```go
@@ -471,7 +528,7 @@ func astKeyToTypeKey(c *Checker, ctx Context, key ast.ObjKey) (*type_system.ObjT
 
 ### Task 5.2: Populate SymbolKeyMap ✅ DONE (for classes)
 
-**Location:** `internal/checker/infer_module.go:301-417`
+**Location:** `internal/checker/infer_module.go` - class inference logic
 
 **What exists for classes:**
 - Symbol keys are extracted during class inference
@@ -499,6 +556,44 @@ type ObjTypeKey struct {
 - `NewSymKey(sym int)` constructor exists
 - Properties can have symbol keys via `ObjTypeKey`
 
+### Task 5.4: Add Interface Symbol Key Inference ⬜ NEEDS VERIFICATION
+
+**Location:** `internal/checker/infer_type_ann.go` or `internal/checker/infer_stmt.go`
+**Difficulty:** Medium
+**Risk:** Medium
+
+**Context:** Symbol key handling is confirmed working for classes (Task 5.1, 5.2). This task verifies and implements equivalent handling for interfaces.
+
+**Verification steps:**
+1. Check if `inferInterface()` handles `ComputedKey` in property/method declarations
+2. Check if `SymbolKeyMap` is populated for interface types
+3. If missing, implement similar logic to class inference
+
+**What to look for in the code:**
+```go
+// In interface inference, when processing elements:
+case *ast.MethodTypeAnn:
+    if computedKey, ok := method.Name.(*ast.ComputedKey); ok {
+        // Should evaluate the key expression and populate SymbolKeyMap
+    }
+```
+
+**If missing, implement:**
+```go
+func (c *Checker) inferInterfaceElem(ctx Context, elem ast.ObjTypeElem, symbolKeyMap map[int]any) {
+    switch e := elem.(type) {
+    case *ast.MethodTypeAnn:
+        if computedKey, ok := e.Name.(*ast.ComputedKey); ok {
+            keyType, _ := c.inferExpr(ctx, computedKey.Expr)
+            if uniqueSym, ok := keyType.(*type_system.UniqueSymbolType); ok {
+                symbolKeyMap[uniqueSym.Value] = computedKey.Expr
+            }
+        }
+    // ... similar for PropertyTypeAnn
+    }
+}
+```
+
 ---
 
 ## Phase 6: Symbol Key Property Access (FR7)
@@ -516,7 +611,7 @@ type ObjTypeKey struct {
 **Risk:** Low
 
 **What exists:**
-- `astKeyToTypeKey()` in `utils.go:96-98` handles conversion of symbol expressions to symbol keys
+- `astKeyToTypeKey()` in `utils.go` handles conversion of symbol expressions to symbol keys
 - Basic infrastructure for symbol key lookup exists
 
 **What needs verification:**
@@ -573,6 +668,71 @@ func TestParseComputedKey(t *testing.T) {
 **Location:** `internal/checker/tests/`
 **Difficulty:** Medium
 
+### Task 7.6: Lib File Discovery Tests ⬜ NOT STARTED
+
+**Location:** `internal/checker/prelude_test.go`
+**Difficulty:** Easy
+
+Test the refactored `discoverESLibFiles` / `loadLibFilesRecursive` function:
+
+```go
+func TestDiscoverESLibFiles(t *testing.T) {
+    libDir := filepath.Join(testRepoRoot, "node_modules", "typescript", "lib")
+
+    tests := []struct {
+        name          string
+        targetVersion string
+        wantContains  []string
+        wantNotContains []string
+    }{
+        {
+            name:          "es5 only",
+            targetVersion: "es5",
+            wantContains:  []string{"lib.es5.d.ts"},
+            wantNotContains: []string{"lib.es2015.core.d.ts"},
+        },
+        {
+            name:          "es2015 includes symbol libs",
+            targetVersion: "es2015",
+            wantContains:  []string{
+                "lib.es5.d.ts",
+                "lib.es2015.core.d.ts",
+                "lib.es2015.symbol.d.ts",
+                "lib.es2015.iterable.d.ts",
+            },
+            wantNotContains: []string{"lib.es2016.array.include.d.ts"},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            files, err := discoverESLibFiles(libDir, tt.targetVersion)
+            require.NoError(t, err)
+            for _, want := range tt.wantContains {
+                assert.Contains(t, files, want)
+            }
+            for _, notWant := range tt.wantNotContains {
+                assert.NotContains(t, files, notWant)
+            }
+        })
+    }
+}
+
+func TestDiscoverESLibFilesNoCycles(t *testing.T) {
+    // Verify that circular references (if any) don't cause infinite loops
+    libDir := filepath.Join(testRepoRoot, "node_modules", "typescript", "lib")
+    files, err := discoverESLibFiles(libDir, "es2015")
+    require.NoError(t, err)
+
+    // Check no duplicates
+    seen := make(map[string]bool)
+    for _, f := range files {
+        assert.False(t, seen[f], "duplicate file: %s", f)
+        seen[f] = true
+    }
+}
+```
+
 ---
 
 ## Implementation Order
@@ -580,15 +740,17 @@ func TestParseComputedKey(t *testing.T) {
 ### Recommended Sequence (Updated)
 
 ```
-Phase 3: ComputedKey conversion ← CRITICAL, do this first!
+Task 3.1-3.2: ComputedKey conversion ← CRITICAL, do this first!
+    ↓
+Task 3.4: Validate conversion works on ES2015 lib files
     ↓
 Task 1.5: Refactor discoverESLibFiles (optional, simplifies code)
     ↓
-Phase 1.3: Enable ES2015 target (flip targetVersion)
+Task 1.3: Enable ES2015 target (flip targetVersion)
     ↓
-Phase 4.1: Computed key dependency tracking
+Task 5.4: Verify/implement interface symbol key inference
     ↓
-Phase 5: Verify interface symbol key inference
+Task 4.1: Computed key dependency tracking (if needed)
     ↓
 Phase 6: Verify property access
     ↓
@@ -597,12 +759,14 @@ Phase 7: Testing (throughout)
 
 ### Rationale (Updated)
 
-1. **Phase 3 first**: This is the **critical blocker**. ~30 lines of code unlocks ES2015+
-2. **Task 1.5 (optional)**: Simplify `discoverESLibFiles` to use recursive loading instead of directory scanning. Can be done before or after enabling ES2015, but the simpler code will be easier to debug.
-3. **Phase 1.3**: Change `targetVersion := "es5"` to `"es2015"` in prelude.go:509
-4. **Phase 4.1**: Ensure correct processing order for declarations with computed keys
-5. **Phases 5-6**: Verify existing infrastructure works for interfaces (may already work)
-6. **Phase 7**: Add tests throughout to validate functionality
+1. **Tasks 3.1-3.2 first**: This is the **critical blocker**. ~35 lines of code unlocks ES2015+
+2. **Task 3.4**: Validate the conversion works on actual ES2015 lib files before proceeding
+3. **Task 1.5 (optional)**: Simplify `discoverESLibFiles` to use recursive loading. Simpler code will be easier to debug.
+4. **Task 1.3**: Change `targetVersion := "es5"` to `"es2015"` in prelude.go
+5. **Task 5.4**: Verify interface symbol key inference works (may already work based on class implementation)
+6. **Task 4.1**: May not be needed if lib file loading order already handles Symbol being defined first
+7. **Phase 6**: Verify existing property access infrastructure works
+8. **Phase 7**: Add tests throughout to validate functionality
 
 ---
 
@@ -612,13 +776,15 @@ Phase 7: Testing (throughout)
 |------|------------|---------------|------|
 | Task 3.1: convertTypeAnnToExpr | Medium | ~30 | Medium |
 | Task 3.2: ComputedKey conversion | Easy | ~5 | Low |
+| Task 3.4: Validation tests | Easy | ~30 | Low |
 | Task 1.3: Enable ES2015 | Trivial | ~1 | Low |
 | Task 1.5: Refactor discoverESLibFiles | Medium | ~30 (net reduction) | Low |
 | Task 4.1: Computed key deps | Medium | ~40 | Medium |
-| Task 5.x: Verify interface support | Unknown | TBD | Medium |
+| Task 5.4: Interface symbol keys | Medium | ~20-40 | Medium |
 | Task 6.1: Verify property access | Unknown | TBD | Low |
+| Task 7.6: Lib discovery tests | Easy | ~50 | Low |
 
-**Total estimated effort for Phase 3:** ~35 lines of new code
+**Total estimated effort for Phase 3:** ~65 lines (including validation tests)
 **Task 1.5 simplification:** Removes ~60 lines, adds ~30 lines (net -30 lines)
 
 ---
@@ -630,15 +796,34 @@ Phase 7: Testing (throughout)
 - [x] `[Symbol.iterator]` parses as ComputedKey ✅ (dts_parser)
 - [ ] All ES2015 lib files parse without errors (blocked by Phase 3)
 
+**Verification:**
+```bash
+go test ./internal/dts_parser/... -run TestParse -v
+```
+
 ### Checkpoint 2: Interop Works
 - [ ] ComputedKey converts to Escalier AST ❌ **BLOCKER**
 - [x] UniqueSymbolType converts correctly ✅
 - [ ] No errors when converting ES2015 lib files
 
+**Verification:**
+```bash
+# After implementing Task 3.1 and 3.2:
+go test ./internal/interop/... -run TestConvertComputedKey -v
+go test ./internal/interop/... -run TestConvertES2015 -v
+```
+
 ### Checkpoint 3: Loading Works
 - [x] Reference directives are parsed ✅
 - [x] Recursive loading follows all references ✅
 - [ ] All declarations from all files are collected (blocked by Phase 3)
+
+**Verification:**
+```bash
+# After enabling ES2015:
+go test ./internal/checker/... -run TestDiscoverESLibFiles -v
+go test ./internal/checker/... -run TestLoadGlobalDefinitions -v
+```
 
 ### Checkpoint 4: Type Inference Works
 - [ ] SymbolConstructor interface has all well-known symbols
@@ -646,10 +831,37 @@ Phase 7: Testing (throughout)
 - [ ] Iterable<T> has [Symbol.iterator] method
 - [ ] Array<T> has [Symbol.iterator] from merged declarations
 
+**Verification:**
+```bash
+go test ./internal/checker/... -run TestSymbol -v
+go test ./internal/checker/... -run TestIterable -v
+```
+
+**Manual verification:**
+```go
+// Add to a test file to inspect Symbol type:
+symbolType := globalScope.Lookup("Symbol")
+fmt.Printf("Symbol type: %s\n", symbolType)
+// Should show iterator, toStringTag, etc.
+```
+
 ### Checkpoint 5: Property Access Works
 - [ ] `arr[Symbol.iterator]()` type-checks correctly
 - [ ] Symbol-keyed properties can be accessed
 - [ ] Type display shows `[Symbol.iterator]` not internal IDs
+
+**Verification:**
+```bash
+go test ./internal/checker/... -run TestSymbolKeyAccess -v
+```
+
+**Manual verification with Escalier source:**
+```
+// test.esc
+val arr = [1, 2, 3]
+val iter = arr[Symbol.iterator]()
+// Should type-check without errors
+```
 
 ---
 
@@ -680,6 +892,28 @@ Phase 7: Testing (throughout)
 - Nested member expressions deeper than `Symbol.X`
 
 **Mitigation:** Start with `IdentTypeAnn` and `MemberTypeAnn` support only. Document unsupported patterns and add them incrementally.
+
+### Risk: Circular References in Lib Files
+
+**Risk Level:** Low
+
+**Context:** The recursive loading approach in Task 1.5 assumes TypeScript lib files do not have circular `/// <reference>` directives.
+
+**Analysis:** TypeScript's lib files are structured as a DAG (directed acyclic graph):
+- `lib.es2015.d.ts` references `lib.es2015.core.d.ts`, `lib.es2015.symbol.d.ts`, etc.
+- Sub-libraries do not reference back to parent bundles
+- No known circular references exist in TypeScript's lib files
+
+**Mitigation:** The `visited` map in the recursive loading function prevents infinite loops even if circular references were introduced:
+
+```go
+if visited[filename] {
+    return nil, nil // Already processed - breaks any cycle
+}
+visited[filename] = true
+```
+
+**Testing:** Task 7.6 includes `TestDiscoverESLibFilesNoCycles` to verify no duplicates are returned, which would indicate cycle handling is working.
 
 ---
 
