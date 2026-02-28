@@ -81,33 +81,29 @@ func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 	}, nil
 }
 
-// convertQualIdentToExpr converts a dts_parser.QualIdent to an ast.Expr.
-// QualIdent can be either an Ident or a Member (for dotted names like Symbol.iterator).
-func convertQualIdentToExpr(qi dts_parser.QualIdent) (ast.Expr, error) {
-	switch q := qi.(type) {
-	case *dts_parser.Ident:
-		return ast.NewIdent(q.Name, q.Span()), nil
-	case *dts_parser.Member:
-		left, err := convertQualIdentToExpr(q.Left)
+// convertExpr converts a dts_parser.Expr to an ast.Expr
+func convertExpr(expr dts_parser.Expr) (ast.Expr, error) {
+	switch e := expr.(type) {
+	case *dts_parser.IdentExpr:
+		return ast.NewIdent(e.Name, e.Span()), nil
+	case *dts_parser.MemberExpr:
+		obj, err := convertExpr(e.Object)
 		if err != nil {
 			return nil, err
 		}
-		right := ast.NewIdentifier(q.Right.Name, q.Right.Span())
-		return ast.NewMember(left, right, false, q.Span()), nil
+		prop := ast.NewIdentifier(e.Prop.Name, e.Prop.Span())
+		return ast.NewMember(obj, prop, false, e.Span()), nil
+	case *dts_parser.LitExpr:
+		switch lit := e.Lit.(type) {
+		case *dts_parser.StringLiteral:
+			return ast.NewLitExpr(ast.NewString(lit.Value, lit.Span())), nil
+		case *dts_parser.NumberLiteral:
+			return ast.NewLitExpr(ast.NewNumber(lit.Value, lit.Span())), nil
+		default:
+			return nil, fmt.Errorf("convertExpr: unsupported literal type %T", lit)
+		}
 	default:
-		return nil, fmt.Errorf("convertQualIdentToExpr: unknown QualIdent type %T", qi)
-	}
-}
-
-// convertTypeAnnToExpr converts a type annotation (used in computed key context)
-// to an expression. Only supports patterns valid in computed keys.
-func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
-	switch t := typeAnn.(type) {
-	case *dts_parser.TypeReference:
-		// [Symbol.iterator] or [foo] -> convert the QualIdent name to an expression
-		return convertQualIdentToExpr(t.Name)
-	default:
-		return nil, fmt.Errorf("convertTypeAnnToExpr: unsupported type annotation in computed key: %T", typeAnn)
+		return nil, fmt.Errorf("convertExpr: unsupported expression type %T", expr)
 	}
 }
 
@@ -120,7 +116,7 @@ func convertPropertyKey(pk dts_parser.PropertyKey) (ast.ObjKey, error) {
 	case *dts_parser.NumberLiteral:
 		return ast.NewNumber(k.Value, k.Span()), nil
 	case *dts_parser.ComputedKey:
-		expr, err := convertTypeAnnToExpr(k.Expr)
+		expr, err := convertExpr(k.Expr)
 		if err != nil {
 			return nil, fmt.Errorf("converting computed key: %w", err)
 		}

@@ -315,12 +315,8 @@ func TestComputedKeys(t *testing.T) {
 	}{
 		{"computed string literal", "{ [\"computed\"]: string }"},
 		{"computed number literal", "{ [42]: number }"},
-		{"computed type reference", "{ [K]: string }"},
-		{"computed union type", "{ [string | number]: any }"},
-		// TODO: Phase 5 features (Advanced Type Operators)
-		// {"computed keyof", "{ [keyof T]: string }"},
-		// {"computed indexed access", "{ [T[K]]: number }"},
-		// {"computed typeof", "{ [typeof x]: string }"},
+		{"computed identifier", "{ [K]: string }"},
+		{"computed member expression", "{ [Symbol.iterator]: any }"},
 		{"multiple computed keys", "{ [K]: string, [P]: number }"},
 		{"computed with regular keys", "{ name: string, [K]: any, age: number }"},
 		{"nested computed", "{ outer: { [K]: string } }"},

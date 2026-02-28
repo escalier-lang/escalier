@@ -578,10 +578,9 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 		return nil
 	}
 
-	// In .d.ts files, computed keys use type expressions
-	expr := p.parseTypeAnn()
+	expr := p.parseExpr()
 	if expr == nil {
-		p.reportError(p.peek().Span, "Expected type expression in computed key")
+		p.reportError(p.peek().Span, "Expected expression in computed key")
 		return nil
 	}
 
@@ -597,4 +596,55 @@ func (p *DtsParser) parseComputedPropertyKey() PropertyKey {
 	}
 
 	return &ComputedKey{Expr: expr, span: span}
+}
+
+// parseExpr parses an expression for computed keys.
+// Supports: identifiers, member expressions (a.b.c), string literals, number literals
+func (p *DtsParser) parseExpr() Expr {
+	token := p.peek()
+
+	switch token.Type {
+	case StrLit:
+		tok := p.consume()
+		return &LitExpr{
+			Lit:  &StringLiteral{Value: tok.Value, span: tok.Span},
+			span: tok.Span,
+		}
+	case NumLit:
+		tok := p.consume()
+		val, _ := strconv.ParseFloat(tok.Value, 64)
+		return &LitExpr{
+			Lit:  &NumberLiteral{Value: val, span: tok.Span},
+			span: tok.Span,
+		}
+	case Identifier:
+		return p.parseIdentOrMemberExpr()
+	default:
+		return nil
+	}
+}
+
+// parseIdentOrMemberExpr parses identifier or member expression (a.b.c)
+func (p *DtsParser) parseIdentOrMemberExpr() Expr {
+	tok := p.consume()
+	var expr Expr = &IdentExpr{Name: tok.Value, span: tok.Span}
+
+	for p.peek().Type == Dot {
+		p.consume() // consume '.'
+		propTok := p.expect(Identifier)
+		if propTok == nil {
+			return nil
+		}
+		expr = &MemberExpr{
+			Object: expr,
+			Prop:   NewIdent(propTok.Value, propTok.Span),
+			span: ast.Span{
+				Start:    expr.Span().Start,
+				End:      propTok.Span.End,
+				SourceID: expr.Span().SourceID,
+			},
+		}
+	}
+
+	return expr
 }

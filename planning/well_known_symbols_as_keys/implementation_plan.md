@@ -22,7 +22,7 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 **Task Breakdown:**
 - **Phase 1:** 1.1-1.3 ✅ | 1.4 ⬜ Config | 1.5 ✅ Refactor
-- **Phase 3:** 3.1 ✅ | 3.2 ✅ | 3.3 ✅ | 3.4 ✅ Validation
+- **Phase 3:** 3.0 ✅ Expr types | 3.1 ✅ parseExpr | 3.2 ✅ convertExpr | 3.3 ✅ | 3.4 ✅ Validation
 - **Phase 5:** 5.1-5.3 ✅ | 5.4 ⬜ Interface verification
 - **Phase 7:** 7.1-7.5 ⬜ | 7.3 ✅ Interop tests | 7.6 ⬜ Lib discovery tests
 
@@ -56,11 +56,12 @@ This plan outlines the implementation steps for supporting well-known symbols as
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `internal/dts_parser/ast.go` | Contains `ComputedKey` struct | ✅ |
-| `internal/dts_parser/object.go` | Parses object type members | ✅ |
+| `internal/dts_parser/ast.go` | `ComputedKey`, `Expr` interface, `IdentExpr`, `MemberExpr`, `LitExpr` | ✅ |
+| `internal/dts_parser/object.go` | Parses object type members, `parseExpr()`, `parseIdentOrMemberExpr()` | ✅ |
+| `internal/dts_parser/class.go` | Class computed key parsing uses `parseExpr()` | ✅ |
 | `internal/dts_parser/lexer.go` | `unique` keyword token | ✅ |
 | `internal/dts_parser/base.go` | Parses `unique symbol` | ✅ |
-| `internal/interop/helper.go` | `convertPropertyKey()` with ComputedKey support | ✅ |
+| `internal/interop/helper.go` | `convertExpr()`, `convertPropertyKey()` with ComputedKey support | ✅ |
 | `internal/interop/helper_test.go` | ComputedKey validation tests | ✅ |
 | `internal/checker/prelude.go` | Lib file loading via `discoverESLibFiles()` | ✅ (ES2015 disabled) |
 | `internal/checker/infer_module.go` | Declaration processing and merging | 🚧 |
@@ -240,71 +241,129 @@ type UniqueSymbolTypeAnn struct {
 
 **This phase was the critical blocker preventing ES2015+ support - now resolved.**
 
-### Task 3.1: Add `convertTypeAnnToExpr` Helper ✅ DONE
+### Task 3.0: Add Expr Interface to dts_parser ✅ DONE
 
-**Location:** `internal/interop/helper.go:102-112`
+**Location:** `internal/dts_parser/ast.go:46-81`
 **Difficulty:** Medium
-**Risk:** Medium
+**Risk:** Low
 
 **Implementation completed:**
 
-Two helper functions were added:
-
-1. `convertQualIdentToExpr()` - Converts `dts_parser.QualIdent` to `ast.Expr`:
-   - Handles `*dts_parser.Ident` → `*ast.IdentExpr`
-   - Handles `*dts_parser.Member` → `*ast.MemberExpr` (recursively)
-
-2. `convertTypeAnnToExpr()` - Converts type annotations in computed key contexts:
-   - Handles `*dts_parser.TypeReference` by delegating to `convertQualIdentToExpr()`
-   - Returns error for unsupported type annotations
+Added proper `Expr` interface and expression types to `dts_parser/ast.go`:
 
 ```go
-func convertQualIdentToExpr(qi dts_parser.QualIdent) (ast.Expr, error) {
-    switch q := qi.(type) {
-    case *dts_parser.Ident:
-        return ast.NewIdent(q.Name, q.Span()), nil
-    case *dts_parser.Member:
-        left, err := convertQualIdentToExpr(q.Left)
-        if err != nil {
-            return nil, err
-        }
-        right := ast.NewIdentifier(q.Right.Name, q.Right.Span())
-        return ast.NewMember(left, right, false, q.Span()), nil
-    default:
-        return nil, fmt.Errorf("convertQualIdentToExpr: unknown QualIdent type %T", qi)
-    }
+// Expr represents an expression in computed keys
+type Expr interface {
+    isExpr()
+    Node
 }
 
-func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
-    switch t := typeAnn.(type) {
-    case *dts_parser.TypeReference:
-        return convertQualIdentToExpr(t.Name)
-    default:
-        return nil, fmt.Errorf("convertTypeAnnToExpr: unsupported type annotation in computed key: %T", typeAnn)
-    }
+func (*LitExpr) isExpr()    {}
+func (*IdentExpr) isExpr()  {}
+func (*MemberExpr) isExpr() {}
+
+// LitExpr wraps a Literal as an expression
+type LitExpr struct {
+    Lit  Literal
+    span ast.Span
+}
+
+type IdentExpr struct {
+    Name string
+    span ast.Span
+}
+
+type MemberExpr struct {
+    Object Expr
+    Prop   *Ident
+    span   ast.Span
 }
 ```
 
-**Patterns handled:**
-1. ✅ `TypeReference` with `Ident` name → Simple identifier like `[foo]`
-2. ✅ `TypeReference` with `Member` name → Member access like `[Symbol.iterator]`
-3. ❌ `TypeofTypeAnn` → Typeof expression (**deferred per FR4** - returns error if encountered)
+**Updated `ComputedKey` struct** (`internal/dts_parser/ast.go:457-460`):
+```go
+type ComputedKey struct {
+    Expr Expr // expression inside [...] (was TypeAnn)
+    span ast.Span
+}
+```
 
-### Task 3.2: Implement ComputedKey Conversion ✅ DONE
+### Task 3.1: Add `parseExpr()` Function ✅ DONE
 
-**Location:** `internal/interop/helper.go:122-127` - `convertPropertyKey()` function, `ComputedKey` case
+**Location:** `internal/dts_parser/object.go:601-648`
+**Difficulty:** Medium
+**Risk:** Low
+
+**Implementation completed:**
+
+Added expression parsing functions for computed keys:
+
+```go
+// parseExpr parses an expression for computed keys.
+// Supports: identifiers, member expressions (a.b.c), string literals, number literals
+func (p *DtsParser) parseExpr() Expr {
+    switch token.Type {
+    case StrLit:
+        return &LitExpr{Lit: &StringLiteral{...}, span: tok.Span}
+    case NumLit:
+        return &LitExpr{Lit: &NumberLiteral{...}, span: tok.Span}
+    case Identifier:
+        return p.parseIdentOrMemberExpr()
+    default:
+        return nil
+    }
+}
+
+// parseIdentOrMemberExpr parses identifier or member expression (a.b.c)
+func (p *DtsParser) parseIdentOrMemberExpr() Expr {
+    // Parses chains like Symbol.iterator into MemberExpr
+}
+```
+
+**Also updated:**
+- `internal/dts_parser/object.go:582` - `parseComputedPropertyKey()` uses `parseExpr()`
+- `internal/dts_parser/class.go:159` - Class computed key parsing uses `parseExpr()`
+
+### Task 3.2: Implement `convertExpr()` Helper ✅ DONE
+
+**Location:** `internal/interop/helper.go:84-107`
 **Difficulty:** Easy
 **Risk:** Low
 
 **Implementation completed:**
+
+Single `convertExpr()` function replaces previous `convertQualIdentToExpr` and `convertTypeAnnToExpr`:
+
 ```go
-case *dts_parser.ComputedKey:
-    expr, err := convertTypeAnnToExpr(k.Expr)
-    if err != nil {
-        return nil, fmt.Errorf("converting computed key: %w", err)
+// convertExpr converts a dts_parser.Expr to an ast.Expr
+func convertExpr(expr dts_parser.Expr) (ast.Expr, error) {
+    switch e := expr.(type) {
+    case *dts_parser.IdentExpr:
+        return ast.NewIdent(e.Name, e.Span()), nil
+    case *dts_parser.MemberExpr:
+        obj, err := convertExpr(e.Object)
+        if err != nil {
+            return nil, err
+        }
+        prop := ast.NewIdentifier(e.Prop.Name, e.Prop.Span())
+        return ast.NewMember(obj, prop, false, e.Span()), nil
+    case *dts_parser.LitExpr:
+        switch lit := e.Lit.(type) {
+        case *dts_parser.StringLiteral:
+            return ast.NewLitExpr(ast.NewString(lit.Value, lit.Span())), nil
+        case *dts_parser.NumberLiteral:
+            return ast.NewLitExpr(ast.NewNumber(lit.Value, lit.Span())), nil
+        }
     }
-    return ast.NewComputedKey(expr), nil
+    return nil, fmt.Errorf("convertExpr: unsupported expression type %T", expr)
+}
 ```
+
+**Patterns handled:**
+1. ✅ `IdentExpr` → Simple identifier like `[foo]`
+2. ✅ `MemberExpr` → Member access like `[Symbol.iterator]`
+3. ✅ `LitExpr` with `StringLiteral` → String literal like `["key"]`
+4. ✅ `LitExpr` with `NumberLiteral` → Number literal like `[42]`
 
 ### Task 3.3: Verify AST ComputedKey Exists ✅ DONE
 
@@ -707,8 +766,9 @@ Phase 7: Testing (throughout)
 
 | Task | Difficulty | Lines of Code | Risk | Status |
 |------|------------|---------------|------|--------|
-| Task 3.1: convertTypeAnnToExpr | Medium | ~30 | Medium | ✅ Done |
-| Task 3.2: ComputedKey conversion | Easy | ~5 | Low | ✅ Done |
+| Task 3.0: Add Expr types to dts_parser | Medium | ~35 | Low | ✅ Done |
+| Task 3.1: Add parseExpr() | Medium | ~45 | Low | ✅ Done |
+| Task 3.2: Add convertExpr() | Easy | ~25 | Low | ✅ Done |
 | Task 3.4: Validation tests | Easy | ~180 | Low | ✅ Done |
 | Task 1.3: Enable ES2015 | Trivial | ~1 | Low | ⬜ Next |
 | Task 1.5: Refactor discoverESLibFiles | Medium | ~30 (net reduction) | Low | ✅ Done |
@@ -717,7 +777,7 @@ Phase 7: Testing (throughout)
 | Task 6.1: Verify property access | Unknown | TBD | Low | ⬜ |
 | Task 7.6: Lib discovery tests | Easy | ~50 | Low | ⬜ |
 
-**Phase 3 completed:** ~215 lines added (including validation tests)
+**Phase 3 completed:** ~285 lines added (including new Expr types, parseExpr, convertExpr, and tests)
 **Task 1.5 simplification:** Removes ~60 lines, adds ~30 lines (net -30 lines)
 
 ---

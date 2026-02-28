@@ -44,6 +44,43 @@ func (m *Member) Span() ast.Span {
 }
 
 // ============================================================================
+// Expressions (for computed keys)
+// ============================================================================
+
+// Expr represents an expression in computed keys
+type Expr interface {
+	isExpr()
+	Node
+}
+
+func (*LitExpr) isExpr()    {}
+func (*IdentExpr) isExpr()  {}
+func (*MemberExpr) isExpr() {}
+
+// LitExpr wraps a Literal as an expression
+type LitExpr struct {
+	Lit  Literal
+	span ast.Span
+}
+
+func (l *LitExpr) Span() ast.Span { return l.span }
+
+type IdentExpr struct {
+	Name string
+	span ast.Span
+}
+
+func (i *IdentExpr) Span() ast.Span { return i.span }
+
+type MemberExpr struct {
+	Object Expr
+	Prop   *Ident
+	span   ast.Span
+}
+
+func (m *MemberExpr) Span() ast.Span { return m.span }
+
+// ============================================================================
 // Top-level Structure
 // ============================================================================
 
@@ -455,7 +492,7 @@ func (*NumberLiteral) isPropertyKey() {}
 func (*ComputedKey) isPropertyKey()   {}
 
 type ComputedKey struct {
-	Expr TypeAnn // in .d.ts, computed keys use type expressions
+	Expr Expr // expression inside [...]
 	span ast.Span
 }
 
