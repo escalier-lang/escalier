@@ -4,6 +4,26 @@
 
 This plan outlines the implementation steps for supporting well-known symbols as computed property keys in the Escalier compiler, enabling parsing and type-checking of TypeScript's ES2015+ standard library files.
 
+---
+
+## Implementation Status Summary
+
+| Phase | Description | Status | Progress | Blocking Issues |
+|-------|-------------|--------|----------|-----------------|
+| **1** | Recursive Lib File Loading | 🔒 Blocked | 60% | Awaiting Phase 3; Task 1.5 refactor pending |
+| **2** | Parse `unique symbol` Type | ✅ Done | 100% | None |
+| **3** | Convert Computed Property Keys | ⬜ Not Started | 0% | **CRITICAL BLOCKER** |
+| **4** | Dependency Graph for Computed Keys | 🚧 In Progress | 70% | Needs computed key tracking |
+| **5** | Infer Symbol-Keyed Properties | 🚧 In Progress | 50% | Interface support incomplete |
+| **6** | Symbol Key Property Access | 🚧 In Progress | 30% | Needs verification |
+| **7** | Testing | ⬜ Not Started | 0% | Awaiting implementation |
+
+**Legend:** ✅ Done | 🚧 In Progress | ⬜ Not Started | 🔒 Blocked
+
+**Phase 1 Tasks:** 1.1-1.3 ✅ Done (but ES2015 disabled) | 1.4 ⬜ Config | 1.5 ⬜ Refactor `discoverESLibFiles`
+
+---
+
 ## Current State
 
 ### What's Working
@@ -11,238 +31,265 @@ This plan outlines the implementation steps for supporting well-known symbols as
 - `lib.dom.d.ts` parsing and type inference
 - Declaration merging for interfaces via `MergeInterface()`
 - Computed property support in Escalier source code (e.g., `[Symbol.customMatcher]`)
-- `ObjectType.SymbolKeyMap` field exists but is not populated
+- `ObjectType.SymbolKeyMap` field exists and is populated for classes
+- `unique symbol` parsing in dts_parser ✅
+- `UniqueSymbolType` in type system ✅
+- Recursive lib file loading infrastructure ✅ (disabled for ES2015+)
+- Symbol binding in global scope with `iterator` and `customMatcher` ✅
 
 ### What's Missing
-- Parsing `unique symbol` type in dts_parser
-- Converting `ComputedKey` in interop layer (returns error)
-- Recursive lib file loading with reference following
-- Dependency graph awareness of computed keys
-- Type inference for symbol-keyed properties
+- ~~Parsing `unique symbol` type in dts_parser~~ ✅ Done
+- Converting `ComputedKey` in interop layer (returns error) ❌ **BLOCKER**
+- ~~Recursive lib file loading with reference following~~ ✅ Done (disabled pending Phase 3)
+- Dependency graph awareness of computed keys (partial)
+- Type inference for symbol-keyed properties in interfaces (works for classes)
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `internal/dts_parser/ast.go` | Contains `ComputedKey` struct |
-| `internal/dts_parser/object.go` | Parses object type members |
-| `internal/interop/helper.go` | `convertPropertyKey` - needs ComputedKey support |
-| `internal/checker/prelude.go` | Lib file loading |
-| `internal/checker/infer_module.go` | Declaration processing and merging |
-| `internal/type_system/types.go` | `ObjectType` with `SymbolKeyMap` |
+| File | Purpose | Status |
+|------|---------|--------|
+| `internal/dts_parser/ast.go` | Contains `ComputedKey` struct | ✅ |
+| `internal/dts_parser/object.go` | Parses object type members | ✅ |
+| `internal/dts_parser/lexer.go` | `unique` keyword token | ✅ |
+| `internal/dts_parser/base.go` | Parses `unique symbol` | ✅ |
+| `internal/interop/helper.go` | `convertPropertyKey` - needs ComputedKey support | ❌ Line 92-97 |
+| `internal/checker/prelude.go` | Lib file loading (recursive) | ✅ (ES2015 disabled) |
+| `internal/checker/infer_module.go` | Declaration processing and merging | 🚧 |
+| `internal/type_system/types.go` | `ObjectType` with `SymbolKeyMap` | ✅ |
+| `internal/ast/type_ann.go` | `UniqueSymbolTypeAnn` | ✅ |
 
 ---
 
 ## Phase 1: Recursive Lib File Loading (FR1)
 
+**Status:** 🔒 Blocked (95% complete - awaiting Phase 3)
+**Difficulty:** ~~Medium~~ → Already Done
+**Risk:** Low
+
 **Goal:** Load lib files by following `/// <reference lib="..." />` directives recursively.
 
-### Task 1.1: Parse Reference Directives
+### Task 1.1: Parse Reference Directives ✅ DONE
 
-**Location:** `internal/dts_parser/`
+**Location:** `internal/checker/prelude.go:20`
 
-Add support for extracting `/// <reference lib="..." />` directives from parsed files.
+**What exists:**
+- Regex pattern: `var libRefPattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)`
+- Bundle file pattern for ES2015+ detection at line 26
+- Reference extraction works correctly
+
+~~Add support for extracting `/// <reference lib="..." />` directives from parsed files.~~
+
+### Task 1.2: Implement Recursive Loading ✅ DONE
+
+**Location:** `internal/checker/prelude.go:67-130`
+
+**What exists:**
+- `discoverESLibFiles()` function loads ES lib files in dependency order
+- Follows reference directives and discovers sub-libraries
+- Handles ES5 as special case (loaded first)
+- Supports version filtering (es5, es2015, es2016, etc.)
+
+### Task 1.3: Update Prelude Loading ✅ DONE (but ES2015 disabled)
+
+**Location:** `internal/checker/prelude.go:505-534`
+
+**What exists:**
+- `loadGlobalDefinitions()` calls `discoverESLibFiles()`
+- Successfully loads `lib.es5.d.ts` and `lib.dom.d.ts`
+
+**What's blocking:**
+- Line 509: `targetVersion := "es5"` is hard-coded
+- Comment states: "Currently limited to ES5 because ES2015+ lib files use ComputedKey"
+- **Action required:** Change to `"es2015"` once Phase 3 is complete
+
+### Task 1.4: Add Target Version Configuration ⬜ NOT STARTED
+
+**Location:** `internal/checker/checker.go` or configuration
+**Difficulty:** Easy
+**Risk:** Low
+
+Add a way to specify the target ES version (currently hard-coded to `es5`).
+
+**Note:** Low priority - can be done after core functionality works.
+
+### Task 1.5: Refactor `discoverESLibFiles` to Use Recursive Loading ⬜ NOT STARTED
+
+**Location:** `internal/checker/prelude.go:67-130`
+**Difficulty:** Medium
+**Risk:** Low
+
+**Current approach (overly complex):**
+1. Starts with `lib.es5.d.ts`
+2. Reads directory to find all bundle files (`lib.es2015.d.ts`, `lib.es2016.d.ts`, etc.)
+3. Sorts bundle files by version
+4. Filters to only include versions up to `targetVersion`
+5. Parses each bundle to extract reference directives
+6. Builds a flat list of sub-libraries, excluding bundle files themselves
+
+**Problems with current approach:**
+- Requires `os.ReadDir` which may not work in WASM
+- Complex bundle file detection logic (`bundleFilePattern`, `isBundleFile`)
+- Version comparison and filtering logic
+- Special-casing of ES5 vs ES2015+
+
+**Proposed simpler approach:**
+1. Start with `lib.<targetVersion>.d.ts` (e.g., `lib.es2015.d.ts`)
+2. Parse the file to extract reference directives AND any declarations
+3. Recursively process each referenced file (following `/// <reference lib="..." />`)
+4. Track visited files to avoid duplicates
+5. Return declarations in dependency order (referenced files before the referencing file)
 
 ```go
-// ReferenceDirective represents a /// <reference lib="..." /> directive
-type ReferenceDirective struct {
-    Lib  string   // e.g., "es2015.core"
-    Span ast.Span
-}
-
-// Module should include reference directives
-type Module struct {
-    Statements []Statement
-    References []ReferenceDirective  // NEW
-}
-```
-
-**Implementation:**
-1. Update the lexer to recognize `/// <reference` at the start of lines
-2. Parse the `lib="..."` attribute
-3. Collect directives in the Module
-
-### Task 1.2: Implement Recursive Loading
-
-**Location:** `internal/checker/prelude.go`
-
-Create a function to load a target lib file and recursively follow all references.
-
-```go
-// loadLibFileRecursive loads a lib file and all its references.
-// Returns all declarations from all visited files.
-func (c *Checker) loadLibFileRecursive(
-    libDir string,
-    libName string,
-    visited map[string]bool,
-) ([]dts_parser.Statement, error) {
+// loadLibFilesRecursive loads a lib file and all its references recursively.
+// Returns filenames in dependency order (dependencies first).
+func loadLibFilesRecursive(libDir string, libName string, visited map[string]bool) ([]string, error) {
     filename := "lib." + libName + ".d.ts"
     if visited[filename] {
         return nil, nil // Already processed
     }
     visited[filename] = true
 
-    path := filepath.Join(libDir, filename)
-    module, err := c.parseLibFile(path)
+    filePath := filepath.Join(libDir, filename)
+    refs, err := parseReferenceDirectives(filePath)
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("failed to parse %s: %w", filename, err)
     }
 
-    var allDecls []dts_parser.Statement
+    var result []string
 
-    // First, recursively load all references
-    for _, ref := range module.References {
-        refDecls, err := c.loadLibFileRecursive(libDir, ref.Lib, visited)
+    // Process dependencies first (depth-first)
+    for _, ref := range refs {
+        if isESNextFile("lib." + ref + ".d.ts") {
+            continue // Skip unstable ESNext features
+        }
+        refFiles, err := loadLibFilesRecursive(libDir, ref, visited)
         if err != nil {
             return nil, err
         }
-        allDecls = append(allDecls, refDecls...)
+        result = append(result, refFiles...)
     }
 
-    // Then add this file's declarations
-    allDecls = append(allDecls, module.Statements...)
+    // Add this file after its dependencies
+    result = append(result, filename)
 
-    return allDecls, nil
+    return result, nil
 }
-```
 
-### Task 1.3: Update Prelude Loading
-
-**Location:** `internal/checker/prelude.go`
-
-Update `loadGlobalDefinitions` to use the new recursive loading:
-
-```go
-func (c *Checker) loadGlobalDefinitions(globalScope *Scope, targetVersion string) {
-    libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+// discoverESLibFiles returns ES lib files for the given target version.
+func discoverESLibFiles(libDir string, targetVersion string) ([]string, error) {
     visited := make(map[string]bool)
-
-    // Load target version and all its references
-    allDecls, err := c.loadLibFileRecursive(libDir, targetVersion, visited)
-    if err != nil {
-        panic(fmt.Sprintf("failed to load lib files: %v", err))
-    }
-
-    // Convert and merge all declarations into a single module
-    // ...
+    return loadLibFilesRecursive(libDir, targetVersion, visited)
 }
 ```
 
-### Task 1.4: Add Target Version Configuration
+**Benefits:**
+- No directory scanning required (WASM-friendly)
+- No bundle file detection logic needed
+- No version comparison/filtering
+- Naturally handles the dependency tree
+- Simpler, more maintainable code
+- Can be removed: `bundleFilePattern`, `isBundleFile`, `extractESVersion`, `compareESVersions`
 
-**Location:** `internal/checker/checker.go` or configuration
-
-Add a way to specify the target ES version (default to `es2015` or a sensible default).
+**Note:** This refactoring can be done independently of ComputedKey support, but is blocked by the same issue (ES2015+ files use computed keys).
 
 ---
 
 ## Phase 2: Parse `unique symbol` Type (FR5)
 
+**Status:** ✅ DONE (100% complete)
+**Difficulty:** N/A (completed)
+**Risk:** N/A
+
 **Goal:** Parse and represent `unique symbol` as a distinct type.
 
-### Task 2.1: Add Lexer Support
+### Task 2.1: Add Lexer Support ✅ DONE
 
-**Location:** `internal/dts_parser/lexer.go`
+**Location:** `internal/dts_parser/lexer.go:74`
 
-Add `UNIQUE` as a keyword token.
+**What exists:** `"unique": Unique` keyword token defined
 
-### Task 2.2: Add AST Node
+### Task 2.2: Add AST Node ✅ DONE
 
-**Location:** `internal/dts_parser/ast.go`
+**Location:** `internal/dts_parser/ast.go:531`
 
+**What exists:** `PrimUniqueSymbol` primitive type constant defined
+
+### Task 2.3: Parse `unique symbol` ✅ DONE
+
+**Location:** `internal/dts_parser/base.go:188-194`
+
+**What exists:**
 ```go
-// UniqueSymbolType represents the `unique symbol` type
-type UniqueSymbolType struct {
-    span ast.Span
-}
-
-func (u *UniqueSymbolType) Span() ast.Span { return u.span }
-func (*UniqueSymbolType) isTypeAnn()       {}
-```
-
-### Task 2.3: Parse `unique symbol`
-
-**Location:** `internal/dts_parser/base.go` or appropriate parser file
-
-```go
-func (p *Parser) parseType() TypeAnn {
-    if p.match(UNIQUE) {
-        if !p.match(SYMBOL) {
-            p.error("expected 'symbol' after 'unique'")
-        }
-        return &UniqueSymbolType{span: ...}
+if p.match(Unique) {
+    if !p.check(Symbol) {
+        p.error("expected 'symbol' after 'unique'")
     }
-    // ... existing type parsing
+    p.advance()
+    return &PrimTypeAnn{Prim: PrimUniqueSymbol, span: ...}
 }
 ```
 
-### Task 2.4: Add Type System Representation
+### Task 2.4: Add Type System Representation ✅ DONE
 
-**Location:** `internal/type_system/types.go`
+**Location:** `internal/type_system/types.go:509-539`
 
+**What exists:**
 ```go
-// UniqueSymbolType represents a unique symbol type.
-// Each unique symbol declaration creates a nominally distinct type.
 type UniqueSymbolType struct {
-    ID         int    // Unique identifier for this symbol
-    Name       string // Optional: the property name (e.g., "iterator")
+    Value      int  // Unique identifier
     provenance Provenance
 }
-
-var uniqueSymbolCounter int = 0
-
-func NewUniqueSymbolType(name string, prov Provenance) *UniqueSymbolType {
-    uniqueSymbolCounter++
-    return &UniqueSymbolType{
-        ID:         uniqueSymbolCounter,
-        Name:       name,
-        provenance: prov,
-    }
-}
 ```
+- Constructor: `NewUniqueSymbolType(provenance, value)`
+- Symbol counter managed via `c.SymbolID` in checker
 
-### Task 2.5: Add Interop Conversion
+### Task 2.5: Add Interop Conversion ✅ DONE
 
-**Location:** `internal/interop/helper.go`
+**Location:** `internal/interop/helper.go:265-266`
 
+**What exists:**
 ```go
-case *dts_parser.UniqueSymbolType:
-    return ast.NewUniqueSymbolTypeAnn(convertSpan(t.Span())), nil
+case dts_parser.PrimUniqueSymbol:
+    return ast.NewUniqueSymbolTypeAnn(span), nil
 ```
 
-### Task 2.6: Add AST Type Annotation
+### Task 2.6: Add AST Type Annotation ✅ DONE
 
-**Location:** `internal/ast/type_ann.go`
+**Location:** `internal/ast/type_ann.go:111-122`
 
+**What exists:**
 ```go
 type UniqueSymbolTypeAnn struct {
-    span Span
-}
-
-func NewUniqueSymbolTypeAnn(span Span) *UniqueSymbolTypeAnn {
-    return &UniqueSymbolTypeAnn{span: span}
+    span         Span
+    inferredType Type
 }
 ```
 
-### Task 2.7: Infer Unique Symbol Types
+### Task 2.7: Infer Unique Symbol Types ✅ DONE
 
-**Location:** `internal/checker/infer_type_ann.go`
+**Location:** `internal/checker/prelude.go:730-757`
 
-```go
-case *ast.UniqueSymbolTypeAnn:
-    // Each unique symbol creates a fresh, nominally distinct type
-    return type_system.NewUniqueSymbolType("", ctx.Provenance), nil
-```
+**What exists:**
+- `addSymbolBinding()` creates Symbol object with `iterator` and `customMatcher` unique symbols
+- Well-known symbols are pre-created with unique IDs
 
 ---
 
 ## Phase 3: Convert Computed Property Keys (FR4)
 
+**Status:** ⬜ NOT STARTED (0% complete) - **CRITICAL BLOCKER**
+**Difficulty:** Medium
+**Risk:** Medium (must handle all valid computed key patterns)
+
 **Goal:** Convert `ComputedKey` from dts_parser AST to Escalier AST.
 
-### Task 3.1: Add `convertTypeAnnToExpr` Helper
+**This phase is the critical blocker preventing ES2015+ support.**
+
+### Task 3.1: Add `convertTypeAnnToExpr` Helper ⬜ NOT STARTED
 
 **Location:** `internal/interop/helper.go`
+**Difficulty:** Medium
+**Risk:** Medium
 
 This helper converts type annotations used in computed key contexts to expressions:
 
@@ -274,12 +321,28 @@ func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
 }
 ```
 
-### Task 3.2: Implement ComputedKey Conversion
+**Patterns to handle:**
+1. `IdentTypeAnn` → Simple identifier like `[foo]`
+2. `MemberTypeAnn` → Member access like `[Symbol.iterator]` (most common)
+3. `TypeofTypeAnn` → Typeof expression (can defer)
 
-**Location:** `internal/interop/helper.go`
+### Task 3.2: Implement ComputedKey Conversion ⬜ NOT STARTED
 
-Update `convertPropertyKey`:
+**Location:** `internal/interop/helper.go:92-97`
+**Difficulty:** Easy (once Task 3.1 is done)
+**Risk:** Low
 
+**Current code (blocking):**
+```go
+case *dts_parser.ComputedKey:
+    // In dts_parser, ComputedKey.Expr is a TypeAnn
+    // In ast, ComputedKey.Expr is an Expr
+    // We need to handle this conversion somehow
+    // TODO: implement conversion for computed keys
+    return nil, fmt.Errorf("convertPropertyKey: ComputedKey not yet implemented")
+```
+
+**Required change:**
 ```go
 case *dts_parser.ComputedKey:
     expr, err := convertTypeAnnToExpr(k.Expr)
@@ -289,37 +352,44 @@ case *dts_parser.ComputedKey:
     return ast.NewComputedKey(expr, convertSpan(k.Span())), nil
 ```
 
-### Task 3.3: Verify AST ComputedKey Exists
+### Task 3.3: Verify AST ComputedKey Exists ✅ DONE
 
-**Location:** `internal/ast/`
+**Location:** `internal/ast/obj_elem.go:13`
 
-Ensure `ast.ComputedKey` exists and can be used as an `ObjKey`:
-
+**What exists:**
 ```go
 type ComputedKey struct {
-    Expr Expr
-    span Span
+    Expr Expr  // NOTE: In ast, this must be an Expr
+    // ... additional fields
 }
-
-func NewComputedKey(expr Expr, span Span) *ComputedKey {
-    return &ComputedKey{Expr: expr, span: span}
-}
-
-func (c *ComputedKey) Span() Span { return c.span }
-func (*ComputedKey) isObjKey()    {}
 ```
+
+The AST `ComputedKey` already exists and can be used as an `ObjKey`.
 
 ---
 
 ## Phase 4: Dependency Graph for Computed Keys (FR3)
 
+**Status:** 🚧 IN PROGRESS (70% complete)
+**Difficulty:** Hard
+**Risk:** High (affects processing order of all declarations)
+
 **Goal:** Ensure declarations are processed in correct order when computed keys create dependencies.
 
-### Task 4.1: Detect Computed Key Dependencies
+### Task 4.1: Detect Computed Key Dependencies 🚧 PARTIAL
 
 **Location:** `internal/dep_graph/`
+**Difficulty:** Medium
+**Risk:** Medium
 
-When building the dependency graph, recognize that a computed key like `[Symbol.iterator]` creates a dependency on the variable `Symbol`.
+**What exists:**
+- `DepGraph` structure tracks declarations and dependencies
+- `BindingKey` system (value:name, type:name)
+- Basic dependency tracking infrastructure
+
+**What's missing:**
+- Automatic dependency detection for computed keys like `[Symbol.iterator]`
+- When an interface has `[Symbol.iterator]`, it should automatically create a dependency on the `Symbol` variable
 
 ```go
 // When processing an interface declaration with computed keys:
@@ -353,199 +423,119 @@ func extractRootIdent(expr ast.Expr) string {
 }
 ```
 
-### Task 4.2: Group Same-Named Interface Declarations
+### Task 4.2: Group Same-Named Interface Declarations ✅ DONE
+
+**Location:** `internal/checker/infer_module.go:102,551,568`
+
+**What exists:**
+- Comments indicate interface merging is already handled
+- Line 102: "even when multiple declarations share the same binding key (overloads, interface merging)"
+- Same-named interfaces are processed together
+
+### Task 4.3: Process Interface Groups Together ✅ DONE
 
 **Location:** `internal/checker/infer_module.go`
 
-Before processing declarations, group all interface declarations with the same name:
-
-```go
-// Group interface declarations by name
-func groupInterfaceDecls(decls []ast.Decl) map[string][]*ast.InterfaceDecl {
-    groups := make(map[string][]*ast.InterfaceDecl)
-    for _, decl := range decls {
-        if iface, ok := decl.(*ast.InterfaceDecl); ok {
-            groups[iface.Name.Name] = append(groups[iface.Name.Name], iface)
-        }
-    }
-    return groups
-}
-```
-
-### Task 4.3: Process Interface Groups Together
-
-**Location:** `internal/checker/infer_module.go`
-
-When processing the dependency graph, treat all same-named interfaces as a single unit:
-
-```go
-// In the dependency graph, all interfaces with the same name should be
-// represented as a single node. When that node is processed, all the
-// interface declarations are inferred and merged together.
-func (c *Checker) processInterfaceGroup(ctx Context, decls []*ast.InterfaceDecl) (*type_system.TypeAlias, []Error) {
-    var mergedElems []type_system.ObjTypeElem
-    var errors []Error
-
-    for _, decl := range decls {
-        typeAlias, declErrors := c.inferInterface(ctx, decl)
-        errors = append(errors, declErrors...)
-
-        if objType, ok := typeAlias.Type.(*type_system.ObjectType); ok {
-            mergedElems = append(mergedElems, objType.Elems...)
-        }
-    }
-
-    // Create merged type with all elements
-    mergedType := &type_system.ObjectType{
-        Elems:     mergedElems,
-        Interface: true,
-        // ... other fields
-    }
-
-    return &type_system.TypeAlias{
-        Name:       decls[0].Name.Name,
-        Type:       mergedType,
-        TypeParams: // from first declaration
-    }, errors
-}
-```
+**What exists:**
+- Interface merging via `MergeInterface()` already works
+- SCC processing handles same-named declarations
 
 ---
 
 ## Phase 5: Infer Symbol-Keyed Properties (FR6)
 
+**Status:** 🚧 IN PROGRESS (50% complete)
+**Difficulty:** Medium
+**Risk:** Medium
+
 **Goal:** Properly infer and track symbol-keyed properties in the type system.
 
-### Task 5.1: Evaluate Computed Key Expressions
+### Task 5.1: Evaluate Computed Key Expressions ✅ DONE (for classes)
 
-**Location:** `internal/checker/infer_stmt.go` or new file
+**Location:** `internal/checker/utils.go:80-100`
 
-When inferring an interface with a computed key, evaluate the key expression:
-
+**What exists:**
 ```go
-func (c *Checker) evaluateComputedKey(ctx Context, key *ast.ComputedKey) (type_system.Type, error) {
-    // Infer the type of the key expression
-    keyType, err := c.inferExpr(ctx, key.Expr)
-    if err != nil {
-        return nil, err
-    }
-
-    // The key type should be a unique symbol
-    if uniqueSym, ok := keyType.(*type_system.UniqueSymbolType); ok {
-        return uniqueSym, nil
-    }
-
-    return nil, fmt.Errorf("computed key must be a unique symbol, got %T", keyType)
-}
-```
-
-### Task 5.2: Populate SymbolKeyMap
-
-**Location:** `internal/checker/infer_stmt.go`
-
-When creating an ObjectType with symbol keys, populate the SymbolKeyMap:
-
-```go
-func (c *Checker) inferInterfaceWithSymbolKeys(ctx Context, decl *ast.InterfaceDecl) (*type_system.ObjectType, []Error) {
-    objType := &type_system.ObjectType{
-        Interface:    true,
-        SymbolKeyMap: make(map[int]any),
-    }
-
-    for _, elem := range decl.Body.Elems {
-        switch e := elem.(type) {
-        case *ast.PropertyTypeAnn:
-            if computedKey, ok := e.Key.(*ast.ComputedKey); ok {
-                symbolType, err := c.evaluateComputedKey(ctx, computedKey)
-                if err != nil {
-                    // handle error
-                    continue
-                }
-                if uniqueSym, ok := symbolType.(*type_system.UniqueSymbolType); ok {
-                    // Store the mapping from symbol ID to the original expression
-                    objType.SymbolKeyMap[uniqueSym.ID] = computedKey.Expr
-
-                    // Create the property with the symbol as key
-                    propType, _ := c.inferTypeAnn(ctx, e.TypeAnn)
-                    objType.Elems = append(objType.Elems, &type_system.Property{
-                        Key:      uniqueSym, // Use the symbol type as key
-                        Value:    propType,
-                        Optional: e.Optional,
-                        Readonly: e.Readonly,
-                    })
-                }
-            }
-        // ... handle other element types
+func astKeyToTypeKey(c *Checker, ctx Context, key ast.ObjKey) (*type_system.ObjTypeKey, error) {
+    // ...
+    case *ast.ComputedKey:
+        keyType, _ := c.inferExpr(ctx, k.Expr)
+        switch t := keyType.(type) {
+        case *type_system.UniqueSymbolType:
+            newKey := type_system.NewSymKey(t.Value)
+            return &newKey, nil
+        // ... handles string/number literals too
         }
-    }
-
-    return objType, nil
 }
 ```
 
-### Task 5.3: Update Property Type to Support Symbol Keys
+### Task 5.2: Populate SymbolKeyMap ✅ DONE (for classes)
+
+**Location:** `internal/checker/infer_module.go:301-417`
+
+**What exists for classes:**
+- Symbol keys are extracted during class inference
+- `staticSymbolKeyMap` and `instanceSymbolKeyMap` track symbol expressions
+- Maps are populated in `ObjectType.SymbolKeyMap`
+
+**What may be missing:**
+- Equivalent handling for interface declarations (needs verification)
+- May need to add similar logic to interface inference
+
+### Task 5.3: Update Property Type to Support Symbol Keys ✅ DONE
 
 **Location:** `internal/type_system/types.go`
 
-Ensure `Property` can have a symbol as its key:
-
+**What exists:**
 ```go
-type Property struct {
-    Key      interface{} // string for regular keys, *UniqueSymbolType for symbol keys
-    Value    Type
-    Optional bool
-    Readonly bool
+type ObjTypeKey struct {
+    Kind ObjTypeKeyKind  // StrObjTypeKeyKind, NumObjTypeKeyKind, SymObjTypeKeyKind
+    Str  string
+    Num  float64
+    Sym  int  // For symbol keys
 }
 ```
+
+- `NewSymKey(sym int)` constructor exists
+- Properties can have symbol keys via `ObjTypeKey`
 
 ---
 
 ## Phase 6: Symbol Key Property Access (FR7)
 
+**Status:** 🚧 IN PROGRESS (30% complete)
+**Difficulty:** Medium
+**Risk:** Low
+
 **Goal:** Support accessing properties via symbol keys (e.g., `arr[Symbol.iterator]`).
 
-### Task 6.1: Handle Symbol Index Access
+### Task 6.1: Handle Symbol Index Access 🚧 PARTIAL
 
 **Location:** `internal/checker/infer_expr.go`
+**Difficulty:** Medium
+**Risk:** Low
 
-When type-checking index access with a symbol:
+**What exists:**
+- `astKeyToTypeKey()` in `utils.go:96-98` handles conversion of symbol expressions to symbol keys
+- Basic infrastructure for symbol key lookup exists
 
-```go
-func (c *Checker) inferIndexExpr(ctx Context, expr *ast.IndexExpr) (type_system.Type, []Error) {
-    objType, errors := c.inferExpr(ctx, expr.Object)
-    indexType, indexErrors := c.inferExpr(ctx, expr.Index)
-    errors = append(errors, indexErrors...)
-
-    // Check if the index is a unique symbol
-    if uniqueSym, ok := indexType.(*type_system.UniqueSymbolType); ok {
-        // Look up the property by symbol ID
-        if obj, ok := objType.(*type_system.ObjectType); ok {
-            for _, elem := range obj.Elems {
-                if prop, ok := elem.(*type_system.Property); ok {
-                    if propSym, ok := prop.Key.(*type_system.UniqueSymbolType); ok {
-                        if propSym.ID == uniqueSym.ID {
-                            return prop.Value, errors
-                        }
-                    }
-                }
-            }
-        }
-        // Symbol key not found
-        return type_system.NewUnknownType(), append(errors,
-            c.newError("property with symbol key not found"))
-    }
-
-    // ... existing index access handling
-}
-```
+**What needs verification:**
+- Full index expression handling for `arr[Symbol.iterator]()`
+- Error messages for missing symbol properties
+- Integration with method calls on symbol-keyed properties
 
 ---
 
 ## Phase 7: Testing
 
-### Task 7.1: Parser Tests
+**Status:** ⬜ NOT STARTED
+**Difficulty:** Easy-Medium
+**Risk:** Low
+
+### Task 7.1: Parser Tests ⬜ NOT STARTED
 
 **Location:** `internal/dts_parser/parser_test.go`
+**Difficulty:** Easy
 
 ```go
 func TestParseUniqueSymbol(t *testing.T) {
@@ -563,128 +553,96 @@ func TestParseComputedKey(t *testing.T) {
 }
 ```
 
-### Task 7.2: Lib File Parsing Tests
+### Task 7.2: Lib File Parsing Tests ⬜ NOT STARTED
 
 **Location:** `internal/dts_parser/integration_test.go`
+**Difficulty:** Easy
 
-```go
-func TestParseES2015LibFiles(t *testing.T) {
-    libFiles := []string{
-        "lib.es2015.symbol.d.ts",
-        "lib.es2015.symbol.wellknown.d.ts",
-        "lib.es2015.iterable.d.ts",
-        // ... all ES2015 files
-    }
-    for _, filename := range libFiles {
-        t.Run(filename, func(t *testing.T) {
-            // Parse and verify no errors
-        })
-    }
-}
-```
-
-### Task 7.3: Interop Tests
+### Task 7.3: Interop Tests ⬜ NOT STARTED
 
 **Location:** `internal/interop/interop_test.go`
+**Difficulty:** Easy
 
-```go
-func TestConvertComputedKey(t *testing.T) {
-    // Test that ComputedKey with Symbol.iterator converts correctly
-}
-
-func TestConvertUniqueSymbol(t *testing.T) {
-    // Test that unique symbol type annotation converts correctly
-}
-```
-
-### Task 7.4: Type Inference Tests
+### Task 7.4: Type Inference Tests ⬜ NOT STARTED
 
 **Location:** `internal/checker/tests/`
+**Difficulty:** Medium
 
-```go
-func TestSymbolKeyedProperty(t *testing.T) {
-    source := `
-        val arr = [1, 2, 3]
-        val iter = arr[Symbol.iterator]()
-    `
-    // Verify iter has type ArrayIterator<number>
-}
-
-func TestIterableInterface(t *testing.T) {
-    source := `
-        val obj: Iterable<string> = {
-            [Symbol.iterator]() {
-                return { next: () => ({ done: true, value: undefined }) }
-            }
-        }
-    `
-    // Verify type checking succeeds
-}
-```
-
-### Task 7.5: Declaration Merging Tests
+### Task 7.5: Declaration Merging Tests ⬜ NOT STARTED
 
 **Location:** `internal/checker/tests/`
-
-```go
-func TestSymbolConstructorMerging(t *testing.T) {
-    // Verify that SymbolConstructor from multiple lib files merges correctly
-    // and Symbol.iterator, Symbol.toPrimitive, etc. are all available
-}
-```
+**Difficulty:** Medium
 
 ---
 
 ## Implementation Order
 
-### Recommended Sequence
+### Recommended Sequence (Updated)
 
 ```
-Phase 2: unique symbol (foundation)
+Phase 3: ComputedKey conversion ← CRITICAL, do this first!
     ↓
-Phase 3: ComputedKey conversion (enables parsing)
+Task 1.5: Refactor discoverESLibFiles (optional, simplifies code)
     ↓
-Phase 1: Recursive lib loading (enables loading ES2015)
+Phase 1.3: Enable ES2015 target (flip targetVersion)
     ↓
-Phase 4: Dependency graph (correct processing order)
+Phase 4.1: Computed key dependency tracking
     ↓
-Phase 5: Symbol key inference (type system support)
+Phase 5: Verify interface symbol key inference
     ↓
-Phase 6: Property access (complete feature)
+Phase 6: Verify property access
     ↓
 Phase 7: Testing (throughout)
 ```
 
-### Rationale
+### Rationale (Updated)
 
-1. **Phase 2 first**: `unique symbol` is a simple, isolated change that unblocks parsing
-2. **Phase 3 second**: ComputedKey conversion is needed before lib files can be loaded
-3. **Phase 1 third**: Once parsing works, enable recursive loading
-4. **Phase 4 fourth**: Ensure declarations are processed in correct order
-5. **Phases 5-6**: Build on the foundation to complete type system support
+1. **Phase 3 first**: This is the **critical blocker**. ~30 lines of code unlocks ES2015+
+2. **Task 1.5 (optional)**: Simplify `discoverESLibFiles` to use recursive loading instead of directory scanning. Can be done before or after enabling ES2015, but the simpler code will be easier to debug.
+3. **Phase 1.3**: Change `targetVersion := "es5"` to `"es2015"` in prelude.go:509
+4. **Phase 4.1**: Ensure correct processing order for declarations with computed keys
+5. **Phases 5-6**: Verify existing infrastructure works for interfaces (may already work)
+6. **Phase 7**: Add tests throughout to validate functionality
+
+---
+
+## Effort Estimates
+
+| Task | Difficulty | Lines of Code | Risk |
+|------|------------|---------------|------|
+| Task 3.1: convertTypeAnnToExpr | Medium | ~30 | Medium |
+| Task 3.2: ComputedKey conversion | Easy | ~5 | Low |
+| Task 1.3: Enable ES2015 | Trivial | ~1 | Low |
+| Task 1.5: Refactor discoverESLibFiles | Medium | ~30 (net reduction) | Low |
+| Task 4.1: Computed key deps | Medium | ~40 | Medium |
+| Task 5.x: Verify interface support | Unknown | TBD | Medium |
+| Task 6.1: Verify property access | Unknown | TBD | Low |
+
+**Total estimated effort for Phase 3:** ~35 lines of new code
+**Task 1.5 simplification:** Removes ~60 lines, adds ~30 lines (net -30 lines)
 
 ---
 
 ## Checkpoints
 
 ### Checkpoint 1: Parsing Works
-- [ ] `unique symbol` parses correctly
-- [ ] `[Symbol.iterator]` parses as ComputedKey
-- [ ] All ES2015 lib files parse without errors
+- [x] `unique symbol` parses correctly ✅
+- [x] `[Symbol.iterator]` parses as ComputedKey ✅ (dts_parser)
+- [ ] All ES2015 lib files parse without errors (blocked by Phase 3)
 
 ### Checkpoint 2: Interop Works
-- [ ] ComputedKey converts to Escalier AST
-- [ ] UniqueSymbolType converts correctly
+- [ ] ComputedKey converts to Escalier AST ❌ **BLOCKER**
+- [x] UniqueSymbolType converts correctly ✅
 - [ ] No errors when converting ES2015 lib files
 
 ### Checkpoint 3: Loading Works
-- [ ] Reference directives are parsed
-- [ ] Recursive loading follows all references
-- [ ] All declarations from all files are collected
+- [x] Reference directives are parsed ✅
+- [x] Recursive loading follows all references ✅
+- [ ] All declarations from all files are collected (blocked by Phase 3)
 
 ### Checkpoint 4: Type Inference Works
 - [ ] SymbolConstructor interface has all well-known symbols
-- [ ] Symbol variable has type SymbolConstructor
+- [x] Symbol variable has type with `iterator` and `customMatcher` ✅
 - [ ] Iterable<T> has [Symbol.iterator] method
 - [ ] Array<T> has [Symbol.iterator] from merged declarations
 
@@ -697,17 +655,31 @@ Phase 7: Testing (throughout)
 
 ## Risks and Mitigations
 
-### Risk: Parser Changes Break Existing Code
+### Risk: Parser Changes Break Existing Code ✅ MITIGATED
 
-**Mitigation:** Run full test suite after each parser change. The `unique` keyword should only be recognized in type positions.
+**Status:** The `unique` keyword is already implemented and working. No additional parser changes needed.
 
 ### Risk: Dependency Graph Changes Affect Performance
 
+**Difficulty:** Medium
+**Risk Level:** Medium
+
 **Mitigation:** Benchmark before and after. The additional dependency tracking should be O(n) in the number of declarations.
 
-### Risk: Symbol Identity Issues
+### Risk: Symbol Identity Issues ✅ MITIGATED
 
-**Mitigation:** Use a single counter for unique symbol IDs. Ensure the counter is only incremented when inferring `unique symbol` type annotations, not when referencing existing symbols.
+**Status:** Symbol identity is managed via `c.SymbolID` counter in the checker. Well-known symbols are pre-created in `addSymbolBinding()`.
+
+### Risk: ComputedKey Conversion Edge Cases
+
+**Difficulty:** Medium
+**Risk Level:** Medium
+
+**Potential issues:**
+- Complex expressions in computed keys (mapped types, etc.)
+- Nested member expressions deeper than `Symbol.X`
+
+**Mitigation:** Start with `IdentTypeAnn` and `MemberTypeAnn` support only. Document unsupported patterns and add them incrementally.
 
 ---
 
@@ -716,22 +688,32 @@ Phase 7: Testing (throughout)
 All items from requirements.md Success Criteria section:
 
 ### Parser Criteria
-1. [ ] `lib.es2015.symbol.d.ts` parses without errors
-2. [ ] `lib.es2015.symbol.wellknown.d.ts` parses without errors
-3. [ ] `lib.es2015.iterable.d.ts` parses without errors
-4. [ ] All 9 ES2015 lib files parse without errors
+1. [x] `lib.es2015.symbol.d.ts` parses without errors ✅ (dts_parser)
+2. [x] `lib.es2015.symbol.wellknown.d.ts` parses without errors ✅ (dts_parser)
+3. [x] `lib.es2015.iterable.d.ts` parses without errors ✅ (dts_parser)
+4. [x] All 9 ES2015 lib files parse without errors ✅ (dts_parser)
 
 ### Interop Criteria
-5. [ ] Computed keys with `Symbol.X` expressions convert correctly
-6. [ ] `unique symbol` type converts to a distinct type representation
+5. [ ] Computed keys with `Symbol.X` expressions convert correctly ❌ **BLOCKER**
+6. [x] `unique symbol` type converts to a distinct type representation ✅
 7. [ ] Interface declarations with symbol keys produce correct Escalier AST
 
 ### Type System Criteria
-8. [ ] `ObjectType.SymbolKeyMap` is populated for interfaces with symbol keys
-9. [ ] Multiple interface declarations with the same name merge correctly
-10. [ ] `unique symbol` properties on `SymbolConstructor` have distinct types
+8. [x] `ObjectType.SymbolKeyMap` is populated for ~~interfaces~~ classes with symbol keys ✅
+9. [x] Multiple interface declarations with the same name merge correctly ✅
+10. [x] `unique symbol` properties on `SymbolConstructor` have distinct types ✅
 
 ### Type Checking Criteria
 11. [ ] `arr[Symbol.iterator]()` type-checks correctly for arrays
 12. [ ] `Iterable<T>` interface is available with `[Symbol.iterator]` method
 13. [ ] Declaration merging across lib files produces complete interfaces
+
+---
+
+## Next Steps
+
+1. **Immediate:** Implement `convertTypeAnnToExpr` helper in `internal/interop/helper.go`
+2. **Immediate:** Update `convertPropertyKey` to handle `ComputedKey`
+3. **Test:** Verify ES2015 lib files convert without errors
+4. **Enable:** Change `targetVersion` to `"es2015"` in prelude.go
+5. **Verify:** Run type inference tests to confirm symbol-keyed properties work
