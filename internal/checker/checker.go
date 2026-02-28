@@ -8,12 +8,13 @@ import (
 )
 
 type Checker struct {
-	TypeVarID       int
-	SymbolID        int
-	Schema          *gqlast.Schema
-	OverloadDecls   map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
-	PackageRegistry *PackageRegistry           // Registry for package namespaces (separate from scope chain)
-	GlobalScope     *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
+	TypeVarID             int
+	SymbolID              int
+	CustomMatcherSymbolID int                        // Symbol ID for Symbol.customMatcher (used for enum destructuring)
+	Schema                *gqlast.Schema
+	OverloadDecls         map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
+	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
+	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 }
 
 func NewChecker() *Checker {

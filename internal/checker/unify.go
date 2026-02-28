@@ -601,8 +601,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
 			for _, elem := range extObj.Elems {
 				if methodElem, ok := elem.(*type_system.MethodElem); ok {
-					// TODO: look up the symbol ID for `Symbol.customMatcher`
-					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
 						if len(methodElem.Fn.Params) != 1 {
 							return []Error{&IncorrectParamCountForCustomMatcherError{
 								Method:    methodElem.Fn,
@@ -705,8 +704,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
 			for _, elem := range extObj.Elems {
 				if methodElem, ok := elem.(*type_system.MethodElem); ok {
-					// TODO: look up the symbol ID for `Symbol.customMatcher`
-					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == 2 {
+					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
 						if len(methodElem.Fn.Params) != 1 {
 							return []Error{&IncorrectParamCountForCustomMatcherError{
 								Method:    methodElem.Fn,

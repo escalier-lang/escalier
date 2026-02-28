@@ -967,8 +967,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			expectedTypes: map[string]string{
-				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol2(self, subject: RGB) -> [number, number, number] throws never}",
-				"hex":  "{new fn (code: string) -> Color throws never, symbol2(self, subject: Hex) -> [string] throws never}",
+				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol12(self, subject: RGB) -> [number, number, number] throws never}",
+				"hex":  "{new fn (code: string) -> Color throws never, symbol12(self, subject: Hex) -> [string] throws never}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -1006,8 +1006,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "MyOption<number>",
-				"some":   "{new fn <T>(value: T) -> MyOption<T> throws never, symbol2<T>(self, subject: Some<T>) -> [T] throws never}",
-				"none":   "{new fn <T>() -> MyOption<T> throws never, symbol2<T>(self, subject: None<T>) -> [] throws never}",
+				"some":   "{new fn <T>(value: T) -> MyOption<T> throws never, symbol12<T>(self, subject: Some<T>) -> [T] throws never}",
+				"none":   "{new fn <T>() -> MyOption<T> throws never, symbol12<T>(self, subject: None<T>) -> [] throws never}",
 				"result": "number | 0",
 			},
 		},
@@ -3866,8 +3866,8 @@ func TestMutableTypes(t *testing.T) {
 				declare val y: unique symbol
 			`,
 			expectedTypes: map[string]string{
-				"x": "symbol3", // Unique symbol should have an ID
-				"y": "symbol4", // Unique symbol should have an ID
+				"x": "symbol13", // Unique symbol should have an ID
+				"y": "symbol14", // Unique symbol should have an ID
 			},
 		},
 		"MutableStringType": {

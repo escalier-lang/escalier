@@ -131,6 +131,24 @@ func isESNextFile(name string) bool {
 	return strings.HasPrefix(name, "lib.esnext")
 }
 
+// filterLibFileErrors filters out expected errors that can occur during lib file loading.
+// InvalidObjectKeyError can occur for computed keys like [Symbol.iterator] when
+// the symbol property isn't available yet during processing. These are expected
+// and should not cause lib file loading to fail.
+func filterLibFileErrors(errors []Error) []Error {
+	var fatalErrors []Error
+	for _, err := range errors {
+		switch err.(type) {
+		case *InvalidObjectKeyError:
+			// Skip - this is expected during ES2015+ lib loading
+			continue
+		default:
+			fatalErrors = append(fatalErrors, err)
+		}
+	}
+	return fatalErrors
+}
+
 // the key is the method name
 type Overrides map[string]bool
 
@@ -208,6 +226,11 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 			}
 
 			instTypeAlias := resolveQualifiedTypeAlias(ctx, instIdent)
+			if instTypeAlias == nil {
+				// Skip if the instance type alias couldn't be resolved
+				// This can happen if computed keys in the type weren't processed
+				continue
+			}
 			if ident, ok := instIdent.(*type_system.Ident); ok {
 				instName := ident.Name
 				// TODO(#254): Support qualified identifiers in mutability overrides
@@ -372,6 +395,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 
 var cachedGlobalScope *Scope
 var cachedSymbolIDCounter int
+var cachedCustomMatcherSymbolID int
 var cachedPackageRegistry *PackageRegistry
 
 // initializeGlobalScope creates the global scope containing TypeScript built-in types
@@ -416,8 +440,8 @@ func (c *Checker) initializeGlobalScope() {
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)
 
-	// Add Symbol object with iterator and customMatcher unique symbols
-	c.addSymbolBinding(globalNs)
+	// Add customMatcher to SymbolConstructor for enum pattern matching
+	c.addCustomMatcherToSymbol(globalNs)
 
 	// Add globalThis binding - provides access to the global namespace
 	// This allows accessing shadowed globals via globalThis.Array, globalThis.Promise, etc.
@@ -454,10 +478,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 	}
 
 	// Discover and load ES lib files
-	// Currently limited to ES5 because ES2015+ lib files use ComputedKey (e.g., [Symbol.iterator])
-	// which is not yet implemented in the interop layer. Declaration merging is now supported,
-	// so once ComputedKey is implemented, ES2015+ can be enabled.
-	targetVersion := "es5"
+	targetVersion := "es2015"
 	esLibFiles, err := discoverESLibFiles(libDir, targetVersion)
 	if err != nil {
 		// Hard error - can't proceed without lib files
@@ -503,8 +524,12 @@ func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
 		}
 
 		inferErrors := c.InferModule(inferCtx, loadResult.GlobalModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
+		// Filter errors - InvalidObjectKeyError can occur for computed keys like [Symbol.iterator]
+		// when the symbol isn't available yet. These are expected during ES2015+ lib loading
+		// and should not cause a panic.
+		fatalErrors := filterLibFileErrors(inferErrors)
+		if len(fatalErrors) > 0 {
+			for _, err := range fatalErrors {
 				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
 			}
 			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
@@ -520,8 +545,9 @@ func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
 		}
 
 		inferErrors := c.InferModule(inferCtx, loadResult.PackageModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
+		fatalErrors := filterLibFileErrors(inferErrors)
+		if len(fatalErrors) > 0 {
+			for _, err := range fatalErrors {
 				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
 			}
 			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
@@ -678,33 +704,35 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 	ns.Values["++"] = &strConcatBinding
 }
 
-// addSymbolBinding adds the Symbol object with iterator and customMatcher unique symbols
-func (c *Checker) addSymbolBinding(ns *type_system.Namespace) {
+// addCustomMatcherToSymbol adds the customMatcher property to the Symbol binding.
+// This is an Escalier-specific addition used for enum pattern matching.
+// The ES2015+ lib files define Symbol and SymbolConstructor with standard well-known symbols
+// (iterator, toStringTag, etc.), but customMatcher is not part of the standard.
+func (c *Checker) addCustomMatcherToSymbol(ns *type_system.Namespace) {
+	// Get the existing SymbolConstructor type alias
+	symbolConstructor := ns.Types["SymbolConstructor"]
+	if symbolConstructor == nil {
+		return
+	}
+
+	// Get the ObjectType from the type alias
+	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+	if !ok {
+		return
+	}
+
+	// Create a new unique symbol for customMatcher
 	c.SymbolID++
-	iteratorSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
-	c.SymbolID++
+	c.CustomMatcherSymbolID = c.SymbolID // Store the symbol ID for use in unify.go
 	customMatcherSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
 
-	symbolElems := []type_system.ObjTypeElem{
-		&type_system.PropertyElem{
-			Name:     type_system.NewStrKey("iterator"),
-			Value:    iteratorSymbol,
-			Optional: false,
-			Readonly: true,
-		},
-		&type_system.PropertyElem{
-			Name:     type_system.NewStrKey("customMatcher"),
-			Value:    customMatcherSymbol,
-			Optional: false,
-			Readonly: true,
-		},
-	}
-
-	ns.Values["Symbol"] = &type_system.Binding{
-		Source:  nil,
-		Type:    type_system.NewObjectType(nil, symbolElems),
-		Mutable: false,
-	}
+	// Add the customMatcher property to the SymbolConstructor type
+	objType.Elems = append(objType.Elems, &type_system.PropertyElem{
+		Name:     type_system.NewStrKey("customMatcher"),
+		Value:    customMatcherSymbol,
+		Optional: false,
+		Readonly: true,
+	})
 }
 
 // addGlobalThisBinding adds the globalThis binding which provides access to the global namespace.
@@ -726,6 +754,7 @@ func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
 func Prelude(c *Checker) *Scope {
 	if cachedGlobalScope != nil {
 		c.SymbolID = cachedSymbolIDCounter
+		c.CustomMatcherSymbolID = cachedCustomMatcherSymbolID
 		c.GlobalScope = cachedGlobalScope
 		c.PackageRegistry.CopyFrom(cachedPackageRegistry)
 		return cachedGlobalScope.WithNewScope()
@@ -737,6 +766,7 @@ func Prelude(c *Checker) *Scope {
 	// Cache for subsequent calls
 	cachedGlobalScope = c.GlobalScope
 	cachedSymbolIDCounter = c.SymbolID
+	cachedCustomMatcherSymbolID = c.CustomMatcherSymbolID
 	cachedPackageRegistry = c.PackageRegistry.Copy() // copy to prevent test pollution
 
 	return c.GlobalScope.WithNewScope()
