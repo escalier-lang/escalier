@@ -605,6 +605,8 @@ func isIdentifierName(t TokenType) bool {
 	case Identifier,
 		// Keywords allowed as property names per ECMAScript IdentifierName
 		// (matches the set allowed by parsePropertyKey)
+		String, Number, Boolean, Bigint,
+		Get, Set,
 		Catch, Try, Throw, Throws, Return, If, Else, Do, For,
 		New, Function, Var, Let, Const, Class, Extends,
 		Implements, Interface, Private, Protected, Public, Static, Yield, Await, Async,
