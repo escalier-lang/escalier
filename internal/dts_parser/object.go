@@ -612,7 +612,11 @@ func (p *DtsParser) parseExpr() Expr {
 		}
 	case NumLit:
 		tok := p.consume()
-		val, _ := strconv.ParseFloat(tok.Value, 64)
+		val, err := strconv.ParseFloat(tok.Value, 64)
+		if err != nil {
+			p.reportError(tok.Span, "Invalid number literal in computed key")
+			return nil
+		}
 		return &LitExpr{
 			Lit:  &NumberLiteral{Value: val, span: tok.Span},
 			span: tok.Span,
