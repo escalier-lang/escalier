@@ -237,7 +237,9 @@ case *dts_parser.ComputedKey:
 1. `ComputedKey.Expr` (a `TypeAnn` in dts_parser) must be converted to an `ast.Expr`
 2. For `MemberTypeAnn` (e.g., `Symbol.iterator`), convert to `ast.Member` expression
 3. For `IdentTypeAnn` (e.g., `foo`), convert to `ast.Ident` expression
-4. For `TypeofTypeAnn` (e.g., `typeof bar`), convert appropriately
+4. For `TypeofTypeAnn` (e.g., `typeof bar`): **Deferred** - not required for ES2015+ lib file support
+
+**Note on TypeofTypeAnn:** The `typeof` pattern in computed keys (e.g., `[typeof someVar]`) is not used in TypeScript's standard library files. Support for this pattern is out-of-scope for the initial implementation. If encountered, the interop layer should return an error with a clear message indicating the pattern is unsupported. This can be added incrementally if needed for user-authored `.d.ts` files.
 
 #### FR5: Support `unique symbol` Type
 
@@ -387,9 +389,9 @@ type ComputedKey struct {
 ```
 
 Ensure the parser correctly handles:
-- `[Symbol.iterator]` - member expression
-- `[foo]` - identifier
-- `[typeof bar]` - typeof expression
+- `[Symbol.iterator]` - member expression (required for ES2015+ lib files)
+- `[foo]` - identifier (required for ES2015+ lib files)
+- `[typeof bar]` - typeof expression (parsing supported, but interop conversion deferred - see FR4)
 
 ### Interop Layer Changes
 

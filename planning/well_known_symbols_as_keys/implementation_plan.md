@@ -12,7 +12,7 @@ This plan outlines the implementation steps for supporting well-known symbols as
 |-------|-------------|--------|----------|-----------------|
 | **1** | Recursive Lib File Loading | 🔒 Blocked | 60% | Awaiting Phase 3; Task 1.5 refactor pending |
 | **2** | Parse `unique symbol` Type | ✅ Done | 100% | None |
-| **3** | Convert Computed Property Keys | ⬜ Not Started | 25% | **CRITICAL BLOCKER** (Task 3.3 done) |
+| **3** | Convert Computed Property Keys | 🚧 In Progress | 25% | **CRITICAL BLOCKER** (Task 3.3 done) |
 | **4** | Dependency Graph for Computed Keys | 🚧 In Progress | 70% | Needs computed key tracking |
 | **5** | Infer Symbol-Keyed Properties | 🚧 In Progress | 60% | Task 5.4 needs verification |
 | **6** | Symbol Key Property Access | 🚧 In Progress | 30% | Needs verification |
@@ -290,7 +290,7 @@ type UniqueSymbolTypeAnn struct {
 
 ## Phase 3: Convert Computed Property Keys (FR4)
 
-**Status:** ⬜ NOT STARTED (0% complete) - **CRITICAL BLOCKER**
+**Status:** 🚧 IN PROGRESS (25% complete - Task 3.3 done) - **CRITICAL BLOCKER**
 **Difficulty:** Medium
 **Risk:** Medium (must handle all valid computed key patterns)
 
@@ -335,9 +335,9 @@ func convertTypeAnnToExpr(typeAnn dts_parser.TypeAnn) (ast.Expr, error) {
 ```
 
 **Patterns to handle:**
-1. `IdentTypeAnn` → Simple identifier like `[foo]`
-2. `MemberTypeAnn` → Member access like `[Symbol.iterator]` (most common)
-3. `TypeofTypeAnn` → Typeof expression (can defer)
+1. `IdentTypeAnn` → Simple identifier like `[foo]` (required)
+2. `MemberTypeAnn` → Member access like `[Symbol.iterator]` (required, most common)
+3. `TypeofTypeAnn` → Typeof expression (**deferred per FR4** - return error if encountered)
 
 ### Task 3.2: Implement ComputedKey Conversion ⬜ NOT STARTED
 
