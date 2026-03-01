@@ -669,10 +669,32 @@ func TestParseComputedKey(t *testing.T) {
 **Location:** `internal/dts_parser/integration_test.go`
 **Difficulty:** Easy
 
-### Task 7.3: Interop Tests ⬜ NOT STARTED
+### Task 7.3: Interop Tests ✅ DONE
 
-**Location:** `internal/interop/interop_test.go`
+**Location:** `internal/interop/helper_test.go`, `internal/interop/module_test.go`
 **Difficulty:** Easy
+
+**What exists:**
+
+1. **`TestConvertComputedKey`** (`helper_test.go:747-863`):
+   - Tests `[Symbol.iterator]` method conversion
+   - Tests `[Symbol.toStringTag]` readonly property conversion
+   - Tests `[Symbol.hasInstance]` method conversion
+   - Validates `MemberExpr` conversion with correct object/property names
+
+2. **`TestConvertComputedKeySimpleIdent`** (`helper_test.go:867-925`):
+   - Tests simple identifier computed keys like `[key]`
+   - Validates `IdentExpr` conversion
+
+3. **`TestConvertES2015LibFiles`** (`module_test.go:384-444`):
+   - Integration test for all 9 ES2015 lib files
+   - Verifies parsing and interop conversion succeeds without errors
+
+**Verification:**
+```bash
+go test ./internal/interop/... -run TestConvertComputedKey -v
+go test ./internal/interop/... -run TestConvertES2015LibFiles -v
+```
 
 ### Task 7.4: Type Inference Tests ⬜ NOT STARTED
 
