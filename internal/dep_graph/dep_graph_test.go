@@ -333,6 +333,47 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 				ValueBindingKey("sum"): {ValueBindingKey("x"), ValueBindingKey("y"), ValueBindingKey("z")},
 			},
 		},
+		"DeclarationsUsingMergedInterfaceViaGlobalValue": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "test.esc",
+					Contents: `
+							// lib.es2015.iterable.d.ts
+							interface SymbolConstructor {
+								iterator: unique symbol,
+							}
+	
+							interface Iterable<T, TReturn = any, TNext = any> {
+								[Symbol.iterator]: fn () -> Iterator<T, TReturn, TNext>,
+							}
+	
+							// lib.es2015.symbol.d.ts
+							interface SymbolConstructor {}
+	
+							declare var Symbol: SymbolConstructor
+	
+							// lib.es2015.symbol.wellknown.d.ts
+							interface SymbolConstructor {
+								toPrimitive: unique symbol,
+							}
+	
+							interface Date {
+								[Symbol.toPrimitive](hint: "default") -> string,
+								[Symbol.toPrimitive](hint: "string") -> string,
+								[Symbol.toPrimitive](hint: "number") -> number,
+								[Symbol.toPrimitive](hint: string) -> string | number,
+							}
+						`,
+				},
+			},
+			expectedDeps: map[BindingKey][]BindingKey{
+				TypeBindingKey("SymbolConstructor"): {},
+				ValueBindingKey("Symbol"):           {TypeBindingKey("SymbolConstructor")},
+				TypeBindingKey("Iterable"):          {ValueBindingKey("Symbol")},
+				TypeBindingKey("Date"):              {ValueBindingKey("Symbol")},
+			},
+		},
 	}
 
 	for name, test := range tests {

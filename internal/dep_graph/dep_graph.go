@@ -535,8 +535,19 @@ func (v *DependencyVisitor) EnterTypeAnn(typeAnn ast.TypeAnn) bool {
 	case *ast.ObjectTypeAnn:
 		// Handle object type annotations which may contain computed keys
 		for _, elem := range t.Elems {
-			if prop, ok := elem.(*ast.PropertyTypeAnn); ok {
-				if compKey, ok := prop.Name.(*ast.ComputedKey); ok {
+			var name ast.ObjKey
+			switch e := elem.(type) {
+			case *ast.PropertyTypeAnn:
+				name = e.Name
+			case *ast.MethodTypeAnn:
+				name = e.Name
+			case *ast.GetterTypeAnn:
+				name = e.Name
+			case *ast.SetterTypeAnn:
+				name = e.Name
+			}
+			if name != nil {
+				if compKey, ok := name.(*ast.ComputedKey); ok {
 					compKey.Expr.Accept(v)
 				}
 			}

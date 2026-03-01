@@ -405,6 +405,15 @@ func NewFuncTypeAnn(
 }
 func (t *FuncTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
+		// Visit type parameters and their constraints
+		for _, tp := range t.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(v)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(v)
+			}
+		}
 		for _, param := range t.Params {
 			param.Pattern.Accept(v)
 			if param.TypeAnn != nil {

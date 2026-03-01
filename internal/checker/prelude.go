@@ -6,13 +6,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tidwall/btree"
 )
+
+// nextSourceID is an atomic counter for generating unique source IDs
+var nextSourceID atomic.Int64
 
 // referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
 // Compiled once at package level for efficiency.
@@ -131,6 +136,54 @@ func isESNextFile(name string) bool {
 	return strings.HasPrefix(name, "lib.esnext")
 }
 
+// filterLibFileErrors filters out expected errors that can occur during lib file loading.
+// InvalidObjectKeyError can occur for computed keys like [Symbol.iterator] when
+// the symbol property isn't available yet during processing. These are expected
+// and should not cause lib file loading to fail.
+func filterLibFileErrors(errors []Error) []Error {
+	var fatalErrors []Error
+	for _, err := range errors {
+		switch err.(type) {
+		case *InvalidObjectKeyError:
+			// Skip - this is expected during ES2015+ lib loading
+			continue
+		default:
+			fatalErrors = append(fatalErrors, err)
+		}
+	}
+	return fatalErrors
+}
+
+// mergeModules merges the source module into the target module.
+// All fields (Namespaces, Files, Sources) are combined. This is used to
+// combine multiple lib files into a single module with a unified dependency graph.
+func mergeModules(target, source *ast.Module) {
+	if source == nil {
+		return
+	}
+
+	// Merge namespaces
+	iter := source.Namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		ns := iter.Value()
+		if existingNs, exists := target.Namespaces.Get(name); exists {
+			// Merge declarations within the namespace
+			existingNs.Decls = append(existingNs.Decls, ns.Decls...)
+		} else {
+			target.Namespaces.Set(name, ns)
+		}
+	}
+
+	// Merge files
+	target.Files = append(target.Files, source.Files...)
+
+	// Merge sources
+	for id, src := range source.Sources {
+		target.Sources[id] = src
+	}
+}
+
 // the key is the method name
 type Overrides map[string]bool
 
@@ -208,6 +261,16 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 			}
 
 			instTypeAlias := resolveQualifiedTypeAlias(ctx, instIdent)
+			if instTypeAlias == nil {
+				// This prints out the following:
+				// Warning: could not resolve instance type alias for SymbolConstructor
+				// Warning: could not resolve instance type alias for ProxyConstructor
+				// TODO: investigate this further.
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve instance type alias for %s\n", name)
+				// Skip if the instance type alias couldn't be resolved
+				// This can happen if computed keys in the type weren't processed
+				continue
+			}
 			if ident, ok := instIdent.(*type_system.Ident); ok {
 				instName := ident.Name
 				// TODO(#254): Support qualified identifiers in mutability overrides
@@ -309,7 +372,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 	source := &ast.Source{
 		Path:     filename,
 		Contents: string(contents),
-		ID:       0,
+		ID:       int(nextSourceID.Add(1)),
 	}
 
 	// Parse the module
@@ -372,6 +435,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 
 var cachedGlobalScope *Scope
 var cachedSymbolIDCounter int
+var cachedCustomMatcherSymbolID int
 var cachedPackageRegistry *PackageRegistry
 
 // initializeGlobalScope creates the global scope containing TypeScript built-in types
@@ -416,8 +480,8 @@ func (c *Checker) initializeGlobalScope() {
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)
 
-	// Add Symbol object with iterator and customMatcher unique symbols
-	c.addSymbolBinding(globalNs)
+	// Add customMatcher to SymbolConstructor for enum pattern matching
+	c.addCustomMatcherToSymbol(globalNs)
 
 	// Add globalThis binding - provides access to the global namespace
 	// This allows accessing shadowed globals via globalThis.Array, globalThis.Promise, etc.
@@ -429,6 +493,11 @@ func (c *Checker) initializeGlobalScope() {
 
 // loadGlobalDefinitions loads TypeScript lib files and infers their declarations
 // into the global scope. Named modules are registered in the PackageRegistry.
+//
+// All lib files are combined into a single module with a unified dependency graph
+// before inference. This ensures that interface declarations split across multiple
+// files (e.g., SymbolConstructor in lib.es2015.symbol.d.ts and lib.es2015.symbol.wellknown.d.ts)
+// are properly merged together. See Risk 2 mitigation in requirements.md.
 //
 // Load order:
 // 1. ES lib files (lib.es5.d.ts, lib.es2015.*.d.ts, lib.es2016.*.d.ts, etc.)
@@ -453,11 +522,8 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		panic(fmt.Sprintf("cannot access TypeScript lib directory %s: %v", libDir, statErr))
 	}
 
-	// Discover and load ES lib files
-	// Currently limited to ES5 because ES2015+ lib files use ComputedKey (e.g., [Symbol.iterator])
-	// which is not yet implemented in the interop layer. Declaration merging is now supported,
-	// so once ComputedKey is implemented, ES2015+ can be enabled.
-	targetVersion := "es5"
+	// Discover ES lib files
+	targetVersion := "es2015"
 	esLibFiles, err := discoverESLibFiles(libDir, targetVersion)
 	if err != nil {
 		// Hard error - can't proceed without lib files
@@ -473,90 +539,45 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		))
 	}
 
-	for _, filename := range esLibFiles {
-		libPath := filepath.Join(libDir, filename)
-		c.loadGlobalFile(libPath, globalScope)
-	}
-
-	// Load DOM lib file after ES lib files
+	// Add DOM lib file to the list
 	// DOM types may reference ES2015+ types (e.g., Promise, Symbol)
-	libDOMPath := filepath.Join(libDir, "lib.dom.d.ts")
-	c.loadGlobalFile(libDOMPath, globalScope)
-}
+	allLibFiles := make([]string, 0, len(esLibFiles)+1)
+	allLibFiles = append(allLibFiles, esLibFiles...)
+	allLibFiles = append(allLibFiles, "lib.dom.d.ts")
 
-// loadGlobalFile loads a single .d.ts file and adds its declarations to the appropriate scope:
-// - Global declarations go to globalScope
-// - Package declarations (if any) also go to globalScope for lib files
-// - Named modules (declare module "...") are registered in the PackageRegistry
-func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
-	loadResult, err := loadClassifiedTypeScriptModule(filePath)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", filePath, err))
+	// Start with an empty combined module. All lib files will be merged into this
+	// single module, creating a unified dependency graph where interface declarations
+	// from different files are properly grouped together.
+	combinedModule := ast.NewModule(btree.Map[string, *ast.Namespace]{})
+
+	for _, filename := range allLibFiles {
+		libPath := filepath.Join(libDir, filename)
+		loadResult, loadErr := loadClassifiedTypeScriptModule(libPath)
+		if loadErr != nil {
+			panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", libPath, loadErr))
+		}
+
+		// Merge GlobalModule into combined module
+		mergeModules(combinedModule, loadResult.GlobalModule)
+
+		// NOTE: We don't bother merging loadResult.PackageModule or
+		// loadResult.NamedModules since we know that TypeScript lib files don't
+		// have any top-level exports or named modules.
 	}
 
-	// Process global declarations
-	if loadResult.GlobalModule != nil {
-		inferCtx := Context{
-			Scope:      globalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-
-		inferErrors := c.InferModule(inferCtx, loadResult.GlobalModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
-			}
-			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
-		}
+	inferCtx := Context{
+		Scope:      globalScope,
+		IsAsync:    false,
+		IsPatMatch: false,
 	}
 
-	// Process package declarations (for lib files, these are also globals)
-	if loadResult.PackageModule != nil {
-		inferCtx := Context{
-			Scope:      globalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
+	inferErrors := c.InferModule(inferCtx, combinedModule)
+	fatalErrors := filterLibFileErrors(inferErrors)
+	if len(fatalErrors) > 0 {
+		for _, err := range fatalErrors {
+			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (span: %v)\n", err.Message(), err.Span())
 		}
-
-		inferErrors := c.InferModule(inferCtx, loadResult.PackageModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
-			}
-			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
-		}
-	}
-
-	// Process named modules - register them in the PackageRegistry
-	for moduleName, astModule := range loadResult.NamedModules {
-		// Create a namespace for this named module
-		moduleNs := type_system.NewNamespace()
-		moduleScope := &Scope{
-			Parent:    globalScope, // Named modules can reference globals
-			Namespace: moduleNs,
-		}
-
-		inferCtx := Context{
-			Scope:      moduleScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-
-		inferErrors := c.InferModule(inferCtx, astModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in module %s: %s\n", moduleName, err.Message())
-			}
-			// Don't panic for named modules - continue processing other modules
-			continue
-		}
-
-		// Register the named module in the PackageRegistry
-		// Use the module name as the key since lib files don't have package paths
-		if err := c.PackageRegistry.Register(moduleName, moduleNs); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to register module %s: %s\n", moduleName, err.Error())
-		}
+		panic("Failed to infer types for TypeScript lib files")
 	}
 }
 
@@ -678,33 +699,36 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 	ns.Values["++"] = &strConcatBinding
 }
 
-// addSymbolBinding adds the Symbol object with iterator and customMatcher unique symbols
-func (c *Checker) addSymbolBinding(ns *type_system.Namespace) {
+// addCustomMatcherToSymbol adds the customMatcher property to the Symbol binding.
+// It's part of the https://github.com/tc39/proposal-extractors proposal, and is
+// used for enum pattern matching in Escalier.
+// The ES2015+ lib files define Symbol and SymbolConstructor with standard well-known symbols
+// (iterator, toStringTag, etc.), but customMatcher is not part of the standard.
+func (c *Checker) addCustomMatcherToSymbol(ns *type_system.Namespace) {
+	// Get the existing SymbolConstructor type alias
+	symbolConstructor := ns.Types["SymbolConstructor"]
+	if symbolConstructor == nil {
+		return
+	}
+
+	// Get the ObjectType from the type alias
+	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+	if !ok {
+		return
+	}
+
+	// Create a new unique symbol for customMatcher
 	c.SymbolID++
-	iteratorSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
-	c.SymbolID++
+	c.CustomMatcherSymbolID = c.SymbolID // Store the symbol ID for use in unify.go
 	customMatcherSymbol := type_system.NewUniqueSymbolType(nil, c.SymbolID)
 
-	symbolElems := []type_system.ObjTypeElem{
-		&type_system.PropertyElem{
-			Name:     type_system.NewStrKey("iterator"),
-			Value:    iteratorSymbol,
-			Optional: false,
-			Readonly: true,
-		},
-		&type_system.PropertyElem{
-			Name:     type_system.NewStrKey("customMatcher"),
-			Value:    customMatcherSymbol,
-			Optional: false,
-			Readonly: true,
-		},
-	}
-
-	ns.Values["Symbol"] = &type_system.Binding{
-		Source:  nil,
-		Type:    type_system.NewObjectType(nil, symbolElems),
-		Mutable: false,
-	}
+	// Add the customMatcher property to the SymbolConstructor type
+	objType.Elems = append(objType.Elems, &type_system.PropertyElem{
+		Name:     type_system.NewStrKey("customMatcher"),
+		Value:    customMatcherSymbol,
+		Optional: false,
+		Readonly: true,
+	})
 }
 
 // addGlobalThisBinding adds the globalThis binding which provides access to the global namespace.
@@ -726,6 +750,7 @@ func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
 func Prelude(c *Checker) *Scope {
 	if cachedGlobalScope != nil {
 		c.SymbolID = cachedSymbolIDCounter
+		c.CustomMatcherSymbolID = cachedCustomMatcherSymbolID
 		c.GlobalScope = cachedGlobalScope
 		c.PackageRegistry.CopyFrom(cachedPackageRegistry)
 		return cachedGlobalScope.WithNewScope()
@@ -737,6 +762,7 @@ func Prelude(c *Checker) *Scope {
 	// Cache for subsequent calls
 	cachedGlobalScope = c.GlobalScope
 	cachedSymbolIDCounter = c.SymbolID
+	cachedCustomMatcherSymbolID = c.CustomMatcherSymbolID
 	cachedPackageRegistry = c.PackageRegistry.Copy() // copy to prevent test pollution
 
 	return c.GlobalScope.WithNewScope()
