@@ -3731,6 +3731,106 @@ func TestExpandType(t *testing.T) {
 		assert.Empty(t, errors)
 		assert.Equal(t, `never`, result.String())
 	})
+
+	// Test the insideKeyOfTarget recursion guard in expand_type.go
+	// This exercises the path where insideKeyOfTarget > 0 and
+	// expandTypeWithConfig is called with insideKeyOfTarget+1
+	t.Run("KeyOfType - nested keyof via type alias (recursion guard)", func(t *testing.T) {
+		// Create a scope with a type alias: type Keys<T> = keyof T
+		scope := NewScope()
+
+		// Create the type parameter T
+		typeParamT := &type_system.TypeParam{
+			Name:       "T",
+			Constraint: nil,
+			Default:    nil,
+		}
+
+		// Create keyof T (the body of the type alias)
+		typeRefT := type_system.NewTypeRefType(nil, "T", nil)
+		keyofT := type_system.NewKeyOfType(nil, typeRefT)
+
+		// Create the type alias: type Keys<T> = keyof T
+		keysAlias := &type_system.TypeAlias{
+			Type:       keyofT,
+			TypeParams: []*type_system.TypeParam{typeParamT},
+		}
+		scope.SetTypeAlias("Keys", keysAlias)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Create an object type: {a: string, b: number}
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("a"), type_system.NewStrPrimType(nil)),
+			type_system.NewPropertyElem(type_system.NewStrKey("b"), type_system.NewNumPrimType(nil)),
+		})
+
+		// Create Keys<{a: string, b: number}> - a type reference to the alias
+		keysRef := type_system.NewTypeRefType(nil, "Keys", keysAlias, objType)
+
+		// Create keyof Keys<{a: string, b: number}>
+		// This creates nested keyof: keyof (keyof {a: string, b: number})
+		// The recursion guard (insideKeyOfTarget) should prevent infinite expansion
+		nestedKeyof := type_system.NewKeyOfType(nil, keysRef)
+
+		result, errors := checker.ExpandType(ctx, nestedKeyof, 1)
+
+		assert.Empty(t, errors)
+		// The inner keyof expands to "a" | "b"
+		// The outer keyof distributes over the union: keyof "a" | keyof "b"
+		// The recursion guard (insideKeyOfTarget > 0) prevents the outer keyof
+		// from fully expanding, which is the expected behavior to prevent
+		// infinite recursion in complex nested keyof scenarios
+		assert.Equal(t, `keyof "a" | keyof "b"`, result.String())
+	})
+
+	t.Run("KeyOfType - mapped type with keyof constraint (recursion guard)", func(t *testing.T) {
+		// This test exercises the insideKeyOfTarget guard when expanding
+		// a mapped type that has keyof in its constraint
+		// Similar to: type Mapped<T> = { [K in keyof T]: T[K] }
+		scope := NewScope()
+
+		// Create an object type to use as T: {x: string, y: number}
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
+			type_system.NewPropertyElem(type_system.NewStrKey("y"), type_system.NewNumPrimType(nil)),
+		})
+
+		// Create keyof objType directly (simulating the constraint)
+		keyofObj := type_system.NewKeyOfType(nil, objType)
+
+		// Create an ObjectType with a MappedElem that uses keyof in its constraint
+		// This simulates: { [K in keyof T]: string }
+		mappedElem := &type_system.MappedElem{
+			TypeParam: &type_system.IndexParam{
+				Name:       "K",
+				Constraint: keyofObj,
+			},
+			Value: type_system.NewStrPrimType(nil),
+		}
+		mappedObjType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{mappedElem})
+
+		// Create keyof of the mapped type
+		// This should exercise the recursion guard when expanding
+		keyofMapped := type_system.NewKeyOfType(nil, mappedObjType)
+
+		ctx := Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		result, errors := checker.ExpandType(ctx, keyofMapped, 1)
+
+		assert.Empty(t, errors)
+		// keyof { [K in keyof {x, y}]: string } should give us "x" | "y"
+		// The mapped type preserves the keys from the original object
+		assert.Equal(t, `"x" | "y"`, result.String())
+	})
 }
 
 func TestExtractNamedCaptureGroups(t *testing.T) {

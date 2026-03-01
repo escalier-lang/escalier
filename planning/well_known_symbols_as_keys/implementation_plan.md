@@ -639,7 +639,7 @@ func (c *Checker) inferInterfaceElem(ctx Context, elem ast.ObjTypeElem, symbolKe
 
 ## Phase 7: Testing
 
-**Status:** ⬜ NOT STARTED
+**Status:** 🚧 IN PROGRESS
 **Difficulty:** Easy-Medium
 **Risk:** Low
 

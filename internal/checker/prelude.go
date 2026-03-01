@@ -538,7 +538,6 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 	// single module, creating a unified dependency graph where interface declarations
 	// from different files are properly grouped together.
 	combinedModule := ast.NewModule(btree.Map[string, *ast.Namespace]{})
-	namedModules := make(map[string]*ast.Module)
 
 	for _, filename := range allLibFiles {
 		libPath := filepath.Join(libDir, filename)
@@ -568,11 +567,6 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (span: %v)\n", err.Message(), err.Span())
 		}
 		panic("Failed to infer types for TypeScript lib files")
-	}
-
-	// Process named modules - register them in the PackageRegistry
-	for moduleName, astModule := range namedModules {
-		c.loadNamedModule(moduleName, astModule, globalScope)
 	}
 }
 
