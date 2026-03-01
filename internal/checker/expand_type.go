@@ -12,8 +12,13 @@ import (
 )
 
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
+	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, 0)
+}
+
+func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, insideKeyOfTarget int) (type_system.Type, []Error) {
 	t = type_system.Prune(t)
 	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
+	visitor.insideKeyOfTarget = insideKeyOfTarget
 
 	result := t.Accept(visitor)
 	return result, visitor.errors
@@ -26,6 +31,7 @@ type TypeExpansionVisitor struct {
 	errors              []Error
 	skipTypeRefsCount   int // if > 0, skip expanding TypeRefTypes
 	expandTypeRefsCount int // if > 0, number of TypeRefTypes expanded, if -1 then unlimited
+	insideKeyOfTarget   int // if > 0, we're expanding a keyof target, don't expand nested keyof
 }
 
 // NewTypeExpansionVisitor creates a new visitor for expanding type references
@@ -188,11 +194,17 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		return distributed
 	case *type_system.KeyOfType:
+		// Prevent infinite recursion when expanding nested keyof types
+		if v.insideKeyOfTarget > 0 {
+			return nil
+		}
+
 		// Expand keyof T by extracting the keys from the type T
 		targetType := type_system.Prune(t.Type)
 
 		// First, try to expand the target type
-		expandedTarget, _ := v.checker.ExpandType(v.ctx, targetType, 1)
+		// Pass insideKeyOfTarget+1 to prevent recursive keyof expansion during target expansion
+		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.insideKeyOfTarget+1)
 		expandedTarget = type_system.Prune(expandedTarget)
 
 		switch target := expandedTarget.(type) {
@@ -395,12 +407,13 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		}
 
 		// Recursively expand the resolved type using the same visitor to maintain state
+		// Propagate insideKeyOfTarget to prevent infinite recursion
 		if v.expandTypeRefsCount == -1 {
-			result, _ := v.checker.ExpandType(v.ctx, expandedType, -1)
+			result, _ := v.checker.expandTypeWithConfig(v.ctx, expandedType, -1, v.insideKeyOfTarget)
 			return result
 		}
 
-		result, _ := v.checker.ExpandType(v.ctx, expandedType, v.expandTypeRefsCount-1)
+		result, _ := v.checker.expandTypeWithConfig(v.ctx, expandedType, v.expandTypeRefsCount-1, v.insideKeyOfTarget)
 		return result
 	case *type_system.TemplateLitType:
 		// Expand template literal types by generating all possible string combinations

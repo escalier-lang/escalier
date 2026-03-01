@@ -97,7 +97,7 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 			newKey := type_system.NewSymKey(t.Value)
 			return &newKey, nil
 		default:
-			panic(&InvalidObjectKeyError{Key: t, span: key.Span()})
+			return nil, []Error{&InvalidObjectKeyError{Key: keyType, span: key.Span()}}
 		}
 	default:
 		panic(fmt.Sprintf("Unknown object key type: %T", key))

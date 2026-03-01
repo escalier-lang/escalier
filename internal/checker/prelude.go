@@ -12,6 +12,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tidwall/btree"
 )
 
 // referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
@@ -147,6 +148,36 @@ func filterLibFileErrors(errors []Error) []Error {
 		}
 	}
 	return fatalErrors
+}
+
+// mergeModules merges the source module into the target module.
+// All fields (Namespaces, Files, Sources) are combined. This is used to
+// combine multiple lib files into a single module with a unified dependency graph.
+func mergeModules(target, source *ast.Module) {
+	if source == nil {
+		return
+	}
+
+	// Merge namespaces
+	iter := source.Namespaces.Iter()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		name := iter.Key()
+		ns := iter.Value()
+		if existingNs, exists := target.Namespaces.Get(name); exists {
+			// Merge declarations within the namespace
+			existingNs.Decls = append(existingNs.Decls, ns.Decls...)
+		} else {
+			target.Namespaces.Set(name, ns)
+		}
+	}
+
+	// Merge files
+	target.Files = append(target.Files, source.Files...)
+
+	// Merge sources
+	for id, src := range source.Sources {
+		target.Sources[id] = src
+	}
 }
 
 // the key is the method name
@@ -454,6 +485,11 @@ func (c *Checker) initializeGlobalScope() {
 // loadGlobalDefinitions loads TypeScript lib files and infers their declarations
 // into the global scope. Named modules are registered in the PackageRegistry.
 //
+// All lib files are combined into a single module with a unified dependency graph
+// before inference. This ensures that interface declarations split across multiple
+// files (e.g., SymbolConstructor in lib.es2015.symbol.d.ts and lib.es2015.symbol.wellknown.d.ts)
+// are properly merged together. See Risk 2 mitigation in requirements.md.
+//
 // Load order:
 // 1. ES lib files (lib.es5.d.ts, lib.es2015.*.d.ts, lib.es2016.*.d.ts, etc.)
 // 2. DOM lib file (lib.dom.d.ts) - loaded after ES libs since DOM types may reference ES2015+ types
@@ -477,7 +513,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		panic(fmt.Sprintf("cannot access TypeScript lib directory %s: %v", libDir, statErr))
 	}
 
-	// Discover and load ES lib files
+	// Discover ES lib files
 	targetVersion := "es2015"
 	esLibFiles, err := discoverESLibFiles(libDir, targetVersion)
 	if err != nil {
@@ -494,95 +530,80 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		))
 	}
 
-	for _, filename := range esLibFiles {
-		libPath := filepath.Join(libDir, filename)
-		c.loadGlobalFile(libPath, globalScope)
-	}
-
-	// Load DOM lib file after ES lib files
+	// Add DOM lib file to the list
 	// DOM types may reference ES2015+ types (e.g., Promise, Symbol)
-	libDOMPath := filepath.Join(libDir, "lib.dom.d.ts")
-	c.loadGlobalFile(libDOMPath, globalScope)
-}
+	allLibFiles := append(esLibFiles, "lib.dom.d.ts")
 
-// loadGlobalFile loads a single .d.ts file and adds its declarations to the appropriate scope:
-// - Global declarations go to globalScope
-// - Package declarations (if any) also go to globalScope for lib files
-// - Named modules (declare module "...") are registered in the PackageRegistry
-func (c *Checker) loadGlobalFile(filePath string, globalScope *Scope) {
-	loadResult, err := loadClassifiedTypeScriptModule(filePath)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", filePath, err))
+	// Start with an empty combined module. All lib files will be merged into this
+	// single module, creating a unified dependency graph where interface declarations
+	// from different files are properly grouped together.
+	combinedModule := ast.NewModule(btree.Map[string, *ast.Namespace]{})
+	namedModules := make(map[string]*ast.Module)
+
+	for _, filename := range allLibFiles {
+		libPath := filepath.Join(libDir, filename)
+		loadResult, loadErr := loadClassifiedTypeScriptModule(libPath)
+		if loadErr != nil {
+			panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", libPath, loadErr))
+		}
+
+		// Merge GlobalModule into combined module
+		mergeModules(combinedModule, loadResult.GlobalModule)
+
+		// NOTE: We don't bother merging loadResult.PackageModule or
+		// loadResult.NamedModules since we know that TypeScript lib files don't
+		// have any top-level exports or named modules.
 	}
 
-	// Process global declarations
-	if loadResult.GlobalModule != nil {
-		inferCtx := Context{
-			Scope:      globalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-
-		inferErrors := c.InferModule(inferCtx, loadResult.GlobalModule)
-		// Filter errors - InvalidObjectKeyError can occur for computed keys like [Symbol.iterator]
-		// when the symbol isn't available yet. These are expected during ES2015+ lib loading
-		// and should not cause a panic.
-		fatalErrors := filterLibFileErrors(inferErrors)
-		if len(fatalErrors) > 0 {
-			for _, err := range fatalErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
-			}
-			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
-		}
+	inferCtx := Context{
+		Scope:      globalScope,
+		IsAsync:    false,
+		IsPatMatch: false,
 	}
 
-	// Process package declarations (for lib files, these are also globals)
-	if loadResult.PackageModule != nil {
-		inferCtx := Context{
-			Scope:      globalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
+	inferErrors := c.InferModule(inferCtx, combinedModule)
+	fatalErrors := filterLibFileErrors(inferErrors)
+	if len(fatalErrors) > 0 {
+		for _, err := range fatalErrors {
+			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (span: %v)\n", err.Message(), err.Span())
 		}
-
-		inferErrors := c.InferModule(inferCtx, loadResult.PackageModule)
-		fatalErrors := filterLibFileErrors(inferErrors)
-		if len(fatalErrors) > 0 {
-			for _, err := range fatalErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in %s: %s\n", filePath, err.Message())
-			}
-			panic(fmt.Sprintf("Failed to infer types for %s", filePath))
-		}
+		panic("Failed to infer types for TypeScript lib files")
 	}
 
 	// Process named modules - register them in the PackageRegistry
-	for moduleName, astModule := range loadResult.NamedModules {
-		// Create a namespace for this named module
-		moduleNs := type_system.NewNamespace()
-		moduleScope := &Scope{
-			Parent:    globalScope, // Named modules can reference globals
-			Namespace: moduleNs,
-		}
+	for moduleName, astModule := range namedModules {
+		c.loadNamedModule(moduleName, astModule, globalScope)
+	}
+}
 
-		inferCtx := Context{
-			Scope:      moduleScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
+// loadNamedModule infers a named module and registers it in the PackageRegistry.
+func (c *Checker) loadNamedModule(moduleName string, astModule *ast.Module, globalScope *Scope) {
+	// Create a namespace for this named module
+	moduleNs := type_system.NewNamespace()
+	moduleScope := &Scope{
+		Parent:    globalScope, // Named modules can reference globals
+		Namespace: moduleNs,
+	}
 
-		inferErrors := c.InferModule(inferCtx, astModule)
-		if len(inferErrors) > 0 {
-			for _, err := range inferErrors {
-				fmt.Fprintf(os.Stderr, "Inference error in module %s: %s\n", moduleName, err.Message())
-			}
-			// Don't panic for named modules - continue processing other modules
-			continue
-		}
+	inferCtx := Context{
+		Scope:      moduleScope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
 
-		// Register the named module in the PackageRegistry
-		// Use the module name as the key since lib files don't have package paths
-		if err := c.PackageRegistry.Register(moduleName, moduleNs); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to register module %s: %s\n", moduleName, err.Error())
+	inferErrors := c.InferModule(inferCtx, astModule)
+	if len(inferErrors) > 0 {
+		for _, err := range inferErrors {
+			fmt.Fprintf(os.Stderr, "Inference error in module %s: %s\n", moduleName, err.Message())
 		}
+		// Don't panic for named modules - continue processing other modules
+		return
+	}
+
+	// Register the named module in the PackageRegistry
+	// Use the module name as the key since lib files don't have package paths
+	if err := c.PackageRegistry.Register(moduleName, moduleNs); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to register module %s: %s\n", moduleName, err.Error())
 	}
 }
 
