@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -14,6 +15,9 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tidwall/btree"
 )
+
+// nextSourceID is an atomic counter for generating unique source IDs
+var nextSourceID atomic.Int64
 
 // referenceDirectivePattern matches /// <reference lib="es2015.core" /> directives
 // Compiled once at package level for efficiency.
@@ -363,7 +367,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 	source := &ast.Source{
 		Path:     filename,
 		Contents: string(contents),
-		ID:       0,
+		ID:       int(nextSourceID.Add(1)),
 	}
 
 	// Parse the module
@@ -569,37 +573,6 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (span: %v)\n", err.Message(), err.Span())
 		}
 		panic("Failed to infer types for TypeScript lib files")
-	}
-}
-
-// loadNamedModule infers a named module and registers it in the PackageRegistry.
-func (c *Checker) loadNamedModule(moduleName string, astModule *ast.Module, globalScope *Scope) {
-	// Create a namespace for this named module
-	moduleNs := type_system.NewNamespace()
-	moduleScope := &Scope{
-		Parent:    globalScope, // Named modules can reference globals
-		Namespace: moduleNs,
-	}
-
-	inferCtx := Context{
-		Scope:      moduleScope,
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-
-	inferErrors := c.InferModule(inferCtx, astModule)
-	if len(inferErrors) > 0 {
-		for _, err := range inferErrors {
-			fmt.Fprintf(os.Stderr, "Inference error in module %s: %s\n", moduleName, err.Message())
-		}
-		// Don't panic for named modules - continue processing other modules
-		return
-	}
-
-	// Register the named module in the PackageRegistry
-	// Use the module name as the key since lib files don't have package paths
-	if err := c.PackageRegistry.Register(moduleName, moduleNs); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to register module %s: %s\n", moduleName, err.Error())
 	}
 }
 
