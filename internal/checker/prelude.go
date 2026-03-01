@@ -262,6 +262,11 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 
 			instTypeAlias := resolveQualifiedTypeAlias(ctx, instIdent)
 			if instTypeAlias == nil {
+				// This prints out the following:
+				// Warning: could not resolve instance type alias for SymbolConstructor
+				// Warning: could not resolve instance type alias for ProxyConstructor
+				// TODO: investigate this further.
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve instance type alias for %s\n", name)
 				// Skip if the instance type alias couldn't be resolved
 				// This can happen if computed keys in the type weren't processed
 				continue
@@ -695,7 +700,8 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 }
 
 // addCustomMatcherToSymbol adds the customMatcher property to the Symbol binding.
-// This is an Escalier-specific addition used for enum pattern matching.
+// It's part of the https://github.com/tc39/proposal-extractors proposal, and is
+// used for enum pattern matching in Escalier.
 // The ES2015+ lib files define Symbol and SymbolConstructor with standard well-known symbols
 // (iterator, toStringTag, etc.), but customMatcher is not part of the standard.
 func (c *Checker) addCustomMatcherToSymbol(ns *type_system.Namespace) {
