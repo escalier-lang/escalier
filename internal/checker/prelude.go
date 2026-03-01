@@ -532,7 +532,9 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 
 	// Add DOM lib file to the list
 	// DOM types may reference ES2015+ types (e.g., Promise, Symbol)
-	allLibFiles := append(esLibFiles, "lib.dom.d.ts")
+	allLibFiles := make([]string, 0, len(esLibFiles)+1)
+	allLibFiles = append(allLibFiles, esLibFiles...)
+	allLibFiles = append(allLibFiles, "lib.dom.d.ts")
 
 	// Start with an empty combined module. All lib files will be merged into this
 	// single module, creating a unified dependency graph where interface declarations
