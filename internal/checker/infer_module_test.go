@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetBindingPriority(t *testing.T) {
+func TestPlaceholderPriority(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      dep_graph.BindingKey
@@ -47,13 +47,13 @@ func TestGetBindingPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := getBindingPriority(tt.key)
+			actual := placeholderPriority(tt.key)
 			assert.Equal(t, tt.expected, actual)
 		})
 	}
 }
 
-func TestSortComponentBindings(t *testing.T) {
+func TestSortKeysForPlaceholders(t *testing.T) {
 	t.Run("sorts Symbol/SymbolConstructor correctly", func(t *testing.T) {
 		component := []dep_graph.BindingKey{
 			dep_graph.TypeBindingKey("Symbol"),            // Instance type - priority 2
@@ -61,7 +61,7 @@ func TestSortComponentBindings(t *testing.T) {
 			dep_graph.TypeBindingKey("SymbolConstructor"), // Constructor - priority 0
 		}
 
-		sorted := sortComponentBindings(component)
+		sorted := sortKeysForPlaceholders(component)
 
 		assert.Equal(t, dep_graph.TypeBindingKey("SymbolConstructor"), sorted[0],
 			"SymbolConstructor should be first")
@@ -78,7 +78,7 @@ func TestSortComponentBindings(t *testing.T) {
 			dep_graph.ValueBindingKey("baz"),
 		}
 
-		sorted := sortComponentBindings(component)
+		sorted := sortKeysForPlaceholders(component)
 
 		// Values come before non-constructor types
 		assert.Equal(t, dep_graph.ValueBindingKey("baz"), sorted[0])
@@ -89,7 +89,7 @@ func TestSortComponentBindings(t *testing.T) {
 
 	t.Run("handles empty component", func(t *testing.T) {
 		component := []dep_graph.BindingKey{}
-		sorted := sortComponentBindings(component)
+		sorted := sortKeysForPlaceholders(component)
 		assert.Empty(t, sorted)
 	})
 
@@ -97,7 +97,7 @@ func TestSortComponentBindings(t *testing.T) {
 		component := []dep_graph.BindingKey{
 			dep_graph.TypeBindingKey("Foo"),
 		}
-		sorted := sortComponentBindings(component)
+		sorted := sortKeysForPlaceholders(component)
 		assert.Equal(t, component, sorted)
 	})
 
@@ -111,7 +111,7 @@ func TestSortComponentBindings(t *testing.T) {
 			dep_graph.ValueBindingKey("Map"),
 		}
 
-		sorted := sortComponentBindings(component)
+		sorted := sortKeysForPlaceholders(component)
 
 		// All constructors first (priority 0)
 		assert.True(t, sorted[0] == dep_graph.TypeBindingKey("ArrayConstructor") ||
