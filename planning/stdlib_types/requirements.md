@@ -108,7 +108,178 @@ When multiple lib files declare the same method with different signatures, the c
 
 In practice, TypeScript's lib files are carefully designed to avoid conflicts. Later ES versions typically add new methods rather than modifying existing ones.
 
-#### FR4: Global Type Augmentation
+#### FR4: Constructor/Prototype Cyclic Dependencies
+
+TypeScript's standard library uses a common pattern where constructor interfaces reference their instance type via a `prototype` property, creating cyclic dependencies that must be handled specially.
+
+**The Pattern:**
+
+```typescript
+// lib.es2015.symbol.d.ts
+interface SymbolConstructor {
+    readonly prototype: Symbol;  // References Symbol (instance type)
+    (description?: string | number): symbol;
+    for(key: string): symbol;
+    keyFor(sym: symbol): string | undefined;
+}
+
+declare var Symbol: SymbolConstructor;  // Value depends on SymbolConstructor type
+
+// lib.es2015.symbol.wellknown.d.ts
+interface SymbolConstructor {
+    readonly toPrimitive: unique symbol;
+    readonly toStringTag: unique symbol;
+    // ... more well-known symbols
+}
+
+interface Symbol {
+    [Symbol.toPrimitive](hint: string): symbol;  // Computed key references Symbol value
+    readonly [Symbol.toStringTag]: string;
+}
+```
+
+**The Cyclic Dependency:**
+
+This creates a three-way cycle:
+1. `SymbolConstructor` (type) depends on `Symbol` (type) via `prototype: Symbol`
+2. `Symbol` (type) depends on `Symbol` (value) via computed keys like `[Symbol.toPrimitive]`
+3. `Symbol` (value) depends on `SymbolConstructor` (type) via its type annotation
+
+```
+SymbolConstructor (type)
+        ↓ prototype: Symbol
+    Symbol (type)
+        ↓ [Symbol.toPrimitive]
+    Symbol (value)
+        ↓ : SymbolConstructor
+SymbolConstructor (type)  ← cycle!
+```
+
+**Prevalence in TypeScript Lib Files:**
+
+This pattern appears throughout TypeScript's standard library for many built-in constructors:
+
+| Constructor Interface | Instance Interface | Prototype Reference |
+|-----------------------|-------------------|---------------------|
+| `SymbolConstructor` | `Symbol` | `prototype: Symbol` |
+| `ArrayConstructor` | `Array<T>` | `prototype: Array<any>` |
+| `MapConstructor` | `Map<K, V>` | `prototype: Map<any, any>` |
+| `SetConstructor` | `Set<T>` | `prototype: Set<any>` |
+| `WeakMapConstructor` | `WeakMap<K, V>` | `prototype: WeakMap<object, any>` |
+| `WeakSetConstructor` | `WeakSet<T>` | `prototype: WeakSet<object>` |
+| `PromiseConstructor` | `Promise<T>` | `prototype: Promise<any>` |
+| `DateConstructor` | `Date` | `prototype: Date` |
+| `RegExpConstructor` | `RegExp` | `prototype: RegExp` |
+| `ErrorConstructor` | `Error` | `prototype: Error` |
+| etc. | | |
+
+**Proposed Solutions:**
+
+**Option A: Exclude `prototype` Properties from Dependency Analysis**
+
+The `prototype` property on constructor interfaces should not create a dependency on the instance type. This breaks the cycle and creates a linear dependency chain:
+
+```
+SymbolConstructor (type)     ← no dependencies (prototype: Symbol is ignored)
+        ↑
+    Symbol (value)           ← depends on SymbolConstructor via type annotation
+        ↑
+    Symbol (type)            ← depends on Symbol value via [Symbol.toPrimitive]
+```
+
+With this approach:
+1. `SymbolConstructor` (type) is processed first - defines `toPrimitive: unique symbol`
+2. `Symbol` (value) is processed next - creates the value binding with type `SymbolConstructor`
+3. `Symbol` (type) is processed last - can now resolve `[Symbol.toPrimitive]` because both the value exists and its type has the property
+
+**Why this works:** The `prototype` property is primarily used for runtime reflection (`Object.getPrototypeOf`) and the `instanceof` operator's internal mechanics. It's rarely accessed directly in application code for type checking. The type of `prototype` doesn't need to be fully resolved for the constructor interface to be usable.
+
+**Implementation:** In the dependency graph construction (`FindDeclDependencies`), skip adding a type dependency for properties named `prototype`.
+
+**Option B: Two-Phase Interface Processing**
+
+Split interface processing into two phases:
+
+1. **Phase 1 (Structure):** Create all interface types with their method signatures, but use placeholder types for any property that references another interface being defined in the same cycle
+2. **Phase 2 (Resolution):** Resolve all placeholder types now that all interfaces exist
+
+This is similar to how many compilers handle forward declarations.
+
+**Option C: Special-Case `prototype` Properties by Naming Convention**
+
+Recognize `prototype` as a special property that always references the instance type of a constructor interface:
+
+1. When processing `interface FooConstructor`, automatically infer that `prototype` has type `Foo` (the corresponding instance interface)
+2. Don't treat `prototype: Foo` as creating a dependency from `FooConstructor` to `Foo`
+3. The naming convention (`FooConstructor` → `Foo`) is consistent across all TypeScript lib files
+
+This approach leverages TypeScript's consistent naming conventions to break the cycle.
+
+**Option D: Ordered Processing Within SCCs**
+
+Keep all declarations in the same SCC but enforce a specific processing order within the component:
+
+1. Process all `FooConstructor` interfaces first (they define properties like `toPrimitive`)
+2. Process all `Foo` value declarations next (they create value bindings)
+3. Process all `Foo` type interfaces last (they can now resolve computed keys)
+
+This requires tracking which declarations are "constructor interfaces" vs "instance interfaces" and sorting within SCCs accordingly.
+
+**Chosen Approach: Option D (Ordered Processing within SCCs)**
+
+Option D is the chosen solution. Rather than breaking cycles by removing edges, we keep all declarations in the same SCC but enforce a specific processing order within each component.
+
+**Why Option D over Option C:**
+
+Option C (breaking cycles by removing `prototype` dependencies) was initially considered but rejected because it doesn't work with the checker's two-phase architecture. When a cycle is broken, types end up in different SCCs and are processed separately. This causes "Unknown type" errors because when `SymbolConstructor` is processed in its own SCC, the `Symbol` type doesn't have a placeholder yet.
+
+Option D works because all types in the SCC get placeholders before any definitions are processed, allowing forward references to resolve correctly via type variables and unification.
+
+**Implementation Details for Option D:**
+
+1. **Keep all cyclic dependencies in the same SCC** - don't break any edges.
+
+2. **Sort binding keys within each SCC** using two sorting functions:
+   - `sortKeysForPlaceholders`: Orders keys for the placeholder phase
+   - `sortKeysForDefinitions`: Orders keys for the definition phase
+
+3. **Placeholder phase ordering** (via `placeholderPriority`):
+   - Priority 0: `*Constructor` type bindings (e.g., `SymbolConstructor`)
+   - Priority 1: Value bindings (e.g., `Symbol` value)
+   - Priority 2: Instance type bindings (e.g., `Symbol` type)
+
+4. **Definition phase ordering** (via `definitionPriority`):
+   - Priority 0: Non-VarDecl declarations (FuncDecl, ClassDecl, TypeDecl, InterfaceDecl, EnumDecl)
+   - Priority 1: VarDecl declarations (processed last so function return types are available)
+
+5. **During inference:**
+   - All bindings in the SCC get placeholders (type variables) first
+   - Then definitions are processed in sorted order
+   - Forward references resolve via unification with the placeholder type variables
+
+```go
+// Sort binding keys for placeholder phase
+func sortKeysForPlaceholders(keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+    sorted := make([]dep_graph.BindingKey, len(keys))
+    copy(sorted, keys)
+    slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+        return placeholderPriority(a) - placeholderPriority(b)
+    })
+    return sorted
+}
+
+// Sort binding keys for definition phase
+func sortKeysForDefinitions(depGraph *dep_graph.DepGraph, keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+    sorted := make([]dep_graph.BindingKey, len(keys))
+    copy(sorted, keys)
+    slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+        return definitionPriority(depGraph, a) - definitionPriority(depGraph, b)
+    })
+    return sorted
+}
+```
+
+#### FR5: Global Type Augmentation
 Types defined in lib files must be available in the global scope:
 
 ```
@@ -118,10 +289,10 @@ val promise = Promise.resolve(42)    // Promise from lib.es2015.promise.d.ts
 val sym = Symbol("key")              // Symbol from lib.es2015.symbol.d.ts
 ```
 
-#### FR5: DOM Lib File Load Order
+#### FR6: DOM Lib File Load Order
 The `lib.dom.d.ts` file must be loaded **after** all ES lib files. DOM types may reference ES2015+ types (e.g., `Promise` in fetch API, `Symbol` in iterables). Loading DOM before ES2015+ would result in unresolved type references.
 
-#### FR6: Preserve Escalier's Two-Parameter Promise Type
+#### FR7: Preserve Escalier's Two-Parameter Promise Type
 
 Escalier extends TypeScript's `Promise<T>` with a two-parameter variant `Promise<T, E>` where:
 - `T` is the resolved value type
@@ -153,11 +324,11 @@ async fn processData(url: string) {
 
 **Requirements:**
 
-**FR6.1: Augmentation of TypeScript Promise**
+**FR7.1: Augmentation of TypeScript Promise**
 
 When loading `Promise` and `PromiseLike` interfaces from TypeScript lib files, the compiler must add the second type parameter `E` with a default value (e.g., `E = never` or `E = any`). This allows existing `Promise<T>` references to work without modification.
 
-**FR6.2: Consistent augmentation across all lib files**
+**FR7.2: Consistent augmentation across all lib files**
 
 Promise-related types in ES2015+ lib files must also be augmented:
    - `lib.es2015.promise.d.ts`: `Promise<T>`, `PromiseLike<T>`, `PromiseConstructorLike`
@@ -165,7 +336,7 @@ Promise-related types in ES2015+ lib files must also be augmented:
    - `lib.es2020.promise.d.ts`: `Promise.allSettled()`
    - `lib.es2021.promise.d.ts`: `Promise.any()`
 
-**FR6.3: Static method return types**
+**FR7.3: Static method return types**
 
 Static methods must properly propagate error types.
 
@@ -282,7 +453,7 @@ Static methods must properly propagate error types.
 
    **Implementation note:** The `AwaitedError<T>` helper must return `never` for non-promise values, so they don't pollute the error type union. Since `never | T = T`, non-promise values are effectively ignored in the error union.
 
-**FR6.4: Backward compatibility**
+**FR7.4: Backward compatibility**
 
 By using a default type parameter (`E = never`), code using `Promise<T>` (single parameter) automatically works as `Promise<T, never>`. No transformation of existing `Promise<T>` references is needed.
 

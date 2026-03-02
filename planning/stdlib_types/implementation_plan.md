@@ -771,6 +771,306 @@ Ensure the current Promise<T, E> behavior continues to work:
 3. Error types propagate through async function calls
 4. `Promise<T>` (single param) defaults to `Promise<T, never>` or `Promise<T, any>` as appropriate
 
+### Phase 2.7: Handle Constructor/Prototype Cyclic Dependencies (FR4)
+
+**Location**: `internal/dep_graph/dep_graph.go`
+
+TypeScript's standard library uses a pattern where constructor interfaces (e.g., `SymbolConstructor`) reference their instance type (e.g., `Symbol`) via a `prototype` property. This creates cyclic dependencies that must be handled specially. See FR4 in `requirements.md` for detailed background.
+
+**The Problem:**
+
+```typescript
+interface SymbolConstructor {
+    readonly prototype: Symbol;  // Creates dependency on Symbol type
+    readonly toPrimitive: unique symbol;
+}
+
+declare var Symbol: SymbolConstructor;  // Depends on SymbolConstructor type
+
+interface Symbol {
+    [Symbol.toPrimitive](hint: string): symbol;  // Depends on Symbol VALUE
+}
+```
+
+This creates a cycle:
+1. `SymbolConstructor` (type) → `Symbol` (type) via `prototype: Symbol`
+2. `Symbol` (type) → `Symbol` (value) via `[Symbol.toPrimitive]`
+3. `Symbol` (value) → `SymbolConstructor` (type) via type annotation
+
+**Originally Chosen Solution: Option C - Special-Case `prototype` by Naming Convention (with cycle detection)**
+
+> **⚠️ IMPLEMENTATION NOTE:** This approach was attempted but **does not work** with the current checker architecture. See "Why Option C Fails" below for details.
+
+**Important:** Not all `Foo`/`FooConstructor` patterns have cycles. The cycle only exists when:
+1. `FooConstructor` has `prototype: Foo` (type depends on instance type)
+2. `interface Foo` uses computed keys like `[Foo.someProperty]` (type depends on value)
+3. `var Foo: FooConstructor` (value depends on constructor type)
+
+Currently, **`Symbol`/`SymbolConstructor` is the primary case** where this cycle occurs. Most other constructor interfaces (e.g., `ArrayConstructor`, `DateConstructor`) don't have this issue because their instance interfaces don't use computed keys.
+
+**Original Approach (Option C):**
+1. Build the dependency graph normally (include all dependencies)
+2. Compute SCCs to detect cycles
+3. Only when a cycle is detected involving `FooConstructor` and `Foo` via `prototype`, remove that dependency
+4. Recompute SCCs after removing the edge
+
+---
+
+### Why Option C Fails
+
+The checker's `InferComponent` function uses a **two-phase approach within each SCC**:
+
+1. **Placeholder phase**: Creates fresh type variables for ALL bindings in the component BEFORE any are fully inferred
+2. **Definition phase**: Infers the actual types and unifies with placeholders
+
+When cyclic types are in the **same SCC**, the placeholder phase ensures all types have bindings before any are resolved, allowing mutual references to work correctly.
+
+**The Problem with Breaking Cycles:**
+
+Breaking cycles by removing edges **separates types into different SCCs**. For example, after removing the `SymbolConstructor → Symbol` dependency:
+
+- `SymbolConstructor` (type) → own SCC (no dependencies)
+- `Symbol` (value) → depends on `SymbolConstructor`
+- `Symbol` (type) → depends on `Symbol` (value)
+
+These become **separate SCCs processed sequentially**. When `SymbolConstructor` is processed, `Symbol` type doesn't have a placeholder yet (it's in a later SCC), causing "Unknown type: Symbol" errors.
+
+**Correct Approach: Option D - Ordered Processing Within SCCs**
+
+Instead of breaking cycles, keep all related types in the same SCC but enforce a specific **processing order within the component**:
+
+1. Process all `*Constructor` interfaces first (they define properties like `toPrimitive`)
+2. Process all value declarations next (they create value bindings referencing constructors)
+3. Process instance type interfaces last (they can now resolve computed keys)
+
+This requires modifying `InferComponent` to sort bindings within an SCC, not the dependency graph.
+
+---
+
+#### Task 2.7.1: Create Binding Key Sorting Function
+
+**Location**: `internal/checker/infer_module.go`
+
+Create a function to sort binding keys within an SCC so that constructor interfaces are processed before their instance types:
+
+```go
+// sortComponentBindings sorts binding keys within an SCC to ensure correct processing order:
+// 1. *Constructor type bindings (define properties like toPrimitive)
+// 2. Value bindings (create value bindings referencing constructors)
+// 3. Instance type bindings (can now resolve computed keys like [Symbol.toPrimitive])
+func sortComponentBindings(component []dep_graph.BindingKey) []dep_graph.BindingKey {
+    sorted := make([]dep_graph.BindingKey, len(component))
+    copy(sorted, component)
+
+    slices.SortFunc(sorted, func(a, b dep_graph.BindingKey) int {
+        priorityA := getBindingPriority(a)
+        priorityB := getBindingPriority(b)
+        return priorityA - priorityB
+    })
+
+    return sorted
+}
+
+// getBindingPriority returns the processing priority for a binding key.
+// Lower numbers are processed first.
+func getBindingPriority(key dep_graph.BindingKey) int {
+    name := key.Name()
+    isType := key.IsTypeBinding()
+
+    // Priority 0: *Constructor type bindings (e.g., SymbolConstructor)
+    // These define properties like toPrimitive that other types reference
+    if isType && strings.HasSuffix(name, "Constructor") {
+        return 0
+    }
+
+    // Priority 1: Value bindings (e.g., Symbol value)
+    // These create value bindings that can be used in computed keys
+    if !isType {
+        return 1
+    }
+
+    // Priority 2: Other type bindings (e.g., Symbol type)
+    // These may use computed keys that reference values
+    return 2
+}
+```
+
+#### Task 2.7.2: Integrate Sorting into InferComponent
+
+**Location**: `internal/checker/infer_module.go`
+
+Update `InferComponent` to sort the component before processing:
+
+```go
+func (c *Checker) InferComponent(
+    ctx Context,
+    depGraph *dep_graph.DepGraph,
+    component []dep_graph.BindingKey,
+) []Error {
+    errors := []Error{}
+
+    // Sort the component to ensure correct processing order for cyclic dependencies
+    // (e.g., SymbolConstructor must be processed before Symbol type)
+    sortedComponent := sortComponentBindings(component)
+
+    // ... rest of the function uses sortedComponent instead of component ...
+}
+```
+
+The key insight is that within an SCC:
+- All bindings get placeholders in the **placeholder phase** before any are resolved
+- The **definition phase** resolves types and unifies with placeholders
+- By sorting, we ensure `SymbolConstructor` is fully defined (including `toPrimitive`) before `Symbol` type tries to resolve `[Symbol.toPrimitive]`
+
+#### Task 2.7.3: Handle Placeholder Phase Ordering
+
+The placeholder phase already creates type variables for all bindings before resolution. However, we need to ensure that when resolving `SymbolConstructor`:
+
+1. The `Symbol` type has a placeholder (it does, since they're in the same SCC)
+2. The `prototype: Symbol` reference can resolve to this placeholder
+3. Later, when `Symbol` type is resolved, the placeholder is unified with the actual type
+
+The current checker architecture already supports this via the two-phase approach. The sorting ensures that when `Symbol` type is being resolved in the definition phase, `SymbolConstructor` has already been fully defined (including `toPrimitive` as a unique symbol).
+
+#### Task 2.7.4: Add Tests for SCC Ordering
+
+**Location**: `internal/checker/tests/` (new test file or add to existing)
+
+```go
+func TestSymbolConstructorCyclicDependency(t *testing.T) {
+    // This test verifies that the Symbol/SymbolConstructor cycle is handled correctly
+    // by processing them in the right order within the same SCC
+    sources := []*ast.Source{
+        {
+            ID:   0,
+            Path: "test.esc",
+            Contents: `
+                interface SymbolConstructor {
+                    prototype: Symbol,
+                    toPrimitive: unique symbol,
+                }
+
+                declare var Symbol: SymbolConstructor
+
+                interface Symbol {
+                    [Symbol.toPrimitive]: fn (hint: string) -> symbol,
+                }
+
+                // Test that we can use Symbol.toPrimitive
+                declare var testSym: Symbol
+            `,
+        },
+    }
+
+    checker := NewChecker()
+    // ... setup and run inference ...
+
+    // Verify SymbolConstructor.prototype has type Symbol
+    symConstructor := checker.GlobalScope.GetTypeAlias("SymbolConstructor")
+    require.NotNil(t, symConstructor)
+
+    objType, ok := type_system.Prune(symConstructor.Type).(*type_system.ObjectType)
+    require.True(t, ok)
+
+    // Find and verify prototype property
+    var prototypeType type_system.Type
+    for _, elem := range objType.Elems {
+        if prop, ok := elem.(*type_system.PropertyElem); ok {
+            if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "prototype" {
+                prototypeType = prop.Value
+                break
+            }
+        }
+    }
+    require.NotNil(t, prototypeType, "prototype property should exist")
+
+    // Verify Symbol type has the [Symbol.toPrimitive] property
+    symType := checker.GlobalScope.GetTypeAlias("Symbol")
+    require.NotNil(t, symType)
+
+    symObjType, ok := type_system.Prune(symType.Type).(*type_system.ObjectType)
+    require.True(t, ok)
+
+    // Should have at least one element (the Symbol.toPrimitive method)
+    assert.GreaterOrEqual(t, len(symObjType.Elems), 1,
+        "Symbol should have at least one element")
+}
+
+func TestSortComponentBindings(t *testing.T) {
+    // Unit test for the sorting function
+    component := []dep_graph.BindingKey{
+        dep_graph.TypeBindingKey("Symbol"),           // Instance type - priority 2
+        dep_graph.ValueBindingKey("Symbol"),          // Value - priority 1
+        dep_graph.TypeBindingKey("SymbolConstructor"), // Constructor - priority 0
+    }
+
+    sorted := sortComponentBindings(component)
+
+    assert.Equal(t, dep_graph.TypeBindingKey("SymbolConstructor"), sorted[0],
+        "SymbolConstructor should be first")
+    assert.Equal(t, dep_graph.ValueBindingKey("Symbol"), sorted[1],
+        "Symbol value should be second")
+    assert.Equal(t, dep_graph.TypeBindingKey("Symbol"), sorted[2],
+        "Symbol type should be last")
+}
+```
+
+#### Task 2.7.5: Verify with Real TypeScript Lib Files
+
+After implementing the sorting, verify that loading `lib.es2015.symbol.d.ts` and `lib.es2015.symbol.wellknown.d.ts` works without "Unknown type" errors:
+
+```go
+func TestLoadES2015SymbolLibFiles(t *testing.T) {
+    checker := NewChecker()
+
+    // Load the prelude which includes ES2015 Symbol lib files
+    // Prelude returns *Scope, not errors
+    scope := Prelude(checker)
+
+    // Collect any errors that were recorded during prelude loading
+    errors := checker.Errors
+    var symbolErrors []Error
+    for _, err := range errors {
+        if strings.Contains(err.Message(), "Symbol") {
+            symbolErrors = append(symbolErrors, err)
+        }
+    }
+
+    assert.Empty(t, symbolErrors,
+        "Should not have Symbol-related errors after loading lib files")
+
+    // Verify Symbol and SymbolConstructor are properly defined
+    symConstructor := scope.GetTypeAlias("SymbolConstructor")
+    assert.NotNil(t, symConstructor, "SymbolConstructor should be defined")
+
+    symType := scope.GetTypeAlias("Symbol")
+    assert.NotNil(t, symType, "Symbol type should be defined")
+
+    symValue := scope.GetValue("Symbol")
+    assert.NotNil(t, symValue, "Symbol value should be defined")
+}
+```
+
+#### Expected Result
+
+After implementing Option D:
+
+1. **Dependency graph** remains unchanged - all cyclic types stay in the same SCC:
+   ```
+   SCC: [SymbolConstructor (type), Symbol (value), Symbol (type)]
+   ```
+
+2. **Processing order within SCC** is sorted:
+   1. `SymbolConstructor` (type) - processed first, defines `toPrimitive` unique symbol
+   2. `Symbol` (value) - processed second, creates value binding of type `SymbolConstructor`
+   3. `Symbol` (type) - processed last, can now resolve `[Symbol.toPrimitive]`
+
+3. **Type resolution** works because:
+   - All three bindings have placeholders before any definition phase runs
+   - `SymbolConstructor` is fully defined first, including its `toPrimitive` property
+   - When `Symbol` type is processed, `Symbol.toPrimitive` resolves to the unique symbol
+   - The `prototype: Symbol` reference in `SymbolConstructor` resolves to `Symbol`'s placeholder, which is later unified with the actual type
+
 ### Phase 3: Parser Compatibility
 
 **Location**: `internal/dts_parser/`, `internal/ast/`, `internal/checker/`

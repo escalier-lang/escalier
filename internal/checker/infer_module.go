@@ -88,12 +88,92 @@ func GetDeclContext(
 	return nsCtx
 }
 
+// placeholderPriority returns the processing priority for a binding key in the placeholder phase.
+// Lower numbers are processed first. This ensures correct ordering for cyclic
+// dependencies like Symbol/SymbolConstructor.
+func placeholderPriority(key dep_graph.BindingKey) int {
+	name := key.Name()
+	isType := key.IsTypeBinding()
+
+	// Priority 0: *Constructor type bindings (e.g., SymbolConstructor)
+	// These define properties like toPrimitive that other types reference
+	if isType && strings.HasSuffix(name, "Constructor") {
+		return 0
+	}
+
+	// Priority 1: Value bindings (e.g., Symbol value, variable declarations)
+	// These create value bindings that can be used in computed keys.
+	// Note: ClassDecl creates both type AND value bindings, so processing a class's
+	// value binding will also define its type (via the processedDefinitions check).
+	if !isType {
+		return 1
+	}
+
+	// Priority 2: Other type bindings (e.g., Symbol type)
+	// These may use computed keys that reference values, so they're processed last.
+	return 2
+}
+
+// definitionPriority returns the processing priority for a binding key in the definition phase.
+// VarDecl-only keys have lower priority (processed last) so that function/method return
+// types are already inferred when processing VarDecl initializers.
+func definitionPriority(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey) int {
+	decls := depGraph.GetDecls(key)
+	for _, decl := range decls {
+		if decl == nil {
+			continue
+		}
+		if _, isVarDecl := decl.(*ast.VarDecl); !isVarDecl {
+			return 0 // Non-VarDecl keys first
+		}
+	}
+	if len(decls) > 0 {
+		return 1 // VarDecl-only keys last
+	}
+	return 0
+}
+
+// sortKeysForPlaceholders sorts binding keys for the placeholder phase:
+// 1. *Constructor type bindings (define properties like toPrimitive)
+// 2. Value bindings (create value bindings referencing constructors)
+// 3. Instance type bindings (can now resolve computed keys like [Symbol.toPrimitive])
+func sortKeysForPlaceholders(keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+	sorted := make([]dep_graph.BindingKey, len(keys))
+	copy(sorted, keys)
+
+	slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+		return placeholderPriority(a) - placeholderPriority(b)
+	})
+
+	return sorted
+}
+
+// sortKeysForDefinitions sorts binding keys for the definition phase.
+// VarDecl-only keys come last so function/method return types are already
+// inferred when processing VarDecl initializers.
+func sortKeysForDefinitions(depGraph *dep_graph.DepGraph, keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+	sorted := make([]dep_graph.BindingKey, len(keys))
+	copy(sorted, keys)
+
+	slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+		return definitionPriority(depGraph, a) - definitionPriority(depGraph, b)
+	})
+
+	return sorted
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
 	component []dep_graph.BindingKey,
 ) []Error {
 	errors := []Error{}
+
+	// Sort the component to ensure correct processing order for cyclic dependencies.
+	// This ensures *Constructor types are processed before their instance types,
+	// which is necessary for patterns like Symbol/SymbolConstructor where the
+	// instance type uses computed keys that reference values defined in the constructor.
+	sortedComponent := sortKeysForPlaceholders(component)
 
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
@@ -122,7 +202,7 @@ func (c *Checker) InferComponent(
 	processedPlaceholders := make(map[ast.Decl]bool)
 
 	// Infer placeholders
-	for _, key := range component {
+	for _, key := range sortedComponent {
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -576,13 +656,14 @@ func (c *Checker) InferComponent(
 	}
 
 	// Track declarations that have been processed in the definition phase.
-	// We use separate maps for the two passes to allow re-processing in the second pass.
-	processedDefinitionsPass1 := make(map[ast.Decl]bool)
-	processedDefinitionsPass2 := make(map[ast.Decl]bool)
+	processedDefinitions := make(map[ast.Decl]bool)
 
-	// Infer definitions - Pass 1: FuncDecl, ClassDecl, EnumDecl, TypeDecl, InterfaceDecl
-	// These need to be processed first so their inferred types are available for VarDecl
-	for _, key := range component {
+	// Sort the component so VarDecl keys come last. This ensures function/method
+	// return types are inferred before VarDecl initializers that may reference them.
+	sortedForDefs := sortKeysForDefinitions(depGraph, sortedComponent)
+
+	// Infer definitions - single pass with VarDecl processed last due to sorting
+	for _, key := range sortedForDefs {
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -590,17 +671,12 @@ func (c *Checker) InferComponent(
 				continue
 			}
 
-			// Skip VarDecl in pass 1 - they're processed in pass 2
-			if _, isVarDecl := decl.(*ast.VarDecl); isVarDecl {
-				continue
-			}
-
 			// Skip declarations that have already been processed.
 			// This can happen for classes and enums which have both type and value binding keys.
-			if processedDefinitionsPass1[decl] {
+			if processedDefinitions[decl] {
 				continue
 			}
-			processedDefinitionsPass1[decl] = true
+			processedDefinitions[decl] = true
 
 			// Skip FuncDecl that use the `declare` keyword, since they are
 			// already fully typed and don't have a body to infer.
@@ -608,7 +684,7 @@ func (c *Checker) InferComponent(
 			// to be inferred and unified with their placeholders.
 			if decl.Declare() {
 				switch decl.(type) {
-				case *ast.FuncDecl:
+				case *ast.FuncDecl, *ast.VarDecl:
 					continue
 				}
 			}
@@ -632,7 +708,29 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, inferErrors)
 				}
 
-			// VarDecl is handled in pass 2
+			case *ast.VarDecl:
+				// Skip if this VarDecl was processed in a previous component
+				// (destructuring patterns create multiple binding keys sharing the same VarDecl)
+				if decl.InferredType == nil {
+					continue
+				}
+
+				// TODO: if there's a type annotation, unify the initializer with it
+				// Skip if the init has already been inferred (to avoid re-unification errors
+				// when multiple binding keys share the same VarDecl across different components)
+				if decl.Init != nil && decl.Init.InferredType() == nil {
+					initType, initErrors := c.inferExpr(nsCtx, decl.Init)
+					errors = slices.Concat(errors, initErrors)
+					if decl.TypeAnn != nil {
+						taType := decl.TypeAnn.InferredType()
+						unifyErrors := c.Unify(ctx, initType, taType)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						patType := decl.InferredType
+						unifyErrors := c.Unify(ctx, initType, patType)
+						errors = slices.Concat(errors, unifyErrors)
+					}
+				}
 			case *ast.TypeDecl:
 				typeAlias, declErrors := c.inferTypeDecl(nsCtx, decl)
 				errors = slices.Concat(errors, declErrors)
@@ -1081,61 +1179,6 @@ func (c *Checker) InferComponent(
 							}
 						}
 					}
-				}
-			}
-		}
-	}
-
-	// Infer definitions - Pass 2: VarDecl
-	// VarDecl initializers are processed after other declarations so that
-	// function/method return types are already inferred and available.
-	for _, key := range component {
-		decls := depGraph.GetDecls(key)
-
-		for _, decl := range decls {
-			if decl == nil {
-				continue
-			}
-
-			varDecl, isVarDecl := decl.(*ast.VarDecl)
-			if !isVarDecl {
-				continue
-			}
-
-			// Skip declarations that have already been processed.
-			if processedDefinitionsPass2[decl] {
-				continue
-			}
-			processedDefinitionsPass2[decl] = true
-
-			// Skip VarDecl that use the `declare` keyword
-			if varDecl.Declare() {
-				continue
-			}
-
-			// Skip if this VarDecl was processed in a previous component
-			// (destructuring patterns create multiple binding keys sharing the same VarDecl)
-			if varDecl.InferredType == nil {
-				continue
-			}
-
-			// Get context for this specific declaration, including file scope for imports
-			nsCtx := GetDeclContext(ctx, depGraph, key, decl)
-
-			// TODO: if there's a type annotation, unify the initializer with it
-			// Skip if the init has already been inferred (to avoid re-unification errors
-			// when multiple binding keys share the same VarDecl across different components)
-			if varDecl.Init != nil && varDecl.Init.InferredType() == nil {
-				initType, initErrors := c.inferExpr(nsCtx, varDecl.Init)
-				errors = slices.Concat(errors, initErrors)
-				if varDecl.TypeAnn != nil {
-					taType := varDecl.TypeAnn.InferredType()
-					unifyErrors := c.Unify(ctx, initType, taType)
-					errors = slices.Concat(errors, unifyErrors)
-				} else {
-					patType := varDecl.InferredType
-					unifyErrors := c.Unify(ctx, initType, patType)
-					errors = slices.Concat(errors, unifyErrors)
 				}
 			}
 		}

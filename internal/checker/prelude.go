@@ -403,6 +403,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 		if err != nil {
 			return nil, fmt.Errorf("converting package declarations: %w", err)
 		}
+		pkgAstModule.Sources[source.ID] = source
 		result.PackageModule = pkgAstModule
 	}
 
@@ -415,6 +416,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 		if err != nil {
 			return nil, fmt.Errorf("converting global declarations: %w", err)
 		}
+		globalAstModule.Sources[source.ID] = source
 		result.GlobalModule = globalAstModule
 	}
 
@@ -427,6 +429,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 		if err != nil {
 			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
 		}
+		namedAstModule.Sources[source.ID] = source
 		result.NamedModules[namedMod.ModuleName] = namedAstModule
 	}
 
@@ -571,11 +574,15 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, combinedModule)
-	fatalErrors := filterLibFileErrors(inferErrors)
+	fatalErrors := c.InferModule(inferCtx, combinedModule)
 	if len(fatalErrors) > 0 {
 		for _, err := range fatalErrors {
-			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (span: %v)\n", err.Message(), err.Span())
+			sourceID := err.Span().SourceID
+			filePath := "unknown"
+			if source, ok := combinedModule.Sources[sourceID]; ok {
+				filePath = source.Path
+			}
+			fmt.Fprintf(os.Stderr, "Inference error in lib files: %s (file: %s, span: %v)\n", err.Message(), filePath, err.Span())
 		}
 		panic("Failed to infer types for TypeScript lib files")
 	}

@@ -356,6 +356,12 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 							// lib.es2015.symbol.wellknown.d.ts
 							interface SymbolConstructor {
 								toPrimitive: unique symbol,
+								toStringTag: unique symbol,
+							}
+
+							interface Symbol {
+								[Symbol.toPrimitive]: fn (hint: string) -> symbol,
+								[Symbol.toStringTag]: string,
 							}
 	
 							interface Date {
@@ -370,6 +376,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 			expectedDeps: map[BindingKey][]BindingKey{
 				TypeBindingKey("SymbolConstructor"): {},
 				ValueBindingKey("Symbol"):           {TypeBindingKey("SymbolConstructor")},
+				TypeBindingKey("Symbol"):            {ValueBindingKey("Symbol")},
 				TypeBindingKey("Iterable"):          {ValueBindingKey("Symbol")},
 				TypeBindingKey("Date"):              {ValueBindingKey("Symbol")},
 			},
