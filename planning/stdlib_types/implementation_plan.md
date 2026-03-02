@@ -797,7 +797,9 @@ This creates a cycle:
 2. `Symbol` (type) → `Symbol` (value) via `[Symbol.toPrimitive]`
 3. `Symbol` (value) → `SymbolConstructor` (type) via type annotation
 
-**Chosen Solution: Option C - Special-Case `prototype` by Naming Convention (with cycle detection)**
+**Originally Chosen Solution: Option C - Special-Case `prototype` by Naming Convention (with cycle detection)**
+
+> **⚠️ IMPLEMENTATION NOTE:** This approach was attempted but **does not work** with the current checker architecture. See "Why Option C Fails" below for details.
 
 **Important:** Not all `Foo`/`FooConstructor` patterns have cycles. The cycle only exists when:
 1. `FooConstructor` has `prototype: Foo` (type depends on instance type)
@@ -806,11 +808,46 @@ This creates a cycle:
 
 Currently, **`Symbol`/`SymbolConstructor` is the primary case** where this cycle occurs. Most other constructor interfaces (e.g., `ArrayConstructor`, `DateConstructor`) don't have this issue because their instance interfaces don't use computed keys.
 
-**Approach:**
+**Original Approach (Option C):**
 1. Build the dependency graph normally (include all dependencies)
 2. Compute SCCs to detect cycles
 3. Only when a cycle is detected involving `FooConstructor` and `Foo` via `prototype`, remove that dependency
 4. Recompute SCCs after removing the edge
+
+---
+
+### Why Option C Fails
+
+The checker's `InferComponent` function uses a **two-phase approach within each SCC**:
+
+1. **Placeholder phase**: Creates fresh type variables for ALL bindings in the component BEFORE any are fully inferred
+2. **Definition phase**: Infers the actual types and unifies with placeholders
+
+When cyclic types are in the **same SCC**, the placeholder phase ensures all types have bindings before any are resolved, allowing mutual references to work correctly.
+
+**The Problem with Breaking Cycles:**
+
+Breaking cycles by removing edges **separates types into different SCCs**. For example, after removing the `SymbolConstructor → Symbol` dependency:
+
+- `SymbolConstructor` (type) → own SCC (no dependencies)
+- `Symbol` (value) → depends on `SymbolConstructor`
+- `Symbol` (type) → depends on `Symbol` (value)
+
+These become **separate SCCs processed sequentially**. When `SymbolConstructor` is processed, `Symbol` type doesn't have a placeholder yet (it's in a later SCC), causing "Unknown type: Symbol" errors.
+
+**Correct Approach: Option D - Ordered Processing Within SCCs**
+
+Instead of breaking cycles, keep all related types in the same SCC but enforce a specific **processing order within the component**:
+
+1. Process all `*Constructor` interfaces first (they define properties like `toPrimitive`)
+2. Process all value declarations next (they create value bindings referencing constructors)
+3. Process instance type interfaces last (they can now resolve computed keys)
+
+This requires modifying `InferComponent` to sort bindings within an SCC, not the dependency graph.
+
+---
+
+**Tasks below describe the original Option C approach. They should be revised to implement Option D instead.**
 
 #### Task 2.7.1: Track `prototype` Dependencies Separately
 
