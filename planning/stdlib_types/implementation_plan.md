@@ -1023,10 +1023,13 @@ After implementing the sorting, verify that loading `lib.es2015.symbol.d.ts` and
 func TestLoadES2015SymbolLibFiles(t *testing.T) {
     checker := NewChecker()
 
-    // This should not panic or produce "Unknown type: Symbol" errors
-    errors := Prelude(checker)
+    // Load the prelude which includes ES2015 Symbol lib files
+    // Prelude returns *Scope, not errors
+    scope := Prelude(checker)
 
-    // Filter for Symbol-related errors
+    // Collect any errors that were recorded during prelude loading
+    // TODO(#256): Once Prelude reports errors, filter for Symbol-related ones
+    errors := checker.Errors
     var symbolErrors []Error
     for _, err := range errors {
         if strings.Contains(err.Message(), "Symbol") {
@@ -1038,13 +1041,13 @@ func TestLoadES2015SymbolLibFiles(t *testing.T) {
         "Should not have Symbol-related errors after loading lib files")
 
     // Verify Symbol and SymbolConstructor are properly defined
-    symConstructor := checker.GlobalScope.GetTypeAlias("SymbolConstructor")
+    symConstructor := scope.GetTypeAlias("SymbolConstructor")
     assert.NotNil(t, symConstructor, "SymbolConstructor should be defined")
 
-    symType := checker.GlobalScope.GetTypeAlias("Symbol")
+    symType := scope.GetTypeAlias("Symbol")
     assert.NotNil(t, symType, "Symbol type should be defined")
 
-    symValue := checker.GlobalScope.GetValue("Symbol")
+    symValue := scope.GetValue("Symbol")
     assert.NotNil(t, symValue, "Symbol value should be defined")
 }
 ```

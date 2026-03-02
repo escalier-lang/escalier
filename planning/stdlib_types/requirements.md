@@ -225,67 +225,57 @@ Keep all declarations in the same SCC but enforce a specific processing order wi
 
 This requires tracking which declarations are "constructor interfaces" vs "instance interfaces" and sorting within SCCs accordingly.
 
-**Chosen Approach: Option C (with cycle detection)**
+**Chosen Approach: Option D (Ordered Processing within SCCs)**
 
-Option C (Special-Case `prototype` Properties by Naming Convention) is the chosen solution, but **only applied when a cycle is actually detected**. This is important because:
+Option D is the chosen solution. Rather than breaking cycles by removing edges, we keep all declarations in the same SCC but enforce a specific processing order within each component.
 
-1. **Not all `Foo`/`FooConstructor` patterns have cycles.** Most constructor interfaces (e.g., `ArrayConstructor`, `DateConstructor`, `MapConstructor`) don't create cycles because their instance interfaces don't use computed keys that reference the constructor value.
+**Why Option D over Option C:**
 
-2. **The cycle only exists when all three conditions are met:**
-   - `FooConstructor` has `prototype: Foo` (type depends on instance type)
-   - `interface Foo` uses computed keys like `[Foo.someProperty]` (type depends on value)
-   - `var Foo: FooConstructor` (value depends on constructor type)
+Option C (breaking cycles by removing `prototype` dependencies) was initially considered but rejected because it doesn't work with the checker's two-phase architecture. When a cycle is broken, types end up in different SCCs and are processed separately. This causes "Unknown type" errors because when `SymbolConstructor` is processed in its own SCC, the `Symbol` type doesn't have a placeholder yet.
 
-3. **Currently, `Symbol`/`SymbolConstructor` is the primary case** where this cycle occurs, because `interface Symbol` has computed keys `[Symbol.toPrimitive]` and `[Symbol.toStringTag]`.
+Option D works because all types in the SCC get placeholders before any definitions are processed, allowing forward references to resolve correctly via type variables and unification.
 
-**Implementation Details for Option C:**
+**Implementation Details for Option D:**
 
-1. **First, build the dependency graph normally** - include all dependencies, including `prototype` properties.
+1. **Keep all cyclic dependencies in the same SCC** - don't break any edges.
 
-2. **Detect cycles involving `*Constructor` interfaces:**
-   - After computing SCCs, check if any SCC contains both `TypeBindingKey("FooConstructor")` and `TypeBindingKey("Foo")` where `FooConstructor` depends on `Foo` via a `prototype` property.
+2. **Sort binding keys within each SCC** using two sorting functions:
+   - `sortKeysForPlaceholders`: Orders keys for the placeholder phase
+   - `sortKeysForDefinitions`: Orders keys for the definition phase
 
-3. **Only when a cycle is detected**, remove the `prototype` dependency to break it:
-   - Remove the edge from `FooConstructor` (type) to `Foo` (type) for the `prototype` property
-   - Recompute SCCs after removing the edge
+3. **Placeholder phase ordering** (via `placeholderPriority`):
+   - Priority 0: `*Constructor` type bindings (e.g., `SymbolConstructor`)
+   - Priority 1: Value bindings (e.g., `Symbol` value)
+   - Priority 2: Instance type bindings (e.g., `Symbol` type)
 
-4. **During interface body inference:**
-   - The `prototype` property is processed normally
-   - By the time `SymbolConstructor` is being inferred, `Symbol` (type) may not exist yet
-   - However, since we're using type variables and unification, the reference can be resolved later when `Symbol` (type) is processed
+4. **Definition phase ordering** (via `definitionPriority`):
+   - Priority 0: Non-VarDecl declarations (FuncDecl, ClassDecl, TypeDecl, InterfaceDecl, EnumDecl)
+   - Priority 1: VarDecl declarations (processed last so function return types are available)
+
+5. **During inference:**
+   - All bindings in the SCC get placeholders (type variables) first
+   - Then definitions are processed in sorted order
+   - Forward references resolve via unification with the placeholder type variables
 
 ```go
-// After building the initial dependency graph
-func breakPrototypeCycles(depGraph *DepGraph) {
-    // Find SCCs that contain both FooConstructor and Foo types
-    for _, scc := range depGraph.Components {
-        if len(scc) < 2 {
-            continue
-        }
+// Sort binding keys for placeholder phase
+func sortKeysForPlaceholders(keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+    sorted := make([]dep_graph.BindingKey, len(keys))
+    copy(sorted, keys)
+    slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+        return placeholderPriority(a) - placeholderPriority(b)
+    })
+    return sorted
+}
 
-        // Look for Constructor/Instance pairs in this SCC
-        for _, key := range scc {
-            if typeKey, ok := key.(TypeBindingKey); ok {
-                name := string(typeKey)
-                if strings.HasSuffix(name, "Constructor") {
-                    instanceName := strings.TrimSuffix(name, "Constructor")
-                    instanceKey := TypeBindingKey(instanceName)
-
-                    // Check if instance type is also in this SCC
-                    if slices.Contains(scc, instanceKey) {
-                        // Check if the dependency is via prototype property
-                        if isPrototypeDependency(depGraph, typeKey, instanceKey) {
-                            // Remove this dependency to break the cycle
-                            depGraph.RemoveDep(typeKey, instanceKey)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Recompute SCCs after removing edges
-    depGraph.Components = depGraph.FindStronglyConnectedComponents(0)
+// Sort binding keys for definition phase
+func sortKeysForDefinitions(depGraph *dep_graph.DepGraph, keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+    sorted := make([]dep_graph.BindingKey, len(keys))
+    copy(sorted, keys)
+    slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+        return definitionPriority(depGraph, a) - definitionPriority(depGraph, b)
+    })
+    return sorted
 }
 ```
 
