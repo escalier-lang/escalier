@@ -1028,7 +1028,6 @@ func TestLoadES2015SymbolLibFiles(t *testing.T) {
     scope := Prelude(checker)
 
     // Collect any errors that were recorded during prelude loading
-    // TODO(#256): Once Prelude reports errors, filter for Symbol-related ones
     errors := checker.Errors
     var symbolErrors []Error
     for _, err := range errors {
