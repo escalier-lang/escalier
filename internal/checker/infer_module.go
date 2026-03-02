@@ -88,12 +88,59 @@ func GetDeclContext(
 	return nsCtx
 }
 
+// getBindingPriority returns the processing priority for a binding key.
+// Lower numbers are processed first. This ensures correct ordering for cyclic
+// dependencies like Symbol/SymbolConstructor.
+func getBindingPriority(key dep_graph.BindingKey) int {
+	name := key.Name()
+	isType := key.IsTypeBinding()
+
+	// Priority 0: *Constructor type bindings (e.g., SymbolConstructor)
+	// These define properties like toPrimitive that other types reference
+	if isType && strings.HasSuffix(name, "Constructor") {
+		return 0
+	}
+
+	// Priority 1: Value bindings (e.g., Symbol value)
+	// These create value bindings that can be used in computed keys
+	if !isType {
+		return 1
+	}
+
+	// Priority 2: Other type bindings (e.g., Symbol type)
+	// These may use computed keys that reference values
+	return 2
+}
+
+// sortComponentBindings sorts binding keys within an SCC to ensure correct processing order:
+// 1. *Constructor type bindings (define properties like toPrimitive)
+// 2. Value bindings (create value bindings referencing constructors)
+// 3. Instance type bindings (can now resolve computed keys like [Symbol.toPrimitive])
+func sortComponentBindings(component []dep_graph.BindingKey) []dep_graph.BindingKey {
+	sorted := make([]dep_graph.BindingKey, len(component))
+	copy(sorted, component)
+
+	slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
+		priorityA := getBindingPriority(a)
+		priorityB := getBindingPriority(b)
+		return priorityA - priorityB
+	})
+
+	return sorted
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
 	component []dep_graph.BindingKey,
 ) []Error {
 	errors := []Error{}
+
+	// Sort the component to ensure correct processing order for cyclic dependencies.
+	// This ensures *Constructor types are processed before their instance types,
+	// which is necessary for patterns like Symbol/SymbolConstructor where the
+	// instance type uses computed keys that reference values defined in the constructor.
+	sortedComponent := sortComponentBindings(component)
 
 	// TODO:
 	// - ensure there are no duplicate declarations in the module
@@ -122,7 +169,7 @@ func (c *Checker) InferComponent(
 	processedPlaceholders := make(map[ast.Decl]bool)
 
 	// Infer placeholders
-	for _, key := range component {
+	for _, key := range sortedComponent {
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -582,7 +629,7 @@ func (c *Checker) InferComponent(
 
 	// Infer definitions - Pass 1: FuncDecl, ClassDecl, EnumDecl, TypeDecl, InterfaceDecl
 	// These need to be processed first so their inferred types are available for VarDecl
-	for _, key := range component {
+	for _, key := range sortedComponent {
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {
@@ -1089,7 +1136,7 @@ func (c *Checker) InferComponent(
 	// Infer definitions - Pass 2: VarDecl
 	// VarDecl initializers are processed after other declarations so that
 	// function/method return types are already inferred and available.
-	for _, key := range component {
+	for _, key := range sortedComponent {
 		decls := depGraph.GetDecls(key)
 
 		for _, decl := range decls {

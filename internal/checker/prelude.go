@@ -574,8 +574,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, combinedModule)
-	fatalErrors := filterLibFileErrors(inferErrors)
+	fatalErrors := c.InferModule(inferCtx, combinedModule)
 	if len(fatalErrors) > 0 {
 		for _, err := range fatalErrors {
 			sourceID := err.Span().SourceID
