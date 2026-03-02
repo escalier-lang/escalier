@@ -771,6 +771,317 @@ Ensure the current Promise<T, E> behavior continues to work:
 3. Error types propagate through async function calls
 4. `Promise<T>` (single param) defaults to `Promise<T, never>` or `Promise<T, any>` as appropriate
 
+### Phase 2.7: Handle Constructor/Prototype Cyclic Dependencies (FR4)
+
+**Location**: `internal/dep_graph/dep_graph.go`
+
+TypeScript's standard library uses a pattern where constructor interfaces (e.g., `SymbolConstructor`) reference their instance type (e.g., `Symbol`) via a `prototype` property. This creates cyclic dependencies that must be handled specially. See FR4 in `requirements.md` for detailed background.
+
+**The Problem:**
+
+```typescript
+interface SymbolConstructor {
+    readonly prototype: Symbol;  // Creates dependency on Symbol type
+    readonly toPrimitive: unique symbol;
+}
+
+declare var Symbol: SymbolConstructor;  // Depends on SymbolConstructor type
+
+interface Symbol {
+    [Symbol.toPrimitive](hint: string): symbol;  // Depends on Symbol VALUE
+}
+```
+
+This creates a cycle:
+1. `SymbolConstructor` (type) → `Symbol` (type) via `prototype: Symbol`
+2. `Symbol` (type) → `Symbol` (value) via `[Symbol.toPrimitive]`
+3. `Symbol` (value) → `SymbolConstructor` (type) via type annotation
+
+**Chosen Solution: Option C - Special-Case `prototype` by Naming Convention (with cycle detection)**
+
+**Important:** Not all `Foo`/`FooConstructor` patterns have cycles. The cycle only exists when:
+1. `FooConstructor` has `prototype: Foo` (type depends on instance type)
+2. `interface Foo` uses computed keys like `[Foo.someProperty]` (type depends on value)
+3. `var Foo: FooConstructor` (value depends on constructor type)
+
+Currently, **`Symbol`/`SymbolConstructor` is the primary case** where this cycle occurs. Most other constructor interfaces (e.g., `ArrayConstructor`, `DateConstructor`) don't have this issue because their instance interfaces don't use computed keys.
+
+**Approach:**
+1. Build the dependency graph normally (include all dependencies)
+2. Compute SCCs to detect cycles
+3. Only when a cycle is detected involving `FooConstructor` and `Foo` via `prototype`, remove that dependency
+4. Recompute SCCs after removing the edge
+
+#### Task 2.7.1: Track `prototype` Dependencies Separately
+
+**Location**: `internal/dep_graph/dep_graph.go`
+
+During dependency graph construction, track which dependencies come from `prototype` properties so we can selectively remove them later if they cause cycles.
+
+```go
+type DepGraph struct {
+    // ... existing fields ...
+
+    // PrototypeDeps tracks dependencies that come from prototype properties.
+    // Key: FooConstructor type binding, Value: Foo type binding
+    // These can be removed if they cause cycles.
+    PrototypeDeps map[BindingKey]BindingKey
+}
+
+// DependencyVisitor tracks dependencies during AST traversal
+type DependencyVisitor struct {
+    // ... existing fields ...
+
+    // CurrentInterfaceName tracks the interface being visited (if any)
+    CurrentInterfaceName string
+
+    // CurrentPropertyName tracks the property being visited (if any)
+    CurrentPropertyName string
+}
+```
+
+#### Task 2.7.2: Record `prototype` Dependencies During Graph Construction
+
+When visiting `prototype` properties on `*Constructor` interfaces, record the dependency in `PrototypeDeps` so it can be removed later if needed:
+
+```go
+// In DependencyVisitor, when processing interface properties
+func (v *DependencyVisitor) visitPropertyTypeAnn(elem *ast.PropertyTypeAnn) {
+    propName := getPropertyName(elem.Name)
+
+    // Track property name for prototype detection
+    prevPropName := v.CurrentPropertyName
+    v.CurrentPropertyName = propName
+
+    // Visit the property value type (adds dependencies normally)
+    if elem.Value != nil {
+        elem.Value.Accept(v)
+    }
+
+    // If this is a prototype property on a *Constructor interface,
+    // record it so we can remove it later if it causes a cycle
+    if propName == "prototype" && strings.HasSuffix(v.CurrentInterfaceName, "Constructor") {
+        if typeRef, ok := elem.Value.(*ast.TypeRefTypeAnn); ok {
+            constructorKey := TypeBindingKey(v.CurrentInterfaceName)
+            instanceKey := TypeBindingKey(ast.QualIdentToString(typeRef.Name))
+            v.Graph.PrototypeDeps[constructorKey] = instanceKey
+        }
+    }
+
+    v.CurrentPropertyName = prevPropName
+}
+```
+
+#### Task 2.7.3: Break Cycles After Initial Graph Construction
+
+After building the dependency graph and computing SCCs, check for cycles involving `prototype` dependencies and remove them:
+
+```go
+// breakPrototypeCycles removes prototype dependencies that cause cycles
+// This is called after the initial dependency graph is built
+func breakPrototypeCycles(depGraph *DepGraph) bool {
+    modified := false
+
+    // Check each prototype dependency
+    for constructorKey, instanceKey := range depGraph.PrototypeDeps {
+        // Check if these are in the same SCC (i.e., part of a cycle)
+        if areInSameSCC(depGraph, constructorKey, instanceKey) {
+            // Remove this dependency to break the cycle
+            depGraph.RemoveDep(constructorKey, instanceKey)
+            modified = true
+        }
+    }
+
+    if modified {
+        // Recompute SCCs after removing edges
+        depGraph.Components = depGraph.FindStronglyConnectedComponents(0)
+    }
+
+    return modified
+}
+
+// areInSameSCC checks if two binding keys are in the same strongly connected component
+func areInSameSCC(depGraph *DepGraph, key1, key2 BindingKey) bool {
+    for _, scc := range depGraph.Components {
+        hasKey1 := slices.Contains(scc, key1)
+        hasKey2 := slices.Contains(scc, key2)
+        if hasKey1 && hasKey2 {
+            return true
+        }
+        if hasKey1 || hasKey2 {
+            // Found one but not the other - they're in different SCCs
+            return false
+        }
+    }
+    return false
+}
+```
+
+#### Task 2.7.4: Integrate into BuildDepGraph
+
+Update `BuildDepGraph` to call the cycle-breaking logic:
+
+```go
+func BuildDepGraph(module *ast.Module) *DepGraph {
+    // ... existing code to build graph ...
+
+    // Compute strongly connected components
+    graph.Components = graph.FindStronglyConnectedComponents(0)
+
+    // Break prototype cycles if detected
+    breakPrototypeCycles(graph)
+
+    return graph
+}
+```
+
+#### Task 2.7.5: Verify Dependency Graph Changes
+
+After implementation, verify that:
+1. Cycles are detected correctly
+2. Only cyclic `prototype` dependencies are removed
+3. Non-cyclic `prototype` dependencies are preserved
+
+```go
+func TestPrototypeCycleDetectionAndBreaking(t *testing.T) {
+    // This test verifies the Symbol/SymbolConstructor cycle is broken
+    source := &ast.Source{
+        ID:   0,
+        Path: "test.esc",
+        Contents: `
+            interface SymbolConstructor {
+                prototype: Symbol,
+                toPrimitive: unique symbol,
+            }
+
+            declare var Symbol: SymbolConstructor
+
+            interface Symbol {
+                [Symbol.toPrimitive]: fn (hint: string) -> symbol,
+            }
+        `,
+    }
+
+    module := parseModule(source)
+    depGraph := dep_graph.BuildDepGraph(module)
+
+    symConstructorKey := dep_graph.TypeBindingKey("SymbolConstructor")
+    symValueKey := dep_graph.ValueBindingKey("Symbol")
+    symTypeKey := dep_graph.TypeBindingKey("Symbol")
+
+    // After cycle breaking, SymbolConstructor should NOT depend on Symbol type
+    // (the prototype dependency was removed because it caused a cycle)
+    symConstructorDeps := depGraph.GetDeps(symConstructorKey)
+    assert.False(t, symConstructorDeps.Contains(symTypeKey),
+        "SymbolConstructor should not depend on Symbol type (cycle broken)")
+
+    // Symbol value depends on SymbolConstructor type (unchanged)
+    symValueDeps := depGraph.GetDeps(symValueKey)
+    assert.True(t, symValueDeps.Contains(symConstructorKey),
+        "Symbol value should depend on SymbolConstructor type")
+
+    // Symbol type depends on Symbol value via computed key (unchanged)
+    symTypeDeps := depGraph.GetDeps(symTypeKey)
+    assert.True(t, symTypeDeps.Contains(symValueKey),
+        "Symbol type should depend on Symbol value")
+
+    // Verify they are now in separate SCCs (no cycle)
+    assert.False(t, areInSameSCC(depGraph, symConstructorKey, symTypeKey),
+        "SymbolConstructor and Symbol type should be in different SCCs")
+}
+
+func TestPrototypeNonCyclePreserved(t *testing.T) {
+    // This test verifies that non-cyclic prototype dependencies are preserved
+    // (e.g., ArrayConstructor.prototype: Array doesn't cause a cycle because
+    // Array doesn't have computed keys referencing Array value)
+    source := &ast.Source{
+        ID:   0,
+        Path: "test.esc",
+        Contents: `
+            interface ArrayConstructor {
+                prototype: Array<any>,
+            }
+
+            declare var Array: ArrayConstructor
+
+            interface Array<T> {
+                length: number,
+                push: fn (item: T) -> number,
+            }
+        `,
+    }
+
+    module := parseModule(source)
+    depGraph := dep_graph.BuildDepGraph(module)
+
+    arrayConstructorKey := dep_graph.TypeBindingKey("ArrayConstructor")
+    arrayTypeKey := dep_graph.TypeBindingKey("Array")
+
+    // ArrayConstructor SHOULD depend on Array type (no cycle to break)
+    arrayConstructorDeps := depGraph.GetDeps(arrayConstructorKey)
+    assert.True(t, arrayConstructorDeps.Contains(arrayTypeKey),
+        "ArrayConstructor should depend on Array type (no cycle)")
+}
+```
+
+#### Task 2.7.6: Verify Type Resolution Still Works
+
+The `prototype` property type must still be resolved during interface body inference, even though it's not a dependency:
+
+```go
+func TestPrototypeTypeResolution(t *testing.T) {
+    // After loading lib files, verify that SymbolConstructor.prototype
+    // has the correct type (Symbol)
+
+    checker := NewChecker()
+    Prelude(checker)
+
+    symConstructor := checker.GlobalScope.GetTypeAlias("SymbolConstructor")
+    require.NotNil(t, symConstructor)
+
+    objType, ok := type_system.Prune(symConstructor.Type).(*type_system.ObjectType)
+    require.True(t, ok)
+
+    // Find prototype property
+    var prototypeType type_system.Type
+    for _, elem := range objType.Elems {
+        if prop, ok := elem.(*type_system.PropertyElem); ok {
+            if prop.Name.String() == "prototype" {
+                prototypeType = prop.Value
+                break
+            }
+        }
+    }
+
+    require.NotNil(t, prototypeType, "prototype property should exist")
+
+    // Verify it references Symbol type
+    typeRef, ok := type_system.Prune(prototypeType).(*type_system.TypeRefType)
+    require.True(t, ok, "prototype should be a type reference")
+    assert.Equal(t, "Symbol", typeRef.Name)
+}
+```
+
+#### Expected Result
+
+After implementing Option C:
+
+1. **Dependency graph** will show:
+   ```
+   SymbolConstructor (type) ← no dependencies (prototype: Symbol skipped)
+           ↑
+       Symbol (value)       ← depends on SymbolConstructor
+           ↑
+       Symbol (type)        ← depends on Symbol value
+   ```
+
+2. **Processing order** will be:
+   1. `SymbolConstructor` (type) - processed first, defines `toPrimitive`
+   2. `Symbol` (value) - processed second, creates value binding
+   3. `Symbol` (type) - processed last, can now resolve `[Symbol.toPrimitive]`
+
+3. **Type resolution** will still work because by the time `SymbolConstructor` is fully inferred, `Symbol` (type) will have been processed (it comes later in dependency order), so the `prototype: Symbol` type reference resolves correctly.
+
 ### Phase 3: Parser Compatibility
 
 **Location**: `internal/dts_parser/`, `internal/ast/`, `internal/checker/`
