@@ -23,6 +23,10 @@ var nextSourceID atomic.Int64
 // Compiled once at package level for efficiency.
 var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)" />`)
 
+// pathReferenceDirectivePattern matches /// <reference path="global.d.ts" /> directives
+// These reference other .d.ts files relative to the current file.
+var pathReferenceDirectivePattern = regexp.MustCompile(`/// <reference path="([^"]+)" />`)
+
 // findRepoRoot walks up the directory tree to find the repository root
 func findRepoRoot() (string, error) {
 	dir, err := os.Getwd()
@@ -74,6 +78,24 @@ func parseReferenceDirectives(filePath string) ([]string, error) {
 	}
 
 	matches := referenceDirectivePattern.FindAllStringSubmatch(string(content), -1)
+	var refs []string
+	for _, match := range matches {
+		if len(match) >= 2 {
+			refs = append(refs, match[1])
+		}
+	}
+	return refs, nil
+}
+
+// parsePathReferenceDirectives extracts path references from a .d.ts file.
+// Example: /// <reference path="global.d.ts" /> -> "global.d.ts"
+func parsePathReferenceDirectives(filePath string) ([]string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := pathReferenceDirectivePattern.FindAllStringSubmatch(string(content), -1)
 	var refs []string
 	for _, match := range matches {
 		if len(match) >= 2 {

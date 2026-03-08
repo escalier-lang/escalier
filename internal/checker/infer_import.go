@@ -154,6 +154,42 @@ type LoadedPackage struct {
 	FilePath  string
 }
 
+// loadPathReferencedFile loads a file referenced via /// <reference path="..." />
+// These files typically contain global interface definitions.
+func (c *Checker) loadPathReferencedFile(filePath string) []Error {
+	var errors []Error
+
+	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
+	if loadErr != nil {
+		return []Error{&GenericError{
+			message: "Could not load referenced file " + filePath + ": " + loadErr.Error(),
+			span:    DEFAULT_SPAN,
+		}}
+	}
+
+	// Process global declarations
+	if loadResult.GlobalModule != nil {
+		globalCtx := Context{
+			Scope:      c.GlobalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		errors = append(errors, c.InferModule(globalCtx, loadResult.GlobalModule)...)
+	}
+
+	// Process package declarations as globals (for files like global.d.ts)
+	if loadResult.PackageModule != nil {
+		globalCtx := Context{
+			Scope:      c.GlobalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		errors = append(errors, c.InferModule(globalCtx, loadResult.PackageModule)...)
+	}
+
+	return errors
+}
+
 // loadPackageForImport loads a package by name, checking the registry first.
 // If not in registry, loads from file system, infers into a namespace,
 // registers it, and handles global augmentations.
@@ -228,6 +264,21 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 			}
 		}
 		// TODO: Handle named imports (import { A, B } from "pkg") if needed
+	}
+
+	// Step 3.6: Process path references (/// <reference path="..." />)
+	// These files typically contain global interface definitions (e.g., global.d.ts)
+	pathRefs, pathErr := parsePathReferenceDirectives(dtsFilePath)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(dtsFilePath)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check if already processed (avoid duplicates)
+			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
 	}
 
 	// Step 4: Process global augmentations into GlobalScope
