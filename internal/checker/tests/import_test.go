@@ -39,18 +39,18 @@ func TestImportInferenceScript(t *testing.T) {
 				"color":      "Globals | DataType.Color | undefined | undefined",
 			},
 		},
-		// "NamespaceImportReact": {
-		// 	input: `
-		// 		import * as React from "react"
-		// 		val useState = React.useState
-		// 	`,
-		// 	expectedValues: map[string]string{
-		// 		// React's useState has two overloads:
-		// 		// 1. useState<S>(initialState: S | (() => S)): [S, Dispatch<SetStateAction<S>>]
-		// 		// 2. useState<S = undefined>(): [S | undefined, Dispatch<SetStateAction<S | undefined>>]
-		// 		"useState": "fn <S>(initialState: S | fn () -> S throws never) -> [S, Dispatch<SetStateAction<S>>] throws never & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>] throws never",
-		// 	},
-		// },
+		"NamespaceImportReact": {
+			input: `
+				import * as React from "react"
+				val useState = React.useState
+			`,
+			expectedValues: map[string]string{
+				// React's useState has two overloads:
+				// 1. useState<S>(initialState: S | (() => S)): [S, Dispatch<SetStateAction<S>>]
+				// 2. useState<S = undefined>(): [S | undefined, Dispatch<SetStateAction<S | undefined>>]
+				"useState": "fn <S>(initialState: S | fn () -> S throws never) -> [S, Dispatch<SetStateAction<S>>] throws never & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>] throws never",
+			},
+		},
 	}
 
 	for testName, testCase := range tests {

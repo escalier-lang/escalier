@@ -357,6 +357,10 @@ type LoadedPackageResult struct {
 	// on each declaration distinguishes them. Empty (never nil) if the file has
 	// no named module declarations.
 	NamedModules map[string]*ast.Module
+
+	// Imports contains import declarations from the .d.ts file.
+	// These need to be processed to load transitive dependencies.
+	Imports []*dts_parser.ImportDecl
 }
 
 // loadClassifiedTypeScriptModule loads a .d.ts file and classifies its contents
@@ -392,6 +396,7 @@ func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, erro
 
 	result := &LoadedPackageResult{
 		NamedModules: make(map[string]*ast.Module),
+		Imports:      classification.Imports,
 	}
 
 	// Process package declarations (both exported and non-exported)

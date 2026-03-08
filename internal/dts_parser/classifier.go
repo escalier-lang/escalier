@@ -21,6 +21,10 @@ type FileClassification struct {
 	// PackageDecls contains all declarations when HasTopLevelExports is true.
 	// The export flag on ast.Decl distinguishes exported from non-exported declarations.
 	PackageDecls []Statement
+
+	// Imports contains all import declarations from the file.
+	// These need to be processed to load transitive dependencies.
+	Imports []*ImportDecl
 }
 
 // NamedModuleDecl represents a named module declaration (`declare module "name" { ... }`).
@@ -41,6 +45,7 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		NamedModules:       make([]NamedModuleDecl, 0),
 		GlobalDecls:        make([]Statement, 0),
 		PackageDecls:       make([]Statement, 0),
+		Imports:            make([]*ImportDecl, 0),
 	}
 
 	// First pass: detect if there are any top-level exports
@@ -53,6 +58,12 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 
 	// Second pass: classify each declaration
 	for _, stmt := range module.Statements {
+		// Capture import declarations
+		if importDecl, ok := stmt.(*ImportDecl); ok {
+			classification.Imports = append(classification.Imports, importDecl)
+			continue
+		}
+
 		// Check for named module declarations
 		if namedModule := extractNamedModule(stmt); namedModule != nil {
 			classification.NamedModules = append(classification.NamedModules, *namedModule)
