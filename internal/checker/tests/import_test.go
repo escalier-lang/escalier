@@ -29,9 +29,14 @@ func TestImportInferenceScript(t *testing.T) {
 			input: `
 				import * as CSS from "csstype"
 				declare val alignItems: CSS.Property.AlignItems
+				declare val properties: CSS.Properties
+				// Access a property from StandardLonghandProperties (extended by StandardProperties, extended by Properties)
+				val color = properties.color
 			`,
 			expectedValues: map[string]string{
 				"alignItems": "Globals | DataType.SelfPosition | \"anchor-center\" | \"baseline\" | \"normal\" | \"stretch\" | string & {}",
+				"properties": "{}",
+				"color":      "Globals | DataType.Color | undefined | undefined",
 			},
 		},
 		// "NamespaceImportReact": {
@@ -40,7 +45,10 @@ func TestImportInferenceScript(t *testing.T) {
 		// 		val useState = React.useState
 		// 	`,
 		// 	expectedValues: map[string]string{
-		// 		"useState": "fn (initialState: any) -> [any, fn (newState: any) -> void] throws never",
+		// 		// React's useState has two overloads:
+		// 		// 1. useState<S>(initialState: S | (() => S)): [S, Dispatch<SetStateAction<S>>]
+		// 		// 2. useState<S = undefined>(): [S | undefined, Dispatch<SetStateAction<S | undefined>>]
+		// 		"useState": "fn <S>(initialState: S | fn () -> S throws never) -> [S, Dispatch<SetStateAction<S>>] throws never & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>] throws never",
 		// 	},
 		// },
 	}

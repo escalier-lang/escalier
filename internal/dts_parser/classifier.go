@@ -137,14 +137,14 @@ func extractGlobalAugmentation(stmt Statement) []Statement {
 //
 //	declare namespace Foo {
 //	    export const bar: number;
-//	    export function baz(): string;
+//	    function baz(): string;  // no export keyword, but still accessible
 //	}
 //	export = Foo;
 //
 // This is equivalent to:
 //
 //	export const bar: number;
-//	export function baz(): string;
+//	export function baz(): string;  // all items become exports
 //
 // Returns the expanded declarations, or the original statement in a slice if not an export = pattern.
 func expandExportEquals(stmt Statement, module *Module) []Statement {
@@ -161,7 +161,14 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 	}
 
 	// Return the namespace's statements as top-level exports
-	// Each statement from the namespace becomes a package declaration
+	// Each statement from the namespace becomes a package declaration.
+	// Mark all declarations as exported since `export = Namespace` means
+	// all items in that namespace become module exports.
+	for _, s := range ns.Statements {
+		if decl, ok := s.(Decl); ok {
+			decl.SetExport(true)
+		}
+	}
 	return ns.Statements
 }
 
