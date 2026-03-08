@@ -6466,6 +6466,7 @@
             },
             export:   false,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:3, Column:2},
@@ -6552,6 +6553,7 @@
             },
             export:   false,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:40},
@@ -6638,6 +6640,7 @@
             },
             export:   false,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:41},
@@ -6749,6 +6752,7 @@
             },
             export:   false,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:53},

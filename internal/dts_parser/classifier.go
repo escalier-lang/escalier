@@ -93,17 +93,10 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 // - export = ...
 // - export default ...
 func isTopLevelExport(stmt Statement) bool {
-	switch s := stmt.(type) {
+	switch stmt.(type) {
 	case *NamedExportStmt, *ExportAllStmt, *ExportAssignmentStmt, *ExportAsNamespaceStmt:
 		// Standalone export statement types
 		return true
-
-	case *AmbientDecl:
-		// Check if inner declaration is exported
-		if decl, ok := s.Declaration.(Decl); ok {
-			return decl.Export()
-		}
-		return false
 
 	default:
 		// Check if the statement is a declaration with Export flag set
@@ -118,27 +111,13 @@ func isTopLevelExport(stmt Statement) bool {
 // Returns nil if the statement is not a named module declaration.
 // Named modules are `declare module "name" { ... }` blocks.
 func extractNamedModule(stmt Statement) *NamedModuleDecl {
-	switch s := stmt.(type) {
-	case *ModuleDecl:
-		// ModuleDecl represents `declare module "name" { ... }`
+	if moduleDecl, ok := stmt.(*ModuleDecl); ok {
 		return &NamedModuleDecl{
-			ModuleName: s.Name,
-			Decls:      s.Statements,
+			ModuleName: moduleDecl.Name,
+			Decls:      moduleDecl.Statements,
 		}
-
-	case *AmbientDecl:
-		// Check if the ambient declaration wraps a module declaration
-		if moduleDecl, ok := s.Declaration.(*ModuleDecl); ok {
-			return &NamedModuleDecl{
-				ModuleName: moduleDecl.Name,
-				Decls:      moduleDecl.Statements,
-			}
-		}
-		return nil
-
-	default:
-		return nil
 	}
+	return nil
 }
 
 // extractGlobalAugmentation extracts declarations from `declare global { ... }` blocks.
@@ -189,17 +168,9 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 // findNamespaceDecl searches for a namespace declaration with the given name in the module.
 func findNamespaceDecl(name string, module *Module) *NamespaceDecl {
 	for _, stmt := range module.Statements {
-		switch s := stmt.(type) {
-		case *NamespaceDecl:
-			if s.Name != nil && s.Name.Name == name {
-				return s
-			}
-
-		case *AmbientDecl:
-			if nsDecl, ok := s.Declaration.(*NamespaceDecl); ok {
-				if nsDecl.Name != nil && nsDecl.Name.Name == name {
-					return nsDecl
-				}
+		if nsDecl, ok := stmt.(*NamespaceDecl); ok {
+			if nsDecl.Name != nil && nsDecl.Name.Name == name {
+				return nsDecl
 			}
 		}
 	}

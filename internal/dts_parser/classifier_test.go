@@ -502,11 +502,6 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 		if _, isNs := stmt.(*NamespaceDecl); isNs {
 			continue
 		}
-		if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
-			if _, isNs := ambient.Declaration.(*NamespaceDecl); isNs {
-				continue
-			}
-		}
 
 		// Check the declaration's Export() flag directly
 		if decl, ok := stmt.(Decl); ok {
@@ -514,15 +509,6 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 			if name != "" {
 				exportedDecls[name] = decl.Export()
 				declsFound[name] = true
-			}
-		} else if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
-			// Check what's inside the ambient declaration
-			if innerDecl, ok := ambient.Declaration.(Decl); ok {
-				name := getDeclName(ambient.Declaration)
-				if name != "" {
-					exportedDecls[name] = innerDecl.Export()
-					declsFound[name] = true
-				}
 			}
 		}
 	}

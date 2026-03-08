@@ -22,20 +22,26 @@ func qualifiedName(parent, child string) string {
 // processNamespace recursively processes a namespace and adds declarations to the btree map.
 // The name parameter is the qualified namespace name (e.g., "Foo.Bar.Baz" for nested namespaces).
 // For the root/global namespace, use an empty string "".
+// The inAmbientNamespace parameter is true when inside a declare namespace block;
+// all declarations inside an ambient namespace are implicitly exported.
 func processNamespace(
 	name string,
 	stmts []dts_parser.Statement,
 	namespaces *btree.Map[string, *ast.Namespace],
+	inAmbientNamespace bool,
 ) error {
 	var decls []ast.Decl
 
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *dts_parser.NamespaceDecl:
-			// Process the nested namespace recursively
+			// Process the namespace recursively
+			// If the namespace has Declare() set, it's a "declare namespace" and
+			// all declarations inside are implicitly ambient/exported
 			nestedName := qualifiedName(name, s.Name.Name)
-			if err := processNamespace(nestedName, s.Statements, namespaces); err != nil {
-				return fmt.Errorf("processing nested namespace %s: %w", s.Name.Name, err)
+			nestedAmbient := inAmbientNamespace || s.Declare()
+			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient); err != nil {
+				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
 			}
 
 		case *dts_parser.ModuleDecl:
@@ -62,35 +68,6 @@ func processNamespace(
 			// Skip these export forms for now (re-exports, named exports, UMD namespace)
 			continue
 
-		case *dts_parser.AmbientDecl:
-			// Unwrap and process the inner declaration
-			switch inner := s.Declaration.(type) {
-			case *dts_parser.NamespaceDecl:
-				// Process nested namespace inside ambient declaration
-				nestedName := qualifiedName(name, inner.Name.Name)
-				if err := processNamespace(nestedName, inner.Statements, namespaces); err != nil {
-					return fmt.Errorf("processing ambient namespace %s: %w", inner.Name.Name, err)
-				}
-
-			case *dts_parser.ModuleDecl:
-				// Module declarations are not supported
-				return fmt.Errorf("module declarations are not supported: %s", inner.Name)
-
-			default:
-				// Convert the ambient declaration like any other statement
-				decl, err := convertStatement(inner)
-				if err != nil {
-					return fmt.Errorf("converting ambient declaration: %w", err)
-				}
-				if decl != nil {
-					// Check if the inner declaration has export flag set
-					if dtsDecl, ok := inner.(dts_parser.Decl); ok && dtsDecl.Export() {
-						decl.SetExport(true)
-					}
-					decls = append(decls, decl)
-				}
-			}
-
 		default:
 			// Convert regular declarations
 			// Skip declarations that fail to convert (e.g., due to unsupported features)
@@ -101,8 +78,10 @@ func processNamespace(
 				continue
 			}
 			if decl != nil {
-				// Check if the declaration has export flag set
-				if dtsDecl, ok := s.(dts_parser.Decl); ok && dtsDecl.Export() {
+				// Auto-export if inside an ambient namespace, otherwise check original export flag
+				if inAmbientNamespace {
+					decl.SetExport(true)
+				} else if dtsDecl, ok := s.(dts_parser.Decl); ok && dtsDecl.Export() {
 					decl.SetExport(true)
 				}
 				decls = append(decls, decl)
@@ -146,7 +125,8 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 
 	// Process all statements, organizing them into namespaces
 	// Use empty string "" as the root/global namespace name
-	if err := processNamespace("", dtsModule.Statements, &namespaces); err != nil {
+	// Pass false for inAmbientNamespace since we're at the top level
+	if err := processNamespace("", dtsModule.Statements, &namespaces, false); err != nil {
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 

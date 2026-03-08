@@ -17,7 +17,15 @@ func (p *DtsParser) parseStatement() Statement {
 	// Handle 'declare' keyword
 	if token.Type == Declare {
 		p.consume() // consume 'declare'
-		return p.parseAmbientDeclaration()
+		inner := p.parseAmbientDeclaration()
+		if inner == nil {
+			return nil
+		}
+		// Set the declare flag on the declaration
+		if decl, ok := inner.(Decl); ok {
+			decl.SetDeclare(true)
+		}
+		return inner
 	}
 
 	// Handle 'export' keyword

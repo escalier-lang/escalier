@@ -37,7 +37,7 @@ func TestImportInferenceScript(t *testing.T) {
 		// "NamespaceImportReact": {
 		// 	input: `
 		// 		import * as React from "react"
-		// 		declare val useState: React.UseState
+		// 		val useState = React.useState
 		// 	`,
 		// 	expectedValues: map[string]string{
 		// 		"useState": "fn (initialState: any) -> [any, fn (newState: any) -> void] throws never",
