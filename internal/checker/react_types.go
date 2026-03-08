@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/resolver"
@@ -50,14 +51,31 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	// 4. Load and classify the main entry point using existing infrastructure
-	// Note: path references like /// <reference path="global.d.ts" /> are now handled
-	// generically by loadPackageForImport via parsePathReferenceDirectives
 	loadResult, loadErr := loadClassifiedTypeScriptModule(entryPoint)
 	if loadErr != nil {
 		return []Error{&GenericError{
 			message: "Could not load @types/react: " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
 		}}
+	}
+
+	// 5. Process path references (/// <reference path="..." />)
+	// These files contain global interface definitions (e.g., global.d.ts)
+	pathRefs, pathErr := parsePathReferenceDirectives(entryPoint)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(entryPoint)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check if already processed (avoid duplicates)
+			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+				// Register a sentinel namespace before loading to prevent duplicate inference
+				sentinelNs := type_system.NewNamespace()
+				_ = c.PackageRegistry.Register(refPath, sentinelNs)
+
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
 	}
 
 	// 6. Process global augmentations (JSX namespace lives here)

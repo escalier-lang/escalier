@@ -173,11 +173,14 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 
 	// Return the namespace's statements as top-level exports
 	// Each statement from the namespace becomes a package declaration.
-	// Mark all declarations as exported since `export = Namespace` means
-	// all items in that namespace become module exports.
-	for _, s := range ns.Statements {
-		if decl, ok := s.(Decl); ok {
-			decl.SetExport(true)
+	// Only mark all declarations as exported if the namespace is ambient
+	// (declared with `declare namespace`). For non-ambient namespaces,
+	// only items with explicit `export` are exported.
+	if ns.Declare() {
+		for _, s := range ns.Statements {
+			if decl, ok := s.(Decl); ok {
+				decl.SetExport(true)
+			}
 		}
 	}
 	return ns.Statements

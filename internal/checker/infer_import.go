@@ -167,6 +167,26 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 		}}
 	}
 
+	// Process nested path references (/// <reference path="..." />)
+	// These files may themselves reference other .d.ts files
+	pathRefs, pathErr := parsePathReferenceDirectives(filePath)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(filePath)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check if already processed (avoid duplicates)
+			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+				// Register a sentinel namespace before loading to prevent duplicate inference
+				// from recursive or shared reference paths
+				sentinelNs := type_system.NewNamespace()
+				_ = c.PackageRegistry.Register(refPath, sentinelNs)
+
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
+	}
+
 	// Process global declarations
 	if loadResult.GlobalModule != nil {
 		globalCtx := Context{
@@ -196,8 +216,6 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 //
 // Returns the package namespace, resolved file path, and any errors.
 func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) (*LoadedPackage, []Error) {
-	errors := []Error{}
-
 	// Step 1: Resolve import to file path
 	dtsFilePath, resolveErr := resolveImport(ctx, importStmt)
 	if resolveErr != nil {
@@ -207,23 +225,60 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 	fmt.Fprintf(os.Stderr, "Resolved import %s to type definitions at %s\n",
 		importStmt.PackageName, dtsFilePath)
 
+	return c.loadPackageFromPath(ctx, dtsFilePath, importStmt.PackageName, importStmt.Span())
+}
+
+// loadPackageFromPath loads a package from a resolved .d.ts file path.
+// This is the internal helper that does the actual loading work.
+// packageName is used for logging and named module lookup.
+// span is used for error messages (can be DEFAULT_SPAN if not available).
+func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageName string, span ast.Span) (*LoadedPackage, []Error) {
+	errors := []Error{}
+
 	// Step 2: Check if already loaded (using file path as key)
 	if pkgNs, found := c.PackageRegistry.Lookup(dtsFilePath); found {
 		fmt.Fprintf(os.Stderr, "Package %s already loaded from %s\n",
-			importStmt.PackageName, dtsFilePath)
+			packageName, dtsFilePath)
 		return &LoadedPackage{Namespace: pkgNs, FilePath: dtsFilePath}, nil
 	}
+
+	// Mark as "in-progress" before loading to prevent A→B→A recursion cycles
+	// Use a sentinel namespace that will be replaced with the real one after loading
+	sentinelNs := type_system.NewNamespace()
+	_ = c.PackageRegistry.Register(dtsFilePath, sentinelNs)
 
 	// Step 3: Load and classify the .d.ts file
 	loadResult, loadErr := loadClassifiedTypeScriptModule(dtsFilePath)
 	if loadErr != nil {
 		return nil, []Error{&GenericError{
-			message: "Could not load type definitions for module import: " + importStmt.PackageName,
-			span:    importStmt.Span(),
+			message: "Could not load type definitions for module import: " + packageName,
+			span:    span,
 		}}
 	}
 
-	// Step 3.5: Process imports from the .d.ts file to load transitive dependencies
+	// Step 3.5: Process path references (/// <reference path="..." />)
+	// Path references are supposed to appear before import statements, so we
+	// process them before imports.
+	// These files typically contain global interface definitions (e.g., global.d.ts)
+	pathRefs, pathErr := parsePathReferenceDirectives(dtsFilePath)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(dtsFilePath)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check if already processed (avoid duplicates)
+			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+				// Register a sentinel namespace before loading to prevent duplicate inference
+				// from recursive or shared reference paths
+				sentinelNs := type_system.NewNamespace()
+				_ = c.PackageRegistry.Register(refPath, sentinelNs)
+
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
+	}
+
+	// Step 3.6: Process imports from the .d.ts file to load transitive dependencies
 	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
 	importedNamespaces := make(map[string]*type_system.Namespace)
 	for _, dtsImport := range loadResult.Imports {
@@ -236,22 +291,15 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 				continue
 			}
 
-			// Check if already loaded
+			// Check if already loaded (or in-progress)
 			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
 				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
 				continue
 			}
 
-			// Recursively load the dependency package
-			// Create a temporary ImportStmt to reuse loadPackageForImport
-			depImportStmt := &ast.ImportStmt{
-				PackageName: dtsImport.From,
-				Specifiers: []*ast.ImportSpecifier{{
-					Name:  "*",
-					Alias: dtsImport.NamespaceAs.Name,
-				}},
-			}
-			depPkg, depErrors := c.loadPackageForImport(ctx, depImportStmt)
+			// Recursively load the dependency package using the resolved path directly
+			// This avoids double resolution and ensures we use the correct path
+			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
 			if len(depErrors) > 0 {
 				for _, err := range depErrors {
 					fmt.Fprintf(os.Stderr, "Warning: error loading dependency %s: %s\n",
@@ -264,21 +312,6 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 			}
 		}
 		// TODO: Handle named imports (import { A, B } from "pkg") if needed
-	}
-
-	// Step 3.6: Process path references (/// <reference path="..." />)
-	// These files typically contain global interface definitions (e.g., global.d.ts)
-	pathRefs, pathErr := parsePathReferenceDirectives(dtsFilePath)
-	if pathErr == nil && len(pathRefs) > 0 {
-		dtsDir := filepath.Dir(dtsFilePath)
-		for _, ref := range pathRefs {
-			refPath := filepath.Join(dtsDir, ref)
-			// Check if already processed (avoid duplicates)
-			if _, found := c.PackageRegistry.Lookup(refPath); !found {
-				refErrors := c.loadPathReferencedFile(refPath)
-				errors = append(errors, refErrors...)
-			}
-		}
 	}
 
 	// Step 4: Process global augmentations into GlobalScope
@@ -363,7 +396,7 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 
 		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
 		errors = append(errors, pkgErrors...)
-	} else if ns, ok := namedModuleNamespaces[importStmt.PackageName]; ok {
+	} else if ns, ok := namedModuleNamespaces[packageName]; ok {
 		// Named module matching the package name - use the namespace from step 5
 		pkgNs = ns
 	} else if loadResult.GlobalModule != nil {
@@ -373,17 +406,14 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 		pkgNs = type_system.NewNamespace()
 	} else {
 		return nil, []Error{&GenericError{
-			message: "Type definitions for module import do not contain expected module: " + importStmt.PackageName,
-			span:    importStmt.Span(),
+			message: "Type definitions for module import do not contain expected module: " + packageName,
+			span:    span,
 		}}
 	}
 
-	// Step 7: Register the package in the registry
-	if regErr := c.PackageRegistry.Register(dtsFilePath, pkgNs); regErr != nil {
-		// This shouldn't happen since we checked Lookup() above
-		fmt.Fprintf(os.Stderr, "Warning: failed to register package %s: %s\n",
-			importStmt.PackageName, regErr.Error())
-	}
+	// Step 7: Update the registry with the real namespace (replacing the sentinel)
+	// Note: We registered a sentinel earlier to prevent cycles, now we update it
+	c.PackageRegistry.Update(dtsFilePath, pkgNs)
 
 	return &LoadedPackage{Namespace: pkgNs, FilePath: dtsFilePath}, errors
 }

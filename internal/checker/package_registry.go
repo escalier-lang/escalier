@@ -52,6 +52,13 @@ func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, b
 	return ns, ok
 }
 
+// Update replaces the namespace for an existing package entry.
+// This is used to replace a sentinel namespace (registered to prevent cycles)
+// with the real namespace after loading is complete.
+func (pr *PackageRegistry) Update(dtsFilePath string, ns *type_system.Namespace) {
+	pr.packages[dtsFilePath] = ns
+}
+
 // MustLookup returns the namespace for a package by its resolved .d.ts file path.
 // Panics if the package is not found. Use this only for internal lookups
 // where the package is guaranteed to exist.

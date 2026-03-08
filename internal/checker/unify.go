@@ -269,19 +269,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				return nil
 			}
 
-			// Check if both inner types are type variables - if so, they're structurally equivalent
-			// for constraint comparison purposes (e.g., keyof T vs keyof T in merged declarations)
-			pruned1 := type_system.Prune(keyof1.Type)
-			pruned2 := type_system.Prune(keyof2.Type)
-
-			// Check for type variables
-			_, isVar1 := pruned1.(*type_system.TypeVarType)
-			_, isVar2 := pruned2.(*type_system.TypeVarType)
-			if isVar1 && isVar2 {
-				// Both are keyof TypeVar - consider them compatible for constraint unification
-				return nil
-			}
-
+			// Return innerErrors to enforce constraint compatibility rather than
+			// unconditionally treating different TypeVar IDs as compatible.
 			return innerErrors
 		}
 	}
