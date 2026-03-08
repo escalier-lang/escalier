@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -104,10 +105,89 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	}
 }
 
+// resolveDtsImport resolves an import declaration from a .d.ts file to the types entry point.
+// The sourceFilePath is the path of the .d.ts file containing the import.
+func resolveDtsImport(sourceFilePath string, importDecl *dts_parser.ImportDecl) (string, error) {
+	// Get the directory containing the source file
+	sourceDir := filepath.Dir(sourceFilePath)
+
+	// Walk up the directory tree looking for node_modules folders
+	// This handles pnpm's nested structure where dependencies are in
+	// sibling node_modules folders
+	currentDir := sourceDir
+	for {
+		// Check if there's a node_modules folder here
+		nodeModulesDir := filepath.Join(currentDir, "node_modules")
+		if info, err := os.Stat(nodeModulesDir); err == nil && info.IsDir() {
+			// Try to find the package in this node_modules
+			moduleDir := filepath.Join(nodeModulesDir, importDecl.From)
+			if resolvedDir, err := resolveModuleDir(moduleDir); err == nil {
+				if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
+					return typesPath, nil
+				}
+			}
+
+			// Try @types/<pkg_name>
+			typesModuleDir := filepath.Join(nodeModulesDir, "@types", importDecl.From)
+			if resolvedDir, err := resolveModuleDir(typesModuleDir); err == nil {
+				if typesPath, err := resolver.GetTypesEntryPoint(resolvedDir); err == nil {
+					return typesPath, nil
+				}
+			}
+		}
+
+		// Move up to parent directory
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			// Reached filesystem root
+			break
+		}
+		currentDir = parentDir
+	}
+
+	return "", fmt.Errorf("could not find types for import %s", importDecl.From)
+}
+
 // LoadedPackage represents a loaded npm package with its resolved file path.
 type LoadedPackage struct {
 	Namespace *type_system.Namespace
 	FilePath  string
+}
+
+// loadPathReferencedFile loads a file referenced via /// <reference path="..." />
+// These files typically contain global interface definitions.
+func (c *Checker) loadPathReferencedFile(filePath string) []Error {
+	var errors []Error
+
+	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
+	if loadErr != nil {
+		return []Error{&GenericError{
+			message: "Could not load referenced file " + filePath + ": " + loadErr.Error(),
+			span:    DEFAULT_SPAN,
+		}}
+	}
+
+	// Process global declarations
+	if loadResult.GlobalModule != nil {
+		globalCtx := Context{
+			Scope:      c.GlobalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		errors = append(errors, c.InferModule(globalCtx, loadResult.GlobalModule)...)
+	}
+
+	// Process package declarations as globals (for files like global.d.ts)
+	if loadResult.PackageModule != nil {
+		globalCtx := Context{
+			Scope:      c.GlobalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		errors = append(errors, c.InferModule(globalCtx, loadResult.PackageModule)...)
+	}
+
+	return errors
 }
 
 // loadPackageForImport loads a package by name, checking the registry first.
@@ -141,6 +221,64 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 			message: "Could not load type definitions for module import: " + importStmt.PackageName,
 			span:    importStmt.Span(),
 		}}
+	}
+
+	// Step 3.5: Process imports from the .d.ts file to load transitive dependencies
+	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
+	importedNamespaces := make(map[string]*type_system.Namespace)
+	for _, dtsImport := range loadResult.Imports {
+		// Only handle namespace imports for now (import * as Alias from "pkg")
+		if dtsImport.NamespaceAs != nil {
+			depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
+			if resolveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve import %s in %s: %s\n",
+					dtsImport.From, dtsFilePath, resolveErr.Error())
+				continue
+			}
+
+			// Check if already loaded
+			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
+				continue
+			}
+
+			// Recursively load the dependency package
+			// Create a temporary ImportStmt to reuse loadPackageForImport
+			depImportStmt := &ast.ImportStmt{
+				PackageName: dtsImport.From,
+				Specifiers: []*ast.ImportSpecifier{{
+					Name:  "*",
+					Alias: dtsImport.NamespaceAs.Name,
+				}},
+			}
+			depPkg, depErrors := c.loadPackageForImport(ctx, depImportStmt)
+			if len(depErrors) > 0 {
+				for _, err := range depErrors {
+					fmt.Fprintf(os.Stderr, "Warning: error loading dependency %s: %s\n",
+						dtsImport.From, err.Message())
+				}
+				// Don't propagate errors for transitive dependencies - they're warnings
+			}
+			if depPkg != nil && depPkg.Namespace != nil {
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
+			}
+		}
+		// TODO: Handle named imports (import { A, B } from "pkg") if needed
+	}
+
+	// Step 3.6: Process path references (/// <reference path="..." />)
+	// These files typically contain global interface definitions (e.g., global.d.ts)
+	pathRefs, pathErr := parsePathReferenceDirectives(dtsFilePath)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(dtsFilePath)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check if already processed (avoid duplicates)
+			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
 	}
 
 	// Step 4: Process global augmentations into GlobalScope
@@ -203,6 +341,16 @@ func (c *Checker) loadPackageForImport(ctx Context, importStmt *ast.ImportStmt) 
 	if loadResult.PackageModule != nil {
 		// File has top-level exports - use PackageModule
 		pkgNs = type_system.NewNamespace()
+
+		// Add imported namespaces to the package namespace before inferring
+		// This makes types like CSS.Properties available when resolving type references
+		for alias, ns := range importedNamespaces {
+			if err := pkgNs.SetNamespace(alias, ns); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to add imported namespace %s: %s\n",
+					alias, err.Error())
+			}
+		}
+
 		pkgScope := &Scope{
 			Parent:    c.GlobalScope,
 			Namespace: pkgNs,

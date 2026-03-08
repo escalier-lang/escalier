@@ -102,9 +102,8 @@ func (*TypeDecl) isStatement()      {}
 func (*EnumDecl) isStatement()      {}
 func (*NamespaceDecl) isStatement() {}
 func (*ModuleDecl) isStatement()    {}
-func (*GlobalDecl) isStatement()    {}
-func (*ImportDecl) isStatement()    {}
-func (*AmbientDecl) isStatement()   {}
+func (*GlobalDecl) isStatement() {}
+func (*ImportDecl) isStatement() {}
 
 // Decl is an interface for declaration types that can be exported
 type Decl interface {
@@ -113,6 +112,8 @@ type Decl interface {
 	SetExport(bool)
 	Default() bool
 	SetDefault(bool)
+	Declare() bool
+	SetDeclare(bool)
 	Node
 }
 
@@ -134,14 +135,17 @@ type VarDecl struct {
 	Readonly bool // for const declarations
 	export   bool
 	default_ bool
+	declare  bool
 	span     ast.Span
 }
 
-func (d *VarDecl) Span() ast.Span      { return d.span }
-func (d *VarDecl) Export() bool        { return d.export }
-func (d *VarDecl) SetExport(e bool)    { d.export = e }
-func (d *VarDecl) Default() bool       { return d.default_ }
-func (d *VarDecl) SetDefault(def bool) { d.default_ = def }
+func (d *VarDecl) Span() ast.Span       { return d.span }
+func (d *VarDecl) Export() bool         { return d.export }
+func (d *VarDecl) SetExport(e bool)     { d.export = e }
+func (d *VarDecl) Default() bool        { return d.default_ }
+func (d *VarDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *VarDecl) Declare() bool        { return d.declare }
+func (d *VarDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type FuncDecl struct {
 	Name       *Ident
@@ -150,14 +154,17 @@ type FuncDecl struct {
 	ReturnType TypeAnn
 	export     bool
 	default_   bool
+	declare    bool
 	span       ast.Span
 }
 
-func (d *FuncDecl) Span() ast.Span      { return d.span }
-func (d *FuncDecl) Export() bool        { return d.export }
-func (d *FuncDecl) SetExport(e bool)    { d.export = e }
-func (d *FuncDecl) Default() bool       { return d.default_ }
-func (d *FuncDecl) SetDefault(def bool) { d.default_ = def }
+func (d *FuncDecl) Span() ast.Span       { return d.span }
+func (d *FuncDecl) Export() bool         { return d.export }
+func (d *FuncDecl) SetExport(e bool)     { d.export = e }
+func (d *FuncDecl) Default() bool        { return d.default_ }
+func (d *FuncDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *FuncDecl) Declare() bool        { return d.declare }
+func (d *FuncDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type ClassDecl struct {
 	Name       *Ident
@@ -168,14 +175,17 @@ type ClassDecl struct {
 	Abstract   bool
 	export     bool
 	default_   bool
+	declare    bool
 	span       ast.Span
 }
 
-func (d *ClassDecl) Span() ast.Span      { return d.span }
-func (d *ClassDecl) Export() bool        { return d.export }
-func (d *ClassDecl) SetExport(e bool)    { d.export = e }
-func (d *ClassDecl) Default() bool       { return d.default_ }
-func (d *ClassDecl) SetDefault(def bool) { d.default_ = def }
+func (d *ClassDecl) Span() ast.Span       { return d.span }
+func (d *ClassDecl) Export() bool         { return d.export }
+func (d *ClassDecl) SetExport(e bool)     { d.export = e }
+func (d *ClassDecl) Default() bool        { return d.default_ }
+func (d *ClassDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *ClassDecl) Declare() bool        { return d.declare }
+func (d *ClassDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type InterfaceDecl struct {
 	Name       *Ident
@@ -184,14 +194,17 @@ type InterfaceDecl struct {
 	Members    []InterfaceMember
 	export     bool
 	default_   bool
+	declare    bool
 	span       ast.Span
 }
 
-func (d *InterfaceDecl) Span() ast.Span      { return d.span }
-func (d *InterfaceDecl) Export() bool        { return d.export }
-func (d *InterfaceDecl) SetExport(e bool)    { d.export = e }
-func (d *InterfaceDecl) Default() bool       { return d.default_ }
-func (d *InterfaceDecl) SetDefault(def bool) { d.default_ = def }
+func (d *InterfaceDecl) Span() ast.Span       { return d.span }
+func (d *InterfaceDecl) Export() bool         { return d.export }
+func (d *InterfaceDecl) SetExport(e bool)     { d.export = e }
+func (d *InterfaceDecl) Default() bool        { return d.default_ }
+func (d *InterfaceDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *InterfaceDecl) Declare() bool        { return d.declare }
+func (d *InterfaceDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type TypeDecl struct {
 	Name       *Ident
@@ -199,29 +212,35 @@ type TypeDecl struct {
 	TypeAnn    TypeAnn
 	export     bool
 	default_   bool
+	declare    bool
 	span       ast.Span
 }
 
-func (d *TypeDecl) Span() ast.Span      { return d.span }
-func (d *TypeDecl) Export() bool        { return d.export }
-func (d *TypeDecl) SetExport(e bool)    { d.export = e }
-func (d *TypeDecl) Default() bool       { return d.default_ }
-func (d *TypeDecl) SetDefault(def bool) { d.default_ = def }
+func (d *TypeDecl) Span() ast.Span       { return d.span }
+func (d *TypeDecl) Export() bool         { return d.export }
+func (d *TypeDecl) SetExport(e bool)     { d.export = e }
+func (d *TypeDecl) Default() bool        { return d.default_ }
+func (d *TypeDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *TypeDecl) Declare() bool        { return d.declare }
+func (d *TypeDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type EnumDecl struct {
-	Name    *Ident
-	Members []*EnumMember
-	Const   bool
-	export  bool
+	Name     *Ident
+	Members  []*EnumMember
+	Const    bool
+	export   bool
 	default_ bool
-	span    ast.Span
+	declare  bool
+	span     ast.Span
 }
 
-func (d *EnumDecl) Span() ast.Span      { return d.span }
-func (d *EnumDecl) Export() bool        { return d.export }
-func (d *EnumDecl) SetExport(e bool)    { d.export = e }
-func (d *EnumDecl) Default() bool       { return d.default_ }
-func (d *EnumDecl) SetDefault(def bool) { d.default_ = def }
+func (d *EnumDecl) Span() ast.Span       { return d.span }
+func (d *EnumDecl) Export() bool         { return d.export }
+func (d *EnumDecl) SetExport(e bool)     { d.export = e }
+func (d *EnumDecl) Default() bool        { return d.default_ }
+func (d *EnumDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *EnumDecl) Declare() bool        { return d.declare }
+func (d *EnumDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type EnumMember struct {
 	Name  *Ident
@@ -236,14 +255,17 @@ type NamespaceDecl struct {
 	Statements []Statement
 	export     bool
 	default_   bool
+	declare    bool
 	span       ast.Span
 }
 
-func (d *NamespaceDecl) Span() ast.Span      { return d.span }
-func (d *NamespaceDecl) Export() bool        { return d.export }
-func (d *NamespaceDecl) SetExport(e bool)    { d.export = e }
-func (d *NamespaceDecl) Default() bool       { return d.default_ }
-func (d *NamespaceDecl) SetDefault(def bool) { d.default_ = def }
+func (d *NamespaceDecl) Span() ast.Span       { return d.span }
+func (d *NamespaceDecl) Export() bool         { return d.export }
+func (d *NamespaceDecl) SetExport(e bool)     { d.export = e }
+func (d *NamespaceDecl) Default() bool        { return d.default_ }
+func (d *NamespaceDecl) SetDefault(def bool)  { d.default_ = def }
+func (d *NamespaceDecl) Declare() bool        { return d.declare }
+func (d *NamespaceDecl) SetDeclare(decl bool) { d.declare = decl }
 
 type ModuleDecl struct {
 	Name       string // module name as string literal
@@ -260,12 +282,6 @@ type GlobalDecl struct {
 
 func (d *GlobalDecl) Span() ast.Span { return d.span }
 
-type AmbientDecl struct {
-	Declaration Statement
-	span        ast.Span
-}
-
-func (d *AmbientDecl) Span() ast.Span { return d.span }
 
 // ============================================================================
 // Import/Export

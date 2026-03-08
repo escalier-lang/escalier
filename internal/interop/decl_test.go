@@ -75,7 +75,7 @@ func TestConvertStatement(t *testing.T) {
 		// Note: Import and Export declarations are skipped as they're not
 		// easily testable in isolation without a full module context
 		{
-			name:      "AmbientDecl - unwrap and convert",
+			name:      "ConstDecl with declare",
 			input:     "declare const ambient: string",
 			wantError: false,
 			wantNil:   false,
@@ -183,7 +183,7 @@ func TestConvertVarDecl(t *testing.T) {
 			stmt := parseStatement(t, tt.input)
 			dv, ok := stmt.(*dts_parser.VarDecl)
 			if !ok {
-				t.Fatalf("expected DeclareVariable, got %T", stmt)
+				t.Fatalf("expected VarDecl, got %T", stmt)
 			}
 
 			result, err := convertVarDecl(dv)
@@ -269,7 +269,7 @@ func TestConvertFuncDecl(t *testing.T) {
 			stmt := parseStatement(t, tt.input)
 			df, ok := stmt.(*dts_parser.FuncDecl)
 			if !ok {
-				t.Fatalf("expected DeclareFunction, got %T", stmt)
+				t.Fatalf("expected FuncDecl, got %T", stmt)
 			}
 
 			result, err := convertFuncDecl(df)
@@ -336,7 +336,7 @@ func TestConvertTypeDecl(t *testing.T) {
 			stmt := parseStatement(t, tt.input)
 			dt, ok := stmt.(*dts_parser.TypeDecl)
 			if !ok {
-				t.Fatalf("expected DeclareTypeAlias, got %T", stmt)
+				t.Fatalf("expected TypeDecl, got %T", stmt)
 			}
 
 			result, err := convertTypeDecl(dt)
@@ -493,7 +493,7 @@ func TestConvertClassDecl(t *testing.T) {
 			stmt := parseStatement(t, tt.input)
 			dc, ok := stmt.(*dts_parser.ClassDecl)
 			if !ok {
-				t.Fatalf("expected DeclareClass, got %T", stmt)
+				t.Fatalf("expected ClassDecl, got %T", stmt)
 			}
 
 			result, err := convertClassDecl(dc)

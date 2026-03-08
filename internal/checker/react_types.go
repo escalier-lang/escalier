@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/resolver"
@@ -50,15 +49,9 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		return nil
 	}
 
-	// 4. Load referenced files first (global.d.ts)
-	// The @types/react index.d.ts has: /// <reference path="global.d.ts" />
-	globalDtsPath := filepath.Join(reactTypesDir, "global.d.ts")
-	if _, statErr := os.Stat(globalDtsPath); statErr == nil {
-		globalErrors := c.loadReactGlobalFile(globalDtsPath)
-		errors = append(errors, globalErrors...)
-	}
-
-	// 5. Load and classify the main entry point using existing infrastructure
+	// 4. Load and classify the main entry point using existing infrastructure
+	// Note: path references like /// <reference path="global.d.ts" /> are now handled
+	// generically by loadPackageForImport via parsePathReferenceDirectives
 	loadResult, loadErr := loadClassifiedTypeScriptModule(entryPoint)
 	if loadErr != nil {
 		return []Error{&GenericError{
@@ -146,43 +139,6 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	fmt.Fprintf(os.Stderr, "@types/react loaded successfully\n")
-	return errors
-}
-
-// loadReactGlobalFile loads a referenced .d.ts file (like global.d.ts) into the global scope.
-func (c *Checker) loadReactGlobalFile(filePath string) []Error {
-	var errors []Error
-
-	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
-	if loadErr != nil {
-		return []Error{&GenericError{
-			message: "Could not load React types file " + filePath + ": " + loadErr.Error(),
-			span:    DEFAULT_SPAN,
-		}}
-	}
-
-	// Process global declarations
-	if loadResult.GlobalModule != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		errors = append(errors, globalErrors...)
-	}
-
-	// Process package declarations (for global files, these are also globals)
-	if loadResult.PackageModule != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.PackageModule)
-		errors = append(errors, globalErrors...)
-	}
-
 	return errors
 }
 

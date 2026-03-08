@@ -450,11 +450,12 @@ func TestClassifyDTSFile_ExportEquals(t *testing.T) {
 	}
 }
 
-// TestExpandExportEqualsPreservesExportFlags verifies that when using
-// "export = Namespace" pattern, the per-member export flags are preserved.
-// Exported members (marked with `export` keyword) should remain exported,
-// while non-exported members should remain non-exported.
-func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
+// TestExpandExportEqualsExportsAllMembers verifies that when using
+// "export = Namespace" pattern, ALL members of the namespace become exports.
+// In TypeScript, `export = Namespace` makes all members accessible from the
+// module, regardless of whether they had the `export` keyword inside the namespace.
+// The `export` keyword inside a namespace has a different meaning (module augmentation).
+func TestExpandExportEqualsExportsAllMembers(t *testing.T) {
 	input := `declare namespace Mixed {
 		export const exported: number;
 		export function exportedFunc(): void;
@@ -487,7 +488,7 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 
 	// Should have 7 package declarations:
 	// - the namespace Mixed declaration itself
-	// - 6 expanded members from the namespace (3 exported + 3 non-exported)
+	// - 6 expanded members from the namespace (all become exports)
 	expectedPackageDeclCount := 7
 	if len(classification.PackageDecls) != expectedPackageDeclCount {
 		t.Errorf("PackageDecls count = %d, expected %d", len(classification.PackageDecls), expectedPackageDeclCount)
@@ -502,11 +503,6 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 		if _, isNs := stmt.(*NamespaceDecl); isNs {
 			continue
 		}
-		if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
-			if _, isNs := ambient.Declaration.(*NamespaceDecl); isNs {
-				continue
-			}
-		}
 
 		// Check the declaration's Export() flag directly
 		if decl, ok := stmt.(Decl); ok {
@@ -515,39 +511,18 @@ func TestExpandExportEqualsPreservesExportFlags(t *testing.T) {
 				exportedDecls[name] = decl.Export()
 				declsFound[name] = true
 			}
-		} else if ambient, isAmbient := stmt.(*AmbientDecl); isAmbient {
-			// Check what's inside the ambient declaration
-			if innerDecl, ok := ambient.Declaration.(Decl); ok {
-				name := getDeclName(ambient.Declaration)
-				if name != "" {
-					exportedDecls[name] = innerDecl.Export()
-					declsFound[name] = true
-				}
-			}
 		}
 	}
 
-	// Verify exported items
-	expectedExported := []string{"exported", "exportedFunc", "ExportedType"}
-	for _, name := range expectedExported {
+	// ALL items should be exported when using "export = Namespace"
+	allMembers := []string{"exported", "exportedFunc", "ExportedType", "nonExported", "nonExportedConst", "NonExportedType"}
+	for _, name := range allMembers {
 		if !declsFound[name] {
 			t.Errorf("Expected to find declaration %q but it was not found", name)
 			continue
 		}
 		if !exportedDecls[name] {
 			t.Errorf("Expected %q to be exported but it was not", name)
-		}
-	}
-
-	// Verify non-exported items
-	expectedNonExported := []string{"nonExported", "nonExportedConst", "NonExportedType"}
-	for _, name := range expectedNonExported {
-		if !declsFound[name] {
-			t.Errorf("Expected to find declaration %q but it was not found", name)
-			continue
-		}
-		if exportedDecls[name] {
-			t.Errorf("Expected %q to NOT be exported but it was", name)
 		}
 	}
 }

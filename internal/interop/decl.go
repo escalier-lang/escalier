@@ -28,9 +28,6 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 		*dts_parser.ExportAsNamespaceStmt:
 		// Skip imports and standalone export statements
 		return nil, nil
-	case *dts_parser.AmbientDecl:
-		// Unwrap and recursively convert the inner declaration
-		return convertStatement(s.Declaration)
 	case *dts_parser.NamespaceDecl, *dts_parser.ModuleDecl:
 		// These are handled separately in the module conversion
 		return nil, fmt.Errorf("namespace/module declarations should be handled at module level")
@@ -99,7 +96,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 		typeParams,
 		params,
 		returnType,
-		nil,   // throws - not parsed from .d.ts for now
+		ast.NewNeverTypeAnn(convertSpan(df.Span())), // throws never for .d.ts functions
 		nil,   // body is nil for declarations
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
