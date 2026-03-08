@@ -176,10 +176,8 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			refPath := filepath.Join(dtsDir, ref)
 			// Check if already processed (avoid duplicates)
 			if _, found := c.PackageRegistry.Lookup(refPath); !found {
-				// Register a sentinel namespace before loading to prevent duplicate inference
-				// from recursive or shared reference paths
-				sentinelNs := type_system.NewNamespace()
-				_ = c.PackageRegistry.Register(refPath, sentinelNs)
+				// Mark as in-progress to prevent duplicate inference from recursive or shared reference paths
+				c.PackageRegistry.MarkInProgress(refPath)
 
 				refErrors := c.loadPathReferencedFile(refPath)
 				errors = append(errors, refErrors...)
@@ -243,9 +241,8 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	}
 
 	// Mark as "in-progress" before loading to prevent A→B→A recursion cycles
-	// Use a sentinel namespace that will be replaced with the real one after loading
-	sentinelNs := type_system.NewNamespace()
-	_ = c.PackageRegistry.Register(dtsFilePath, sentinelNs)
+	// The sentinel will be replaced with the real namespace after loading via Update()
+	c.PackageRegistry.MarkInProgress(dtsFilePath)
 
 	// Step 3: Load and classify the .d.ts file
 	loadResult, loadErr := loadClassifiedTypeScriptModule(dtsFilePath)
@@ -267,10 +264,8 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 			refPath := filepath.Join(dtsDir, ref)
 			// Check if already processed (avoid duplicates)
 			if _, found := c.PackageRegistry.Lookup(refPath); !found {
-				// Register a sentinel namespace before loading to prevent duplicate inference
-				// from recursive or shared reference paths
-				sentinelNs := type_system.NewNamespace()
-				_ = c.PackageRegistry.Register(refPath, sentinelNs)
+				// Mark as in-progress to prevent duplicate inference from recursive or shared reference paths
+				c.PackageRegistry.MarkInProgress(refPath)
 
 				refErrors := c.loadPathReferencedFile(refPath)
 				errors = append(errors, refErrors...)
@@ -286,8 +281,11 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		if dtsImport.NamespaceAs != nil {
 			depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
 			if resolveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not resolve import %s in %s: %s\n",
-					dtsImport.From, dtsFilePath, resolveErr.Error())
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Could not resolve import %s in %s: %s",
+						dtsImport.From, dtsFilePath, resolveErr.Error()),
+					span: DEFAULT_SPAN,
+				})
 				continue
 			}
 
@@ -300,13 +298,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 			// Recursively load the dependency package using the resolved path directly
 			// This avoids double resolution and ensures we use the correct path
 			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
-			if len(depErrors) > 0 {
-				for _, err := range depErrors {
-					fmt.Fprintf(os.Stderr, "Warning: error loading dependency %s: %s\n",
-						dtsImport.From, err.Message())
-				}
-				// Don't propagate errors for transitive dependencies - they're warnings
-			}
+			errors = append(errors, depErrors...)
 			if depPkg != nil && depPkg.Namespace != nil {
 				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
 			}
@@ -322,14 +314,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 			IsPatMatch: false,
 		}
 		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		if len(globalErrors) > 0 {
-			for _, err := range globalErrors {
-				fmt.Fprintf(os.Stderr, "Global augmentation error in %s: %s\n",
-					dtsFilePath, err.Message())
-			}
-			// Surface global augmentation errors so users get diagnostics
-			errors = append(errors, globalErrors...)
-		}
+		errors = append(errors, globalErrors...)
 	}
 
 	// Step 5: Process named modules and register them
@@ -349,10 +334,6 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 
 		moduleErrors := c.InferModule(moduleCtx, namedModule)
 		if len(moduleErrors) > 0 {
-			for _, err := range moduleErrors {
-				fmt.Fprintf(os.Stderr, "Error inferring named module %s: %s\n",
-					moduleName, err.Message())
-			}
 			errors = append(errors, moduleErrors...)
 			continue
 		}
@@ -363,8 +344,10 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		// Register named module with a composite key: filePath + "#" + moduleName
 		namedModuleKey := dtsFilePath + "#" + moduleName
 		if regErr := c.PackageRegistry.Register(namedModuleKey, moduleNs); regErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to register named module %s: %s\n",
-				moduleName, regErr.Error())
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Failed to register named module %s: %s", moduleName, regErr.Error()),
+				span:    DEFAULT_SPAN,
+			})
 		}
 	}
 
@@ -379,8 +362,10 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		// This makes types like CSS.Properties available when resolving type references
 		for alias, ns := range importedNamespaces {
 			if err := pkgNs.SetNamespace(alias, ns); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to add imported namespace %s: %s\n",
-					alias, err.Error())
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
+					span:    DEFAULT_SPAN,
+				})
 			}
 		}
 
@@ -412,8 +397,13 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	}
 
 	// Step 7: Update the registry with the real namespace (replacing the sentinel)
-	// Note: We registered a sentinel earlier to prevent cycles, now we update it
-	c.PackageRegistry.Update(dtsFilePath, pkgNs)
+	// Note: We marked as in-progress earlier to prevent cycles, now we update it
+	if updateErr := c.PackageRegistry.Update(dtsFilePath, pkgNs); updateErr != nil {
+		errors = append(errors, &GenericError{
+			message: fmt.Sprintf("Failed to update package registry for %s: %s", packageName, updateErr.Error()),
+			span:    span,
+		})
+	}
 
 	return &LoadedPackage{Namespace: pkgNs, FilePath: dtsFilePath}, errors
 }

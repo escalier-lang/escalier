@@ -6,6 +6,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// sentinelNamespace is a global singleton used to mark packages as "in-progress"
+// during loading. This prevents cycles (A→B→A) and duplicate loading.
+// It should never be returned to callers - it's replaced with the real namespace
+// after loading completes via Update().
+var sentinelNamespace = type_system.NewNamespace()
+
 // PackageRegistry stores package namespaces separate from the scope chain.
 // Packages are registered by their resolved .d.ts file path (not the package name).
 // This design supports monorepos where different Escalier packages may depend on
@@ -38,11 +44,20 @@ func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespac
 	if ns == nil {
 		return fmt.Errorf("package namespace cannot be nil")
 	}
+	if ns == sentinelNamespace {
+		return fmt.Errorf("cannot register sentinel namespace directly; use MarkInProgress instead")
+	}
 	if _, exists := pr.packages[dtsFilePath]; exists {
 		return fmt.Errorf("package at %q is already registered", dtsFilePath)
 	}
 	pr.packages[dtsFilePath] = ns
 	return nil
+}
+
+// MarkInProgress marks a package as being loaded to prevent cycles and duplicate loading.
+// Call Update() after loading completes to replace the sentinel with the real namespace.
+func (pr *PackageRegistry) MarkInProgress(dtsFilePath string) {
+	pr.packages[dtsFilePath] = sentinelNamespace
 }
 
 // Lookup returns the namespace for a package by its resolved .d.ts file path.
@@ -55,8 +70,13 @@ func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, b
 // Update replaces the namespace for an existing package entry.
 // This is used to replace a sentinel namespace (registered to prevent cycles)
 // with the real namespace after loading is complete.
-func (pr *PackageRegistry) Update(dtsFilePath string, ns *type_system.Namespace) {
+// Returns an error if attempting to update with the sentinel namespace.
+func (pr *PackageRegistry) Update(dtsFilePath string, ns *type_system.Namespace) error {
+	if ns == sentinelNamespace {
+		return fmt.Errorf("cannot update with sentinel namespace; use MarkInProgress instead")
+	}
 	pr.packages[dtsFilePath] = ns
+	return nil
 }
 
 // MustLookup returns the namespace for a package by its resolved .d.ts file path.
