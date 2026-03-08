@@ -95,7 +95,6 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
-	// fmt.Fprintf(os.Stderr, "Unifying types %s and %s\n", t1, t2)
 
 	// | TypeVarType, _ -> ...
 	if _, ok := t1.(*type_system.TypeVarType); ok {
@@ -245,6 +244,46 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 			T1: t1,
 			T2: t2,
 		}}
+	}
+	// | KeyOfType, KeyOfType -> expand both to get their keys, then check if keyof1's keys are a subset of keyof2's keys
+	if keyof1, ok := t1.(*type_system.KeyOfType); ok {
+		if keyof2, ok := t2.(*type_system.KeyOfType); ok {
+			// Expand both keyof types to get their actual keys
+			expandedKeys1, _ := c.ExpandType(ctx, keyof1, 1)
+			expandedKeys2, _ := c.ExpandType(ctx, keyof2, 1)
+
+			// Check if expansion succeeded (result is not still a KeyOfType)
+			_, stillKeyOf1 := expandedKeys1.(*type_system.KeyOfType)
+			_, stillKeyOf2 := expandedKeys2.(*type_system.KeyOfType)
+
+			// If both were successfully expanded to concrete keys, unify the expanded types
+			if !stillKeyOf1 && !stillKeyOf2 {
+				return c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1)
+			}
+
+			// If neither could be expanded (e.g., both are keyof TypeVar), try to unify the underlying types.
+			// During interface merging, keyof constraints on type parameters may have different
+			// internal type variable IDs but represent the same constraint structurally.
+			innerErrors := c.unifyWithDepth(ctx, keyof1.Type, keyof2.Type, depth+1)
+			if len(innerErrors) == 0 {
+				return nil
+			}
+
+			// Check if both inner types are type variables - if so, they're structurally equivalent
+			// for constraint comparison purposes (e.g., keyof T vs keyof T in merged declarations)
+			pruned1 := type_system.Prune(keyof1.Type)
+			pruned2 := type_system.Prune(keyof2.Type)
+
+			// Check for type variables
+			_, isVar1 := pruned1.(*type_system.TypeVarType)
+			_, isVar2 := pruned2.(*type_system.TypeVarType)
+			if isVar1 && isVar2 {
+				// Both are keyof TypeVar - consider them compatible for constraint unification
+				return nil
+			}
+
+			return innerErrors
+		}
 	}
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
