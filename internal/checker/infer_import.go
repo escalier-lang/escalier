@@ -492,11 +492,13 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 
 	// Step 4: Process named modules and register them
 	// Track namespaces by module name so we can reuse them in step 6
+	// Named modules use processed.PkgCtx.Scope as parent so they can resolve
+	// file-level imports (e.g., `import * as CSS from 'csstype'`).
 	namedModuleNamespaces := make(map[string]*type_system.Namespace)
 	for moduleName, namedModule := range parsedTypeDef.NamedModules {
 		moduleNs := type_system.NewNamespace()
 		moduleScope := &Scope{
-			Parent:    c.GlobalScope,
+			Parent:    processed.PkgCtx.Scope,
 			Namespace: moduleNs,
 		}
 		moduleCtx := Context{

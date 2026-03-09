@@ -69,17 +69,9 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 
 	pkgNs := processed.PkgNs
 
-	// 6. Copy JSX namespace from React to the current scope
-	// In @types/react, JSX is nested inside React (React.JSX), but the JSX type checker
-	// expects it at the top level as "JSX". Copy it to the current scope's namespace.
-	if jsxNs, ok := pkgNs.GetNamespace("JSX"); ok {
-		if err := ctx.Scope.Namespace.SetNamespace("JSX", jsxNs); err != nil {
-			errors = append(errors, &GenericError{
-				message: "Failed to set JSX namespace in scope: " + err.Error(),
-				span:    DEFAULT_SPAN,
-			})
-		}
-	} else {
+	// 6. Verify JSX namespace exists (report error if not found)
+	// The actual injection is done by injectReactTypes below.
+	if _, ok := pkgNs.GetNamespace("JSX"); !ok {
 		errors = append(errors, &GenericError{
 			message: "JSX namespace not found in React package namespace",
 			span:    DEFAULT_SPAN,
@@ -95,7 +87,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		})
 	}
 
-	// 8. Inject types into current scope
+	// 8. Inject types into current scope (React namespace and JSX namespace)
 	if err := c.injectReactTypes(ctx, pkgNs); err != nil {
 		errors = append(errors, &GenericError{
 			message: "Failed to inject React types: " + err.Error(),
@@ -109,7 +101,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 
 // injectReactTypes adds React types to the current scope.
 // The React namespace is made available as a value (for React.createElement, etc.).
-// The JSX namespace should already be in GlobalScope from global augmentations.
+// The JSX namespace is copied from React.JSX to the top-level scope as "JSX".
 // Returns an error if the namespace cannot be injected.
 func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) error {
 	if pkgNs == nil {
@@ -126,6 +118,18 @@ func (c *Checker) injectReactTypes(ctx Context, pkgNs *type_system.Namespace) er
 	if err := ctx.Scope.Namespace.SetNamespace("React", pkgNs); err != nil {
 		return fmt.Errorf("could not inject React namespace: %w", err)
 	}
+
+	// Copy JSX namespace from React to the current scope.
+	// In @types/react, JSX is nested inside React (React.JSX), but the JSX type checker
+	// expects it at the top level as "JSX".
+	if jsxNs, ok := pkgNs.GetNamespace("JSX"); ok {
+		if err := ctx.Scope.Namespace.SetNamespace("JSX", jsxNs); err != nil {
+			return fmt.Errorf("could not inject JSX namespace: %w", err)
+		}
+	}
+	// Note: If JSX namespace is not found, we don't return an error here.
+	// The cold-load path reports this as a separate error during initial loading.
+
 	return nil
 }
 
