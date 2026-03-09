@@ -61,10 +61,28 @@ func (pr *PackageRegistry) MarkInProgress(dtsFilePath string) {
 }
 
 // Lookup returns the namespace for a package by its resolved .d.ts file path.
-// Returns (namespace, true) if found, or (nil, false) if not found.
+// Returns:
+//   - (namespace, true) if loaded successfully
+//   - (nil, true) if in-progress (being loaded) - callers should not try to load again
+//   - (nil, false) if not found - callers can initiate loading
+//
+// The sentinel namespace is never returned to callers.
 func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, bool) {
 	ns, ok := pr.packages[dtsFilePath]
-	return ns, ok
+	if !ok {
+		return nil, false
+	}
+	if ns == sentinelNamespace {
+		// In-progress: return nil but true to indicate "found but not ready"
+		return nil, true
+	}
+	return ns, true
+}
+
+// IsInProgress returns true if the package is currently being loaded.
+func (pr *PackageRegistry) IsInProgress(dtsFilePath string) bool {
+	ns, ok := pr.packages[dtsFilePath]
+	return ok && ns == sentinelNamespace
 }
 
 // Update replaces the namespace for an existing package entry.
@@ -80,20 +98,23 @@ func (pr *PackageRegistry) Update(dtsFilePath string, ns *type_system.Namespace)
 }
 
 // MustLookup returns the namespace for a package by its resolved .d.ts file path.
-// Panics if the package is not found. Use this only for internal lookups
-// where the package is guaranteed to exist.
+// Panics if the package is not found or is in-progress. Use this only for internal lookups
+// where the package is guaranteed to be fully loaded.
 func (pr *PackageRegistry) MustLookup(dtsFilePath string) *type_system.Namespace {
 	ns, ok := pr.packages[dtsFilePath]
 	if !ok {
 		panic(fmt.Sprintf("package at %q not found in registry", dtsFilePath))
 	}
+	if ns == sentinelNamespace {
+		panic(fmt.Sprintf("package at %q is still in-progress", dtsFilePath))
+	}
 	return ns
 }
 
-// Has returns true if a package with the given file path is registered.
+// Has returns true if a package with the given file path is fully loaded (not in-progress).
 func (pr *PackageRegistry) Has(dtsFilePath string) bool {
-	_, ok := pr.packages[dtsFilePath]
-	return ok
+	ns, ok := pr.packages[dtsFilePath]
+	return ok && ns != sentinelNamespace
 }
 
 // CopyFrom copies all entries from another PackageRegistry into this one.

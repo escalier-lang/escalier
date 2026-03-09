@@ -40,6 +40,11 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 
 	// 3. Check if already loaded (use PackageRegistry for caching)
 	if pkgNs, found := c.PackageRegistry.Lookup(entryPoint); found {
+		if pkgNs == nil {
+			// React is in-progress (cycle) - return without injection
+			// This shouldn't happen in normal usage but handle gracefully
+			return nil
+		}
 		fmt.Fprintf(os.Stderr, "@types/react already loaded, injecting into scope\n")
 		if err := c.injectReactTypes(ctx, pkgNs); err != nil {
 			return []Error{&GenericError{
@@ -66,8 +71,11 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		dtsDir := filepath.Dir(entryPoint)
 		for _, ref := range pathRefs {
 			refPath := filepath.Join(dtsDir, ref)
-			// Check if already processed (avoid duplicates)
-			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+			// Check registry status:
+			// - Has() returns true only for fully loaded packages
+			// - IsInProgress() returns true for packages currently being loaded
+			// Only load if not found AND not in-progress
+			if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
 				// Mark as in-progress to prevent duplicate inference
 				c.PackageRegistry.MarkInProgress(refPath)
 

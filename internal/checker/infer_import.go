@@ -156,15 +156,32 @@ type LoadedPackage struct {
 
 // loadPathReferencedFile loads a file referenced via /// <reference path="..." />
 // These files typically contain global interface definitions.
+// The caller must have already called MarkInProgress(filePath) before calling this function.
+// This function will update the registry with the loaded namespace when complete.
 func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	var errors []Error
 
 	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
 	if loadErr != nil {
+		// On error, update registry with empty namespace to clear the in-progress sentinel
+		_ = c.PackageRegistry.Update(filePath, type_system.NewNamespace())
 		return []Error{&GenericError{
 			message: "Could not load referenced file " + filePath + ": " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
 		}}
+	}
+
+	// Create a namespace for this file's types
+	// Types are processed into both this namespace (for registry lookup) and GlobalScope (for global access)
+	fileNs := type_system.NewNamespace()
+	fileScope := &Scope{
+		Parent:    c.GlobalScope,
+		Namespace: fileNs,
+	}
+	fileCtx := Context{
+		Scope:      fileScope,
+		IsAsync:    false,
+		IsPatMatch: false,
 	}
 
 	// Process nested path references (/// <reference path="..." />)
@@ -185,24 +202,42 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 		}
 	}
 
-	// Process global declarations
+	// Process global declarations into both the file namespace and GlobalScope
 	if loadResult.GlobalModule != nil {
+		// First, process into the file namespace for registry lookup
+		errors = append(errors, c.InferModule(fileCtx, loadResult.GlobalModule)...)
+
+		// Also process into GlobalScope for global access
 		globalCtx := Context{
 			Scope:      c.GlobalScope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		errors = append(errors, c.InferModule(globalCtx, loadResult.GlobalModule)...)
+		// Note: We ignore errors here since we already reported them from the fileCtx processing
+		_ = c.InferModule(globalCtx, loadResult.GlobalModule)
 	}
 
 	// Process package declarations as globals (for files like global.d.ts)
 	if loadResult.PackageModule != nil {
+		// First, process into the file namespace for registry lookup
+		errors = append(errors, c.InferModule(fileCtx, loadResult.PackageModule)...)
+
+		// Also process into GlobalScope for global access
 		globalCtx := Context{
 			Scope:      c.GlobalScope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		errors = append(errors, c.InferModule(globalCtx, loadResult.PackageModule)...)
+		// Note: We ignore errors here since we already reported them from the fileCtx processing
+		_ = c.InferModule(globalCtx, loadResult.PackageModule)
+	}
+
+	// Update the registry with the file's namespace (replacing the in-progress sentinel)
+	if updateErr := c.PackageRegistry.Update(filePath, fileNs); updateErr != nil {
+		errors = append(errors, &GenericError{
+			message: fmt.Sprintf("Failed to update package registry for %s: %s", filePath, updateErr.Error()),
+			span:    DEFAULT_SPAN,
+		})
 	}
 
 	return errors
@@ -235,6 +270,11 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 
 	// Step 2: Check if already loaded (using file path as key)
 	if pkgNs, found := c.PackageRegistry.Lookup(dtsFilePath); found {
+		if pkgNs == nil {
+			// Package is in-progress (being loaded) - this is a cycle
+			// Return nil to signal the cycle, but no error - cycles are expected
+			return nil, nil
+		}
 		fmt.Fprintf(os.Stderr, "Package %s already loaded from %s\n",
 			packageName, dtsFilePath)
 		return &LoadedPackage{Namespace: pkgNs, FilePath: dtsFilePath}, nil
@@ -247,6 +287,8 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	// Step 3: Load and classify the .d.ts file
 	loadResult, loadErr := loadClassifiedTypeScriptModule(dtsFilePath)
 	if loadErr != nil {
+		// Clean up sentinel so the package can be retried
+		delete(c.PackageRegistry.packages, dtsFilePath) // Need to expose a Remove method
 		return nil, []Error{&GenericError{
 			message: "Could not load type definitions for module import: " + packageName,
 			span:    span,
@@ -262,8 +304,11 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		dtsDir := filepath.Dir(dtsFilePath)
 		for _, ref := range pathRefs {
 			refPath := filepath.Join(dtsDir, ref)
-			// Check if already processed (avoid duplicates)
-			if _, found := c.PackageRegistry.Lookup(refPath); !found {
+			// Check registry status:
+			// - Has() returns true only for fully loaded packages
+			// - IsInProgress() returns true for packages currently being loaded
+			// Only load if not found AND not in-progress
+			if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
 				// Mark as in-progress to prevent duplicate inference from recursive or shared reference paths
 				c.PackageRegistry.MarkInProgress(refPath)
 
@@ -291,6 +336,10 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 
 			// Check if already loaded (or in-progress)
 			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+				if depNs == nil {
+					// Dependency is in-progress (cycle) - skip it
+					continue
+				}
 				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
 				continue
 			}
@@ -428,6 +477,11 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	// Note: We check by package name first for backwards compatibility with tests
 	// that register packages by name rather than file path.
 	if pkgNs, found := c.PackageRegistry.Lookup(importStmt.PackageName); found {
+		if pkgNs == nil {
+			// Package is in-progress (cycle) - return without binding
+			// This should be rare when looking up by package name
+			return errors
+		}
 		errors = append(errors, c.bindImportSpecifiers(ctx, importStmt, pkgNs)...)
 		return errors
 	}
