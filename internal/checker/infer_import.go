@@ -163,8 +163,8 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 
 	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
 	if loadErr != nil {
-		// On error, update registry with empty namespace to clear the in-progress sentinel
-		_ = c.PackageRegistry.Update(filePath, type_system.NewNamespace())
+		// Remove the in-progress entry so later loads can retry and report the real failure.
+		delete(c.PackageRegistry.packages, filePath)
 		return []Error{&GenericError{
 			message: "Could not load referenced file " + filePath + ": " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
@@ -439,6 +439,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		// Use an empty namespace so we don't expose all globals as package exports.
 		pkgNs = type_system.NewNamespace()
 	} else {
+		delete(c.PackageRegistry.packages, dtsFilePath)
 		return nil, []Error{&GenericError{
 			message: "Type definitions for module import do not contain expected module: " + packageName,
 			span:    span,
