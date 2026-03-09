@@ -423,17 +423,10 @@ func (c *Checker) ProcessExportStatements(
 ) []Error {
 	var errors []Error
 
-	// Process named export statements
+	// Process named export statements (both local and re-exports)
 	for _, namedExport := range parsedTypeDef.NamedExports {
-		if namedExport.From == "" {
-			// Local export: export { foo } or export { foo as bar }
-			localErrors := c.processLocalNamedExport(pkgNs, namedExport)
-			errors = append(errors, localErrors...)
-		} else {
-			// Re-export: export { foo } from "module"
-			reexportErrors := c.processReExport(ctx, dtsFilePath, pkgNs, namedExport)
-			errors = append(errors, reexportErrors...)
-		}
+		exportErrors := c.processNamedExport(ctx, dtsFilePath, pkgNs, namedExport)
+		errors = append(errors, exportErrors...)
 	}
 
 	// Process export * from statements
@@ -451,95 +444,42 @@ func (c *Checker) ProcessExportStatements(
 	return errors
 }
 
-// processLocalNamedExport handles local named exports like `export { foo }` or `export { foo as bar }`.
-// It looks up the local name in the package namespace and marks it as exported under the exported name.
-func (c *Checker) processLocalNamedExport(
-	pkgNs *type_system.Namespace,
-	stmt *dts_parser.NamedExportStmt,
-) []Error {
-	var errors []Error
-
-	for _, spec := range stmt.Specifiers {
-		localName := spec.Local.Name
-		exportedName := spec.Exported.Name
-
-		found := false
-
-		// Check values (skip for type-only exports)
-		if !stmt.TypeOnly {
-			if binding, ok := pkgNs.Values[localName]; ok {
-				// Create new binding with Exported=true and possibly renamed
-				newBinding := &type_system.Binding{
-					Source:   binding.Source,
-					Type:     binding.Type,
-					Mutable:  binding.Mutable,
-					Exported: true,
-				}
-				pkgNs.Values[exportedName] = newBinding
-				found = true
-			}
-		}
-
-		// Check types (always allowed for both regular and type-only exports)
-		if typeAlias, ok := pkgNs.Types[localName]; ok {
-			newAlias := &type_system.TypeAlias{
-				Type:       typeAlias.Type,
-				TypeParams: typeAlias.TypeParams,
-				Exported:   true,
-			}
-			pkgNs.Types[exportedName] = newAlias
-			found = true
-		}
-
-		// Check nested namespaces (skip for type-only exports)
-		if !stmt.TypeOnly {
-			if ns, ok := pkgNs.Namespaces[localName]; ok {
-				pkgNs.Namespaces[exportedName] = ns
-				found = true
-			}
-		}
-
-		if !found && !stmt.TypeOnly {
-			errors = append(errors, &GenericError{
-				message: fmt.Sprintf("Cannot export '%s': not found in module", localName),
-				span:    spec.Span(),
-			})
-		}
-	}
-
-	return errors
-}
-
-// processReExport handles re-exports like `export { foo } from "bar"` or `export { foo as baz } from "bar"`.
-// It loads the source module and copies the specified items to the current namespace.
-func (c *Checker) processReExport(
+// processNamedExport handles named exports:
+// - Local exports: `export { foo }` or `export { foo as bar }` (stmt.From == "")
+// - Re-exports: `export { foo } from "bar"` or `export { foo as baz } from "bar"` (stmt.From != "")
+func (c *Checker) processNamedExport(
 	ctx Context,
 	sourceFilePath string,
 	pkgNs *type_system.Namespace,
 	stmt *dts_parser.NamedExportStmt,
 ) []Error {
 	var errors []Error
+	var srcNs *type_system.Namespace
 
-	// Resolve the module path
-	resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
-	if resolveErr != nil {
-		errors = append(errors, &GenericError{
-			message: fmt.Sprintf("Cannot resolve re-export from '%s': %s",
-				stmt.From, resolveErr.Error()),
-			span: stmt.Span(),
-		})
-		return errors
+	if stmt.From == "" {
+		// Local export: source is the package namespace itself
+		srcNs = pkgNs
+	} else {
+		// Re-export: resolve and load the source module
+		resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
+		if resolveErr != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Cannot resolve re-export from '%s': %s",
+					stmt.From, resolveErr.Error()),
+				span: stmt.Span(),
+			})
+			return errors
+		}
+
+		depPkg, depErrors := c.loadPackageFromPath(ctx, resolvedPath, stmt.From, stmt.Span())
+		errors = append(errors, depErrors...)
+
+		if depPkg == nil || depPkg.Namespace == nil {
+			return errors
+		}
+
+		srcNs = filterExportedNamespace(depPkg.Namespace)
 	}
-
-	// Load the dependency (using existing cycle detection)
-	depPkg, depErrors := c.loadPackageFromPath(ctx, resolvedPath, stmt.From, stmt.Span())
-	errors = append(errors, depErrors...)
-
-	if depPkg == nil || depPkg.Namespace == nil {
-		return errors
-	}
-
-	depNs := filterExportedNamespace(depPkg.Namespace)
 
 	// Process each specifier
 	for _, spec := range stmt.Specifiers {
@@ -550,7 +490,7 @@ func (c *Checker) processReExport(
 
 		// Copy value bindings (skip for type-only exports)
 		if !stmt.TypeOnly {
-			if binding, ok := depNs.Values[localName]; ok {
+			if binding, ok := srcNs.Values[localName]; ok {
 				newBinding := &type_system.Binding{
 					Source:   binding.Source,
 					Type:     binding.Type,
@@ -562,8 +502,8 @@ func (c *Checker) processReExport(
 			}
 		}
 
-		// Copy type bindings (always allowed)
-		if typeAlias, ok := depNs.Types[localName]; ok {
+		// Copy type bindings (always allowed for both regular and type-only exports)
+		if typeAlias, ok := srcNs.Types[localName]; ok {
 			newAlias := &type_system.TypeAlias{
 				Type:       typeAlias.Type,
 				TypeParams: typeAlias.TypeParams,
@@ -575,17 +515,22 @@ func (c *Checker) processReExport(
 
 		// Copy namespace bindings (skip for type-only exports)
 		if !stmt.TypeOnly {
-			if ns, ok := depNs.Namespaces[localName]; ok {
+			if ns, ok := srcNs.Namespaces[localName]; ok {
 				pkgNs.Namespaces[exportedName] = ns
 				found = true
 			}
 		}
 
 		if !found && !stmt.TypeOnly {
+			var message string
+			if stmt.From == "" {
+				message = fmt.Sprintf("Cannot export '%s': not found in module", localName)
+			} else {
+				message = fmt.Sprintf("Module '%s' has no export named '%s'", stmt.From, localName)
+			}
 			errors = append(errors, &GenericError{
-				message: fmt.Sprintf("Module '%s' has no export named '%s'",
-					stmt.From, localName),
-				span: spec.Span(),
+				message: message,
+				span:    spec.Span(),
 			})
 		}
 	}
@@ -627,12 +572,15 @@ func (c *Checker) processExportAll(
 
 	if stmt.AsName != nil {
 		// export * as ns from "module" - create namespace binding
-		if err := pkgNs.SetNamespace(stmt.AsName.Name, depNs); err != nil {
-			errors = append(errors, &GenericError{
-				message: fmt.Sprintf("Cannot create namespace '%s': %s",
-					stmt.AsName.Name, err.Error()),
-				span: stmt.Span(),
-			})
+		// Skip for type-only exports (namespaces are runtime constructs)
+		if !stmt.TypeOnly {
+			if err := pkgNs.SetNamespace(stmt.AsName.Name, depNs); err != nil {
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Cannot create namespace '%s': %s",
+						stmt.AsName.Name, err.Error()),
+					span: stmt.Span(),
+				})
+			}
 		}
 	} else {
 		// export * from "module" - merge all exports
@@ -641,18 +589,23 @@ func (c *Checker) processExportAll(
 		// erroring at declaration time. Our approach is simpler: the first export wins,
 		// which is consistent and avoids silent incorrect behavior. A more complete
 		// implementation could track ambiguous names and error only when they're used.
-		for name, binding := range depNs.Values {
-			if _, exists := pkgNs.Values[name]; !exists {
-				newBinding := &type_system.Binding{
-					Source:   binding.Source,
-					Type:     binding.Type,
-					Mutable:  binding.Mutable,
-					Exported: true,
+
+		// Merge values (skip for type-only exports)
+		if !stmt.TypeOnly {
+			for name, binding := range depNs.Values {
+				if _, exists := pkgNs.Values[name]; !exists {
+					newBinding := &type_system.Binding{
+						Source:   binding.Source,
+						Type:     binding.Type,
+						Mutable:  binding.Mutable,
+						Exported: true,
+					}
+					pkgNs.Values[name] = newBinding
 				}
-				pkgNs.Values[name] = newBinding
 			}
 		}
 
+		// Merge types (always allowed for both regular and type-only exports)
 		for name, typeAlias := range depNs.Types {
 			if _, exists := pkgNs.Types[name]; !exists {
 				newAlias := &type_system.TypeAlias{
@@ -664,9 +617,12 @@ func (c *Checker) processExportAll(
 			}
 		}
 
-		for name, ns := range depNs.Namespaces {
-			if _, exists := pkgNs.Namespaces[name]; !exists {
-				pkgNs.Namespaces[name] = ns
+		// Merge namespaces (skip for type-only exports)
+		if !stmt.TypeOnly {
+			for name, ns := range depNs.Namespaces {
+				if _, exists := pkgNs.Namespaces[name]; !exists {
+					pkgNs.Namespaces[name] = ns
+				}
 			}
 		}
 	}
