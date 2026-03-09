@@ -274,9 +274,11 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 		// Parse the default export declaration
 		// For export default, we also allow class declarations (with or without declare)
 		var declaration Statement
+		var isDeclare bool
 		nextToken := p.peek()
 		if nextToken.Type == Declare {
 			p.consume() // consume 'declare'
+			isDeclare = true
 			declaration = p.parseAmbientDeclaration()
 		} else if nextToken.Type == Class || nextToken.Type == Abstract {
 			// export default class or export default abstract class
@@ -290,10 +292,13 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 			return nil
 		}
 
-		// Set export and default flags on the declaration
+		// Set export, default, and declare flags on the declaration
 		if decl, ok := declaration.(Decl); ok {
 			decl.SetExport(true)
 			decl.SetDefault(true)
+			if isDeclare {
+				decl.SetDeclare(true)
+			}
 		}
 
 		return declaration
@@ -380,8 +385,10 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 	// Export a declaration: export var/let/const/function/class/interface/type/enum/namespace
 	// Also handles: export declare var/let/const/function/class
 	var declaration Statement
+	var isDeclare bool
 	if p.peek().Type == Declare {
 		p.consume() // consume 'declare'
+		isDeclare = true
 		declaration = p.parseAmbientDeclaration()
 	} else {
 		declaration = p.parseTopLevelDeclaration()
@@ -391,9 +398,12 @@ func (p *DtsParser) parseExportDeclaration() Statement {
 		return nil
 	}
 
-	// Set export flag on the declaration
+	// Set export and declare flags on the declaration
 	if decl, ok := declaration.(Decl); ok {
 		decl.SetExport(true)
+		if isDeclare {
+			decl.SetDeclare(true)
+		}
 	}
 
 	return declaration

@@ -552,6 +552,7 @@
             Readonly: false,
             export:   true,
             default_: false,
+            declare:  true,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:29},
@@ -587,6 +588,7 @@
             },
             export:   true,
             default_: false,
+            declare:  true,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:36},
@@ -620,6 +622,7 @@
             },
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:25},
@@ -673,6 +676,7 @@
             },
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:35},
@@ -703,6 +707,7 @@
             Abstract: false,
             export:   true,
             default_: false,
+            declare:  true,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:28},
@@ -778,6 +783,7 @@
             Const:    false,
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:39},
@@ -804,6 +810,7 @@
             },
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:27},
@@ -1188,6 +1195,7 @@
             },
             export:   true,
             default_: true,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:33},
@@ -1221,6 +1229,7 @@
             },
             export:   true,
             default_: true,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:16},
                 End:      ast.Location{Line:1, Column:33},
@@ -1549,6 +1558,7 @@
             },
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:2, Column:11},
                 End:      ast.Location{Line:2, Column:40},
@@ -1774,6 +1784,7 @@
             },
             export:   true,
             default_: false,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:8},
                 End:      ast.Location{Line:1, Column:25},
@@ -1831,6 +1842,7 @@
             Abstract: false,
             export:   true,
             default_: true,
+            declare:  false,
             span:     ast.Span{
                 Start:    ast.Location{Line:3, Column:19},
                 End:      ast.Location{Line:3, Column:32},

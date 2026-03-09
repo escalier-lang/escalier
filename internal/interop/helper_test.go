@@ -508,9 +508,10 @@ func TestConvertMethodDecl(t *testing.T) {
 				t.Fatal("No statements parsed")
 			}
 
-			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			stmt := module.Statements[0]
+			classDecl, ok := stmt.(*dts_parser.ClassDecl)
 			if !ok {
-				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+				t.Fatalf("Expected ClassDecl, got %T", stmt)
 			}
 
 			if tt.methodIdx >= len(classDecl.Members) {
@@ -588,9 +589,10 @@ func TestConvertPropertyDecl(t *testing.T) {
 				t.Fatal("No statements parsed")
 			}
 
-			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			stmt := module.Statements[0]
+			classDecl, ok := stmt.(*dts_parser.ClassDecl)
 			if !ok {
-				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+				t.Fatalf("Expected ClassDecl, got %T", stmt)
 			}
 
 			if tt.propIdx >= len(classDecl.Members) {
@@ -653,9 +655,10 @@ func TestConvertGetterDecl(t *testing.T) {
 				t.Fatal("No statements parsed")
 			}
 
-			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			stmt := module.Statements[0]
+			classDecl, ok := stmt.(*dts_parser.ClassDecl)
 			if !ok {
-				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+				t.Fatalf("Expected ClassDecl, got %T", stmt)
 			}
 
 			if tt.getterIdx >= len(classDecl.Members) {
@@ -718,9 +721,10 @@ func TestConvertSetterDecl(t *testing.T) {
 				t.Fatal("No statements parsed")
 			}
 
-			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			stmt := module.Statements[0]
+			classDecl, ok := stmt.(*dts_parser.ClassDecl)
 			if !ok {
-				t.Fatalf("Expected ClassDecl, got %T", module.Statements[0])
+				t.Fatalf("Expected ClassDecl, got %T", stmt)
 			}
 
 			if tt.setterIdx >= len(classDecl.Members) {

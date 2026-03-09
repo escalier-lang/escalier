@@ -761,6 +761,11 @@ func (c *Checker) InferComponent(
 						existingObjType.Elems = append(existingObjType.Elems, newObjType.Elems...)
 						// Keep the Interface flag true
 						existingObjType.Interface = true
+
+						// Unify the type parameters even for merged interfaces to ensure constraint compatibility
+						typeParamErrors := c.unifyTypeParams(nsCtx, existingTypeAlias.TypeParams, interfaceAlias.TypeParams)
+						errors = slices.Concat(errors, typeParamErrors)
+
 						// The merged type is already in the scope via the binding, no need to update
 						continue
 					}

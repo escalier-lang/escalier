@@ -381,6 +381,145 @@ func findRepoRoot() (string, error) {
 	}
 }
 
+func TestConvertModule_AmbientNamespaceAutoExport(t *testing.T) {
+	input := `
+declare namespace MyNamespace {
+  var x: number;
+  function foo(): void;
+  class MyClass {}
+  interface MyInterface {}
+  type MyType = string;
+  enum MyEnum { A, B }
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check MyNamespace
+	ns, nsExists := astModule.Namespaces.Get("MyNamespace")
+	if !nsExists {
+		t.Fatalf("MyNamespace not found")
+	}
+
+	// All declarations inside declare namespace should be auto-exported
+	for i, decl := range ns.Decls {
+		if !decl.Export() {
+			t.Errorf("Declaration %d (%T) should be auto-exported in ambient namespace", i, decl)
+		}
+	}
+
+	snaps.MatchSnapshot(t, astModule)
+}
+
+func TestConvertModule_AmbientNamespaceNestedAutoExport(t *testing.T) {
+	input := `
+declare namespace Outer {
+  namespace Inner {
+    var x: number;
+    function foo(): void;
+  }
+  var y: string;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check Outer namespace declarations are auto-exported
+	outerNS, outerExists := astModule.Namespaces.Get("Outer")
+	if !outerExists {
+		t.Fatalf("Outer namespace not found")
+	}
+	for i, decl := range outerNS.Decls {
+		if !decl.Export() {
+			t.Errorf("Outer declaration %d (%T) should be auto-exported", i, decl)
+		}
+	}
+
+	// Check Inner namespace declarations are also auto-exported (ambient propagates)
+	innerNS, innerExists := astModule.Namespaces.Get("Outer.Inner")
+	if !innerExists {
+		t.Fatalf("Outer.Inner namespace not found")
+	}
+	for i, decl := range innerNS.Decls {
+		if !decl.Export() {
+			t.Errorf("Inner declaration %d (%T) should be auto-exported", i, decl)
+		}
+	}
+
+	snaps.MatchSnapshot(t, astModule)
+}
+
+func TestConvertModule_TopLevelDeclareNotAutoExported(t *testing.T) {
+	input := `
+declare var x: number;
+declare function foo(): void;
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check root namespace
+	rootNS, rootExists := astModule.Namespaces.Get("")
+	if !rootExists {
+		t.Fatalf("Root namespace not found")
+	}
+
+	// Top-level declare statements should NOT be auto-exported
+	// (they're not inside a namespace)
+	for i, decl := range rootNS.Decls {
+		if decl.Export() {
+			t.Errorf("Top-level declaration %d (%T) should NOT be auto-exported", i, decl)
+		}
+	}
+
+	snaps.MatchSnapshot(t, astModule)
+}
+
+func TestConvertModule_ExplicitExportInAmbientNamespace(t *testing.T) {
+	input := `
+declare namespace MyNamespace {
+  export var x: number;
+  var y: string;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check MyNamespace
+	ns, nsExists := astModule.Namespaces.Get("MyNamespace")
+	if !nsExists {
+		t.Fatalf("MyNamespace not found")
+	}
+
+	// Both declarations should be exported (explicit and auto)
+	for i, decl := range ns.Decls {
+		if !decl.Export() {
+			t.Errorf("Declaration %d (%T) should be exported in ambient namespace", i, decl)
+		}
+	}
+
+	snaps.MatchSnapshot(t, astModule)
+}
+
 func TestConvertES2015LibFiles(t *testing.T) {
 	// Find the repo root by looking for go.mod
 	repoRoot, err := findRepoRoot()

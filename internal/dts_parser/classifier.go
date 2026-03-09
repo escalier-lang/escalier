@@ -21,6 +21,10 @@ type FileClassification struct {
 	// PackageDecls contains all declarations when HasTopLevelExports is true.
 	// The export flag on ast.Decl distinguishes exported from non-exported declarations.
 	PackageDecls []Statement
+
+	// Imports contains all import declarations from the file.
+	// These need to be processed to load transitive dependencies.
+	Imports []*ImportDecl
 }
 
 // NamedModuleDecl represents a named module declaration (`declare module "name" { ... }`).
@@ -41,6 +45,7 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		NamedModules:       make([]NamedModuleDecl, 0),
 		GlobalDecls:        make([]Statement, 0),
 		PackageDecls:       make([]Statement, 0),
+		Imports:            make([]*ImportDecl, 0),
 	}
 
 	// First pass: detect if there are any top-level exports
@@ -53,6 +58,12 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 
 	// Second pass: classify each declaration
 	for _, stmt := range module.Statements {
+		// Capture import declarations
+		if importDecl, ok := stmt.(*ImportDecl); ok {
+			classification.Imports = append(classification.Imports, importDecl)
+			continue
+		}
+
 		// Check for named module declarations
 		if namedModule := extractNamedModule(stmt); namedModule != nil {
 			classification.NamedModules = append(classification.NamedModules, *namedModule)
@@ -93,17 +104,10 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 // - export = ...
 // - export default ...
 func isTopLevelExport(stmt Statement) bool {
-	switch s := stmt.(type) {
+	switch stmt.(type) {
 	case *NamedExportStmt, *ExportAllStmt, *ExportAssignmentStmt, *ExportAsNamespaceStmt:
 		// Standalone export statement types
 		return true
-
-	case *AmbientDecl:
-		// Check if inner declaration is exported
-		if decl, ok := s.Declaration.(Decl); ok {
-			return decl.Export()
-		}
-		return false
 
 	default:
 		// Check if the statement is a declaration with Export flag set
@@ -118,27 +122,13 @@ func isTopLevelExport(stmt Statement) bool {
 // Returns nil if the statement is not a named module declaration.
 // Named modules are `declare module "name" { ... }` blocks.
 func extractNamedModule(stmt Statement) *NamedModuleDecl {
-	switch s := stmt.(type) {
-	case *ModuleDecl:
-		// ModuleDecl represents `declare module "name" { ... }`
+	if moduleDecl, ok := stmt.(*ModuleDecl); ok {
 		return &NamedModuleDecl{
-			ModuleName: s.Name,
-			Decls:      s.Statements,
+			ModuleName: moduleDecl.Name,
+			Decls:      moduleDecl.Statements,
 		}
-
-	case *AmbientDecl:
-		// Check if the ambient declaration wraps a module declaration
-		if moduleDecl, ok := s.Declaration.(*ModuleDecl); ok {
-			return &NamedModuleDecl{
-				ModuleName: moduleDecl.Name,
-				Decls:      moduleDecl.Statements,
-			}
-		}
-		return nil
-
-	default:
-		return nil
 	}
+	return nil
 }
 
 // extractGlobalAugmentation extracts declarations from `declare global { ... }` blocks.
@@ -158,14 +148,14 @@ func extractGlobalAugmentation(stmt Statement) []Statement {
 //
 //	declare namespace Foo {
 //	    export const bar: number;
-//	    export function baz(): string;
+//	    function baz(): string;  // no export keyword, but still accessible
 //	}
 //	export = Foo;
 //
 // This is equivalent to:
 //
 //	export const bar: number;
-//	export function baz(): string;
+//	export function baz(): string;  // all items become exports
 //
 // Returns the expanded declarations, or the original statement in a slice if not an export = pattern.
 func expandExportEquals(stmt Statement, module *Module) []Statement {
@@ -182,24 +172,26 @@ func expandExportEquals(stmt Statement, module *Module) []Statement {
 	}
 
 	// Return the namespace's statements as top-level exports
-	// Each statement from the namespace becomes a package declaration
+	// Each statement from the namespace becomes a package declaration.
+	// Only mark all declarations as exported if the namespace is ambient
+	// (declared with `declare namespace`). For non-ambient namespaces,
+	// only items with explicit `export` are exported.
+	if ns.Declare() {
+		for _, s := range ns.Statements {
+			if decl, ok := s.(Decl); ok {
+				decl.SetExport(true)
+			}
+		}
+	}
 	return ns.Statements
 }
 
 // findNamespaceDecl searches for a namespace declaration with the given name in the module.
 func findNamespaceDecl(name string, module *Module) *NamespaceDecl {
 	for _, stmt := range module.Statements {
-		switch s := stmt.(type) {
-		case *NamespaceDecl:
-			if s.Name != nil && s.Name.Name == name {
-				return s
-			}
-
-		case *AmbientDecl:
-			if nsDecl, ok := s.Declaration.(*NamespaceDecl); ok {
-				if nsDecl.Name != nil && nsDecl.Name.Name == name {
-					return nsDecl
-				}
+		if nsDecl, ok := stmt.(*NamespaceDecl); ok {
+			if nsDecl.Name != nil && nsDecl.Name.Name == name {
+				return nsDecl
 			}
 		}
 	}

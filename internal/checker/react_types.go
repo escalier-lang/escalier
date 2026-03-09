@@ -40,6 +40,11 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 
 	// 3. Check if already loaded (use PackageRegistry for caching)
 	if pkgNs, found := c.PackageRegistry.Lookup(entryPoint); found {
+		if pkgNs == nil {
+			// React is in-progress (cycle) - return without injection
+			// This shouldn't happen in normal usage but handle gracefully
+			return nil
+		}
 		fmt.Fprintf(os.Stderr, "@types/react already loaded, injecting into scope\n")
 		if err := c.injectReactTypes(ctx, pkgNs); err != nil {
 			return []Error{&GenericError{
@@ -50,21 +55,70 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		return nil
 	}
 
-	// 4. Load referenced files first (global.d.ts)
-	// The @types/react index.d.ts has: /// <reference path="global.d.ts" />
-	globalDtsPath := filepath.Join(reactTypesDir, "global.d.ts")
-	if _, statErr := os.Stat(globalDtsPath); statErr == nil {
-		globalErrors := c.loadReactGlobalFile(globalDtsPath)
-		errors = append(errors, globalErrors...)
-	}
-
-	// 5. Load and classify the main entry point using existing infrastructure
+	// 4. Load and classify the main entry point using existing infrastructure
 	loadResult, loadErr := loadClassifiedTypeScriptModule(entryPoint)
 	if loadErr != nil {
 		return []Error{&GenericError{
 			message: "Could not load @types/react: " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
 		}}
+	}
+
+	// 5. Process path references (/// <reference path="..." />)
+	// These files contain global interface definitions (e.g., global.d.ts)
+	pathRefs, pathErr := parsePathReferenceDirectives(entryPoint)
+	if pathErr == nil && len(pathRefs) > 0 {
+		dtsDir := filepath.Dir(entryPoint)
+		for _, ref := range pathRefs {
+			refPath := filepath.Join(dtsDir, ref)
+			// Check registry status:
+			// - Has() returns true only for fully loaded packages
+			// - IsInProgress() returns true for packages currently being loaded
+			// Only load if not found AND not in-progress
+			if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
+				// Mark as in-progress to prevent duplicate inference
+				c.PackageRegistry.MarkInProgress(refPath)
+
+				refErrors := c.loadPathReferencedFile(refPath)
+				errors = append(errors, refErrors...)
+			}
+		}
+	}
+
+	// 5.5. Process imports from the .d.ts file to load transitive dependencies
+	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
+	importedNamespaces := make(map[string]*type_system.Namespace)
+	for _, dtsImport := range loadResult.Imports {
+		// Only handle namespace imports for now (import * as Alias from "pkg")
+		if dtsImport.NamespaceAs != nil {
+			depTypesPath, resolveErr := resolveDtsImport(entryPoint, dtsImport)
+			if resolveErr != nil {
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Could not resolve import %s in @types/react: %s",
+						dtsImport.From, resolveErr.Error()),
+					span: DEFAULT_SPAN,
+				})
+				continue
+			}
+
+			// Check if already loaded (or in-progress)
+			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+				if depNs == nil {
+					// Dependency is in-progress (cycle) - skip it
+					continue
+				}
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
+				continue
+			}
+
+			// Recursively load the dependency package using the resolved path directly
+			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
+			errors = append(errors, depErrors...)
+			if depPkg != nil && depPkg.Namespace != nil {
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
+			}
+		}
+		// TODO: Handle named imports (import { A, B } from "pkg") if needed
 	}
 
 	// 6. Process global augmentations (JSX namespace lives here)
@@ -75,18 +129,25 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 			IsPatMatch: false,
 		}
 		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		if len(globalErrors) > 0 {
-			for _, err := range globalErrors {
-				fmt.Fprintf(os.Stderr, "Global augmentation error in @types/react: %s\n", err.Message())
-			}
-			errors = append(errors, globalErrors...)
-		}
+		errors = append(errors, globalErrors...)
 	}
 
 	// 7. Process internal declarations first (file-scoped types like Booleanish, NativeAnimationEvent, etc.)
 	// These need to be in scope before package declarations are processed.
 	var pkgNs *type_system.Namespace
 	pkgNs = type_system.NewNamespace()
+
+	// Add imported namespaces to the package namespace before inferring
+	// This makes types like CSS.Properties available when resolving type references
+	for alias, ns := range importedNamespaces {
+		if err := pkgNs.SetNamespace(alias, ns); err != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
+				span:    DEFAULT_SPAN,
+			})
+		}
+	}
+
 	pkgScope := &Scope{
 		Parent:    c.GlobalScope,
 		Namespace: pkgNs,
@@ -100,24 +161,14 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 8. Process package module (React namespace with FC, Component, etc.)
 	if loadResult.PackageModule != nil {
 		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
-		if len(pkgErrors) > 0 {
-			for _, err := range pkgErrors {
-				fmt.Fprintf(os.Stderr, "Package module error in @types/react: %s\n", err.Message())
-			}
-			errors = append(errors, pkgErrors...)
-		}
+		errors = append(errors, pkgErrors...)
 	}
 
 	// 9. Process named modules (e.g., declare module "react" { ... })
 	// Check if there's a "react" named module that should be used as the package namespace
 	if reactModule, ok := loadResult.NamedModules["react"]; ok {
 		namedErrors := c.InferModule(pkgCtx, reactModule)
-		if len(namedErrors) > 0 {
-			for _, err := range namedErrors {
-				fmt.Fprintf(os.Stderr, "Named module error in @types/react: %s\n", err.Message())
-			}
-			errors = append(errors, namedErrors...)
-		}
+		errors = append(errors, namedErrors...)
 	}
 
 	// 10. Copy JSX namespace from React to the current scope
@@ -125,16 +176,25 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// expects it at the top level as "JSX". Copy it to the current scope's namespace.
 	if jsxNs, ok := pkgNs.GetNamespace("JSX"); ok {
 		if err := ctx.Scope.Namespace.SetNamespace("JSX", jsxNs); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to set JSX namespace in scope: %s\n", err.Error())
+			errors = append(errors, &GenericError{
+				message: "Failed to set JSX namespace in scope: " + err.Error(),
+				span:    DEFAULT_SPAN,
+			})
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "Warning: JSX namespace not found in React package namespace\n")
+		errors = append(errors, &GenericError{
+			message: "JSX namespace not found in React package namespace",
+			span:    DEFAULT_SPAN,
+		})
 	}
 
 	// 11. Always register in PackageRegistry for caching (even if partially populated)
 	// This prevents re-parsing on subsequent calls
 	if regErr := c.PackageRegistry.Register(entryPoint, pkgNs); regErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to register @types/react: %s\n", regErr.Error())
+		errors = append(errors, &GenericError{
+			message: "Failed to register @types/react: " + regErr.Error(),
+			span:    DEFAULT_SPAN,
+		})
 	}
 
 	// 12. Inject types into current scope
@@ -146,43 +206,6 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	fmt.Fprintf(os.Stderr, "@types/react loaded successfully\n")
-	return errors
-}
-
-// loadReactGlobalFile loads a referenced .d.ts file (like global.d.ts) into the global scope.
-func (c *Checker) loadReactGlobalFile(filePath string) []Error {
-	var errors []Error
-
-	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
-	if loadErr != nil {
-		return []Error{&GenericError{
-			message: "Could not load React types file " + filePath + ": " + loadErr.Error(),
-			span:    DEFAULT_SPAN,
-		}}
-	}
-
-	// Process global declarations
-	if loadResult.GlobalModule != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		errors = append(errors, globalErrors...)
-	}
-
-	// Process package declarations (for global files, these are also globals)
-	if loadResult.PackageModule != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.PackageModule)
-		errors = append(errors, globalErrors...)
-	}
-
 	return errors
 }
 

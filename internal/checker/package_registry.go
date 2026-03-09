@@ -6,6 +6,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// sentinelNamespace is a global singleton used to mark packages as "in-progress"
+// during loading. This prevents cycles (A→B→A) and duplicate loading.
+// It should never be returned to callers - it's replaced with the real namespace
+// after loading completes via Update().
+var sentinelNamespace = type_system.NewNamespace()
+
 // PackageRegistry stores package namespaces separate from the scope chain.
 // Packages are registered by their resolved .d.ts file path (not the package name).
 // This design supports monorepos where different Escalier packages may depend on
@@ -38,6 +44,9 @@ func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespac
 	if ns == nil {
 		return fmt.Errorf("package namespace cannot be nil")
 	}
+	if ns == sentinelNamespace {
+		return fmt.Errorf("cannot register sentinel namespace directly; use MarkInProgress instead")
+	}
 	if _, exists := pr.packages[dtsFilePath]; exists {
 		return fmt.Errorf("package at %q is already registered", dtsFilePath)
 	}
@@ -45,28 +54,67 @@ func (pr *PackageRegistry) Register(dtsFilePath string, ns *type_system.Namespac
 	return nil
 }
 
+// MarkInProgress marks a package as being loaded to prevent cycles and duplicate loading.
+// Call Update() after loading completes to replace the sentinel with the real namespace.
+func (pr *PackageRegistry) MarkInProgress(dtsFilePath string) {
+	pr.packages[dtsFilePath] = sentinelNamespace
+}
+
 // Lookup returns the namespace for a package by its resolved .d.ts file path.
-// Returns (namespace, true) if found, or (nil, false) if not found.
+// Returns:
+//   - (namespace, true) if loaded successfully
+//   - (nil, true) if in-progress (being loaded) - callers should not try to load again
+//   - (nil, false) if not found - callers can initiate loading
+//
+// The sentinel namespace is never returned to callers.
 func (pr *PackageRegistry) Lookup(dtsFilePath string) (*type_system.Namespace, bool) {
 	ns, ok := pr.packages[dtsFilePath]
-	return ns, ok
+	if !ok {
+		return nil, false
+	}
+	if ns == sentinelNamespace {
+		// In-progress: return nil but true to indicate "found but not ready"
+		return nil, true
+	}
+	return ns, true
+}
+
+// IsInProgress returns true if the package is currently being loaded.
+func (pr *PackageRegistry) IsInProgress(dtsFilePath string) bool {
+	ns, ok := pr.packages[dtsFilePath]
+	return ok && ns == sentinelNamespace
+}
+
+// Update replaces the namespace for an existing package entry.
+// This is used to replace a sentinel namespace (registered to prevent cycles)
+// with the real namespace after loading is complete.
+// Returns an error if attempting to update with the sentinel namespace.
+func (pr *PackageRegistry) Update(dtsFilePath string, ns *type_system.Namespace) error {
+	if ns == sentinelNamespace {
+		return fmt.Errorf("cannot update with sentinel namespace; use MarkInProgress instead")
+	}
+	pr.packages[dtsFilePath] = ns
+	return nil
 }
 
 // MustLookup returns the namespace for a package by its resolved .d.ts file path.
-// Panics if the package is not found. Use this only for internal lookups
-// where the package is guaranteed to exist.
+// Panics if the package is not found or is in-progress. Use this only for internal lookups
+// where the package is guaranteed to be fully loaded.
 func (pr *PackageRegistry) MustLookup(dtsFilePath string) *type_system.Namespace {
 	ns, ok := pr.packages[dtsFilePath]
 	if !ok {
 		panic(fmt.Sprintf("package at %q not found in registry", dtsFilePath))
 	}
+	if ns == sentinelNamespace {
+		panic(fmt.Sprintf("package at %q is still in-progress", dtsFilePath))
+	}
 	return ns
 }
 
-// Has returns true if a package with the given file path is registered.
+// Has returns true if a package with the given file path is fully loaded (not in-progress).
 func (pr *PackageRegistry) Has(dtsFilePath string) bool {
-	_, ok := pr.packages[dtsFilePath]
-	return ok
+	ns, ok := pr.packages[dtsFilePath]
+	return ok && ns != sentinelNamespace
 }
 
 // CopyFrom copies all entries from another PackageRegistry into this one.
