@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/dts_parser"
-	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tidwall/btree"
@@ -95,14 +93,20 @@ func parsePathReferenceDirectives(filePath string) ([]string, error) {
 		return nil, err
 	}
 
-	matches := pathReferenceDirectivePattern.FindAllStringSubmatch(string(content), -1)
+	return parsePathRefsFromContent(string(content)), nil
+}
+
+// parsePathRefsFromContent extracts path reference directives from file content.
+// This is used by loadClassifiedTypeScriptModule to avoid reading the file twice.
+func parsePathRefsFromContent(content string) []string {
+	matches := pathReferenceDirectivePattern.FindAllStringSubmatch(content, -1)
 	var refs []string
 	for _, match := range matches {
 		if len(match) >= 2 {
 			refs = append(refs, match[1])
 		}
 	}
-	return refs, nil
+	return refs
 }
 
 // loadLibFilesRecursive loads a lib file and all its references recursively.
@@ -361,108 +365,6 @@ func UpdateArrayMutability(namespace *type_system.Namespace) {
 	}
 }
 
-// LoadedPackageResult holds the result of loading and classifying a .d.ts file.
-type LoadedPackageResult struct {
-	// PackageModule is the AST module containing package declarations.
-	// Contains both exported and non-exported declarations; the Export() method
-	// on each declaration distinguishes them. nil if the file has no top-level exports.
-	PackageModule *ast.Module
-
-	// GlobalModule is the AST module containing global declarations.
-	// This includes declarations from `declare global { ... }` blocks,
-	// and all declarations if the file has no top-level exports.
-	GlobalModule *ast.Module
-
-	// NamedModules maps module names to their AST modules.
-	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
-	// Contains both exported and non-exported declarations; the Export() method
-	// on each declaration distinguishes them. Empty (never nil) if the file has
-	// no named module declarations.
-	NamedModules map[string]*ast.Module
-
-	// Imports contains import declarations from the .d.ts file.
-	// These need to be processed to load transitive dependencies.
-	Imports []*dts_parser.ImportDecl
-}
-
-// loadClassifiedTypeScriptModule loads a .d.ts file and classifies its contents
-// using the FileClassification system from dts_parser/classifier.go.
-func loadClassifiedTypeScriptModule(filename string) (*LoadedPackageResult, error) {
-	// Read the file
-	contents, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading DTS file: %s\n", err.Error())
-		return nil, err
-	}
-
-	source := &ast.Source{
-		Path:     filename,
-		Contents: string(contents),
-		ID:       int(nextSourceID.Add(1)),
-	}
-
-	// Parse the module
-	parser := dts_parser.NewDtsParser(source)
-	dtsModule, parseErrors := parser.ParseModule()
-
-	if len(parseErrors) > 0 {
-		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
-		for _, parseErr := range parseErrors {
-			fmt.Fprintf(os.Stderr, "- %s\n", parseErr)
-		}
-		return nil, fmt.Errorf("failed to parse DTS module %s: %d errors", filename, len(parseErrors))
-	}
-
-	// Classify the file using the FileClassification system
-	classification := dts_parser.ClassifyDTSFile(dtsModule)
-
-	result := &LoadedPackageResult{
-		NamedModules: make(map[string]*ast.Module),
-		Imports:      classification.Imports,
-	}
-
-	// Process package declarations (both exported and non-exported)
-	if len(classification.PackageDecls) > 0 {
-		pkgDtsModule := &dts_parser.Module{
-			Statements: classification.PackageDecls,
-		}
-		pkgAstModule, err := interop.ConvertModule(pkgDtsModule)
-		if err != nil {
-			return nil, fmt.Errorf("converting package declarations: %w", err)
-		}
-		pkgAstModule.Sources[source.ID] = source
-		result.PackageModule = pkgAstModule
-	}
-
-	// Process global declarations
-	if len(classification.GlobalDecls) > 0 {
-		globalDtsModule := &dts_parser.Module{
-			Statements: classification.GlobalDecls,
-		}
-		globalAstModule, err := interop.ConvertModule(globalDtsModule)
-		if err != nil {
-			return nil, fmt.Errorf("converting global declarations: %w", err)
-		}
-		globalAstModule.Sources[source.ID] = source
-		result.GlobalModule = globalAstModule
-	}
-
-	// Process named modules
-	for _, namedMod := range classification.NamedModules {
-		namedDtsModule := &dts_parser.Module{
-			Statements: namedMod.Decls,
-		}
-		namedAstModule, err := interop.ConvertModule(namedDtsModule)
-		if err != nil {
-			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
-		}
-		namedAstModule.Sources[source.ID] = source
-		result.NamedModules[namedMod.ModuleName] = namedAstModule
-	}
-
-	return result, nil
-}
-
 var cachedGlobalScope *Scope
 var cachedSymbolIDCounter int
 var cachedCustomMatcherSymbolID int
@@ -582,16 +484,16 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 
 	for _, filename := range allLibFiles {
 		libPath := filepath.Join(libDir, filename)
-		loadResult, loadErr := loadClassifiedTypeScriptModule(libPath)
+		parsedTypeDef, loadErr := parseTypeDef(libPath)
 		if loadErr != nil {
 			panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", libPath, loadErr))
 		}
 
 		// Merge GlobalModule into combined module
-		mergeModules(combinedModule, loadResult.GlobalModule)
+		mergeModules(combinedModule, parsedTypeDef.GlobalModule)
 
-		// NOTE: We don't bother merging loadResult.PackageModule or
-		// loadResult.NamedModules since we know that TypeScript lib files don't
+		// NOTE: We don't bother merging parsedTypeDef.PackageModule or
+		// parsedTypeDef.NamedModules since we know that TypeScript lib files don't
 		// have any top-level exports or named modules.
 	}
 
