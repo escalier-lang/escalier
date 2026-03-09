@@ -277,8 +277,8 @@ type InferredPackage struct {
 // inferParsedTypeDef handles common .d.ts processing:
 // 1. Loads path-referenced files
 // 2. Loads transitive import dependencies
-// 3. Processes global augmentations into GlobalScope
-// 4. Creates package namespace with imported namespaces
+// 3. Creates package namespace with imported namespaces
+// 4. Processes global augmentations into GlobalScope (with imports visible)
 // 5. Infers PackageModule into the package namespace (if present)
 //
 // Callers are responsible for:
@@ -332,18 +332,9 @@ func (c *Checker) inferParsedTypeDef(
 		}
 	}
 
-	// 3. Process global augmentations into GlobalScope
-	if parsedTypeDef.GlobalModule != nil && c.GlobalScope != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
-		errors = append(errors, globalErrors...)
-	}
-
-	// 4. Create package namespace with imported namespaces
+	// 3. Create package namespace with imported namespaces
+	// This must happen before GlobalModule inference so that imports are visible
+	// to global augmentations that may reference imported types.
 	pkgNs := type_system.NewNamespace()
 	for alias, ns := range importedNamespaces {
 		if err := pkgNs.SetNamespace(alias, ns); err != nil {
@@ -362,6 +353,23 @@ func (c *Checker) inferParsedTypeDef(
 		Scope:      pkgScope,
 		IsAsync:    false,
 		IsPatMatch: false,
+	}
+
+	// 4. Process global augmentations into GlobalScope
+	// Use a scope that has pkgScope as parent (so imports are visible for lookups)
+	// but writes declarations to GlobalScope.Namespace.
+	if parsedTypeDef.GlobalModule != nil && c.GlobalScope != nil {
+		globalAugScope := &Scope{
+			Parent:    pkgScope,                // imports visible through parent chain
+			Namespace: c.GlobalScope.Namespace, // declarations go to global scope
+		}
+		globalCtx := Context{
+			Scope:      globalAugScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
+		errors = append(errors, globalErrors...)
 	}
 
 	// 5. Infer PackageModule into the package namespace (if present)
@@ -411,8 +419,8 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		// Note: We ignore errors here since they were already reported by inferParsedTypeDef
-		_ = c.InferModule(globalCtx, parsedTypeDef.PackageModule)
+		globalErrors := c.InferModule(globalCtx, parsedTypeDef.PackageModule)
+		errors = append(errors, globalErrors...)
 	}
 
 	// Update the registry with the file's namespace (replacing the in-progress sentinel)
