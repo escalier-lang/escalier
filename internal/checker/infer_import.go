@@ -303,32 +303,39 @@ func (c *Checker) inferParsedTypeDef(
 	}
 
 	// 2. Process imports to load transitive dependencies
+	// All imports are resolved and loaded (including side-effect imports like `import "foo"`),
+	// but only namespace imports (`import * as X from "pkg"`) are bound to importedNamespaces.
 	importedNamespaces := make(map[string]*type_system.Namespace)
 	for _, dtsImport := range parsedTypeDef.Imports {
-		if dtsImport.NamespaceAs != nil {
-			depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
-			if resolveErr != nil {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Could not resolve import %s in %s: %s",
-						dtsImport.From, dtsFilePath, resolveErr.Error()),
-					span: DEFAULT_SPAN,
-				})
-				continue
-			}
+		depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
+		if resolveErr != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Could not resolve import %s in %s: %s",
+					dtsImport.From, dtsFilePath, resolveErr.Error()),
+				span: DEFAULT_SPAN,
+			})
+			continue
+		}
 
-			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
-				if depNs == nil {
-					continue // In-progress (cycle)
-				}
+		// Check if already loaded (or in-progress)
+		if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+			if depNs == nil {
+				continue // In-progress (cycle)
+			}
+			// Only bind to importedNamespaces for namespace imports
+			if dtsImport.NamespaceAs != nil {
 				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
-				continue
 			}
+			continue
+		}
 
-			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
-			errors = append(errors, depErrors...)
-			if depPkg != nil && depPkg.Namespace != nil {
-				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
-			}
+		// Load the dependency package
+		depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
+		errors = append(errors, depErrors...)
+
+		// Only bind to importedNamespaces for namespace imports
+		if dtsImport.NamespaceAs != nil && depPkg != nil && depPkg.Namespace != nil {
+			importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
 		}
 	}
 
