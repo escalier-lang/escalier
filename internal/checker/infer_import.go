@@ -465,20 +465,22 @@ func (c *Checker) processLocalNamedExport(
 
 		found := false
 
-		// Check values
-		if binding, ok := pkgNs.Values[localName]; ok {
-			// Create new binding with Exported=true and possibly renamed
-			newBinding := &type_system.Binding{
-				Source:   binding.Source,
-				Type:     binding.Type,
-				Mutable:  binding.Mutable,
-				Exported: true,
+		// Check values (skip for type-only exports)
+		if !stmt.TypeOnly {
+			if binding, ok := pkgNs.Values[localName]; ok {
+				// Create new binding with Exported=true and possibly renamed
+				newBinding := &type_system.Binding{
+					Source:   binding.Source,
+					Type:     binding.Type,
+					Mutable:  binding.Mutable,
+					Exported: true,
+				}
+				pkgNs.Values[exportedName] = newBinding
+				found = true
 			}
-			pkgNs.Values[exportedName] = newBinding
-			found = true
 		}
 
-		// Check types
+		// Check types (always allowed for both regular and type-only exports)
 		if typeAlias, ok := pkgNs.Types[localName]; ok {
 			newAlias := &type_system.TypeAlias{
 				Type:       typeAlias.Type,
@@ -489,10 +491,12 @@ func (c *Checker) processLocalNamedExport(
 			found = true
 		}
 
-		// Check nested namespaces
-		if ns, ok := pkgNs.Namespaces[localName]; ok {
-			pkgNs.Namespaces[exportedName] = ns
-			found = true
+		// Check nested namespaces (skip for type-only exports)
+		if !stmt.TypeOnly {
+			if ns, ok := pkgNs.Namespaces[localName]; ok {
+				pkgNs.Namespaces[exportedName] = ns
+				found = true
+			}
 		}
 
 		if !found && !stmt.TypeOnly {
@@ -544,19 +548,21 @@ func (c *Checker) processReExport(
 
 		found := false
 
-		// Copy value bindings
-		if binding, ok := depNs.Values[localName]; ok {
-			newBinding := &type_system.Binding{
-				Source:   binding.Source,
-				Type:     binding.Type,
-				Mutable:  binding.Mutable,
-				Exported: true,
+		// Copy value bindings (skip for type-only exports)
+		if !stmt.TypeOnly {
+			if binding, ok := depNs.Values[localName]; ok {
+				newBinding := &type_system.Binding{
+					Source:   binding.Source,
+					Type:     binding.Type,
+					Mutable:  binding.Mutable,
+					Exported: true,
+				}
+				pkgNs.Values[exportedName] = newBinding
+				found = true
 			}
-			pkgNs.Values[exportedName] = newBinding
-			found = true
 		}
 
-		// Copy type bindings
+		// Copy type bindings (always allowed)
 		if typeAlias, ok := depNs.Types[localName]; ok {
 			newAlias := &type_system.TypeAlias{
 				Type:       typeAlias.Type,
@@ -567,10 +573,12 @@ func (c *Checker) processReExport(
 			found = true
 		}
 
-		// Copy namespace bindings
-		if ns, ok := depNs.Namespaces[localName]; ok {
-			pkgNs.Namespaces[exportedName] = ns
-			found = true
+		// Copy namespace bindings (skip for type-only exports)
+		if !stmt.TypeOnly {
+			if ns, ok := depNs.Namespaces[localName]; ok {
+				pkgNs.Namespaces[exportedName] = ns
+				found = true
+			}
 		}
 
 		if !found && !stmt.TypeOnly {
@@ -628,7 +636,11 @@ func (c *Checker) processExportAll(
 		}
 	} else {
 		// export * from "module" - merge all exports
-		// Don't overwrite existing exports (first export wins)
+		// "First export wins" semantics: if a name already exists, we keep the first one.
+		// This is by design - TypeScript makes ambiguous re-exports unavailable rather than
+		// erroring at declaration time. Our approach is simpler: the first export wins,
+		// which is consistent and avoids silent incorrect behavior. A more complete
+		// implementation could track ambiguous names and error only when they're used.
 		for name, binding := range depNs.Values {
 			if _, exists := pkgNs.Values[name]; !exists {
 				newBinding := &type_system.Binding{
@@ -885,9 +897,15 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	// Step 5: Determine which module to use as the package namespace
 	var pkgNs *type_system.Namespace
 
-	if parsedTypeDef.PackageModule != nil {
-		// File has top-level exports - use the namespace from inferParsedTypeDef
-		// (which already has imported namespaces added and PackageModule inferred)
+	// Check if the file has any module-level content (declarations or export statements)
+	hasModuleContent := parsedTypeDef.PackageModule != nil ||
+		len(parsedTypeDef.NamedExports) > 0 ||
+		len(parsedTypeDef.ExportAllStmts) > 0 ||
+		parsedTypeDef.ExportAsNamespace != nil
+
+	if hasModuleContent {
+		// File has top-level exports or re-exports - use the namespace from inferParsedTypeDef
+		// (which already has imported namespaces added, PackageModule inferred, and exports processed)
 		pkgNs = processed.PkgNs
 	} else if ns, ok := namedModuleNamespaces[packageName]; ok {
 		// Named module matching the package name - use the namespace from step 5
