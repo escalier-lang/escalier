@@ -65,7 +65,8 @@ func processNamespace(
 			continue
 
 		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
-			// Skip these export forms for now (re-exports, named exports, UMD namespace)
+			// Skip these - they're processed directly in the checker during inferParsedTypeDef.
+			// See processExportStatements() in infer_import.go for implementation.
 			continue
 
 		default:

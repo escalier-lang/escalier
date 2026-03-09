@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -176,6 +177,19 @@ type ParsedTypeDef struct {
 	// These files need to be loaded before processing the main module.
 	// Paths are relative to the directory containing the .d.ts file.
 	PathRefs []string
+
+	// NamedExports contains export { ... } statements.
+	// Local exports (From == "") mark local declarations as exported.
+	// Re-exports (From != "") need module loading to copy items from another module.
+	NamedExports []*dts_parser.NamedExportStmt
+
+	// ExportAllStmts contains export * from statements.
+	// These re-export all items from another module.
+	ExportAllStmts []*dts_parser.ExportAllStmt
+
+	// ExportAsNamespace contains the export as namespace statement (if present).
+	// Only one such statement is valid per file (UMD pattern).
+	ExportAsNamespace *dts_parser.ExportAsNamespaceStmt
 }
 
 // parseTypeDef parses a .d.ts file and classifies its contents
@@ -213,9 +227,12 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 	pathRefs := parsePathRefsFromContent(string(contents))
 
 	result := &ParsedTypeDef{
-		NamedModules: make(map[string]*ast.Module),
-		Imports:      classification.Imports,
-		PathRefs:     pathRefs,
+		NamedModules:      make(map[string]*ast.Module),
+		Imports:           classification.Imports,
+		PathRefs:          pathRefs,
+		NamedExports:      classification.NamedExports,
+		ExportAllStmts:    classification.ExportAllStmts,
+		ExportAsNamespace: classification.ExportAsNamespace,
 	}
 
 	// Process package declarations (both exported and non-exported)
@@ -280,6 +297,7 @@ type InferredPackage struct {
 // 3. Creates package namespace with imported namespaces
 // 4. Processes global augmentations into GlobalScope (with imports visible)
 // 5. Infers PackageModule into the package namespace (if present)
+// 6. Processes export statements (local exports, re-exports, export as namespace)
 //
 // Callers are responsible for:
 // - Inferring NamedModules into the returned context (if needed)
@@ -385,7 +403,319 @@ func (c *Checker) inferParsedTypeDef(
 		errors = append(errors, pkgErrors...)
 	}
 
+	// 6. Process export statements (local exports, re-exports, export as namespace)
+	exportErrors := c.ProcessExportStatements(ctx, dtsFilePath, parsedTypeDef, pkgNs)
+	errors = append(errors, exportErrors...)
+
 	return &InferredPackage{PkgNs: pkgNs, PkgCtx: pkgCtx}, errors
+}
+
+// ProcessExportStatements handles export statements from a .d.ts file:
+// - Local named exports: export { foo } - marks existing declarations as exported
+// - Re-exports: export { foo } from "bar" - loads "bar" and copies specified items
+// - Export all: export * from "bar" - loads "bar" and merges all exports
+// - Export as namespace: export as namespace MyLib - UMD pattern, adds to global scope
+func (c *Checker) ProcessExportStatements(
+	ctx Context,
+	dtsFilePath string,
+	parsedTypeDef *ParsedTypeDef,
+	pkgNs *type_system.Namespace,
+) []Error {
+	var errors []Error
+
+	// Process named export statements
+	for _, namedExport := range parsedTypeDef.NamedExports {
+		if namedExport.From == "" {
+			// Local export: export { foo } or export { foo as bar }
+			localErrors := c.processLocalNamedExport(pkgNs, namedExport)
+			errors = append(errors, localErrors...)
+		} else {
+			// Re-export: export { foo } from "module"
+			reexportErrors := c.processReExport(ctx, dtsFilePath, pkgNs, namedExport)
+			errors = append(errors, reexportErrors...)
+		}
+	}
+
+	// Process export * from statements
+	for _, exportAll := range parsedTypeDef.ExportAllStmts {
+		allErrors := c.processExportAll(ctx, dtsFilePath, pkgNs, exportAll)
+		errors = append(errors, allErrors...)
+	}
+
+	// Process export as namespace (UMD pattern)
+	if parsedTypeDef.ExportAsNamespace != nil {
+		c.processExportAsNamespace(pkgNs, parsedTypeDef.ExportAsNamespace)
+	}
+
+	return errors
+}
+
+// processLocalNamedExport handles local named exports like `export { foo }` or `export { foo as bar }`.
+// It looks up the local name in the package namespace and marks it as exported under the exported name.
+func (c *Checker) processLocalNamedExport(
+	pkgNs *type_system.Namespace,
+	stmt *dts_parser.NamedExportStmt,
+) []Error {
+	var errors []Error
+
+	for _, spec := range stmt.Specifiers {
+		localName := spec.Local.Name
+		exportedName := spec.Exported.Name
+
+		found := false
+
+		// Check values
+		if binding, ok := pkgNs.Values[localName]; ok {
+			// Create new binding with Exported=true and possibly renamed
+			newBinding := &type_system.Binding{
+				Source:   binding.Source,
+				Type:     binding.Type,
+				Mutable:  binding.Mutable,
+				Exported: true,
+			}
+			pkgNs.Values[exportedName] = newBinding
+			found = true
+		}
+
+		// Check types
+		if typeAlias, ok := pkgNs.Types[localName]; ok {
+			newAlias := &type_system.TypeAlias{
+				Type:       typeAlias.Type,
+				TypeParams: typeAlias.TypeParams,
+				Exported:   true,
+			}
+			pkgNs.Types[exportedName] = newAlias
+			found = true
+		}
+
+		// Check nested namespaces
+		if ns, ok := pkgNs.Namespaces[localName]; ok {
+			pkgNs.Namespaces[exportedName] = ns
+			found = true
+		}
+
+		if !found && !stmt.TypeOnly {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Cannot export '%s': not found in module", localName),
+				span:    spec.Span(),
+			})
+		}
+	}
+
+	return errors
+}
+
+// processReExport handles re-exports like `export { foo } from "bar"` or `export { foo as baz } from "bar"`.
+// It loads the source module and copies the specified items to the current namespace.
+func (c *Checker) processReExport(
+	ctx Context,
+	sourceFilePath string,
+	pkgNs *type_system.Namespace,
+	stmt *dts_parser.NamedExportStmt,
+) []Error {
+	var errors []Error
+
+	// Resolve the module path
+	resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
+	if resolveErr != nil {
+		errors = append(errors, &GenericError{
+			message: fmt.Sprintf("Cannot resolve re-export from '%s': %s",
+				stmt.From, resolveErr.Error()),
+			span: stmt.Span(),
+		})
+		return errors
+	}
+
+	// Load the dependency (using existing cycle detection)
+	depPkg, depErrors := c.loadPackageFromPath(ctx, resolvedPath, stmt.From, stmt.Span())
+	errors = append(errors, depErrors...)
+
+	if depPkg == nil || depPkg.Namespace == nil {
+		return errors
+	}
+
+	depNs := filterExportedNamespace(depPkg.Namespace)
+
+	// Process each specifier
+	for _, spec := range stmt.Specifiers {
+		localName := spec.Local.Name
+		exportedName := spec.Exported.Name
+
+		found := false
+
+		// Copy value bindings
+		if binding, ok := depNs.Values[localName]; ok {
+			newBinding := &type_system.Binding{
+				Source:   binding.Source,
+				Type:     binding.Type,
+				Mutable:  binding.Mutable,
+				Exported: true,
+			}
+			pkgNs.Values[exportedName] = newBinding
+			found = true
+		}
+
+		// Copy type bindings
+		if typeAlias, ok := depNs.Types[localName]; ok {
+			newAlias := &type_system.TypeAlias{
+				Type:       typeAlias.Type,
+				TypeParams: typeAlias.TypeParams,
+				Exported:   true,
+			}
+			pkgNs.Types[exportedName] = newAlias
+			found = true
+		}
+
+		// Copy namespace bindings
+		if ns, ok := depNs.Namespaces[localName]; ok {
+			pkgNs.Namespaces[exportedName] = ns
+			found = true
+		}
+
+		if !found && !stmt.TypeOnly {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Module '%s' has no export named '%s'",
+					stmt.From, localName),
+				span: spec.Span(),
+			})
+		}
+	}
+
+	return errors
+}
+
+// processExportAll handles `export * from "bar"` or `export * as ns from "bar"`.
+// For `export *`, it merges all exports from the source module.
+// For `export * as ns`, it creates a namespace binding.
+func (c *Checker) processExportAll(
+	ctx Context,
+	sourceFilePath string,
+	pkgNs *type_system.Namespace,
+	stmt *dts_parser.ExportAllStmt,
+) []Error {
+	var errors []Error
+
+	// Resolve the module path
+	resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
+	if resolveErr != nil {
+		errors = append(errors, &GenericError{
+			message: fmt.Sprintf("Cannot resolve export * from '%s': %s",
+				stmt.From, resolveErr.Error()),
+			span: stmt.Span(),
+		})
+		return errors
+	}
+
+	// Load the dependency
+	depPkg, depErrors := c.loadPackageFromPath(ctx, resolvedPath, stmt.From, stmt.Span())
+	errors = append(errors, depErrors...)
+
+	if depPkg == nil || depPkg.Namespace == nil {
+		return errors
+	}
+
+	depNs := filterExportedNamespace(depPkg.Namespace)
+
+	if stmt.AsName != nil {
+		// export * as ns from "module" - create namespace binding
+		if err := pkgNs.SetNamespace(stmt.AsName.Name, depNs); err != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Cannot create namespace '%s': %s",
+					stmt.AsName.Name, err.Error()),
+				span: stmt.Span(),
+			})
+		}
+	} else {
+		// export * from "module" - merge all exports
+		// Don't overwrite existing exports (first export wins)
+		for name, binding := range depNs.Values {
+			if _, exists := pkgNs.Values[name]; !exists {
+				newBinding := &type_system.Binding{
+					Source:   binding.Source,
+					Type:     binding.Type,
+					Mutable:  binding.Mutable,
+					Exported: true,
+				}
+				pkgNs.Values[name] = newBinding
+			}
+		}
+
+		for name, typeAlias := range depNs.Types {
+			if _, exists := pkgNs.Types[name]; !exists {
+				newAlias := &type_system.TypeAlias{
+					Type:       typeAlias.Type,
+					TypeParams: typeAlias.TypeParams,
+					Exported:   true,
+				}
+				pkgNs.Types[name] = newAlias
+			}
+		}
+
+		for name, ns := range depNs.Namespaces {
+			if _, exists := pkgNs.Namespaces[name]; !exists {
+				pkgNs.Namespaces[name] = ns
+			}
+		}
+	}
+
+	return errors
+}
+
+// processExportAsNamespace handles `export as namespace MyLib` (UMD pattern).
+// This makes the package available as a global namespace.
+func (c *Checker) processExportAsNamespace(
+	pkgNs *type_system.Namespace,
+	stmt *dts_parser.ExportAsNamespaceStmt,
+) {
+	// UMD pattern: make the package available as a global namespace
+	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
+		c.GlobalScope.Namespace.Namespaces[stmt.Name.Name] = pkgNs
+	}
+}
+
+// resolveExportModulePath resolves a module path from an export statement.
+// Handles both relative paths (./foo, ../bar) and package names (lodash).
+func (c *Checker) resolveExportModulePath(sourceFilePath string, modulePath string) (string, error) {
+	if isRelativeModulePath(modulePath) {
+		// Relative path: resolve from source file directory
+		return resolveRelativeDtsPath(sourceFilePath, modulePath), nil
+	}
+
+	// Package import: use existing resolution
+	importDecl := &dts_parser.ImportDecl{From: modulePath}
+	return resolveDtsImport(sourceFilePath, importDecl)
+}
+
+// isRelativeModulePath checks if a module path is relative (starts with ./ or ../)
+func isRelativeModulePath(path string) bool {
+	return strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
+}
+
+// resolveRelativeDtsPath resolves a relative .d.ts path from a source file.
+func resolveRelativeDtsPath(sourceFilePath string, relativePath string) string {
+	sourceDir := filepath.Dir(sourceFilePath)
+
+	// Remove .js extension if present (TypeScript allows importing .js)
+	relativePath = strings.TrimSuffix(relativePath, ".js")
+
+	// Try with .d.ts extension first
+	if !strings.HasSuffix(relativePath, ".d.ts") {
+		dtsPath := filepath.Join(sourceDir, relativePath+".d.ts")
+		if _, err := os.Stat(dtsPath); err == nil {
+			return dtsPath
+		}
+
+		// Try as directory with index.d.ts
+		indexPath := filepath.Join(sourceDir, relativePath, "index.d.ts")
+		if _, err := os.Stat(indexPath); err == nil {
+			return indexPath
+		}
+
+		// Fall back to adding .d.ts
+		return dtsPath
+	}
+
+	return filepath.Join(sourceDir, relativePath)
 }
 
 // loadPathReferencedFile loads a file referenced via /// <reference path="..." />
