@@ -422,7 +422,10 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	// (inferParsedTypeDef only processes PackageModule into pkgNs, not GlobalScope)
 	if parsedTypeDef.PackageModule != nil && c.GlobalScope != nil {
 		globalCtx := Context{
-			Scope:      c.GlobalScope,
+			Scope: &Scope{
+				Parent:    processed.PkgCtx.Scope,
+				Namespace: c.GlobalScope.Namespace,
+			},
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
