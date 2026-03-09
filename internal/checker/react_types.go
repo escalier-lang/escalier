@@ -3,7 +3,6 @@ package checker
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/resolver"
@@ -56,7 +55,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	// 4. Load and classify the main entry point using existing infrastructure
-	loadResult, loadErr := loadClassifiedTypeScriptModule(entryPoint)
+	parsedTypeDef, loadErr := parseTypeDef(entryPoint)
 	if loadErr != nil {
 		return []Error{&GenericError{
 			message: "Could not load @types/react: " + loadErr.Error(),
@@ -64,114 +63,13 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}}
 	}
 
-	// 5. Process path references (/// <reference path="..." />)
-	// These files contain global interface definitions (e.g., global.d.ts)
-	pathRefs, pathErr := parsePathReferenceDirectives(entryPoint)
-	if pathErr == nil && len(pathRefs) > 0 {
-		dtsDir := filepath.Dir(entryPoint)
-		for _, ref := range pathRefs {
-			refPath := filepath.Join(dtsDir, ref)
-			// Check registry status:
-			// - Has() returns true only for fully loaded packages
-			// - IsInProgress() returns true for packages currently being loaded
-			// Only load if not found AND not in-progress
-			if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
-				// Mark as in-progress to prevent duplicate inference
-				c.PackageRegistry.MarkInProgress(refPath)
+	// 5. Process common parts: path refs, imports, global module, package module, package scope
+	processed, processErrors := c.inferParsedTypeDef(ctx, entryPoint, parsedTypeDef)
+	errors = append(errors, processErrors...)
 
-				refErrors := c.loadPathReferencedFile(refPath)
-				errors = append(errors, refErrors...)
-			}
-		}
-	}
+	pkgNs := processed.PkgNs
 
-	// 5.5. Process imports from the .d.ts file to load transitive dependencies
-	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
-	importedNamespaces := make(map[string]*type_system.Namespace)
-	for _, dtsImport := range loadResult.Imports {
-		// Only handle namespace imports for now (import * as Alias from "pkg")
-		if dtsImport.NamespaceAs != nil {
-			depTypesPath, resolveErr := resolveDtsImport(entryPoint, dtsImport)
-			if resolveErr != nil {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Could not resolve import %s in @types/react: %s",
-						dtsImport.From, resolveErr.Error()),
-					span: DEFAULT_SPAN,
-				})
-				continue
-			}
-
-			// Check if already loaded (or in-progress)
-			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
-				if depNs == nil {
-					// Dependency is in-progress (cycle) - skip it
-					continue
-				}
-				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
-				continue
-			}
-
-			// Recursively load the dependency package using the resolved path directly
-			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
-			errors = append(errors, depErrors...)
-			if depPkg != nil && depPkg.Namespace != nil {
-				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
-			}
-		}
-		// TODO: Handle named imports (import { A, B } from "pkg") if needed
-	}
-
-	// 6. Process global augmentations (JSX namespace lives here)
-	if loadResult.GlobalModule != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		errors = append(errors, globalErrors...)
-	}
-
-	// 7. Process internal declarations first (file-scoped types like Booleanish, NativeAnimationEvent, etc.)
-	// These need to be in scope before package declarations are processed.
-	var pkgNs *type_system.Namespace
-	pkgNs = type_system.NewNamespace()
-
-	// Add imported namespaces to the package namespace before inferring
-	// This makes types like CSS.Properties available when resolving type references
-	for alias, ns := range importedNamespaces {
-		if err := pkgNs.SetNamespace(alias, ns); err != nil {
-			errors = append(errors, &GenericError{
-				message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
-				span:    DEFAULT_SPAN,
-			})
-		}
-	}
-
-	pkgScope := &Scope{
-		Parent:    c.GlobalScope,
-		Namespace: pkgNs,
-	}
-	pkgCtx := Context{
-		Scope:      pkgScope,
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-
-	// 8. Process package module (React namespace with FC, Component, etc.)
-	if loadResult.PackageModule != nil {
-		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
-		errors = append(errors, pkgErrors...)
-	}
-
-	// 9. Process named modules (e.g., declare module "react" { ... })
-	// Check if there's a "react" named module that should be used as the package namespace
-	if reactModule, ok := loadResult.NamedModules["react"]; ok {
-		namedErrors := c.InferModule(pkgCtx, reactModule)
-		errors = append(errors, namedErrors...)
-	}
-
-	// 10. Copy JSX namespace from React to the current scope
+	// 6. Copy JSX namespace from React to the current scope
 	// In @types/react, JSX is nested inside React (React.JSX), but the JSX type checker
 	// expects it at the top level as "JSX". Copy it to the current scope's namespace.
 	if jsxNs, ok := pkgNs.GetNamespace("JSX"); ok {
@@ -188,7 +86,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		})
 	}
 
-	// 11. Always register in PackageRegistry for caching (even if partially populated)
+	// 7. Always register in PackageRegistry for caching (even if partially populated)
 	// This prevents re-parsing on subsequent calls
 	if regErr := c.PackageRegistry.Register(entryPoint, pkgNs); regErr != nil {
 		errors = append(errors, &GenericError{
@@ -197,7 +95,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		})
 	}
 
-	// 12. Inject types into current scope
+	// 8. Inject types into current scope
 	if err := c.injectReactTypes(ctx, pkgNs); err != nil {
 		errors = append(errors, &GenericError{
 			message: "Failed to inject React types: " + err.Error(),

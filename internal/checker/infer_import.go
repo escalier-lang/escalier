@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -148,10 +149,228 @@ func resolveDtsImport(sourceFilePath string, importDecl *dts_parser.ImportDecl) 
 	return "", fmt.Errorf("could not find types for import %s", importDecl.From)
 }
 
+// ParsedTypeDef holds the result of loading and classifying a .d.ts file.
+type ParsedTypeDef struct {
+	// PackageModule is the AST module containing package declarations.
+	// Contains both exported and non-exported declarations; the Export() method
+	// on each declaration distinguishes them. nil if the file has no top-level exports.
+	PackageModule *ast.Module
+
+	// GlobalModule is the AST module containing global declarations.
+	// This includes declarations from `declare global { ... }` blocks,
+	// and all declarations if the file has no top-level exports.
+	GlobalModule *ast.Module
+
+	// NamedModules maps module names to their AST modules.
+	// e.g., `declare module "lodash/fp" { ... }` creates an entry for "lodash/fp".
+	// Contains both exported and non-exported declarations; the Export() method
+	// on each declaration distinguishes them. Empty (never nil) if the file has
+	// no named module declarations.
+	NamedModules map[string]*ast.Module
+
+	// Imports contains import declarations from the .d.ts file.
+	// These need to be processed to load transitive dependencies.
+	Imports []*dts_parser.ImportDecl
+
+	// PathRefs contains paths from /// <reference path="..." /> directives.
+	// These files need to be loaded before processing the main module.
+	// Paths are relative to the directory containing the .d.ts file.
+	PathRefs []string
+}
+
+// parseTypeDef parses a .d.ts file and classifies its contents
+// using the FileClassification system from dts_parser/classifier.go.
+func parseTypeDef(filename string) (*ParsedTypeDef, error) {
+	// Read the file
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading DTS file: %s\n", err.Error())
+		return nil, err
+	}
+
+	source := &ast.Source{
+		Path:     filename,
+		Contents: string(contents),
+		ID:       int(nextSourceID.Add(1)),
+	}
+
+	// Parse the module
+	parser := dts_parser.NewDtsParser(source)
+	dtsModule, parseErrors := parser.ParseModule()
+
+	if len(parseErrors) > 0 {
+		fmt.Fprintf(os.Stderr, "Errors parsing DTS module:\n")
+		for _, parseErr := range parseErrors {
+			fmt.Fprintf(os.Stderr, "- %s\n", parseErr)
+		}
+		return nil, fmt.Errorf("failed to parse DTS module %s: %d errors", filename, len(parseErrors))
+	}
+
+	// Classify the file using the FileClassification system
+	classification := dts_parser.ClassifyDTSFile(dtsModule)
+
+	// Parse path reference directives from the file content
+	pathRefs := parsePathRefsFromContent(string(contents))
+
+	result := &ParsedTypeDef{
+		NamedModules: make(map[string]*ast.Module),
+		Imports:      classification.Imports,
+		PathRefs:     pathRefs,
+	}
+
+	// Process package declarations (both exported and non-exported)
+	if len(classification.PackageDecls) > 0 {
+		pkgDtsModule := &dts_parser.Module{
+			Statements: classification.PackageDecls,
+		}
+		pkgAstModule, err := interop.ConvertModule(pkgDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting package declarations: %w", err)
+		}
+		pkgAstModule.Sources[source.ID] = source
+		result.PackageModule = pkgAstModule
+	}
+
+	// Process global declarations
+	if len(classification.GlobalDecls) > 0 {
+		globalDtsModule := &dts_parser.Module{
+			Statements: classification.GlobalDecls,
+		}
+		globalAstModule, err := interop.ConvertModule(globalDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting global declarations: %w", err)
+		}
+		globalAstModule.Sources[source.ID] = source
+		result.GlobalModule = globalAstModule
+	}
+
+	// Process named modules
+	for _, namedMod := range classification.NamedModules {
+		namedDtsModule := &dts_parser.Module{
+			Statements: namedMod.Decls,
+		}
+		namedAstModule, err := interop.ConvertModule(namedDtsModule)
+		if err != nil {
+			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
+		}
+		namedAstModule.Sources[source.ID] = source
+		result.NamedModules[namedMod.ModuleName] = namedAstModule
+	}
+
+	return result, nil
+}
+
 // LoadedPackage represents a loaded npm package with its resolved file path.
 type LoadedPackage struct {
 	Namespace *type_system.Namespace
 	FilePath  string
+}
+
+// InferredPackage contains the results of processing a LoadedPackageResult.
+type InferredPackage struct {
+	// PkgNs is the package namespace with imported namespaces already added
+	PkgNs *type_system.Namespace
+	// PkgCtx is the context for inferring into PkgNs
+	PkgCtx Context
+}
+
+// inferParsedTypeDef handles common .d.ts processing:
+// 1. Loads path-referenced files
+// 2. Loads transitive import dependencies
+// 3. Processes global augmentations into GlobalScope
+// 4. Creates package namespace with imported namespaces
+// 5. Infers PackageModule into the package namespace (if present)
+//
+// Callers are responsible for:
+// - Inferring NamedModules into the returned context (if needed)
+// - Registering the namespace in PackageRegistry
+// - Any package-specific post-processing
+func (c *Checker) inferParsedTypeDef(
+	ctx Context,
+	dtsFilePath string,
+	parsedTypeDef *ParsedTypeDef,
+) (*InferredPackage, []Error) {
+	var errors []Error
+
+	// 1. Process path references (/// <reference path="..." />)
+	for _, ref := range parsedTypeDef.PathRefs {
+		refPath := filepath.Join(filepath.Dir(dtsFilePath), ref)
+		if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
+			c.PackageRegistry.MarkInProgress(refPath)
+			refErrors := c.loadPathReferencedFile(refPath)
+			errors = append(errors, refErrors...)
+		}
+	}
+
+	// 2. Process imports to load transitive dependencies
+	importedNamespaces := make(map[string]*type_system.Namespace)
+	for _, dtsImport := range parsedTypeDef.Imports {
+		if dtsImport.NamespaceAs != nil {
+			depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
+			if resolveErr != nil {
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Could not resolve import %s in %s: %s",
+						dtsImport.From, dtsFilePath, resolveErr.Error()),
+					span: DEFAULT_SPAN,
+				})
+				continue
+			}
+
+			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+				if depNs == nil {
+					continue // In-progress (cycle)
+				}
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
+				continue
+			}
+
+			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
+			errors = append(errors, depErrors...)
+			if depPkg != nil && depPkg.Namespace != nil {
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
+			}
+		}
+	}
+
+	// 3. Process global augmentations into GlobalScope
+	if parsedTypeDef.GlobalModule != nil && c.GlobalScope != nil {
+		globalCtx := Context{
+			Scope:      c.GlobalScope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
+		errors = append(errors, globalErrors...)
+	}
+
+	// 4. Create package namespace with imported namespaces
+	pkgNs := type_system.NewNamespace()
+	for alias, ns := range importedNamespaces {
+		if err := pkgNs.SetNamespace(alias, ns); err != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
+				span:    DEFAULT_SPAN,
+			})
+		}
+	}
+
+	pkgScope := &Scope{
+		Parent:    c.GlobalScope,
+		Namespace: pkgNs,
+	}
+	pkgCtx := Context{
+		Scope:      pkgScope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	// 5. Infer PackageModule into the package namespace (if present)
+	if parsedTypeDef.PackageModule != nil {
+		pkgErrors := c.InferModule(pkgCtx, parsedTypeDef.PackageModule)
+		errors = append(errors, pkgErrors...)
+	}
+
+	return &InferredPackage{PkgNs: pkgNs, PkgCtx: pkgCtx}, errors
 }
 
 // loadPathReferencedFile loads a file referenced via /// <reference path="..." />
@@ -161,7 +380,7 @@ type LoadedPackage struct {
 func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	var errors []Error
 
-	loadResult, loadErr := loadClassifiedTypeScriptModule(filePath)
+	parsedTypeDef, loadErr := parseTypeDef(filePath)
 	if loadErr != nil {
 		// Remove the in-progress entry so later loads can retry and report the real failure.
 		delete(c.PackageRegistry.packages, filePath)
@@ -203,9 +422,9 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	}
 
 	// Process global declarations into both the file namespace and GlobalScope
-	if loadResult.GlobalModule != nil {
+	if parsedTypeDef.GlobalModule != nil {
 		// First, process into the file namespace for registry lookup
-		errors = append(errors, c.InferModule(fileCtx, loadResult.GlobalModule)...)
+		errors = append(errors, c.InferModule(fileCtx, parsedTypeDef.GlobalModule)...)
 
 		// Also process into GlobalScope for global access
 		globalCtx := Context{
@@ -214,13 +433,13 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			IsPatMatch: false,
 		}
 		// Note: We ignore errors here since we already reported them from the fileCtx processing
-		_ = c.InferModule(globalCtx, loadResult.GlobalModule)
+		_ = c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
 	}
 
 	// Process package declarations as globals (for files like global.d.ts)
-	if loadResult.PackageModule != nil {
+	if parsedTypeDef.PackageModule != nil {
 		// First, process into the file namespace for registry lookup
-		errors = append(errors, c.InferModule(fileCtx, loadResult.PackageModule)...)
+		errors = append(errors, c.InferModule(fileCtx, parsedTypeDef.PackageModule)...)
 
 		// Also process into GlobalScope for global access
 		globalCtx := Context{
@@ -229,7 +448,7 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			IsPatMatch: false,
 		}
 		// Note: We ignore errors here since we already reported them from the fileCtx processing
-		_ = c.InferModule(globalCtx, loadResult.PackageModule)
+		_ = c.InferModule(globalCtx, parsedTypeDef.PackageModule)
 	}
 
 	// Update the registry with the file's namespace (replacing the in-progress sentinel)
@@ -285,7 +504,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	c.PackageRegistry.MarkInProgress(dtsFilePath)
 
 	// Step 3: Load and classify the .d.ts file
-	loadResult, loadErr := loadClassifiedTypeScriptModule(dtsFilePath)
+	parsedTypeDef, loadErr := parseTypeDef(dtsFilePath)
 	if loadErr != nil {
 		// Clean up sentinel so the package can be retried
 		delete(c.PackageRegistry.packages, dtsFilePath) // Need to expose a Remove method
@@ -295,81 +514,14 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		}}
 	}
 
-	// Step 3.5: Process path references (/// <reference path="..." />)
-	// Path references are supposed to appear before import statements, so we
-	// process them before imports.
-	// These files typically contain global interface definitions (e.g., global.d.ts)
-	pathRefs, pathErr := parsePathReferenceDirectives(dtsFilePath)
-	if pathErr == nil && len(pathRefs) > 0 {
-		dtsDir := filepath.Dir(dtsFilePath)
-		for _, ref := range pathRefs {
-			refPath := filepath.Join(dtsDir, ref)
-			// Check registry status:
-			// - Has() returns true only for fully loaded packages
-			// - IsInProgress() returns true for packages currently being loaded
-			// Only load if not found AND not in-progress
-			if !c.PackageRegistry.Has(refPath) && !c.PackageRegistry.IsInProgress(refPath) {
-				// Mark as in-progress to prevent duplicate inference from recursive or shared reference paths
-				c.PackageRegistry.MarkInProgress(refPath)
+	// Process common parts: path refs, imports, global module, package scope creation
+	processed, processErrors := c.inferParsedTypeDef(ctx, dtsFilePath, parsedTypeDef)
+	errors = append(errors, processErrors...)
 
-				refErrors := c.loadPathReferencedFile(refPath)
-				errors = append(errors, refErrors...)
-			}
-		}
-	}
-
-	// Step 3.6: Process imports from the .d.ts file to load transitive dependencies
-	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
-	importedNamespaces := make(map[string]*type_system.Namespace)
-	for _, dtsImport := range loadResult.Imports {
-		// Only handle namespace imports for now (import * as Alias from "pkg")
-		if dtsImport.NamespaceAs != nil {
-			depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
-			if resolveErr != nil {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Could not resolve import %s in %s: %s",
-						dtsImport.From, dtsFilePath, resolveErr.Error()),
-					span: DEFAULT_SPAN,
-				})
-				continue
-			}
-
-			// Check if already loaded (or in-progress)
-			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
-				if depNs == nil {
-					// Dependency is in-progress (cycle) - skip it
-					continue
-				}
-				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
-				continue
-			}
-
-			// Recursively load the dependency package using the resolved path directly
-			// This avoids double resolution and ensures we use the correct path
-			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
-			errors = append(errors, depErrors...)
-			if depPkg != nil && depPkg.Namespace != nil {
-				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
-			}
-		}
-		// TODO: Handle named imports (import { A, B } from "pkg") if needed
-	}
-
-	// Step 4: Process global augmentations into GlobalScope
-	if loadResult.GlobalModule != nil && c.GlobalScope != nil {
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		globalErrors := c.InferModule(globalCtx, loadResult.GlobalModule)
-		errors = append(errors, globalErrors...)
-	}
-
-	// Step 5: Process named modules and register them
+	// Step 4: Process named modules and register them
 	// Track namespaces by module name so we can reuse them in step 6
 	namedModuleNamespaces := make(map[string]*type_system.Namespace)
-	for moduleName, namedModule := range loadResult.NamedModules {
+	for moduleName, namedModule := range parsedTypeDef.NamedModules {
 		moduleNs := type_system.NewNamespace()
 		moduleScope := &Scope{
 			Parent:    c.GlobalScope,
@@ -400,40 +552,17 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		}
 	}
 
-	// Step 6: Determine which module to use as the package namespace
+	// Step 5: Determine which module to use as the package namespace
 	var pkgNs *type_system.Namespace
 
-	if loadResult.PackageModule != nil {
-		// File has top-level exports - use PackageModule
-		pkgNs = type_system.NewNamespace()
-
-		// Add imported namespaces to the package namespace before inferring
-		// This makes types like CSS.Properties available when resolving type references
-		for alias, ns := range importedNamespaces {
-			if err := pkgNs.SetNamespace(alias, ns); err != nil {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
-					span:    DEFAULT_SPAN,
-				})
-			}
-		}
-
-		pkgScope := &Scope{
-			Parent:    c.GlobalScope,
-			Namespace: pkgNs,
-		}
-		pkgCtx := Context{
-			Scope:      pkgScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-
-		pkgErrors := c.InferModule(pkgCtx, loadResult.PackageModule)
-		errors = append(errors, pkgErrors...)
+	if parsedTypeDef.PackageModule != nil {
+		// File has top-level exports - use the namespace from inferParsedTypeDef
+		// (which already has imported namespaces added and PackageModule inferred)
+		pkgNs = processed.PkgNs
 	} else if ns, ok := namedModuleNamespaces[packageName]; ok {
 		// Named module matching the package name - use the namespace from step 5
 		pkgNs = ns
-	} else if loadResult.GlobalModule != nil {
+	} else if parsedTypeDef.GlobalModule != nil {
 		// No top-level exports and no matching named module - use the global module
 		// Global augmentations are already applied to c.GlobalScope in Step 4.
 		// Use an empty namespace so we don't expose all globals as package exports.
