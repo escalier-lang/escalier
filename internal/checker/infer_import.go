@@ -390,69 +390,33 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 		}}
 	}
 
-	// Create a namespace for this file's types
-	// Types are processed into both this namespace (for registry lookup) and GlobalScope (for global access)
-	fileNs := type_system.NewNamespace()
-	fileScope := &Scope{
-		Parent:    c.GlobalScope,
-		Namespace: fileNs,
-	}
-	fileCtx := Context{
-		Scope:      fileScope,
+	// Use inferParsedTypeDef to handle common processing:
+	// - Path references (nested /// <reference path="..." />)
+	// - Transitive imports
+	// - GlobalModule into GlobalScope
+	// - PackageModule into pkgNs
+	ctx := Context{
+		Scope:      c.GlobalScope,
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
+	processed, processErrors := c.inferParsedTypeDef(ctx, filePath, parsedTypeDef)
+	errors = append(errors, processErrors...)
 
-	// Process nested path references (/// <reference path="..." />)
-	// These files may themselves reference other .d.ts files
-	pathRefs, pathErr := parsePathReferenceDirectives(filePath)
-	if pathErr == nil && len(pathRefs) > 0 {
-		dtsDir := filepath.Dir(filePath)
-		for _, ref := range pathRefs {
-			refPath := filepath.Join(dtsDir, ref)
-			// Check if already processed (avoid duplicates)
-			if _, found := c.PackageRegistry.Lookup(refPath); !found {
-				// Mark as in-progress to prevent duplicate inference from recursive or shared reference paths
-				c.PackageRegistry.MarkInProgress(refPath)
-
-				refErrors := c.loadPathReferencedFile(refPath)
-				errors = append(errors, refErrors...)
-			}
-		}
-	}
-
-	// Process global declarations into both the file namespace and GlobalScope
-	if parsedTypeDef.GlobalModule != nil {
-		// First, process into the file namespace for registry lookup
-		errors = append(errors, c.InferModule(fileCtx, parsedTypeDef.GlobalModule)...)
-
-		// Also process into GlobalScope for global access
+	// Path-referenced files define global types, so also process PackageModule into GlobalScope.
+	// (inferParsedTypeDef only processes PackageModule into pkgNs, not GlobalScope)
+	if parsedTypeDef.PackageModule != nil && c.GlobalScope != nil {
 		globalCtx := Context{
 			Scope:      c.GlobalScope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		// Note: We ignore errors here since we already reported them from the fileCtx processing
-		_ = c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
-	}
-
-	// Process package declarations as globals (for files like global.d.ts)
-	if parsedTypeDef.PackageModule != nil {
-		// First, process into the file namespace for registry lookup
-		errors = append(errors, c.InferModule(fileCtx, parsedTypeDef.PackageModule)...)
-
-		// Also process into GlobalScope for global access
-		globalCtx := Context{
-			Scope:      c.GlobalScope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		// Note: We ignore errors here since we already reported them from the fileCtx processing
+		// Note: We ignore errors here since they were already reported by inferParsedTypeDef
 		_ = c.InferModule(globalCtx, parsedTypeDef.PackageModule)
 	}
 
 	// Update the registry with the file's namespace (replacing the in-progress sentinel)
-	if updateErr := c.PackageRegistry.Update(filePath, fileNs); updateErr != nil {
+	if updateErr := c.PackageRegistry.Update(filePath, processed.PkgNs); updateErr != nil {
 		errors = append(errors, &GenericError{
 			message: fmt.Sprintf("Failed to update package registry for %s: %s", filePath, updateErr.Error()),
 			span:    DEFAULT_SPAN,
