@@ -85,6 +85,42 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}
 	}
 
+	// 5.5. Process imports from the .d.ts file to load transitive dependencies
+	// This creates a map of namespace alias -> namespace for imports like "import * as CSS from 'csstype'"
+	importedNamespaces := make(map[string]*type_system.Namespace)
+	for _, dtsImport := range loadResult.Imports {
+		// Only handle namespace imports for now (import * as Alias from "pkg")
+		if dtsImport.NamespaceAs != nil {
+			depTypesPath, resolveErr := resolveDtsImport(entryPoint, dtsImport)
+			if resolveErr != nil {
+				errors = append(errors, &GenericError{
+					message: fmt.Sprintf("Could not resolve import %s in @types/react: %s",
+						dtsImport.From, resolveErr.Error()),
+					span: DEFAULT_SPAN,
+				})
+				continue
+			}
+
+			// Check if already loaded (or in-progress)
+			if depNs, found := c.PackageRegistry.Lookup(depTypesPath); found {
+				if depNs == nil {
+					// Dependency is in-progress (cycle) - skip it
+					continue
+				}
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depNs)
+				continue
+			}
+
+			// Recursively load the dependency package using the resolved path directly
+			depPkg, depErrors := c.loadPackageFromPath(ctx, depTypesPath, dtsImport.From, DEFAULT_SPAN)
+			errors = append(errors, depErrors...)
+			if depPkg != nil && depPkg.Namespace != nil {
+				importedNamespaces[dtsImport.NamespaceAs.Name] = filterExportedNamespace(depPkg.Namespace)
+			}
+		}
+		// TODO: Handle named imports (import { A, B } from "pkg") if needed
+	}
+
 	// 6. Process global augmentations (JSX namespace lives here)
 	if loadResult.GlobalModule != nil {
 		globalCtx := Context{
@@ -100,6 +136,18 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// These need to be in scope before package declarations are processed.
 	var pkgNs *type_system.Namespace
 	pkgNs = type_system.NewNamespace()
+
+	// Add imported namespaces to the package namespace before inferring
+	// This makes types like CSS.Properties available when resolving type references
+	for alias, ns := range importedNamespaces {
+		if err := pkgNs.SetNamespace(alias, ns); err != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
+				span:    DEFAULT_SPAN,
+			})
+		}
+	}
+
 	pkgScope := &Scope{
 		Parent:    c.GlobalScope,
 		Namespace: pkgNs,
