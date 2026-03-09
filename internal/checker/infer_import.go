@@ -444,7 +444,8 @@ func (c *Checker) ProcessExportStatements(
 
 	// Process export as namespace (UMD pattern)
 	if parsedTypeDef.ExportAsNamespace != nil {
-		c.processExportAsNamespace(pkgNs, parsedTypeDef.ExportAsNamespace)
+		umdErrors := c.processExportAsNamespace(pkgNs, parsedTypeDef.ExportAsNamespace)
+		errors = append(errors, umdErrors...)
 	}
 
 	return errors
@@ -666,11 +667,21 @@ func (c *Checker) processExportAll(
 func (c *Checker) processExportAsNamespace(
 	pkgNs *type_system.Namespace,
 	stmt *dts_parser.ExportAsNamespaceStmt,
-) {
+) []Error {
+	var errors []Error
+
 	// UMD pattern: make the package available as a global namespace
 	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
-		c.GlobalScope.Namespace.Namespaces[stmt.Name.Name] = pkgNs
+		if err := c.GlobalScope.Namespace.SetNamespace(stmt.Name.Name, pkgNs); err != nil {
+			errors = append(errors, &GenericError{
+				message: fmt.Sprintf("Cannot create global namespace '%s': %s",
+					stmt.Name.Name, err.Error()),
+				span: stmt.Span(),
+			})
+		}
 	}
+
+	return errors
 }
 
 // resolveExportModulePath resolves a module path from an export statement.
@@ -692,6 +703,10 @@ func isRelativeModulePath(path string) bool {
 }
 
 // resolveRelativeDtsPath resolves a relative .d.ts path from a source file.
+// It tries multiple resolution strategies (file.d.ts, dir/index.d.ts) and returns
+// the first path that exists. If no path exists, it returns the primary candidate
+// path (file.d.ts) - the caller should handle the "file not found" case since
+// the path might be pre-registered in the PackageRegistry.
 func resolveRelativeDtsPath(sourceFilePath string, relativePath string) string {
 	sourceDir := filepath.Dir(sourceFilePath)
 
@@ -711,7 +726,8 @@ func resolveRelativeDtsPath(sourceFilePath string, relativePath string) string {
 			return indexPath
 		}
 
-		// Fall back to adding .d.ts
+		// Return primary candidate path - caller will handle "not found"
+		// (path might exist in PackageRegistry even if not on disk)
 		return dtsPath
 	}
 
