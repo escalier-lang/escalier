@@ -670,3 +670,161 @@ func TestProcessExportStatements_NonExportedFiltered(t *testing.T) {
 	require.Len(t, errors, 1, "Should have error for non-exported item")
 	assert.Contains(t, errors[0].Message(), "privateFunc")
 }
+
+// TestProcessLocalNamedExport_NamespaceExportSetsFlag verifies that exporting a namespace
+// via local named export sets the Exported flag on the namespace.
+func TestProcessLocalNamedExport_NamespaceExportSetsFlag(t *testing.T) {
+	c := NewChecker()
+
+	// Create package namespace with a nested namespace that is NOT exported
+	pkgNs := type_system.NewNamespace()
+	innerNs := type_system.NewNamespace()
+	innerNs.Types["Helper"] = &type_system.TypeAlias{
+		Type:     type_system.NewStrPrimType(nil),
+		Exported: true,
+	}
+	innerNs.Exported = false // Initially not exported
+	pkgNs.Namespaces["internal"] = innerNs
+
+	parsedTypeDef := &ParsedTypeDef{
+		NamedExports: []*dts_parser.NamedExportStmt{
+			{
+				Specifiers: []*dts_parser.ExportSpecifier{
+					{
+						Local:    dts_parser.NewIdent("internal", DEFAULT_SPAN),
+						Exported: dts_parser.NewIdent("utils", DEFAULT_SPAN),
+					},
+				},
+				From: "",
+			},
+		},
+	}
+
+	ctx := Context{
+		Scope:   Prelude(c),
+		IsAsync: false,
+	}
+
+	errors := c.ProcessExportStatements(ctx, "/test/index.d.ts", parsedTypeDef, pkgNs)
+
+	assert.Empty(t, errors, "Should process namespace exports without errors")
+
+	// Check that the exported namespace has Exported = true
+	ns, found := pkgNs.Namespaces["utils"]
+	assert.True(t, found, "Should have 'utils' namespace export")
+	assert.True(t, ns.Exported, "Exported namespace should have Exported flag set to true")
+}
+
+// TestProcessExportAll_NamespaceExportSetsFlag verifies that namespaces merged via
+// export * get their Exported flag set.
+func TestProcessExportAll_NamespaceExportSetsFlag(t *testing.T) {
+	c := NewChecker()
+
+	// Create a source namespace with a nested namespace
+	srcNs := type_system.NewNamespace()
+	nestedNs := type_system.NewNamespace()
+	nestedNs.Types["Type1"] = &type_system.TypeAlias{
+		Type:     type_system.NewStrPrimType(nil),
+		Exported: true,
+	}
+	nestedNs.Exported = true // Source namespace is exported
+	srcNs.Namespaces["MyNamespace"] = nestedNs
+	err := c.PackageRegistry.Register("/test/source.d.ts", srcNs)
+	require.NoError(t, err)
+
+	pkgNs := type_system.NewNamespace()
+
+	parsedTypeDef := &ParsedTypeDef{
+		ExportAllStmts: []*dts_parser.ExportAllStmt{
+			{
+				From: "./source",
+			},
+		},
+	}
+
+	ctx := Context{
+		Scope:   Prelude(c),
+		IsAsync: false,
+	}
+
+	errors := c.ProcessExportStatements(ctx, "/test/index.d.ts", parsedTypeDef, pkgNs)
+
+	assert.Empty(t, errors, "Should process export * without errors")
+
+	// Check that the merged namespace has Exported = true
+	ns, found := pkgNs.Namespaces["MyNamespace"]
+	assert.True(t, found, "Should have 'MyNamespace' from export *")
+	assert.True(t, ns.Exported, "Merged namespace should have Exported flag set to true")
+}
+
+// TestFilterExportedNamespace_OnlyExportedNamespacesIncluded verifies that
+// filterExportedNamespace only includes namespaces with Exported = true.
+func TestFilterExportedNamespace_OnlyExportedNamespacesIncluded(t *testing.T) {
+	c := NewChecker()
+
+	// Create a namespace with both exported and non-exported nested namespaces
+	pkgNs := type_system.NewNamespace()
+
+	// Exported namespace
+	exportedNs := type_system.NewNamespace()
+	exportedNs.Types["PublicType"] = &type_system.TypeAlias{
+		Type:     type_system.NewStrPrimType(nil),
+		Exported: true,
+	}
+	exportedNs.Exported = true
+	pkgNs.Namespaces["PublicNS"] = exportedNs
+
+	// Non-exported namespace
+	privateNs := type_system.NewNamespace()
+	privateNs.Types["PrivateType"] = &type_system.TypeAlias{
+		Type:     type_system.NewNumPrimType(nil),
+		Exported: true,
+	}
+	privateNs.Exported = false
+	pkgNs.Namespaces["PrivateNS"] = privateNs
+
+	// Also add some exported values and types at the root level
+	pkgNs.Values["rootFunc"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Exported: true,
+	}
+	pkgNs.Types["RootType"] = &type_system.TypeAlias{
+		Type:     type_system.NewStrPrimType(nil),
+		Exported: true,
+	}
+
+	// Use the export as namespace feature which calls filterExportedNamespace
+	parsedTypeDef := &ParsedTypeDef{
+		ExportAsNamespace: &dts_parser.ExportAsNamespaceStmt{
+			Name: dts_parser.NewIdent("TestLib", DEFAULT_SPAN),
+		},
+	}
+
+	ctx := Context{
+		Scope:   Prelude(c),
+		IsAsync: false,
+	}
+
+	errors := c.ProcessExportStatements(ctx, "/test/index.d.ts", parsedTypeDef, pkgNs)
+
+	assert.Empty(t, errors, "Should process export as namespace without errors")
+
+	// Get the global namespace
+	globalNs, found := c.GlobalScope.Namespace.Namespaces["TestLib"]
+	require.True(t, found, "Should have 'TestLib' in global scope")
+
+	// Exported namespace should be included
+	_, hasPublic := globalNs.Namespaces["PublicNS"]
+	assert.True(t, hasPublic, "PublicNS should be in filtered result (Exported = true)")
+
+	// Non-exported namespace should NOT be included
+	_, hasPrivate := globalNs.Namespaces["PrivateNS"]
+	assert.False(t, hasPrivate, "PrivateNS should NOT be in filtered result (Exported = false)")
+
+	// Exported values and types should still be included
+	_, hasRootFunc := globalNs.Values["rootFunc"]
+	assert.True(t, hasRootFunc, "rootFunc should be in filtered result")
+
+	_, hasRootType := globalNs.Types["RootType"]
+	assert.True(t, hasRootType, "RootType should be in filtered result")
+}

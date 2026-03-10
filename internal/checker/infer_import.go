@@ -516,7 +516,14 @@ func (c *Checker) processNamedExport(
 		// Copy namespace bindings (skip for type-only exports)
 		if !stmt.TypeOnly {
 			if ns, ok := srcNs.Namespaces[localName]; ok {
-				pkgNs.Namespaces[exportedName] = ns
+				// Create a wrapper namespace with Exported=true
+				exportedNs := &type_system.Namespace{
+					Values:     ns.Values,
+					Types:      ns.Types,
+					Namespaces: ns.Namespaces,
+					Exported:   true,
+				}
+				pkgNs.Namespaces[exportedName] = exportedNs
 				found = true
 			}
 		}
@@ -621,7 +628,14 @@ func (c *Checker) processExportAll(
 		if !stmt.TypeOnly {
 			for name, ns := range depNs.Namespaces {
 				if _, exists := pkgNs.Namespaces[name]; !exists {
-					pkgNs.Namespaces[name] = ns
+					// Create a wrapper namespace with Exported=true
+					exportedNs := &type_system.Namespace{
+						Values:     ns.Values,
+						Types:      ns.Types,
+						Namespaces: ns.Namespaces,
+						Exported:   true,
+					}
+					pkgNs.Namespaces[name] = exportedNs
 				}
 			}
 		}
@@ -639,8 +653,10 @@ func (c *Checker) processExportAsNamespace(
 	var errors []Error
 
 	// UMD pattern: make the package available as a global namespace
+	// Filter to only include exported symbols (exclude internal helpers and non-exported locals)
 	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
-		if err := c.GlobalScope.Namespace.SetNamespace(stmt.Name.Name, pkgNs); err != nil {
+		exportedNs := filterExportedNamespace(pkgNs)
+		if err := c.GlobalScope.Namespace.SetNamespace(stmt.Name.Name, exportedNs); err != nil {
 			errors = append(errors, &GenericError{
 				message: fmt.Sprintf("Cannot create global namespace '%s': %s",
 					stmt.Name.Name, err.Error()),
@@ -1031,11 +1047,10 @@ func filterExportedNamespace(ns *type_system.Namespace) *type_system.Namespace {
 		}
 	}
 
-	// Recursively filter nested namespaces
+	// Recursively filter nested namespaces (only include exported ones)
 	for name, subNs := range ns.Namespaces {
-		filteredSub := filterExportedNamespace(subNs)
-		// Only include if the filtered namespace has any items
-		if len(filteredSub.Values) > 0 || len(filteredSub.Types) > 0 || len(filteredSub.Namespaces) > 0 {
+		if subNs.Exported {
+			filteredSub := filterExportedNamespace(subNs)
 			filtered.Namespaces[name] = filteredSub
 		}
 	}
