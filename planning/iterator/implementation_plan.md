@@ -291,10 +291,21 @@ func (p *Parser) parseYieldExpr() *ast.YieldExpr {
         p.lexer.consume()
     }
 
-    // Parse the yielded expression (if any)
+    // Parse the yielded expression
     var value ast.Expr
-    if !p.isStatementTerminator() {
+    if isDelegate {
+        // 'yield from' REQUIRES an expression (the iterable to delegate to)
+        if p.isStatementTerminator() {
+            p.error("'yield from' requires an iterable expression")
+            // Return a yield with nil value - type checker will also catch this
+            return ast.NewYieldExpr(nil, true, startSpan)
+        }
         value = p.expr()
+    } else {
+        // Regular 'yield' can optionally have an expression
+        if !p.isStatementTerminator() {
+            value = p.expr()
+        }
     }
 
     endSpan := startSpan
@@ -383,10 +394,17 @@ func (c *Checker) inferForInStmt(ctx *Context, stmt *ast.ForInStmt) []Error {
     // Extract element type from Iterable<T> or AsyncIterable<T>
     var elementType Type
     if stmt.IsAwait {
+        // for await...in can iterate over BOTH async iterables and sync iterables.
+        // In JS, `for await (x of syncIterable)` awaits each value from the sync iterator.
+        // Try async iterable first, then fall back to sync iterable.
         elementType = c.getAsyncIterableElementType(iterableType)
         if elementType == nil {
+            // Fallback: try sync iterable (values will be awaited)
+            elementType = c.getIterableElementType(iterableType)
+        }
+        if elementType == nil {
             errors = append(errors, Error{
-                Message: fmt.Sprintf("Type '%s' is not async iterable", iterableType),
+                Message: fmt.Sprintf("Type '%s' is not iterable", iterableType),
                 Span:    stmt.Iterable.Span(),
             })
             elementType = AnyType{}
@@ -436,33 +454,43 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
     errors := []Error{}
 
     // Mark this function context as containing yield (makes it a generator)
-    ctx.ContainsYield = true
+    // Uses pointer dereference so all block scopes within the function see this
+    if ctx.ContainsYield != nil {
+        *ctx.ContainsYield = true
+    }
 
     if expr.IsDelegate {
         // yield from: the value must be iterable
-        if expr.Value != nil {
-            valueType, errs := c.inferExpr(ctx, expr.Value)
-            errors = slices.Concat(errors, errs)
-
-            elementType := c.getIterableElementType(valueType)
-            if elementType == nil {
-                errors = append(errors, Error{
-                    Message: fmt.Sprintf("Type '%s' is not iterable", valueType),
-                    Span:    expr.Value.Span(),
-                })
-            }
-            // Track delegated element types - contributes to T in Generator<T, TReturn, TNext>
-            ctx.AddYieldedType(elementType)
-
-            // The yield* expression evaluates to TReturn of the delegated generator.
-            // For simplicity, we can start with `unknown` and refine later if needed.
-            // Most code doesn't use the return value of yield*.
-            delegatedReturnType := c.getIteratorReturnType(valueType)
-            if delegatedReturnType == nil {
-                delegatedReturnType = UnknownType{}
-            }
-            return delegatedReturnType, errors
+        if expr.Value == nil {
+            // Parser should have already reported this error, but handle gracefully
+            errors = append(errors, Error{
+                Message: "'yield from' requires an iterable expression",
+                Span:    expr.Span(),
+            })
+            return UnknownType{}, errors
         }
+
+        valueType, errs := c.inferExpr(ctx, expr.Value)
+        errors = slices.Concat(errors, errs)
+
+        elementType := c.getIterableElementType(valueType)
+        if elementType == nil {
+            errors = append(errors, Error{
+                Message: fmt.Sprintf("Type '%s' is not iterable", valueType),
+                Span:    expr.Value.Span(),
+            })
+        }
+        // Track delegated element types - contributes to T in Generator<T, TReturn, TNext>
+        ctx.AddYieldedType(elementType)
+
+        // The yield* expression evaluates to TReturn of the delegated generator.
+        // For simplicity, we can start with `unknown` and refine later if needed.
+        // Most code doesn't use the return value of yield*.
+        delegatedReturnType := c.getIteratorReturnType(valueType)
+        if delegatedReturnType == nil {
+            delegatedReturnType = UnknownType{}
+        }
+        return delegatedReturnType, errors
     } else {
         // Regular yield
         if expr.Value != nil {
@@ -497,16 +525,21 @@ Modify function inference to detect generators by presence of `yield`:
 func (c *Checker) inferFuncDecl(ctx *Context, decl *ast.FuncDecl) (Type, []Error) {
     // ... existing setup ...
 
+    // Allocate fresh pointers for generator tracking - this function gets its own
+    // tracking independent of any enclosing function
+    containsYield := false
+    yieldedTypes := []Type{}
+
     funcCtx := ctx.WithNewScope()
     funcCtx.IsAsync = decl.Sig.Async
-    funcCtx.ContainsYield = false  // Will be set to true if yield is encountered
-    funcCtx.YieldedTypes = []Type{}  // Track yield types
+    funcCtx.ContainsYield = &containsYield   // Fresh pointer for this function
+    funcCtx.YieldedTypes = &yieldedTypes     // Fresh pointer for this function
 
-    // ... infer body (this may set funcCtx.ContainsYield = true) ...
+    // ... infer body (this may set *funcCtx.ContainsYield = true) ...
 
     // Check if this function is a generator (contains yield)
-    if funcCtx.ContainsYield {
-        yieldType := c.unionTypes(funcCtx.YieldedTypes)
+    if *funcCtx.ContainsYield {
+        yieldType := c.unionTypes(*funcCtx.YieldedTypes)
         returnType := // from explicit returns or undefined
         nextType := NeverType{}  // defaults to never; explicit annotation required for .next(value) usage
 
@@ -524,19 +557,27 @@ func (c *Checker) inferFuncDecl(ctx *Context, decl *ast.FuncDecl) (Type, []Error
 
 **File**: `internal/checker/checker.go`
 
-Extend the checker context with generator-related fields:
+Extend the checker context with generator-related fields. These must be **pointers** so that block scopes within the same function share the same underlying values, while nested functions can allocate fresh values:
 
 ```go
 type Context struct {
     // ... existing fields (Scope, IsAsync, IsPatMatch, etc.) ...
 
-    ContainsYield     bool      // Set to true when yield is encountered
-    YieldedTypes      []Type    // Types of all yield expressions
-    GeneratorNextType Type      // TNext type for this generator
+    // Generator tracking - pointers so block scopes share state within a function
+    ContainsYield     *bool             // Set to true when yield is encountered
+    YieldedTypes      *[]Type           // Types of all yield expressions
+    GeneratorNextType Type              // TNext type for this generator (not a pointer - set once per function)
+}
+
+// Helper method to add a yielded type (handles nil check and dereferencing)
+func (ctx *Context) AddYieldedType(t Type) {
+    if ctx.YieldedTypes != nil {
+        *ctx.YieldedTypes = append(*ctx.YieldedTypes, t)
+    }
 }
 ```
 
-**Update scope helpers**: The `WithNewScope`, `WithNewScopeAndNamespace`, and `WithScope` methods must be updated to propagate the new fields:
+**Update scope helpers**: The `WithNewScope`, `WithNewScopeAndNamespace`, and `WithScope` methods copy the pointers (sharing the underlying values for block scopes):
 
 ```go
 func (ctx *Context) WithNewScope() Context {
@@ -548,7 +589,7 @@ func (ctx *Context) WithNewScope() Context {
         TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
         FileScopes:             ctx.FileScopes,
         Module:                 ctx.Module,
-        // Generator fields - propagate to child scopes
+        // Generator fields - copy pointers so block scopes share state
         ContainsYield:          ctx.ContainsYield,
         YieldedTypes:           ctx.YieldedTypes,
         GeneratorNextType:      ctx.GeneratorNextType,
@@ -557,6 +598,8 @@ func (ctx *Context) WithNewScope() Context {
 ```
 
 Similarly update `WithNewScopeAndNamespace` and `WithScope`.
+
+**Why pointers?** When a `yield` appears inside an `if` block or loop body, it must mark the enclosing *function* as a generator. By sharing pointers, all block scopes within a function update the same underlying `ContainsYield` and `YieldedTypes`. Function scopes allocate fresh pointers (see sections 4.3 and 4.5) so nested functions get independent tracking.
 
 **Note**: Loop variable immutability is handled by binding them as `val` (not `var`). The existing type system already prevents reassignment of `val` bindings, so no additional tracking is needed.
 
@@ -570,15 +613,20 @@ Similarly update `WithNewScopeAndNamespace` and `WithScope`.
 
 ```go
 func (c *Checker) inferFuncExpr(ctx *Context, expr *ast.FuncExpr) (Type, []Error) {
-    // Create fresh context for this function - does NOT inherit ContainsYield
+    // Allocate fresh pointers - this nested function gets independent tracking
+    // Yields in this function do NOT affect the outer function's generator status
+    containsYield := false
+    yieldedTypes := []Type{}
+
     funcCtx := ctx.WithNewScope()
     funcCtx.IsAsync = expr.Async
-    funcCtx.ContainsYield = false  // Fresh start for this function
-    funcCtx.YieldedTypes = []Type{}
+    funcCtx.ContainsYield = &containsYield   // Fresh pointer for this function
+    funcCtx.YieldedTypes = &yieldedTypes     // Fresh pointer for this function
 
     // ... infer body ...
 
-    // funcCtx.ContainsYield reflects only yields in THIS function
+    // *funcCtx.ContainsYield reflects only yields in THIS function
+    // Block scopes within this function share these pointers
 }
 ```
 
