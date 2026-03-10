@@ -96,88 +96,108 @@ func TestClassifyDTSFile_GlobalsOnly(t *testing.T) {
 
 func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 	tests := []struct {
-		name               string
-		input              string
-		hasTopLevelExports bool
-		globalDeclsCount   int
-		packageDeclsCount  int
-		namedModulesCount  int
+		name                string
+		input               string
+		hasTopLevelExports  bool
+		globalDeclsCount    int
+		packageDeclsCount   int
+		namedModulesCount   int
+		namedExportsCount   int
+		exportAllStmtsCount int
 	}{
 		{
-			name:               "export interface",
-			input:              `export interface Foo { x: number }`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export interface",
+			input:               `export interface Foo { x: number }`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   1,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "export type alias",
-			input:              `export type MyString = string;`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export type alias",
+			input:               `export type MyString = string;`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   1,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "export function",
-			input:              `export declare function foo(): void;`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export function",
+			input:               `export declare function foo(): void;`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   1,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "export variable",
-			input:              `export declare const VERSION: string;`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export variable",
+			input:               `export declare const VERSION: string;`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   1,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "export class",
-			input:              `export declare class MyClass { constructor() }`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export class",
+			input:               `export declare class MyClass { constructor() }`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   1,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
 			name: "multiple exports",
 			input: `export interface Foo { }
 			export type Bar = Foo;
 			export declare function baz(): Bar;`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  3,
-			namedModulesCount:  0,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   3,
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 0,
 		},
 		{
 			name: "named exports",
 			input: `declare interface Foo { }
 			declare const bar: string;
 			export { Foo, bar }`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  3, // Foo, bar, and the export statement
-			namedModulesCount:  0,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   2, // Foo, bar (export statement is extracted separately)
+			namedModulesCount:   0,
+			namedExportsCount:   1, // the export { Foo, bar } statement
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "re-export from module",
-			input:              `export { something } from "other-module";`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "re-export from module",
+			input:               `export { something } from "other-module";`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   0, // export statement is extracted separately
+			namedModulesCount:   0,
+			namedExportsCount:   1, // the re-export statement
+			exportAllStmtsCount: 0,
 		},
 		{
-			name:               "export all",
-			input:              `export * from "other-module";`,
-			hasTopLevelExports: true,
-			globalDeclsCount:   0,
-			packageDeclsCount:  1,
-			namedModulesCount:  0,
+			name:                "export all",
+			input:               `export * from "other-module";`,
+			hasTopLevelExports:  true,
+			globalDeclsCount:    0,
+			packageDeclsCount:   0, // export statement is extracted separately
+			namedModulesCount:   0,
+			namedExportsCount:   0,
+			exportAllStmtsCount: 1, // the export * statement
 		},
 	}
 
@@ -209,6 +229,12 @@ func TestClassifyDTSFile_TopLevelExports(t *testing.T) {
 			}
 			if len(classification.NamedModules) != tt.namedModulesCount {
 				t.Errorf("NamedModules count = %d, expected %d", len(classification.NamedModules), tt.namedModulesCount)
+			}
+			if len(classification.NamedExports) != tt.namedExportsCount {
+				t.Errorf("NamedExports count = %d, expected %d", len(classification.NamedExports), tt.namedExportsCount)
+			}
+			if len(classification.ExportAllStmts) != tt.exportAllStmtsCount {
+				t.Errorf("ExportAllStmts count = %d, expected %d", len(classification.ExportAllStmts), tt.exportAllStmtsCount)
 			}
 		})
 	}

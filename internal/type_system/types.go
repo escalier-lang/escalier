@@ -2357,6 +2357,7 @@ type Namespace struct {
 	Values     map[string]*Binding
 	Types      map[string]*TypeAlias
 	Namespaces map[string]*Namespace
+	Exported   bool
 }
 
 func NewNamespace() *Namespace {

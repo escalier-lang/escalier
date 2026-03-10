@@ -24,11 +24,13 @@ func qualifiedName(parent, child string) string {
 // For the root/global namespace, use an empty string "".
 // The inAmbientNamespace parameter is true when inside a declare namespace block;
 // all declarations inside an ambient namespace are implicitly exported.
+// The isExported parameter indicates whether this namespace was declared with 'export' keyword.
 func processNamespace(
 	name string,
 	stmts []dts_parser.Statement,
 	namespaces *btree.Map[string, *ast.Namespace],
 	inAmbientNamespace bool,
+	isExported bool,
 ) error {
 	var decls []ast.Decl
 
@@ -40,7 +42,8 @@ func processNamespace(
 			// all declarations inside are implicitly ambient/exported
 			nestedName := qualifiedName(name, s.Name.Name)
 			nestedAmbient := inAmbientNamespace || s.Declare()
-			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient); err != nil {
+			nestedExported := s.Export()
+			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
 				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
 			}
 
@@ -65,7 +68,8 @@ func processNamespace(
 			continue
 
 		case *dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt, *dts_parser.ExportAsNamespaceStmt:
-			// Skip these export forms for now (re-exports, named exports, UMD namespace)
+			// Skip these - they're processed directly in the checker during inferParsedTypeDef.
+			// See processExportStatements() in infer_import.go for implementation.
 			continue
 
 		default:
@@ -90,8 +94,8 @@ func processNamespace(
 	}
 
 	// Merge the declarations into the namespace
-	if len(decls) > 0 {
-		mergeNamespace(name, decls, namespaces)
+	if len(decls) > 0 || isExported {
+		mergeNamespace(name, decls, namespaces, isExported)
 	}
 
 	return nil
@@ -99,10 +103,12 @@ func processNamespace(
 
 // mergeNamespace merges declarations into an existing namespace or creates a new one.
 // The name parameter is the qualified namespace name (empty string for root/global namespace).
+// The isExported parameter indicates whether this namespace was declared with 'export' keyword.
 func mergeNamespace(
 	name string,
 	decls []ast.Decl,
 	namespaces *btree.Map[string, *ast.Namespace],
+	isExported bool,
 ) {
 	// Get the existing namespace if it exists
 	existing, exists := namespaces.Get(name)
@@ -110,10 +116,16 @@ func mergeNamespace(
 	if exists {
 		// Merge the new declarations with existing ones
 		existing.Decls = append(existing.Decls, decls...)
+		// If this namespace is exported, mark it as such
+		// (once exported, always exported - don't unset if previously exported)
+		if isExported {
+			existing.Exported = true
+		}
 	} else {
 		// Create a new namespace
 		namespace := &ast.Namespace{
-			Decls: decls,
+			Decls:    decls,
+			Exported: isExported,
 		}
 		namespaces.Set(name, namespace)
 	}
@@ -126,7 +138,8 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 	// Process all statements, organizing them into namespaces
 	// Use empty string "" as the root/global namespace name
 	// Pass false for inAmbientNamespace since we're at the top level
-	if err := processNamespace("", dtsModule.Statements, &namespaces, false); err != nil {
+	// Pass false for isExported since the root namespace is not exported
+	if err := processNamespace("", dtsModule.Statements, &namespaces, false, false); err != nil {
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 

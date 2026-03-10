@@ -70,7 +70,8 @@ func (i *Ident) Span() Span {
 
 // TODO add support for imports and exports
 type Namespace struct {
-	Decls []Decl
+	Decls    []Decl
+	Exported bool // Whether this namespace was declared with 'export' keyword
 }
 
 // File represents a single source file in a module.

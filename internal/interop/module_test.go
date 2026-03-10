@@ -520,6 +520,238 @@ declare namespace MyNamespace {
 	snaps.MatchSnapshot(t, astModule)
 }
 
+func TestConvertModule_ExportedNamespace(t *testing.T) {
+	input := `
+export namespace Property {
+  export type AlignItems = string;
+  export type AccentColor = string;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check that Property namespace exists and is exported
+	ns, nsExists := astModule.Namespaces.Get("Property")
+	if !nsExists {
+		t.Fatalf("Property namespace not found")
+	}
+
+	if !ns.Exported {
+		t.Errorf("Property namespace should be exported")
+	}
+
+	// Check that declarations inside are exported
+	if len(ns.Decls) != 2 {
+		t.Errorf("Expected 2 declarations in Property namespace, got %d", len(ns.Decls))
+	}
+	for i, decl := range ns.Decls {
+		if !decl.Export() {
+			t.Errorf("Declaration %d (%T) should be exported", i, decl)
+		}
+	}
+}
+
+func TestConvertModule_NonExportedNamespace(t *testing.T) {
+	input := `
+namespace Internal {
+  export type Helper = string;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check that Internal namespace exists but is NOT exported
+	ns, nsExists := astModule.Namespaces.Get("Internal")
+	if !nsExists {
+		t.Fatalf("Internal namespace not found")
+	}
+
+	if ns.Exported {
+		t.Errorf("Internal namespace should NOT be exported")
+	}
+}
+
+func TestConvertModule_NestedExportedNamespaces(t *testing.T) {
+	input := `
+export namespace Outer {
+  export namespace Inner {
+    export type Foo = string;
+  }
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check that Outer namespace is exported
+	outerNS, outerExists := astModule.Namespaces.Get("Outer")
+	if !outerExists {
+		t.Fatalf("Outer namespace not found")
+	}
+	if !outerNS.Exported {
+		t.Errorf("Outer namespace should be exported")
+	}
+
+	// Check that Inner namespace is also exported
+	innerNS, innerExists := astModule.Namespaces.Get("Outer.Inner")
+	if !innerExists {
+		t.Fatalf("Outer.Inner namespace not found")
+	}
+	if !innerNS.Exported {
+		t.Errorf("Outer.Inner namespace should be exported")
+	}
+}
+
+func TestConvertModule_MixedExportedNamespaces(t *testing.T) {
+	input := `
+export namespace Exported {
+  namespace NotExported {
+    export type Foo = string;
+  }
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	// Check that Exported namespace is exported
+	exportedNS, exportedExists := astModule.Namespaces.Get("Exported")
+	if !exportedExists {
+		t.Fatalf("Exported namespace not found")
+	}
+	if !exportedNS.Exported {
+		t.Errorf("Exported namespace should be exported")
+	}
+
+	// Check that NotExported namespace is NOT exported
+	notExportedNS, notExportedExists := astModule.Namespaces.Get("Exported.NotExported")
+	if !notExportedExists {
+		t.Fatalf("Exported.NotExported namespace not found")
+	}
+	if notExportedNS.Exported {
+		t.Errorf("Exported.NotExported namespace should NOT be exported")
+	}
+}
+
+func TestConvertModule_DeclareNamespaceNotExported(t *testing.T) {
+	// declare namespace is ambient but NOT exported by default
+	input := `
+declare namespace AmbientNS {
+  var x: number;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	ns, nsExists := astModule.Namespaces.Get("AmbientNS")
+	if !nsExists {
+		t.Fatalf("AmbientNS namespace not found")
+	}
+
+	// declare namespace without export should NOT be exported
+	if ns.Exported {
+		t.Errorf("AmbientNS namespace should NOT be exported (no export keyword)")
+	}
+
+	// But declarations inside should be auto-exported (due to ambient)
+	for i, decl := range ns.Decls {
+		if !decl.Export() {
+			t.Errorf("Declaration %d should be auto-exported in ambient namespace", i)
+		}
+	}
+}
+
+func TestConvertModule_ExportDeclareNamespace(t *testing.T) {
+	// export declare namespace is both ambient AND exported
+	input := `
+export declare namespace ExportedAmbientNS {
+  var x: number;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	ns, nsExists := astModule.Namespaces.Get("ExportedAmbientNS")
+	if !nsExists {
+		t.Fatalf("ExportedAmbientNS namespace not found")
+	}
+
+	// export declare namespace should be exported
+	if !ns.Exported {
+		t.Errorf("ExportedAmbientNS namespace should be exported")
+	}
+
+	// Declarations inside should also be exported
+	for i, decl := range ns.Decls {
+		if !decl.Export() {
+			t.Errorf("Declaration %d should be exported in ambient namespace", i)
+		}
+	}
+}
+
+func TestConvertModule_NamespaceMergingPreservesExport(t *testing.T) {
+	// When merging namespaces, once exported should stay exported
+	input := `
+export namespace MergedNS {
+  type First = string;
+}
+
+namespace MergedNS {
+  type Second = number;
+}
+`
+
+	dtsModule := parseModule(t, input)
+	astModule, err := ConvertModule(dtsModule)
+
+	if err != nil {
+		t.Fatalf("ConvertModule returned error: %v", err)
+	}
+
+	ns, nsExists := astModule.Namespaces.Get("MergedNS")
+	if !nsExists {
+		t.Fatalf("MergedNS namespace not found")
+	}
+
+	// Should have both declarations merged
+	if len(ns.Decls) != 2 {
+		t.Errorf("Expected 2 declarations in MergedNS (merged), got %d", len(ns.Decls))
+	}
+
+	// Should still be exported (first declaration exported it)
+	if !ns.Exported {
+		t.Errorf("MergedNS namespace should be exported (was exported in first declaration)")
+	}
+}
+
 func TestConvertES2015LibFiles(t *testing.T) {
 	// Find the repo root by looking for go.mod
 	repoRoot, err := findRepoRoot()

@@ -29,6 +29,8 @@ func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Err
 
 // GetNamespaceCtx returns a new Context with its namespace set to the namespace of
 // the binding with the given key. If the namespace doesn't exist yet, it creates one.
+// The namespace's Exported flag is set based on the ast.Namespace.Exported field
+// from the module (if available).
 func GetNamespaceCtx(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
@@ -40,9 +42,24 @@ func GetNamespaceCtx(
 	}
 	ns := ctx.Scope.Namespace
 	nsCtx := ctx
+	qualifiedName := ""
 	for part := range strings.SplitSeq(nsName, ".") {
+		// Build the qualified namespace name for looking up export status
+		if qualifiedName == "" {
+			qualifiedName = part
+		} else {
+			qualifiedName = qualifiedName + "." + part
+		}
+
 		if _, ok := ns.GetNamespace(part); !ok {
-			ns.SetNamespace(part, type_system.NewNamespace())
+			newNs := type_system.NewNamespace()
+			// Check if this namespace is exported by looking up the ast.Namespace
+			if ctx.Module != nil {
+				if astNs, exists := ctx.Module.Namespaces.Get(qualifiedName); exists {
+					newNs.Exported = astNs.Exported
+				}
+			}
+			ns.SetNamespace(part, newNs)
 		}
 		ns, _ = ns.GetNamespace(part)
 		nsCtx = nsCtx.WithNewScopeAndNamespace(ns)

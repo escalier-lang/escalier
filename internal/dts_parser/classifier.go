@@ -25,6 +25,19 @@ type FileClassification struct {
 	// Imports contains all import declarations from the file.
 	// These need to be processed to load transitive dependencies.
 	Imports []*ImportDecl
+
+	// NamedExports contains export { ... } statements.
+	// Local exports (From == "") mark local declarations as exported.
+	// Re-exports (From != "") need module loading to copy items from another module.
+	NamedExports []*NamedExportStmt
+
+	// ExportAllStmts contains export * from statements.
+	// These re-export all items from another module.
+	ExportAllStmts []*ExportAllStmt
+
+	// ExportAsNamespace contains the export as namespace statement (if present).
+	// Only one such statement is valid per file (UMD pattern).
+	ExportAsNamespace *ExportAsNamespaceStmt
 }
 
 // NamedModuleDecl represents a named module declaration (`declare module "name" { ... }`).
@@ -46,6 +59,9 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		GlobalDecls:        make([]Statement, 0),
 		PackageDecls:       make([]Statement, 0),
 		Imports:            make([]*ImportDecl, 0),
+		NamedExports:       make([]*NamedExportStmt, 0),
+		ExportAllStmts:     make([]*ExportAllStmt, 0),
+		ExportAsNamespace:  nil,
 	}
 
 	// First pass: detect if there are any top-level exports
@@ -61,6 +77,24 @@ func ClassifyDTSFile(module *Module) *FileClassification {
 		// Capture import declarations
 		if importDecl, ok := stmt.(*ImportDecl); ok {
 			classification.Imports = append(classification.Imports, importDecl)
+			continue
+		}
+
+		// Capture named export statements (export { ... } or export { ... } from "module")
+		if namedExport, ok := stmt.(*NamedExportStmt); ok {
+			classification.NamedExports = append(classification.NamedExports, namedExport)
+			continue
+		}
+
+		// Capture export all statements (export * from "module")
+		if exportAll, ok := stmt.(*ExportAllStmt); ok {
+			classification.ExportAllStmts = append(classification.ExportAllStmts, exportAll)
+			continue
+		}
+
+		// Capture export as namespace statement (export as namespace MyLib)
+		if exportAsNs, ok := stmt.(*ExportAsNamespaceStmt); ok {
+			classification.ExportAsNamespace = exportAsNs
 			continue
 		}
 
