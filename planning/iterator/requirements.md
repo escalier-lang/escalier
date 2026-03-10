@@ -389,7 +389,7 @@ fn example() {
     yield 2
     return "done"
 }
-// Inferred: Generator<number, string, unknown>
+// Inferred: Generator<number, string, never>
 ```
 
 ### 6.3. Async Generator Return Types
@@ -402,7 +402,7 @@ async fn fetchItems() {
     yield await fetchItem(2)
     return "complete"
 }
-// Inferred: AsyncGenerator<Item, string, unknown>
+// Inferred: AsyncGenerator<Item, string, never>
 ```
 
 ### 6.4. Spread Type Inference
@@ -431,7 +431,7 @@ for item in obj {  // Error: Type '{a: number, b: number}' is not iterable
 
 ### 7.2. Yield in Nested Functions
 
-The `yield` and `yield from` keywords only apply to the immediately enclosing function. Using them in a nested non-generator callback is an error:
+The `yield` and `yield from` keywords only apply to the immediately enclosing function.
 
 ```escalier
 fn outer() {
@@ -442,7 +442,7 @@ fn outer() {
     }
 
     items.forEach(fn(item) {
-        yield item  // Error: yield in callback doesn't yield from outer()
+        yield item  // Error: forEach doesn't expect a generator as a callback
     })
 }
 ```

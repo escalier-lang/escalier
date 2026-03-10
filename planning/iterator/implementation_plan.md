@@ -216,7 +216,7 @@ func NewYieldExpr(value Expr, isDelegate bool, span Span) *YieldExpr {
     }
 }
 
-func (e *YieldExpr) exprNode()   {}
+func (e *YieldExpr) isExpr()     {}
 func (e *YieldExpr) Span() Span  { return e.span }
 ```
 
@@ -369,7 +369,7 @@ func (c *Checker) inferForInStmt(ctx *Context, stmt *ast.ForInStmt) []Error {
     errors := []Error{}
 
     // Validate async context for 'for await'
-    if stmt.IsAwait && !ctx.InAsync {
+    if stmt.IsAwait && !ctx.IsAsync {
         errors = append(errors, Error{
             Message: "'for await' is only allowed in async functions",
             Span:    stmt.Span(),
@@ -403,7 +403,7 @@ func (c *Checker) inferForInStmt(ctx *Context, stmt *ast.ForInStmt) []Error {
     }
 
     // Create new scope for loop body
-    loopCtx := ctx.NewScope()
+    loopCtx := ctx.WithNewScope()
 
     // Bind pattern variables with inferred element type.
     // Bindings should have Mutable: false (like `val` declarations),
@@ -497,8 +497,8 @@ Modify function inference to detect generators by presence of `yield`:
 func (c *Checker) inferFuncDecl(ctx *Context, decl *ast.FuncDecl) (Type, []Error) {
     // ... existing setup ...
 
-    funcCtx := ctx.NewScope()
-    funcCtx.InAsync = decl.Sig.Async
+    funcCtx := ctx.WithNewScope()
+    funcCtx.IsAsync = decl.Sig.Async
     funcCtx.ContainsYield = false  // Will be set to true if yield is encountered
     funcCtx.YieldedTypes = []Type{}  // Track yield types
 
@@ -522,20 +522,41 @@ func (c *Checker) inferFuncDecl(ctx *Context, decl *ast.FuncDecl) (Type, []Error
 
 ### 4.4 Add Context Fields
 
-**File**: `internal/checker/context.go`
+**File**: `internal/checker/checker.go`
 
-Extend the checker context:
+Extend the checker context with generator-related fields:
 
 ```go
 type Context struct {
-    // ... existing fields ...
+    // ... existing fields (Scope, IsAsync, IsPatMatch, etc.) ...
 
-    InAsync           bool
     ContainsYield     bool      // Set to true when yield is encountered
     YieldedTypes      []Type    // Types of all yield expressions
     GeneratorNextType Type      // TNext type for this generator
 }
 ```
+
+**Update scope helpers**: The `WithNewScope`, `WithNewScopeAndNamespace`, and `WithScope` methods must be updated to propagate the new fields:
+
+```go
+func (ctx *Context) WithNewScope() Context {
+    return Context{
+        Scope:                  ctx.Scope.WithNewScope(),
+        IsAsync:                ctx.IsAsync,
+        IsPatMatch:             ctx.IsPatMatch,
+        AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
+        TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
+        FileScopes:             ctx.FileScopes,
+        Module:                 ctx.Module,
+        // Generator fields - propagate to child scopes
+        ContainsYield:          ctx.ContainsYield,
+        YieldedTypes:           ctx.YieldedTypes,
+        GeneratorNextType:      ctx.GeneratorNextType,
+    }
+}
+```
+
+Similarly update `WithNewScopeAndNamespace` and `WithScope`.
 
 **Note**: Loop variable immutability is handled by binding them as `val` (not `var`). The existing type system already prevents reassignment of `val` bindings, so no additional tracking is needed.
 
@@ -550,8 +571,8 @@ type Context struct {
 ```go
 func (c *Checker) inferFuncExpr(ctx *Context, expr *ast.FuncExpr) (Type, []Error) {
     // Create fresh context for this function - does NOT inherit ContainsYield
-    funcCtx := ctx.NewScope()
-    funcCtx.InAsync = expr.Async
+    funcCtx := ctx.WithNewScope()
+    funcCtx.IsAsync = expr.Async
     funcCtx.ContainsYield = false  // Fresh start for this function
     funcCtx.YieldedTypes = []Type{}
 
@@ -1030,7 +1051,7 @@ func TestContinueInForIn(t *testing.T) {
 
 Create test fixtures with input Escalier code and expected JavaScript output:
 
-```
+```text
 fixtures/iterator/
     for_in_basic/
         input.esc
@@ -1118,7 +1139,7 @@ fixtures/iterator/
 | Parser | `internal/parser/stmt.go` | Parse for-in loops |
 | Parser | `internal/parser/expr.go` | Parse yield and yield from expressions |
 | Types | `internal/type_system/types.go` | Helper functions for Generator types, GetIteratorReturnType |
-| Checker | `internal/checker/context.go` | Add `ContainsYield`, `YieldedTypes` fields |
+| Checker | `internal/checker/checker.go` | Add `ContainsYield`, `YieldedTypes`, `GeneratorNextType` fields to Context; update `WithNewScope`, `WithNewScopeAndNamespace`, `WithScope` to propagate them |
 | Checker | `internal/checker/infer_stmt.go` | Infer for-in loops, validate async context, bind loop vars (Mutable: false) |
 | Checker | `internal/checker/infer_expr.go` | Infer yield expressions, set ContainsYield, verify await checks |
 | Checker | `internal/checker/infer_func.go` | Detect generators via ContainsYield |
