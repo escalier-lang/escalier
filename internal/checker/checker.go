@@ -49,6 +49,9 @@ type Context struct {
 	FileScopes map[int]*Scope
 	// Module is the current module being processed (for file path lookup).
 	Module *ast.Module
+	// AwaitThrowTypes collects throw types from await expressions during inference.
+	// Pointer so block scopes share state within a function.
+	AwaitThrowTypes *[]type_system.Type
 }
 
 func (ctx *Context) WithNewScope() Context {
@@ -60,16 +63,21 @@ func (ctx *Context) WithNewScope() Context {
 		TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
 		FileScopes:             ctx.FileScopes,
 		Module:                 ctx.Module,
+		AwaitThrowTypes:        ctx.AwaitThrowTypes,
 	}
 }
 
+// WithNewScopeAndNamespace creates a new context for entering a module namespace.
+// AllowUndefinedTypeRefs and TypeRefsToUpdate are intentionally omitted here
+// because callers manage those fields directly on the returned context.
 func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
 	return Context{
-		Scope:      ctx.Scope.WithNewScopeAndNamespace(ns),
-		IsAsync:    ctx.IsAsync,
-		IsPatMatch: ctx.IsPatMatch,
-		FileScopes: ctx.FileScopes,
-		Module:     ctx.Module,
+		Scope:           ctx.Scope.WithNewScopeAndNamespace(ns),
+		IsAsync:         ctx.IsAsync,
+		IsPatMatch:      ctx.IsPatMatch,
+		FileScopes:      ctx.FileScopes,
+		Module:          ctx.Module,
+		AwaitThrowTypes: ctx.AwaitThrowTypes,
 	}
 }
 
@@ -83,6 +91,7 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
 		FileScopes:             ctx.FileScopes,
 		Module:                 ctx.Module,
+		AwaitThrowTypes:        ctx.AwaitThrowTypes,
 	}
 }
 

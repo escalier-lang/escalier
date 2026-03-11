@@ -420,11 +420,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					// No type arguments – fallback to never.
 					resultType = type_system.NewNeverType(nil)
 				}
-				// Record the throws type if present (second type argument of Promise)
-				if len(promiseType.TypeArgs) >= 2 {
-					expr.Throws = promiseType.TypeArgs[1]
-				} else {
-					expr.Throws = type_system.NewNeverType(nil)
+				// Record the throws type via context pointer
+				if ctx.AwaitThrowTypes != nil {
+					if len(promiseType.TypeArgs) >= 2 {
+						*ctx.AwaitThrowTypes = append(*ctx.AwaitThrowTypes, promiseType.TypeArgs[1])
+					} else {
+						*ctx.AwaitThrowTypes = append(*ctx.AwaitThrowTypes, type_system.NewNeverType(nil))
+					}
 				}
 			} else {
 				// If not a Promise type, this is an error

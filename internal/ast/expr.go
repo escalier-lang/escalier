@@ -811,13 +811,12 @@ func (e *DoExpr) Accept(v Visitor) {
 
 type AwaitExpr struct {
 	Arg          Expr
-	Throws       Type // filled in later
 	span         Span
 	inferredType Type
 }
 
 func NewAwait(arg Expr, span Span) *AwaitExpr {
-	return &AwaitExpr{Arg: arg, Throws: nil, span: span, inferredType: nil}
+	return &AwaitExpr{Arg: arg, span: span, inferredType: nil}
 }
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {

@@ -174,6 +174,12 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	bodyCtx := ctx.WithNewScope()
 	bodyCtx.IsAsync = isAsync
 
+	// Allocate fresh slice for collecting await throw types during inference
+	if isAsync {
+		awaitThrowTypes := []type_system.Type{}
+		bodyCtx.AwaitThrowTypes = &awaitThrowTypes
+	}
+
 	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
 	errors = slices.Concat(errors, bodyErrors)
 
@@ -332,36 +338,6 @@ func (v *ThrowVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
-type AwaitVisitor struct {
-	ast.DefaultVisitor
-	Awaits []*ast.AwaitExpr
-}
-
-func (v *AwaitVisitor) EnterExpr(expr ast.Expr) bool {
-	if awaitExpr, ok := expr.(*ast.AwaitExpr); ok {
-		v.Awaits = append(v.Awaits, awaitExpr)
-	}
-
-	// Don't visit function expressions since we don't want to include any
-	// await expressions inside them.
-	if _, ok := expr.(*ast.FuncExpr); ok {
-		return false
-	}
-	return true
-}
-
-func (v *AwaitVisitor) EnterDecl(decl ast.Decl) bool {
-	// Don't visit function declarations since we don't want to include any
-	// await expressions inside them.
-	if _, ok := decl.(*ast.FuncDecl); ok {
-		return false
-	}
-	return true
-}
-
-func (v *AwaitVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
-	return true
-}
 
 func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.Type, []Error) {
 	errors := []Error{}
@@ -371,15 +347,9 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 		Throws:         []*ast.ThrowExpr{},
 	}
 
-	awaitVisitor := &AwaitVisitor{
-		DefaultVisitor: ast.DefaultVisitor{},
-		Awaits:         []*ast.AwaitExpr{},
-	}
-
 	for _, stmt := range block.Stmts {
 		// TODO: don't visit statements that are unreachable
 		stmt.Accept(throwVisitor)
-		stmt.Accept(awaitVisitor)
 	}
 
 	throwTypes := []type_system.Type{}
@@ -390,11 +360,9 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 		}
 	}
 
-	// Collect throw types from await expressions (Promise rejection types)
-	for _, awaitExpr := range awaitVisitor.Awaits {
-		if awaitExpr.Throws != nil {
-			throwTypes = append(throwTypes, awaitExpr.Throws)
-		}
+	// Collect throw types from await expressions (collected during inference)
+	if ctx.AwaitThrowTypes != nil {
+		throwTypes = append(throwTypes, *ctx.AwaitThrowTypes...)
 	}
 
 	return throwTypes, errors
