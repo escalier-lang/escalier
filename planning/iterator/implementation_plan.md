@@ -162,6 +162,101 @@ func TestArraySpreadRequiresIterable(t *testing.T) {
 
 **Note**: Object spread (`{...obj}`) does NOT require `Iterable<T>` - it copies enumerable own properties. This is already correctly handled.
 
+### 0.5 Refactor Await Throw Collection to Use Context Pointers
+
+**Why this matters**: The generator implementation (Phase 4) relies on a pattern where type information is collected during inference via shared context pointers, avoiding a second AST traversal. The existing `await` implementation already uses a similar two-pass approach that can be refactored to validate this pattern before building generators on top of it.
+
+**Current approach** (two passes in `internal/checker/infer_func.go`):
+1. During inference: `AwaitExpr` case in `infer_expr.go` unwraps `Promise<T, E>` and stores `Throws` on the `AwaitExpr` node
+2. Post-inference: `AwaitVisitor` walks the AST a second time to collect `Throws` from all `AwaitExpr` nodes in `findThrowTypes`
+
+**Proposed approach** (single pass, matching the yield pattern):
+1. Add `AwaitThrowTypes *[]type_system.Type` to `Context` (pointer, like `YieldedTypes`)
+2. In `inferFuncBodyWithFuncSigType`, allocate a fresh pointer when `isAsync` is true
+3. In the `AwaitExpr` case in `infer_expr.go`, append the throws type to `*ctx.AwaitThrowTypes` during inference (replacing `expr.Throws = ...`)
+4. In `findThrowTypes`, use the collected `*ctx.AwaitThrowTypes` instead of running `AwaitVisitor`
+5. Remove `AwaitVisitor` and the `Throws` field from `AwaitExpr`
+
+**Changes**:
+
+**File**: `internal/checker/checker.go`
+```go
+type Context struct {
+    // ... existing fields ...
+
+    // Async tracking - pointer so block scopes share state within a function
+    AwaitThrowTypes *[]type_system.Type  // Throw types from await expressions
+}
+```
+
+Update `WithNewScope`, `WithNewScopeAndNamespace`, and `WithScope` to propagate `AwaitThrowTypes`.
+
+**File**: `internal/checker/infer_func.go`
+```go
+func (c *Checker) inferFuncBodyWithFuncSigType(
+    ctx Context,
+    funcSigType *type_system.FuncType,
+    paramBindings map[string]*type_system.Binding,
+    body *ast.Block,
+    isAsync bool,
+) []Error {
+    errors := []Error{}
+
+    // Allocate fresh pointer for await throw tracking
+    awaitThrowTypes := []type_system.Type{}
+
+    bodyCtx := ctx.WithNewScope()
+    bodyCtx.IsAsync = isAsync
+    bodyCtx.AwaitThrowTypes = &awaitThrowTypes  // Fresh pointer for this function
+
+    returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
+    errors = slices.Concat(errors, bodyErrors)
+
+    // Incorporate await throw types into the inferred throw type
+    // (previously collected by AwaitVisitor in findThrowTypes)
+    if isAsync && len(awaitThrowTypes) > 0 {
+        inferredThrowType = type_system.NewUnionType(nil,
+            append([]type_system.Type{inferredThrowType}, awaitThrowTypes...)...)
+    }
+
+    // ... rest of existing async/sync logic ...
+}
+```
+
+**File**: `internal/checker/infer_expr.go`
+```go
+case *ast.AwaitExpr:
+    if !ctx.IsAsync {
+        // ... existing error handling ...
+    } else {
+        argType, argErrors := c.inferExpr(ctx, expr.Arg)
+        errors = argErrors
+
+        if promiseType, ok := argType.(*type_system.TypeRefType); ok &&
+            type_system.QualIdentToString(promiseType.Name) == "Promise" {
+            if len(promiseType.TypeArgs) >= 1 {
+                resultType = promiseType.TypeArgs[0]
+            }
+            // Record throws type via context pointer (replaces expr.Throws)
+            if len(promiseType.TypeArgs) >= 2 && ctx.AwaitThrowTypes != nil {
+                *ctx.AwaitThrowTypes = append(*ctx.AwaitThrowTypes, promiseType.TypeArgs[1])
+            }
+        }
+    }
+```
+
+**File**: `internal/checker/infer_func.go` — Remove `AwaitVisitor` struct and update `findThrowTypes` to no longer use it.
+
+**File**: `internal/ast/expr.go` — Remove `Throws` field from `AwaitExpr` (no longer needed since throw types are collected via context).
+
+**Benefits**:
+- Validates the context-pointer pattern that generators will use (derisks Phase 4)
+- Eliminates a redundant AST traversal
+- Simplifies `AwaitExpr` by removing its `Throws` field
+- Makes the async and generator patterns consistent
+
+**Test plan**: All existing async function tests should continue to pass. Specifically verify that `Promise<T, E>` rejection types still propagate correctly to the function's throws type.
+
 ---
 
 ## Phase 1: AST Extensions
@@ -298,16 +393,23 @@ case For:
 
 **File**: `internal/parser/expr.go`
 
-Add yield expression parsing. Since `yield` has lower precedence than most operators, handle it at the statement-expression boundary:
+Handle `yield` and `yield from` as prefix unary operators in the expression parser, with precedence `2`. This is lower than all binary operators (the lowest being `||` and `??` at precedence `3`), so the operand of `yield` is always a complete expression. For example, `yield 1 + 2` parses as `yield (1 + 2)`.
+
+**Precedence table update**:
+
+The `Precedence` table should be extended to include yield at precedence 2. This documents that yield binds less tightly than any binary operator, and is relevant if the precedence-climbing parser is later generalized to support prefix operators with custom precedence.
+
+**Integration**: Add `yield` and `yield from` as cases in `primaryExpr()`, following the same pattern as `await` (line 416):
 
 ```go
-func (p *Parser) parseYieldExpr() *ast.YieldExpr {
-    startSpan := p.lexer.current().Span
+// In primaryExpr(), add case alongside Await:
+case Yield:
     p.lexer.consume() // consume 'yield'
+    startSpan := token.Span
 
     // Check for 'from' keyword (yield from for delegation)
     isDelegate := false
-    if p.lexer.current().Type == From {
+    if p.lexer.peek().Type == From {
         isDelegate = true
         p.lexer.consume()
     }
@@ -317,8 +419,7 @@ func (p *Parser) parseYieldExpr() *ast.YieldExpr {
     if isDelegate {
         // 'yield from' REQUIRES an expression (the iterable to delegate to)
         if p.isStatementTerminator() {
-            p.error("'yield from' requires an iterable expression")
-            // Return a yield with nil value - type checker will also catch this
+            p.reportError(startSpan, "'yield from' requires an iterable expression")
             return ast.NewYieldExpr(nil, true, startSpan)
         }
         value = p.expr()
@@ -334,9 +435,10 @@ func (p *Parser) parseYieldExpr() *ast.YieldExpr {
         endSpan = value.Span()
     }
 
-    return ast.NewYieldExpr(value, isDelegate, ast.MergeSpans(startSpan, endSpan))
-}
+    expr = ast.NewYieldExpr(value, isDelegate, ast.MergeSpans(startSpan, endSpan))
 ```
+
+**Why `primaryExpr()`?** Like `await`, `yield` is a keyword-prefixed unary operator. Since its precedence (2) is lower than all binary operators (3+), `p.expr()` correctly parses the full operand expression. Handling it in `primaryExpr()` matches the existing pattern for `await` and avoids a separate parsing function.
 
 **Note**: No special parsing needed for generator functions - any function containing `yield` is automatically a generator. The type checker and code generator detect this by scanning the function body for yield expressions.
 
@@ -555,39 +657,69 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
 
 **File**: `internal/checker/infer_func.go`
 
-Modify function inference to detect generators by presence of `yield`:
+Generator detection belongs in `inferFuncBodyWithFuncSigType`, which is the shared function called by all three sites that can produce generators:
+
+- `inferFuncDecl` in `infer_stmt.go` (function declarations)
+- `case *ast.FuncExpr` in `infer_expr.go` (function expressions / lambdas)
+- `case *ast.MethodExpr` in `infer_expr.go` (object/class methods)
+
+By placing the generator logic here, all three automatically gain generator support.
+
+Modify `inferFuncBodyWithFuncSigType` to allocate fresh `ContainsYield`/`YieldedTypes` pointers, then check after body inference:
 
 ```go
-func (c *Checker) inferFuncDecl(ctx *Context, decl *ast.FuncDecl) (Type, []Error) {
-    // ... existing setup ...
+func (c *Checker) inferFuncBodyWithFuncSigType(
+    ctx Context,
+    funcSigType *type_system.FuncType,
+    paramBindings map[string]*type_system.Binding,
+    body *ast.Block,
+    isAsync bool,
+) []Error {
+    errors := []Error{}
 
     // Allocate fresh pointers for generator tracking - this function gets its own
     // tracking independent of any enclosing function
     containsYield := false
-    yieldedTypes := []Type{}
+    yieldedTypes := []type_system.Type{}
 
-    funcCtx := ctx.WithNewScope()
-    funcCtx.IsAsync = decl.Sig.Async
-    funcCtx.ContainsYield = &containsYield   // Fresh pointer for this function
-    funcCtx.YieldedTypes = &yieldedTypes     // Fresh pointer for this function
+    bodyCtx := ctx.WithNewScope()
+    bodyCtx.IsAsync = isAsync
+    bodyCtx.ContainsYield = &containsYield   // Fresh pointer for this function
+    bodyCtx.YieldedTypes = &yieldedTypes     // Fresh pointer for this function
 
-    // ... infer body (this may set *funcCtx.ContainsYield = true) ...
+    returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
+    errors = slices.Concat(errors, bodyErrors)
 
     // Check if this function is a generator (contains yield)
-    if *funcCtx.ContainsYield {
-        yieldType := c.unionTypes(*funcCtx.YieldedTypes)
-        returnType := // from explicit returns or undefined
-        nextType := NeverType{}  // defaults to never; explicit annotation required for .next(value) usage
+    if containsYield {
+        yieldType := c.unionTypes(yieldedTypes)
+        nextType := type_system.NewNeverType(nil)
 
-        if decl.Sig.Async {
-            return MakeAsyncGeneratorType(yieldType, returnType, nextType), errors
+        if isAsync {
+            // async function* -> AsyncGenerator<T, TReturn, TNext>
+            funcSigType.Return = MakeAsyncGeneratorType(yieldType, returnType, nextType)
+        } else {
+            // function* -> Generator<T, TReturn, TNext>
+            funcSigType.Return = MakeGeneratorType(yieldType, returnType, nextType)
         }
-        return MakeGeneratorType(yieldType, returnType, nextType), errors
+        funcSigType.Throws = type_system.NewNeverType(nil)
+        return errors
     }
 
-    // ... rest of existing logic for regular functions ...
+    // ... rest of existing logic for regular (non-generator) functions ...
+    if isAsync {
+        // existing async Promise wrapping logic ...
+    } else {
+        unifyReturnErrors := c.Unify(ctx, returnType, funcSigType.Return)
+        unifyThrowsErrors := c.Unify(ctx, inferredThrowType, funcSigType.Throws)
+        errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
+    }
+
+    return errors
 }
 ```
+
+This approach means `inferFuncDecl`, `FuncExpr`, and `MethodExpr` all get generator support without any changes to their callsites.
 
 ### 4.4 Add Context Fields
 
@@ -641,30 +773,19 @@ Similarly update `WithNewScopeAndNamespace` and `WithScope`.
 
 ### 4.5 Yield Context Scoping
 
-**Important**: Each function creates a new context for `ContainsYield` tracking. When entering a nested function (lambda, callback, etc.), a fresh context is created. This ensures:
+**Important**: Each call to `inferFuncBodyWithFuncSigType` allocates fresh `ContainsYield`/`YieldedTypes` pointers (see section 4.3). This naturally creates a new generator-tracking scope for every function boundary. Since all three callsites flow through it:
+
+- `inferFuncDecl` (in `infer_stmt.go`) → `inferFuncBodyWithFuncSigType`
+- `case *ast.FuncExpr` (in `infer_expr.go`) → `inferFuncBodyWithFuncSigType`
+- `case *ast.MethodExpr` (in `infer_expr.go`) → `inferFuncBodyWithFuncSigType`
+
+...nested functions automatically get independent tracking. This ensures:
 
 1. `yield` in a nested function only makes *that* function a generator
 2. The outer function's generator status is unaffected by nested yields
 3. Using `yield` inside a `.forEach()` callback creates a generator callback, not a generator outer function
 
-```go
-func (c *Checker) inferFuncExpr(ctx *Context, expr *ast.FuncExpr) (Type, []Error) {
-    // Allocate fresh pointers - this nested function gets independent tracking
-    // Yields in this function do NOT affect the outer function's generator status
-    containsYield := false
-    yieldedTypes := []Type{}
-
-    funcCtx := ctx.WithNewScope()
-    funcCtx.IsAsync = expr.Async
-    funcCtx.ContainsYield = &containsYield   // Fresh pointer for this function
-    funcCtx.YieldedTypes = &yieldedTypes     // Fresh pointer for this function
-
-    // ... infer body ...
-
-    // *funcCtx.ContainsYield reflects only yields in THIS function
-    // Block scopes within this function share these pointers
-}
-```
+Block scopes created by `WithNewScope` (for `if`/`while`/`for` bodies) copy the pointers, so yields anywhere in the function body share the same tracking state.
 
 ### 4.6 Async Context Validation
 
@@ -874,54 +995,55 @@ func (p *Printer) printYieldExpr(expr *YieldExpr) {
 
 ### 6.1 Parser Tests
 
+Add test cases to the existing snapshot-based test tables. The project uses `go-snaps`
+(`snaps.MatchSnapshot`) for parser tests — no expected output is specified inline; instead,
+snapshots are automatically generated on first run and verified on subsequent runs.
+
 **File**: `internal/parser/stmt_test.go`
 
+Add these entries to the `TestParseStmtNoErrors` test table:
+
 ```go
-func TestParseForInStmt(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            input: `for item in items { console.log(item) }`,
-            expected: // AST representation
-        },
-        {
-            input: `for [key, value] in map { }`,
-            expected: // With destructuring
-        },
-        {
-            input: `for await item in asyncItems { }`,
-            expected: // Async iteration
-        },
-    }
-    // ... test implementation ...
-}
+"ForInBasic": {
+    input: `for item in items { console.log(item) }`,
+},
+"ForInDestructuring": {
+    input: `for [key, value] in map { }`,
+},
+"ForAwaitIn": {
+    input: `for await item in asyncItems { }`,
+},
+"ForInWithValPattern": {
+    input: `for val item in items { }`,
+},
+"GeneratorFuncDecl": {
+    input: `fn count() { yield 1; yield 2; yield 3 }`,
+},
+"AsyncGeneratorFuncDecl": {
+    input: `async fn fetch() { yield await x }`,
+},
 ```
 
 **File**: `internal/parser/expr_test.go`
 
-```go
-func TestParseYieldExpr(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {"yield 1", /* expected */},
-        {"yield from items", /* expected */},
-        {"yield", /* bare yield */},
-    }
-}
+Add these entries to the `TestParseExprNoErrors` test table:
 
-func TestParseGeneratorFunc(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {"fn count() { yield 1 }", /* expected */},
-        {"async fn fetch() { yield await x }", /* expected */},
-    }
-}
+```go
+"YieldWithValue": {
+    input: "yield 1",
+},
+"YieldFrom": {
+    input: "yield from items",
+},
+"BareYield": {
+    input: "yield",
+},
+"YieldInBinaryExpr": {
+    input: "x + yield 1",
+},
+"YieldFromInBinaryExpr": {
+    input: "x + yield from items",
+},
 ```
 
 ### 6.2 Type Checker Tests
@@ -1051,7 +1173,7 @@ func TestEmptyIterable(t *testing.T) {
 func TestInfiniteGenerator(t *testing.T) {
     input := `
         fn naturals() {
-            var n = 0
+            var n: number = 0
             while true {
                 yield n
                 n = n + 1
@@ -1131,39 +1253,49 @@ func TestContinueInForIn(t *testing.T) {
 
 ### 6.5 Integration Tests (Fixtures)
 
-**Directory**: `fixtures/iterator/`
+**Directory**: `fixtures/`
 
-Create test fixtures with input Escalier code and expected JavaScript output:
+Create test fixtures following the existing convention. Each fixture is a top-level directory
+under `fixtures/` containing a `lib/` directory with `.esc` source files, a `build/` directory
+for generated output, and a `package.json`:
 
 ```text
-fixtures/iterator/
+fixtures/
     for_in_basic/
-        input.esc
-        output.js
+        lib/
+            for_in_basic.esc
+        build/
+        package.json
     for_in_destructuring/
-        input.esc
-        output.js
-    for_in_break_continue/
-        input.esc
-        output.js
+        lib/
+            for_in_destructuring.esc
+        build/
+        package.json
     for_await_in/
-        input.esc
-        output.js
+        lib/
+            for_await_in.esc
+        build/
+        package.json
     generator_basic/
-        input.esc
-        output.js
+        lib/
+            generator_basic.esc
+        build/
+        package.json
     generator_with_finally/
-        input.esc
-        output.js
+        lib/
+            generator_with_finally.esc
+        build/
+        package.json
     async_generator/
-        input.esc
-        output.js
+        lib/
+            async_generator.esc
+        build/
+        package.json
     yield_delegation/
-        input.esc
-        output.js
-    empty_iterable/
-        input.esc
-        output.js
+        lib/
+            yield_delegation.esc
+        build/
+        package.json
 ```
 
 ---
@@ -1175,9 +1307,10 @@ fixtures/iterator/
 2. Test that Symbol.iterator property lookup works on known types
 3. Implement and test `GetIterableElementType` as a standalone spike
 4. Verify array spread properly checks for `Iterable<T>` (or add this check)
-5. Verify existing `await` context checking works correctly
+5. Refactor `await` throw collection to use context pointers (Phase 0.5) — validates the single-pass context-pointer pattern that generators will use
+6. Verify existing `await` context checking works correctly (all async tests still pass after refactor)
 
-**Exit criteria**: All foundation tests pass. If any fail, fix them before proceeding - these are blocking issues.
+**Exit criteria**: All foundation tests pass, and the await refactor demonstrates the context-pointer pattern works end-to-end. If any fail, fix them before proceeding - these are blocking issues.
 
 ### Milestone 1: Basic For-In Loops
 1. Add `ForInStmt` to AST
@@ -1217,7 +1350,10 @@ fixtures/iterator/
 
 | Phase | File | Changes |
 |-------|------|---------|
-| Phase 0 | `internal/checker/infer_expr.go` | Verify array spread checks `Iterable<T>` |
+| Phase 0 | `internal/checker/infer_expr.go` | Verify array spread checks `Iterable<T>`; refactor `AwaitExpr` to collect throw types via context pointer |
+| Phase 0 | `internal/checker/infer_func.go` | Refactor `inferFuncBodyWithFuncSigType` to allocate `AwaitThrowTypes` pointer; remove `AwaitVisitor` |
+| Phase 0 | `internal/checker/checker.go` | Add `AwaitThrowTypes` field to Context; propagate in scope helpers |
+| Phase 0 | `internal/ast/expr.go` | Remove `Throws` field from `AwaitExpr` |
 | AST | `internal/ast/stmt.go` | Add `ForInStmt` |
 | AST | `internal/ast/expr.go` | Add `YieldExpr` |
 | Parser | `internal/parser/stmt.go` | Parse for-in loops |
@@ -1226,7 +1362,7 @@ fixtures/iterator/
 | Checker | `internal/checker/checker.go` | Add `ContainsYield`, `YieldedTypes`, `GeneratorNextType` fields to Context; update `WithNewScope`, `WithNewScopeAndNamespace`, `WithScope` to propagate them |
 | Checker | `internal/checker/infer_stmt.go` | Infer for-in loops, validate async context, bind loop vars (Mutable: false) |
 | Checker | `internal/checker/infer_expr.go` | Infer yield expressions, set ContainsYield, verify await checks |
-| Checker | `internal/checker/infer_func.go` | Detect generators via ContainsYield |
+| Checker | `internal/checker/infer_func.go` | Detect generators via ContainsYield in `inferFuncBodyWithFuncSigType` (covers FuncDecl, FuncExpr, and MethodExpr) |
 | Codegen | `internal/codegen/ast.go` | Add `ForOfStmt`, `YieldExpr`, `Method.IsGenerator` |
 | Codegen | `internal/codegen/builder.go` | Transform for-in, yield; detect generators in functions and methods |
 | Codegen | `internal/codegen/printer.go` | Print for-of, yield, yield*, function*, *method() |
