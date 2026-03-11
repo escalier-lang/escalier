@@ -3492,6 +3492,7 @@
                 End:      ast.Location{Line:1, Column:9},
                 SourceID: 0,
             },
+            inferredType: nil,
         },
         &ast.RestSpreadExpr{
             Value: &ast.ObjectExpr{
@@ -3551,6 +3552,7 @@
                 End:      ast.Location{Line:1, Column:20},
                 SourceID: 0,
             },
+            inferredType: nil,
         },
     },
     span: ast.Span{

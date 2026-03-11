@@ -5,14 +5,16 @@ This document outlines the implementation strategy for adding iterator protocol 
 ## Current State Analysis
 
 ### Already Implemented
-- **Spread syntax**: `RestSpreadExpr` fully implemented in parser, type checker, and codegen
+- **Spread syntax**: `RestSpreadExpr` fully implemented in parser, type checker, and codegen. `RestSpreadExpr` now implements both `Expr` and `ObjExprElem` interfaces, enabling spread in both array and object contexts.
+- **Array spread with iterable check**: The parser supports `...expr` inside array literals (`[1, 2, ...arr]`). The type checker validates that the spread operand implements `Iterable<T>` and extracts the element type. Non-iterable types produce a clear error.
 - **Async functions**: `async fn` with `await` expressions fully supported
 - **Tokens**: `Yield`, `From`, `In`, `Async`, `Await` tokens already defined in lexer
-- **Standard library**: TypeScript lib.es2015.d.ts and iterable definitions loaded
-- **Symbol support**: `Symbol.iterator` parsed in computed property keys by the `.d.ts` parser, but the checker does not yet resolve `[Symbol.iterator]` for property lookups (see `TODO: handle Symbol.iterator as key` in `internal/checker/prelude.go`). This must be addressed in Milestone 0.
+- **Standard library**: TypeScript lib.es2015.d.ts and iterable definitions loaded. Verified: `Iterator<T, TReturn, TNext>`, `Iterable<T, TReturn, TNext>`, `IterableIterator<T, TReturn, TNext>`, `Generator<T, TReturn, TNext>`, `IteratorResult<T, TReturn>` all load correctly.
+- **Symbol.iterator property lookup**: The checker resolves `[Symbol.iterator]` for index access on `ObjectType`, `TypeRefType` (including `Array`), `PrimType` (e.g. `string`), and `LitType`. Implemented in `expand_type.go:getObjectAccess`.
+- **`GetIterableElementType` helper**: `internal/checker/iterable.go` provides `GetIterableElementType(ctx, type)` which extracts element type T from any `Iterable<T>` by looking up `[Symbol.iterator]()` and extracting T from the returned Iterator type. Handles `TupleType` directly (union of element types), `TypeRefType` (first type arg), and `ObjectType` (via `next()` method).
 
-### Verification Required
-- **Array spread Iterable check**: Verify that `RestSpreadExpr` in array contexts (`TupleExpr`) properly validates that the spread operand implements `Iterable<T>`. Object spread does not require this check.
+### Not Yet Loaded
+- **AsyncGenerator**: Requires ES2018+ lib files which are not currently loaded (target is `"es2015"`).
 
 ### Not Yet Implemented
 - `for...in` loop statement
@@ -23,144 +25,67 @@ This document outlines the implementation strategy for adding iterator protocol 
 
 ---
 
-## Phase 0: Verification and Foundation
+## Phase 0: Verification and Foundation ✅ COMPLETED
 
 Before implementing new iterator features, verify foundational pieces and derisk the implementation by testing critical assumptions.
 
-### 0.1 Verify Standard Library Types Load Correctly
+### 0.1 Verify Standard Library Types Load Correctly ✅
 
-**Why this matters**: The entire implementation depends on `Iterator`, `Iterable`, `Generator`, and `AsyncGenerator` being correctly loaded from lib.es2015.d.ts. If these types aren't available or have unexpected structure, nothing else will work.
+**Status**: Completed. Tests in `internal/checker/tests/iterator_test.go:TestStdLibIteratorTypesLoaded`.
 
-**Test cases to add**:
-```go
-func TestStdLibIteratorTypesLoaded(t *testing.T) {
-    ctx := loadStdLib()
+**Findings**:
+- `Iterator<T, TReturn, TNext>` — 3 type params ✅
+- `Iterable<T, TReturn, TNext>` — 3 type params (not 1 as originally assumed; TypeScript's definition includes TReturn and TNext with defaults)
+- `IterableIterator<T, TReturn, TNext>` — 3 type params ✅
+- `Generator<T, TReturn, TNext>` — 3 type params ✅
+- `IteratorResult<T, TReturn>` — 2 type params ✅
+- `SymbolConstructor` has `iterator` property with `UniqueSymbolType` ✅
+- `AsyncGenerator` — NOT loaded (requires ES2018+ lib files; current target is `"es2015"`)
 
-    // Verify Iterator type exists with correct type parameters
-    iteratorType := ctx.GetTypeAlias("Iterator")
-    assert.NotNil(t, iteratorType, "Iterator type should be loaded")
-    assert.Equal(t, 3, len(iteratorType.TypeParams), "Iterator<T, TReturn, TNext>")
+### 0.2 Verify Symbol.iterator Property Lookup ✅
 
-    // Verify Iterable type exists
-    iterableType := ctx.GetTypeAlias("Iterable")
-    assert.NotNil(t, iterableType, "Iterable type should be loaded")
+**Status**: Completed. Required code changes + tests in `internal/checker/tests/iterator_test.go:TestSymbolIteratorLookup`.
 
-    // Verify Generator type exists
-    generatorType := ctx.GetTypeAlias("Generator")
-    assert.NotNil(t, generatorType, "Generator type should be loaded")
-    assert.Equal(t, 3, len(generatorType.TypeParams), "Generator<T, TReturn, TNext>")
+**Changes made**:
+- **`internal/checker/expand_type.go`** — Added `isSymbolIndexKey(key)` helper that checks if a `MemberAccessKey` is an `IndexKey` with a `UniqueSymbolType` (e.g. `Symbol.iterator`). Used in three places to avoid duplicated unwrap-and-check logic.
+- **`internal/checker/expand_type.go`** — `getObjectAccess` `IndexKey` case: added handling for `UniqueSymbolType` keys to match against `SymObjTypeKeyKind` object elements (previously only `StrLit` keys were handled)
+- **`internal/checker/expand_type.go`** — `getMemberType` `TypeRefType` case: Array numeric index access now uses `!isSymbolIndexKey(key)` to skip symbol keys so they fall through to type alias expansion (previously `arr[Symbol.iterator]` was incorrectly treated as numeric indexing)
+- **`internal/checker/expand_type.go`** — `PrimType` and `LitType` cases: now delegate to wrapper types when the key is a `PropertyKey` or a symbol index key, using `isSymbolIndexKey(key)` (e.g. `string[Symbol.iterator]` delegates to `String`)
 
-    // Verify AsyncGenerator type exists
-    asyncGeneratorType := ctx.GetTypeAlias("AsyncGenerator")
-    assert.NotNil(t, asyncGeneratorType, "AsyncGenerator type should be loaded")
-}
-```
+### 0.3 Implement GetIterableElementType ✅
 
-### 0.2 Verify Symbol.iterator Property Lookup
+**Status**: Completed. Implementation in `internal/checker/iterable.go`, tests in `internal/checker/tests/iterator_test.go:TestGetIterableElementType`.
 
-**Why this matters**: `GetIterableElementType` needs to look up `[Symbol.iterator]` on types. This is a computed property key, not a regular named property.
+**Implementation** (`internal/checker/iterable.go`):
+- `getSymbolIteratorID()` — retrieves the Symbol.iterator unique symbol ID from `SymbolConstructor` in the global scope
+- `GetIterableElementType(ctx, type)` — looks up `[Symbol.iterator]` on the type via `getMemberType`, gets the return type of the function, then extracts T (first type arg) from the Iterator-like return type
+- `extractIteratorElementType(ctx, type)` — extracts T from `TypeRefType` (first type arg, after verifying the type name contains "Iterator" or equals "Generator") or `ObjectType` (via `next()` method returning `IteratorResult<T, TReturn>`)
+- Direct `TupleType` handling — returns union of element types (tuples are always iterable)
 
-**Test cases to add**:
-```go
-func TestSymbolIteratorLookup(t *testing.T) {
-    input := `
-        declare val arr: Array<number>
-        val iter = arr[Symbol.iterator]()
-    `
-    iterType, errors := inferType(input, "iter")
-    assert.Empty(t, errors)
-    // iter should have type Iterator<number, ...> or IterableIterator<number, ...>
-    assert.Contains(t, iterType.String(), "Iterator")
-}
-```
+**Tested types**:
+- `Array<number>` → `number` ✅
+- `Array<string>` → `string` ✅
+- `string` → `string` ✅
+- `number` → `nil` (not iterable) ✅
+- `boolean` → `nil` (not iterable) ✅
 
-### 0.3 Implement GetIterableElementType (Spike)
+### 0.4 Array Spread Iterable Check ✅
 
-**Why this matters**: This is the foundational function used by for-in loops, array spread validation, and yield delegation. Implement and test it before building features that depend on it.
+**Status**: Completed. Required parser + checker changes + tests in `internal/checker/tests/iterator_test.go:TestArraySpreadRequiresIterable`.
 
-**Test against known types**:
-```go
-func TestGetIterableElementType(t *testing.T) {
-    tests := []struct {
-        typeName string
-        expected string
-    }{
-        {"Array<number>", "number"},
-        {"Set<string>", "string"},
-        {"Map<string, number>", "[string, number]"},
-        {"string", "string"},
-        {"Generator<boolean, void, never>", "boolean"},
-    }
+**Changes made**:
+- **`internal/ast/expr.go`** — `RestSpreadExpr` now implements the `Expr` interface (added `isExpr()`, `InferredType()`, `SetInferredType()`, and `inferredType` field) so it can appear in `TupleExpr.Elems`. `TupleExpr.Accept` handles `RestSpreadExpr` elements specially, visiting them via `EnterExpr`/`ExitExpr` (not `EnterObjExprElem`/`ExitObjExprElem`) so visitors in array context see spread elements correctly.
+- **`internal/parser/expr.go`** — Added `arrayElem()` method that handles `...expr` inside array literals; array literal parsing now uses `parseDelimSeq(p, CloseBracket, Comma, p.arrayElem)` instead of `p.expr`
+- **`internal/checker/infer_expr.go`** — `TupleExpr` case now checks for `*ast.RestSpreadExpr` elements, calls `GetIterableElementType` to validate iterability, and wraps the result as `RestSpreadType(Array<elementType>)`
 
-    for _, tt := range tests {
-        t.Run(tt.typeName, func(t *testing.T) {
-            typ := parseType(tt.typeName)
-            elementType := GetIterableElementType(typ)
-            assert.NotNil(t, elementType, "should be iterable")
-            assert.Equal(t, tt.expected, elementType.String())
-        })
-    }
+**Test cases**:
+- `[1, 2, ...[3, 4]]` — valid (tuple spread) ✅
+- `[1, 2, ...nums]` where `nums: Array<number>` — valid ✅
+- `[..."hello"]` — valid (string is iterable) ✅
+- `[...5]` — error: "Type '5' is not iterable" ✅
+- `[...{a: 1}]` — error: non-iterable object ✅
 
-    // Non-iterable types should return nil
-    nonIterables := []string{"{a: number}", "number", "boolean"}
-    for _, typeName := range nonIterables {
-        t.Run(typeName+" (non-iterable)", func(t *testing.T) {
-            typ := parseType(typeName)
-            elementType := GetIterableElementType(typ)
-            assert.Nil(t, elementType, "should not be iterable")
-        })
-    }
-}
-```
-
-### 0.4 Verify Array Spread Iterable Check
-
-**Files to check**: `internal/checker/infer_expr.go`
-
-When `RestSpreadExpr` appears inside a `TupleExpr` (array literal), verify the type checker:
-1. Checks that the spread operand implements `Iterable<T>`
-2. Extracts the element type `T` from the iterable
-3. Reports an error if the operand is not iterable
-
-```go
-// Expected behavior in inferTupleExpr when encountering RestSpreadExpr:
-case *ast.RestSpreadExpr:
-    spreadType, errs := c.inferExpr(ctx, elem.Value)
-    errors = slices.Concat(errors, errs)
-
-    // Check that spread operand is iterable
-    elementType := c.getIterableElementType(spreadType)
-    if elementType == nil {
-        errors = append(errors, Error{
-            Message: fmt.Sprintf("Type '%s' is not iterable", spreadType),
-            Span:    elem.Span(),
-        })
-        elementType = AnyType{}
-    }
-    elemTypes = append(elemTypes, elementType)
-```
-
-**Test cases to add**:
-```go
-func TestArraySpreadRequiresIterable(t *testing.T) {
-    // Valid: spreading an array
-    input1 := `val arr = [1, 2, ...([3, 4])]`
-    errors1 := check(input1)
-    assert.Empty(t, errors1)
-
-    // Valid: spreading a Set
-    input2 := `val arr = [...new Set([1, 2, 3])]`
-    errors2 := check(input2)
-    assert.Empty(t, errors2)
-
-    // Invalid: spreading a non-iterable object
-    input3 := `val arr = [...{a: 1}]`
-    errors3 := check(input3)
-    assert.NotEmpty(t, errors3)
-}
-```
-
-**Note**: Object spread (`{...obj}`) does NOT require `Iterable<T>` - it copies enumerable own properties. This is already correctly handled.
+**Note**: Object spread (`{...obj}`) does NOT require `Iterable<T>` — it copies enumerable own properties. This is unchanged.
 
 ### 0.5 Refactor Await Throw Collection to Use Context Pointers
 

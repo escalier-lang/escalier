@@ -43,6 +43,7 @@ func (*TaggedTemplateLitExpr) isExpr() {}
 func (*JSXElementExpr) isExpr()        {}
 func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
+func (*RestSpreadExpr) isExpr()        {}
 
 type EmptyExpr struct {
 	span         Span
@@ -443,7 +444,16 @@ func NewArray(elems []Expr, span Span) *TupleExpr {
 func (e *TupleExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		for _, elem := range e.Elems {
-			elem.Accept(v)
+			if spread, ok := elem.(*RestSpreadExpr); ok {
+				// In array context, visit RestSpreadExpr as an Expr
+				// rather than as an ObjExprElem.
+				if v.EnterExpr(spread) {
+					spread.Value.Accept(v)
+				}
+				v.ExitExpr(spread)
+			} else {
+				elem.Accept(v)
+			}
 		}
 	}
 	v.ExitExpr(e)
@@ -615,15 +625,21 @@ func (e *PropertyExpr) Accept(v Visitor) {
 }
 
 type RestSpreadExpr struct {
-	Value Expr
-	span  Span
+	Value        Expr
+	span         Span
+	inferredType Type
 }
 
 func NewRestSpread(value Expr, span Span) *RestSpreadExpr {
 	return &RestSpreadExpr{Value: value, span: span}
 }
-func (e *RestSpreadExpr) Span() Span { return e.span }
+func (e *RestSpreadExpr) Span() Span                 { return e.span }
+func (e *RestSpreadExpr) InferredType() Type          { return e.inferredType }
+func (e *RestSpreadExpr) SetInferredType(t Type)      { e.inferredType = t }
 func (e *RestSpreadExpr) Accept(v Visitor) {
+	// RestSpreadExpr can appear in both object expressions and array expressions.
+	// When used as an Expr (array context), use EnterExpr/ExitExpr.
+	// When used as an ObjExprElem (object context), use EnterObjExprElem/ExitObjExprElem.
 	if v.EnterObjExprElem(e) {
 		e.Value.Accept(v)
 	}

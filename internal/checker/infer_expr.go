@@ -213,16 +213,36 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			Mutability: type_system.MutabilityUncertain,
 		}
 	case *ast.TupleExpr:
-		types := make([]type_system.Type, len(expr.Elems))
+		elemTypes := []type_system.Type{}
 		errors = []Error{}
-		for i, elem := range expr.Elems {
-			elemType, elemErrors := c.inferExpr(ctx, elem)
-			types[i] = elemType
-			errors = slices.Concat(errors, elemErrors)
+		for _, elem := range expr.Elems {
+			if spread, ok := elem.(*ast.RestSpreadExpr); ok {
+				spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
+				errors = slices.Concat(errors, spreadErrors)
+
+				// Check that the spread operand is iterable
+				elementType := c.GetIterableElementType(ctx, spreadType)
+				if elementType == nil {
+					err := NewGenericError(
+						fmt.Sprintf("Type '%s' is not iterable", spreadType),
+						spread.Span(),
+					)
+					errors = append(errors, err)
+					elementType = type_system.NewAnyType(nil)
+				}
+				elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
+					Name:     type_system.NewIdent("Array"),
+					TypeArgs: []type_system.Type{elementType},
+				}))
+			} else {
+				elemType, elemErrors := c.inferExpr(ctx, elem)
+				elemTypes = append(elemTypes, elemType)
+				errors = slices.Concat(errors, elemErrors)
+			}
 		}
 
 		resultType = &type_system.MutabilityType{
-			Type:       type_system.NewTupleType(provenance, types...),
+			Type:       type_system.NewTupleType(provenance, elemTypes...),
 			Mutability: type_system.MutabilityUncertain,
 		}
 	case *ast.ObjectExpr:

@@ -387,7 +387,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
 			p.lexer.consume()
-			elems := parseDelimSeq(p, CloseBracket, Comma, p.expr)
+			elems := parseDelimSeq(p, CloseBracket, Comma, p.arrayElem)
 			end := p.expect(CloseBracket, AlwaysConsume)
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end, SourceID: p.lexer.source.ID})
 		case OpenBrace:
@@ -635,6 +635,22 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 			ast.MergeSpans(token.Span, span),
 		)
 	}
+}
+
+// arrayElem parses a single element of an array literal.
+// Handles both regular expressions and spread syntax (...expr).
+func (p *Parser) arrayElem() ast.Expr {
+	token := p.lexer.peek()
+	if token.Type == DotDotDot {
+		p.lexer.consume() // consume '...'
+		arg := p.expr()
+		if arg == nil {
+			p.reportError(token.Span, "Expected an expression after '...'")
+			return nil
+		}
+		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
+	}
+	return p.expr()
 }
 
 func (p *Parser) objExprElem() ast.ObjExprElem {
