@@ -639,7 +639,7 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
         ctx.AddYieldedType(valueType)
     } else {
         // Bare `yield` yields undefined - record it so Generator<T,...> includes it
-        ctx.AddYieldedType(UndefinedType{})
+        ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
     }
 
     // The yield expression evaluates to TNext (value passed to .next())
@@ -731,10 +731,17 @@ Extend the checker context with generator-related fields. These must be **pointe
 type Context struct {
     // ... existing fields (Scope, IsAsync, IsPatMatch, etc.) ...
 
-    // Generator tracking - pointers so block scopes share state within a function
+    // Generator tracking:
+    // ContainsYield and YieldedTypes are pointers because they are accumulators
+    // mutated during traversal — block scopes must share the same underlying
+    // values so that yields inside if/while/etc. propagate to the enclosing
+    // function. Nested functions allocate fresh pointers to isolate their state.
+    // GeneratorNextType is a plain Type (not a pointer) because it is a read-only
+    // per-function configuration value set once when entering a function and
+    // simply copied by value into block scopes.
     ContainsYield     *bool             // Set to true when yield is encountered
     YieldedTypes      *[]Type           // Types of all yield expressions
-    GeneratorNextType Type              // TNext type for this generator (not a pointer - set once per function)
+    GeneratorNextType Type              // TNext type for this generator
 }
 
 // Helper method to add a yielded type (handles nil check and dereferencing)
