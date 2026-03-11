@@ -9,7 +9,7 @@ This document outlines the implementation strategy for adding iterator protocol 
 - **Async functions**: `async fn` with `await` expressions fully supported
 - **Tokens**: `Yield`, `From`, `In`, `Async`, `Await` tokens already defined in lexer
 - **Standard library**: TypeScript lib.es2015.d.ts and iterable definitions loaded
-- **Symbol support**: `Symbol.iterator` recognized in computed property keys
+- **Symbol support**: `Symbol.iterator` parsed in computed property keys by the `.d.ts` parser, but the checker does not yet resolve `[Symbol.iterator]` for property lookups (see `TODO: handle Symbol.iterator as key` in `internal/checker/prelude.go`). This must be addressed in Milestone 0.
 
 ### Verification Required
 - **Array spread Iterable check**: Verify that `RestSpreadExpr` in array contexts (`TupleExpr`) properly validates that the spread operand implements `Iterable<T>`. Object spread does not require this check.
@@ -174,14 +174,14 @@ Add a new statement type for for...in loops:
 
 ```go
 type ForInStmt struct {
-    Pattern  Pattern   // Loop variable pattern (supports destructuring)
+    Pattern  Pat       // Loop variable pattern (supports destructuring)
     Iterable Expr      // Expression being iterated
     Body     []Stmt    // Loop body statements
     IsAwait  bool      // true for `for await...in`
     span     Span
 }
 
-func NewForInStmt(pattern Pattern, iterable Expr, body []Stmt, isAwait bool, span Span) *ForInStmt {
+func NewForInStmt(pattern Pat, iterable Expr, body []Stmt, isAwait bool, span Span) *ForInStmt {
     return &ForInStmt{
         Pattern:  pattern,
         Iterable: iterable,
@@ -191,8 +191,18 @@ func NewForInStmt(pattern Pattern, iterable Expr, body []Stmt, isAwait bool, spa
     }
 }
 
-func (s *ForInStmt) stmtNode()    {}
-func (s *ForInStmt) Span() Span   { return s.span }
+func (*ForInStmt) isStmt()       {}
+func (s *ForInStmt) Span() Span  { return s.span }
+func (s *ForInStmt) Accept(v Visitor) {
+    if v.EnterStmt(s) {
+        s.Pattern.Accept(v)
+        s.Iterable.Accept(v)
+        for _, stmt := range s.Body {
+            stmt.Accept(v)
+        }
+    }
+    v.ExitStmt(s)
+}
 ```
 
 ### 1.2 Add YieldExpr to Expression AST
@@ -203,9 +213,10 @@ Add yield expression:
 
 ```go
 type YieldExpr struct {
-    Value      Expr   // The yielded value (nil for bare `yield`)
-    IsDelegate bool   // true for `yield from` (compiles to yield*)
-    span       Span
+    Value        Expr   // The yielded value (nil for bare `yield`)
+    IsDelegate   bool   // true for `yield from` (compiles to yield*)
+    span         Span
+    inferredType Type
 }
 
 func NewYieldExpr(value Expr, isDelegate bool, span Span) *YieldExpr {
@@ -216,8 +227,18 @@ func NewYieldExpr(value Expr, isDelegate bool, span Span) *YieldExpr {
     }
 }
 
-func (e *YieldExpr) isExpr()     {}
-func (e *YieldExpr) Span() Span  { return e.span }
+func (*YieldExpr) isExpr()                     {}
+func (e *YieldExpr) Span() Span                { return e.span }
+func (e *YieldExpr) InferredType() Type         { return e.inferredType }
+func (e *YieldExpr) SetInferredType(t Type)     { e.inferredType = t }
+func (e *YieldExpr) Accept(v Visitor) {
+    if v.EnterExpr(e) {
+        if e.Value != nil {
+            e.Value.Accept(v)
+        }
+    }
+    v.ExitExpr(e)
+}
 ```
 
 **Note**: No changes needed to `FuncSig` - generator functions are detected by the presence of `yield` expressions in the function body during type checking and code generation.
@@ -473,15 +494,29 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
         valueType, errs := c.inferExpr(ctx, expr.Value)
         errors = slices.Concat(errors, errs)
 
-        elementType := c.getIterableElementType(valueType)
+        // In async generators, yield* can delegate to both async and sync iterables
+        // (matching the for-await fallback behavior). Try async first, then sync.
+        var elementType Type
+        if ctx.IsAsync {
+            elementType = c.getAsyncIterableElementType(valueType)
+            if elementType == nil {
+                elementType = c.getIterableElementType(valueType)
+            }
+        } else {
+            elementType = c.getIterableElementType(valueType)
+        }
+
         if elementType == nil {
             errors = append(errors, Error{
                 Message: fmt.Sprintf("Type '%s' is not iterable", valueType),
                 Span:    expr.Value.Span(),
             })
         }
-        // Track delegated element types - contributes to T in Generator<T, TReturn, TNext>
-        ctx.AddYieldedType(elementType)
+
+        // Only record yielded type when non-nil to avoid nil entries in unionTypes()
+        if elementType != nil {
+            ctx.AddYieldedType(elementType)
+        }
 
         // The yield* expression evaluates to TReturn of the delegated generator.
         // For simplicity, we can start with `unknown` and refine later if needed.
@@ -491,27 +526,28 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
             delegatedReturnType = UnknownType{}
         }
         return delegatedReturnType, errors
-    } else {
-        // Regular yield
-        if expr.Value != nil {
-            valueType, errs := c.inferExpr(ctx, expr.Value)
-            errors = slices.Concat(errors, errs)
-
-            // Track yielded types - contributes to T in Generator<T, TReturn, TNext>
-            ctx.AddYieldedType(valueType)
-
-            // The yield expression evaluates to TNext (value passed to .next())
-            // TNext defaults to `never` since most generators are consumed via
-            // for...of loops rather than manual .next(value) calls. If code needs
-            // to pass values, it can explicitly annotate the generator type.
-            if ctx.GeneratorNextType == nil {
-                return NeverType{}, errors
-            }
-            return ctx.GeneratorNextType, errors
-        }
     }
 
-    return VoidType{}, errors
+    // Regular yield (with or without value)
+    if expr.Value != nil {
+        valueType, errs := c.inferExpr(ctx, expr.Value)
+        errors = slices.Concat(errors, errs)
+
+        // Track yielded types - contributes to T in Generator<T, TReturn, TNext>
+        ctx.AddYieldedType(valueType)
+    } else {
+        // Bare `yield` yields undefined - record it so Generator<T,...> includes it
+        ctx.AddYieldedType(UndefinedType{})
+    }
+
+    // The yield expression evaluates to TNext (value passed to .next())
+    // TNext defaults to `never` since most generators are consumed via
+    // for...of loops rather than manual .next(value) calls. If code needs
+    // to pass values, it can explicitly annotate the generator type.
+    if ctx.GeneratorNextType == nil {
+        return NeverType{}, errors
+    }
+    return ctx.GeneratorNextType, errors
 }
 ```
 
@@ -646,7 +682,7 @@ The type checker must validate async context for iterator-related constructs:
    - `async fn` containing `yield` produces `AsyncGenerator<T, TReturn, TNext>`
    - Both `await` and `yield` are valid in async generators
 
-**Verification**: Ensure existing `await` checking in `inferAwaitExpr` properly checks `ctx.InAsync` and reports errors. The iterator implementation should not break this existing behavior.
+**Verification**: Ensure existing `await` checking in `inferAwaitExpr` properly checks `ctx.IsAsync` and reports errors. The iterator implementation should not break this existing behavior.
 
 ---
 
