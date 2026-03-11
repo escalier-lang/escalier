@@ -67,6 +67,9 @@ func (ctx *Context) WithNewScope() Context {
 	}
 }
 
+// WithNewScopeAndNamespace creates a new context for entering a module namespace.
+// AllowUndefinedTypeRefs and TypeRefsToUpdate are intentionally omitted here
+// because callers manage those fields directly on the returned context.
 func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
 	return Context{
 		Scope:           ctx.Scope.WithNewScopeAndNamespace(ns),
