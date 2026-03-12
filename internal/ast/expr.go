@@ -43,6 +43,7 @@ func (*TaggedTemplateLitExpr) isExpr() {}
 func (*JSXElementExpr) isExpr()        {}
 func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
+func (*YieldExpr) isExpr()             {}
 func (*ArraySpreadExpr) isExpr()       {}
 
 type EmptyExpr struct {
@@ -625,9 +626,6 @@ type ArraySpreadExpr struct {
 func NewArraySpread(value Expr, span Span) *ArraySpreadExpr {
 	return &ArraySpreadExpr{Value: value, span: span}
 }
-func (e *ArraySpreadExpr) Span() Span             { return e.span }
-func (e *ArraySpreadExpr) InferredType() Type     { return e.inferredType }
-func (e *ArraySpreadExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *ArraySpreadExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Value.Accept(v)
@@ -645,9 +643,6 @@ type ObjSpreadExpr struct {
 func NewRestSpread(value Expr, span Span) *ObjSpreadExpr {
 	return &ObjSpreadExpr{Value: value, span: span}
 }
-func (e *ObjSpreadExpr) Span() Span             { return e.span }
-func (e *ObjSpreadExpr) InferredType() Type     { return e.inferredType }
-func (e *ObjSpreadExpr) SetInferredType(t Type) { e.inferredType = t }
 func (e *ObjSpreadExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
 		e.Value.Accept(v)
@@ -846,6 +841,30 @@ func NewAwait(arg Expr, span Span) *AwaitExpr {
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
+	}
+	v.ExitExpr(e)
+}
+
+type YieldExpr struct {
+	Value        Expr // The yielded value (nil for bare `yield`)
+	IsDelegate   bool // true for `yield from` (compiles to yield*)
+	span         Span
+	inferredType Type
+}
+
+func NewYieldExpr(value Expr, isDelegate bool, span Span) *YieldExpr {
+	return &YieldExpr{
+		Value:      value,
+		IsDelegate: isDelegate,
+		span:       span,
+	}
+}
+
+func (e *YieldExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		if e.Value != nil {
+			e.Value.Accept(v)
+		}
 	}
 	v.ExitExpr(e)
 }

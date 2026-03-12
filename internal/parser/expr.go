@@ -421,6 +421,32 @@ func (p *Parser) primaryExpr() ast.Expr {
 				return nil
 			}
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
+		case Yield:
+			p.lexer.consume() // consume 'yield'
+
+			// Check for 'from' keyword (yield from for delegation)
+			isDelegate := false
+			if p.lexer.peek().Type == From {
+				isDelegate = true
+				p.lexer.consume()
+			}
+
+			// Parse the yielded expression
+			var value ast.Expr
+			if isDelegate {
+				// 'yield from' REQUIRES an expression (the iterable to delegate to)
+				value = p.expr()
+			} else {
+				// Regular 'yield' can optionally have an expression
+				value = p.exprWithoutErrorCheck()
+			}
+
+			endSpan := token.Span
+			if value != nil {
+				endSpan = value.Span()
+			}
+
+			return ast.NewYieldExpr(value, isDelegate, ast.MergeSpans(token.Span, endSpan))
 		case If:
 			return p.ifElse()
 		case Match:
@@ -653,7 +679,7 @@ func canStartExpr(tt TokenType) bool {
 		// Grouping / collection starters
 		OpenParen, OpenBracket, OpenBrace,
 		// Expression-starting keywords
-		Fn, Async, Await, If, Match, Try, Throw, Do, LessThan:
+		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, LessThan:
 		return true
 	default:
 		return false
