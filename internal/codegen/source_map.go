@@ -340,7 +340,6 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 			s.TraverseExpr(expr)
 		}
 	case *SpreadExpr:
-		s.AddSegmentForNode(ek)
 		s.TraverseExpr(ek.Arg)
 	case *IdentExpr, *LitExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top

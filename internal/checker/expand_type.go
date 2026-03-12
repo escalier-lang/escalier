@@ -695,9 +695,16 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
-		// Check the Extends field if property not found
+		// Check the Extends field if property not found.
+		//
+		// TypeAlias is guaranteed to be non-nil here for valid code: the placeholder
+		// phase in InferModule creates TypeAliases for all types before the definition
+		// phase processes extends clauses via inferTypeAnn, which resolves TypeAlias
+		// immediately. SubstituteTypeParams also preserves TypeAlias on copies. The
+		// nil check below is a defensive guard for error-recovery paths where
+		// inferTypeAnn couldn't resolve an unknown type name (already reported as
+		// UnknownTypeError).
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias, substituting type args
 			extendsType := type_system.Type(extendsTypeRef)
 
 			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
@@ -784,9 +791,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
-		// Check the Extends field if property not found
+		// Check the Extends field if index key not found (same invariant as
+		// the PropertyKey branch above — see comment there for why TypeAlias
+		// is guaranteed non-nil for valid code).
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias, substituting type args
 			extendsType := type_system.Type(extendsTypeRef)
 			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {

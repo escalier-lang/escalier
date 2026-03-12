@@ -263,6 +263,44 @@ func TestGetIterableElementType(t *testing.T) {
 		require.NotNil(t, elemType)
 		assert.Equal(t, "number", elemType.String())
 	})
+
+	t.Run("TupleWithSpreadTuple", func(t *testing.T) {
+		// [number, ...[string, boolean]] should yield number | string | boolean
+		innerTuple := type_system.NewTupleType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewBoolPrimType(nil),
+		)
+		tupleType := type_system.NewTupleType(nil,
+			type_system.NewNumPrimType(nil),
+			type_system.NewRestSpreadType(nil, innerTuple),
+		)
+		elemType := c.GetIterableElementType(ctx, tupleType)
+		require.NotNil(t, elemType, "[number, ...[string, boolean]] should be iterable")
+		assert.Equal(t, "number | string | boolean", elemType.String())
+	})
+
+	t.Run("UnionOfIterables", func(t *testing.T) {
+		// string | Array<number> should yield string | number
+		arrayAlias := scope.GetTypeAlias("Array")
+		require.NotNil(t, arrayAlias)
+		unionType := type_system.NewUnionType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewTypeRefType(nil, "Array", arrayAlias, type_system.NewNumPrimType(nil)),
+		)
+		elemType := c.GetIterableElementType(ctx, unionType)
+		require.NotNil(t, elemType, "string | Array<number> should be iterable")
+		assert.Equal(t, "string | number", elemType.String())
+	})
+
+	t.Run("UnionWithNonIterable", func(t *testing.T) {
+		// string | number should not be iterable (number is not iterable)
+		unionType := type_system.NewUnionType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewNumPrimType(nil),
+		)
+		elemType := c.GetIterableElementType(ctx, unionType)
+		assert.Nil(t, elemType, "string | number should not be iterable")
+	})
 }
 
 // =============================================================================

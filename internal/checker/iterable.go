@@ -47,6 +47,25 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		t = type_system.Prune(mut.Type)
 	}
 
+	// Handle UnionType by extracting the element type from each branch and unioning
+	// the results. This is needed because getMemberType returns a union of
+	// [Symbol.iterator] method types for union inputs, which then fails the hard
+	// cast to *FuncType below.
+	if union, ok := t.(*type_system.UnionType); ok {
+		elemTypes := make([]type_system.Type, 0, len(union.Types))
+		for _, branch := range union.Types {
+			inner := c.GetIterableElementType(ctx, branch)
+			if inner == nil {
+				return nil // one branch is not iterable, so the union isn't either
+			}
+			elemTypes = append(elemTypes, inner)
+		}
+		if len(elemTypes) == 1 {
+			return elemTypes[0]
+		}
+		return type_system.NewUnionType(nil, elemTypes...)
+	}
+
 	// Handle TupleType directly - tuples are iterable, yielding the union of element types.
 	// RestSpreadType elements (e.g. ...string[] in [number, ...string[]]) are unwrapped
 	// to extract the inner array's element type.
@@ -57,11 +76,10 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		elemTypes := make([]type_system.Type, 0, len(tuple.Elems))
 		for _, elem := range tuple.Elems {
 			if rest, ok := elem.(*type_system.RestSpreadType); ok {
-				// Extract the element type from the spread's inner type (e.g. Array<string> → string)
-				if ref, ok := type_system.Prune(rest.Type).(*type_system.TypeRefType); ok && len(ref.TypeArgs) > 0 {
-					elemTypes = append(elemTypes, ref.TypeArgs[0])
-				} else {
-					elemTypes = append(elemTypes, rest.Type)
+				// Structurally resolve the spread's element type (e.g. Array<string> → string,
+				// or a type alias for an array, or another tuple).
+				if inner := c.GetIterableElementType(ctx, rest.Type); inner != nil {
+					elemTypes = append(elemTypes, inner)
 				}
 			} else {
 				elemTypes = append(elemTypes, elem)
