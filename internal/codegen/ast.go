@@ -137,6 +137,7 @@ func (*TypeCastExpr) isExpr()          {}
 func (*TemplateLitExpr) isExpr()       {}
 func (*TaggedTemplateLitExpr) isExpr() {}
 func (*EmptyExpr) isExpr()             {}
+func (*SpreadExpr) isExpr()            {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -227,6 +228,20 @@ func NewArrayExpr(elems []Expr, source ast.Node) *ArrayExpr {
 func (e *ArrayExpr) Span() *Span        { return e.span }
 func (e *ArrayExpr) SetSpan(span *Span) { e.span = span }
 func (e *ArrayExpr) Source() ast.Node   { return e.source }
+
+// SpreadExpr represents a spread element in an array: [...expr]
+type SpreadExpr struct {
+	Arg    Expr
+	source ast.Node
+	span   *Span
+}
+
+func NewSpreadExpr(arg Expr, source ast.Node) *SpreadExpr {
+	return &SpreadExpr{Arg: arg, source: source, span: nil}
+}
+func (e *SpreadExpr) Span() *Span        { return e.span }
+func (e *SpreadExpr) SetSpan(span *Span) { e.span = span }
+func (e *SpreadExpr) Source() ast.Node   { return e.source }
 
 type ObjKey interface {
 	isObjKey()

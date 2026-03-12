@@ -109,6 +109,9 @@ func (p *Printer) PrintExpr(expr Expr) {
 		} else {
 			p.print(fullyQualifyName(e.Name, e.Namespace))
 		}
+	case *SpreadExpr:
+		p.print("...")
+		p.PrintExpr(e.Arg)
 	case *EmptyExpr:
 		// EmptyExpr generates no output - used as a placeholder
 		// for terminal expressions that shouldn't be used

@@ -3475,7 +3475,7 @@
                 SourceID: 0,
             },
         },
-        &ast.RestSpreadExpr{
+        &ast.ObjSpreadExpr{
             Value: &ast.IdentExpr{
                 Name:      "b",
                 Namespace: 0,
@@ -3492,8 +3492,9 @@
                 End:      ast.Location{Line:1, Column:9},
                 SourceID: 0,
             },
+            inferredType: nil,
         },
-        &ast.RestSpreadExpr{
+        &ast.ObjSpreadExpr{
             Value: &ast.ObjectExpr{
                 Elems: {
                     &ast.PropertyExpr{
@@ -3551,6 +3552,7 @@
                 End:      ast.Location{Line:1, Column:20},
                 SourceID: 0,
             },
+            inferredType: nil,
         },
     },
     span: ast.Span{
@@ -8323,5 +8325,125 @@
         SourceID: 0,
     },
     inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperand - 1]
+&ast.TupleExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperand - 1]
+&ast.ObjectExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperand - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperand - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 1]
+&ast.ObjectExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 1]
+&ast.TupleExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected } but got ,",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected ] but got ,",
+    },
 }
 ---

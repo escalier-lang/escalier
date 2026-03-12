@@ -43,6 +43,7 @@ func (*TaggedTemplateLitExpr) isExpr() {}
 func (*JSXElementExpr) isExpr()        {}
 func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
+func (*ArraySpreadExpr) isExpr()       {}
 
 type EmptyExpr struct {
 	span         Span
@@ -461,7 +462,7 @@ func (*MethodExpr) isObjExprElem()      {}
 func (*GetterExpr) isObjExprElem()      {}
 func (*SetterExpr) isObjExprElem()      {}
 func (*PropertyExpr) isObjExprElem()    {}
-func (*RestSpreadExpr) isObjExprElem()  {}
+func (*ObjSpreadExpr) isObjExprElem()   {}
 
 type CallableExpr struct {
 	Fn   FuncExpr
@@ -614,16 +615,40 @@ func (e *PropertyExpr) Accept(v Visitor) {
 	v.ExitObjExprElem(e)
 }
 
-type RestSpreadExpr struct {
-	Value Expr
-	span  Span
+// ArraySpreadExpr represents a spread element in an array context: [...expr]
+type ArraySpreadExpr struct {
+	Value        Expr
+	span         Span
+	inferredType Type
 }
 
-func NewRestSpread(value Expr, span Span) *RestSpreadExpr {
-	return &RestSpreadExpr{Value: value, span: span}
+func NewArraySpread(value Expr, span Span) *ArraySpreadExpr {
+	return &ArraySpreadExpr{Value: value, span: span}
 }
-func (e *RestSpreadExpr) Span() Span { return e.span }
-func (e *RestSpreadExpr) Accept(v Visitor) {
+func (e *ArraySpreadExpr) Span() Span             { return e.span }
+func (e *ArraySpreadExpr) InferredType() Type     { return e.inferredType }
+func (e *ArraySpreadExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *ArraySpreadExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		e.Value.Accept(v)
+	}
+	v.ExitExpr(e)
+}
+
+// ObjSpreadExpr represents a spread element in an object context: {...expr}
+type ObjSpreadExpr struct {
+	Value        Expr
+	span         Span
+	inferredType Type
+}
+
+func NewRestSpread(value Expr, span Span) *ObjSpreadExpr {
+	return &ObjSpreadExpr{Value: value, span: span}
+}
+func (e *ObjSpreadExpr) Span() Span             { return e.span }
+func (e *ObjSpreadExpr) InferredType() Type     { return e.inferredType }
+func (e *ObjSpreadExpr) SetInferredType(t Type) { e.inferredType = t }
+func (e *ObjSpreadExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
 		e.Value.Accept(v)
 	}

@@ -1558,6 +1558,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 	case *ast.TupleExpr:
 		elemsExprs, elemsStmts := b.buildExprs(expr.Elems)
 		return NewArrayExpr(elemsExprs, expr), elemsStmts
+	case *ast.ArraySpreadExpr:
+		argExpr, argStmts := b.buildExpr(expr.Value, expr)
+		return NewSpreadExpr(argExpr, expr), argStmts
 	case *ast.ObjectExpr:
 		stmts := []Stmt{}
 		elems := make([]ObjExprElem, len(expr.Elems))

@@ -387,7 +387,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
 			p.lexer.consume()
-			elems := parseDelimSeq(p, CloseBracket, Comma, p.expr)
+			elems := parseDelimSeq(p, CloseBracket, Comma, p.arrayElem)
 			end := p.expect(CloseBracket, AlwaysConsume)
 			expr = ast.NewArray(elems, ast.Span{Start: token.Span.Start, End: end, SourceID: p.lexer.source.ID})
 		case OpenBrace:
@@ -637,18 +637,57 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 	}
 }
 
+// canStartExpr returns true if the given token type can begin an expression.
+// This is used to avoid calling p.expr() when the next token clearly cannot
+// start one, which prevents primaryExpr's default branch from consuming
+// delimiters like commas.
+func canStartExpr(tt TokenType) bool {
+	switch tt {
+	case
+		// Prefix operators
+		Plus, Minus, Bang,
+		// Literals
+		NumLit, StrLit, RegexLit, True, False, Null, Undefined, BackTick,
+		// Identifiers and keyword-identifiers
+		Identifier, Underscore, String, Number, Boolean, Bigint,
+		// Grouping / collection starters
+		OpenParen, OpenBracket, OpenBrace,
+		// Expression-starting keywords
+		Fn, Async, Await, If, Match, Try, Throw, Do, LessThan:
+		return true
+	default:
+		return false
+	}
+}
+
+// arrayElem parses a single element of an array literal.
+// Handles both regular expressions and spread syntax (...expr).
+func (p *Parser) arrayElem() ast.Expr {
+	token := p.lexer.peek()
+	if token.Type == DotDotDot {
+		p.lexer.consume() // consume '...'
+		if !canStartExpr(p.lexer.peek().Type) {
+			p.reportError(token.Span, "Expected an expression after '...'")
+			return nil
+		}
+		arg := p.expr()
+		return ast.NewArraySpread(arg, ast.MergeSpans(token.Span, arg.Span()))
+	}
+	return p.expr()
+}
+
 func (p *Parser) objExprElem() ast.ObjExprElem {
 	token := p.lexer.peek()
 
 	if token.Type == DotDotDot {
 		p.lexer.consume() // consume '...'
-		arg := p.expr()
-		if arg == nil {
+		if !canStartExpr(p.lexer.peek().Type) {
 			p.reportError(token.Span, "Expected an expression after '...'")
+			return nil
 		}
-		if arg != nil {
-			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
-		}
+
+		arg := p.expr()
+		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 
 	// TODO: raise an error if 'get' or 'set' is used with a property definition

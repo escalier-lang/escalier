@@ -11,6 +11,21 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// isSymbolIndexKey returns true if the given MemberAccessKey is an IndexKey
+// whose underlying type is a UniqueSymbolType (e.g. Symbol.iterator).
+func isSymbolIndexKey(key MemberAccessKey) bool {
+	indexKey, ok := key.(IndexKey)
+	if !ok {
+		return false
+	}
+	keyType := type_system.Prune(indexKey.Type)
+	if mut, ok := keyType.(*type_system.MutabilityType); ok {
+		keyType = mut.Type
+	}
+	_, isSymbol := keyType.(*type_system.UniqueSymbolType)
+	return isSymbol
+}
+
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
 	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, 0)
 }
@@ -487,14 +502,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		// For mutable types, get the access from the inner type
 		return c.getMemberType(ctx, t.Type, key)
 	case *type_system.TypeRefType:
-		// Handle Array access
-		if indexKey, ok := key.(IndexKey); ok && type_system.QualIdentToString(t.Name) == "Array" {
+		// Handle Array numeric index access (skip symbol keys like Symbol.iterator)
+		if indexKey, ok := key.(IndexKey); ok && type_system.QualIdentToString(t.Name) == "Array" && !isSymbolIndexKey(key) {
 			unifyErrors := c.Unify(ctx, indexKey.Type, type_system.NewNumPrimType(nil))
 			errors = slices.Concat(errors, unifyErrors)
 			return t.TypeArgs[0], errors
-		} else if _, ok := key.(IndexKey); ok && type_system.QualIdentToString(t.Name) == "Array" {
-			errors = append(errors, &ExpectedArrayError{Type: t})
-			return type_system.NewNeverType(nil), errors
 		}
 
 		// Try to expand the type alias and call getAccessType recursively
@@ -566,11 +578,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			builtinName = ""
 		}
 		if builtinName != "" {
-			if _, ok := key.(PropertyKey); ok {
-				builtinRef := &type_system.TypeRefType{
-					Name:     type_system.NewIdent(builtinName),
-					TypeArgs: []type_system.Type{},
-				}
+			builtinRef := &type_system.TypeRefType{
+				Name:     type_system.NewIdent(builtinName),
+				TypeArgs: []type_system.Type{},
+			}
+			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
 				return c.getMemberType(ctx, builtinRef, key)
 			}
 		}
@@ -592,11 +604,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			builtinName = ""
 		}
 		if builtinName != "" {
-			if _, ok := key.(PropertyKey); ok {
-				builtinRef := &type_system.TypeRefType{
-					Name:     type_system.NewIdent(builtinName),
-					TypeArgs: []type_system.Type{},
-				}
+			builtinRef := &type_system.TypeRefType{
+				Name:     type_system.NewIdent(builtinName),
+				TypeArgs: []type_system.Type{},
+			}
+			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
 				return c.getMemberType(ctx, builtinRef, key)
 			}
 		}
@@ -683,14 +695,26 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
-		// Check the Extends field if property not found
+		// Check the Extends field if property not found.
+		//
+		// TypeAlias is guaranteed to be non-nil here for valid code: the placeholder
+		// phase in InferModule creates TypeAliases for all types before the definition
+		// phase processes extends clauses via inferTypeAnn, which resolves TypeAlias
+		// immediately. SubstituteTypeParams also preserves TypeAlias on copies. The
+		// nil check below is a defensive guard for error-recovery paths where
+		// inferTypeAnn couldn't resolve an unknown type name (already reported as
+		// UnknownTypeError).
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias
-			extendsType := type_system.Prune(extendsTypeRef)
+			extendsType := type_system.Type(extendsTypeRef)
 
-			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
-					extendsType = type_system.Prune(typeRef.TypeAlias.Type)
+					resolved := typeRef.TypeAlias.Type
+					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
+						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
+						resolved = SubstituteTypeParams(resolved, subs)
+					}
+					extendsType = type_system.Prune(resolved)
 				}
 			}
 
@@ -739,14 +763,47 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
+		// Handle unique symbol keys (e.g. Symbol.iterator)
+		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
+			symKey := type_system.NewSymKey(symType.Value)
+			for _, elem := range objType.Elems {
+				switch elem := elem.(type) {
+				case *type_system.PropertyElem:
+					if elem.Name == symKey {
+						propType := elem.Value
+						if elem.Optional {
+							propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+						}
+						return propType, errors
+					}
+				case *type_system.MethodElem:
+					if elem.Name == symKey {
+						return elem.Fn, errors
+					}
+				case *type_system.MappedElem:
+					panic("MappedElems should have been expanded before property access")
+				case *type_system.ConstructorElem, *type_system.CallableElem,
+					*type_system.GetterElem, *type_system.SetterElem:
+					continue
+				default:
+					continue
+				}
+			}
+		}
 
-		// Check the Extends field if property not found
+		// Check the Extends field if index key not found (same invariant as
+		// the PropertyKey branch above — see comment there for why TypeAlias
+		// is guaranteed non-nil for valid code).
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias
-			extendsType := type_system.Prune(extendsTypeRef)
-			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+			extendsType := type_system.Type(extendsTypeRef)
+			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
-					extendsType = type_system.Prune(typeRef.TypeAlias.Type)
+					resolved := typeRef.TypeAlias.Type
+					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
+						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
+						resolved = SubstituteTypeParams(resolved, subs)
+					}
+					extendsType = type_system.Prune(resolved)
 				}
 			}
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {

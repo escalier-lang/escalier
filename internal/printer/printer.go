@@ -355,6 +355,9 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.writeString("/* JSX fragment */")
 	case *ast.TypeCastExpr:
 		p.printTypeCastExpr(e)
+	case *ast.ArraySpreadExpr:
+		p.writeString("...")
+		p.printExpr(e.Value)
 	default:
 		p.writeString("/* unknown expression */")
 	}
@@ -551,7 +554,7 @@ func (p *Printer) printObjExprElem(elem ast.ObjExprElem) {
 			p.writeString(": ")
 			p.printExpr(e.Value)
 		}
-	case *ast.RestSpreadExpr:
+	case *ast.ObjSpreadExpr:
 		p.writeString("...")
 		p.printExpr(e.Value)
 	}
