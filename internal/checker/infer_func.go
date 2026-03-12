@@ -170,9 +170,16 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 ) []Error {
 	errors := []Error{}
 
-	// Create async context if this is an async function
+	// Allocate fresh pointers for generator tracking — this function gets its own
+	// tracking independent of any enclosing function
+	containsYield := false
+	yieldedTypes := []type_system.Type{}
+
+	// Create context for the function body
 	bodyCtx := ctx.WithNewScope()
 	bodyCtx.IsAsync = isAsync
+	bodyCtx.ContainsYield = &containsYield
+	bodyCtx.YieldedTypes = &yieldedTypes
 
 	// Allocate fresh slice for collecting await throw types during inference
 	if isAsync {
@@ -183,7 +190,27 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
 	errors = slices.Concat(errors, bodyErrors)
 
-	// For async functions, we need to handle Promise return types differently
+	// Check if this function is a generator (contains yield)
+	if containsYield {
+		var yieldType type_system.Type
+		if len(yieldedTypes) == 1 {
+			yieldType = yieldedTypes[0]
+		} else if len(yieldedTypes) > 1 {
+			yieldType = type_system.NewUnionType(nil, yieldedTypes...)
+		} else {
+			yieldType = type_system.NewNeverType(nil)
+		}
+		nextType := type_system.NewNeverType(nil)
+
+		if isAsync {
+			funcSigType.Return = type_system.MakeAsyncGeneratorType(yieldType, returnType, nextType)
+		} else {
+			funcSigType.Return = type_system.MakeGeneratorType(yieldType, returnType, nextType)
+		}
+		funcSigType.Throws = type_system.NewNeverType(nil)
+		return errors
+	}
+
 	// For async functions, we construct a Promise<T, E> from the inferred
 	// return and throws types, then unify with the function signature.
 	if isAsync {
@@ -196,7 +223,6 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 			// Async functions do not throw directly; set throws to never.
 			funcSigType.Throws = type_system.NewNeverType(nil)
 		}
-		// Now unify the (possibly updated) return type with itself – no additional work needed.
 	} else {
 		// For non-async functions, use the original logic
 		unifyReturnErrors := c.Unify(ctx, returnType, funcSigType.Return)

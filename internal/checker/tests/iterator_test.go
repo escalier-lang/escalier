@@ -304,6 +304,117 @@ func TestGetIterableElementType(t *testing.T) {
 }
 
 // =============================================================================
+// Phase 3.1: Generator Type Helpers
+// =============================================================================
+
+func TestMakeGeneratorType(t *testing.T) {
+	t.Run("Generator<number, string, boolean>", func(t *testing.T) {
+		genType := type_system.MakeGeneratorType(
+			type_system.NewNumPrimType(nil),
+			type_system.NewStrPrimType(nil),
+			type_system.NewBoolPrimType(nil),
+		)
+		assert.Equal(t, "Generator", type_system.QualIdentToString(genType.Name))
+		require.Len(t, genType.TypeArgs, 3)
+		assert.Equal(t, "number", genType.TypeArgs[0].String())
+		assert.Equal(t, "string", genType.TypeArgs[1].String())
+		assert.Equal(t, "boolean", genType.TypeArgs[2].String())
+	})
+
+	t.Run("AsyncGenerator<number, void, undefined>", func(t *testing.T) {
+		genType := type_system.MakeAsyncGeneratorType(
+			type_system.NewNumPrimType(nil),
+			type_system.NewVoidType(nil),
+			type_system.NewUndefinedType(nil),
+		)
+		assert.Equal(t, "AsyncGenerator", type_system.QualIdentToString(genType.Name))
+		require.Len(t, genType.TypeArgs, 3)
+		assert.Equal(t, "number", genType.TypeArgs[0].String())
+		assert.Equal(t, "void", genType.TypeArgs[1].String())
+		assert.Equal(t, "undefined", genType.TypeArgs[2].String())
+	})
+}
+
+// =============================================================================
+// Phase 3.2: GetIteratorReturnType
+// =============================================================================
+
+func TestGetIteratorReturnType(t *testing.T) {
+	c := NewChecker()
+	scope := Prelude(c)
+	ctx := Context{
+		Scope:      scope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	t.Run("ArrayOfNumber", func(t *testing.T) {
+		arrayAlias := scope.GetTypeAlias("Array")
+		require.NotNil(t, arrayAlias)
+		arrayType := &type_system.TypeRefType{
+			Name:      type_system.NewIdent("Array"),
+			TypeArgs:  []type_system.Type{type_system.NewNumPrimType(nil)},
+			TypeAlias: arrayAlias,
+		}
+
+		returnType := c.GetIteratorReturnType(ctx, arrayType)
+		require.NotNil(t, returnType, "Array<number> should have an iterator return type")
+	})
+
+	t.Run("StringIteratorReturnType", func(t *testing.T) {
+		strType := type_system.NewStrPrimType(nil)
+		returnType := c.GetIteratorReturnType(ctx, strType)
+		require.NotNil(t, returnType, "string should have an iterator return type")
+	})
+
+	t.Run("NumberHasNoIteratorReturnType", func(t *testing.T) {
+		numType := type_system.NewNumPrimType(nil)
+		returnType := c.GetIteratorReturnType(ctx, numType)
+		assert.Nil(t, returnType, "number should not have an iterator return type")
+	})
+}
+
+// =============================================================================
+// Phase 3.2: GetAsyncIterableElementType
+// =============================================================================
+
+func TestGetAsyncIterableElementType(t *testing.T) {
+	c := NewChecker()
+	scope := Prelude(c)
+	ctx := Context{
+		Scope:      scope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	t.Run("NumberIsNotAsyncIterable", func(t *testing.T) {
+		numType := type_system.NewNumPrimType(nil)
+		elemType := c.GetAsyncIterableElementType(ctx, numType)
+		assert.Nil(t, elemType, "number should not be async iterable")
+	})
+
+	t.Run("StringIsNotAsyncIterable", func(t *testing.T) {
+		// string has [Symbol.iterator] but not [Symbol.asyncIterator]
+		strType := type_system.NewStrPrimType(nil)
+		elemType := c.GetAsyncIterableElementType(ctx, strType)
+		assert.Nil(t, elemType, "string should not be async iterable (no ES2018+ support)")
+	})
+
+	t.Run("ArrayIsNotAsyncIterable", func(t *testing.T) {
+		// Array has [Symbol.iterator] but not [Symbol.asyncIterator]
+		arrayAlias := scope.GetTypeAlias("Array")
+		require.NotNil(t, arrayAlias)
+		arrayType := &type_system.TypeRefType{
+			Name:      type_system.NewIdent("Array"),
+			TypeArgs:  []type_system.Type{type_system.NewNumPrimType(nil)},
+			TypeAlias: arrayAlias,
+		}
+		elemType := c.GetAsyncIterableElementType(ctx, arrayType)
+		assert.Nil(t, elemType, "Array should not be async iterable (no ES2018+ support)")
+	})
+}
+
+// =============================================================================
 // Phase 0.4: Array Spread Iterable Check
 // =============================================================================
 
@@ -343,6 +454,200 @@ func TestArraySpreadRequiresIterable(t *testing.T) {
 		// Invalid: spreading a non-iterable object in an array context
 		_, errors := inferScript(t, `val arr = [...{a: 1}]`)
 		assert.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+	})
+}
+
+// =============================================================================
+// Phase 4.1: Infer For-In Loop Types
+// =============================================================================
+
+func TestForInLoopInference(t *testing.T) {
+	t.Run("ForInArray", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			declare val nums: Array<number>
+			for n in nums {
+				val x = n
+			}
+		`)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Printf("Error: %s\n", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+		_ = types
+	})
+
+	t.Run("ForInString", func(t *testing.T) {
+		_, errors := inferScript(t, `
+			for ch in "hello" {
+				val x = ch
+			}
+		`)
+		assert.Empty(t, errors)
+	})
+
+	t.Run("ForInNonIterable", func(t *testing.T) {
+		_, errors := inferScript(t, `
+			for x in 42 {
+			}
+		`)
+		assert.NotEmpty(t, errors, "for-in over a number should produce an error")
+		if len(errors) > 0 {
+			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+				"error should mention 'not iterable', got: %s", errors[0].Message())
+		}
+	})
+
+	t.Run("ForInTuple", func(t *testing.T) {
+		_, errors := inferScript(t, `
+			for x in [1, 2, 3] {
+				val y = x
+			}
+		`)
+		assert.Empty(t, errors)
+	})
+}
+
+// =============================================================================
+// Phase 4.2: Infer Yield Expressions
+// =============================================================================
+
+func TestYieldExprInference(t *testing.T) {
+	t.Run("SimpleGenerator", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn count() {
+				yield 1
+				yield 2
+				yield 3
+			}
+		`)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Printf("Error: %s\n", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+		countType, exists := types["count"]
+		assert.True(t, exists, "count should be declared")
+		if exists {
+			assert.True(t, strings.Contains(countType, "Generator"),
+				"count should return a Generator type, got: %s", countType)
+		}
+	})
+
+	t.Run("GeneratorWithReturn", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn myGen() {
+				yield 1
+				yield 2
+				return "done"
+			}
+		`)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Printf("Error: %s\n", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+		genType, exists := types["myGen"]
+		assert.True(t, exists, "myGen should be declared")
+		if exists {
+			assert.True(t, strings.Contains(genType, "Generator"),
+				"myGen should return a Generator type, got: %s", genType)
+		}
+	})
+
+	t.Run("GeneratorYieldDifferentTypes", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn mixed() {
+				yield 1
+				yield "hello"
+			}
+		`)
+		assert.Empty(t, errors)
+		mixedType, exists := types["mixed"]
+		assert.True(t, exists, "mixed should be declared")
+		if exists {
+			assert.True(t, strings.Contains(mixedType, "Generator"),
+				"mixed should return a Generator type, got: %s", mixedType)
+		}
+	})
+
+	t.Run("YieldFromArray", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn delegating() {
+				declare val nums: Array<number>
+				yield from nums
+			}
+		`)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Printf("Error: %s\n", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+		delegatingType, exists := types["delegating"]
+		assert.True(t, exists, "delegating should be declared")
+		if exists {
+			assert.True(t, strings.Contains(delegatingType, "Generator"),
+				"delegating should return a Generator type, got: %s", delegatingType)
+		}
+	})
+
+	t.Run("YieldFromNonIterable", func(t *testing.T) {
+		_, errors := inferScript(t, `
+			fn bad() {
+				yield from 42
+			}
+		`)
+		assert.NotEmpty(t, errors, "yield from a number should produce an error")
+		if len(errors) > 0 {
+			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+				"error should mention 'not iterable', got: %s", errors[0].Message())
+		}
+	})
+}
+
+// =============================================================================
+// Phase 4.3: Generator function detection
+// =============================================================================
+
+func TestGeneratorFunctionDetection(t *testing.T) {
+	t.Run("NonGeneratorFunction", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn add(a: number, b: number) {
+				return a + b
+			}
+		`)
+		assert.Empty(t, errors)
+		addType, exists := types["add"]
+		assert.True(t, exists)
+		if exists {
+			assert.False(t, strings.Contains(addType, "Generator"),
+				"add should NOT be a Generator, got: %s", addType)
+		}
+	})
+
+	t.Run("NestedYieldDoesNotAffectOuter", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn outer() {
+				fn inner() {
+					yield 1
+				}
+				return inner
+			}
+		`)
+		assert.Empty(t, errors)
+		outerType, exists := types["outer"]
+		assert.True(t, exists)
+		if exists {
+			// outer returns a function that returns a Generator, but outer itself is NOT a generator
+			assert.True(t, strings.HasPrefix(outerType, "fn ()"),
+				"outer should be a regular function, got: %s", outerType)
+			assert.False(t, strings.HasPrefix(outerType, "fn () -> Generator"),
+				"outer should NOT directly return a Generator (yield is in inner), got: %s", outerType)
+		}
 	})
 }
 

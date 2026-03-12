@@ -30,6 +30,8 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 	case *ast.ImportStmt:
 		errors := c.inferImport(ctx, stmt)
 		return errors
+	case *ast.ForInStmt:
+		return c.inferForInStmt(ctx, stmt)
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}
@@ -360,4 +362,65 @@ func (c *Checker) inferInterface(
 	}
 
 	return &typeAlias, errors
+}
+
+func (c *Checker) inferForInStmt(ctx Context, stmt *ast.ForInStmt) []Error {
+	errors := []Error{}
+
+	// Validate async context for 'for await'
+	if stmt.IsAwait && !ctx.IsAsync {
+		errors = append(errors, &UnimplementedError{
+			message: "'for await' is only allowed in async functions",
+			span:    stmt.Span(),
+		})
+	}
+
+	// Infer the type of the iterable expression
+	iterableType, errs := c.inferExpr(ctx, stmt.Iterable)
+	errors = slices.Concat(errors, errs)
+
+	// Extract element type from Iterable<T> or AsyncIterable<T>
+	var elementType type_system.Type
+	if stmt.IsAwait {
+		// for await...in can iterate over both async and sync iterables.
+		// Try async iterable first, then fall back to sync iterable.
+		elementType = c.GetAsyncIterableElementType(ctx, iterableType)
+		if elementType == nil {
+			elementType = c.GetIterableElementType(ctx, iterableType)
+		}
+	} else {
+		elementType = c.GetIterableElementType(ctx, iterableType)
+	}
+
+	if elementType == nil {
+		errors = append(errors, &UnimplementedError{
+			message: fmt.Sprintf("Type '%s' is not iterable", iterableType),
+			span:    stmt.Iterable.Span(),
+		})
+		elementType = type_system.NewNeverType(nil)
+	}
+
+	// Create new scope for loop body
+	loopCtx := ctx.WithNewScope()
+
+	// Infer pattern and unify with element type
+	patType, bindings, patErrors := c.inferPattern(ctx, stmt.Pattern)
+	errors = slices.Concat(errors, patErrors)
+
+	unifyErrors := c.Unify(ctx, elementType, patType)
+	errors = slices.Concat(errors, unifyErrors)
+
+	// Add bindings to loop scope (loop variables are immutable like `val`)
+	for name, binding := range bindings {
+		binding.Mutable = false
+		loopCtx.Scope.setValue(name, binding)
+	}
+
+	// Infer body statements
+	for _, bodyStmt := range stmt.Body.Stmts {
+		errs := c.inferStmt(loopCtx, bodyStmt)
+		errors = slices.Concat(errors, errs)
+	}
+
+	return errors
 }
