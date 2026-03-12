@@ -648,7 +648,7 @@ func (p *Parser) arrayElem() ast.Expr {
 			p.reportError(token.Span, "Expected an expression after '...'")
 			return nil
 		}
-		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
+		return ast.NewArraySpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 	return p.expr()
 }

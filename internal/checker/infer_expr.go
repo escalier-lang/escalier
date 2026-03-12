@@ -216,7 +216,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		elemTypes := []type_system.Type{}
 		errors = []Error{}
 		for _, elem := range expr.Elems {
-			if spread, ok := elem.(*ast.RestSpreadExpr); ok {
+			if spread, ok := elem.(*ast.ArraySpreadExpr); ok {
 				spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
 				errors = slices.Concat(errors, spreadErrors)
 

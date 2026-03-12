@@ -3475,7 +3475,7 @@
                 SourceID: 0,
             },
         },
-        &ast.RestSpreadExpr{
+        &ast.ObjSpreadExpr{
             Value: &ast.IdentExpr{
                 Name:      "b",
                 Namespace: 0,
@@ -3494,7 +3494,7 @@
             },
             inferredType: nil,
         },
-        &ast.RestSpreadExpr{
+        &ast.ObjSpreadExpr{
             Value: &ast.ObjectExpr{
                 Elems: {
                     &ast.PropertyExpr{
