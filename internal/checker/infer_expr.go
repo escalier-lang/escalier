@@ -458,70 +458,81 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 		}
 	case *ast.YieldExpr:
-		// Mark this function context as containing yield (makes it a generator)
-		if ctx.ContainsYield != nil {
+		// yield/yield from can only be used inside functions (where ContainsYield is allocated)
+		if ctx.ContainsYield == nil {
+			keyword := "yield"
+			if expr.IsDelegate {
+				keyword = "yield from"
+			}
+			errors = []Error{&UnimplementedError{
+				message: fmt.Sprintf("'%s' can only be used inside a function", keyword),
+				span:    expr.Span(),
+			}}
+			resultType = type_system.NewNeverType(provenance)
+		} else {
+			// Mark this function context as containing yield (makes it a generator)
 			*ctx.ContainsYield = true
-		}
 
-		if expr.IsDelegate {
-			// yield from: the value must be iterable
-			if expr.Value == nil {
-				errors = []Error{&UnimplementedError{
-					message: "'yield from' requires an iterable expression",
-					span:    expr.Span(),
-				}}
-				resultType = type_system.NewNeverType(provenance)
-			} else {
-				valueType, errs := c.inferExpr(ctx, expr.Value)
-				errors = errs
-
-				// In async generators, yield from can delegate to both async and sync iterables
-				var elementType type_system.Type
-				if ctx.IsAsync {
-					elementType = c.GetAsyncIterableElementType(ctx, valueType)
-					if elementType == nil {
-						elementType = c.GetIterableElementType(ctx, valueType)
-					}
-				} else {
-					elementType = c.GetIterableElementType(ctx, valueType)
-				}
-
-				if elementType == nil {
-					errors = append(errors, &UnimplementedError{
-						message: fmt.Sprintf("Type '%s' is not iterable", valueType),
-						span:    expr.Value.Span(),
-					})
-				} else {
-					ctx.AddYieldedType(elementType)
-				}
-
-				// The yield from expression evaluates to TReturn of the delegated iterator
-				delegatedReturnType := c.GetIteratorReturnType(ctx, valueType)
-				if delegatedReturnType == nil {
+			if expr.IsDelegate {
+				// yield from: the value must be iterable
+				if expr.Value == nil {
+					errors = []Error{&UnimplementedError{
+						message: "'yield from' requires an iterable expression",
+						span:    expr.Span(),
+					}}
 					resultType = type_system.NewNeverType(provenance)
 				} else {
-					resultType = delegatedReturnType
-				}
-			}
-		} else {
-			// Regular yield
-			if expr.Value != nil {
-				valueType, errs := c.inferExpr(ctx, expr.Value)
-				errors = errs
-				ctx.AddYieldedType(valueType)
-			} else {
-				// Bare `yield` yields undefined
-				ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
-			}
+					valueType, errs := c.inferExpr(ctx, expr.Value)
+					errors = errs
 
-			// The yield expression evaluates to TNext (value passed to .next()).
-			// Currently GeneratorNextType is always nil (see Context definition),
-			// so yield always evaluates to never. This is fine because most
-			// generators are consumed via for...in, not manual .next(value).
-			if ctx.GeneratorNextType != nil {
-				resultType = ctx.GeneratorNextType
+					// In async generators, yield from can delegate to both async and sync iterables
+					var elementType type_system.Type
+					if ctx.IsAsync {
+						elementType = c.GetAsyncIterableElementType(ctx, valueType)
+						if elementType == nil {
+							elementType = c.GetIterableElementType(ctx, valueType)
+						}
+					} else {
+						elementType = c.GetIterableElementType(ctx, valueType)
+					}
+
+					if elementType == nil {
+						errors = append(errors, &UnimplementedError{
+							message: fmt.Sprintf("Type '%s' is not iterable", valueType),
+							span:    expr.Value.Span(),
+						})
+					} else {
+						ctx.AddYieldedType(elementType)
+					}
+
+					// The yield from expression evaluates to TReturn of the delegated iterator
+					delegatedReturnType := c.GetIteratorReturnType(ctx, valueType)
+					if delegatedReturnType == nil {
+						resultType = type_system.NewNeverType(provenance)
+					} else {
+						resultType = delegatedReturnType
+					}
+				}
 			} else {
-				resultType = type_system.NewNeverType(provenance)
+				// Regular yield
+				if expr.Value != nil {
+					valueType, errs := c.inferExpr(ctx, expr.Value)
+					errors = errs
+					ctx.AddYieldedType(valueType)
+				} else {
+					// Bare `yield` yields undefined
+					ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
+				}
+
+				// The yield expression evaluates to TNext (value passed to .next()).
+				// Currently GeneratorNextType is always nil (see Context definition),
+				// so yield always evaluates to never. This is fine because most
+				// generators are consumed via for...in, not manual .next(value).
+				if ctx.GeneratorNextType != nil {
+					resultType = ctx.GeneratorNextType
+				} else {
+					resultType = type_system.NewNeverType(provenance)
+				}
 			}
 		}
 	case *ast.TaggedTemplateLitExpr:

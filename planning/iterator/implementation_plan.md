@@ -16,12 +16,18 @@ This document outlines the implementation strategy for adding iterator protocol 
 ### Not Yet Loaded
 - **AsyncGenerator**: Requires ES2018+ lib files which are not currently loaded (target is `"es2015"`).
 
-### Not Yet Implemented
-- `for...in` loop statement
-- `yield` and `yield from` expressions
+### Implemented (Phases 1–4)
+- `for...in` loop statement (parsing + type checking)
+- `for await...in` loop statement (parsing + type checking)
+- `yield` and `yield from` expressions (parsing + type checking)
 - Generator detection (functions containing `yield` are generators)
 - Async generators (async functions containing `yield`)
-- `for await...in` loop statement
+- `yield`/`yield from` rejected at module scope (outside functions)
+- Generator return type annotation mismatch detection
+
+### Not Yet Implemented
+- Code generation for `for...in`, `yield`, and generator functions (Phase 5)
+- Comprehensive end-to-end testing (Phase 6)
 
 ---
 
@@ -184,7 +190,9 @@ case *ast.AwaitExpr:
 
 ---
 
-## Phase 1: AST Extensions
+## Phase 1: AST Extensions ✅ COMPLETED
+
+Implemented in commit `62a39ce` (Update parser to parse for-in and yield (#345)).
 
 ### 1.1 Add ForInStmt to Statement AST
 
@@ -265,7 +273,9 @@ func (e *YieldExpr) Accept(v Visitor) {
 
 ---
 
-## Phase 2: Parser Extensions
+## Phase 2: Parser Extensions ✅ COMPLETED
+
+Implemented in commit `62a39ce` (Update parser to parse for-in and yield (#345)).
 
 ### 2.1 Parse For-In Loops
 
@@ -369,55 +379,34 @@ case Yield:
 
 ---
 
-## Phase 3: Type System Extensions
+## Phase 3: Type System Extensions ✅ COMPLETED
+
+Implemented in commits `cba3445` (implement type checking of for-in and generator functions) and `13eebdd` (initial revisions).
 
 ### 3.1 Generator Type Handling
 
-**File**: `internal/type_system/types.go`
-
-The existing type system can handle `Generator<T, TReturn, TNext>` as a generic type reference. No new type constructors are needed, but helper functions may be useful:
-
-```go
-// Helper to construct Generator<T, TReturn, TNext> type
-func MakeGeneratorType(yieldType, returnType, nextType Type) *TypeRefType {
-    return NewTypeRef("Generator", []Type{yieldType, returnType, nextType})
-}
-
-// Helper to construct AsyncGenerator<T, TReturn, TNext> type
-func MakeAsyncGeneratorType(yieldType, returnType, nextType Type) *TypeRefType {
-    return NewTypeRef("AsyncGenerator", []Type{yieldType, returnType, nextType})
-}
-```
+**Status**: Completed. Generator and AsyncGenerator types are constructed inline using `type_system.NewTypeRefType` with the looked-up type alias (no separate helper functions needed). The `MakeGeneratorType`/`MakeAsyncGeneratorType` helpers were initially added then inlined since they were only used in one place.
 
 ### 3.2 Iterable Type Extraction
 
-Add utilities to extract the element type from an `Iterable<T>`:
+**Status**: Completed. All utilities implemented in `internal/checker/iterable.go`:
 
-```go
-// GetIterableElementType extracts T from Iterable<T> or returns nil
-func GetIterableElementType(t Type) Type {
-    // Check if type has [Symbol.iterator]() method
-    // Return the T from Iterator<T, TReturn, TNext> returned by that method
-}
-
-// GetAsyncIterableElementType extracts T from AsyncIterable<T>
-func GetAsyncIterableElementType(t Type) Type {
-    // Similar but for [Symbol.asyncIterator]()
-}
-
-// GetIteratorReturnType extracts TReturn from Iterator<T, TReturn, TNext>
-// Used for determining the type of yield* expressions
-func GetIteratorReturnType(t Type) Type {
-    // Check if type has [Symbol.iterator]() method
-    // Return the TReturn from Iterator<T, TReturn, TNext> returned by that method
-}
-```
+- **`getSymbolID(name string) (int, bool)`** — Shared helper that looks up a unique symbol ID from `SymbolConstructor` (e.g. `"iterator"` or `"asyncIterator"`).
+- **`GetIterableElementType(ctx, t)`** — Already existed; extracts T from `Iterable<T>`. Handles `UnionType`, `TupleType` (including `RestSpreadType` elements), and general types via `[Symbol.iterator]()` lookup.
+- **`GetAsyncIterableElementType(ctx, t)`** — New; extracts T from `AsyncIterable<T>` via `[Symbol.asyncIterator]()` lookup. Uses shared `getSymbolID` helper.
+- **`GetIteratorReturnType(ctx, t)`** — New; extracts `TReturn` from an iterable's iterator. Handles `UnionType` (recurses per branch) and `TupleType` (returns `void`). Uses shared `unifyIteratorNextReturn` helper.
+- **`unifyIteratorNextReturn(ctx, t)`** — Shared helper that looks up `next()` on an iterator type and unifies its return with `IteratorResult<freshT, freshTReturn>`. Returns both `(T, TReturn)`.
+- **`extractIteratorElementType(ctx, t)`** — Refactored to delegate to `unifyIteratorNextReturn`, returning just the element type.
 
 ---
 
-## Phase 4: Type Checker Extensions
+## Phase 4: Type Checker Extensions ✅ COMPLETED
+
+Implemented in commits `cba3445` (implement type checking of for-in and generator functions) and `13eebdd` (initial revisions), with additional guards added in the current working tree.
 
 ### 4.1 Infer For-In Loop Types
+
+**Status**: Completed in `internal/checker/infer_stmt.go:inferForInStmt`.
 
 **File**: `internal/checker/infer_stmt.go`
 
@@ -492,6 +481,13 @@ func (c *Checker) inferForInStmt(ctx *Context, stmt *ast.ForInStmt) []Error {
 ```
 
 ### 4.2 Infer Yield Expressions
+
+**Status**: Completed in `internal/checker/infer_expr.go` (case `*ast.YieldExpr`). Includes:
+- Guard rejecting `yield`/`yield from` at module scope (when `ctx.ContainsYield` is nil)
+- Regular yield tracking via `ctx.AddYieldedType`
+- `yield from` delegation with iterable validation and `TReturn` extraction
+- Async generator support (`yield from` tries async iterable first, then sync)
+- `TNext` defaults to `never` (documented in code comments)
 
 **File**: `internal/checker/infer_expr.go`
 
@@ -580,6 +576,8 @@ func (c *Checker) inferYieldExpr(ctx *Context, expr *ast.YieldExpr) (Type, []Err
 
 ### 4.3 Infer Generator Functions
 
+**Status**: Completed in `internal/checker/infer_func.go:inferFuncBodyWithFuncSigType`. The inferred Generator/AsyncGenerator type is unified against any declared return annotation before assignment, producing a type error on mismatch (e.g. `fn g() -> number { yield 1 }`).
+
 **File**: `internal/checker/infer_func.go`
 
 Generator detection belongs in `inferFuncBodyWithFuncSigType`, which is the shared function called by all three sites that can produce generators:
@@ -648,6 +646,8 @@ This approach means `inferFuncDecl`, `FuncExpr`, and `MethodExpr` all get genera
 
 ### 4.4 Add Context Fields
 
+**Status**: Completed in `internal/checker/checker.go`. All three fields added, `AddYieldedType` helper added, and all `WithNewScope`/`WithNewScopeAndNamespace`/`WithScope` methods updated to propagate the pointers.
+
 **File**: `internal/checker/checker.go`
 
 Extend the checker context with generator-related fields. These must be **pointers** so that block scopes within the same function share the same underlying values, while nested functions can allocate fresh values:
@@ -705,6 +705,8 @@ Similarly update `WithNewScopeAndNamespace` and `WithScope`.
 
 ### 4.5 Yield Context Scoping
 
+**Status**: Completed. Tested in `TestGeneratorFunctionDetection/NestedYieldDoesNotAffectOuter`.
+
 **Important**: Each call to `inferFuncBodyWithFuncSigType` allocates fresh `ContainsYield`/`YieldedTypes` pointers (see section 4.3). This naturally creates a new generator-tracking scope for every function boundary. Since all three callsites flow through it:
 
 - `inferFuncDecl` (in `infer_stmt.go`) → `inferFuncBodyWithFuncSigType`
@@ -720,6 +722,8 @@ Similarly update `WithNewScopeAndNamespace` and `WithScope`.
 Block scopes created by `WithNewScope` (for `if`/`while`/`for` bodies) copy the pointers, so yields anywhere in the function body share the same tracking state.
 
 ### 4.6 Async Context Validation
+
+**Status**: Completed. `for await` in non-async context produces an error. `yield`/`yield from` outside a function produces an error.
 
 The type checker must validate async context for iterator-related constructs:
 

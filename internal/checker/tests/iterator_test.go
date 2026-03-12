@@ -666,6 +666,17 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		}
 	})
 
+	t.Run("AnnotatedReturnTypeMismatch", func(t *testing.T) {
+		// A generator with a return annotation of `number` should produce an error
+		// because the inferred type is Generator<number, void, never>, not number.
+		_, errors := inferScript(t, `
+			fn g() -> number {
+				yield 1
+			}
+		`)
+		assert.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
+	})
+
 	t.Run("NestedYieldDoesNotAffectOuter", func(t *testing.T) {
 		types, errors := inferScript(t, `
 			fn outer() {
