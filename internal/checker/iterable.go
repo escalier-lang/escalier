@@ -5,9 +5,9 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// getSymbolIteratorID retrieves the unique symbol ID for Symbol.iterator
-// from the SymbolConstructor type in the global scope.
-func (c *Checker) getSymbolIteratorID() (int, bool) {
+// getSymbolID retrieves the unique symbol ID for a named property on SymbolConstructor
+// (e.g. "iterator" for Symbol.iterator, "asyncIterator" for Symbol.asyncIterator).
+func (c *Checker) getSymbolID(name string) (int, bool) {
 	if c.GlobalScope == nil {
 		return 0, false
 	}
@@ -24,7 +24,7 @@ func (c *Checker) getSymbolIteratorID() (int, bool) {
 
 	for _, elem := range objType.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "iterator" {
+			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == name {
 				if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
 					return sym.Value, true
 				}
@@ -91,7 +91,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		return type_system.NewUnionType(nil, elemTypes...)
 	}
 
-	symIterID, ok := c.getSymbolIteratorID()
+	symIterID, ok := c.getSymbolID("iterator")
 	if !ok {
 		return nil
 	}
@@ -185,7 +185,28 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 		t = type_system.Prune(mut.Type)
 	}
 
-	symIterID, ok := c.getSymbolIteratorID()
+	// Handle UnionType by extracting TReturn from each branch and unioning the results.
+	if union, ok := t.(*type_system.UnionType); ok {
+		returnTypes := make([]type_system.Type, 0, len(union.Types))
+		for _, branch := range union.Types {
+			inner := c.GetIteratorReturnType(ctx, branch)
+			if inner == nil {
+				return nil
+			}
+			returnTypes = append(returnTypes, inner)
+		}
+		if len(returnTypes) == 1 {
+			return returnTypes[0]
+		}
+		return type_system.NewUnionType(nil, returnTypes...)
+	}
+
+	// Handle TupleType — tuples use Array's iterator which has TReturn = void.
+	if _, ok := t.(*type_system.TupleType); ok {
+		return type_system.NewVoidType(nil)
+	}
+
+	symIterID, ok := c.getSymbolID("iterator")
 	if !ok {
 		return nil
 	}
@@ -223,35 +244,8 @@ func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) t
 		t = type_system.Prune(mut.Type)
 	}
 
-	if c.GlobalScope == nil {
-		return nil
-	}
-
-	// Look up Symbol.asyncIterator from SymbolConstructor
-	symbolConstructor := c.GlobalScope.Namespace.Types["SymbolConstructor"]
-	if symbolConstructor == nil {
-		return nil
-	}
-
-	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+	asyncIterSymID, ok := c.getSymbolID("asyncIterator")
 	if !ok {
-		return nil
-	}
-
-	var asyncIterSymID int
-	found := false
-	for _, elem := range objType.Elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "asyncIterator" {
-				if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
-					asyncIterSymID = sym.Value
-					found = true
-					break
-				}
-			}
-		}
-	}
-	if !found {
 		return nil
 	}
 

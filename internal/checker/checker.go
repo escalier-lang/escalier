@@ -57,8 +57,15 @@ type Context struct {
 	// mutated during traversal — block scopes must share the same underlying
 	// values so that yields inside if/while/etc. propagate to the enclosing
 	// function. Nested functions allocate fresh pointers to isolate their state.
-	ContainsYield     *bool
-	YieldedTypes      *[]type_system.Type
+	ContainsYield *bool
+	YieldedTypes  *[]type_system.Type
+	// GeneratorNextType is the TNext type for the current generator function,
+	// controlling what type yield expressions evaluate to. Currently always nil
+	// (yield evaluates to never, TNext is never) because most generators are
+	// consumed via for...in loops rather than manual .next(value) calls. If we
+	// later support explicit generator type annotations like
+	// fn foo(): Generator<number, void, string>, this field would be set to
+	// the annotated TNext so that yield expressions evaluate to that type.
 	GeneratorNextType type_system.Type
 }
 

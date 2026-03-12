@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -97,7 +96,7 @@ func inferModule(t *testing.T, input string) (map[string]string, []Error) {
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	if len(parseErrors) > 0 {
 		for i, err := range parseErrors {
-			fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+			t.Logf("Parse Error[%d]: %#v", i, err)
 		}
 	}
 	require.Len(t, parseErrors, 0, "expected no parse errors")
@@ -133,7 +132,7 @@ func inferScript(t *testing.T, input string) (map[string]string, []Error) {
 	script, parseErrors := p.ParseScript()
 	if len(parseErrors) > 0 {
 		for i, err := range parseErrors {
-			fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+			t.Logf("Parse Error[%d]: %#v", i, err)
 		}
 	}
 	require.Len(t, parseErrors, 0, "expected no parse errors")
@@ -162,7 +161,7 @@ func TestSymbolIteratorLookup(t *testing.T) {
 		`)
 		if len(errors) > 0 {
 			for _, err := range errors {
-				fmt.Printf("Error: %s\n", err.Message())
+				t.Logf("Error: %s", err.Message())
 			}
 		}
 		assert.Empty(t, errors)
@@ -308,8 +307,12 @@ func TestGetIterableElementType(t *testing.T) {
 // =============================================================================
 
 func TestMakeGeneratorType(t *testing.T) {
+	c := NewChecker()
+	scope := Prelude(c)
+
 	t.Run("Generator<number, string, boolean>", func(t *testing.T) {
-		genType := type_system.MakeGeneratorType(
+		genAlias := scope.GetTypeAlias("Generator")
+		genType := type_system.NewTypeRefType(nil, "Generator", genAlias,
 			type_system.NewNumPrimType(nil),
 			type_system.NewStrPrimType(nil),
 			type_system.NewBoolPrimType(nil),
@@ -319,10 +322,12 @@ func TestMakeGeneratorType(t *testing.T) {
 		assert.Equal(t, "number", genType.TypeArgs[0].String())
 		assert.Equal(t, "string", genType.TypeArgs[1].String())
 		assert.Equal(t, "boolean", genType.TypeArgs[2].String())
+		assert.NotNil(t, genType.TypeAlias, "TypeAlias should be set")
 	})
 
 	t.Run("AsyncGenerator<number, void, undefined>", func(t *testing.T) {
-		genType := type_system.MakeAsyncGeneratorType(
+		// AsyncGenerator alias is not loaded (requires ES2018+), so pass nil
+		genType := type_system.NewTypeRefType(nil, "AsyncGenerator", nil,
 			type_system.NewNumPrimType(nil),
 			type_system.NewVoidType(nil),
 			type_system.NewUndefinedType(nil),
@@ -371,6 +376,38 @@ func TestGetIteratorReturnType(t *testing.T) {
 		numType := type_system.NewNumPrimType(nil)
 		returnType := c.GetIteratorReturnType(ctx, numType)
 		assert.Nil(t, returnType, "number should not have an iterator return type")
+	})
+
+	t.Run("TupleReturnType", func(t *testing.T) {
+		tupleType := type_system.NewTupleType(nil,
+			type_system.NewNumPrimType(nil),
+			type_system.NewStrPrimType(nil),
+		)
+		returnType := c.GetIteratorReturnType(ctx, tupleType)
+		require.NotNil(t, returnType, "tuple should have an iterator return type")
+		assert.Equal(t, "void", returnType.String())
+	})
+
+	t.Run("UnionOfIterables", func(t *testing.T) {
+		arrayAlias := scope.GetTypeAlias("Array")
+		require.NotNil(t, arrayAlias)
+		// string | Array<number> — both iterable, so union of their TReturn types
+		unionType := type_system.NewUnionType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewTypeRefType(nil, "Array", arrayAlias, type_system.NewNumPrimType(nil)),
+		)
+		returnType := c.GetIteratorReturnType(ctx, unionType)
+		require.NotNil(t, returnType, "string | Array<number> should have an iterator return type")
+	})
+
+	t.Run("UnionWithNonIterable", func(t *testing.T) {
+		// string | number — number is not iterable, so no return type
+		unionType := type_system.NewUnionType(nil,
+			type_system.NewStrPrimType(nil),
+			type_system.NewNumPrimType(nil),
+		)
+		returnType := c.GetIteratorReturnType(ctx, unionType)
+		assert.Nil(t, returnType, "string | number should not have an iterator return type")
 	})
 }
 
@@ -471,7 +508,7 @@ func TestForInLoopInference(t *testing.T) {
 		`)
 		if len(errors) > 0 {
 			for _, err := range errors {
-				fmt.Printf("Error: %s\n", err.Message())
+				t.Logf("Error: %s", err.Message())
 			}
 		}
 		assert.Empty(t, errors)
@@ -524,7 +561,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		if len(errors) > 0 {
 			for _, err := range errors {
-				fmt.Printf("Error: %s\n", err.Message())
+				t.Logf("Error: %s", err.Message())
 			}
 		}
 		assert.Empty(t, errors)
@@ -546,7 +583,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		if len(errors) > 0 {
 			for _, err := range errors {
-				fmt.Printf("Error: %s\n", err.Message())
+				t.Logf("Error: %s", err.Message())
 			}
 		}
 		assert.Empty(t, errors)
@@ -583,7 +620,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		if len(errors) > 0 {
 			for _, err := range errors {
-				fmt.Printf("Error: %s\n", err.Message())
+				t.Logf("Error: %s", err.Message())
 			}
 		}
 		assert.Empty(t, errors)

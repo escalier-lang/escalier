@@ -514,7 +514,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
 			}
 
-			// The yield expression evaluates to TNext (value passed to .next())
+			// The yield expression evaluates to TNext (value passed to .next()).
+			// Currently GeneratorNextType is always nil (see Context definition),
+			// so yield always evaluates to never. This is fine because most
+			// generators are consumed via for...in, not manual .next(value).
 			if ctx.GeneratorNextType != nil {
 				resultType = ctx.GeneratorNextType
 			} else {

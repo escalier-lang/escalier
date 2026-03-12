@@ -200,12 +200,15 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		} else {
 			yieldType = type_system.NewNeverType(nil)
 		}
+		// TNext is always never for now — see GeneratorNextType comment in Context.
 		nextType := type_system.NewNeverType(nil)
 
 		if isAsync {
-			funcSigType.Return = type_system.MakeAsyncGeneratorType(yieldType, returnType, nextType)
+			asyncGenAlias := ctx.Scope.GetTypeAlias("AsyncGenerator")
+			funcSigType.Return = type_system.NewTypeRefType(nil, "AsyncGenerator", asyncGenAlias, yieldType, returnType, nextType)
 		} else {
-			funcSigType.Return = type_system.MakeGeneratorType(yieldType, returnType, nextType)
+			genAlias := ctx.Scope.GetTypeAlias("Generator")
+			funcSigType.Return = type_system.NewTypeRefType(nil, "Generator", genAlias, yieldType, returnType, nextType)
 		}
 		funcSigType.Throws = type_system.NewNeverType(nil)
 		return errors

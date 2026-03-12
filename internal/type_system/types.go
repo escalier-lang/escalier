@@ -192,16 +192,6 @@ func NewTypeRefType(provenance Provenance, name string, typeAlias *TypeAlias, ty
 	}
 }
 
-// MakeGeneratorType constructs a Generator<T, TReturn, TNext> type reference.
-func MakeGeneratorType(yieldType, returnType, nextType Type) *TypeRefType {
-	return NewTypeRefType(nil, "Generator", nil, yieldType, returnType, nextType)
-}
-
-// MakeAsyncGeneratorType constructs an AsyncGenerator<T, TReturn, TNext> type reference.
-func MakeAsyncGeneratorType(yieldType, returnType, nextType Type) *TypeRefType {
-	return NewTypeRefType(nil, "AsyncGenerator", nil, yieldType, returnType, nextType)
-}
-
 func NewTypeRefTypeFromQualIdent(provenance Provenance, name QualIdent, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
 	return &TypeRefType{
 		Name:       name,
