@@ -42,6 +42,14 @@ func (node *TupleExpr) Span() Span             { return node.span }
 func (node *TupleExpr) InferredType() Type     { return node.inferredType }
 func (node *TupleExpr) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *ArraySpreadExpr) Span() Span             { return node.span }
+func (node *ArraySpreadExpr) InferredType() Type     { return node.inferredType }
+func (node *ArraySpreadExpr) SetInferredType(t Type) { node.inferredType = t }
+
+func (node *ObjSpreadExpr) Span() Span             { return node.span }
+func (node *ObjSpreadExpr) InferredType() Type     { return node.inferredType }
+func (node *ObjSpreadExpr) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *ObjectExpr) Span() Span             { return node.span }
 func (node *ObjectExpr) InferredType() Type     { return node.inferredType }
 func (node *ObjectExpr) SetInferredType(t Type) { node.inferredType = t }
@@ -73,6 +81,10 @@ func (node *DoExpr) SetInferredType(t Type) { node.inferredType = t }
 func (node *AwaitExpr) Span() Span             { return node.span }
 func (node *AwaitExpr) InferredType() Type     { return node.inferredType }
 func (node *AwaitExpr) SetInferredType(t Type) { node.inferredType = t }
+
+func (node *YieldExpr) Span() Span             { return node.span }
+func (node *YieldExpr) InferredType() Type     { return node.inferredType }
+func (node *YieldExpr) SetInferredType(t Type) { node.inferredType = t }
 
 func (node *TemplateLitExpr) Span() Span             { return node.span }
 func (node *TemplateLitExpr) InferredType() Type     { return node.inferredType }

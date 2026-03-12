@@ -90,3 +90,32 @@ func (s *ImportStmt) Accept(v Visitor) {
 	}
 	v.ExitStmt(s)
 }
+
+type ForInStmt struct {
+	Pattern  Pat   // Loop variable pattern (supports destructuring)
+	Iterable Expr  // Expression being iterated
+	Body     Block // Loop body
+	IsAwait  bool  // true for `for await...in`
+	span     Span
+}
+
+func NewForInStmt(pattern Pat, iterable Expr, body Block, isAwait bool, span Span) *ForInStmt {
+	return &ForInStmt{
+		Pattern:  pattern,
+		Iterable: iterable,
+		Body:     body,
+		IsAwait:  isAwait,
+		span:     span,
+	}
+}
+
+func (*ForInStmt) isStmt()      {}
+func (s *ForInStmt) Span() Span { return s.span }
+func (s *ForInStmt) Accept(v Visitor) {
+	if v.EnterStmt(s) {
+		s.Pattern.Accept(v)
+		s.Iterable.Accept(v)
+		s.Body.Accept(v)
+	}
+	v.ExitStmt(s)
+}

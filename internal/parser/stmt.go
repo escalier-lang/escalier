@@ -78,6 +78,8 @@ func (p *Parser) stmt() ast.Stmt {
 	switch token.Type {
 	case Import:
 		stmt = p.importStmt()
+	case For:
+		stmt = p.parseForInStmt()
 	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class:
 		decl := p.Decl()
 		if decl == nil {
@@ -104,6 +106,44 @@ func (p *Parser) stmt() ast.Stmt {
 	}
 
 	return stmt
+}
+
+// parseForInStmt = 'for' 'await'? pattern 'in' expr '{' stmt* '}'
+func (p *Parser) parseForInStmt() ast.Stmt {
+	startSpan := p.lexer.peek().Span
+	p.lexer.consume() // consume 'for'
+
+	// Check for 'await' keyword
+	isAwait := false
+	if p.lexer.peek().Type == Await {
+		isAwait = true
+		p.lexer.consume()
+	}
+
+	// Parse pattern (loop variable)
+	pattern := p.pattern(false, false)
+	if pattern == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected a pattern after 'for'")
+		return nil
+	}
+
+	// Expect 'in' keyword
+	inToken := p.lexer.peek()
+	if inToken.Type != In {
+		p.reportError(inToken.Span, "Expected 'in' after pattern in for loop")
+		return nil
+	}
+	p.lexer.consume() // consume 'in'
+
+	// Parse iterable expression
+	iterable := p.expr()
+
+	// Parse body block
+	body := p.block()
+
+	return ast.NewForInStmt(pattern, iterable, body, isAwait,
+		ast.MergeSpans(startSpan, body.Span))
 }
 
 // importStmt = 'import' importSpecifiers 'from' string
