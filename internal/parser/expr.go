@@ -644,7 +644,7 @@ func (p *Parser) arrayElem() ast.Expr {
 	if token.Type == DotDotDot {
 		p.lexer.consume() // consume '...'
 		arg := p.expr()
-		if arg == nil {
+		if _, isEmpty := arg.(*ast.EmptyExpr); arg == nil || isEmpty {
 			p.reportError(token.Span, "Expected an expression after '...'")
 			return nil
 		}
@@ -659,10 +659,9 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 	if token.Type == DotDotDot {
 		p.lexer.consume() // consume '...'
 		arg := p.expr()
-		if arg == nil {
+		if _, isEmpty := arg.(*ast.EmptyExpr); arg == nil || isEmpty {
 			p.reportError(token.Span, "Expected an expression after '...'")
-		}
-		if arg != nil {
+		} else {
 			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 		}
 	}

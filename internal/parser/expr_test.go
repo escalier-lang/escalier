@@ -363,6 +363,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"ThrowMissingExpression": {
 			input: "throw",
 		},
+		"ArraySpreadMissingOperand": {
+			input: "[...]",
+		},
+		"ObjectSpreadMissingOperand": {
+			input: "{...}",
+		},
 	}
 
 	for name, test := range tests {
