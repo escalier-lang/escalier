@@ -142,7 +142,7 @@ func (p *Parser) parseForInStmt() ast.Stmt {
 	// Parse body block
 	body := p.block()
 
-	return ast.NewForInStmt(pattern, iterable, body.Stmts, isAwait,
+	return ast.NewForInStmt(pattern, iterable, body, isAwait,
 		ast.MergeSpans(startSpan, body.Span))
 }
 

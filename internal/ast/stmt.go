@@ -92,14 +92,14 @@ func (s *ImportStmt) Accept(v Visitor) {
 }
 
 type ForInStmt struct {
-	Pattern  Pat    // Loop variable pattern (supports destructuring)
-	Iterable Expr   // Expression being iterated
-	Body     []Stmt // Loop body statements
-	IsAwait  bool   // true for `for await...in`
+	Pattern  Pat   // Loop variable pattern (supports destructuring)
+	Iterable Expr  // Expression being iterated
+	Body     Block // Loop body
+	IsAwait  bool  // true for `for await...in`
 	span     Span
 }
 
-func NewForInStmt(pattern Pat, iterable Expr, body []Stmt, isAwait bool, span Span) *ForInStmt {
+func NewForInStmt(pattern Pat, iterable Expr, body Block, isAwait bool, span Span) *ForInStmt {
 	return &ForInStmt{
 		Pattern:  pattern,
 		Iterable: iterable,
@@ -115,9 +115,7 @@ func (s *ForInStmt) Accept(v Visitor) {
 	if v.EnterStmt(s) {
 		s.Pattern.Accept(v)
 		s.Iterable.Accept(v)
-		for _, stmt := range s.Body {
-			stmt.Accept(v)
-		}
+		s.Body.Accept(v)
 	}
 	v.ExitStmt(s)
 }
