@@ -637,17 +637,40 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 	}
 }
 
+// canStartExpr returns true if the given token type can begin an expression.
+// This is used to avoid calling p.expr() when the next token clearly cannot
+// start one, which prevents primaryExpr's default branch from consuming
+// delimiters like commas.
+func canStartExpr(tt TokenType) bool {
+	switch tt {
+	case
+		// Prefix operators
+		Plus, Minus, Bang,
+		// Literals
+		NumLit, StrLit, RegexLit, True, False, Null, Undefined, BackTick,
+		// Identifiers and keyword-identifiers
+		Identifier, Underscore, String, Number, Boolean, Bigint,
+		// Grouping / collection starters
+		OpenParen, OpenBracket, OpenBrace,
+		// Expression-starting keywords
+		Fn, Async, Await, If, Match, Try, Throw, Do, LessThan:
+		return true
+	default:
+		return false
+	}
+}
+
 // arrayElem parses a single element of an array literal.
 // Handles both regular expressions and spread syntax (...expr).
 func (p *Parser) arrayElem() ast.Expr {
 	token := p.lexer.peek()
 	if token.Type == DotDotDot {
 		p.lexer.consume() // consume '...'
-		arg := p.expr()
-		if _, isEmpty := arg.(*ast.EmptyExpr); arg == nil || isEmpty {
+		if !canStartExpr(p.lexer.peek().Type) {
 			p.reportError(token.Span, "Expected an expression after '...'")
 			return nil
 		}
+		arg := p.expr()
 		return ast.NewArraySpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 	return p.expr()
@@ -658,10 +681,10 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 
 	if token.Type == DotDotDot {
 		p.lexer.consume() // consume '...'
-		arg := p.expr()
-		if _, isEmpty := arg.(*ast.EmptyExpr); arg == nil || isEmpty {
+		if !canStartExpr(p.lexer.peek().Type) {
 			p.reportError(token.Span, "Expected an expression after '...'")
 		} else {
+			arg := p.expr()
 			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 		}
 	}

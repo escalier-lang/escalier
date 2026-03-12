@@ -8358,14 +8358,6 @@
 []*parser.Error{
     &parser.Error{
         Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
-    &parser.Error{
-        Span: ast.Span{
             Start:    ast.Location{Line:1, Column:2},
             End:      ast.Location{Line:1, Column:5},
             SourceID: 0,
@@ -8377,14 +8369,6 @@
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperand - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
     &parser.Error{
         Span: ast.Span{
             Start:    ast.Location{Line:1, Column:2},
@@ -8400,6 +8384,82 @@
             SourceID: 0,
         },
         Message: "Expected a property name",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 1]
+&ast.ObjectExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 1]
+&ast.TupleExpr{
+    Elems: {
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected a property name",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected } but got ,",
+    },
+}
+---
+
+[TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:2},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression after '...'",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected ] but got ,",
     },
 }
 ---
