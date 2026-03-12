@@ -683,10 +683,11 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		p.lexer.consume() // consume '...'
 		if !canStartExpr(p.lexer.peek().Type) {
 			p.reportError(token.Span, "Expected an expression after '...'")
-		} else {
-			arg := p.expr()
-			return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
+			return nil
 		}
+
+		arg := p.expr()
+		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 
 	// TODO: raise an error if 'get' or 'set' is used with a property definition
