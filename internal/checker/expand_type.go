@@ -697,12 +697,17 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 		// Check the Extends field if property not found
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias
-			extendsType := type_system.Prune(extendsTypeRef)
+			// Resolve TypeRefType through TypeAlias, substituting type args
+			extendsType := type_system.Type(extendsTypeRef)
 
-			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
-					extendsType = type_system.Prune(typeRef.TypeAlias.Type)
+					resolved := typeRef.TypeAlias.Type
+					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
+						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
+						resolved = SubstituteTypeParams(resolved, subs)
+					}
+					extendsType = type_system.Prune(resolved)
 				}
 			}
 
@@ -781,11 +786,16 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 		// Check the Extends field if property not found
 		for _, extendsTypeRef := range objType.Extends {
-			// Resolve TypeRefType through TypeAlias
-			extendsType := type_system.Prune(extendsTypeRef)
-			if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+			// Resolve TypeRefType through TypeAlias, substituting type args
+			extendsType := type_system.Type(extendsTypeRef)
+			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
-					extendsType = type_system.Prune(typeRef.TypeAlias.Type)
+					resolved := typeRef.TypeAlias.Type
+					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
+						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
+						resolved = SubstituteTypeParams(resolved, subs)
+					}
+					extendsType = type_system.Prune(resolved)
 				}
 			}
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {

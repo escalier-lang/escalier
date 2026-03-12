@@ -1,40 +1,38 @@
 package checker
 
 import (
-	"strings"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // getSymbolIteratorID retrieves the unique symbol ID for Symbol.iterator
 // from the SymbolConstructor type in the global scope.
-func (c *Checker) getSymbolIteratorID() int {
+func (c *Checker) getSymbolIteratorID() (int, bool) {
 	if c.GlobalScope == nil {
-		return -1
+		return 0, false
 	}
 
 	symbolConstructor := c.GlobalScope.Namespace.Types["SymbolConstructor"]
 	if symbolConstructor == nil {
-		return -1
+		return 0, false
 	}
 
 	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
 	if !ok {
-		return -1
+		return 0, false
 	}
 
 	for _, elem := range objType.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
 			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "iterator" {
 				if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
-					return sym.Value
+					return sym.Value, true
 				}
 			}
 		}
 	}
 
-	return -1
+	return 0, false
 }
 
 // GetIterableElementType extracts the element type T from an Iterable<T> type.
@@ -49,20 +47,34 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		t = type_system.Prune(mut.Type)
 	}
 
-	// Handle TupleType directly - tuples are iterable, yielding the union of element types
+	// Handle TupleType directly - tuples are iterable, yielding the union of element types.
+	// RestSpreadType elements (e.g. ...string[] in [number, ...string[]]) are unwrapped
+	// to extract the inner array's element type.
 	if tuple, ok := t.(*type_system.TupleType); ok {
-		switch len(tuple.Elems) {
-		case 0:
+		if len(tuple.Elems) == 0 {
 			return type_system.NewNeverType(nil)
-		case 1:
-			return tuple.Elems[0]
-		default:
-			return type_system.NewUnionType(nil, tuple.Elems...)
 		}
+		elemTypes := make([]type_system.Type, 0, len(tuple.Elems))
+		for _, elem := range tuple.Elems {
+			if rest, ok := elem.(*type_system.RestSpreadType); ok {
+				// Extract the element type from the spread's inner type (e.g. Array<string> → string)
+				if ref, ok := type_system.Prune(rest.Type).(*type_system.TypeRefType); ok && len(ref.TypeArgs) > 0 {
+					elemTypes = append(elemTypes, ref.TypeArgs[0])
+				} else {
+					elemTypes = append(elemTypes, rest.Type)
+				}
+			} else {
+				elemTypes = append(elemTypes, elem)
+			}
+		}
+		if len(elemTypes) == 1 {
+			return elemTypes[0]
+		}
+		return type_system.NewUnionType(nil, elemTypes...)
 	}
 
-	symIterID := c.getSymbolIteratorID()
-	if symIterID < 0 {
+	symIterID, ok := c.getSymbolIteratorID()
+	if !ok {
 		return nil
 	}
 
@@ -94,41 +106,44 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 	return c.extractIteratorElementType(ctx, returnType)
 }
 
-// extractIteratorElementType extracts the element type T from an Iterator-like type.
-// It handles TypeRefType (e.g. Iterator<T>, IterableIterator<T>, ArrayIterator<T>)
-// by returning the first type argument.
+// extractIteratorElementType extracts the element type T from an Iterator-like type
+// by looking up the `next` method and unifying its return type with IteratorResult<T>.
+// This is a structural check — any type with a compatible `next()` method qualifies.
 func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
-
-	switch rt := t.(type) {
-	case *type_system.TypeRefType:
-		// Verify this is actually an Iterator-like type before extracting T.
-		// Rather than maintaining a hardcoded allowlist, check if the name
-		// contains "Iterator" or is "Generator" — this covers Iterator,
-		// IterableIterator, IteratorObject, ArrayIterator, MapIterator,
-		// SetIterator, StringIterator, and Generator.
-		name := type_system.QualIdentToString(rt.Name)
-		isIteratorLike := strings.Contains(name, "Iterator") || name == "Generator"
-		if len(rt.TypeArgs) > 0 && isIteratorLike {
-			return rt.TypeArgs[0]
-		}
-	case *type_system.ObjectType:
-		// For expanded object types, look for the `next()` method and
-		// extract the element type from IteratorResult<T, TReturn>
-		for _, elem := range rt.Elems {
-			if method, ok := elem.(*type_system.MethodElem); ok {
-				if method.Name.Kind == type_system.StrObjTypeKeyKind && method.Name.Str == "next" {
-					nextReturn := type_system.Prune(method.Fn.Return)
-					if ref, ok := nextReturn.(*type_system.TypeRefType); ok {
-						name := type_system.QualIdentToString(ref.Name)
-						if name == "IteratorResult" && len(ref.TypeArgs) > 0 {
-							return ref.TypeArgs[0]
-						}
-					}
-				}
-			}
-		}
+	if c.GlobalScope == nil {
+		return nil
+	}
+	iteratorResultAlias := c.GlobalScope.Namespace.Types["IteratorResult"]
+	if iteratorResultAlias == nil || len(iteratorResultAlias.TypeParams) == 0 {
+		return nil
 	}
 
-	return nil
+	// Look up the `next` method on the candidate type
+	nextKey := PropertyKey{Name: "next", span: ast.Span{}}
+	nextMethod, errors := c.getMemberType(ctx, t, nextKey)
+	if len(errors) > 0 {
+		return nil
+	}
+
+	nextMethod = type_system.Prune(nextMethod)
+	funcType, ok := nextMethod.(*type_system.FuncType)
+	if !ok {
+		return nil
+	}
+
+	// Create a fresh type variable for the element type T
+	freshT := c.FreshVar(nil)
+	freshTReturn := c.FreshVar(nil)
+
+	// Build IteratorResult<freshT, freshTReturn> as a TypeRefType
+	expectedReturn := type_system.NewTypeRefType(nil, "IteratorResult",
+		iteratorResultAlias, freshT, freshTReturn)
+
+	// Unify the next() return type with IteratorResult<T, TReturn>
+	unifyErrors := c.Unify(ctx, funcType.Return, expectedReturn)
+	if len(unifyErrors) > 0 {
+		return nil
+	}
+
+	return type_system.Prune(freshT)
 }

@@ -235,6 +235,34 @@ func TestGetIterableElementType(t *testing.T) {
 		elemType := c.GetIterableElementType(ctx, boolType)
 		assert.Nil(t, elemType, "boolean should not be iterable")
 	})
+
+	t.Run("TupleWithRestSpread", func(t *testing.T) {
+		// [number, ...string[]] should yield number | string
+		arrayAlias := scope.GetTypeAlias("Array")
+		require.NotNil(t, arrayAlias)
+		arrayOfString := type_system.NewTypeRefType(nil, "Array", arrayAlias, type_system.NewStrPrimType(nil))
+		tupleType := type_system.NewTupleType(nil,
+			type_system.NewNumPrimType(nil),
+			type_system.NewRestSpreadType(nil, arrayOfString),
+		)
+		elemType := c.GetIterableElementType(ctx, tupleType)
+		require.NotNil(t, elemType, "[number, ...string[]] should be iterable")
+		assert.Equal(t, "number | string", elemType.String())
+	})
+
+	t.Run("EmptyTuple", func(t *testing.T) {
+		tupleType := type_system.NewTupleType(nil)
+		elemType := c.GetIterableElementType(ctx, tupleType)
+		require.NotNil(t, elemType)
+		assert.Equal(t, "never", elemType.String())
+	})
+
+	t.Run("SingleElementTuple", func(t *testing.T) {
+		tupleType := type_system.NewTupleType(nil, type_system.NewNumPrimType(nil))
+		elemType := c.GetIterableElementType(ctx, tupleType)
+		require.NotNil(t, elemType)
+		assert.Equal(t, "number", elemType.String())
+	})
 }
 
 // =============================================================================
@@ -277,5 +305,34 @@ func TestArraySpreadRequiresIterable(t *testing.T) {
 		// Invalid: spreading a non-iterable object in an array context
 		_, errors := inferScript(t, `val arr = [...{a: 1}]`)
 		assert.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+	})
+}
+
+// =============================================================================
+// Phase 0.5: Module-level iterator inference
+// =============================================================================
+
+func TestModuleIterableInference(t *testing.T) {
+	t.Run("SpreadArrayInModule", func(t *testing.T) {
+		types, errors := inferModule(t, `
+			declare val nums: Array<number>
+			val arr = [1, 2, ...nums]
+		`)
+		assert.Empty(t, errors)
+		arrType, exists := types["arr"]
+		assert.True(t, exists, "arr should be declared")
+		if exists {
+			assert.True(t, strings.Contains(arrType, "number"),
+				"arr should contain number, got: %s", arrType)
+		}
+	})
+
+	t.Run("SpreadNonIterableInModule", func(t *testing.T) {
+		_, errors := inferModule(t, `val arr = [...5]`)
+		assert.NotEmpty(t, errors, "spreading a number should produce an error")
+		if len(errors) > 0 {
+			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+				"error should mention 'not iterable', got: %s", errors[0].Message())
+		}
 	})
 }
