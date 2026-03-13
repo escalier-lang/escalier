@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/async_generator.esc"],"sourcesContent":["// Async generator function\nexport async fn fetchItems() {\n    yield 1\n    yield 2\n    yield 3\n}\n"],"names":[],"mappings":"AACA;EACI,MAAM;EACN,MAAM;EACN,MAAM"}

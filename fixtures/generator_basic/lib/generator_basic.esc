@@ -1,0 +1,19 @@
+// Basic generator function
+export fn count() {
+    yield 1
+    yield 2
+    yield 3
+}
+
+// Generator with a return value
+export fn countWithDone() {
+    yield 1
+    yield 2
+    return "done"
+}
+
+// Generator that yields different types
+export fn mixed() {
+    yield 1
+    yield "hello"
+}

@@ -262,6 +262,21 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ImportNamespace": {
 			input: `import * as ns from "module"`,
 		},
+		"ForInBasic": {
+			input: `for item in items { console.log(item) }`,
+		},
+		"ForInDestructuring": {
+			input: `for [key, value] in map { }`,
+		},
+		"ForAwaitIn": {
+			input: `for await item in asyncItems { }`,
+		},
+		"GeneratorFuncDecl": {
+			input: "fn count() {\n\tyield 1\n\tyield 2\n\tyield 3\n}",
+		},
+		"AsyncGeneratorFuncDecl": {
+			input: `async fn fetch() { yield await x }`,
+		},
 	}
 
 	for name, test := range tests {
