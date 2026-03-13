@@ -52,6 +52,27 @@ type Context struct {
 	// AwaitThrowTypes collects throw types from await expressions during inference.
 	// Pointer so block scopes share state within a function.
 	AwaitThrowTypes *[]type_system.Type
+	// Generator tracking:
+	// ContainsYield and YieldedTypes are pointers because they are accumulators
+	// mutated during traversal — block scopes must share the same underlying
+	// values so that yields inside if/while/etc. propagate to the enclosing
+	// function. Nested functions allocate fresh pointers to isolate their state.
+	ContainsYield *bool
+	YieldedTypes  *[]type_system.Type
+	// GeneratorNextType is the TNext type for the current generator function,
+	// controlling what type yield expressions evaluate to. Currently always nil
+	// (yield evaluates to never, TNext is never) because most generators are
+	// consumed via for...in loops rather than manual .next(value) calls. If we
+	// later support explicit generator type annotations like
+	// fn foo(): Generator<number, void, string>, this field would be set to
+	// the annotated TNext so that yield expressions evaluate to that type.
+	GeneratorNextType type_system.Type
+}
+
+func (ctx *Context) AddYieldedType(t type_system.Type) {
+	if ctx.YieldedTypes != nil {
+		*ctx.YieldedTypes = append(*ctx.YieldedTypes, t)
+	}
 }
 
 func (ctx *Context) WithNewScope() Context {
@@ -64,6 +85,9 @@ func (ctx *Context) WithNewScope() Context {
 		FileScopes:             ctx.FileScopes,
 		Module:                 ctx.Module,
 		AwaitThrowTypes:        ctx.AwaitThrowTypes,
+		ContainsYield:          ctx.ContainsYield,
+		YieldedTypes:           ctx.YieldedTypes,
+		GeneratorNextType:      ctx.GeneratorNextType,
 	}
 }
 
@@ -72,12 +96,15 @@ func (ctx *Context) WithNewScope() Context {
 // because callers manage those fields directly on the returned context.
 func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
 	return Context{
-		Scope:           ctx.Scope.WithNewScopeAndNamespace(ns),
-		IsAsync:         ctx.IsAsync,
-		IsPatMatch:      ctx.IsPatMatch,
-		FileScopes:      ctx.FileScopes,
-		Module:          ctx.Module,
-		AwaitThrowTypes: ctx.AwaitThrowTypes,
+		Scope:             ctx.Scope.WithNewScopeAndNamespace(ns),
+		IsAsync:           ctx.IsAsync,
+		IsPatMatch:        ctx.IsPatMatch,
+		FileScopes:        ctx.FileScopes,
+		Module:            ctx.Module,
+		AwaitThrowTypes:   ctx.AwaitThrowTypes,
+		ContainsYield:     ctx.ContainsYield,
+		YieldedTypes:      ctx.YieldedTypes,
+		GeneratorNextType: ctx.GeneratorNextType,
 	}
 }
 
@@ -92,6 +119,9 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		FileScopes:             ctx.FileScopes,
 		Module:                 ctx.Module,
 		AwaitThrowTypes:        ctx.AwaitThrowTypes,
+		ContainsYield:          ctx.ContainsYield,
+		YieldedTypes:           ctx.YieldedTypes,
+		GeneratorNextType:      ctx.GeneratorNextType,
 	}
 }
 

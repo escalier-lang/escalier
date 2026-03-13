@@ -5,9 +5,9 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// getSymbolIteratorID retrieves the unique symbol ID for Symbol.iterator
-// from the SymbolConstructor type in the global scope.
-func (c *Checker) getSymbolIteratorID() (int, bool) {
+// getSymbolID retrieves the unique symbol ID for a named property on SymbolConstructor
+// (e.g. "iterator" for Symbol.iterator, "asyncIterator" for Symbol.asyncIterator).
+func (c *Checker) getSymbolID(name string) (int, bool) {
 	if c.GlobalScope == nil {
 		return 0, false
 	}
@@ -24,7 +24,7 @@ func (c *Checker) getSymbolIteratorID() (int, bool) {
 
 	for _, elem := range objType.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "iterator" {
+			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == name {
 				if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
 					return sym.Value, true
 				}
@@ -91,7 +91,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		return type_system.NewUnionType(nil, elemTypes...)
 	}
 
-	symIterID, ok := c.getSymbolIteratorID()
+	symIterID, ok := c.getSymbolID("iterator")
 	if !ok {
 		return nil
 	}
@@ -124,32 +124,32 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 	return c.extractIteratorElementType(ctx, returnType)
 }
 
-// extractIteratorElementType extracts the element type T from an Iterator-like type
-// by looking up the `next` method and unifying its return type with IteratorResult<T>.
-// This is a structural check — any type with a compatible `next()` method qualifies.
-func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) type_system.Type {
+// unifyIteratorNextReturn looks up `next()` on an Iterator-like type and unifies
+// its return type with IteratorResult<freshT, freshTReturn>. Returns the two fresh
+// type variables (pruned) or nil, nil if the type is not a valid iterator.
+func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type_system.Type, type_system.Type) {
 	if c.GlobalScope == nil {
-		return nil
+		return nil, nil
 	}
 	iteratorResultAlias := c.GlobalScope.Namespace.Types["IteratorResult"]
 	if iteratorResultAlias == nil || len(iteratorResultAlias.TypeParams) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Look up the `next` method on the candidate type
 	nextKey := PropertyKey{Name: "next", span: ast.Span{}}
 	nextMethod, errors := c.getMemberType(ctx, t, nextKey)
 	if len(errors) > 0 {
-		return nil
+		return nil, nil
 	}
 
 	nextMethod = type_system.Prune(nextMethod)
 	funcType, ok := nextMethod.(*type_system.FuncType)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
-	// Create a fresh type variable for the element type T
+	// Create fresh type variables for T and TReturn
 	freshT := c.FreshVar(nil)
 	freshTReturn := c.FreshVar(nil)
 
@@ -160,8 +160,112 @@ func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) ty
 	// Unify the next() return type with IteratorResult<T, TReturn>
 	unifyErrors := c.Unify(ctx, funcType.Return, expectedReturn)
 	if len(unifyErrors) > 0 {
+		return nil, nil
+	}
+
+	return type_system.Prune(freshT), type_system.Prune(freshTReturn)
+}
+
+// extractIteratorElementType extracts the element type T from an Iterator-like type
+// by looking up the `next` method and unifying its return type with IteratorResult<T>.
+// This is a structural check — any type with a compatible `next()` method qualifies.
+func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) type_system.Type {
+	elemType, _ := c.unifyIteratorNextReturn(ctx, t)
+	return elemType
+}
+
+// GetIteratorReturnType extracts the TReturn type from an Iterable's iterator.
+// It looks up [Symbol.iterator]() on the type, gets the iterator, then extracts
+// TReturn from the IteratorResult<T, TReturn> returned by next().
+// Used for determining the type of `yield from` (yield*) expressions.
+func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
+
+	if mut, ok := t.(*type_system.MutabilityType); ok {
+		t = type_system.Prune(mut.Type)
+	}
+
+	// Handle UnionType by extracting TReturn from each branch and unioning the results.
+	if union, ok := t.(*type_system.UnionType); ok {
+		returnTypes := make([]type_system.Type, 0, len(union.Types))
+		for _, branch := range union.Types {
+			inner := c.GetIteratorReturnType(ctx, branch)
+			if inner == nil {
+				return nil
+			}
+			returnTypes = append(returnTypes, inner)
+		}
+		if len(returnTypes) == 1 {
+			return returnTypes[0]
+		}
+		return type_system.NewUnionType(nil, returnTypes...)
+	}
+
+	// Handle TupleType — tuples use Array's iterator which has TReturn = void.
+	if _, ok := t.(*type_system.TupleType); ok {
+		return type_system.NewVoidType(nil)
+	}
+
+	symIterID, ok := c.getSymbolID("iterator")
+	if !ok {
 		return nil
 	}
 
-	return type_system.Prune(freshT)
+	symKey := type_system.NewUniqueSymbolType(nil, symIterID)
+	indexKey := IndexKey{
+		Type: symKey,
+		span: ast.Span{},
+	}
+
+	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey)
+	if len(errors) > 0 {
+		return nil
+	}
+
+	iteratorMethod = type_system.Prune(iteratorMethod)
+	funcType, ok := iteratorMethod.(*type_system.FuncType)
+	if !ok {
+		return nil
+	}
+
+	returnType := type_system.Prune(funcType.Return)
+	_, tReturn := c.unifyIteratorNextReturn(ctx, returnType)
+	return tReturn
+}
+
+// GetAsyncIterableElementType extracts T from AsyncIterable<T> by looking up
+// [Symbol.asyncIterator]() on the type, then extracting T from the returned
+// AsyncIterator type. Returns nil if the type is not async iterable.
+// Note: Requires ES2018+ lib files to be loaded for AsyncIterable/AsyncIterator types.
+func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
+
+	if mut, ok := t.(*type_system.MutabilityType); ok {
+		t = type_system.Prune(mut.Type)
+	}
+
+	asyncIterSymID, ok := c.getSymbolID("asyncIterator")
+	if !ok {
+		return nil
+	}
+
+	symKey := type_system.NewUniqueSymbolType(nil, asyncIterSymID)
+	indexKey := IndexKey{
+		Type: symKey,
+		span: ast.Span{},
+	}
+
+	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey)
+	if len(errors) > 0 {
+		return nil
+	}
+
+	iteratorMethod = type_system.Prune(iteratorMethod)
+	funcType, ok := iteratorMethod.(*type_system.FuncType)
+	if !ok {
+		return nil
+	}
+
+	returnType := type_system.Prune(funcType.Return)
+	return c.extractIteratorElementType(ctx, returnType)
 }

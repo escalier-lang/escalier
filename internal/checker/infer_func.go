@@ -170,9 +170,16 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 ) []Error {
 	errors := []Error{}
 
-	// Create async context if this is an async function
+	// Allocate fresh pointers for generator tracking — this function gets its own
+	// tracking independent of any enclosing function
+	containsYield := false
+	yieldedTypes := []type_system.Type{}
+
+	// Create context for the function body
 	bodyCtx := ctx.WithNewScope()
 	bodyCtx.IsAsync = isAsync
+	bodyCtx.ContainsYield = &containsYield
+	bodyCtx.YieldedTypes = &yieldedTypes
 
 	// Allocate fresh slice for collecting await throw types during inference
 	if isAsync {
@@ -183,7 +190,41 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
 	errors = slices.Concat(errors, bodyErrors)
 
-	// For async functions, we need to handle Promise return types differently
+	// Check if this function is a generator (contains yield)
+	if containsYield {
+		var yieldType type_system.Type
+		if len(yieldedTypes) == 1 {
+			yieldType = yieldedTypes[0]
+		} else if len(yieldedTypes) > 1 {
+			yieldType = type_system.NewUnionType(nil, yieldedTypes...)
+		} else {
+			yieldType = type_system.NewNeverType(nil)
+		}
+		// TNext is always never for now — see GeneratorNextType comment in Context.
+		nextType := type_system.NewNeverType(nil)
+
+		var inferredGenType type_system.Type
+		if isAsync {
+			asyncGenAlias := ctx.Scope.GetTypeAlias("AsyncGenerator")
+			inferredGenType = type_system.NewTypeRefType(nil, "AsyncGenerator", asyncGenAlias, yieldType, returnType, nextType)
+		} else {
+			genAlias := ctx.Scope.GetTypeAlias("Generator")
+			inferredGenType = type_system.NewTypeRefType(nil, "Generator", genAlias, yieldType, returnType, nextType)
+		}
+
+		unifyErrors := c.Unify(ctx, inferredGenType, funcSigType.Return)
+		errors = slices.Concat(errors, unifyErrors)
+
+		// Only overwrite the return type when there's no explicit annotation
+		// (i.e., it's a fresh type variable). When annotated, unification
+		// already checked compatibility.
+		if _, isTypeVar := funcSigType.Return.(*type_system.TypeVarType); isTypeVar {
+			funcSigType.Return = inferredGenType
+		}
+		funcSigType.Throws = type_system.NewNeverType(nil)
+		return errors
+	}
+
 	// For async functions, we construct a Promise<T, E> from the inferred
 	// return and throws types, then unify with the function signature.
 	if isAsync {
@@ -196,7 +237,6 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 			// Async functions do not throw directly; set throws to never.
 			funcSigType.Throws = type_system.NewNeverType(nil)
 		}
-		// Now unify the (possibly updated) return type with itself – no additional work needed.
 	} else {
 		// For non-async functions, use the original logic
 		unifyReturnErrors := c.Unify(ctx, returnType, funcSigType.Return)
