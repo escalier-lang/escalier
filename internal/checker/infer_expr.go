@@ -12,7 +12,7 @@ import (
 )
 
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Error) {
-	var resultType type_system.Type
+	var exprType type_system.Type
 	var errors []Error
 
 	provenance := &ast.NodeProvenance{Node: expr}
@@ -95,11 +95,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			unifyErrors := c.Unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
 
-			resultType = neverType
+			exprType = neverType
 		} else {
 			opBinding := ctx.Scope.GetValue(string(expr.Op))
 			if opBinding == nil {
-				resultType = neverType
+				exprType = neverType
 				errors = []Error{&UnknownOperatorError{
 					Operator: string(expr.Op),
 				}}
@@ -108,7 +108,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// TODO: handle function overloading
 				if fnType, ok := opBinding.Type.(*type_system.FuncType); ok {
 					if len(fnType.Params) != 2 {
-						resultType = neverType
+						exprType = neverType
 						errors = []Error{&InvalidNumberOfArgumentsError{
 							CallExpr: expr,
 							Callee:   fnType,
@@ -125,10 +125,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						rightErrors = c.Unify(ctx, rightType, fnType.Params[1].Type)
 						errors = slices.Concat(errors, leftErrors, rightErrors)
 
-						resultType = fnType.Return
+						exprType = fnType.Return
 					}
 				} else {
-					resultType = neverType
+					exprType = neverType
 					errors = []Error{&UnknownOperatorError{Operator: string(expr.Op)}}
 				}
 			}
@@ -137,43 +137,43 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		if expr.Op == ast.UnaryMinus {
 			if lit, ok := expr.Arg.(*ast.LiteralExpr); ok {
 				if num, ok := lit.Lit.(*ast.NumLit); ok {
-					resultType = type_system.NewNumLitType(provenance, -num.Value)
+					exprType = type_system.NewNumLitType(provenance, -num.Value)
 					errors = []Error{}
 				} else {
-					resultType = type_system.NewNeverType(nil)
+					exprType = type_system.NewNeverType(nil)
 					errors = []Error{&UnimplementedError{
 						message: "Handle unary operators",
 						span:    expr.Span(),
 					}}
 				}
 			} else {
-				resultType = type_system.NewNeverType(nil)
+				exprType = type_system.NewNeverType(nil)
 				errors = []Error{&UnimplementedError{
 					message: "Handle unary operators",
 					span:    expr.Span(),
 				}}
 			}
 		} else {
-			resultType = type_system.NewNeverType(nil)
+			exprType = type_system.NewNeverType(nil)
 			errors = []Error{&UnimplementedError{
 				message: "Handle unary operators",
 				span:    expr.Span(),
 			}}
 		}
 	case *ast.CallExpr:
-		resultType, errors = c.inferCallExpr(ctx, expr)
+		exprType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 		key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
 		propType, propErrors := c.getMemberType(ctx, objType, key)
 
-		resultType = propType
+		exprType = propType
 
 		if methodType, ok := propType.(*type_system.FuncType); ok {
 			if retType, ok := methodType.Return.(*type_system.TypeRefType); ok && type_system.QualIdentToString(retType.Name) == "Self" {
 				t := *methodType   // Create a copy of the struct
 				t.Return = objType // Replace `Self` with the object type
-				resultType = &t
+				exprType = &t
 			}
 		}
 
@@ -186,7 +186,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		key := IndexKey{Type: indexType, span: expr.Index.Span()}
 		accessType, accessErrors := c.getMemberType(ctx, objType, key)
-		resultType = accessType
+		exprType = accessType
 		errors = slices.Concat(errors, accessErrors)
 	case *ast.IdentExpr:
 		if binding := ctx.Scope.GetValue(expr.Name); binding != nil {
@@ -194,22 +194,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := type_system.Prune(binding.Type)
-			resultType = t.Copy()
-			resultType.SetProvenance(&ast.NodeProvenance{Node: expr})
+			exprType = t.Copy()
+			exprType.SetProvenance(&ast.NodeProvenance{Node: expr})
 			expr.Source = binding.Source
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
 			t := type_system.NewNamespaceType(provenance, namespace)
-			resultType = t
+			exprType = t
 			errors = nil
 		} else {
-			resultType = type_system.NewNeverType(nil)
+			exprType = type_system.NewNeverType(nil)
 			errors = []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
 		}
 	case *ast.LiteralExpr:
-		resultType, errors = c.inferLit(expr.Lit)
-		resultType = &type_system.MutabilityType{
-			Type:       resultType,
+		exprType, errors = c.inferLit(expr.Lit)
+		exprType = &type_system.MutabilityType{
+			Type:       exprType,
 			Mutability: type_system.MutabilityUncertain,
 		}
 	case *ast.TupleExpr:
@@ -241,7 +241,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 		}
 
-		resultType = &type_system.MutabilityType{
+		exprType = &type_system.MutabilityType{
 			Type:       type_system.NewTupleType(provenance, elemTypes...),
 			Mutability: type_system.MutabilityUncertain,
 		}
@@ -385,7 +385,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			i++
 		}
 
-		resultType = &type_system.MutabilityType{
+		exprType = &type_system.MutabilityType{
 			Type:       selfType,
 			Mutability: type_system.MutabilityUncertain,
 		}
@@ -396,19 +396,19 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
-		resultType = funcType
+		exprType = funcType
 	case *ast.IfElseExpr:
-		resultType, errors = c.inferIfElse(ctx, expr)
+		exprType, errors = c.inferIfElse(ctx, expr)
 	case *ast.DoExpr:
-		resultType, errors = c.inferDoExpr(ctx, expr)
+		exprType, errors = c.inferDoExpr(ctx, expr)
 	case *ast.MatchExpr:
-		resultType, errors = c.inferMatchExpr(ctx, expr)
+		exprType, errors = c.inferMatchExpr(ctx, expr)
 	case *ast.ThrowExpr:
 		// Infer the type of the argument being thrown
 		_, argErrors := c.inferExpr(ctx, expr.Arg)
 		errors = argErrors
 		// Throw expressions have type never since they don't return a value
-		resultType = type_system.NewNeverType(nil)
+		exprType = type_system.NewNeverType(nil)
 	case *ast.AwaitExpr:
 		// Await can only be used inside async functions
 		if !ctx.IsAsync {
@@ -418,7 +418,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					span:    expr.Span(),
 				},
 			}
-			resultType = type_system.NewNeverType(nil)
+			exprType = type_system.NewNeverType(nil)
 		} else {
 			// Infer the type of the expression being awaited
 			argType, argErrors := c.inferExpr(ctx, expr.Arg)
@@ -435,10 +435,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			if promiseType, ok := argType.(*type_system.TypeRefType); ok && type_system.QualIdentToString(promiseType.Name) == "Promise" {
 				if len(promiseType.TypeArgs) >= 1 {
 					// Use the first type argument as the awaited value.
-					resultType = promiseType.TypeArgs[0]
+					exprType = promiseType.TypeArgs[0]
 				} else {
 					// No type arguments – fallback to never.
-					resultType = type_system.NewNeverType(nil)
+					exprType = type_system.NewNeverType(nil)
 				}
 				// Record the throws type via context pointer
 				if ctx.AwaitThrowTypes != nil {
@@ -454,7 +454,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					message: "await expression expects a Promise type",
 					span:    expr.Span(),
 				})
-				resultType = type_system.NewNeverType(nil)
+				exprType = type_system.NewNeverType(nil)
 			}
 		}
 	case *ast.YieldExpr:
@@ -468,7 +468,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				message: fmt.Sprintf("'%s' can only be used inside a function", keyword),
 				span:    expr.Span(),
 			}}
-			resultType = type_system.NewNeverType(provenance)
+			exprType = type_system.NewNeverType(provenance)
 		} else {
 			// Mark this function context as containing yield (makes it a generator)
 			*ctx.ContainsYield = true
@@ -480,7 +480,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						message: "'yield from' requires an iterable expression",
 						span:    expr.Span(),
 					}}
-					resultType = type_system.NewNeverType(provenance)
+					exprType = type_system.NewNeverType(provenance)
 				} else {
 					valueType, errs := c.inferExpr(ctx, expr.Value)
 					errors = errs
@@ -508,9 +508,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					// The yield from expression evaluates to TReturn of the delegated iterator
 					delegatedReturnType := c.GetIteratorReturnType(ctx, valueType)
 					if delegatedReturnType == nil {
-						resultType = type_system.NewNeverType(provenance)
+						exprType = type_system.NewNeverType(provenance)
 					} else {
-						resultType = delegatedReturnType
+						exprType = delegatedReturnType
 					}
 				}
 			} else {
@@ -529,9 +529,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// so yield always evaluates to never. This is fine because most
 				// generators are consumed via for...in, not manual .next(value).
 				if ctx.GeneratorNextType != nil {
-					resultType = ctx.GeneratorNextType
+					exprType = ctx.GeneratorNextType
 				} else {
-					resultType = type_system.NewNeverType(provenance)
+					exprType = type_system.NewNeverType(provenance)
 				}
 			}
 		}
@@ -584,10 +584,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		callExpr := ast.NewCall(expr.Tag, args, false, expr.Span())
 
 		// Infer the call expression
-		resultType, errors = c.inferCallExpr(ctx, callExpr)
+		exprType, errors = c.inferCallExpr(ctx, callExpr)
 	case *ast.TypeCastExpr:
 		// Infer the type of the expression being cast
-		exprType, exprErrors := c.inferExpr(ctx, expr.Expr)
+		castType, exprErrors := c.inferExpr(ctx, expr.Expr)
 		errors = slices.Concat(errors, exprErrors)
 
 		// Infer the type annotation to get the target type
@@ -596,11 +596,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		// Check that the expression type is a subtype of the target type
 		// For type casting, we require that exprType can be unified with targetType
-		unifyErrors := c.Unify(ctx, exprType, targetType)
+		unifyErrors := c.Unify(ctx, castType, targetType)
 		errors = slices.Concat(errors, unifyErrors)
 
 		// The result type is the target type
-		resultType = targetType
+		exprType = targetType
 	case *ast.TemplateLitExpr:
 		// Template literals always produce strings
 		// We need to infer all the interpolated expressions for type checking
@@ -610,7 +610,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			errors = slices.Concat(errors, exprErrors)
 		}
 		// Template literals always result in a string type
-		resultType = type_system.NewStrPrimType(provenance)
+		exprType = type_system.NewStrPrimType(provenance)
 	case *ast.IfLetExpr:
 		// Infer the type of the target expression
 		targetType, targetErrors := c.inferExpr(ctx, expr.Target)
@@ -676,7 +676,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 
 		// The overall type of the if let is the union of the consequent and alternative types
-		resultType = type_system.NewUnionType(provenance, consType, altType)
+		exprType = type_system.NewUnionType(provenance, consType, altType)
 	case *ast.TryCatchExpr:
 		errors = []Error{}
 
@@ -757,17 +757,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// and all catch case types
 		if len(catchTypes) > 0 {
 			allTypes := append([]type_system.Type{tryType}, catchTypes...)
-			resultType = type_system.NewUnionType(provenance, allTypes...)
+			exprType = type_system.NewUnionType(provenance, allTypes...)
 		} else {
 			// No catch clauses, just the try type
-			resultType = tryType
+			exprType = tryType
 		}
 	case *ast.JSXElementExpr:
-		resultType, errors = c.inferJSXElement(ctx, expr)
+		exprType, errors = c.inferJSXElement(ctx, expr)
 	case *ast.JSXFragmentExpr:
-		resultType, errors = c.inferJSXFragment(ctx, expr)
+		exprType, errors = c.inferJSXFragment(ctx, expr)
 	default:
-		resultType = type_system.NewNeverType(nil)
+		exprType = type_system.NewNeverType(nil)
 		errors = []Error{
 			&UnimplementedError{
 				message: "Infer expression type: " + fmt.Sprintf("%T", expr),
@@ -777,9 +777,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 	}
 
 	// Always set the inferred type on the expression before returning
-	expr.SetInferredType(resultType)
-	resultType.SetProvenance(provenance)
-	return resultType, errors
+	expr.SetInferredType(exprType)
+	exprType.SetProvenance(provenance)
+	return exprType, errors
 }
 
 // isPropertyReadonly checks if a specific property in an object type is readonly
