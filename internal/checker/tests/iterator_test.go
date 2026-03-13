@@ -919,8 +919,12 @@ func TestYieldFromGenerator(t *testing.T) {
 	outerType, exists := types["outer"]
 	assert.True(t, exists)
 	if exists {
-		assert.True(t, strings.Contains(outerType, "Generator"),
+		assert.True(t, strings.Contains(outerType, "Generator<"),
 			"outer should be a Generator, got: %s", outerType)
+		assert.True(t, strings.Contains(outerType, "1") && strings.Contains(outerType, "2"),
+			"outer should include delegated yields from inner(), got: %s", outerType)
+		assert.True(t, strings.Contains(outerType, "3"),
+			"outer should include direct yield 3, got: %s", outerType)
 	}
 }
 
