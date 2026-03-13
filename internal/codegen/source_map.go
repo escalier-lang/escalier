@@ -134,8 +134,12 @@ func (s *SourceMapGenerator) TraverseStmt(stmt Stmt) {
 		s.AddSegmentForNode(stmt)
 		s.TraverseExpr(sk.Expr)
 	case *TryStmt:
+		s.AddSegmentForNode(stmt)
 		s.TraverseStmt(sk.Try)
 		if sk.Catch != nil {
+			if sk.Catch.Param != nil {
+				s.TraversePattern(sk.Catch.Param)
+			}
 			s.TraverseStmt(sk.Catch.Body)
 		}
 		if sk.Finally != nil {
