@@ -1286,6 +1286,15 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		}
 	}
 
+	// Check if any overload contains yield - if so, the generated function must be a generator
+	isGenerator := false
+	for _, overload := range implementedOverloads {
+		if overload.Body != nil && containsYield(overload.Body.Stmts) {
+			isGenerator = true
+			break
+		}
+	}
+
 	// Create the function declaration
 	fnDecl := &FuncDecl{
 		Name: &Identifier{
@@ -1300,6 +1309,7 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		declare:    false,
 		export:     b.isModule,
 		async:      isAsync,
+		generator:  isGenerator,
 		span:       nil,
 		source:     overloads[0],
 	}
