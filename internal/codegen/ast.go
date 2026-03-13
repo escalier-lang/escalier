@@ -138,6 +138,7 @@ func (*TemplateLitExpr) isExpr()       {}
 func (*TaggedTemplateLitExpr) isExpr() {}
 func (*EmptyExpr) isExpr()             {}
 func (*SpreadExpr) isExpr()            {}
+func (*YieldExpr) isExpr()             {}
 
 type MemberExpr struct {
 	Object   Expr
@@ -201,17 +202,24 @@ func (e *NewExpr) SetSpan(span *Span) { e.span = span }
 func (e *NewExpr) Source() ast.Node   { return e.source }
 
 type FuncExpr struct {
-	Params []*Param
-	Body   []Stmt
-	async  bool
-	span   *Span
-	source ast.Node
+	Params    []*Param
+	Body      []Stmt
+	async     bool
+	generator bool
+	span      *Span
+	source    ast.Node
 }
 
-func NewFuncExpr(params []*Param, body []Stmt, async bool, source ast.Node) *FuncExpr {
-	return &FuncExpr{Params: params, Body: body, async: async, source: source, span: nil}
+type FuncExprOptions struct {
+	Async     bool
+	Generator bool
+}
+
+func NewFuncExpr(params []*Param, body []Stmt, opts FuncExprOptions, source ast.Node) *FuncExpr {
+	return &FuncExpr{Params: params, Body: body, async: opts.Async, generator: opts.Generator, source: source, span: nil}
 }
 func (e *FuncExpr) Async() bool        { return e.async }
+func (e *FuncExpr) Generator() bool    { return e.generator }
 func (e *FuncExpr) Span() *Span        { return e.span }
 func (e *FuncExpr) SetSpan(span *Span) { e.span = span }
 func (e *FuncExpr) Source() ast.Node   { return e.source }
@@ -508,6 +516,20 @@ func (e *AwaitExpr) Span() *Span        { return e.span }
 func (e *AwaitExpr) SetSpan(span *Span) { e.span = span }
 func (e *AwaitExpr) Source() ast.Node   { return e.source }
 
+type YieldExpr struct {
+	Value      Expr // optional, nil for bare `yield`
+	IsDelegate bool // true for `yield*` (yield from)
+	span       *Span
+	source     ast.Node
+}
+
+func NewYieldExpr(value Expr, isDelegate bool, source ast.Node) *YieldExpr {
+	return &YieldExpr{Value: value, IsDelegate: isDelegate, source: source, span: nil}
+}
+func (e *YieldExpr) Span() *Span        { return e.span }
+func (e *YieldExpr) SetSpan(span *Span) { e.span = span }
+func (e *YieldExpr) Source() ast.Node   { return e.source }
+
 type TypeCastExpr struct {
 	Expr   Expr
 	span   *Span
@@ -611,6 +633,7 @@ type FuncDecl struct {
 	export     bool
 	declare    bool
 	async      bool
+	generator  bool
 	span       *Span
 	source     ast.Node
 }
@@ -618,6 +641,7 @@ type FuncDecl struct {
 func (d *FuncDecl) Export() bool       { return d.export }
 func (d *FuncDecl) Declare() bool      { return d.declare }
 func (d *FuncDecl) Async() bool        { return d.async }
+func (d *FuncDecl) Generator() bool    { return d.generator }
 func (d *FuncDecl) Span() *Span        { return d.span }
 func (d *FuncDecl) SetSpan(span *Span) { d.span = span }
 func (d *FuncDecl) Source() ast.Node   { return d.source }
@@ -635,6 +659,7 @@ func (*BlockStmt) isStmt()  {}
 func (*IfStmt) isStmt()     {}
 func (*ThrowStmt) isStmt()  {}
 func (*TryStmt) isStmt()    {}
+func (*ForOfStmt) isStmt()  {}
 
 type ExprStmt struct {
 	Expr   Expr
@@ -726,6 +751,22 @@ func NewTryStmt(tryBlock *BlockStmt, catchClause *CatchClause, finallyBlock *Blo
 func (s *TryStmt) Span() *Span        { return s.span }
 func (s *TryStmt) SetSpan(span *Span) { s.span = span }
 func (s *TryStmt) Source() ast.Node   { return s.source }
+
+type ForOfStmt struct {
+	Pattern  Pat
+	Iterable Expr
+	Body     []Stmt
+	IsAwait  bool
+	span     *Span
+	source   ast.Node
+}
+
+func NewForOfStmt(pattern Pat, iterable Expr, body []Stmt, isAwait bool, source ast.Node) *ForOfStmt {
+	return &ForOfStmt{Pattern: pattern, Iterable: iterable, Body: body, IsAwait: isAwait, source: source, span: nil}
+}
+func (s *ForOfStmt) Span() *Span        { return s.span }
+func (s *ForOfStmt) SetSpan(span *Span) { s.span = span }
+func (s *ForOfStmt) Source() ast.Node   { return s.source }
 
 // TODO add support for imports and exports
 type Module struct {
@@ -1061,28 +1102,38 @@ func (e *FieldElem) SetSpan(span *Span) { e.span = span }
 func (e *FieldElem) Source() ast.Node   { return e.source }
 
 type MethodElem struct {
-	Name    ObjKey
-	Params  []*Param
-	Body    []Stmt // optional for declare
-	MutSelf *bool  // true if 'self' is mutable, optional
-	Static  bool   // true if this is a static method
-	Private bool   // true if this is a private method
-	Async   bool   // true if this is an async method
-	span    *Span
-	source  ast.Node
+	Name      ObjKey
+	Params    []*Param
+	Body      []Stmt // optional for declare
+	MutSelf   *bool  // true if 'self' is mutable, optional
+	Static    bool   // true if this is a static method
+	Private   bool   // true if this is a private method
+	Async     bool   // true if this is an async method
+	Generator bool   // true if this is a generator method
+	span      *Span
+	source    ast.Node
 }
 
-func NewMethodElem(name ObjKey, params []*Param, body []Stmt, mutSelf *bool, static, private, async bool, source ast.Node) *MethodElem {
+type MethodElemOptions struct {
+	MutSelf   *bool
+	Static    bool
+	Private   bool
+	Async     bool
+	Generator bool
+}
+
+func NewMethodElem(name ObjKey, params []*Param, body []Stmt, opts MethodElemOptions, source ast.Node) *MethodElem {
 	return &MethodElem{
-		Name:    name,
-		Params:  params,
-		Body:    body,
-		MutSelf: mutSelf,
-		Static:  static,
-		Private: private,
-		Async:   async,
-		source:  source,
-		span:    nil,
+		Name:      name,
+		Params:    params,
+		Body:      body,
+		MutSelf:   opts.MutSelf,
+		Static:    opts.Static,
+		Private:   opts.Private,
+		Async:     opts.Async,
+		Generator: opts.Generator,
+		source:    source,
+		span:      nil,
 	}
 }
 
