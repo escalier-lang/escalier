@@ -879,17 +879,13 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		// Create constructor method
-		constructorMethod := &MethodElem{
-			Name:    NewIdentExpr("constructor", "", d),
-			Params:  params,
-			Body:    constructorBodyStmts,
-			MutSelf: nil,
-			Static:  false,
-			Private: false,
-			Async:   false,
-			span:    nil,
-			source:  d,
-		}
+		constructorMethod := NewMethodElem(
+			NewIdentExpr("constructor", "", d),
+			params,
+			constructorBodyStmts,
+			MethodElemOptions{},
+			d,
+		)
 
 		// Add constructor as the first element in the class body
 		classElems = append([]ClassElem{constructorMethod}, classElems...)
@@ -982,17 +978,13 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				}
 
 				// Create constructor method
-				constructorMethod := &MethodElem{
-					Name:    NewIdentExpr("constructor", "", elem),
-					Params:  params,
-					Body:    constructorBodyStmts,
-					MutSelf: nil,
-					Static:  false,
-					Private: false,
-					Async:   false,
-					span:    nil,
-					source:  elem,
-				}
+				constructorMethod := NewMethodElem(
+					NewIdentExpr("constructor", "", elem),
+					params,
+					constructorBodyStmts,
+					MethodElemOptions{},
+					elem,
+				)
 
 				// Create Symbol.customMatcher method
 				// This method destructures the instance and returns the parameters as a tuple
@@ -1035,17 +1027,13 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 					nil,
 				)
 
-				matcherMethod := &MethodElem{
-					Name:    NewComputedKey(symbolCustomMatcher, elem),
-					Params:  matcherParams,
-					Body:    matcherBody,
-					MutSelf: nil,
-					Static:  true,
-					Private: false,
-					Async:   false,
-					span:    nil,
-					source:  elem,
-				}
+				matcherMethod := NewMethodElem(
+					NewComputedKey(symbolCustomMatcher, elem),
+					matcherParams,
+					matcherBody,
+					MethodElemOptions{Static: true},
+					elem,
+				)
 
 				// Create the class for this variant
 				classElems := []ClassElem{constructorMethod, matcherMethod}
@@ -2371,18 +2359,19 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
 			isGenerator := e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts)
-			methodElem := &MethodElem{
-				Name:      name,
-				Params:    params,
-				Body:      slices.Concat(paramStmts, bodyStmts),
-				MutSelf:   e.MutSelf,
-				Static:    e.Static,
-				Private:   e.Private,
-				Async:     e.Fn.Async,
-				Generator: isGenerator,
-				span:      nil,
-				source:    e,
-			}
+			methodElem := NewMethodElem(
+				name,
+				params,
+				slices.Concat(paramStmts, bodyStmts),
+				MethodElemOptions{
+					MutSelf:   e.MutSelf,
+					Static:    e.Static,
+					Private:   e.Private,
+					Async:     e.Fn.Async,
+					Generator: isGenerator,
+				},
+				e,
+			)
 			outElems = append(outElems, methodElem)
 
 		case *ast.GetterElem:

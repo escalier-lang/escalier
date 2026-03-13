@@ -1114,16 +1114,24 @@ type MethodElem struct {
 	source    ast.Node
 }
 
-func NewMethodElem(name ObjKey, params []*Param, body []Stmt, mutSelf *bool, static, private, async, generator bool, source ast.Node) *MethodElem {
+type MethodElemOptions struct {
+	MutSelf   *bool
+	Static    bool
+	Private   bool
+	Async     bool
+	Generator bool
+}
+
+func NewMethodElem(name ObjKey, params []*Param, body []Stmt, opts MethodElemOptions, source ast.Node) *MethodElem {
 	return &MethodElem{
 		Name:      name,
 		Params:    params,
 		Body:      body,
-		MutSelf:   mutSelf,
-		Static:    static,
-		Private:   private,
-		Async:     async,
-		Generator: generator,
+		MutSelf:   opts.MutSelf,
+		Static:    opts.Static,
+		Private:   opts.Private,
+		Async:     opts.Async,
+		Generator: opts.Generator,
 		source:    source,
 		span:      nil,
 	}
