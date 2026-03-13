@@ -146,7 +146,11 @@ func (p *Printer) PrintExpr(expr Expr) {
 		if e.async {
 			p.print("async ")
 		}
-		p.print("function (")
+		if e.generator {
+			p.print("function* (")
+		} else {
+			p.print("function (")
+		}
 		for i, param := range e.Params {
 			if i > 0 {
 				p.print(", ")
@@ -222,6 +226,15 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *AwaitExpr:
 		p.print("await ")
 		p.PrintExpr(e.Arg)
+	case *YieldExpr:
+		p.print("yield")
+		if e.IsDelegate {
+			p.print("*")
+		}
+		if e.Value != nil {
+			p.print(" ")
+			p.PrintExpr(e.Value)
+		}
 	case *TypeCastExpr:
 		// TypeCastExpr should not appear in the final codegen AST as it should be
 		// converted to the inner expression during the build phase, but if it does
@@ -616,7 +629,11 @@ func (p *Printer) PrintDecl(decl Decl) {
 		if d.async {
 			p.print("async ")
 		}
-		p.print("function ")
+		if d.generator {
+			p.print("function* ")
+		} else {
+			p.print("function ")
+		}
 		p.print(d.Name.Name)
 
 		// Print type parameters if present
@@ -847,6 +864,24 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 			p.print(" finally ")
 			p.PrintStmt(s.Finally)
 		}
+	case *ForOfStmt:
+		p.print("for ")
+		if s.IsAwait {
+			p.print("await ")
+		}
+		p.print("(const ")
+		p.printPattern(s.Pattern)
+		p.print(" of ")
+		p.PrintExpr(s.Iterable)
+		p.print(") {")
+		p.indent++
+		for _, stmt := range s.Body {
+			p.NewLine()
+			p.PrintStmt(stmt)
+		}
+		p.indent--
+		p.NewLine()
+		p.print("}")
 	}
 
 	end := p.location
@@ -1018,6 +1053,9 @@ func (p *Printer) printClassElem(elem ClassElem) {
 		}
 		if e.Async {
 			p.print("async ")
+		}
+		if e.Generator {
+			p.print("*")
 		}
 		p.printObjKey(e.Name)
 		p.print("(")

@@ -546,6 +546,22 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			source: stmt,
 		}
 		return append(stmts, stmt)
+	case *ast.ForInStmt:
+		// Build the iterable expression
+		iterableExpr, iterableStmts := b.buildExpr(s.Iterable, nil)
+
+		// Build the loop variable pattern using a temp variable
+		id := b.NewTempId()
+		_, patStmts := b.buildPattern(s.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
+
+		// Build body statements
+		bodyStmts := b.buildStmts(s.Body.Stmts)
+		bodyStmts = slices.Concat(patStmts, bodyStmts)
+
+		pat := NewIdentPat(id, nil, s.Pattern)
+
+		forOfStmt := NewForOfStmt(pat, iterableExpr, bodyStmts, s.IsAwait, s)
+		return append(iterableStmts, forOfStmt)
 	default:
 		panic("TransformStmt - default case should never happen")
 	}
@@ -767,6 +783,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			declare:    decl.Declare(),
 			export:     b.isModule && !prevInBlockScope,
 			async:      d.Async,
+			generator:  containsYield(d.Body.Stmts),
 			span:       nil,
 			source:     decl,
 		}
@@ -1627,7 +1644,10 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		return NewFuncExpr(
 			params,
 			bodyStmts,
-			expr.Async,
+			FuncExprOptions{
+				Async:     expr.Async,
+				Generator: containsYield(expr.Body.Stmts),
+			},
 			expr,
 		), []Stmt{}
 	case *ast.DoExpr:
@@ -1756,6 +1776,15 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		awaitExpr := NewAwaitExpr(argExpr, expr)
 
 		return awaitExpr, argStmts
+	case *ast.YieldExpr:
+		var valueExpr Expr
+		var valueStmts []Stmt
+		if expr.Value != nil {
+			valueExpr, valueStmts = b.buildExpr(expr.Value, expr)
+		}
+
+		yieldExpr := NewYieldExpr(valueExpr, expr.IsDelegate, expr)
+		return yieldExpr, valueStmts
 	case *ast.TypeCastExpr:
 		// For type casts, we just build the inner expression since
 		// JavaScript doesn't have runtime type casting
@@ -2331,16 +2360,18 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			name, nameStmts := b.buildObjKey(e.Name)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
+			isGenerator := e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts)
 			methodElem := &MethodElem{
-				Name:    name,
-				Params:  params,
-				Body:    slices.Concat(paramStmts, bodyStmts),
-				MutSelf: e.MutSelf,
-				Static:  e.Static,
-				Private: e.Private,
-				Async:   e.Fn.Async,
-				span:    nil,
-				source:  e,
+				Name:      name,
+				Params:    params,
+				Body:      slices.Concat(paramStmts, bodyStmts),
+				MutSelf:   e.MutSelf,
+				Static:    e.Static,
+				Private:   e.Private,
+				Async:     e.Fn.Async,
+				Generator: isGenerator,
+				span:      nil,
+				source:    e,
 			}
 			outElems = append(outElems, methodElem)
 
@@ -2960,4 +2991,45 @@ func combineConditions(conditions []Expr, source ast.Node) Expr {
 	}
 
 	return result
+}
+
+// yieldDetector walks the AST to check for yield expressions.
+// It stops at function boundaries so nested function yields don't count.
+type yieldDetector struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (d *yieldDetector) EnterExpr(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.YieldExpr:
+		d.found = true
+		return false
+	case *ast.FuncExpr:
+		return false // Don't descend into nested functions
+	}
+	return true
+}
+
+func (d *yieldDetector) EnterDecl(decl ast.Decl) bool {
+	switch decl.(type) {
+	case *ast.FuncDecl:
+		return false // Don't descend into nested function declarations
+	case *ast.ClassDecl:
+		return false // Don't descend into class declarations
+	}
+	return true
+}
+
+// containsYield checks whether the given statements contain a yield expression,
+// stopping at function boundaries (nested functions are separate generators).
+func containsYield(stmts []ast.Stmt) bool {
+	detector := &yieldDetector{}
+	for _, stmt := range stmts {
+		stmt.Accept(detector)
+		if detector.found {
+			return true
+		}
+	}
+	return false
 }

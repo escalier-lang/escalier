@@ -53,3 +53,138 @@ compiler.CompilerOutput{
     },
 }
 ---
+
+[TestGeneratorFunction - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    Modules:    {
+        "index": {JS:"function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,AAAA,MAAM;EACN,AAAA,MAAM;EACN,AAAA,MAAM\"}", DTS:""},
+    },
+}
+---
+
+[TestGeneratorWithReturn - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    Modules:    {
+        "index": {JS:"function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,AAAA,MAAM;EACN,OAAO\"}", DTS:""},
+    },
+}
+---
+
+[TestYieldFrom - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    Modules:    {
+        "index": {JS:"function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,AAAA,OAAW\"}", DTS:""},
+    },
+}
+---
+
+[TestForIn - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    Modules:    {
+        "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Array\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
+    },
+}
+---
+
+[TestForAwaitIn - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: nil,
+    Modules:    {
+        "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: Array\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
+    },
+}
+---
+
+[TestForInIterator - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: {
+        &checker.UnimplementedError{
+            message: "Type 'Iterator<number>' is not iterable",
+            span:    ast.Span{
+                Start:    ast.Location{Line:2, Column:10},
+                End:      ast.Location{Line:2, Column:15},
+                SourceID: 0,
+            },
+        },
+    },
+    Modules: {
+        "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Iterator\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
+    },
+}
+---
+
+[TestForAwaitInAsyncIterator - 1]
+compiler.CompilerOutput{
+    ParseErrors: {
+    },
+    TypeErrors: {
+        &checker.UnknownTypeError{
+            TypeName: "AsyncIterator",
+            TypeRef:  &type_system.TypeRefType{
+                Name:     &type_system.Ident{Name:"AsyncIterator"},
+                TypeArgs: {
+                    nil,
+                },
+                TypeAlias:  (*type_system.TypeAlias)(nil),
+                provenance: &ast.NodeProvenance{
+                    Node: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "AsyncIterator",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:2, Column:22},
+                                End:      ast.Location{Line:2, Column:35},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                            &ast.NumberTypeAnn{
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:2, Column:36},
+                                    End:      ast.Location{Line:2, Column:42},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:2, Column:22},
+                            End:      ast.Location{Line:2, Column:43},
+                            SourceID: 0,
+                        },
+                        inferredType: &type_system.NeverType{
+                            provenance: &ast.NodeProvenance{(CYCLIC REFERENCE)},
+                        },
+                    },
+                },
+            },
+        },
+        &checker.UnimplementedError{
+            message: "Type 'never' is not iterable",
+            span:    ast.Span{
+                Start:    ast.Location{Line:3, Column:18},
+                End:      ast.Location{Line:3, Column:23},
+                SourceID: 0,
+            },
+        },
+    },
+    Modules: {
+        "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: AsyncIterator\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
+    },
+}
+---

@@ -130,6 +130,24 @@ func (s *SourceMapGenerator) TraverseStmt(stmt Stmt) {
 		if sk.Alt != nil {
 			s.TraverseStmt(sk.Alt)
 		}
+	case *ThrowStmt:
+		s.AddSegmentForNode(stmt)
+		s.TraverseExpr(sk.Expr)
+	case *TryStmt:
+		s.TraverseStmt(sk.Try)
+		if sk.Catch != nil {
+			s.TraverseStmt(sk.Catch.Body)
+		}
+		if sk.Finally != nil {
+			s.TraverseStmt(sk.Finally)
+		}
+	case *ForOfStmt:
+		s.AddSegmentForNode(stmt)
+		s.TraversePattern(sk.Pattern)
+		s.TraverseExpr(sk.Iterable)
+		for _, bodyStmt := range sk.Body {
+			s.TraverseStmt(bodyStmt)
+		}
 	}
 }
 
@@ -341,6 +359,11 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 		}
 	case *SpreadExpr:
 		s.TraverseExpr(ek.Arg)
+	case *YieldExpr:
+		s.AddSegmentForNode(expr)
+		if ek.Value != nil {
+			s.TraverseExpr(ek.Value)
+		}
 	case *IdentExpr, *LitExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top
 		// of this function
