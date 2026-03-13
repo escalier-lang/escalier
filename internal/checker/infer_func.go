@@ -215,7 +215,12 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		unifyErrors := c.Unify(ctx, inferredGenType, funcSigType.Return)
 		errors = slices.Concat(errors, unifyErrors)
 
-		funcSigType.Return = inferredGenType
+		// Only overwrite the return type when there's no explicit annotation
+		// (i.e., it's a fresh type variable). When annotated, unification
+		// already checked compatibility.
+		if _, isTypeVar := funcSigType.Return.(*type_system.TypeVarType); isTypeVar {
+			funcSigType.Return = inferredGenType
+		}
 		funcSigType.Throws = type_system.NewNeverType(nil)
 		return errors
 	}

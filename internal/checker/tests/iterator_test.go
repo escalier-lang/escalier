@@ -364,12 +364,14 @@ func TestGetIteratorReturnType(t *testing.T) {
 
 		returnType := c.GetIteratorReturnType(ctx, arrayType)
 		require.NotNil(t, returnType, "Array<number> should have an iterator return type")
+		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("StringIteratorReturnType", func(t *testing.T) {
 		strType := type_system.NewStrPrimType(nil)
 		returnType := c.GetIteratorReturnType(ctx, strType)
 		require.NotNil(t, returnType, "string should have an iterator return type")
+		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("NumberHasNoIteratorReturnType", func(t *testing.T) {
@@ -398,6 +400,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 		)
 		returnType := c.GetIteratorReturnType(ctx, unionType)
 		require.NotNil(t, returnType, "string | Array<number> should have an iterator return type")
+		assert.Equal(t, "BuiltinIteratorReturn | BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("UnionWithNonIterable", func(t *testing.T) {
@@ -559,18 +562,10 @@ func TestYieldExprInference(t *testing.T) {
 				yield 3
 			}
 		`)
-		if len(errors) > 0 {
-			for _, err := range errors {
-				t.Logf("Error: %s", err.Message())
-			}
-		}
 		assert.Empty(t, errors)
-		countType, exists := types["count"]
-		assert.True(t, exists, "count should be declared")
-		if exists {
-			assert.True(t, strings.Contains(countType, "Generator"),
-				"count should return a Generator type, got: %s", countType)
-		}
+		assert.Equal(t,
+			"fn () -> Generator<mut? 1 | mut? 2 | mut? 3, void, never> throws never",
+			types["count"])
 	})
 
 	t.Run("GeneratorWithReturn", func(t *testing.T) {
@@ -581,18 +576,10 @@ func TestYieldExprInference(t *testing.T) {
 				return "done"
 			}
 		`)
-		if len(errors) > 0 {
-			for _, err := range errors {
-				t.Logf("Error: %s", err.Message())
-			}
-		}
 		assert.Empty(t, errors)
-		genType, exists := types["myGen"]
-		assert.True(t, exists, "myGen should be declared")
-		if exists {
-			assert.True(t, strings.Contains(genType, "Generator"),
-				"myGen should return a Generator type, got: %s", genType)
-		}
+		assert.Equal(t,
+			`fn () -> Generator<mut? 1 | mut? 2, mut? "done", never> throws never`,
+			types["myGen"])
 	})
 
 	t.Run("GeneratorYieldDifferentTypes", func(t *testing.T) {
@@ -603,12 +590,9 @@ func TestYieldExprInference(t *testing.T) {
 			}
 		`)
 		assert.Empty(t, errors)
-		mixedType, exists := types["mixed"]
-		assert.True(t, exists, "mixed should be declared")
-		if exists {
-			assert.True(t, strings.Contains(mixedType, "Generator"),
-				"mixed should return a Generator type, got: %s", mixedType)
-		}
+		assert.Equal(t,
+			`fn () -> Generator<mut? 1 | mut? "hello", void, never> throws never`,
+			types["mixed"])
 	})
 
 	t.Run("YieldFromArray", func(t *testing.T) {
@@ -618,18 +602,10 @@ func TestYieldExprInference(t *testing.T) {
 				yield from nums
 			}
 		`)
-		if len(errors) > 0 {
-			for _, err := range errors {
-				t.Logf("Error: %s", err.Message())
-			}
-		}
 		assert.Empty(t, errors)
-		delegatingType, exists := types["delegating"]
-		assert.True(t, exists, "delegating should be declared")
-		if exists {
-			assert.True(t, strings.Contains(delegatingType, "Generator"),
-				"delegating should return a Generator type, got: %s", delegatingType)
-		}
+		assert.Equal(t,
+			"fn () -> Generator<number, void, never> throws never",
+			types["delegating"])
 	})
 
 	t.Run("YieldFromNonIterable", func(t *testing.T) {
@@ -658,15 +634,41 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 			}
 		`)
 		assert.Empty(t, errors)
-		addType, exists := types["add"]
-		assert.True(t, exists)
-		if exists {
-			assert.False(t, strings.Contains(addType, "Generator"),
-				"add should NOT be a Generator, got: %s", addType)
+		assert.Equal(t,
+			"fn (a: number, b: number) -> number throws never",
+			types["add"])
+	})
+
+	t.Run("AnnotatedGeneratorReturnType", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn count() -> Generator<number, string, never> {
+				yield 1
+				yield 2
+				return "done"
+			}
+		`)
+		assert.Empty(t, errors)
+		assert.Equal(t,
+			`fn () -> Generator<number, string, never> throws never`,
+			types["count"])
+	})
+
+	t.Run("AnnotatedGeneratorReturnTypeMismatch", func(t *testing.T) {
+		// Annotated as Generator<string, ...> but yields numbers — should error.
+		_, errors := inferScript(t, `
+			fn count() -> Generator<string, void, never> {
+				yield 1
+				yield 2
+			}
+		`)
+		assert.NotEmpty(t, errors, "generator type argument mismatch should produce an error")
+		if len(errors) > 0 {
+			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
+				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
 		}
 	})
 
-	t.Run("AnnotatedReturnTypeMismatch", func(t *testing.T) {
+	t.Run("AnnotatedNonGeneratorReturnTypeMismatch", func(t *testing.T) {
 		// A generator with a return annotation of `number` should produce an error
 		// because the inferred type is Generator<number, void, never>, not number.
 		_, errors := inferScript(t, `
@@ -675,6 +677,10 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 			}
 		`)
 		assert.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
+		if len(errors) > 0 {
+			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
+				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
+		}
 	})
 
 	t.Run("NestedYieldDoesNotAffectOuter", func(t *testing.T) {
@@ -687,15 +693,9 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 			}
 		`)
 		assert.Empty(t, errors)
-		outerType, exists := types["outer"]
-		assert.True(t, exists)
-		if exists {
-			// outer returns a function that returns a Generator, but outer itself is NOT a generator
-			assert.True(t, strings.HasPrefix(outerType, "fn ()"),
-				"outer should be a regular function, got: %s", outerType)
-			assert.False(t, strings.HasPrefix(outerType, "fn () -> Generator"),
-				"outer should NOT directly return a Generator (yield is in inner), got: %s", outerType)
-		}
+		assert.Equal(t,
+			"fn () -> fn () -> Generator<1, void, never> throws never throws never",
+			types["outer"])
 	})
 }
 
