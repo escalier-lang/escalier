@@ -364,7 +364,6 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	case *SpreadExpr:
 		s.TraverseExpr(ek.Arg)
 	case *YieldExpr:
-		s.AddSegmentForNode(expr)
 		if ek.Value != nil {
 			s.TraverseExpr(ek.Value)
 		}

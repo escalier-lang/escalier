@@ -60,7 +60,7 @@ compiler.CompilerOutput{
     },
     TypeErrors: nil,
     Modules:    {
-        "index": {JS:"function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,AAAA,MAAM;EACN,AAAA,MAAM;EACN,AAAA,MAAM\"}", DTS:""},
+        "index": {JS:"function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,MAAM;EACN,MAAM\"}", DTS:""},
     },
 }
 ---
@@ -71,7 +71,7 @@ compiler.CompilerOutput{
     },
     TypeErrors: nil,
     Modules:    {
-        "index": {JS:"function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,AAAA,MAAM;EACN,OAAO\"}", DTS:""},
+        "index": {JS:"function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,OAAO\"}", DTS:""},
     },
 }
 ---
@@ -82,7 +82,7 @@ compiler.CompilerOutput{
     },
     TypeErrors: nil,
     Modules:    {
-        "index": {JS:"function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,AAAA,OAAW\"}", DTS:""},
+        "index": {JS:"function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,OAAW\"}", DTS:""},
     },
 }
 ---
