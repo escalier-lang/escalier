@@ -7,20 +7,28 @@ export function charCount(temp1) {
   }
   return count;
 }
-export function sumArray(temp3) {
+export function spreadArray(temp3) {
   const items = temp3;
+  return [...items];
+}
+export function spreadString(temp4) {
+  const s = temp4;
+  return [...s];
+}
+export function sumArray(temp5) {
+  const items = temp5;
   let total = 0;
-  for (const temp4 of items) {
-    const item = temp4;
+  for (const temp6 of items) {
+    const item = temp6;
     total = total + item;
   }
   return total;
 }
-export function sumPairs(temp5) {
-  const pairs = temp5;
+export function sumPairs(temp7) {
+  const pairs = temp7;
   let total = 0;
-  for (const temp6 of pairs) {
-    const [a, b] = temp6;
+  for (const temp8 of pairs) {
+    const [a, b] = temp8;
     total = total + a + b;
   }
   return total;

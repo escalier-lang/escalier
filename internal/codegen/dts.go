@@ -801,7 +801,9 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		}
 		return NewTupleTypeAnn(elems)
 	case *type_sys.RestSpreadType:
-		panic("TODO: implement RestSpreadType")
+		return &RestSpreadTypeAnn{
+			Value: b.buildTypeAnn(t.Type),
+		}
 	case *type_sys.UnionType:
 		types := make([]TypeAnn, len(t.Types))
 		for i, type_ := range t.Types {
