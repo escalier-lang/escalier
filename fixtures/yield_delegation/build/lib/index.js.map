@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/yield_delegation.esc"],"sourcesContent":["// Yield delegation using yield from\nexport fn inner() {\n    yield 1\n    yield 2\n}\n\nexport fn outer() {\n    yield from inner()\n    yield 3\n}\n"],"names":[],"mappings":"AACA;EACI,MAAM;EACN,MAAM;;AAGV;EACI,OAAW,AAAA;EACX,MAAM"}

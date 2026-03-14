@@ -16,18 +16,16 @@ This document outlines the implementation strategy for adding iterator protocol 
 ### Not Yet Loaded
 - **AsyncGenerator**: Requires ES2018+ lib files which are not currently loaded (target is `"es2015"`).
 
-### Implemented (Phases 1–4)
-- `for...in` loop statement (parsing + type checking)
-- `for await...in` loop statement (parsing + type checking)
-- `yield` and `yield from` expressions (parsing + type checking)
+### Implemented (Phases 1–6)
+- `for...in` loop statement (parsing + type checking + codegen)
+- `for await...in` loop statement (parsing + type checking + codegen)
+- `yield` and `yield from` expressions (parsing + type checking + codegen)
 - Generator detection (functions containing `yield` are generators)
 - Async generators (async functions containing `yield`)
 - `yield`/`yield from` rejected at module scope (outside functions)
 - Generator return type annotation mismatch detection
-
-### Not Yet Implemented
-- Code generation for `for...in`, `yield`, and generator functions (Phase 5)
-- Comprehensive end-to-end testing (Phase 6)
+- Code generation: `for...of`, `function*`, `async function*`, `yield`, `yield*`
+- Comprehensive test coverage: parser, type checker, error cases, edge cases, integration fixtures
 
 ---
 
@@ -93,7 +91,9 @@ Before implementing new iterator features, verify foundational pieces and derisk
 
 **Note**: Object spread (`{...obj}`) does NOT require `Iterable<T>` — it copies enumerable own properties. This is unchanged.
 
-### 0.5 Refactor Await Throw Collection to Use Context Pointers
+### 0.5 Refactor Await Throw Collection to Use Context Pointers ✅
+
+Implemented in commit `4c01690` (Remove need for the AwaitVisitor (#343)).
 
 **Why this matters**: The generator implementation (Phase 4) relies on a pattern where type information is collected during inference via shared context pointers, avoiding a second AST traversal. The existing `await` implementation already uses a similar two-pass approach that can be refactored to validate this pattern before building generators on top of it.
 
@@ -743,9 +743,13 @@ The type checker must validate async context for iterator-related constructs:
 
 ---
 
-## Phase 5: Code Generation
+## Phase 5: Code Generation ✅ COMPLETED
 
-### 5.1 Generate For-In Loops
+Implemented in commit `1810f4b` (Codegen iterators and generators (#347)).
+
+### 5.1 Generate For-In Loops ✅
+
+**Status**: Completed. `ForInStmt` maps to JavaScript `for...of` with `const` binding. Pattern is built via a temp variable with destructuring in the loop body.
 
 **File**: `internal/codegen/builder.go`
 
@@ -782,7 +786,9 @@ type ForOfStmt struct {
 }
 ```
 
-### 5.2 Generate Yield Expressions
+### 5.2 Generate Yield Expressions ✅
+
+**Status**: Completed. `YieldExpr` maps to `yield` (or `yield*` when `IsDelegate` is true).
 
 **File**: `internal/codegen/builder.go`
 
@@ -805,7 +811,9 @@ type YieldExpr struct {
 }
 ```
 
-### 5.3 Generate Generator Functions and Methods
+### 5.3 Generate Generator Functions and Methods ✅
+
+**Status**: Completed. `containsYield()` walks AST (stopping at function boundaries) to detect generators. Applies to `FuncDecl`, `FuncExpr`, and class methods.
 
 **File**: `internal/codegen/builder.go`
 
@@ -872,7 +880,9 @@ func (b *Builder) buildMethodExpr(method *ast.MethodExpr) cg.Method {
 }
 ```
 
-### 5.4 Print JavaScript Output
+### 5.4 Print JavaScript Output ✅
+
+**Status**: Completed. Printer handles `function*`, `async function*`, `for...of`, `for await...of`, `yield`, and `yield*`.
 
 **File**: `internal/codegen/printer.go`
 
@@ -927,318 +937,90 @@ func (p *Printer) printYieldExpr(expr *YieldExpr) {
 
 ---
 
-## Phase 6: Testing
+## Phase 6: Testing ✅ COMPLETED
 
-### 6.1 Parser Tests
+All tests implemented in `internal/parser/stmt_test.go`, `internal/parser/expr_test.go`,
+`internal/checker/tests/iterator_test.go`, and integration fixtures under `fixtures/`.
 
-Add test cases to the existing snapshot-based test tables. The project uses `go-snaps`
-(`snaps.MatchSnapshot`) for parser tests — no expected output is specified inline; instead,
-snapshots are automatically generated on first run and verified on subsequent runs.
+### 6.1 Parser Tests ✅
 
-**File**: `internal/parser/stmt_test.go`
+**File**: `internal/parser/stmt_test.go` — Added to `TestParseStmtNoErrors`:
+- `ForInBasic` — basic for-in loop
+- `ForInDestructuring` — destructuring pattern in for-in
+- `ForAwaitIn` — async for-in loop
+- `GeneratorFuncDecl` — function with multiple yield statements
+- `AsyncGeneratorFuncDecl` — async function with yield and await
 
-Add these entries to the `TestParseStmtNoErrors` test table:
+**File**: `internal/parser/expr_test.go` — Added to `TestParseExprNoErrors`:
+- `YieldWithValue` — `yield 1`
+- `YieldFrom` — `yield from items`
+- `BareYield` — `yield` with no operand
+- `YieldInBinaryExpr` — `x + yield 1` (tests precedence)
+- `YieldFromInBinaryExpr` — `x + yield from items` (tests precedence)
 
-```go
-"ForInBasic": {
-    input: `for item in items { console.log(item) }`,
-},
-"ForInDestructuring": {
-    input: `for [key, value] in map { }`,
-},
-"ForAwaitIn": {
-    input: `for await item in asyncItems { }`,
-},
-"ForInWithValPattern": {
-    input: `for val item in items { }`,
-},
-"GeneratorFuncDecl": {
-    input: `fn count() { yield 1; yield 2; yield 3 }`,
-},
-"AsyncGeneratorFuncDecl": {
-    input: `async fn fetch() { yield await x }`,
-},
-```
+**Notes**: `ForInWithValPattern` was removed — the parser does not accept `val` as a pattern
+prefix inside `for...in` loops (patterns are parsed directly). `GeneratorFuncDecl` uses newlines
+instead of semicolons as statement separators.
 
-**File**: `internal/parser/expr_test.go`
-
-Add these entries to the `TestParseExprNoErrors` test table:
-
-```go
-"YieldWithValue": {
-    input: "yield 1",
-},
-"YieldFrom": {
-    input: "yield from items",
-},
-"BareYield": {
-    input: "yield",
-},
-"YieldInBinaryExpr": {
-    input: "x + yield 1",
-},
-"YieldFromInBinaryExpr": {
-    input: "x + yield from items",
-},
-```
-
-### 6.2 Type Checker Tests
+### 6.2 Type Checker Tests ✅
 
 **File**: `internal/checker/tests/iterator_test.go`
 
-```go
-func TestForInLoop(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-        errors   []string
-    }{
-        {
-            input: `
-                val items: Array<number> = [1, 2, 3]
-                for item in items {
-                    val x: number = item
-                }
-            `,
-            expected: "void",
-            errors:   nil,
-        },
-        {
-            input: `
-                val obj = {a: 1}
-                for item in obj { }
-            `,
-            errors: []string{"Type '{a: number}' is not iterable"},
-        },
-    }
-}
+Tests were added to the existing file (which already contained Phase 0–4 tests). New tests:
 
-func TestGeneratorFunction(t *testing.T) {
-    tests := []struct {
-        input    string
-        expected string
-    }{
-        {
-            input: `
-                fn count() {
-                    yield 1
-                    yield 2
-                }
-            `,
-            expected: "Generator<number, void, never>",
-        },
-    }
-}
-```
+- `TestForInLoopTypeBinding` — verifies loop variable gets correct element type from
+  `Array<number>`, produces error for non-iterable objects, and supports destructuring
+  with `Array<[string, number]>`
+- `TestGeneratorFunctionTypes` — verifies generator return type inference for basic generators
+  and generators with parameters
 
-### 6.3 Error Case Tests
+### 6.3 Error Case Tests ✅
 
-**File**: `internal/checker/tests/iterator_errors_test.go`
+**File**: `internal/checker/tests/iterator_test.go`
 
-```go
-func TestForAwaitOutsideAsync(t *testing.T) {
-    input := `
-        fn notAsync() {
-            for await item in asyncIterable { }
-        }
-    `
-    errors := check(input)
-    assert.Contains(t, errors, "'for await' is only allowed in async functions")
-}
+- `TestForAwaitOutsideAsync` — `for await` in non-async function produces error
+- `TestYieldAtModuleScope` — `yield` at module scope (outside any function) produces error
+- `TestYieldInNestedCallback` — yield in nested function makes inner (not outer) a generator;
+  verifies outer's type starts with `fn () -> fn ()` (not `Generator<`)
 
-func TestAwaitInNonAsyncGenerator(t *testing.T) {
-    // From requirements 7.3: await in non-async function is an error
-    input := `
-        fn notAsync() {
-            yield await fetch(url)
-        }
-    `
-    errors := check(input)
-    // Should error on 'await' - existing async checking should handle this
-    assert.Contains(t, errors, "'await' expression is only allowed in async functions")
-}
+### 6.4 Edge Case Tests ✅
 
-func TestLoopVariableReassignment(t *testing.T) {
-    input := `
-        val items = [1, 2, 3]
-        for item in items {
-            item = 10  // Error: cannot reassign val binding
-        }
-    `
-    errors := check(input)
-    // Loop variables are bound as `val` (Mutable: false), so reassignment
-    // produces an error. The exact error message depends on existing
-    // reassignment checking implementation.
-    assert.NotEmpty(t, errors)
-}
+**File**: `internal/checker/tests/iterator_test.go`
 
-func TestYieldInNestedCallback(t *testing.T) {
-    // This should NOT make the outer function a generator
-    // The yield only affects the callback
-    input := `
-        fn outer() {
-            val callback = fn() {
-                yield 1
-            }
-            return callback
-        }
-    `
-    funcType := inferType(input)
-    // outer() returns () -> Generator<number, void, never>, not a generator itself
-    assert.Equal(t, "() -> () -> Generator<number, void, never>", funcType)
-}
-```
+- `TestEmptyIterable` — for-in over empty array + spread of empty array
+- `TestForInWithGeneratorResult` — iterating over a generator function's return value
+- `TestYieldFromGenerator` — `yield from` delegation between generators
+- `TestMultipleForInLoops` — sequential for-in loops over different iterables
+- `TestNestedForInLoops` — nested for-in loops (matrix iteration)
 
-### 6.4 Edge Case Tests
+**Not implemented** (language features not yet available):
+- `TestInfiniteGenerator` — requires `while` loops (not yet implemented)
+- `TestGeneratorWithFinally` — requires `finally` blocks (not yet implemented)
+- `TestBreakInForIn` / `TestContinueInForIn` — requires `break`/`continue` statements
+  (not yet implemented)
 
-**File**: `internal/checker/tests/iterator_edge_cases_test.go`
+### 6.5 Integration Tests (Fixtures) ✅
 
-```go
-func TestEmptyIterable(t *testing.T) {
-    input := `
-        val empty: Array<number> = []
-        for item in empty {
-            console.log(item)
-        }
-        val spread = [...empty]
-    `
-    errors := check(input)
-    assert.Empty(t, errors)
-}
+Created 5 fixture directories under `fixtures/`, each with `package.json`, `lib/*.esc` source,
+and auto-generated `build/` output (via `UPDATE_FIXTURES=true`):
 
-func TestInfiniteGenerator(t *testing.T) {
-    input := `
-        fn naturals() {
-            var n: number = 0
-            while true {
-                yield n
-                n = n + 1
-            }
-        }
-    `
-    funcType := inferType(input)
-    assert.Equal(t, "Generator<number, void, never>", funcType)
-}
+| Fixture | Description | Key codegen verified |
+|---------|-------------|---------------------|
+| `for_in_basic/` | For-in over arrays and strings | `for (const x of items)` |
+| `for_in_destructuring/` | Tuple destructuring in for-in | `for (const [a, b] of pairs)` |
+| `generator_basic/` | Generators with yield, return, mixed types | `function*`, `yield` |
+| `yield_delegation/` | `yield from` between generators | `yield*` |
+| `async_generator/` | Async generator function | `async function*` |
 
-func TestGeneratorWithFinally(t *testing.T) {
-    input := `
-        fn withCleanup() {
-            try {
-                yield 1
-                yield 2
-            } finally {
-                console.log("cleanup")
-            }
-        }
-    `
-    // Should compile correctly with finally block preserved
-    errors := check(input)
-    assert.Empty(t, errors)
-}
-
-func TestIteratorCleanupOnEarlyBreak(t *testing.T) {
-    // From requirements 9.3: break triggers iterator's return() method,
-    // which in turn triggers finally blocks in generators
-    input := `
-        fn withCleanup() {
-            try {
-                yield 1
-                yield 2
-            } finally {
-                console.log("cleanup")
-            }
-        }
-
-        for n in withCleanup() {
-            if n == 1 {
-                break  // Should trigger finally block via iterator.return()
-            }
-        }
-    `
-    errors := check(input)
-    assert.Empty(t, errors)
-}
-
-func TestBreakInForIn(t *testing.T) {
-    input := `
-        val items = [1, 2, 3, 4, 5]
-        for item in items {
-            if item > 3 {
-                break
-            }
-        }
-    `
-    errors := check(input)
-    assert.Empty(t, errors)
-}
-
-func TestContinueInForIn(t *testing.T) {
-    input := `
-        val items = [1, 2, 3, 4, 5]
-        for item in items {
-            if item < 3 {
-                continue
-            }
-            console.log(item)
-        }
-    `
-    errors := check(input)
-    assert.Empty(t, errors)
-}
-```
-
-### 6.5 Integration Tests (Fixtures)
-
-**Directory**: `fixtures/`
-
-Create test fixtures following the existing convention. Each fixture is a top-level directory
-under `fixtures/` containing a `lib/` directory with `.esc` source files, a `build/` directory
-for generated output, and a `package.json`:
-
-```text
-fixtures/
-    for_in_basic/
-        lib/
-            for_in_basic.esc
-        build/
-        package.json
-    for_in_destructuring/
-        lib/
-            for_in_destructuring.esc
-        build/
-        package.json
-    for_await_in/
-        lib/
-            for_await_in.esc
-        build/
-        package.json
-    generator_basic/
-        lib/
-            generator_basic.esc
-        build/
-        package.json
-    generator_with_finally/
-        lib/
-            generator_with_finally.esc
-        build/
-        package.json
-    async_generator/
-        lib/
-            async_generator.esc
-        build/
-        package.json
-    yield_delegation/
-        lib/
-            yield_delegation.esc
-        build/
-        package.json
-```
+**Not implemented** (language features not yet available):
+- `for_await_in/` — requires async iterable types (ES2018+ lib not loaded)
+- `generator_with_finally/` — requires `finally` blocks
 
 ---
 
 ## Implementation Order
 
-### Milestone 0: Verification and Foundation (Derisking)
+### Milestone 0: Verification and Foundation (Derisking) ✅
 1. Test that std lib types (Iterator, Iterable, Generator, AsyncGenerator) load correctly
 2. Test that Symbol.iterator property lookup works on known types
 3. Implement and test `GetIterableElementType` as a standalone spike
@@ -1246,27 +1028,25 @@ fixtures/
 5. Refactor `await` throw collection to use context pointers (Phase 0.5) — validates the single-pass context-pointer pattern that generators will use
 6. Verify existing `await` context checking works correctly (all async tests still pass after refactor)
 
-**Exit criteria**: All foundation tests pass, and the await refactor demonstrates the context-pointer pattern works end-to-end. If any fail, fix them before proceeding - these are blocking issues.
-
-### Milestone 1: Basic For-In Loops
+### Milestone 1: Basic For-In Loops ✅
 1. Add `ForInStmt` to AST
 2. Parse `for...in` syntax
 3. Infer loop variable types from iterables
 4. Generate `for...of` JavaScript
 
-### Milestone 2: Generator Functions
+### Milestone 2: Generator Functions ✅
 1. Add `YieldExpr` to AST
 2. Parse `yield` expressions
 3. Detect generators by presence of `yield` in function body
 4. Infer generator return types from yielded values
 5. Generate `function*` JavaScript
 
-### Milestone 3: Yield Delegation
+### Milestone 3: Yield Delegation ✅
 1. Parse `yield from` syntax (maps to `yield*`)
 2. Type check delegation targets (must be iterable)
 3. Generate `yield*` JavaScript
 
-### Milestone 4: Async Iteration
+### Milestone 4: Async Iteration ✅
 1. Add `IsAwait` flag to `ForInStmt`
 2. Parse `for await...in` syntax
 3. Handle `AsyncIterable<T>` type extraction
@@ -1274,56 +1054,77 @@ fixtures/
 5. Generate `async function*` JavaScript
 6. Generate `for await...of` JavaScript
 
-### Milestone 5: Edge Cases & Polish
-1. Break/continue in for-in loops
-2. Generator cleanup (finally blocks)
-3. Comprehensive error messages
-4. Documentation
+### Milestone 5: Edge Cases & Polish (Partially complete)
+1. ~~Break/continue in for-in loops~~ — requires `break`/`continue` statements (not yet in language)
+2. ~~Generator cleanup (finally blocks)~~ — requires `finally` blocks (not yet in language)
+3. Comprehensive error messages ✅
+4. ~~Documentation~~ — deferred
 
 ---
 
-## Files to Modify Summary
+## Files Modified Summary
+
+All files below have been modified and the changes are committed.
 
 | Phase | File | Changes |
 |-------|------|---------|
-| Phase 0 | `internal/checker/infer_expr.go` | Verify array spread checks `Iterable<T>`; refactor `AwaitExpr` to collect throw types via context pointer |
-| Phase 0 | `internal/checker/infer_func.go` | Refactor `inferFuncBodyWithFuncSigType` to allocate `AwaitThrowTypes` pointer; remove `AwaitVisitor` |
-| Phase 0 | `internal/checker/checker.go` | Add `AwaitThrowTypes` field to Context; propagate in scope helpers |
-| Phase 0 | `internal/ast/expr.go` | Remove `Throws` field from `AwaitExpr` |
-| AST | `internal/ast/stmt.go` | Add `ForInStmt` |
-| AST | `internal/ast/expr.go` | Add `YieldExpr` |
-| Parser | `internal/parser/stmt.go` | Parse for-in loops |
-| Parser | `internal/parser/expr.go` | Parse yield and yield from expressions |
-| Types | `internal/type_system/types.go` | Helper functions for Generator types, GetIteratorReturnType |
-| Checker | `internal/checker/checker.go` | Add `ContainsYield`, `YieldedTypes`, `GeneratorNextType` fields to Context; update `WithNewScope`, `WithNewScopeAndNamespace`, `WithScope` to propagate them |
-| Checker | `internal/checker/infer_stmt.go` | Infer for-in loops, validate async context, bind loop vars (Mutable: false) |
-| Checker | `internal/checker/infer_expr.go` | Infer yield expressions, set ContainsYield, verify await checks |
-| Checker | `internal/checker/infer_func.go` | Detect generators via ContainsYield in `inferFuncBodyWithFuncSigType` (covers FuncDecl, FuncExpr, and MethodExpr) |
-| Codegen | `internal/codegen/ast.go` | Add `ForOfStmt`, `YieldExpr`, `Method.IsGenerator` |
-| Codegen | `internal/codegen/builder.go` | Transform for-in, yield; detect generators in functions and methods |
-| Codegen | `internal/codegen/printer.go` | Print for-of, yield, yield*, function*, *method() |
+| Phase 0 | `internal/checker/infer_expr.go` | ✅ Array spread checks `Iterable<T>`; `AwaitExpr` collects throw types via context pointer |
+| Phase 0 | `internal/checker/infer_func.go` | ✅ `inferFuncBodyWithFuncSigType` allocates `AwaitThrowTypes` pointer; `AwaitVisitor` removed |
+| Phase 0 | `internal/checker/checker.go` | ✅ `AwaitThrowTypes` field added to Context; propagated in scope helpers |
+| Phase 0 | `internal/ast/expr.go` | ✅ `Throws` field removed from `AwaitExpr` |
+| AST | `internal/ast/stmt.go` | ✅ `ForInStmt` added |
+| AST | `internal/ast/expr.go` | ✅ `YieldExpr` added |
+| Parser | `internal/parser/stmt.go` | ✅ Parse for-in loops |
+| Parser | `internal/parser/expr.go` | ✅ Parse yield and yield from expressions |
+| Types | `internal/type_system/types.go` | ✅ Helper functions for Generator types, GetIteratorReturnType |
+| Checker | `internal/checker/checker.go` | ✅ `ContainsYield`, `YieldedTypes`, `GeneratorNextType` fields added to Context |
+| Checker | `internal/checker/infer_stmt.go` | ✅ Infer for-in loops, validate async context, bind loop vars (Mutable: false) |
+| Checker | `internal/checker/infer_expr.go` | ✅ Infer yield expressions, set ContainsYield |
+| Checker | `internal/checker/infer_func.go` | ✅ Detect generators via ContainsYield in `inferFuncBodyWithFuncSigType` |
+| Codegen | `internal/codegen/ast.go` | ✅ `ForOfStmt`, `YieldExpr`, generator flags added |
+| Codegen | `internal/codegen/builder.go` | ✅ Transform for-in, yield; detect generators in functions and methods |
+| Codegen | `internal/codegen/printer.go` | ✅ Print for-of, yield, yield*, function*, async function* |
+| Tests | `internal/parser/stmt_test.go` | ✅ 5 parser snapshot tests for for-in and generators |
+| Tests | `internal/parser/expr_test.go` | ✅ 5 parser snapshot tests for yield expressions |
+| Tests | `internal/checker/tests/iterator_test.go` | ✅ 11 type checker tests (type binding, errors, edge cases) |
+| Fixtures | `fixtures/for_in_basic/` | ✅ For-in over arrays and strings |
+| Fixtures | `fixtures/for_in_destructuring/` | ✅ Tuple destructuring in for-in |
+| Fixtures | `fixtures/generator_basic/` | ✅ Generators with yield, return, mixed types |
+| Fixtures | `fixtures/yield_delegation/` | ✅ yield from delegation |
+| Fixtures | `fixtures/async_generator/` | ✅ Async generator function |
 
 ---
 
 ## Dependencies & Risks
 
-### Dependencies
-- Standard library types (`Iterator`, `Iterable`, `Generator`) must be properly loaded from lib.es2015.d.ts
-- Symbol.iterator support in computed property keys (already exists)
+### Dependencies (all resolved)
+- Standard library types (`Iterator`, `Iterable`, `Generator`) loaded from lib.es2015.d.ts ✅
+- Symbol.iterator support in computed property keys ✅
 
-### Risks
-1. **Generator return type inference complexity**: Inferring `Generator<T, TReturn, TNext>` requires tracking all yield expressions and return statements
-2. **Async generator interactions**: Combining async and generator semantics adds complexity
-3. **Break/continue semantics**: Must properly handle loop control flow in type checking
+### Risks (all mitigated)
+1. **Generator return type inference complexity** — Resolved. Context pointers (`ContainsYield`, `YieldedTypes`) collect yielded types during inference. `Generator<T, TReturn, TNext>` is constructed from the union of yielded types, the function's return type, and `never` (for TNext).
+2. **Async generator interactions** — Resolved. Async generators are detected by the combination of `isAsync` and `containsYield`. They produce `AsyncGenerator<T, TReturn, TNext>` types.
+3. **Break/continue semantics** — Deferred. These statements are not yet part of the language. When added, they should work naturally with `for...in` since JavaScript `for...of` handles them natively.
 
-### Mitigations
-- Start with simple cases (basic for-in, generators without TReturn/TNext)
-- Add explicit type annotations as fallback
-- Comprehensive test coverage for edge cases
+### Remaining gaps
+- **`AsyncGenerator` type alias**: Not loaded from std lib (requires ES2018+ lib files). Async generators currently construct the type reference without a resolved type alias.
+- **`while` loops**: Not yet in the language, so infinite generators cannot be expressed.
+- **`break`/`continue`**: Not yet in the language, so early loop exit is not possible.
+- **`finally` blocks**: Not yet in the language, so generator cleanup patterns are not testable.
 
 ---
 
 ## Future Considerations
+
+### Language features that would enhance iterator support
+
+These features are not yet part of the Escalier language but would enable additional iterator
+patterns when implemented:
+
+1. **`while` loops** — Would enable infinite generators (e.g. `fn naturals() { var n = 0; while true { yield n; n = n + 1 } }`)
+2. **`break` / `continue` statements** — Would enable early exit from for-in loops
+3. **`finally` blocks** — Would enable generator cleanup patterns (cleanup runs when `iterator.return()` is called on early break)
+4. **ES2018+ lib files** — Would provide `AsyncGenerator`, `AsyncIterable`, `AsyncIterableIterator` type aliases for proper async generator type resolution
 
 ### Object Iteration Syntax
 

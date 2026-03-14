@@ -232,6 +232,21 @@ func TestParseExprNoErrors(t *testing.T) {
 		"ThrowStringLiteral": {
 			input: "throw \"divide by zero\"",
 		},
+		"YieldWithValue": {
+			input: "yield 1",
+		},
+		"YieldFrom": {
+			input: "yield from items",
+		},
+		"BareYield": {
+			input: "yield",
+		},
+		"YieldInBinaryExpr": {
+			input: "x + yield 1",
+		},
+		"YieldFromInBinaryExpr": {
+			input: "x + yield from items",
+		},
 	}
 
 	for name, test := range tests {

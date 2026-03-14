@@ -14,6 +14,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// assertHasError checks that at least one error in the slice contains the given substring.
+func assertHasError(t *testing.T, errors []Error, substring string) {
+	t.Helper()
+	for _, err := range errors {
+		if strings.Contains(err.Message(), substring) {
+			return
+		}
+	}
+	messages := make([]string, len(errors))
+	for i, err := range errors {
+		messages[i] = err.Message()
+	}
+	t.Errorf("expected an error containing %q, got: %v", substring, messages)
+}
+
 // =============================================================================
 // Phase 0.1: Verify Standard Library Types Load Correctly
 // =============================================================================
@@ -483,17 +498,15 @@ func TestArraySpreadRequiresIterable(t *testing.T) {
 	t.Run("SpreadNonIterable", func(t *testing.T) {
 		// Invalid: spreading a number
 		_, errors := inferScript(t, `val arr = [...5]`)
-		assert.NotEmpty(t, errors, "spreading a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "spreading a number should produce an error")
+		assertHasError(t, errors, "not iterable")
 	})
 
 	t.Run("SpreadNonIterableObject", func(t *testing.T) {
 		// Invalid: spreading a non-iterable object in an array context
 		_, errors := inferScript(t, `val arr = [...{a: 1}]`)
-		assert.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+		require.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+		assertHasError(t, errors, "not iterable")
 	})
 }
 
@@ -532,11 +545,8 @@ func TestForInLoopInference(t *testing.T) {
 			for x in 42 {
 			}
 		`)
-		assert.NotEmpty(t, errors, "for-in over a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "for-in over a number should produce an error")
+		assertHasError(t, errors, "not iterable")
 	})
 
 	t.Run("ForInTuple", func(t *testing.T) {
@@ -614,11 +624,8 @@ func TestYieldExprInference(t *testing.T) {
 				yield from 42
 			}
 		`)
-		assert.NotEmpty(t, errors, "yield from a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "yield from a number should produce an error")
+		assertHasError(t, errors, "not iterable")
 	})
 }
 
@@ -661,11 +668,8 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 				yield 2
 			}
 		`)
-		assert.NotEmpty(t, errors, "generator type argument mismatch should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
-				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "generator type argument mismatch should produce an error")
+		assertHasError(t, errors, "cannot be assigned to")
 	})
 
 	t.Run("AnnotatedNonGeneratorReturnTypeMismatch", func(t *testing.T) {
@@ -676,11 +680,8 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 				yield 1
 			}
 		`)
-		assert.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
-				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
+		assertHasError(t, errors, "cannot be assigned to")
 	})
 
 	t.Run("NestedYieldDoesNotAffectOuter", func(t *testing.T) {
@@ -720,10 +721,235 @@ func TestModuleIterableInference(t *testing.T) {
 
 	t.Run("SpreadNonIterableInModule", func(t *testing.T) {
 		_, errors := inferModule(t, `val arr = [...5]`)
-		assert.NotEmpty(t, errors, "spreading a number should produce an error")
+		require.NotEmpty(t, errors, "spreading a number should produce an error")
+		assertHasError(t, errors, "not iterable")
+	})
+}
+
+// =============================================================================
+// Phase 6.2: Additional Type Checker Tests
+// =============================================================================
+
+func TestForInLoopTypeBinding(t *testing.T) {
+	t.Run("ForInArrayElementType", func(t *testing.T) {
+		// Verify the loop variable gets the correct element type
+		_, errors := inferScript(t, `
+			val items: Array<number> = [1, 2, 3]
+			for item in items {
+				val x: number = item
+			}
+		`)
 		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
+			for _, err := range errors {
+				t.Logf("Error: %s", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+	})
+
+	t.Run("ForInNonIterableObject", func(t *testing.T) {
+		_, errors := inferScript(t, `
+			val obj = {a: 1}
+			for item in obj { }
+		`)
+		require.NotEmpty(t, errors, "for-in over a non-iterable object should produce an error")
+		assertHasError(t, errors, "not iterable")
+	})
+
+	t.Run("ForInDestructuring", func(t *testing.T) {
+		// Destructuring the element in a for-in loop
+		_, errors := inferScript(t, `
+			declare val pairs: Array<[string, number]>
+			for [key, value] in pairs {
+				val k: string = key
+				val v: number = value
+			}
+		`)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				t.Logf("Error: %s", err.Message())
+			}
+		}
+		assert.Empty(t, errors)
+	})
+}
+
+func TestGeneratorFunctionTypes(t *testing.T) {
+	t.Run("BasicGeneratorReturnType", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn count() {
+				yield 1
+				yield 2
+			}
+		`)
+		assert.Empty(t, errors)
+		countType, exists := types["count"]
+		assert.True(t, exists)
+		if exists {
+			assert.True(t, strings.Contains(countType, "Generator"),
+				"count should return a Generator type, got: %s", countType)
 		}
 	})
+
+	t.Run("GeneratorWithParams", func(t *testing.T) {
+		types, errors := inferScript(t, `
+			fn range(start: number, end: number) {
+				yield start
+				yield end
+			}
+		`)
+		assert.Empty(t, errors)
+		rangeType, exists := types["range"]
+		assert.True(t, exists)
+		if exists {
+			assert.True(t, strings.Contains(rangeType, "Generator"),
+				"range should return a Generator, got: %s", rangeType)
+		}
+	})
+}
+
+// =============================================================================
+// Phase 6.3: Error Case Tests
+// =============================================================================
+
+func TestForAwaitOutsideAsync(t *testing.T) {
+	_, errors := inferScript(t, `
+		fn notAsync() {
+			declare val asyncItems: Array<number>
+			for await item in asyncItems { }
+		}
+	`)
+	require.NotEmpty(t, errors, "'for await' outside async should produce an error")
+	assertHasError(t, errors, "'for await' is only allowed in async functions")
+}
+
+func TestYieldAtModuleScope(t *testing.T) {
+	_, errors := inferScript(t, `
+		yield 1
+	`)
+	require.NotEmpty(t, errors, "yield at module scope should produce an error")
+	assertHasError(t, errors, "'yield' can only be used inside a function")
+}
+
+func TestYieldInNestedCallback(t *testing.T) {
+	// yield in a nested function should make the inner function a generator,
+	// not the outer function
+	types, errors := inferScript(t, `
+		fn outer() {
+			val callback = fn() {
+				yield 1
+			}
+			return callback
+		}
+	`)
+	assert.Empty(t, errors)
+	outerType, exists := types["outer"]
+	assert.True(t, exists)
+	if exists {
+		// outer should NOT be a generator - it returns a generator function,
+		// but its own return type should not start with Generator<
+		assert.True(t, strings.HasPrefix(outerType, "fn () -> fn ()"),
+			"outer should return a function, not be a generator itself, got: %s", outerType)
+	}
+}
+
+// =============================================================================
+// Phase 6.4: Edge Case Tests
+// =============================================================================
+
+func TestEmptyIterable(t *testing.T) {
+	_, errors := inferScript(t, `
+		val empty: Array<number> = []
+		for item in empty {
+			val x = item
+		}
+		val spread = [...empty]
+	`)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+	}
+	assert.Empty(t, errors)
+}
+
+func TestForInWithGeneratorResult(t *testing.T) {
+	// Iterating over a generator function's result
+	_, errors := inferScript(t, `
+		fn nums() {
+			yield 1
+			yield 2
+			yield 3
+		}
+		for n in nums() {
+			val x = n
+		}
+	`)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+	}
+	assert.Empty(t, errors)
+}
+
+func TestYieldFromGenerator(t *testing.T) {
+	// yield from another generator
+	types, errors := inferScript(t, `
+		fn inner() {
+			yield 1
+			yield 2
+		}
+		fn outer() {
+			yield from inner()
+			yield 3
+		}
+	`)
+	assert.Empty(t, errors)
+	outerType, exists := types["outer"]
+	assert.True(t, exists)
+	if exists {
+		assert.True(t, strings.Contains(outerType, "Generator<"),
+			"outer should be a Generator, got: %s", outerType)
+		assert.True(t, strings.Contains(outerType, "1") && strings.Contains(outerType, "2"),
+			"outer should include delegated yields from inner(), got: %s", outerType)
+		assert.True(t, strings.Contains(outerType, "3"),
+			"outer should include direct yield 3, got: %s", outerType)
+	}
+}
+
+func TestMultipleForInLoops(t *testing.T) {
+	_, errors := inferScript(t, `
+		declare val nums: Array<number>
+		declare val strs: Array<string>
+		for n in nums {
+			val x: number = n
+		}
+		for s in strs {
+			val y: string = s
+		}
+	`)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+	}
+	assert.Empty(t, errors)
+}
+
+func TestNestedForInLoops(t *testing.T) {
+	_, errors := inferScript(t, `
+		declare val matrix: Array<Array<number>>
+		for row in matrix {
+			for cell in row {
+				val x: number = cell
+			}
+		}
+	`)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			t.Logf("Error: %s", err.Message())
+		}
+	}
+	assert.Empty(t, errors)
 }

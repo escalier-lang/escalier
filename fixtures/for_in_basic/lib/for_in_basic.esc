@@ -1,0 +1,17 @@
+// Basic for-in loop over an array
+export fn sumArray(items: Array<number>) -> number {
+    var total: number = 0
+    for item in items {
+        total = total + item
+    }
+    return total
+}
+
+// For-in loop over a string
+export fn charCount(s: string) -> number {
+    var count: number = 0
+    for ch in s {
+        count = count + 1
+    }
+    return count
+}

@@ -8447,3 +8447,158 @@
     },
 }
 ---
+
+[TestParseExprNoErrors/YieldWithValue - 1]
+&ast.YieldExpr{
+    Value: &ast.LiteralExpr{
+        Lit: &ast.NumLit{
+            Value: 1,
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+        },
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:7},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    IsDelegate: false,
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:8},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/YieldInBinaryExpr - 1]
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name:      "x",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:2},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Op:    "+",
+    Right: &ast.YieldExpr{
+        Value: &ast.LiteralExpr{
+            Lit: &ast.NumLit{
+                Value: 1,
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:11},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        IsDelegate: false,
+        span:       ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/BareYield - 1]
+&ast.YieldExpr{
+    Value:      nil,
+    IsDelegate: false,
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/YieldFromInBinaryExpr - 1]
+&ast.BinaryExpr{
+    Left: &ast.IdentExpr{
+        Name:      "x",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:2},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Op:    "+",
+    Right: &ast.YieldExpr{
+        Value: &ast.IdentExpr{
+            Name:      "items",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
+                End:      ast.Location{Line:1, Column:21},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        IsDelegate: true,
+        span:       ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:21},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:21},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprNoErrors/YieldFrom - 1]
+&ast.YieldExpr{
+    Value: &ast.IdentExpr{
+        Name:      "items",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:12},
+            End:      ast.Location{Line:1, Column:17},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    IsDelegate: true,
+    span:       ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:17},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
