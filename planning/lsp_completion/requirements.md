@@ -87,6 +87,10 @@ expression, but the name suggests "absence" rather than "error." Renaming it to
   definition, parser, type checker, code generator, tests).
 - R1.4.2: `ErrorExpr` should be usable for any expression-level syntax error,
   not only missing operands.
+- R1.4.3: `ErrorExpr` must contain a `Span` covering the error site. It does
+  not need to store skipped tokens or a message — the parser's error list
+  (populated via `reportError`) is the authoritative record of what went wrong.
+  Similarly, `ErrorStmt` must contain a `Span` covering the skipped region.
 
 ### 1.5 Statement-Level Recovery
 
@@ -117,23 +121,28 @@ expression, but the name suggests "absence" rather than "error." Renaming it to
 
 **Problem:** When the parser produces an incomplete or erroneous expression
 (e.g. `ErrorExpr`, `MemberExpr` with an empty property), the type checker
-currently assigns `NeverType`. Because `NeverType` is a legitimate bottom type,
-it unifies with everything, causing cascading false-positive type errors
-elsewhere in the program.  Likewise, we don't want to use `UnknownType` either
-for similar reasons.
+currently assigns `NeverType`. Because `NeverType` is a bottom type, `never` is
+assignable to everything (but nothing is assignable to `never`). This means an
+expression with type `never` can flow into any context without triggering a type
+error, causing false-positive silence — the type checker accepts code that would
+otherwise be flagged.  Likewise, we don't want to use `UnknownType` either for
+similar reasons.
 
 **Requirements:**
 
 - R2.1.1: Introduce a new type, `ErrorType`, in the type system. `ErrorType`
   must be distinct from `NeverType`, `AnyType`, `UnknownType`, and
   `WildcardType`.
-- R2.1.2: `ErrorType` must behave as both a top and bottom type during
-  unification: it must unify with any other type without producing errors. This
-  prevents cascading diagnostics from a single syntax error.
-- R2.1.3: `ErrorType` must propagate through operations. Accessing a member of
-  an `ErrorType` must return `ErrorType`. Calling an `ErrorType` must return
-  `ErrorType`. Using `ErrorType` as an operand in a binary expression must
-  return `ErrorType`.
+- R2.1.2: `ErrorType` must unify with any other type without producing errors.
+  This prevents cascading diagnostics from a single syntax error. The result of
+  unification is simply success (no error) — the non-error type is used wherever
+  the result matters.
+- R2.1.3: `ErrorType` must not propagate through operations. The type checker
+  must infer the result type as if the `ErrorType` operand were a valid type.
+  For example, if one operand of `+` is `ErrorType` and the other is `number`,
+  the result is `number`. Accessing a member of `ErrorType` returns `ErrorType`
+  only because there is no valid type to infer (the object type is unknown).
+  Calling an `ErrorType` returns `ErrorType` for the same reason.
 - R2.1.4: The type checker must never introduce `ErrorType` when the source has
   no syntax errors. `ErrorType` is strictly for representing the types of
   syntactically invalid constructs.
@@ -157,8 +166,9 @@ for similar reasons.
 **Requirements:**
 
 - R2.3.1: The type checker must not report type errors that involve `ErrorType`.
-  For example, if `x` has type `ErrorType` and is used in `x + 1`, no "operator
-  + not defined for ErrorType and number" error should be emitted.
+  For example, if `x` has type `ErrorType` and is used in `x + 1`, the result
+  must be inferred as `number` with no error emitted — the checker treats
+  `ErrorType` as compatible with the expected operand type.
 - R2.3.2: The type checker must still report errors for well-formed expressions
   that have genuine type errors, even if they appear in the same file as syntax
   errors.
@@ -202,24 +212,36 @@ for similar reasons.
 **Requirements:**
 
 - R3.3.1: Use the existing `findNodeInScript` visitor to locate the AST node at
-  the cursor position.
+  the cursor position. The visitor must also track the parent node of the found
+  node (the current implementation does not do this and must be extended), so
+  the completion handler can distinguish between a standalone `IdentExpr` and
+  one that is the property of a `MemberExpr`.
 - R3.3.2: If the node at the cursor is a `MemberExpr` with an empty property
   (or a property that is a prefix of what the user has typed), use the
   `InferredType` of the object subexpression as the basis for member completions.
-- R3.3.3: If the node at the cursor is an `IdentExpr` that is the property of a
-  `MemberExpr`, use the `InferredType` of the parent `MemberExpr`'s object as
-  the basis and filter by the identifier text.
+- R3.3.3: If the node at the cursor is an `IdentExpr` whose parent node is a
+  `MemberExpr`, use the `InferredType` of that `MemberExpr`'s object as the
+  basis and filter by the identifier text.
 - R3.3.4: If the node at the cursor is a standalone `IdentExpr` (not part of a
   `MemberExpr`), or the cursor is at a position where an expression is expected,
   provide scope-based completions filtered by the identifier text typed so far.
 
 ### 3.4 Resolving Completion Items from Types
 
+**Prerequisites:**
+
+Before resolving completions from a type, call `Prune` on the type to resolve
+any `TypeVarType` to its bound value. If the result is still a `TypeVarType`
+(i.e. the variable is unresolved), treat it the same as `AnyType` and return an
+empty completion list.
+
 **Requirements:**
 
-- R3.4.1: For `ObjectType`, return all properties, methods, getters, and setters
-  as completion items. Set `CompletionItemKind` appropriately (`Field`,
-  `Method`, `Property`).
+- R3.4.1: For `ObjectType`, return `PropertyElem`, `MethodElem`, `GetterElem`,
+  and `SetterElem` members as completion items. Set `CompletionItemKind`
+  appropriately (`Field`, `Method`, `Property`). `CallableElem`,
+  `ConstructorElem`, `MappedElem`, and `RestSpreadElem` do not have named
+  members and should be skipped.
 - R3.4.2: For `NamespaceType`, return all values, types, and child namespaces
   as completion items.
 - R3.4.3: For `PrimType` and `LitType` (e.g. `"hello".`), resolve the wrapper
@@ -258,10 +280,24 @@ from the prelude.
   introduced by import statements are only available in the source file scope,
   not the general module scope. In scripts, the file scope and script scope
   are the same; in modules, they are distinct.
+
+  Within local and function scopes, only include bindings whose declaration
+  appears before the cursor position. Variables declared after the cursor must
+  not be suggested. The same applies to the top-level script scope, since
+  scripts process statements in source order. This does not apply to the
+  top-level module scope, where declarations are processed based on the
+  dependency graph rather than source order.
+
+  To determine the innermost scope at the cursor position, the type checker
+  must record a mapping from AST nodes (or spans) to their enclosing `Scope`
+  during inference. The completion handler uses this mapping together with the
+  node found by `findNodeInScript` to look up the correct scope. (The current
+  checker does not store this mapping and must be extended.)
 - R3.5.2: Include globals and prelude bindings (e.g. `console`, `Math`,
   `parseInt`, etc.) that are in scope beyond the module/script scope.
 - R3.5.3: Include type aliases from `Scope.Types` with `CompletionItemKind`
-  set to `Class` or `Interface` as appropriate.
+  set based on the underlying `ObjectType`: `Class` if `Nominal` is true,
+  `Interface` if `Interface` is true, `Struct` otherwise.
 - R3.5.4: Include child namespaces from `Scope.Namespaces` with
   `CompletionItemKind` set to `Module`.
 - R3.5.5: If the user has typed a partial identifier, filter the results by
@@ -283,8 +319,7 @@ them can be slow and overwhelming in the UI.
 - R3.6.2: The default limit should be configurable but start at a reasonable
   value (e.g. 100 items).
 - R3.6.3: When the result is truncated, prefer items that match the typed prefix
-  more closely. Items whose label starts with the typed prefix should be
-  prioritized over items that match only by substring or case-insensitive match.
+  more closely (e.g. exact case match before case-insensitive match).
 - R3.6.4: Member completions (from `.` or `?.`) are typically small enough that
   they do not need truncation, but the limit must still apply as a safety
   measure.
@@ -319,7 +354,10 @@ them can be slow and overwhelming in the UI.
 
 - R3.9.1: Completions triggered after `?.` must behave identically to `.`
   completions, but on the non-nullable variant of the object type (strip `null`
-  and `undefined` from unions before resolving members).
+  and `undefined` from unions before resolving members). Note that `?.` does
+  not need its own trigger character — the client fires a `.` trigger when the
+  user types the `.` in `?.`, and the re-parsed AST will contain a `MemberExpr`
+  with `OptChain: true`, which the handler uses to detect this case.
 
 ---
 
@@ -332,9 +370,14 @@ them can be slow and overwhelming in the UI.
 - R4.1.1: When the document changes (`textDocument/didChange`), re-parse and
   re-check the entire document. (Full re-parse is acceptable for now; incremental
   parsing is a future optimization.)
-- R4.1.2: The updated AST and inferred types must be available before responding
-  to any subsequent completion request. The `validate()` function already does
-  this on `didChange`; ensure it continues to do so.
+- R4.1.2: When a document is opened (`textDocument/didOpen`), re-parse and
+  re-check it so that completions are available immediately without requiring
+  the user to make an edit first.
+- R4.1.3: The updated AST, inferred types, and scope mapping must be available
+  before responding to any subsequent completion request. Access to the stored
+  AST and type-checking results must be synchronized (e.g. via a mutex) to
+  prevent data races between `didChange`/`didOpen` (which write) and
+  `completion` (which reads).
 
 ---
 
