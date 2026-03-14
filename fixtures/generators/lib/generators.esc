@@ -17,3 +17,21 @@ export fn mixed() {
     yield 1
     yield "hello"
 }
+
+// Yield delegation using yield from
+export fn inner() {
+    yield 1
+    yield 2
+}
+
+export fn outer() {
+    yield from inner()
+    yield 3
+}
+
+// Async generator function
+export async fn fetchItems() {
+    yield 1
+    yield 2
+    yield 3
+}

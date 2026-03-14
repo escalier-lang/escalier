@@ -15,3 +15,12 @@ export fn charCount(s: string) -> number {
     }
     return count
 }
+
+// For-in loop with tuple destructuring
+export fn sumPairs(pairs: Array<[number, number]>) -> number {
+    var total: number = 0
+    for [a, b] in pairs {
+        total = total + a + b
+    }
+    return total
+}

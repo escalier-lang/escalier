@@ -1,6 +1,0 @@
-// Async generator function
-export async fn fetchItems() {
-    yield 1
-    yield 2
-    yield 3
-}

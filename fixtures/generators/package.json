@@ -1,5 +1,5 @@
 {
-    "name": "for_in_basic",
+    "name": "generators",
     "version": "0.0.1",
     "type": "module",
     "main": "build/lib/index.js"

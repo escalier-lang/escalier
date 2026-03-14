@@ -16,4 +16,13 @@ export function sumArray(temp3) {
   }
   return total;
 }
+export function sumPairs(temp5) {
+  const pairs = temp5;
+  let total = 0;
+  for (const temp6 of pairs) {
+    const [a, b] = temp6;
+    total = total + a + b;
+  }
+  return total;
+}
 //# sourceMappingURL=./index.js.map
