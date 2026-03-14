@@ -1034,6 +1034,9 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		panic("PrintTypeAnn: IntrinsicTypeAnn not implemented")
 	case *ImportType:
 		panic("PrintTypeAnn: ImportType not implemented")
+	case *RestSpreadTypeAnn:
+		p.print("...")
+		p.PrintTypeAnn(ta.Value)
 	}
 }
 

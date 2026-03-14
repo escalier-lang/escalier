@@ -29,6 +29,24 @@ export fn outer() {
     yield 3
 }
 
+// Iterate over a generator using for-in
+export fn sumOuter() -> number {
+    var total: number = 0
+    for n in outer() {
+        total = total + n
+    }
+    return total
+}
+
+// Spread generator into array
+export fn countArray() {
+    return [...count()]
+}
+
+export fn outerArray() {
+    return [...outer()]
+}
+
 // Async generator function
 export async fn fetchItems() {
     yield 1

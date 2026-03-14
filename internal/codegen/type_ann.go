@@ -238,8 +238,15 @@ type IndexParamTypeAnn struct {
 }
 
 type RestSpreadTypeAnn struct {
-	Value TypeAnn
+	Value  TypeAnn
+	span   *Span
+	source ast.Node
 }
+
+func (*RestSpreadTypeAnn) isTypeAnn()                     {}
+func (t *RestSpreadTypeAnn) Span() *Span                  { return t.span }
+func (t *RestSpreadTypeAnn) SetSpan(span *Span)           { t.span = span }
+func (t *RestSpreadTypeAnn) Source() ast.Node              { return t.source }
 
 type ObjectTypeAnn struct {
 	Elems  []ObjTypeAnnElem
