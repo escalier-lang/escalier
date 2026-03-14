@@ -483,17 +483,17 @@ func TestArraySpreadRequiresIterable(t *testing.T) {
 	t.Run("SpreadNonIterable", func(t *testing.T) {
 		// Invalid: spreading a number
 		_, errors := inferScript(t, `val arr = [...5]`)
-		assert.NotEmpty(t, errors, "spreading a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "spreading a number should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 
 	t.Run("SpreadNonIterableObject", func(t *testing.T) {
 		// Invalid: spreading a non-iterable object in an array context
 		_, errors := inferScript(t, `val arr = [...{a: 1}]`)
-		assert.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+		require.NotEmpty(t, errors, "spreading a non-iterable object should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 }
 
@@ -532,11 +532,9 @@ func TestForInLoopInference(t *testing.T) {
 			for x in 42 {
 			}
 		`)
-		assert.NotEmpty(t, errors, "for-in over a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "for-in over a number should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 
 	t.Run("ForInTuple", func(t *testing.T) {
@@ -614,11 +612,9 @@ func TestYieldExprInference(t *testing.T) {
 				yield from 42
 			}
 		`)
-		assert.NotEmpty(t, errors, "yield from a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "yield from a number should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 }
 
@@ -661,11 +657,9 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 				yield 2
 			}
 		`)
-		assert.NotEmpty(t, errors, "generator type argument mismatch should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
-				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "generator type argument mismatch should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
+			"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
 	})
 
 	t.Run("AnnotatedNonGeneratorReturnTypeMismatch", func(t *testing.T) {
@@ -676,11 +670,9 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 				yield 1
 			}
 		`)
-		assert.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
-				"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "annotated return type mismatch should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "cannot be assigned to"),
+			"error should mention 'cannot be assigned to', got: %s", errors[0].Message())
 	})
 
 	t.Run("NestedYieldDoesNotAffectOuter", func(t *testing.T) {
@@ -720,11 +712,9 @@ func TestModuleIterableInference(t *testing.T) {
 
 	t.Run("SpreadNonIterableInModule", func(t *testing.T) {
 		_, errors := inferModule(t, `val arr = [...5]`)
-		assert.NotEmpty(t, errors, "spreading a number should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "spreading a number should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 }
 
@@ -754,11 +744,9 @@ func TestForInLoopTypeBinding(t *testing.T) {
 			val obj = {a: 1}
 			for item in obj { }
 		`)
-		assert.NotEmpty(t, errors, "for-in over a non-iterable object should produce an error")
-		if len(errors) > 0 {
-			assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
-				"error should mention 'not iterable', got: %s", errors[0].Message())
-		}
+		require.NotEmpty(t, errors, "for-in over a non-iterable object should produce an error")
+		assert.True(t, strings.Contains(errors[0].Message(), "not iterable"),
+			"error should mention 'not iterable', got: %s", errors[0].Message())
 	})
 
 	t.Run("ForInDestructuring", func(t *testing.T) {
@@ -824,7 +812,7 @@ func TestForAwaitOutsideAsync(t *testing.T) {
 			for await item in asyncItems { }
 		}
 	`)
-	assert.NotEmpty(t, errors, "'for await' outside async should produce an error")
+	require.NotEmpty(t, errors, "'for await' outside async should produce an error")
 	found := false
 	for _, err := range errors {
 		if strings.Contains(err.Message(), "for await") && strings.Contains(err.Message(), "async") {
@@ -838,7 +826,9 @@ func TestYieldAtModuleScope(t *testing.T) {
 	_, errors := inferScript(t, `
 		yield 1
 	`)
-	assert.NotEmpty(t, errors, "yield at module scope should produce an error")
+	require.NotEmpty(t, errors, "yield at module scope should produce an error")
+	assert.True(t, strings.Contains(errors[0].Message(), "'yield' can only be used inside a function"),
+		"error should mention yield scope restriction, got: %s", errors[0].Message())
 }
 
 func TestYieldInNestedCallback(t *testing.T) {
