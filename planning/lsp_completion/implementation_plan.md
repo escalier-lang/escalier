@@ -349,8 +349,20 @@ completion request holds a read lock on the same goroutine), the server deadlock
    No additional scope map is needed — scope-based completions (Step 3.5)
    traverse the AST directly and read types from `InferredType` on declaration
    nodes.
-2. Use `mu` (RWMutex) to synchronize access: `didChange`/`didOpen` take a write
-   lock, `completion` takes a read lock (R4.1.3).
+2. **Lock discipline** (R4.1.3): `didChange` and `didOpen` handlers must call
+   `validate()` **outside any lock** — parsing and type-checking are expensive
+   and must not block completion requests. After `validate()` returns, acquire
+   a short write lock only to swap the new AST into `astCache`, then release
+   it immediately. The `completion` handler acquires a read lock to read from
+   `astCache`.
+   ```
+   // INVARIANT: validate() must never be called while holding mu.
+   // didChange/didOpen flow:
+   //   1. Call validate() (no lock held) → returns new AST
+   //   2. mu.Lock()
+   //   3. Swap astCache entry
+   //   4. mu.Unlock()
+   ```
 3. Ensure `validate()` is called from `textDocumentDidOpen` (not just
    `textDocumentDidChange`) so that completions are available immediately after
    opening a file without requiring an edit (R4.1.2).
