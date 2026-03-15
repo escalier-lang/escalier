@@ -167,7 +167,15 @@
             inferredType: nil,
         },
         TypeAnn: nil,
-        Init:    &ast.ErrorExpr{
+        Init:    &ast.LiteralExpr{
+            Lit: &ast.NumLit{
+                Value: 5,
+                span:  ast.Span{
+                    Start:    ast.Location{Line:1, Column:7},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+            },
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:7},
                 End:      ast.Location{Line:1, Column:8},

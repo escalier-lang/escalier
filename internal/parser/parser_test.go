@@ -489,6 +489,12 @@ func TestStatementRecovery(t *testing.T) {
 		"ErrorAtStart": {
 			input: "@@@\nval a = 1",
 		},
+		"MissingEqualsOnNewLine": {
+			input: "val x\nval y = 10",
+		},
+		"ClassExtendsMissingType": {
+			input: "class Foo extends { bar(self) { return 1 } }",
+		},
 	}
 
 	for name, test := range tests {

@@ -67,6 +67,10 @@ Statement boundaries recognized by `skipToNextStatement()`:
   `enum`, `class`, `return`, `throw`, `for`, `if`, `import`, `export`,
   `declare`, `async`
 
+The `isStatementInitiator()` helper exposes the same keyword set for use by
+declaration-level recovery (e.g. deciding whether to attempt expression
+parsing after a missing `=`).
+
 ### Declaration-Level Recovery
 
 **Entry points:** `varDecl()`, `fnDecl()`, `typeDecl()`, `interfaceDecl()`,
@@ -77,12 +81,18 @@ returning nil:
 
 - **Missing identifier**: An empty-string `Ident` is used (e.g.
   `ast.NewIdentifier("")`). This matches the pattern already used by `fnDecl`.
-- **Missing initializer** (`val x`): A `VarDecl` is produced with `ErrorExpr`
-  as the init expression.
+- **Missing `=` sign** (`val x 5`): If the next token is not a statement
+  initiator and is on the same line, the parser attempts to parse an expression
+  as the initializer (recovering the user's intent). If the next token is a
+  statement initiator or on a new line (`val x\nval y = 10`), an `ErrorExpr`
+  is used as the initializer to avoid consuming the next statement.
 - **Missing return type** (`fn foo() ->`): A `FuncDecl` is produced without a
   return type annotation.
 - **Missing body `{`**: Declarations are produced with nil/empty bodies
   (`ClassDecl`, `EnumDecl`, `InterfaceDecl`).
+- **Missing extends type** (`class Foo extends {}`): If `{` follows `extends`
+  directly, the parser skips the `typeAnn()` call to avoid consuming the class
+  body as an object type. The `{` is preserved for class body parsing.
 - **Invalid modifiers** (`async val`): The error is reported but parsing of
   the declaration continues.
 

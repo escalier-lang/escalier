@@ -4,6 +4,20 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// isStatementInitiator returns true if the token type begins a new statement
+// or declaration. Used to decide whether recovery should attempt to parse an
+// expression or bail out.
+func (p *Parser) isStatementInitiator(tt TokenType) bool {
+	// nolint: exhaustive
+	switch tt {
+	case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
+		For, If, Import, Export, Declare, Async, EndOfFile:
+		return true
+	default:
+		return false
+	}
+}
+
 // skipToNextStatement consumes tokens until reaching a statement boundary:
 // EOF, the given stop token, a newline boundary, or a statement-initiating keyword.
 func (p *Parser) skipToNextStatement(stopOn TokenType) {

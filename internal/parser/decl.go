@@ -40,34 +40,23 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
+	if async && token.Type != Fn {
+		p.reportError(token.Span, "async can only be used with functions")
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case Val, Var:
-		if async {
-			p.reportError(token.Span, "async can only be used with functions")
-		}
 		return p.varDecl(start, token, export, declare)
 	case Fn:
 		return p.fnDecl(start, export, declare, async)
 	case Type:
-		if async {
-			p.reportError(token.Span, "async can only be used with functions")
-		}
 		return p.typeDecl(start, export, declare)
 	case Interface:
-		if async {
-			p.reportError(token.Span, "async can only be used with functions")
-		}
 		return p.interfaceDecl(start, export, declare)
 	case Enum:
-		if async {
-			p.reportError(token.Span, "async can only be used with functions")
-		}
 		return p.enumDecl(start, export, declare)
 	case Class:
-		if async {
-			p.reportError(token.Span, "async can only be used with functions")
-		}
 		return p.classDecl(start, export, declare)
 	default:
 		p.reportError(token.Span, "Unexpected token")
@@ -107,15 +96,21 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	var extends *ast.TypeRefTypeAnn
 	if token.Type == Extends {
 		p.lexer.consume()
-		extendsTypeAnn := p.typeAnn()
-		if extendsTypeAnn == nil {
+		nextToken := p.lexer.peek()
+		if nextToken.Type == OpenBrace {
+			// The '{' is the class body, not a type annotation.
 			p.reportError(token.Span, "Expected type annotation after 'extends'")
 		} else {
-			// Ensure the extends clause is a type reference
-			var ok bool
-			extends, ok = extendsTypeAnn.(*ast.TypeRefTypeAnn)
-			if !ok {
-				p.reportError(token.Span, "extends clause must be a type reference")
+			extendsTypeAnn := p.typeAnn()
+			if extendsTypeAnn == nil {
+				p.reportError(token.Span, "Expected type annotation after 'extends'")
+			} else {
+				// Ensure the extends clause is a type reference
+				var ok bool
+				extends, ok = extendsTypeAnn.(*ast.TypeRefTypeAnn)
+				if !ok {
+					p.reportError(token.Span, "extends clause must be a type reference")
+				}
 			}
 		}
 		token = p.lexer.peek()
@@ -438,7 +433,12 @@ func (p *Parser) varDecl(
 	if !declare {
 		if token.Type != Equal {
 			p.reportError(token.Span, "Expected equals sign")
-			init = ast.NewError(token.Span)
+			onNewLine := token.Span.Start.Line != end.Line
+			if p.isStatementInitiator(token.Type) || onNewLine {
+				init = ast.NewError(token.Span)
+			} else {
+				init = p.expr()
+			}
 		} else {
 			p.lexer.consume()
 			init = p.expr()
