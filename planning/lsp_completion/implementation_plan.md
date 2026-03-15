@@ -1,8 +1,12 @@
 # textDocument/completion - Implementation Plan
 
 This plan implements the requirements in `requirements.md`. Work is organized into
-phases that build on each other: parser recovery first, then error-tolerant type
-inference, then the completion handler itself.
+phases that build on each other: error-tolerant type inference first (to establish
+correctness), then the completion handler (to deliver end-to-end functionality),
+then parser recovery (to expand coverage). This ordering front-loads the type
+system changes and defers the highest-risk parser work until a working completion
+path exists. See the [Implementation Order](#implementation-order) section for
+the risk-aware sequencing and milestone breakdown.
 
 ---
 
@@ -44,8 +48,23 @@ inference, then the completion handler itself.
 
 ### Step 1.3: General Expression Recovery (R1.3.1–R1.3.5)
 
+**Risk: HIGH** — The expression parser has ~25 `return nil` points and a panic on
+stack invariant violation in the binary expression parser. Converting nil-return
+paths to produce `ErrorExpr` while maintaining the stack invariant is error-prone.
+
 **Files:**
 - `internal/parser/expr.go` — binary expressions, call expressions, index expressions
+
+**Mitigations:**
+- **Incremental conversion**: Don't convert all nil-returns at once. Implement
+  R1.3.2 (binary RHS), R1.3.3 (call args), and R1.3.4 (index) one at a time,
+  testing each before moving on. Remaining nil-return points can be addressed in
+  follow-up work.
+- **Guard the panic**: Replace the stack invariant panic in `exprWithoutErrorCheck`
+  with an `ErrorExpr` fallback so that even if a recovery path is wrong, the
+  parser doesn't crash.
+- **Parser fuzzing**: After implementing recovery, feed randomized incomplete
+  expressions and assert the parser never panics and always returns a non-nil AST.
 
 **Approach:**
 
@@ -80,12 +99,23 @@ For each sub-requirement:
 
 ### Step 1.4: Statement-Level Recovery (R1.5.1, R1.5.2, R1.4.3)
 
+**Risk: MEDIUM** — Determining the "next statement boundary" using indentation is
+tricky for an indentation-sensitive language. Wrong boundary detection could
+swallow valid statements.
+
 **Files:**
 - `internal/ast/stmt.go` — add `ErrorStmt` node
 - `internal/ast/visitor.go` — add `ErrorStmt` to visitor
 - `internal/parser/stmt.go` — recovery logic
 - `internal/checker/infer_stmt.go` — handle `ErrorStmt` (no-op)
 - `internal/codegen/builder.go` — handle `ErrorStmt` (skip)
+
+**Mitigations:**
+- **Conservative boundary detection**: Start with only
+  newline-at-same-or-lower-indentation and EOF as boundaries. Don't try to detect
+  semicolons or other heuristics initially.
+- **Multi-error tests**: Write tests with 2–3 syntax errors in the same file and
+  verify each subsequent statement is still parsed correctly.
 
 **Approach:**
 1. Define `ErrorStmt` in the AST with only a `Span` covering the skipped tokens
@@ -99,9 +129,26 @@ For each sub-requirement:
 
 ### Step 1.5: Declaration-Level Recovery (R1.6.1, R1.6.2)
 
+**Risk: HIGH** — `decl.go` has ~23 nil-return points spread across 6 declaration
+types (variable, function, type, interface, enum, class). Class parsing alone is
+~250 lines with a modifier state machine. Each declaration type has different
+structure, so there's no single recovery pattern.
+
 **Files:**
 - `internal/parser/decl.go` — simplify function decl recovery, add recovery to
   other declaration types
+
+**Mitigations:**
+- **Prioritize by frequency**: Focus on `val`/`let` declarations and function
+  declarations first since those are what users write most often. Type, interface,
+  enum, and class recovery can follow in later work.
+- **Fall back to statement-level recovery**: For complex declarations like classes,
+  don't try to recover inside the declaration body initially. Instead, fall back to
+  statement-level recovery (Step 1.4's `ErrorStmt`) when a declaration fails
+  partway through. This is coarser but much safer.
+- **Snapshot-test each declaration type**: Write a snapshot test with broken syntax
+  for each declaration type before modifying it, so regressions are immediately
+  visible.
 
 **Approach:**
 1. Review the existing ad-hoc recovery in `decl.go` (empty identifiers for
@@ -131,11 +178,29 @@ For each sub-requirement:
 
 ### Step 2.1: Introduce ErrorType (R2.1.1, R2.1.4, R2.1.5)
 
+**Risk: MEDIUM-HIGH** — Adding a new type requires updating type switches across
+~14 files. The `//sumtype:decl` exhaustiveness checker catches missing cases at
+build time, but nested type switches (e.g. inside `KeyOfType` or `IndexType`
+expansion) are not covered by sumtype and must be audited manually.
+
 **Files:**
 - `internal/type_system/types.go` — add `ErrorType` struct
 - `internal/type_system/types_gen.go` — add generated methods (or manually add
   `Provenance`, `SetProvenance`, `Copy`, `Equals`, `Accept`, `String`)
 - `internal/type_system/visitor.go` — add `VisitErrorType` to `TypeVisitor`
+
+**Mitigations:**
+- **Use the sumtype checker**: After adding ErrorType to the `//sumtype:decl`
+  comment, run `go-sumtype` (or `go build` if integrated) to find every top-level
+  switch that needs updating. This catches the majority of cases automatically.
+- **Default to pass-through**: In most type switches (expand, substitute, etc.),
+  ErrorType should pass through unchanged. Add an explicit
+  `*ErrorType: return t` case rather than trying to define special semantics
+  everywhere.
+- **Audit `expand_type.go` separately**: Given its many nested type switches,
+  treat it as its own sub-task. Walk through each `EnterType`/`ExitType` case
+  and confirm that ErrorType either falls through to default or is handled
+  explicitly.
 
 **Approach:**
 1. Define `ErrorType` implementing the `Type` interface:
@@ -152,8 +217,24 @@ For each sub-requirement:
 
 ### Step 2.2: ErrorType Unification (R2.1.2, R2.1.3, R2.3.1)
 
+**Risk: HIGH** — `unify.go` is ~1,750 lines with 25 type combination cases and
+recursive unification up to 50 levels deep. The early-return seems simple, but
+there are subtle interactions: unions containing ErrorType, type variable binding
+to ErrorType, and conditional types.
+
 **Files:**
 - `internal/checker/unify.go` — add `ErrorType` cases
+
+**Mitigations:**
+- **Add ErrorType check at the very top of `unifyWithDepth`**: Before any other
+  logic, check if either type is `*ErrorType` and return nil. This ensures it's
+  handled before any type-specific branches that might not expect it.
+- **Prevent binding TypeVarType to ErrorType**: When unifying `TypeVarType` with
+  `ErrorType`, succeed without binding the variable to ErrorType. Otherwise
+  ErrorType could propagate through type inference via variable resolution.
+- **Write targeted combination tests**: Test ErrorType against each of
+  {PrimType, ObjectType, FuncType, UnionType, IntersectionType, TypeVarType,
+  TupleType}. Include nested scenarios like `unify(Union(ErrorType, number), string)`.
 
 **Approach:**
 1. In the `Unify` function, add early-return cases:
@@ -234,9 +315,20 @@ is no underlying type to look up members or return types from:
 
 ### Step 3.2: Store Scope Mapping and Ensure Validation on Open (R4.1.1–R4.1.3)
 
+**Risk: MEDIUM** — Adding a `sync.RWMutex` introduces concurrency concerns. If
+the lock discipline is wrong (e.g., `validate()` takes a write lock while a
+completion request holds a read lock on the same goroutine), the server deadlocks.
+
 **Files:**
 - `cmd/lsp-server/main.go` — add fields to `Server` struct
 - `cmd/lsp-server/text_document.go` — update `validate()` to store results
+
+**Mitigations:**
+- **Keep the critical section minimal**: Take the write lock only to swap the
+  stored data (scope map, AST cache), not during parsing/checking. Parse and check
+  outside the lock, then swap atomically under the lock.
+- **Never call `validate()` from within a locked section**: Document this
+  invariant with a comment.
 
 **Approach:**
 1. Add fields to the `Server` struct (the existing `astCache` already stores
@@ -256,14 +348,25 @@ is no underlying type to look up members or return types from:
 
 ### Step 3.3: Find Relevant Node (R3.3.1–R3.3.4)
 
+**Risk: MEDIUM** — The current `find_node.go` has no parent tracking. Adding
+parent tracking requires modifying the visitor pattern. If a single parent field
+is used instead of a stack, the parent could be wrong for nodes that appear in
+nested contexts.
+
 **Files:**
 - `cmd/lsp-server/completion.go`
 - `cmd/lsp-server/find_node.go` — extend to track parent node
 
+**Mitigations:**
+- **Use a stack, not a single parent field**: Push on `Enter*`, pop on `Exit*`.
+  Return the top of the stack as the parent. This handles nested nodes correctly.
+- **Test the three completion cases explicitly**: Case A (`foo.`), Case B
+  (`foo.ba|`), Case C (bare `con|`). Verify the parent is correct for each.
+
 **Approach:**
 1. Extend `findNodeInScript` to return both the found node and its parent node
-   (R3.3.1). Add a `Parent` field to the `Visitor` struct that tracks the
-   previous node as the visitor descends.
+   (R3.3.1). Add a `Parents` stack to the `Visitor` struct that tracks the
+   ancestor chain as the visitor descends.
 2. Convert the LSP position (line/character) to an `ast.Location`.
 3. Use the extended `findNodeInScript` to find the node and parent at the cursor.
 4. All three `CompletionTriggerKind` values (`Invoked`, `TriggerCharacter`,
@@ -321,9 +424,28 @@ is no underlying type to look up members or return types from:
 
 ### Step 3.5: Scope-Based Completions (R3.5.1–R3.5.6)
 
+**Risk: MEDIUM-HIGH** — This requires adding a `ScopeMap` to the checker that
+records which scope each AST node belongs to. The mapping must be populated at
+every scope-creation point, and any missed point means completions silently fail
+for that context. The declaration-before-cursor filtering also requires comparing
+spans, which is tricky for multi-line declarations.
+
 **Files:**
 - `cmd/lsp-server/completion.go`
 - `internal/checker/scope.go` — add scope mapping infrastructure
+
+**Mitigations:**
+- **Centralize scope map updates in `WithNewScope`**: Rather than modifying every
+  inference function, hook into the scope creation function itself. When
+  `WithNewScope` is called, record the association between the current AST node
+  and the new scope. This reduces the number of code paths to modify.
+- **Start with a coarse mapping**: Initially, map only top-level
+  statements/declarations to their scope (not every sub-expression). This gives
+  correct completions for most cursor positions. Refine to inner expressions only
+  if needed.
+- **Test with nested scopes**: Write tests for: function body, nested blocks,
+  for-loop body, if/else branches, and closures. Verify the correct scope is
+  resolved at cursor positions in each.
 
 **Approach:**
 1. **Add scope mapping to the checker** (R3.5.1): During type inference, record
@@ -493,40 +615,77 @@ is no underlying type to look up members or return types from:
 
 ## Implementation Order
 
+The implementation order below is risk-aware: it front-loads the type system
+changes (which affect correctness globally) and builds a working end-to-end
+completion path before tackling the high-risk parser recovery work. This means
+completions work with the existing partial recovery (trailing dot) early on,
+and the harder parser recovery steps extend coverage incrementally.
+
+### Milestone 1: ErrorType Foundation
+
+Low-risk mechanical changes that establish the type system groundwork.
+
 ```
-Phase 1 (Parser Recovery)
-  ├── Step 1.1: Rename EmptyExpr → ErrorExpr
-  ├── Step 1.2: Trailing dot recovery
-  ├── Step 1.3: General expression recovery
-  ├── Step 1.4: Statement-level recovery (ErrorStmt)
-  ├── Step 1.5: Declaration-level recovery
-  └── Step 1.6: Document recovery strategy
-
-Phase 2 (Error-Tolerant Inference)
-  ├── Step 2.1: Introduce ErrorType
-  ├── Step 2.2: ErrorType unification (handles operators + cascading suppression)
-  ├── Step 2.3: ErrorType in member access and calls
-  └── Step 2.4: Assign ErrorType to error nodes (+ R2.3.2 preservation)
-
-Phase 3 (Completion Handler)
-  ├── Step 3.1: Register handler + capabilities
-  ├── Step 3.2: Store scope mapping + ensure validation on didOpen (with mutex)
-  ├── Step 3.3: Find relevant node (with parent tracking)
-  ├── Step 3.4: Member completions from types (with Prune)
-  ├── Step 3.5: Scope-based completions (with scope mapping + declaration ordering)
-  ├── Step 3.6: Optional chaining
-  ├── Step 3.7: Filtering
-  ├── Step 3.8: Result limiting
-  └── Step 3.9: Completion item details
-
-Phase 4 (Testing)
-  ├── Step 4.1: Parser recovery tests
-  ├── Step 4.2: Type inference tests
-  └── Step 4.3: Completion handler tests
+Step 1.1: Rename EmptyExpr → ErrorExpr                              [LOW risk]
+Step 1.2: Trailing dot recovery (verify existing behavior)          [LOW risk]
+Step 2.1: Introduce ErrorType (+ sumtype checker audit)             [MEDIUM-HIGH risk]
+Step 2.4: Assign ErrorType to error nodes                           [LOW risk]
+Step 2.2: ErrorType unification                                     [HIGH risk]
+Step 2.3: ErrorType in member access and calls                      [LOW risk]
 ```
 
-Tests should be written alongside each phase (not deferred to the end), but
+After this milestone: the type checker handles syntax errors gracefully. The
+parser still only recovers trailing dots, but the checker no longer produces
+cascading diagnostics from those errors.
+
+### Milestone 2: End-to-End Completions
+
+Builds the completion handler on top of the ErrorType foundation. Member
+completions (`.` trigger) work first, then scope-based completions.
+
+```
+Step 3.1: Register handler + capabilities                           [LOW risk]
+Step 3.2: Store scope mapping + validation on didOpen (with mutex)  [MEDIUM risk]
+Step 3.3: Find relevant node (with parent tracking)                 [MEDIUM risk]
+Step 3.4: Member completions from types (with Prune)                [LOW risk]
+Step 3.5: Scope-based completions (with scope mapping)              [MEDIUM-HIGH risk]
+Step 3.6: Optional chaining                                         [LOW risk]
+Step 3.7: Filtering                                                 [LOW risk]
+Step 3.8: Result limiting                                           [LOW risk]
+Step 3.9: Completion item details                                   [LOW risk]
+```
+
+After this milestone: completions work end-to-end for `.` triggers and bare
+identifiers. Coverage is limited to cases where the existing parser produces
+usable ASTs (trailing dot, complete expressions).
+
+### Milestone 3: Parser Recovery
+
+Extends the parser to recover from more syntax errors, expanding the set of
+situations where completions work. These steps are high-risk and should be
+tackled incrementally.
+
+```
+Step 1.3: General expression recovery                               [HIGH risk]
+Step 1.4: Statement-level recovery (ErrorStmt)                      [MEDIUM risk]
+Step 1.5: Declaration-level recovery                                [HIGH risk]
+Step 1.6: Document recovery strategy                                [LOW risk]
+```
+
+After this milestone: the parser recovers from most common syntax errors,
+providing usable ASTs for the checker and completion handler in nearly all
+editing scenarios.
+
+### Testing
+
+Tests should be written alongside each milestone (not deferred to the end).
 Phase 4 calls out the full test matrix for completeness.
+
+```
+Step 4.1: Parser recovery tests (alongside Milestone 3)
+Step 4.2: Type inference tests (alongside Milestone 1)
+Step 4.3: Completion handler tests (alongside Milestone 2)
+```
 
 ---
 
