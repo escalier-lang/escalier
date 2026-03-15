@@ -435,7 +435,8 @@ func (p *Parser) varDecl(
 			p.reportError(token.Span, "Expected equals sign")
 			onNewLine := token.Span.Start.Line != end.Line
 			if p.isStatementInitiator(token.Type) || onNewLine {
-				init = ast.NewError(token.Span)
+				zeroSpan := ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID}
+				init = ast.NewError(zeroSpan)
 			} else {
 				init = p.expr()
 			}
@@ -495,6 +496,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		p.lexer.consume()
 		typeAnn := p.typeAnn()
 		if typeAnn == nil {
+			end = token.Span.End
 			p.reportError(token.Span, "Expected type annotation after arrow")
 		} else {
 			end = typeAnn.Span().End

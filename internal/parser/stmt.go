@@ -91,11 +91,17 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 				nextToken := p.lexer.peek()
 				if token.Span.End.Line == nextToken.Span.End.Line &&
 					token.Span.End.Column == nextToken.Span.End.Column {
-					// No tokens were consumed — skip to the next statement
+					// No tokens were consumed -- skip to the next statement
 					// boundary to avoid an infinite loop.
 					p.reportError(token.Span, "Unexpected token")
 					p.skipToNextStatement(stopOn)
 					nextToken = p.lexer.peek()
+					if nextToken.Span.End.Line == token.Span.End.Line &&
+						nextToken.Span.End.Column == token.Span.End.Column {
+						// skipToNextStatement didn't advance -- force progress.
+						p.lexer.consume()
+						nextToken = p.lexer.peek()
+					}
 				}
 				// Wrap the failed statement region in an ErrorStmt.
 				stmts = append(stmts, ast.NewErrorStmt(

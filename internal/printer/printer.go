@@ -89,11 +89,16 @@ func (p *Printer) dedent() {
 
 // PrintScript prints a Script node
 func (p *Printer) PrintScript(script *ast.Script) error {
-	for i, stmt := range script.Stmts {
-		p.printStmt(stmt)
-		if i < len(script.Stmts)-1 {
+	first := true
+	for _, stmt := range script.Stmts {
+		if _, isErr := stmt.(*ast.ErrorStmt); isErr {
+			continue
+		}
+		if !first {
 			p.newline()
 		}
+		p.printStmt(stmt)
+		first = false
 	}
 	return nil
 }
@@ -776,6 +781,9 @@ func (p *Printer) printBlock(block *ast.Block) {
 		p.indent()
 
 		for _, stmt := range block.Stmts {
+			if _, isErr := stmt.(*ast.ErrorStmt); isErr {
+				continue
+			}
 			p.printStmt(stmt)
 			p.newline()
 		}

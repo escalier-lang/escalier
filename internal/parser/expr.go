@@ -145,7 +145,12 @@ loop:
 	if len(values) != 1 {
 		// This should never happen if the algorithm is correct, but guard
 		// against it to avoid crashing during error recovery.
-		span := values.Peek().Span()
+		var span ast.Span
+		if values.IsEmpty() {
+			span = ast.Span{Start: p.lexer.currentLocation, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		} else {
+			span = values.Peek().Span()
+		}
 		p.reportError(span, "internal error: expression stack invariant violated")
 		return ast.NewError(span)
 	}
