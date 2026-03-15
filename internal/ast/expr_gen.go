@@ -2,9 +2,9 @@
 
 package ast
 
-func (node *EmptyExpr) Span() Span             { return node.span }
-func (node *EmptyExpr) InferredType() Type     { return node.inferredType }
-func (node *EmptyExpr) SetInferredType(t Type) { node.inferredType = t }
+func (node *ErrorExpr) Span() Span             { return node.span }
+func (node *ErrorExpr) InferredType() Type     { return node.inferredType }
+func (node *ErrorExpr) SetInferredType(t Type) { node.inferredType = t }
 
 func (node *BinaryExpr) Span() Span             { return node.span }
 func (node *BinaryExpr) InferredType() Type     { return node.inferredType }

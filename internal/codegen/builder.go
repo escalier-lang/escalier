@@ -505,7 +505,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
 		switch s.Expr.(type) {
-		case *ast.EmptyExpr:
+		case *ast.ErrorExpr:
 			// Ignore empty expressions.
 			return []Stmt{}
 		default:
@@ -2065,7 +2065,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		return b.buildJSXElement(expr)
 	case *ast.JSXFragmentExpr:
 		return b.buildJSXFragment(expr)
-	case *ast.EmptyExpr:
+	case *ast.ErrorExpr:
 		undefined := NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr)
 		return undefined, []Stmt{}
 	default:

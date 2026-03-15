@@ -95,13 +95,27 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
+	// | TypeVarType, ErrorType -> bind
+	// | ErrorType, TypeVarType -> bind
+	// | ErrorType, _ -> success (suppress cascading errors)
+	// | _, ErrorType -> success (suppress cascading errors)
+	_, t1IsTypeVar := t1.(*type_system.TypeVarType)
+	_, t2IsTypeVar := t2.(*type_system.TypeVarType)
+	_, t1IsError := t1.(*type_system.ErrorType)
+	_, t2IsError := t2.(*type_system.ErrorType)
+	if (t1IsTypeVar && t2IsError) || (t1IsError && t2IsTypeVar) {
+		return c.bind(ctx, t1, t2)
+	}
+	if t1IsError || t2IsError {
+		return nil
+	}
 
 	// | TypeVarType, _ -> ...
-	if _, ok := t1.(*type_system.TypeVarType); ok {
+	if t1IsTypeVar {
 		return c.bind(ctx, t1, t2)
 	}
 	// | _, TypeVarType -> ...
-	if _, ok := t2.(*type_system.TypeVarType); ok {
+	if t2IsTypeVar {
 		return c.bind(ctx, t1, t2)
 	}
 	// | MutableType, MutableType -> ...

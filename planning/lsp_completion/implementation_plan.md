@@ -671,15 +671,15 @@ properly recovered ASTs.
 Mechanical changes that establish the type system groundwork.
 
 ```
-Step 1.1: Rename EmptyExpr → ErrorExpr                              [LOW risk]
-Step 1.2: Trailing dot recovery (verify existing behavior)          [LOW risk]
-Step 2.1: Introduce ErrorType (+ sumtype checker audit)             [MEDIUM-HIGH risk]
-Step 2.4: Assign ErrorType to error nodes                           [LOW risk]
-Step 2.2: ErrorType unification                                     [HIGH risk]
-Step 2.3: ErrorType in member access and calls                      [LOW risk]
+Step 1.1: Rename EmptyExpr → ErrorExpr                              [DONE] 1e5c806
+Step 1.2: Trailing dot recovery (verify existing behavior)          [DONE] 0305bf3
+Step 2.1: Introduce ErrorType (+ sumtype checker audit)             [DONE] f7777f4
+Step 2.4: Assign ErrorType to error nodes                           [DONE] f70b768
+Step 2.2: ErrorType unification                                     [DONE] 8ff566f
+Step 2.3: ErrorType in member access and calls                      [DONE] ebd10a6
 ```
 
-After this milestone: the type checker handles syntax errors gracefully. The
+**Status: COMPLETE.** The type checker handles syntax errors gracefully. The
 parser still only recovers trailing dots, but the checker no longer produces
 cascading diagnostics from those errors.
 

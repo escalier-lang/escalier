@@ -122,22 +122,6 @@ test('textDocument/didOpen', async () => {
           "severity": 1,
           "source": "escalier",
         },
-        {
-          "code": "ERR_CODE",
-          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
-          "range": {
-            "end": {
-              "character": 0,
-              "line": 2,
-            },
-            "start": {
-              "character": 0,
-              "line": 2,
-            },
-          },
-          "severity": 1,
-          "source": "escalier",
-        },
       ]
     `);
 });
@@ -186,22 +170,6 @@ test('textDocument/didChange', async () => {
       [
         {
           "message": "Expected an expression",
-          "range": {
-            "end": {
-              "character": 0,
-              "line": 2,
-            },
-            "start": {
-              "character": 0,
-              "line": 2,
-            },
-          },
-          "severity": 1,
-          "source": "escalier",
-        },
-        {
-          "code": "ERR_CODE",
-          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
           "range": {
             "end": {
               "character": 0,

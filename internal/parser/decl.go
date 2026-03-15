@@ -448,7 +448,7 @@ func (p *Parser) varDecl(
 		if init == nil {
 			token := p.lexer.peek()
 			p.reportError(token.Span, "Expected an expression")
-			init = ast.NewEmpty(token.Span)
+			init = ast.NewError(token.Span)
 		}
 		end = init.Span().End
 	}

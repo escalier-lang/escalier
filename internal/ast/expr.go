@@ -20,7 +20,7 @@ type Expr interface {
 	Inferrable
 }
 
-func (*EmptyExpr) isExpr()             {}
+func (*ErrorExpr) isExpr()             {}
 func (*BinaryExpr) isExpr()            {}
 func (*UnaryExpr) isExpr()             {}
 func (*LiteralExpr) isExpr()           {}
@@ -46,15 +46,15 @@ func (*TypeCastExpr) isExpr()          {}
 func (*YieldExpr) isExpr()             {}
 func (*ArraySpreadExpr) isExpr()       {}
 
-type EmptyExpr struct {
+type ErrorExpr struct {
 	span         Span
 	inferredType Type
 }
 
-func NewEmpty(span Span) *EmptyExpr {
-	return &EmptyExpr{span: span, inferredType: nil}
+func NewError(span Span) *ErrorExpr {
+	return &ErrorExpr{span: span, inferredType: nil}
 }
-func (e *EmptyExpr) Accept(v Visitor) {
+func (e *ErrorExpr) Accept(v Visitor) {
 	v.EnterExpr(e)
 	v.ExitExpr(e)
 }
