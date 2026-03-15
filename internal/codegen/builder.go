@@ -562,6 +562,8 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 
 		forOfStmt := NewForOfStmt(pat, iterableExpr, bodyStmts, s.IsAwait, s)
 		return append(iterableStmts, forOfStmt)
+	case *ast.ErrorStmt:
+		return []Stmt{}
 	default:
 		panic("TransformStmt - default case should never happen")
 	}

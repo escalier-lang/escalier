@@ -32,6 +32,8 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 		return errors
 	case *ast.ForInStmt:
 		return c.inferForInStmt(ctx, stmt)
+	case *ast.ErrorStmt:
+		return nil
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}

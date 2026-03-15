@@ -86,31 +86,40 @@ recovery paths were already working correctly. The actual changes were minimal.
 
 ### Step 1.4: Statement-Level Recovery (R1.5.1, R1.5.2, R1.4.3)
 
-**Risk: MEDIUM** — Wrong boundary detection could swallow valid statements.
+**Status: DONE**
 
-**Files:**
-- `internal/ast/stmt.go` — add `ErrorStmt` node
-- `internal/ast/visitor.go` — add `ErrorStmt` to visitor
-- `internal/parser/stmt.go` — recovery logic
-- `internal/checker/infer_stmt.go` — handle `ErrorStmt` (no-op)
-- `internal/codegen/builder.go` — handle `ErrorStmt` (skip)
+**Files changed:**
+- `internal/ast/stmt.go` — added `ErrorStmt` struct (span-only, no children)
+- `internal/parser/stmt.go` — added `skipToNextStatement` method and recovery
+  logic in `stmts()`
+- `internal/checker/infer_stmt.go` — added `ErrorStmt` case (returns nil)
+- `internal/codegen/builder.go` — added `ErrorStmt` case (returns empty slice)
+- `internal/printer/printer.go` — added `ErrorStmt` case (no-op)
+- `internal/parser/parser_test.go` — added `TestStatementRecovery` tests
 
-**Mitigations:**
-- **Multi-error tests**: Write tests with 2–3 syntax errors in the same file and
-  verify each subsequent statement is still parsed correctly.
+**What was done:**
 
-**Approach:**
-1. Define `ErrorStmt` in the AST with only a `Span` covering the skipped tokens
-   (R1.4.3). No message or token storage needed.
-2. In the top-level statement parsing loop, if `parseStmt` fails (returns nil or
-   panics are caught), skip tokens until the next statement boundary:
-   - Newline
-   - Semicolon
-   - EOF
-   - Statement-initiating keywords: `val`, `let`, `fn`, `type`, `interface`,
-     `enum`, `class`, `return`, `throw`, `for`, `if`, `import`, `export`,
-     `declare`
-3. Wrap the skipped region in an `ErrorStmt` and continue parsing.
+1. **Added `ErrorStmt` AST node** with only a `Span` field. No children to visit,
+   no message storage — the parser's error list is authoritative.
+
+2. **Added `skipToNextStatement` method** that consumes tokens until reaching a
+   statement boundary: EOF, the stop token, a newline, or a statement-initiating
+   keyword (`val`, `var`, `fn`, `type`, `interface`, `enum`, `class`, `return`,
+   `throw`, `for`, `if`, `import`, `export`, `declare`, `async`).
+
+3. **Updated `stmts()` recovery logic**: when `stmt()` returns nil, the parser
+   now produces an `ErrorStmt` covering the failed region. Two sub-cases:
+   - If no tokens were consumed (e.g. stray `)`), `skipToNextStatement` advances
+     past the unparseable tokens before creating the `ErrorStmt`.
+   - If tokens were consumed by the expression parser's own error handling (e.g.
+     unknown `@` tokens), the `ErrorStmt` covers the consumed region directly.
+
+4. **Added handler cases** in the checker (no-op), codegen (skip), and printer
+   (no-op) so `ErrorStmt` doesn't cause panics in downstream passes.
+
+5. **Added tests**: `ErrorBetweenValidStatements`, `MultipleErrorsBetweenStatements`,
+   `ErrorAtStart` — all verify that valid statements surrounding errors are parsed
+   correctly and `ErrorStmt` nodes appear in the AST.
 
 ### Step 1.5: Declaration-Level Recovery (R1.6.1, R1.6.2)
 
@@ -678,7 +687,7 @@ incrementally.
 
 ```
 Step 1.3: General expression recovery                               [DONE]
-Step 1.4: Statement-level recovery (ErrorStmt)                      [MEDIUM risk]
+Step 1.4: Statement-level recovery (ErrorStmt)                      [DONE]
 Step 1.5: Declaration-level recovery                                [HIGH risk]
 Step 1.6: Document recovery strategy                                [LOW risk]
 ```

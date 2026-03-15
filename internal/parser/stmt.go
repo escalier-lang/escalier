@@ -4,6 +4,29 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// skipToNextStatement consumes tokens until reaching a statement boundary:
+// EOF, the given stop token, a newline boundary, or a statement-initiating keyword.
+func (p *Parser) skipToNextStatement(stopOn TokenType) {
+	for {
+		token := p.lexer.peek()
+		// nolint: exhaustive
+		switch token.Type {
+		case EndOfFile, stopOn:
+			return
+		case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
+			For, If, Import, Export, Declare, Async:
+			return
+		default:
+			p.lexer.consume()
+			// Stop if the next token is on a different line (statement boundary).
+			next := p.lexer.peek()
+			if next.Span.Start.Line != token.Span.Start.Line {
+				return
+			}
+		}
+	}
+}
+
 // block = '{' stmt* '}'
 func (p *Parser) block() ast.Block {
 	var start ast.Location
@@ -52,14 +75,18 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 				stmts = append(stmts, stmt)
 			} else {
 				nextToken := p.lexer.peek()
-				// If no tokens have been consumed then we've encountered
-				// something we don't know how to parse.  We consume the token
-				// and then try to parse the another statement.
 				if token.Span.End.Line == nextToken.Span.End.Line &&
 					token.Span.End.Column == nextToken.Span.End.Column {
+					// No tokens were consumed — skip to the next statement
+					// boundary to avoid an infinite loop.
 					p.reportError(token.Span, "Unexpected token")
-					p.lexer.consume()
+					p.skipToNextStatement(stopOn)
+					nextToken = p.lexer.peek()
 				}
+				// Wrap the failed statement region in an ErrorStmt.
+				stmts = append(stmts, ast.NewErrorStmt(
+					ast.Span{Start: token.Span.Start, End: nextToken.Span.Start, SourceID: p.lexer.source.ID},
+				))
 			}
 			token = p.lexer.peek()
 		}

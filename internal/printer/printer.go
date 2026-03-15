@@ -141,6 +141,8 @@ func (p *Printer) printStmt(stmt ast.Stmt) {
 			p.space()
 			p.printExpr(s.Expr)
 		}
+	case *ast.ErrorStmt:
+		// Skip error recovery nodes
 	default:
 		p.writeString("/* unknown statement */")
 	}
