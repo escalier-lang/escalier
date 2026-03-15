@@ -87,6 +87,7 @@ func (*TemplateLitType) isType()  {}
 func (*IntrinsicType) isType()    {}
 func (*NamespaceType) isType()    {}
 func (*RegexType) isType()        {}
+func (*ErrorType) isType()        {}
 
 func Prune(t Type) Type {
 	switch t := t.(type) {
@@ -584,6 +585,30 @@ func (t *NeverType) Equals(other Type) bool {
 
 func (t *NeverType) String() string {
 	return "never"
+}
+
+type ErrorType struct {
+	provenance Provenance
+}
+
+func (t *ErrorType) Accept(v TypeVisitor) Type {
+	if result := v.EnterType(t); result != nil {
+		t = result.(*ErrorType)
+	}
+	if result := v.ExitType(t); result != nil {
+		return result
+	}
+	return t
+}
+
+func NewErrorType(provenance Provenance) *ErrorType { return &ErrorType{provenance: provenance} }
+func (t *ErrorType) Equals(other Type) bool {
+	_, ok := other.(*ErrorType)
+	return ok
+}
+
+func (t *ErrorType) String() string {
+	return "<error>"
 }
 
 type VoidType struct {
