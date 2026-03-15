@@ -263,8 +263,14 @@ func (c *Checker) inferTypeDecl(
 	result := c.buildTypeParams(ctx, decl.TypeParams, nil)
 	errors := result.Errors
 
-	t, typeErrors := c.inferTypeAnn(result.Ctx, decl.TypeAnn)
-	errors = slices.Concat(errors, typeErrors)
+	var t type_system.Type
+	if decl.TypeAnn == nil {
+		t = type_system.NewErrorType(nil)
+	} else {
+		var typeErrors []Error
+		t, typeErrors = c.inferTypeAnn(result.Ctx, decl.TypeAnn)
+		errors = slices.Concat(errors, typeErrors)
+	}
 
 	typeAlias := type_system.TypeAlias{
 		Type:       t,
