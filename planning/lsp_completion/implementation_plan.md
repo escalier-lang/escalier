@@ -5,9 +5,9 @@ area into three phases — parser recovery, error-tolerant type inference, and t
 completion handler — but the phases are **not** executed in numeric order. The
 risk-aware [Implementation Order](#implementation-order) section defines the
 actual sequencing: error-tolerant type inference first (to establish correctness),
-then the completion handler (to deliver end-to-end functionality), then parser
-recovery (to expand coverage). This front-loads the type system changes and
-defers the highest-risk parser work until a working completion path exists.
+then parser recovery (so incomplete code produces usable ASTs), then the
+completion handler (to deliver end-to-end functionality). This ensures the
+completion handler can be tested against properly recovered ASTs from the start.
 
 ---
 
@@ -225,20 +225,28 @@ to ErrorType, and conditional types.
 - `internal/checker/unify.go` — add `ErrorType` cases
 
 **Mitigations:**
-- **Add ErrorType check at the very top of `unifyWithDepth`**: Before any other
-  logic, check if either type is `*ErrorType` and return nil. This ensures it's
-  handled before any type-specific branches that might not expect it.
-- **Prevent binding TypeVarType to ErrorType**: When unifying `TypeVarType` with
-  `ErrorType`, succeed without binding the variable to ErrorType. Otherwise
-  ErrorType could propagate through type inference via variable resolution.
+- **Add ErrorType check after Prune but before type-specific dispatch**: In
+  `unifyWithDepth`, after the existing `Prune` calls on both types (which resolve
+  `TypeVarType` to their bound values) but before the `TypeVarType` binding logic
+  and type-specific dispatch (the chain of type assertions starting with
+  `TypeVarType`, `MutabilityType`, etc.), check whether either pruned type is
+  `*ErrorType` and handle it before the general type-specific dispatch. This
+  placement ensures type variables are resolved via `Prune` first. If one side
+  is still a `TypeVarType` (unresolved) and the other is `ErrorType`, call
+  `bind()` so the variable resolves to `ErrorType`. Otherwise return nil
+  immediately.
 - **Write targeted combination tests**: Test ErrorType against each of
   {PrimType, ObjectType, FuncType, UnionType, IntersectionType, TypeVarType,
   TupleType}. Include nested scenarios like `unify(Union(ErrorType, number), string)`.
 
 **Approach:**
-1. In the `Unify` function, add early-return cases:
-   - If either side is `*ErrorType`, return `nil` (no error). The unified result
-     is the non-error side. If both are `ErrorType`, the result is `ErrorType`.
+1. In `unifyWithDepth`, after the `Prune` calls but before the existing
+   `TypeVarType` binding and type-specific dispatch, add an ErrorType check:
+   - If one side is `*TypeVarType` and the other is `*ErrorType`, call `bind()`
+     to bind the variable to `ErrorType` and return nil. This is necessary so
+     that the type variable resolves to `ErrorType` rather than remaining
+     unbound.
+   - Otherwise, if either side is `*ErrorType`, return `nil` (no error).
 2. This single change handles cascading suppression for binary/unary operators
    and function calls automatically: operators are modeled as `FuncType`s in
    `prelude.go`, so when an `ErrorType` operand is unified with the expected
@@ -253,21 +261,24 @@ to ErrorType, and conditional types.
                   // result: number — no error reported
    ```
 
-### Step 2.3: ErrorType in Member Access and Calls (R2.1.3)
+### Step 2.3: ErrorType in Member Access, Index Expressions, and Calls (R2.1.3)
 
 **Files:**
-- `internal/checker/infer_expr.go` — member access, calls
+- `internal/checker/infer_expr.go` — member access, index expressions, calls
 
 **Approach:**
 
 Unlike binary/unary operators (handled by unification in Step 2.2), member
-access and calls on an `ErrorType` value need explicit handling because there
-is no underlying type to look up members or return types from:
+access, index expressions, and calls on an `ErrorType` value need explicit
+handling because there is no underlying type to look up members, indices, or
+return types from:
 
 1. In `inferMemberExpr`: if the object's inferred type is `ErrorType`, return
    `ErrorType` without reporting an "unknown property" error. (There is no
    type to look up the member on.)
-2. In `inferCallExpr`: if the callee's inferred type is `ErrorType`, return
+2. In `inferIndexExpr`: if the object's inferred type is `ErrorType`, return
+   `ErrorType` without reporting an error. (There is no type to index into.)
+3. In `inferCallExpr`: if the callee's inferred type is `ErrorType`, return
    `ErrorType` without reporting a "not callable" error. (There is no
    `FuncType` to extract a return type from.)
 
@@ -324,24 +335,23 @@ completion request holds a read lock on the same goroutine), the server deadlock
 
 **Mitigations:**
 - **Keep the critical section minimal**: Take the write lock only to swap the
-  stored data (scope map, AST cache), not during parsing/checking. Parse and check
-  outside the lock, then swap atomically under the lock.
+  stored data (AST cache), not during parsing/checking. Parse and check outside
+  the lock, then swap atomically under the lock.
 - **Never call `validate()` from within a locked section**: Document this
   invariant with a comment.
 
 **Approach:**
-1. Add fields to the `Server` struct (the existing `astCache` already stores
-   parsed scripts):
+1. Add a mutex to the `Server` struct to synchronize access to `astCache`
+   (which already stores parsed scripts with inferred types):
    ```go
-   mu        sync.RWMutex
-   scopeMaps map[protocol.DocumentUri]map[ast.Node]*checker.Scope
+   mu sync.RWMutex
    ```
-2. In `validate()`, after parsing and type-checking, store the scope mapping
-   so the completion handler can look up the scope at any cursor position. The
-   parsed script is already stored in `astCache`.
-3. Use `mu` (RWMutex) to synchronize access: `didChange`/`didOpen` take a write
+   No additional scope map is needed — scope-based completions (Step 3.5)
+   traverse the AST directly and read types from `InferredType` on declaration
+   nodes.
+2. Use `mu` (RWMutex) to synchronize access: `didChange`/`didOpen` take a write
    lock, `completion` takes a read lock (R4.1.3).
-4. Ensure `validate()` is called from `textDocumentDidOpen` (not just
+3. Ensure `validate()` is called from `textDocumentDidOpen` (not just
    `textDocumentDidChange`) so that completions are available immediately after
    opening a file without requiring an edit (R4.1.2).
 
@@ -361,6 +371,12 @@ nested contexts.
   Return the top of the stack as the parent. This handles nested nodes correctly.
 - **Test the three completion cases explicitly**: Case A (`foo.`), Case B
   (`foo.ba|`), Case C (bare `con|`). Verify the parent is correct for each.
+- **Test in modules (multi-file packages)**: Modules merge multiple files from
+  `lib/` into a single module. Verify that `findNodeInScript` correctly locates
+  nodes when the completion request targets a specific file within a multi-file
+  module. The handler must identify which file the cursor is in, find the node
+  within that file's AST, and resolve the correct file scope (not just the
+  shared module scope).
 
 **Approach:**
 1. Extend `findNodeInScript` to return both the found node and its parent node
@@ -423,43 +439,62 @@ nested contexts.
 
 ### Step 3.5: Scope-Based Completions (R3.5.1–R3.5.6)
 
-**Risk: MEDIUM-HIGH** — This requires adding a `ScopeMap` to the checker that
-records which scope each AST node belongs to. The mapping must be populated at
-every scope-creation point, and any missed point means completions silently fail
-for that context. The declaration-before-cursor filtering also requires comparing
-spans, which is tricky for multi-line declarations.
+**Risk: MEDIUM** — Collecting in-scope bindings requires traversing the AST to
+find declarations before the cursor, then walking the scope chain for outer
+scopes. The declaration-before-cursor logic must correctly handle different scope
+levels (local vs module vs global) and multi-file modules.
 
 **Files:**
 - `cmd/lsp-server/completion.go`
-- `internal/checker/scope.go` — add scope mapping infrastructure
 
 **Mitigations:**
-- **Centralize scope map updates in `WithNewScope`**: Rather than modifying every
-  inference function, hook into the scope creation function itself. When
-  `WithNewScope` is called, record the association between the current AST node
-  and the new scope. This reduces the number of code paths to modify.
-- **Start with a coarse mapping**: Initially, map only top-level
-  statements/declarations to their scope (not every sub-expression). This gives
-  correct completions for most cursor positions. Refine to inner expressions only
-  if needed.
 - **Test with nested scopes**: Write tests for: function body, nested blocks,
-  for-loop body, if/else branches, and closures. Verify the correct scope is
-  resolved at cursor positions in each.
+  for-loop body, if/else branches, and closures. Verify the correct bindings are
+  returned at cursor positions in each.
+- **Test multi-file modules**: Verify that file-scoped imports are included but
+  imports from other files in the same module are not.
 
 **Approach:**
-1. **Add scope mapping to the checker** (R3.5.1): During type inference, record
-   a mapping from AST nodes to their enclosing `Scope`. This requires:
-   - Adding a `ScopeMap map[ast.Node]*Scope` field to `checker.Context`.
-   - In `inferExpr`, `inferStmt`, and scope-creating functions (`inferFunc`,
-     block inference), recording the current scope for each visited node.
-   - Returning the scope map alongside inference results so the LSP server can
-     store it.
 
-2. Write a function `scopeCompletions(scope *checker.Scope, cursorPos ast.Location, prefix string) []protocol.CompletionItem`.
+The approach differs by scope level. For scopes where declaration order matters
+(scripts, function bodies, blocks), we traverse the AST to find declarations
+before the cursor and look up their types via `InferredType` on the declaration's
+pattern nodes. For scopes where all bindings are visible regardless of position
+(module scope, global scope), we read directly from the `Scope.Namespace`.
 
-3. Walk the scope chain from the innermost scope outward. The scope hierarchy
-   differs between modules and scripts (see `packages_vs_globals/requirements.md`
-   section 6.1):
+1. **Local completions from AST traversal** (R3.5.1): Write a function that
+   traverses the AST from the file/script root, collecting variable bindings
+   declared before the cursor position. For each binding found:
+   - Walk the statements in order. Stop when a statement's span is past the
+     cursor.
+   - For `VarDecl`: extract the binding name(s) from the `Pattern` field. Use
+     `pattern.InferredType()` on the `IdentPat` (or nested patterns) to get
+     the variable's type. Only include if the declaration span is before the
+     cursor.
+   - For `FuncDecl`: in scripts, function declarations are hoisted — the
+     function name is visible throughout the entire script scope regardless of
+     where the declaration appears. Include all `FuncDecl` bindings from the
+     script scope unconditionally (don't filter by cursor position). Use
+     `funcDecl.InferredType` for the type. In function/block scopes,
+     `FuncDecl` is not hoisted and should be filtered by cursor position like
+     `VarDecl`.
+   - For function parameters: when the cursor is inside a function body,
+     include all parameters. Each parameter's type is available via
+     `param.Pattern.InferredType()`.
+   - For `for..in` loop variables: when the cursor is inside the loop body,
+     include the loop variable.
+   - For block-scoped bindings (if/else, match arms): only include if the
+     cursor is inside that block.
+   - For import statements: include the imported bindings (namespaces and
+     named imports). These are always visible within the file regardless of
+     position. In scripts, this means the AST traversal handles all
+     script-scope bindings (variables, functions, and imports), so the script
+     scope can be skipped entirely in step 2.
+
+2. **Scope chain for outer scopes**: Once local bindings are collected, walk the
+   scope chain from the enclosing scope outward for bindings that aren't
+   position-dependent. The scope hierarchy differs between modules and scripts
+   (see `packages_vs_globals/requirements.md` section 6.1):
 
    **Modules** (three levels):
    ```
@@ -476,32 +511,33 @@ spans, which is tricky for multi-line declarations.
    ```
    globalScope (globals)
        ↑ Parent
-   scriptScope (local declarations + import bindings)
+   scriptScope (all script-level bindings)
        ↑ Parent
    [inner scopes: function, block, etc.]
    ```
 
-   At each scope level, collect:
-   - `scope.Namespace.Values` — each binding becomes a completion item.
-     For inner scopes (function, block), file scope, and script scope, only
-     include bindings whose declaration appears before the cursor position.
-     For the module scope, include all bindings (declarations are processed by
-     dependency graph, not source order). For the global scope, include all
-     bindings.
-   - `scope.Namespace.Types` — each type alias becomes a completion item
-     with `Kind` based on the underlying `ObjectType`: `Class` if `Nominal` is
-     true, `Interface` if `Interface` is true, `Struct` otherwise (R3.5.3).
-   - `scope.Namespace.Namespaces` — each child namespace becomes a completion
-     item with `Kind: Module`. In modules, import bindings appear as
-     sub-namespaces in the file scope (e.g., `lodash`, `ramda`). These are
-     file-scoped: an import in one file is NOT visible to other files in the
-     same module. In scripts, import bindings appear as sub-namespaces in the
-     script scope.
+   For scripts, **skip the script scope entirely** — all script-scope bindings
+   (variables, hoisted functions, and imports) are already collected by the AST
+   traversal in step 1. Only the global scope needs to be walked.
 
-4. Track seen names to handle shadowing: if a name was already collected from an
-   inner scope, skip it in outer scopes (R3.5.6).
-5. Filter by prefix (case-insensitive) if the user has typed characters (R3.5.5).
-6. The global scope (prelude) is reached naturally by walking the parent chain
+   At each scope level (excluding skipped scopes), collect from
+   `scope.Namespace`:
+   - `Values` — each binding becomes a completion item. For the module scope,
+     include all bindings (declarations are processed by dependency graph, not
+     source order). For the global scope, include all bindings.
+   - `Types` — each type alias becomes a completion item with `Kind` based on
+     the underlying `ObjectType`: `Class` if `Nominal` is true, `Interface` if
+     `Interface` is true, `Struct` otherwise (R3.5.3).
+   - `Namespaces` — each child namespace becomes a completion item with
+     `Kind: Module`. In modules, import bindings appear as sub-namespaces in
+     the file scope (e.g., `lodash`, `ramda`). These are file-scoped: an
+     import in one file is NOT visible to other files in the same module. In
+     scripts, import bindings appear as sub-namespaces in the script scope.
+
+3. Track seen names to handle shadowing: if a name was already collected from an
+   inner scope or from the AST traversal, skip it in outer scopes (R3.5.6).
+4. Filter by prefix (case-insensitive) if the user has typed characters (R3.5.5).
+5. The global scope (prelude) is reached naturally by walking the parent chain
    to the root — no special handling needed (R3.5.2).
 
 ### Step 3.6: Optional Chaining (R3.9.1)
@@ -614,15 +650,13 @@ spans, which is tricky for multi-line declarations.
 
 ## Implementation Order
 
-The implementation order below is risk-aware: it front-loads the type system
-changes (which affect correctness globally) and builds a working end-to-end
-completion path before tackling the high-risk parser recovery work. This means
-completions work with the existing partial recovery (trailing dot) early on,
-and the harder parser recovery steps extend coverage incrementally.
+The implementation order below front-loads the type system changes and parser
+recovery so that the completion handler can be tested end-to-end against
+properly recovered ASTs.
 
 ### Milestone 1: ErrorType Foundation
 
-Low-risk mechanical changes that establish the type system groundwork.
+Mechanical changes that establish the type system groundwork.
 
 ```
 Step 1.1: Rename EmptyExpr → ErrorExpr                              [LOW risk]
@@ -637,32 +671,12 @@ After this milestone: the type checker handles syntax errors gracefully. The
 parser still only recovers trailing dots, but the checker no longer produces
 cascading diagnostics from those errors.
 
-### Milestone 2: End-to-End Completions
+### Milestone 2: Parser Recovery
 
-Builds the completion handler on top of the ErrorType foundation. Member
-completions (`.` trigger) work first, then scope-based completions.
-
-```
-Step 3.1: Register handler + capabilities                           [LOW risk]
-Step 3.2: Store scope mapping + validation on didOpen (with mutex)  [MEDIUM risk]
-Step 3.3: Find relevant node (with parent tracking)                 [MEDIUM risk]
-Step 3.4: Member completions from types (with Prune)                [LOW risk]
-Step 3.5: Scope-based completions (with scope mapping)              [MEDIUM-HIGH risk]
-Step 3.6: Optional chaining                                         [LOW risk]
-Step 3.7: Filtering                                                 [LOW risk]
-Step 3.8: Result limiting                                           [LOW risk]
-Step 3.9: Completion item details                                   [LOW risk]
-```
-
-After this milestone: completions work end-to-end for `.` triggers and bare
-identifiers. Coverage is limited to cases where the existing parser produces
-usable ASTs (trailing dot, complete expressions).
-
-### Milestone 3: Parser Recovery
-
-Extends the parser to recover from more syntax errors, expanding the set of
-situations where completions work. These steps are high-risk and should be
-tackled incrementally.
+Extends the parser to recover from more syntax errors. Without this, the
+completion handler cannot be tested end-to-end because the parser won't produce
+usable ASTs for incomplete code. These steps are high-risk and should be tackled
+incrementally.
 
 ```
 Step 1.3: General expression recovery                               [HIGH risk]
@@ -672,8 +686,28 @@ Step 1.6: Document recovery strategy                                [LOW risk]
 ```
 
 After this milestone: the parser recovers from most common syntax errors,
-providing usable ASTs for the checker and completion handler in nearly all
-editing scenarios.
+providing usable ASTs for the checker and completion handler.
+
+### Milestone 3: End-to-End Completions
+
+Builds the completion handler on top of the ErrorType and parser recovery
+foundations. Member completions (`.` trigger) work first, then scope-based
+completions.
+
+```
+Step 3.1: Register handler + capabilities                           [LOW risk]
+Step 3.2: Synchronize AST cache + validation on didOpen (with mutex)[MEDIUM risk]
+Step 3.3: Find relevant node (with parent tracking)                 [MEDIUM risk]
+Step 3.4: Member completions from types (with Prune)                [LOW risk]
+Step 3.5: Scope-based completions (AST traversal + scope chain)     [MEDIUM risk]
+Step 3.6: Optional chaining                                         [LOW risk]
+Step 3.7: Filtering                                                 [LOW risk]
+Step 3.8: Result limiting                                           [LOW risk]
+Step 3.9: Completion item details                                   [LOW risk]
+```
+
+After this milestone: completions work end-to-end for `.` triggers and bare
+identifiers across all syntax error recovery scenarios.
 
 ### Testing
 
@@ -681,9 +715,9 @@ Tests should be written alongside each milestone (not deferred to the end).
 Phase 4 calls out the full test matrix for completeness.
 
 ```
-Step 4.1: Parser recovery tests (alongside Milestone 3)
+Step 4.1: Parser recovery tests (alongside Milestone 2)
 Step 4.2: Type inference tests (alongside Milestone 1)
-Step 4.3: Completion handler tests (alongside Milestone 2)
+Step 4.3: Completion handler tests (alongside Milestone 3)
 ```
 
 ---
