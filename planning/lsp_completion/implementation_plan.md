@@ -150,7 +150,7 @@ For each sub-requirement:
 4. Update all `TypeVisitor` implementations to handle `ErrorType` (initially
    returning the type unchanged).
 
-### Step 2.2: ErrorType Unification (R2.1.2)
+### Step 2.2: ErrorType Unification (R2.1.2, R2.1.3, R2.3.1)
 
 **Files:**
 - `internal/checker/unify.go` — add `ErrorType` cases
@@ -159,28 +159,37 @@ For each sub-requirement:
 1. In the `Unify` function, add early-return cases:
    - If either side is `*ErrorType`, return `nil` (no error). The unified result
      is the non-error side. If both are `ErrorType`, the result is `ErrorType`.
-2. This prevents cascading unification failures from a single syntax error.
+2. This single change handles cascading suppression for binary/unary operators
+   and function calls automatically: operators are modeled as `FuncType`s in
+   `prelude.go`, so when an `ErrorType` operand is unified with the expected
+   parameter type, unification succeeds silently and the operator's return type
+   is inferred normally. For example:
+   ```
+   val a = obj.  // a: ErrorType (syntax error)
+   val b = 5     // b: number
+   val c = a + b // + is FuncType{params: [number, number], return: number}
+                  // unify(ErrorType, number) → success
+                  // unify(number, number) → success
+                  // result: number — no error reported
+   ```
 
-### Step 2.3: ErrorType in Operations (R2.1.3)
+### Step 2.3: ErrorType in Member Access and Calls (R2.1.3)
 
 **Files:**
-- `internal/checker/infer_expr.go` — member access, call, binary ops
+- `internal/checker/infer_expr.go` — member access, calls
 
 **Approach:**
 
-`ErrorType` does **not** propagate through operations. The checker infers the
-result type as if the `ErrorType` operand were valid:
+Unlike binary/unary operators (handled by unification in Step 2.2), member
+access and calls on an `ErrorType` value need explicit handling because there
+is no underlying type to look up members or return types from:
 
-1. In `inferBinaryExpr`: if one operand is `ErrorType` and the other is a valid
-   type, infer the result from the valid operand (e.g. `ErrorType + number` →
-   `number`). If both are `ErrorType`, return `ErrorType`. Do not report an
-   operator error.
-2. In `inferMemberExpr`: if the object's inferred type is `ErrorType`, return
-   `ErrorType` (there is no valid type to infer from). Do not report an
-   "unknown property" error.
-3. In `inferCallExpr`: if the callee's inferred type is `ErrorType`, return
-   `ErrorType` (there is no valid return type to infer). Do not report a
-   "not callable" error.
+1. In `inferMemberExpr`: if the object's inferred type is `ErrorType`, return
+   `ErrorType` without reporting an "unknown property" error. (There is no
+   type to look up the member on.)
+2. In `inferCallExpr`: if the callee's inferred type is `ErrorType`, return
+   `ErrorType` without reporting a "not callable" error. (There is no
+   `FuncType` to extract a return type from.)
 
 ### Step 2.4: Assign ErrorType to Error Nodes (R2.2.1–R2.2.3)
 
@@ -195,30 +204,10 @@ result type as if the `ErrorType` operand were valid:
    - Set the overall `MemberExpr` inferred type to `ErrorType`.
 3. For any other error-recovery AST nodes (e.g. `ErrorStmt` doesn't need a type,
    but expressions within recovered statements should follow the above rules).
-
-### Step 2.5: Suppress Cascading Diagnostics (R2.3.1, R2.3.2)
-
-**Files:**
-- `internal/checker/infer_expr.go` — guard error-reporting paths
-- `internal/checker/unify.go` — already handled by Step 2.2
-
-**Approach:**
-1. Before reporting type errors in the checker, check whether any involved type
-   is `ErrorType`. If so, suppress the error and infer the result from the
-   non-error operand(s).
-2. Use a helper function:
-   ```go
-   func involvesErrorType(types ...type_system.Type) bool {
-       for _, t := range types {
-           if _, ok := t.(*type_system.ErrorType); ok {
-               return true
-           }
-       }
-       return false
-   }
-   ```
-3. Apply this check at key error-reporting sites: binary ops, member access,
-   call expressions, unification failures that would be reported to the user.
+4. Genuine type errors in well-formed expressions must still be reported, even
+   if they appear in the same file as syntax errors (R2.3.2). The `ErrorType`
+   suppression is scoped to unification (Step 2.2) and direct operations on
+   `ErrorType` values (Step 2.3) — all other error reporting remains unchanged.
 
 ---
 
@@ -243,24 +232,27 @@ result type as if the `ErrorType` operand were valid:
 2. Add `TextDocumentCompletion: s.textDocumentCompletion` to the handler map.
 3. Stub the handler to return an empty `[]protocol.CompletionItem`.
 
-### Step 3.2: Store Parsed AST, Types, and Scope Mapping (prerequisite)
+### Step 3.2: Store Scope Mapping and Ensure Validation on Open (R4.1.1–R4.1.3)
 
 **Files:**
 - `cmd/lsp-server/main.go` — add fields to `Server` struct
 - `cmd/lsp-server/text_document.go` — update `validate()` to store results
 
 **Approach:**
-1. Add fields to the `Server` struct:
+1. Add fields to the `Server` struct (the existing `astCache` already stores
+   parsed scripts):
    ```go
    mu        sync.RWMutex
-   scripts   map[protocol.DocumentUri]*ast.Script
-   contexts  map[protocol.DocumentUri]*checker.Context
    scopeMaps map[protocol.DocumentUri]map[ast.Node]*checker.Scope
    ```
-2. In `validate()`, after parsing and type-checking, store the script, context,
-   and scope mapping so the completion handler can access them.
+2. In `validate()`, after parsing and type-checking, store the scope mapping
+   so the completion handler can look up the scope at any cursor position. The
+   parsed script is already stored in `astCache`.
 3. Use `mu` (RWMutex) to synchronize access: `didChange`/`didOpen` take a write
    lock, `completion` takes a read lock (R4.1.3).
+4. Ensure `validate()` is called from `textDocumentDidOpen` (not just
+   `textDocumentDidChange`) so that completions are available immediately after
+   opening a file without requiring an edit (R4.1.2).
 
 ### Step 3.3: Find Relevant Node (R3.3.1–R3.3.4)
 
@@ -274,14 +266,22 @@ result type as if the `ErrorType` operand were valid:
    previous node as the visitor descends.
 2. Convert the LSP position (line/character) to an `ast.Location`.
 3. Use the extended `findNodeInScript` to find the node and parent at the cursor.
-4. Determine the completion context:
+4. All three `CompletionTriggerKind` values (`Invoked`, `TriggerCharacter`,
+   `TriggerForIncompleteCompletions`) use the same logic — the trigger kind
+   does not change behavior. The completion context is determined entirely by
+   the node found at the cursor position:
    - **Case A: `MemberExpr` with empty property** — the cursor is right after `.`
      → member completions on the object's inferred type.
    - **Case B: `IdentExpr` whose parent is a `MemberExpr`** — the cursor is on a
-     partial property name like `foo.ba|` → member completions filtered by the
-     typed text. The parent tracking makes this case straightforward.
+     partial property name like `foo.ba|` → member completions on the parent
+     `MemberExpr`'s object type, filtered by the typed text.
    - **Case C: Standalone `IdentExpr` or expression-expected position** → scope-
      based completions filtered by the typed text.
+
+   In Cases A and B, the handler resolves members from the object/namespace
+   type (Step 3.4). In Case C, the handler collects in-scope symbols
+   (Step 3.5). In all cases, results are filtered by any identifier text the
+   user has typed so far.
 
 ### Step 3.4: Member Completions from Types (R3.4.1–R3.4.10)
 
@@ -336,21 +336,52 @@ result type as if the `ErrorType` operand were valid:
 
 2. Write a function `scopeCompletions(scope *checker.Scope, cursorPos ast.Location, prefix string) []protocol.CompletionItem`.
 
-3. Walk the scope chain from the innermost scope outward:
-   - Collect `scope.Namespace.Values` — each binding becomes a completion item.
-     For local/function scopes and script-level scope, only include bindings
-     whose declaration appears before the cursor position. For module-level
-     scope, include all bindings (declarations are processed by dependency
-     graph, not source order).
-   - Collect `scope.Namespace.Types` — each type alias becomes a completion item
+3. Walk the scope chain from the innermost scope outward. The scope hierarchy
+   differs between modules and scripts (see `packages_vs_globals/requirements.md`
+   section 6.1):
+
+   **Modules** (three levels):
+   ```
+   globalScope (globals: Array, Promise, console, Math, etc.)
+       ↑ Parent
+   moduleScope (module-level declarations shared across files)
+       ↑ Parent
+   fileScope (file-local import bindings as sub-namespaces)
+       ↑ Parent
+   [inner scopes: function, block, etc.]
+   ```
+
+   **Scripts** (two levels):
+   ```
+   globalScope (globals)
+       ↑ Parent
+   scriptScope (local declarations + import bindings)
+       ↑ Parent
+   [inner scopes: function, block, etc.]
+   ```
+
+   At each scope level, collect:
+   - `scope.Namespace.Values` — each binding becomes a completion item.
+     For inner scopes (function, block), file scope, and script scope, only
+     include bindings whose declaration appears before the cursor position.
+     For the module scope, include all bindings (declarations are processed by
+     dependency graph, not source order). For the global scope, include all
+     bindings.
+   - `scope.Namespace.Types` — each type alias becomes a completion item
      with `Kind` based on the underlying `ObjectType`: `Class` if `Nominal` is
      true, `Interface` if `Interface` is true, `Struct` otherwise (R3.5.3).
-   - Collect `scope.Namespace.Namespaces` — each namespace becomes a completion
-     item with `Kind: Module`.
+   - `scope.Namespace.Namespaces` — each child namespace becomes a completion
+     item with `Kind: Module`. In modules, import bindings appear as
+     sub-namespaces in the file scope (e.g., `lodash`, `ramda`). These are
+     file-scoped: an import in one file is NOT visible to other files in the
+     same module. In scripts, import bindings appear as sub-namespaces in the
+     script scope.
+
 4. Track seen names to handle shadowing: if a name was already collected from an
    inner scope, skip it in outer scopes (R3.5.6).
 5. Filter by prefix (case-insensitive) if the user has typed characters (R3.5.5).
-6. Include the global scope (prelude) which contains `console`, `Math`, etc. (R3.5.2).
+6. The global scope (prelude) is reached naturally by walking the parent chain
+   to the root — no special handling needed (R3.5.2).
 
 ### Step 3.6: Optional Chaining (R3.9.1)
 
@@ -404,28 +435,9 @@ result type as if the `ErrorType` operand were valid:
 
 ---
 
-## Phase 4: Re-validation on Edit and Open
+## Phase 4: Testing
 
-### Step 4.1: Ensure Validation on didOpen and didChange (R4.1.1, R4.1.2, R4.1.3)
-
-**Files:**
-- `cmd/lsp-server/text_document.go`
-
-**Approach:**
-1. The existing `validate()` function already re-parses and re-checks on
-   `didChange`. Ensure it also runs on `didOpen` (R4.1.2), so completions are
-   available immediately after opening a file without requiring an edit.
-2. Update `validate()` to store the script, context, and scope mapping in the
-   `Server` struct (from Step 3.2) under the write lock.
-3. The completion handler reads these under the read lock, ensuring no data
-   races between `didChange`/`didOpen` (writing) and `completion` (reading)
-   (R4.1.3).
-
----
-
-## Phase 5: Testing
-
-### Step 5.1: Parser Recovery Tests (R5.1.1–R5.1.4)
+### Step 4.1: Parser Recovery Tests (R5.1.1–R5.1.4)
 
 **Files:**
 - `internal/parser/parser_test.go` (or new `recovery_test.go`)
@@ -443,7 +455,7 @@ result type as if the `ErrorType` operand were valid:
   subsequent statements.
 - Error in function body doesn't prevent parsing of subsequent declarations.
 
-### Step 5.2: Type Inference Tests (R5.2.1–R5.2.3)
+### Step 4.2: Type Inference Tests (R5.2.1–R5.2.3)
 
 **Files:**
 - `internal/checker/checker_test.go` (or new `error_type_test.go`)
@@ -455,7 +467,7 @@ result type as if the `ErrorType` operand were valid:
 - `ErrorType` call returns `ErrorType`, no "not callable" error.
 - `foo.` still infers the type of `foo` correctly.
 
-### Step 5.3: Completion Handler Tests (R5.3.1–R5.3.11)
+### Step 4.3: Completion Handler Tests (R5.3.1–R5.3.11)
 
 **Files:**
 - `cmd/lsp-server/completion_test.go` (new)
@@ -492,14 +504,13 @@ Phase 1 (Parser Recovery)
 
 Phase 2 (Error-Tolerant Inference)
   ├── Step 2.1: Introduce ErrorType
-  ├── Step 2.2: ErrorType unification
-  ├── Step 2.3: ErrorType in operations (non-propagating)
-  ├── Step 2.4: Assign ErrorType to error nodes
-  └── Step 2.5: Suppress cascading diagnostics
+  ├── Step 2.2: ErrorType unification (handles operators + cascading suppression)
+  ├── Step 2.3: ErrorType in member access and calls
+  └── Step 2.4: Assign ErrorType to error nodes (+ R2.3.2 preservation)
 
 Phase 3 (Completion Handler)
   ├── Step 3.1: Register handler + capabilities
-  ├── Step 3.2: Store AST/context/scope mapping in server (with mutex)
+  ├── Step 3.2: Store scope mapping + ensure validation on didOpen (with mutex)
   ├── Step 3.3: Find relevant node (with parent tracking)
   ├── Step 3.4: Member completions from types (with Prune)
   ├── Step 3.5: Scope-based completions (with scope mapping + declaration ordering)
@@ -508,14 +519,22 @@ Phase 3 (Completion Handler)
   ├── Step 3.8: Result limiting
   └── Step 3.9: Completion item details
 
-Phase 4 (Re-validation)
-  └── Step 4.1: Ensure validation on didOpen + didChange (with mutex)
-
-Phase 5 (Testing)
-  ├── Step 5.1: Parser recovery tests
-  ├── Step 5.2: Type inference tests
-  └── Step 5.3: Completion handler tests
+Phase 4 (Testing)
+  ├── Step 4.1: Parser recovery tests
+  ├── Step 4.2: Type inference tests
+  └── Step 4.3: Completion handler tests
 ```
 
 Tests should be written alongside each phase (not deferred to the end), but
-Phase 5 calls out the full test matrix for completeness.
+Phase 4 calls out the full test matrix for completeness.
+
+---
+
+## Future Work
+
+- **Context-aware scope completions**: Investigate limiting bare identifier
+  completions to only types or only values based on whether the cursor is in a
+  position that only makes sense for types (e.g., type annotations, type
+  parameters, `extends` clauses) or only for values (e.g., expression
+  positions, function arguments). Currently, scope-based completions return
+  both types and values regardless of context.
