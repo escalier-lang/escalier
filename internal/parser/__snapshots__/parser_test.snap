@@ -3622,20 +3622,93 @@
 ---
 
 [TestParseEnumErrorHandling/EnumMissingOpeningBrace - 1]
-&ast.ErrorStmt{
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "Result",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      nil,
+        export:     false,
+        declare:    false,
+        span:       ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:12},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:13},
+        End:      ast.Location{Line:1, Column:12},
         SourceID: 0,
     },
 }
 ---
 
 [TestParseEnumErrorHandling/EnumMissingName - 1]
-&ast.ErrorStmt{
+&ast.DeclStmt{
+    Decl: &ast.EnumDecl{
+        Name: &ast.Ident{
+            Name: "",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:6},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Elems:      {
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "Some",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:8},
+                        End:      ast.Location{Line:1, Column:12},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            &ast.EnumVariant{
+                Name: &ast.Ident{
+                    Name: "None",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:14},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                },
+                Params: nil,
+                span:   ast.Span{
+                    Start:    ast.Location{Line:1, Column:14},
+                    End:      ast.Location{Line:1, Column:18},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:20},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:6},
+        End:      ast.Location{Line:1, Column:20},
         SourceID: 0,
     },
 }
@@ -3938,63 +4011,14 @@
 ---
 
 [TestParseEnumErrorHandling/EnumMissingName - 2]
-&ast.ExprStmt{
-    Expr: &ast.ObjectExpr{
-        Elems: {
-            &ast.PropertyExpr{
-                Name: &ast.IdentExpr{
-                    Name:      "Some",
-                    Namespace: 0,
-                    Source:    nil,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:8},
-                        End:      ast.Location{Line:1, Column:12},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Optional: false,
-                Readonly: false,
-                Value:    nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:8},
-                    End:      ast.Location{Line:1, Column:12},
-                    SourceID: 0,
-                },
-            },
-            &ast.PropertyExpr{
-                Name: &ast.IdentExpr{
-                    Name:      "None",
-                    Namespace: 0,
-                    Source:    nil,
-                    span:      ast.Span{
-                        Start:    ast.Location{Line:1, Column:14},
-                        End:      ast.Location{Line:1, Column:18},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Optional: false,
-                Readonly: false,
-                Value:    nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:14},
-                    End:      ast.Location{Line:1, Column:18},
-                    SourceID: 0,
-                },
-            },
-        },
-        span: ast.Span{
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
             Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:20},
+            End:      ast.Location{Line:1, Column:7},
             SourceID: 0,
         },
-        inferredType: nil,
-    },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:6},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
+        Message: "Expected identifier after 'enum'",
     },
 }
 ---

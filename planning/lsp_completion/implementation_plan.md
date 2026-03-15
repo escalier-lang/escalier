@@ -123,35 +123,47 @@ recovery paths were already working correctly. The actual changes were minimal.
 
 ### Step 1.5: Declaration-Level Recovery (R1.6.1, R1.6.2)
 
-**Risk: HIGH** — `decl.go` has ~23 nil-return points spread across 6 declaration
-types (variable, function, type, interface, enum, class). Class parsing alone is
-~250 lines with a modifier state machine. Each declaration type has different
-structure, so there's no single recovery pattern.
+**Status: DONE**
 
-**Files:**
-- `internal/parser/decl.go` — simplify function decl recovery, add recovery to
-  other declaration types
+**Files changed:**
+- `internal/parser/decl.go` — converted nil-returns to partial AST nodes across
+  all declaration types
 
-**Mitigations:**
-- **Prioritize by frequency**: Focus on `val`/`let` declarations and function
-  declarations first since those are what users write most often. Type, interface,
-  enum, and class recovery can follow in later work.
-- **Fall back to statement-level recovery**: For complex declarations like classes,
-  don't try to recover inside the declaration body initially. Instead, fall back to
-  statement-level recovery (Step 1.4's `ErrorStmt`) when a declaration fails
-  partway through. This is coarser but much safer.
-- **Snapshot-test each declaration type**: Write a snapshot test with broken syntax
-  for each declaration type before modifying it, so regressions are immediately
-  visible.
+**What was done:**
 
-**Approach:**
-1. Review the existing ad-hoc recovery in `decl.go` (empty identifiers for
-   missing names, skipping missing parens).
-2. Refactor to use the same strategy as expression/statement recovery: produce
-   partial AST nodes with `ErrorExpr`/`ErrorStmt` for missing parts, report
-   errors, and continue.
-3. Ensure `VarDecl`, `TypeDecl`, `InterfaceDecl`, `EnumDecl` all follow the
-   same pattern.
+All six declaration types now produce partial AST nodes instead of returning nil
+when encountering errors. The changes follow a consistent pattern: report the
+error, substitute a placeholder (empty identifier, `ErrorExpr`, empty body), and
+continue parsing.
+
+1. **`varDecl` — missing `=` sign**: Now produces a `VarDecl` with `ErrorExpr`
+   as the initializer instead of returning nil. This preserves the variable name
+   and pattern for downstream use.
+
+2. **`fnDecl` — missing return type after `->`**: Now produces a `FuncDecl`
+   without a return type instead of returning nil. The function name, params,
+   and body are preserved.
+
+3. **`Decl()` — async modifier errors**: The `async` keyword with non-function
+   declarations (e.g. `async val`) now reports an error but continues parsing the
+   declaration instead of returning nil.
+
+4. **`typeDecl` — missing identifier / missing type annotation**: Uses empty
+   identifier for missing name (matching `fnDecl` pattern). Missing type
+   annotation produces a partial `TypeDecl` with nil `TypeAnn`.
+
+5. **`interfaceDecl` — missing identifier / missing `{`**: Uses empty identifier
+   for missing name. Missing opening brace produces a partial `InterfaceDecl`
+   with an empty `ObjectTypeAnn`.
+
+6. **`enumDecl` — missing identifier / missing `{`**: Uses empty identifier for
+   missing name. Missing opening brace produces a partial `EnumDecl` with nil
+   elements.
+
+7. **`classDecl` — missing identifier / extends errors / missing `{`**: Uses
+   empty identifier for missing name. Extends clause errors (missing type,
+   non-type-ref) report errors but don't bail. Missing opening brace produces a
+   partial `ClassDecl` with nil body.
 
 ### Step 1.6: Consistent Recovery Documentation (R1.1.1, R1.1.2, R1.1.3)
 
@@ -688,7 +700,7 @@ incrementally.
 ```
 Step 1.3: General expression recovery                               [DONE]
 Step 1.4: Statement-level recovery (ErrorStmt)                      [DONE]
-Step 1.5: Declaration-level recovery                                [HIGH risk]
+Step 1.5: Declaration-level recovery                                [DONE]
 Step 1.6: Document recovery strategy                                [LOW risk]
 ```
 
