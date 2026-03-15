@@ -167,16 +167,12 @@ continue parsing.
 
 ### Step 1.6: Consistent Recovery Documentation (R1.1.1, R1.1.2, R1.1.3)
 
-**Files:**
-- `internal/parser/RECOVERY.md` (new) — document the recovery strategy
+**Status: DONE**
 
-**Approach:**
-1. After implementing Steps 1.2–1.5, document the unified recovery strategy:
-   - Expression-level: return `ErrorExpr` for missing/malformed subexpressions.
-   - Statement-level: skip to next boundary, emit `ErrorStmt`.
-   - Declaration-level: same as statement-level, applied within declaration bodies.
-2. Document that skipped tokens are tracked via error diagnostics (the parser's
-   `errors` slice records the span and message for every recovery point).
+**Files created:**
+- `internal/parser/RECOVERY.md` — documents the three-level recovery strategy
+  (expression, statement, declaration), the error node types, statement boundary
+  detection, and type checker integration.
 
 ---
 
@@ -701,10 +697,10 @@ incrementally.
 Step 1.3: General expression recovery                               [DONE]
 Step 1.4: Statement-level recovery (ErrorStmt)                      [DONE]
 Step 1.5: Declaration-level recovery                                [DONE]
-Step 1.6: Document recovery strategy                                [LOW risk]
+Step 1.6: Document recovery strategy                                [DONE]
 ```
 
-After this milestone: the parser recovers from most common syntax errors,
+**Status: COMPLETE.** The parser recovers from most common syntax errors,
 providing usable ASTs for the checker and completion handler.
 
 ### Milestone 3: End-to-End Completions
