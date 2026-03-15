@@ -309,8 +309,8 @@ func (p *Printer) printEnumDecl(decl *ast.EnumDecl) {
 
 func (p *Printer) printExpr(expr ast.Expr) {
 	switch e := expr.(type) {
-	case *ast.EmptyExpr:
-		// Empty expression - don't print anything
+	case *ast.ErrorExpr:
+		// Error expression - don't print anything
 	case *ast.BinaryExpr:
 		p.printBinaryExpr(e)
 	case *ast.UnaryExpr:

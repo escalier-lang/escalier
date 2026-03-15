@@ -124,7 +124,7 @@ test('textDocument/didOpen', async () => {
         },
         {
           "code": "ERR_CODE",
-          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
+          "message": "Unimplemented: Infer expression type: *ast.ErrorExpr",
           "range": {
             "end": {
               "character": 0,
@@ -201,7 +201,7 @@ test('textDocument/didChange', async () => {
         },
         {
           "code": "ERR_CODE",
-          "message": "Unimplemented: Infer expression type: *ast.EmptyExpr",
+          "message": "Unimplemented: Infer expression type: *ast.ErrorExpr",
           "range": {
             "end": {
               "character": 0,

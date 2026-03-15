@@ -292,7 +292,7 @@ nil
                             inferredType: nil,
                         },
                         TypeAnn: nil,
-                        Init:    &ast.EmptyExpr{
+                        Init:    &ast.ErrorExpr{
                             span: ast.Span{
                                 Start:    ast.Location{Line:3, Column:5},
                                 End:      ast.Location{Line:3, Column:8},
@@ -377,7 +377,7 @@ nil
                             inferredType: nil,
                         },
                         Op:    "+",
-                        Right: &ast.EmptyExpr{
+                        Right: &ast.ErrorExpr{
                             span: ast.Span{
                                 Start:    ast.Location{Line:5, Column:4},
                                 End:      ast.Location{Line:5, Column:5},
@@ -7245,7 +7245,7 @@ nil
             inferredType: nil,
         },
         TypeAnn: nil,
-        Init:    &ast.EmptyExpr{
+        Init:    &ast.ErrorExpr{
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:9},
                 End:      ast.Location{Line:1, Column:9},

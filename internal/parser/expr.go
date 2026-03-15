@@ -32,7 +32,7 @@ func (p *Parser) expr() ast.Expr {
 	if expr == nil {
 		token := p.lexer.peek()
 		p.reportError(token.Span, "Expected an expression")
-		return ast.NewEmpty(token.Span)
+		return ast.NewError(token.Span)
 	}
 
 	return expr
@@ -128,7 +128,7 @@ loop:
 		if expr == nil {
 			token := p.lexer.peek()
 			p.reportError(token.Span, "Expected an expression")
-			expr = ast.NewEmpty(token.Span)
+			expr = ast.NewError(token.Span)
 		}
 		values.Push(expr)
 	}
@@ -351,7 +351,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
 				p.reportError(token.Span, "Expected a number")
-				// TODO: return an EmptyExpr instead of nil
+				// TODO: return an ErrorExpr instead of nil
 				return nil
 			}
 			expr = ast.NewLitExpr(ast.NewNumber(value, token.Span))
@@ -382,7 +382,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 			expr = p.expr()
 			p.exprMode.Pop()
 			if expr == nil {
-				return ast.NewEmpty(token.Span)
+				return ast.NewError(token.Span)
 			}
 			p.expect(CloseParen, AlwaysConsume)
 		case OpenBracket:
@@ -1071,7 +1071,7 @@ func (p *Parser) matchExpr() ast.Expr {
 	if target == nil {
 		token := p.lexer.peek()
 		p.reportError(token.Span, "Expected target expression after 'match'")
-		return ast.NewEmpty(token.Span)
+		return ast.NewError(token.Span)
 	}
 
 	p.expect(OpenBrace, AlwaysConsume)
@@ -1241,7 +1241,7 @@ func (p *Parser) throwExpr() ast.Expr {
 	if arg == nil {
 		token := p.lexer.peek()
 		p.reportError(token.Span, "Expected expression after 'throw'")
-		return ast.NewEmpty(token.Span)
+		return ast.NewError(token.Span)
 	}
 
 	span := ast.Span{Start: start, End: arg.Span().End, SourceID: p.lexer.source.ID}

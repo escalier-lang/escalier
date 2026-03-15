@@ -138,7 +138,7 @@
             },
             inferredType: nil,
         },
-        &ast.EmptyExpr{
+        &ast.ErrorExpr{
             span: ast.Span{
                 Start:    ast.Location{Line:1, Column:7},
                 End:      ast.Location{Line:1, Column:7},
@@ -434,7 +434,7 @@
         inferredType: nil,
     },
     Op:    "+",
-    Right: &ast.EmptyExpr{
+    Right: &ast.ErrorExpr{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:8},
             End:      ast.Location{Line:1, Column:8},
@@ -4677,7 +4677,7 @@
             Guard: nil,
             Body:  ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:16},
                         End:      ast.Location{Line:1, Column:17},
@@ -4732,7 +4732,7 @@
             Guard: nil,
             Body:  ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:19},
                         End:      ast.Location{Line:1, Column:20},
@@ -4802,7 +4802,7 @@
             },
             Body: ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:26},
                         End:      ast.Location{Line:1, Column:26},
@@ -5928,7 +5928,7 @@
             Guard: nil,
             Body:  ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:38},
                         End:      ast.Location{Line:1, Column:39},
@@ -6061,7 +6061,7 @@
             },
             Body: ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:51},
                         End:      ast.Location{Line:1, Column:51},
@@ -6512,7 +6512,7 @@
             Guard: nil,
             Body:  ast.BlockOrExpr{
                 Block: (*ast.Block)(nil),
-                Expr:  &ast.EmptyExpr{
+                Expr:  &ast.ErrorExpr{
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:44},
                         End:      ast.Location{Line:1, Column:45},
@@ -6952,7 +6952,7 @@
 
 [TestParseExprErrorHandling/ThrowMissingExpression - 1]
 &ast.ThrowExpr{
-    Arg: &ast.EmptyExpr{
+    Arg: &ast.ErrorExpr{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:6},
             End:      ast.Location{Line:1, Column:6},
