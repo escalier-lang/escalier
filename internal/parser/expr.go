@@ -241,14 +241,15 @@ loop:
 			expr = ast.NewIndex(obj, index, optChain, span)
 		case Dot, QuestionDot:
 			p.lexer.consume()
-			prop := p.lexer.next()
 			optChain := false
 			if token.Type == QuestionDot {
 				optChain = true
 			}
+			prop := p.lexer.peek()
 			// nolint: exhaustive
 			switch prop.Type {
 			case Identifier, Underscore, String, Number, Boolean, Bigint:
+				p.lexer.consume()
 				obj := expr
 				prop := ast.NewIdentifier(prop.Value, prop.Span)
 				expr = ast.NewMember(
@@ -263,7 +264,7 @@ loop:
 				)
 				expr = ast.NewMember(
 					obj, prop, optChain,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
+					ast.Span{Start: obj.Span().Start, End: token.Span.End, SourceID: p.lexer.source.ID},
 				)
 				if token.Type == Dot {
 					p.reportError(token.Span, "expected an identifier after .")
