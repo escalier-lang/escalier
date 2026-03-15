@@ -32,6 +32,8 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 		return errors
 	case *ast.ForInStmt:
 		return c.inferForInStmt(ctx, stmt)
+	case *ast.ErrorStmt:
+		return nil
 	default:
 		panic(fmt.Sprintf("Unknown statement type: %T", stmt))
 	}
@@ -261,8 +263,14 @@ func (c *Checker) inferTypeDecl(
 	result := c.buildTypeParams(ctx, decl.TypeParams, nil)
 	errors := result.Errors
 
-	t, typeErrors := c.inferTypeAnn(result.Ctx, decl.TypeAnn)
-	errors = slices.Concat(errors, typeErrors)
+	var t type_system.Type
+	if decl.TypeAnn == nil {
+		t = type_system.NewErrorType(nil)
+	} else {
+		var typeErrors []Error
+		t, typeErrors = c.inferTypeAnn(result.Ctx, decl.TypeAnn)
+		errors = slices.Concat(errors, typeErrors)
+	}
 
 	typeAlias := type_system.TypeAlias{
 		Type:       t,

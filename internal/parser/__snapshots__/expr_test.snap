@@ -8602,3 +8602,115 @@
     inferredType: nil,
 }
 ---
+
+[TestParseExprErrorHandling/IncompleteCallMissingCloseParen - 1]
+&ast.CallExpr{
+    Callee: &ast.IdentExpr{
+        Name:      "foo",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Args: {
+        &ast.IdentExpr{
+            Name:      "a",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.IdentExpr{
+            Name:      "b",
+            Namespace: 0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    OptChain: false,
+    span:     ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteCallMissingCloseParen - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:4},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected a closing paren",
+    },
+}
+---
+
+[TestParseExprErrorHandling/IncompleteIndex - 1]
+&ast.IndexExpr{
+    Object: &ast.IdentExpr{
+        Name:      "arr",
+        Namespace: 0,
+        Source:    nil,
+        span:      ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:4},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Index: &ast.ErrorExpr{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    OptChain: false,
+    span:     ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:5},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseExprErrorHandling/IncompleteIndex - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected an expression",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:4},
+            End:      ast.Location{Line:1, Column:5},
+            SourceID: 0,
+        },
+        Message: "Expected a closing bracket",
+    },
+}
+---

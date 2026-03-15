@@ -303,6 +303,12 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"MismatchedBracketsIndex": {
 			input: "foo[bar)",
 		},
+		"IncompleteIndex": {
+			input: "arr[",
+		},
+		"IncompleteCallMissingCloseParen": {
+			input: "foo(a, b",
+		},
 		"IncompleteTemplateLiteral": {
 			input: "`foo",
 		},

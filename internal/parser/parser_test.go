@@ -475,3 +475,48 @@ func TestClassDeclarations(t *testing.T) {
 		})
 	}
 }
+
+func TestStatementRecovery(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ErrorBetweenValidStatements": {
+			input: "val a = 1\n@@@\nval b = 2",
+		},
+		"MultipleErrorsBetweenStatements": {
+			input: "val a = 1\n@@@\nval b = 2\n###\nval c = 3",
+		},
+		"ErrorAtStart": {
+			input: "@@@\nval a = 1",
+		},
+		"MissingEqualsOnNewLine": {
+			input: "val x\nval y = 10",
+		},
+		"ClassExtendsMissingType": {
+			input: "class Foo extends { bar(self) { return 1 } }",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+
+			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
+			snaps.MatchSnapshot(t, errors)
+		})
+	}
+}

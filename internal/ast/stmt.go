@@ -91,6 +91,20 @@ func (s *ImportStmt) Accept(v Visitor) {
 	v.ExitStmt(s)
 }
 
+type ErrorStmt struct {
+	span Span
+}
+
+func NewErrorStmt(span Span) *ErrorStmt {
+	return &ErrorStmt{span: span}
+}
+func (*ErrorStmt) isStmt()      {}
+func (s *ErrorStmt) Span() Span { return s.span }
+func (s *ErrorStmt) Accept(v Visitor) {
+	v.EnterStmt(s)
+	v.ExitStmt(s)
+}
+
 type ForInStmt struct {
 	Pattern  Pat   // Loop variable pattern (supports destructuring)
 	Iterable Expr  // Expression being iterated
