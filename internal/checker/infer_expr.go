@@ -173,6 +173,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// MemberExpr is an error.
 			exprType = type_system.NewErrorType(nil)
 			errors = objErrors
+		} else if _, ok := objType.(*type_system.ErrorType); ok {
+			// Object is ErrorType — propagate without reporting errors.
+			exprType = type_system.NewErrorType(nil)
+			errors = objErrors
 		} else {
 			key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
 			propType, propErrors := c.getMemberType(ctx, objType, key)
@@ -195,10 +199,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		errors = slices.Concat(objErrors, indexErrors)
 
-		key := IndexKey{Type: indexType, span: expr.Index.Span()}
-		accessType, accessErrors := c.getMemberType(ctx, objType, key)
-		exprType = accessType
-		errors = slices.Concat(errors, accessErrors)
+		if _, ok := objType.(*type_system.ErrorType); ok {
+			exprType = type_system.NewErrorType(nil)
+		} else {
+			key := IndexKey{Type: indexType, span: expr.Index.Span()}
+			accessType, accessErrors := c.getMemberType(ctx, objType, key)
+			exprType = accessType
+			errors = slices.Concat(errors, accessErrors)
+		}
 	case *ast.IdentExpr:
 		if binding := ctx.Scope.GetValue(expr.Name); binding != nil {
 			// We create a new type and set its provenance to be the identifier
@@ -853,6 +861,8 @@ func (c *Checker) inferCallExpr(
 	}
 
 	switch t := calleeType.(type) {
+	case *type_system.ErrorType:
+		return type_system.NewErrorType(provneance), errors
 	case *type_system.FuncType:
 		return c.handleFuncCall(ctx, t, expr, argTypes, provneance, errors)
 
