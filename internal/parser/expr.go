@@ -143,7 +143,11 @@ loop:
 	}
 
 	if len(values) != 1 {
-		panic("parseExpr - expected one value on the stack")
+		// This should never happen if the algorithm is correct, but guard
+		// against it to avoid crashing during error recovery.
+		span := values.Peek().Span()
+		p.reportError(span, "internal error: expression stack invariant violated")
+		return ast.NewError(span)
 	}
 	return values.Pop()
 }
@@ -221,13 +225,8 @@ loop:
 		case OpenBracket, QuestionOpenBracket:
 			p.lexer.consume()
 			p.exprMode.Push(MultiLineExpr)
-			// TODO: handle the case when parseExpr() return None correctly
 			index := p.expr()
 			p.exprMode.Pop()
-			if index == nil {
-				p.reportError(token.Span, "Expected an expression after '['")
-				break loop
-			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
 				p.reportError(token.Span, "Expected a closing bracket")

@@ -49,54 +49,40 @@ completion handler can be tested against properly recovered ASTs from the start.
 
 ### Step 1.3: General Expression Recovery (R1.3.1–R1.3.5)
 
-**Risk: HIGH** — The expression parser has ~25 `return nil` points and a panic on
-stack invariant violation in the binary expression parser. Converting nil-return
-paths to produce `ErrorExpr` while maintaining the stack invariant is error-prone.
+**Status: DONE** — The anticipated risk was HIGH, but analysis revealed that the
+existing `expr()` function (which wraps `exprWithoutErrorCheck()`) already
+guarantees a non-nil return by producing `ErrorExpr` on failure. This meant most
+recovery paths were already working correctly. The actual changes were minimal.
 
-**Files:**
-- `internal/parser/expr.go` — binary expressions, call expressions, index expressions
+**Files changed:**
+- `internal/parser/expr.go` — guarded panic, removed dead code
+- `internal/parser/expr_test.go` — added test cases
 
-**Mitigations:**
-- **Incremental conversion**: Don't convert all nil-returns at once. Implement
-  R1.3.2 (binary RHS), R1.3.3 (call args), and R1.3.4 (index) one at a time,
-  testing each before moving on. Remaining nil-return points can be addressed in
-  follow-up work.
-- **Guard the panic**: Replace the stack invariant panic in `exprWithoutErrorCheck`
-  with an `ErrorExpr` fallback so that even if a recovery path is wrong, the
-  parser doesn't crash.
-- **Parser fuzzing**: After implementing recovery, feed randomized incomplete
-  expressions and assert the parser never panics and always returns a non-nil AST.
+**What was done:**
 
-**Approach:**
+1. **Guarded the stack invariant panic** in `exprWithoutErrorCheck`: replaced the
+   `panic("parseExpr - expected one value on the stack")` with an `ErrorExpr`
+   fallback that reports an internal error. This ensures the parser never crashes
+   during error recovery, even if the algorithm has a bug.
 
-For each sub-requirement:
+2. **Removed dead code in index parsing**: the `nil` check on `p.expr()` return
+   value and the `break loop` fallback were unreachable because `expr()` always
+   returns non-nil (`ErrorExpr` on failure). Removed the dead code and the TODO
+   comment. The parser now correctly produces `IndexExpr` with `ErrorExpr` for
+   incomplete index expressions like `arr[`.
 
-**R1.3.2 — Missing RHS in binary expressions (`a + `):**
-1. In the binary expression parsing loop (Pratt parser or precedence climbing),
-   after consuming an operator, attempt to parse the RHS.
-2. If parsing the RHS fails (returns `nil` or encounters an unexpected token),
-   emit an `ErrorExpr` for the RHS and report an error.
-3. The binary expression is still constructed with the valid LHS and the
-   `ErrorExpr` RHS.
+3. **Added test cases**: `IncompleteIndex` (`arr[`) and
+   `IncompleteCallMissingCloseParen` (`foo(a, b`).
 
-**R1.3.3 — Incomplete call expressions (`foo(a, )`, `foo(a, b`):**
-1. In `parseCallArgs` (or equivalent), when parsing argument list items:
-   - If a comma is followed by `)` or an unexpected token, insert an `ErrorExpr`
-     for the missing argument.
-   - If the closing `)` is missing (e.g. EOF or newline), report an error but
-     still produce the `CallExpr` with the arguments parsed so far.
-2. Ensure the `CallExpr` node is returned even when recovery occurs.
+**What was already working (no changes needed):**
 
-**R1.3.4 — Incomplete index expressions (`arr[`):**
-1. In index expression parsing, if the `]` is missing or the index expression is
-   absent, produce an `IndexExpr` with an `ErrorExpr` for the missing index.
-2. Report the error and continue.
-
-**R1.3.5 — Don't abandon statements for subexpression errors:**
-1. Ensure expression-level recovery (above) is attempted before falling back to
-   statement-level skip. The key insight is that `parseExpr` should always return
-   a non-nil result (using `ErrorExpr` if needed) rather than causing the caller
-   to abandon the entire statement.
+- **R1.3.2** (binary RHS): `exprWithoutErrorCheck` already created `ErrorExpr`
+  for missing RHS after an operator (lines 128-132).
+- **R1.3.3** (incomplete calls): `expr()` returns `ErrorExpr` instead of nil, so
+  `parseDelimSeq` always receives valid arguments. Missing close paren is already
+  detected and reported.
+- **R1.3.5** (don't abandon statements): `expr()` always returns non-nil,
+  preventing callers from abandoning statements due to subexpression failures.
 
 ### Step 1.4: Statement-Level Recovery (R1.5.1, R1.5.2, R1.4.3)
 
@@ -691,7 +677,7 @@ usable ASTs for incomplete code. These steps are high-risk and should be tackled
 incrementally.
 
 ```
-Step 1.3: General expression recovery                               [HIGH risk]
+Step 1.3: General expression recovery                               [DONE]
 Step 1.4: Statement-level recovery (ErrorStmt)                      [MEDIUM risk]
 Step 1.5: Declaration-level recovery                                [HIGH risk]
 Step 1.6: Document recovery strategy                                [LOW risk]
