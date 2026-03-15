@@ -179,3 +179,46 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTypeAnnErrorHandling(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"IncompleteUnion": {
+			input: "number |",
+		},
+		"IncompleteIntersection": {
+			input: "string &",
+		},
+		"KeyofMissingType": {
+			input: "keyof",
+		},
+		"FuncTypeMissingReturnType": {
+			input: "fn() ->",
+		},
+		"PropertyMissingType": {
+			input: "{x: }",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			typeAnn := parser.typeAnn()
+
+			assert.NotNil(t, typeAnn, "Expected non-nil type annotation from recovery")
+			snaps.MatchSnapshot(t, typeAnn)
+			assert.Greater(t, len(parser.errors), 0, "Expected parsing errors but got none")
+			snaps.MatchSnapshot(t, parser.errors)
+		})
+	}
+}

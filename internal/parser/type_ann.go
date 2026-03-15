@@ -25,6 +25,20 @@ type TypeAnnOp struct {
 	Arity int
 }
 
+// typeAnnRequired wraps typeAnn() and guarantees a non-nil return.
+// If typeAnn() returns nil, it reports an error and returns ErrorTypeAnn.
+// Use this in places where a type annotation is syntactically required
+// after a token has been consumed (e.g. after |, &, keyof, :, ->).
+func (p *Parser) typeAnnRequired() ast.TypeAnn {
+	typeAnn := p.typeAnn()
+	if typeAnn == nil {
+		token := p.lexer.peek()
+		p.reportError(token.Span, "Expected a type annotation")
+		return ast.NewErrorTypeAnn(token.Span)
+	}
+	return typeAnn
+}
+
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
@@ -119,10 +133,8 @@ loop:
 		if typeAnn == nil {
 			token := p.lexer.peek()
 			p.reportError(token.Span, "Expected a type annotation")
-
-			// Return nil to indicate parsing failed gracefully
-			// The error has already been reported
-			return nil
+			typeAnns.Push(ast.NewErrorTypeAnn(token.Span))
+			break loop
 		}
 		typeAnns.Push(typeAnn)
 	}
@@ -151,11 +163,16 @@ loop:
 	}
 
 	if len(typeAnns) != 1 {
-		// This indicates an internal parser error, but we should not panic
-		// Report an error and return nil
-		token := p.lexer.peek()
-		p.reportError(token.Span, "Internal parser error: invalid type annotation state")
-		return nil
+		// This should never happen if the algorithm is correct, but guard
+		// against it to avoid crashing during error recovery.
+		var span ast.Span
+		if typeAnns.IsEmpty() {
+			span = ast.Span{Start: p.lexer.currentLocation, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		} else {
+			span = typeAnns.Peek().Span()
+		}
+		p.reportError(span, "internal error: type annotation stack invariant violated")
+		return ast.NewErrorTypeAnn(span)
 	}
 	return typeAnns.Pop()
 }
@@ -200,7 +217,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				typeAnn = ast.NewUniqueSymbolTypeAnn(ast.MergeSpans(token.Span, symbolToken.Span))
 			} else {
 				p.reportError(token.Span, "expected 'symbol' after 'unique'")
-				return nil
+				typeAnn = ast.NewErrorTypeAnn(token.Span)
 			}
 		case Any:
 			p.lexer.consume()
@@ -225,7 +242,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			value, err := strconv.ParseFloat(token.Value, 64)
 			if err != nil {
 				p.reportError(token.Span, "Expected a number")
-				return nil
+				typeAnn = ast.NewErrorTypeAnn(token.Span)
+				break
 			}
 			typeAnn = ast.NewLitTypeAnn(ast.NewNumber(value, token.Span), token.Span)
 		case StrLit:
@@ -271,11 +289,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 
 			p.expect(Arrow, AlwaysConsume)
 
-			retType := p.typeAnn()
-			if retType == nil {
-				p.reportError(token.Span, "expected return type annotation")
-				return nil
-			}
+			retType := p.typeAnnRequired()
 
 			endSpan := retType.Span()
 
@@ -283,12 +297,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			var throwsType ast.TypeAnn
 			if p.lexer.peek().Type == Throws {
 				p.lexer.consume() // consume 'throws'
-				throwsType = p.typeAnn()
-				if throwsType == nil {
-					p.reportError(p.lexer.peek().Span, "expected type annotation after 'throws'")
-				} else {
-					endSpan = throwsType.Span()
-				}
+				throwsType = p.typeAnnRequired()
+				endSpan = throwsType.Span()
 			}
 
 			typeAnn = ast.NewFuncTypeAnn(
@@ -300,23 +310,11 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			)
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
-			checkType := p.typeAnn()
-			if checkType == nil {
-				p.reportError(token.Span, "expected check type for conditional type")
-				return nil
-			}
+			checkType := p.typeAnnRequired()
 			p.expect(Colon, AlwaysConsume)
-			extendsType := p.typeAnn()
-			if extendsType == nil {
-				p.reportError(token.Span, "expected extends type for conditional type")
-				return nil
-			}
+			extendsType := p.typeAnnRequired()
 			p.expect(OpenBrace, AlwaysConsume)
-			thenType := p.typeAnn()
-			if thenType == nil {
-				p.reportError(token.Span, "expected then type for conditional type")
-				return nil
-			}
+			thenType := p.typeAnnRequired()
 			p.expect(CloseBrace, AlwaysConsume)
 			p.expect(Else, AlwaysConsume)
 
@@ -326,14 +324,13 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			if nextToken.Type == If {
 				// Parse 'else if' - recursively parse another conditional type
 				elseType = p.primaryTypeAnn() // This will parse the nested conditional
+				if elseType == nil {
+					elseType = ast.NewErrorTypeAnn(nextToken.Span)
+				}
 			} else {
 				// Parse final 'else' clause
 				p.expect(OpenBrace, AlwaysConsume)
-				elseType = p.typeAnn()
-				if elseType == nil {
-					p.reportError(nextToken.Span, "expected else type for conditional type")
-					return nil
-				}
+				elseType = p.typeAnnRequired()
 				p.expect(CloseBrace, AlwaysConsume)
 			}
 
@@ -349,7 +346,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			nameToken := p.lexer.peek()
 			if nameToken.Type != Identifier {
 				p.reportError(nameToken.Span, "expected identifier after 'infer'")
-				return nil
+				typeAnn = ast.NewErrorTypeAnn(token.Span)
+				break
 			}
 			p.lexer.consume() // consume identifier
 			typeAnn = ast.NewInferTypeAnn(
@@ -361,7 +359,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			typ := p.primaryTypeAnn()
 			if typ == nil {
 				p.reportError(token.Span, "expected type annotation after 'keyof'")
-				return nil
+				typ = ast.NewErrorTypeAnn(token.Span)
 			}
 			typeAnn = ast.NewKeyOfTypeAnn(
 				typ,
@@ -373,7 +371,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			identToken := p.lexer.peek()
 			if identToken.Type != Identifier {
 				p.reportError(token.Span, "expected identifier after 'typeof'")
-				return nil
+				typeAnn = ast.NewErrorTypeAnn(token.Span)
+				break
 			}
 			p.lexer.consume() // consume identifier
 			qualIdent := p.parseQualifiedIdent(identToken)
@@ -405,11 +404,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			}
 		case OpenParen: // parenthesized type annotation
 			p.lexer.consume() // consume '('
-			typeAnn = p.typeAnn()
-			if typeAnn == nil {
-				p.reportError(token.Span, "expected type annotation inside parentheses")
-				return nil
-			}
+			typeAnn = p.typeAnnRequired()
 			p.expect(CloseParen, AlwaysConsume)
 			// Just return the inner type annotation - parentheses are for grouping only
 		case BackTick: // template literal type
@@ -765,22 +760,14 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 			return property
 		}
 
-		value := p.typeAnn()
-
-		if value == nil {
-			token := p.lexer.peek()
-			if token.Type == Comma {
-				return property
-			}
-		}
-
+		value := p.typeAnnRequired()
 		property.Value = value
 
 		return property
 	case Question:
 		p.lexer.consume() // consume '?'
 		p.expect(Colon, ConsumeOnMatch)
-		value := p.typeAnn()
+		value := p.typeAnnRequired()
 		return &ast.PropertyTypeAnn{
 			Name:     objKey,
 			Optional: true,
@@ -794,11 +781,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 
 		p.expect(Arrow, ConsumeOnMatch)
 
-		retType := p.typeAnn()
-		if retType == nil {
-			p.reportError(token.Span, "expected return type annotation")
-			return nil
-		}
+		retType := p.typeAnnRequired()
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
 			typeParams,
@@ -850,12 +833,12 @@ func (p *Parser) typeParam() *ast.TypeParam {
 
 	if p.lexer.peek().Type == Colon {
 		p.lexer.consume() // consume ':'
-		constraint = p.typeAnn()
+		constraint = p.typeAnnRequired()
 	}
 
 	if p.lexer.peek().Type == Equal {
 		p.lexer.consume() // consume '='
-		default_ = p.typeAnn()
+		default_ = p.typeAnnRequired()
 	}
 
 	typeParam := ast.NewTypeParam(name, constraint, default_)

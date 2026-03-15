@@ -37,7 +37,7 @@ func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportTypeAnn) isTypeAnn()       {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
-func (*EmptyTypeAnn) isTypeAnn()        {}
+func (*ErrorTypeAnn) isTypeAnn()        {}
 func (*RestSpreadTypeAnn) isTypeAnn()   {}
 
 type LitTypeAnn struct {
@@ -624,15 +624,15 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 	v.ExitTypeAnn(t)
 }
 
-type EmptyTypeAnn struct {
+type ErrorTypeAnn struct {
 	span         Span
 	inferredType Type
 }
 
-func NewEmptyTypeAnn(span Span) *EmptyTypeAnn {
-	return &EmptyTypeAnn{span: span, inferredType: nil}
+func NewErrorTypeAnn(span Span) *ErrorTypeAnn {
+	return &ErrorTypeAnn{span: span, inferredType: nil}
 }
-func (t *EmptyTypeAnn) Accept(v Visitor) {
+func (t *ErrorTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
 	v.ExitTypeAnn(t)
 }

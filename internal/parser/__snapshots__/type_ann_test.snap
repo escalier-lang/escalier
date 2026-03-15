@@ -2921,3 +2921,252 @@ nil
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnErrorHandling/KeyofMissingType - 1]
+&ast.KeyOfTypeAnn{
+    Type: &ast.ErrorTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/IncompleteUnion - 1]
+&ast.UnionTypeAnn{
+    Types: {
+        &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.ErrorTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/IncompleteIntersection - 1]
+&ast.IntersectionTypeAnn{
+    Types: {
+        &ast.StringTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.ErrorTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:9},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/FuncTypeMissingReturnType - 1]
+&ast.FuncTypeAnn{
+    TypeParams: nil,
+    Params:     {
+    },
+    Return: &ast.ErrorTypeAnn{
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 0,
+        },
+        inferredType: nil,
+    },
+    Throws: nil,
+    span:   ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:8},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/PropertyMissingType - 1]
+&ast.ObjectTypeAnn{
+    Elems: {
+        &ast.PropertyTypeAnn{
+            Name: &ast.IdentExpr{
+                Name:      "x",
+                Namespace: 0,
+                Source:    nil,
+                span:      ast.Span{
+                    Start:    ast.Location{Line:1, Column:2},
+                    End:      ast.Location{Line:1, Column:3},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Optional: false,
+            Readonly: false,
+            Value:    &ast.ErrorTypeAnn{
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:6},
+                    End:      ast.Location{Line:1, Column:6},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:6},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/KeyofMissingType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "expected type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "expected type annotation after 'keyof'",
+    },
+}
+---
+
+[TestParseTypeAnnErrorHandling/IncompleteIntersection - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        Message: "expected type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        Message: "Expected a type annotation",
+    },
+}
+---
+
+[TestParseTypeAnnErrorHandling/IncompleteUnion - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        Message: "expected type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:9},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+        Message: "Expected a type annotation",
+    },
+}
+---
+
+[TestParseTypeAnnErrorHandling/PropertyMissingType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:5},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "expected type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected a type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:6},
+            End:      ast.Location{Line:1, Column:6},
+            SourceID: 0,
+        },
+        Message: "Expected } but got ",
+    },
+}
+---
+
+[TestParseTypeAnnErrorHandling/FuncTypeMissingReturnType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 0,
+        },
+        Message: "expected type annotation",
+    },
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:8},
+            SourceID: 0,
+        },
+        Message: "Expected a type annotation",
+    },
+}
+---

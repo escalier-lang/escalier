@@ -223,6 +223,8 @@ func (c *Checker) inferTypeAnn(
 		// that is handled specially by the compiler. We represent it as an
 		// IntrinsicType which is essentially a placeholder.
 		t = &type_system.IntrinsicType{Name: "intrinsic"}
+	case *ast.ErrorTypeAnn:
+		t = type_system.NewErrorType(nil)
 	default:
 		panic(fmt.Sprintf("Unknown type annotation: %T", typeAnn))
 	}
