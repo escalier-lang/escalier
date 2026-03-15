@@ -1,12 +1,13 @@
 # textDocument/completion - Implementation Plan
 
-This plan implements the requirements in `requirements.md`. Work is organized into
-phases that build on each other: error-tolerant type inference first (to establish
-correctness), then the completion handler (to deliver end-to-end functionality),
-then parser recovery (to expand coverage). This ordering front-loads the type
-system changes and defers the highest-risk parser work until a working completion
-path exists. See the [Implementation Order](#implementation-order) section for
-the risk-aware sequencing and milestone breakdown.
+This plan implements the requirements in `requirements.md`. Steps are grouped by
+area into three phases — parser recovery, error-tolerant type inference, and the
+completion handler — but the phases are **not** executed in numeric order. The
+risk-aware [Implementation Order](#implementation-order) section defines the
+actual sequencing: error-tolerant type inference first (to establish correctness),
+then the completion handler (to deliver end-to-end functionality), then parser
+recovery (to expand coverage). This front-loads the type system changes and
+defers the highest-risk parser work until a working completion path exists.
 
 ---
 
@@ -99,9 +100,7 @@ For each sub-requirement:
 
 ### Step 1.4: Statement-Level Recovery (R1.5.1, R1.5.2, R1.4.3)
 
-**Risk: MEDIUM** — Determining the "next statement boundary" using indentation is
-tricky for an indentation-sensitive language. Wrong boundary detection could
-swallow valid statements.
+**Risk: MEDIUM** — Wrong boundary detection could swallow valid statements.
 
 **Files:**
 - `internal/ast/stmt.go` — add `ErrorStmt` node
@@ -111,9 +110,6 @@ swallow valid statements.
 - `internal/codegen/builder.go` — handle `ErrorStmt` (skip)
 
 **Mitigations:**
-- **Conservative boundary detection**: Start with only
-  newline-at-same-or-lower-indentation and EOF as boundaries. Don't try to detect
-  semicolons or other heuristics initially.
 - **Multi-error tests**: Write tests with 2–3 syntax errors in the same file and
   verify each subsequent statement is still parsed correctly.
 
@@ -122,9 +118,12 @@ swallow valid statements.
    (R1.4.3). No message or token storage needed.
 2. In the top-level statement parsing loop, if `parseStmt` fails (returns nil or
    panics are caught), skip tokens until the next statement boundary:
-   - Newline at the same or lower indentation level
+   - Newline
    - Semicolon
    - EOF
+   - Statement-initiating keywords: `val`, `let`, `fn`, `type`, `interface`,
+     `enum`, `class`, `return`, `throw`, `for`, `if`, `import`, `export`,
+     `declare`
 3. Wrap the skipped region in an `ErrorStmt` and continue parsing.
 
 ### Step 1.5: Declaration-Level Recovery (R1.6.1, R1.6.2)
