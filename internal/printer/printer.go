@@ -976,8 +976,8 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 	case *ast.MutableTypeAnn:
 		p.writeString("mut ")
 		p.printTypeAnn(t.Target)
-	case *ast.EmptyTypeAnn:
-		// Empty type annotation
+	case *ast.ErrorTypeAnn:
+		// Skip error recovery nodes
 	case *ast.RestSpreadTypeAnn:
 		p.writeString("...")
 		p.printTypeAnn(t.Value)

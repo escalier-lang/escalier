@@ -113,6 +113,42 @@ expression, but the name suggests "absence" rather than "error." Renaming it to
 - R1.6.2: Other declaration types (type aliases, variable declarations, etc.)
   must also follow the common recovery strategy.
 
+### 1.7 Type Annotation Recovery
+
+**Problem:** The type annotation parser (`typeAnn()` / `primaryTypeAnn()` in
+`type_ann.go`) uses the same Pratt-style precedence climbing algorithm as the
+expression parser, but lacks the recovery guarantees that the expression parser
+has. Specifically:
+
+- `typeAnn()` returns `nil` on failure, unlike `expr()` which wraps
+  `exprWithoutErrorCheck()` and guarantees non-nil by substituting `ErrorExpr`.
+- There is no `ErrorTypeAnn` AST node, so callers of `typeAnn()` must handle
+  `nil` returns, leading to inconsistent recovery across the codebase.
+- The stack invariant check at the end of `typeAnn()` returns `nil` instead of
+  a recovery node, mirroring the bug that was fixed in `expr.go`.
+- `primaryTypeAnn()` returns `nil` on many error paths (missing operand after
+  `keyof`, missing return type in function type, etc.), which propagates upward
+  and can abort parsing of enclosing constructs.
+
+**Requirements:**
+
+- R1.7.1: Introduce an `ErrorTypeAnn` AST node analogous to `ErrorExpr`. It
+  must contain only a `Span` field and implement the `TypeAnn` interface.
+- R1.7.2: Create a wrapper function (e.g. `typeAnnRequired()`) analogous to
+  `expr()` that calls `typeAnn()` and substitutes `ErrorTypeAnn` when the
+  result is `nil`. Callers that require a non-nil type annotation after
+  consuming a delimiter (e.g. after `|`, `&`, `:`, `->`) should use this
+  wrapper. Prefix operators like `keyof` and `typeof` that call
+  `primaryTypeAnn()` directly (to preserve precedence) should perform their
+  own nil recovery instead — checking the result and substituting
+  `ErrorTypeAnn` when nil.
+- R1.7.3: The stack invariant check at the end of `typeAnn()` must return an
+  `ErrorTypeAnn` instead of `nil`, matching the expression parser's behavior.
+- R1.7.4: `ErrorTypeAnn` must be inferred as `ErrorType` by the type checker,
+  consistent with how `ErrorExpr` is handled.
+- R1.7.5: Downstream passes (checker, codegen, printer) must handle
+  `ErrorTypeAnn` without panicking.
+
 ---
 
 ## 2. Error-Tolerant Type Inference

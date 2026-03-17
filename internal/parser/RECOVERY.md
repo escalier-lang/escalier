@@ -11,8 +11,8 @@ results.
    nodes with placeholders rather than returning nil when encountering errors.
 2. **Report errors via the parser's error list.** The `errors` slice on the
    `Parser` struct is the authoritative record of all syntax errors. AST error
-   nodes (`ErrorExpr`, `ErrorStmt`) carry only a `Span` — no message or skipped
-   token storage.
+   nodes (`ErrorExpr`, `ErrorStmt`, `ErrorTypeAnn`) carry only a `Span` — no
+   message or skipped token storage.
 3. **Recover at the narrowest scope possible.** Expression-level recovery is
    preferred over statement-level recovery, which is preferred over abandoning
    an entire declaration.
@@ -96,12 +96,49 @@ returning nil:
 - **Invalid modifiers** (`async val`): The error is reported but parsing of
   the declaration continues.
 
+### Type Annotation Recovery
+
+**Entry point:** `typeAnnRequired()` in `type_ann.go`
+
+The `typeAnnRequired()` function wraps `typeAnn()` and guarantees a non-nil
+return. If `typeAnn()` returns nil (no valid type annotation found),
+`typeAnnRequired()` reports an error and returns an `ErrorTypeAnn` node.
+
+This mirrors the `expr()` / `exprWithoutErrorCheck()` pattern, but with an
+important distinction: `typeAnn()` itself still returns nil in the `default`
+case (when no token was consumed) because nil signals "no type annotation
+present" — this is important for optional type annotation contexts like
+`val x = 5` where a missing type annotation is valid.
+
+Specific recovery points:
+
+- **Missing union/intersection RHS** (`number |`, `string &`): After consuming
+  the operator, if `primaryTypeAnn()` returns nil, an `ErrorTypeAnn` is
+  substituted for the right operand. The union/intersection node is still
+  constructed with the valid LHS.
+- **Missing type after `keyof`** (`keyof`): `typeAnnRequired()` returns
+  `ErrorTypeAnn`, producing a `KeyOfTypeAnn` with an error operand.
+- **Missing type after `typeof`** (`typeof`): Same pattern as `keyof`.
+- **Missing type after `infer`** (`infer`): `ErrorTypeAnn` is returned when
+  the identifier is missing.
+- **Missing function return type** (`fn() ->`): `typeAnnRequired()` returns
+  `ErrorTypeAnn` for the return type.
+- **Missing property type** (`{x: }`): After consuming `:`, `typeAnnRequired()`
+  returns `ErrorTypeAnn` for the property value type.
+- **Missing type parameter constraint/default** (`T:`, `T =`): After consuming
+  `:` or `=`, `typeAnnRequired()` returns `ErrorTypeAnn`.
+- **Conditional type sub-types**: All positions in `if A : B { C } else { D }`
+  use `typeAnnRequired()` for `A`, `B`, `C`, and `D`.
+- **Stack invariant guard**: The Pratt parser's stack invariant check returns
+  `ErrorTypeAnn` instead of nil, matching the expression parser pattern.
+
 ## Error Node Types
 
-| Node        | Level       | Fields     | Downstream Handling                    |
-|-------------|-------------|------------|----------------------------------------|
-| `ErrorExpr` | Expression  | `span`     | Inferred as `ErrorType` (no cascading) |
-| `ErrorStmt` | Statement   | `span`     | Checker: no-op. Codegen: skip.         |
+| Node           | Level           | Fields     | Downstream Handling                    |
+|----------------|-----------------|------------|----------------------------------------|
+| `ErrorExpr`    | Expression      | `span`     | Inferred as `ErrorType` (no cascading) |
+| `ErrorStmt`    | Statement       | `span`     | Checker: no-op. Codegen: skip.         |
+| `ErrorTypeAnn` | Type Annotation | `span`     | Inferred as `ErrorType` (no cascading) |
 
 ## Type Checker Integration
 

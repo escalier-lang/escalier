@@ -165,6 +165,55 @@ continue parsing.
    non-type-ref) report errors but don't bail. Missing opening brace produces a
    partial `ClassDecl` with nil body.
 
+### Step 1.7: Type Annotation Recovery (R1.7.1–R1.7.5)
+
+**Status: DONE**
+
+**Files changed:**
+- `internal/ast/type_ann.go` — renamed `EmptyTypeAnn` to `ErrorTypeAnn`
+- `internal/ast/type_ann_gen.go` — updated generated methods
+- `internal/parser/type_ann.go` — added `typeAnnRequired()` wrapper, updated
+  `typeAnn()` stack invariant, updated `primaryTypeAnn()` error paths, updated
+  `objTypeAnnElem` and `typeParam` callers
+- `internal/checker/infer_type_ann.go` — added `ErrorTypeAnn` case (infers
+  `ErrorType`)
+- `internal/checker/infer_stmt.go` — added nil guard for `decl.TypeAnn` in
+  `inferTypeDecl`
+- `internal/printer/printer.go` — updated `EmptyTypeAnn` → `ErrorTypeAnn` case
+- `internal/parser/type_ann_test.go` — added `TestParseTypeAnnErrorHandling`
+
+**What was done:**
+
+1. **Renamed `EmptyTypeAnn` → `ErrorTypeAnn`** across `type_ann.go`,
+   `type_ann_gen.go`, and `printer.go`. The existing struct already had the
+   right shape (span-only, no children).
+
+2. **Added `typeAnnRequired()` wrapper** — analogous to how `expr()` wraps
+   `exprWithoutErrorCheck()`. Returns `ErrorTypeAnn` when `typeAnn()` returns
+   nil. Used in all positions where a type annotation is syntactically required
+   after consuming a token.
+
+3. **Updated `typeAnn()` internals**:
+   - After `|`/`&` operators: pushes `ErrorTypeAnn` and breaks loop instead of
+     returning nil.
+   - Stack invariant: returns `ErrorTypeAnn` with empty-stack guard.
+
+4. **Updated `primaryTypeAnn()` error paths** — converted `return nil` to
+   `ErrorTypeAnn` or `typeAnnRequired()` in all cases where a token was already
+   consumed: `unique`, `NumLit` parse error, `fn` return type, `throws`, `if`
+   conditional type sub-types, `infer`, `keyof`, `typeof`, `OpenParen`.
+   The `default` case still returns nil (no token consumed).
+
+5. **Updated callers**: `objTypeAnnElem` property values after `:` and `?:`,
+   method return types, and `typeParam` constraints/defaults now use
+   `typeAnnRequired()`.
+
+6. **Added checker case**: `*ast.ErrorTypeAnn` infers as `ErrorType`.
+
+7. **Added 5 test cases**: `IncompleteUnion` (`number |`),
+   `IncompleteIntersection` (`string &`), `KeyofMissingType` (`keyof`),
+   `FuncTypeMissingReturnType` (`fn() ->`), `PropertyMissingType` (`{x: }`).
+
 ### Step 1.6: Consistent Recovery Documentation (R1.1.1, R1.1.2, R1.1.3)
 
 **Status: DONE**
@@ -698,10 +747,12 @@ Step 1.3: General expression recovery                               [DONE]
 Step 1.4: Statement-level recovery (ErrorStmt)                      [DONE]
 Step 1.5: Declaration-level recovery                                [DONE]
 Step 1.6: Document recovery strategy                                [DONE]
+Step 1.7: Type annotation recovery (ErrorTypeAnn)                   [DONE]
 ```
 
-**Status: COMPLETE.** The parser recovers from most common syntax errors,
-providing usable ASTs for the checker and completion handler.
+**Status: COMPLETE.** All four recovery levels are implemented: expression,
+statement, declaration, and type annotation. The parser produces usable ASTs
+for all categories of incomplete/erroneous code.
 
 ### Milestone 3: End-to-End Completions
 
