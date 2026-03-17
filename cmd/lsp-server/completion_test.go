@@ -17,7 +17,36 @@ import (
 )
 
 // parseAndInfer parses source code and returns the script and its scope.
+// It fails the test immediately if there are any parse or type errors.
 func parseAndInfer(t *testing.T, source string) (*ast.Script, *checker.Scope) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, &ast.Source{
+		Path:     "test.esc",
+		Contents: source,
+	})
+	script, parseErrors := p.ParseScript()
+	for _, err := range parseErrors {
+		t.Fatalf("unexpected parse error: %s at %v", err.Message, err.Span)
+	}
+
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		Scope:      checker.Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	scope, typeErrors := c.InferScript(inferCtx, script)
+	for _, err := range typeErrors {
+		t.Fatalf("unexpected type error: %s at %v", err.Message(), err.Span())
+	}
+	return script, scope
+}
+
+// parseAndInferAllowErrors parses source code and returns the script and its scope,
+// tolerating parse and type errors (for tests with intentionally malformed code).
+func parseAndInferAllowErrors(t *testing.T, source string) (*ast.Script, *checker.Scope) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -50,7 +79,7 @@ func getCompletionLabels(items []protocol.CompletionItem) []string {
 func TestMemberCompletionOnObject(t *testing.T) {
 	source := `val obj: {a: number, b: string} = {a: 1, b: "hello"}
 obj.`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at end of "obj." — line 2, after the dot
 	loc := ast.Location{Line: 2, Column: 5}
@@ -72,7 +101,7 @@ obj.`
 func TestMemberCompletionFiltered(t *testing.T) {
 	source := `val obj: {alpha: number, beta: string, able: boolean} = {alpha: 1, beta: "hi", able: true}
 obj.al`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "al" after dot — line 2, col 7
 	// The parser produces a MemberExpr with Prop.Name = "al"
@@ -97,7 +126,7 @@ func TestMemberCompletionOnErrorType(t *testing.T) {
 	source := `val obj: {a: number} = {a: 1}
 val x = obj.
 x.`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at end of "x." — line 3, after the dot
 	loc := ast.Location{Line: 3, Column: 3}
@@ -118,7 +147,7 @@ func TestScopeCompletionBasic(t *testing.T) {
 	source := `val x: number = 42
 val y: string = "hello"
 x`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "x" on line 3
 	loc := ast.Location{Line: 3, Column: 1}
@@ -132,7 +161,7 @@ x`
 func TestScopeCompletionIncludesFunctions(t *testing.T) {
 	source := `fn greet(name: string) -> string { return name }
 gre`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "gre" — line 2, col 3
 	loc := ast.Location{Line: 2, Column: 3}
@@ -146,7 +175,7 @@ func TestScopeCompletionPositionDependent(t *testing.T) {
 	source := `val a: number = 1
 val b: number = 2
 a`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "a" on line 3 — both a and b should be visible
 	loc := ast.Location{Line: 3, Column: 1}
@@ -164,7 +193,7 @@ func TestScopeCompletionExcludesFutureDecls(t *testing.T) {
 	source := `val a: number = 1
 a
 val b: number = 2`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "a" on line 2 — only a should be visible, not b
 	loc := ast.Location{Line: 2, Column: 1}
@@ -223,7 +252,7 @@ func TestScopeCompletionInsideFuncBody(t *testing.T) {
 	val sum = a + b
 	sum
 }`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "sum" on line 3, inside the function body
 	loc := ast.Location{Line: 3, Column: 2}
@@ -244,7 +273,7 @@ func TestScopeCompletionInsideFuncSeesOuterScope(t *testing.T) {
 fn foo() -> number {
 	outer
 }`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "outer" on line 3, inside foo's body
 	loc := ast.Location{Line: 3, Column: 2}
@@ -268,7 +297,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 		a
 	}
 }`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "b" on line 5, inside the if-block
 	loc := ast.Location{Line: 5, Column: 3}
@@ -286,7 +315,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 func TestScopeCompletionInsideMatchCase(t *testing.T) {
 	// Match with destructuring pattern: {name} binds "name" from the object
 	source := "fn foo(obj: {name: string}) -> string {\n  match obj {\n    {name} => name,\n  }\n}"
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Line 3: "    {name} => name,"
 	//          123456789012345
@@ -304,7 +333,7 @@ func TestScopeCompletionInsideMatchCase(t *testing.T) {
 
 func TestScopeCompletionInsideForIn(t *testing.T) {
 	source := "val items: number[] = [1, 2, 3]\nfor item in items {\n  item\n}"
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "item" on line 3, col 3
 	loc := ast.Location{Line: 3, Column: 3}
@@ -322,7 +351,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 	source := `val greet = fn (name: string) -> string {
 	name
 }`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "name" on line 2, inside the function expression body
 	loc := ast.Location{Line: 2, Column: 2}
@@ -339,7 +368,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 func TestStripNullUndefined(t *testing.T) {
 	source := `val obj: {a: number} | null = {a: 1}
 obj?.`
-	script, scope := parseAndInfer(t, source)
+	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor after "?." — line 2, col 6
 	loc := ast.Location{Line: 2, Column: 6}

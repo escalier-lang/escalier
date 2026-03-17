@@ -29,49 +29,52 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	loc := posToLoc(params.Position)
 	node, parent := findNodeAndParent(script, loc)
 
-	if node == nil {
-		return nil, nil
-	}
-
 	var items []protocol.CompletionItem
 
-	switch n := node.(type) {
-	case *ast.MemberExpr:
-		// Case A: cursor right after `.` — MemberExpr with empty property
-		// Case B: cursor on partial property like `foo.ba|` — MemberExpr with non-empty property
-		objType := n.Object.InferredType()
-		if objType != nil {
-			if n.OptChain {
-				objType = stripNullUndefined(objType)
-			}
-			items = completionsFromType(objType, scope)
-			if n.Prop.Name != "" {
-				items = filterByPrefix(items, n.Prop.Name)
-			}
-		}
-	case *ast.IdentExpr:
-		if memberExpr, ok := parent.(*ast.MemberExpr); ok {
-			// The cursor landed on the property identifier of a MemberExpr.
-			// Provide member completions filtered by the partial property name.
-			objType := memberExpr.Object.InferredType()
+	if node == nil {
+		// Cursor on whitespace/blank — provide scope-based completions
+		items = completionsFromScope(script, scope, loc)
+	} else {
+		switch n := node.(type) {
+		case *ast.MemberExpr:
+			// Case A: cursor right after `.` — MemberExpr with empty property
+			// Case B: cursor on partial property like `foo.ba|` — MemberExpr with non-empty property
+			objType := n.Object.InferredType()
 			if objType != nil {
-				if memberExpr.OptChain {
+				if n.OptChain {
 					objType = stripNullUndefined(objType)
 				}
 				items = completionsFromType(objType, scope)
+				if n.Prop.Name != "" {
+					items = filterByPrefix(items, n.Prop.Name)
+				}
+			}
+		case *ast.IdentExpr:
+			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
+				// The cursor landed on the property identifier of a MemberExpr.
+				// Provide member completions filtered by the partial property name.
+				objType := memberExpr.Object.InferredType()
+				if objType != nil {
+					if memberExpr.OptChain {
+						objType = stripNullUndefined(objType)
+					}
+					items = completionsFromType(objType, scope)
+					items = filterByPrefix(items, n.Name)
+				}
+			} else {
+				// Case C: standalone identifier — scope-based completions
+				items = completionsFromScope(script, scope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
-		} else {
-			// Case C: standalone identifier — scope-based completions
+		default:
+			// Other node types — provide scope-based completions
 			items = completionsFromScope(script, scope, loc)
-			items = filterByPrefix(items, n.Name)
 		}
-	default:
-		// No completions for other node types
 	}
 
+	totalBeforeLimit := len(items)
 	items = sortAndLimit(items)
-	isIncomplete := len(items) >= maxCompletionItems
+	isIncomplete := totalBeforeLimit > maxCompletionItems
 
 	return &protocol.CompletionList{
 		IsIncomplete: isIncomplete,
@@ -237,6 +240,15 @@ func completionsFromNamespace(ns *type_system.Namespace) []protocol.CompletionIt
 	return items
 }
 
+// completionDedupKey returns the canonical name for deduplication, using
+// FilterText (the raw property name) when available, otherwise Label.
+func completionDedupKey(item protocol.CompletionItem) string {
+	if item.FilterText != nil {
+		return *item.FilterText
+	}
+	return item.Label
+}
+
 func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []protocol.CompletionItem {
 	// Collect members from each variant, return only common ones
 	var allSets []map[string]protocol.CompletionItem
@@ -249,7 +261,7 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 		memberItems := completionsFromType(variant, scope)
 		set := make(map[string]protocol.CompletionItem, len(memberItems))
 		for _, item := range memberItems {
-			set[item.Label] = item
+			set[completionDedupKey(item)] = item
 		}
 		allSets = append(allSets, set)
 	}
@@ -258,10 +270,10 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 	}
 	// Keep only items present in all sets
 	var items []protocol.CompletionItem
-	for label, item := range allSets[0] {
+	for key, item := range allSets[0] {
 		common := true
 		for _, set := range allSets[1:] {
-			if _, ok := set[label]; !ok {
+			if _, ok := set[key]; !ok {
 				common = false
 				break
 			}
@@ -280,8 +292,9 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 	for _, part := range inter.Types {
 		partItems := completionsFromType(part, scope)
 		for _, item := range partItems {
-			if !seen[item.Label] {
-				seen[item.Label] = true
+			key := completionDedupKey(item)
+			if !seen[key] {
+				seen[key] = true
 				items = append(items, item)
 			}
 		}
