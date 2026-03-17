@@ -42,7 +42,9 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
 	loc := posToLoc(params.Position)
+	s.mu.RLock()
 	script := s.astCache[params.TextDocument.URI]
+	s.mu.RUnlock()
 	if script == nil {
 		return nil, fmt.Errorf("textDocument/definition: script not found")
 	}
@@ -125,7 +127,9 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		loc.Column,
 	)
 
+	server.mu.RLock()
 	script := server.astCache[params.TextDocument.URI]
+	server.mu.RUnlock()
 	if script != nil {
 		node := findNodeInScript(script, loc)
 
@@ -188,7 +192,6 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		Contents: contents,
 	})
 	script, parseErrors := p.ParseScript()
-	server.astCache[uri] = script
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
@@ -196,7 +199,13 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	_, typeErrors := c.InferScript(inferCtx, script)
+	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+	// INVARIANT: validate() must never be called while holding mu.
+	server.mu.Lock()
+	server.astCache[uri] = script
+	server.scopeCache[uri] = scriptScope
+	server.mu.Unlock()
 
 	diagnotics := []protocol.Diagnostic{}
 	for _, err := range parseErrors {

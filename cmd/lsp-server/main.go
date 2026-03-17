@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/checker"
 )
 
 const lsName = "escalier"
@@ -31,16 +33,19 @@ func main() {
 }
 
 type Server struct {
-	handler   protocol.Handler
-	documents map[protocol.DocumentUri]protocol.TextDocumentItem
-	astCache  map[protocol.DocumentUri]*ast.Script
+	handler    protocol.Handler
+	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
+	astCache   map[protocol.DocumentUri]*ast.Script
+	scopeCache map[protocol.DocumentUri]*checker.Scope
+	mu         sync.RWMutex
 }
 
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents: map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:  map[protocol.DocumentUri]*ast.Script{},
+		documents:  map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		astCache:   map[protocol.DocumentUri]*ast.Script{},
+		scopeCache: map[protocol.DocumentUri]*checker.Scope{},
 	}
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
@@ -56,6 +61,7 @@ func NewServer() *Server {
 		TextDocumentDidOpen:        s.textDocumentDidOpen,
 		TextDocumentDidChange:      s.textDocumentDidChange,
 		TextDocumentHover:          s.textDocumentHover,
+		TextDocumentCompletion:     s.textDocumentCompletion,
 		TextDocumentCodeAction:     s.textDocumentCodeAction,
 
 		// Workspace
@@ -76,6 +82,9 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
+	capabilities.CompletionProvider = &protocol.CompletionOptions{
+		TriggerCharacters: []string{"."},
+	}
 	capabilities.DeclarationProvider = true
 	capabilities.DefinitionProvider = true
 	capabilities.CodeActionProvider = protocol.CodeActionOptions{
