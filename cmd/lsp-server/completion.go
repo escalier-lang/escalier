@@ -50,13 +50,22 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 		}
 	case *ast.IdentExpr:
-		if _, ok := parent.(*ast.MemberExpr); ok {
-			// Shouldn't normally reach here — MemberExpr case handles it.
-			// But just in case, fall through to scope completions.
+		if memberExpr, ok := parent.(*ast.MemberExpr); ok {
+			// The cursor landed on the property identifier of a MemberExpr.
+			// Provide member completions filtered by the partial property name.
+			objType := memberExpr.Object.InferredType()
+			if objType != nil {
+				if memberExpr.OptChain {
+					objType = stripNullUndefined(objType)
+				}
+				items = completionsFromType(objType, scope)
+				items = filterByPrefix(items, n.Name)
+			}
+		} else {
+			// Case C: standalone identifier — scope-based completions
+			items = completionsFromScope(script, scope, loc)
+			items = filterByPrefix(items, n.Name)
 		}
-		// Case C: standalone identifier — scope-based completions
-		items = completionsFromScope(script, scope, loc)
-		items = filterByPrefix(items, n.Name)
 	default:
 		// No completions for other node types
 	}
@@ -281,13 +290,98 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 }
 
 // completionsFromScope collects in-scope bindings for standalone identifier completion.
+// It walks the AST ancestor chain from the cursor position, collecting bindings from
+// each enclosing scope: function params, match/catch pattern bindings, for-in loop
+// variables, if-let patterns, and block-local variable declarations.
 func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 
-	// Step 1: Collect local bindings from AST traversal (position-dependent)
-	for _, stmt := range script.Stmts {
-		// Import statements are always visible
+	// Find the ancestor chain from root to the cursor's deepest node.
+	_, ancestors := findNodeWithAncestors(script, cursor)
+
+	// Process ancestors innermost-first so inner bindings shadow outer ones.
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		switch a := ancestors[i].(type) {
+		case *ast.FuncDecl:
+			if a.Body != nil && a.Body.Span.Contains(cursor) {
+				for _, param := range a.Params {
+					collectPatternBindings(param.Pattern, seen, &items)
+				}
+				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+			}
+		case *ast.FuncExpr:
+			if a.Body != nil && a.Body.Span.Contains(cursor) {
+				for _, param := range a.Params {
+					collectPatternBindings(param.Pattern, seen, &items)
+				}
+				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+			}
+		case *ast.MatchExpr:
+			for _, matchCase := range a.Cases {
+				if matchCase.Span().Contains(cursor) {
+					collectPatternBindings(matchCase.Pattern, seen, &items)
+					if matchCase.Body.Block != nil {
+						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, seen, &items)
+					}
+					break
+				}
+			}
+		case *ast.TryCatchExpr:
+			if a.Try.Span.Contains(cursor) {
+				collectBlockBindings(a.Try.Stmts, cursor, seen, &items)
+			} else {
+				for _, catchCase := range a.Catch {
+					if catchCase.Span().Contains(cursor) {
+						collectPatternBindings(catchCase.Pattern, seen, &items)
+						if catchCase.Body.Block != nil {
+							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, seen, &items)
+						}
+						break
+					}
+				}
+			}
+		case *ast.IfLetExpr:
+			if a.Cons.Span.Contains(cursor) {
+				collectPatternBindings(a.Pattern, seen, &items)
+				collectBlockBindings(a.Cons.Stmts, cursor, seen, &items)
+			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, seen, &items)
+			}
+		case *ast.IfElseExpr:
+			if a.Cons.Span.Contains(cursor) {
+				collectBlockBindings(a.Cons.Stmts, cursor, seen, &items)
+			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, seen, &items)
+			}
+		case *ast.DoExpr:
+			if a.Body.Span.Contains(cursor) {
+				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+			}
+		case *ast.ForInStmt:
+			if a.Body.Span.Contains(cursor) {
+				collectPatternBindings(a.Pattern, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+			}
+		}
+	}
+
+	// Collect from top-level script statements.
+	collectBlockBindings(script.Stmts, cursor, seen, &items)
+
+	// Walk the scope chain for global/prelude bindings.
+	if scope.Parent != nil {
+		collectScopeBindings(scope.Parent, seen, &items)
+	}
+
+	return items
+}
+
+// collectBlockBindings collects imports, hoisted function declarations, and
+// variable declarations (before the cursor) from a block's statements.
+func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, seen map[string]bool, items *[]protocol.CompletionItem) {
+	// Pass 1: imports and hoisted function declarations (always visible in their block)
+	for _, stmt := range stmts {
 		if importStmt, ok := stmt.(*ast.ImportStmt); ok {
 			for _, spec := range importStmt.Specifiers {
 				name := spec.Name
@@ -297,58 +391,40 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 				if !seen[name] {
 					seen[name] = true
 					kind := protocol.CompletionItemKindModule
-					items = append(items, protocol.CompletionItem{
+					*items = append(*items, protocol.CompletionItem{
 						Label: name,
 						Kind:  &kind,
 					})
 				}
 			}
-			continue
 		}
-
-		// Hoisted function declarations are always visible in scripts
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
 			if funcDecl, ok := declStmt.Decl.(*ast.FuncDecl); ok {
 				name := funcDecl.Name.Name
 				if name != "" && !seen[name] {
 					seen[name] = true
 					kind := protocol.CompletionItemKindFunction
-					var detail *string
-					if binding := scope.Namespace.Values[name]; binding != nil {
-						d := binding.Type.String()
-						detail = &d
-					}
-					items = append(items, protocol.CompletionItem{
-						Label:  name,
-						Kind:   &kind,
-						Detail: detail,
+					*items = append(*items, protocol.CompletionItem{
+						Label: name,
+						Kind:  &kind,
 					})
 				}
-				continue
 			}
 		}
+	}
 
-		// For other statements, only include if declared before cursor
+	// Pass 2: variable declarations before the cursor
+	for _, stmt := range stmts {
 		if stmt.Span().Start.Line > cursor.Line ||
 			(stmt.Span().Start.Line == cursor.Line && stmt.Span().Start.Column > cursor.Column) {
 			continue
 		}
-
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
 			if varDecl, ok := declStmt.Decl.(*ast.VarDecl); ok {
-				collectPatternBindings(varDecl.Pattern, seen, &items)
+				collectPatternBindings(varDecl.Pattern, seen, items)
 			}
 		}
 	}
-
-	// Step 2: Walk the scope chain for outer scopes
-	// Skip the script scope (already handled by AST traversal above)
-	// Walk from parent (global scope) upward
-	if scope.Parent != nil {
-		collectScopeBindings(scope.Parent, seen, &items)
-	}
-
-	return items
 }
 
 func collectPatternBindings(pat ast.Pat, seen map[string]bool, items *[]protocol.CompletionItem) {
@@ -524,6 +600,8 @@ func filterByPrefix(items []protocol.CompletionItem, prefix string) []protocol.C
 	return filtered
 }
 
+// TODO: Sort by relevance (e.g. prefix-match score) instead of alphabetically,
+// so that truncation keeps the most relevant items rather than the first alphabetically.
 func sortAndLimit(items []protocol.CompletionItem) []protocol.CompletionItem {
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Label < items[j].Label

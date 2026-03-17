@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -180,7 +181,7 @@ val b: number = 2`
 func TestCompletionResultLimiting(t *testing.T) {
 	items := make([]protocol.CompletionItem, 150)
 	for i := range items {
-		label := "item" + string(rune('A'+i%26))
+		label := fmt.Sprintf("item%03d", i)
 		kind := protocol.CompletionItemKindVariable
 		items[i] = protocol.CompletionItem{
 			Label: label,
@@ -215,6 +216,124 @@ func TestFilterByPrefixCaseInsensitive(t *testing.T) {
 	filtered := filterByPrefix(items, "to")
 	assert.Len(t, filtered, 1)
 	assert.Equal(t, "ToString", filtered[0].Label)
+}
+
+func TestScopeCompletionInsideFuncBody(t *testing.T) {
+	source := `fn add(a: number, b: number) -> number {
+	val sum = a + b
+	sum
+}`
+	script, scope := parseAndInfer(t, source)
+
+	// Cursor at "sum" on line 3, inside the function body
+	loc := ast.Location{Line: 3, Column: 2}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["a"], "param a should be in scope")
+	assert.True(t, seen["b"], "param b should be in scope")
+	assert.True(t, seen["sum"], "local var sum should be in scope")
+	assert.True(t, seen["add"], "function add should be in scope (hoisted at script level)")
+}
+
+func TestScopeCompletionInsideFuncSeesOuterScope(t *testing.T) {
+	source := `val outer: number = 10
+fn foo() -> number {
+	outer
+}`
+	script, scope := parseAndInfer(t, source)
+
+	// Cursor at "outer" on line 3, inside foo's body
+	loc := ast.Location{Line: 3, Column: 2}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["outer"], "outer var should be visible inside function")
+	assert.True(t, seen["foo"], "function foo should be visible (hoisted)")
+}
+
+func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
+	source := `fn foo(x: number) -> number {
+	val a = 1
+	if (true) {
+		val b = 2
+		b
+	} else {
+		a
+	}
+}`
+	script, scope := parseAndInfer(t, source)
+
+	// Cursor at "b" on line 5, inside the if-block
+	loc := ast.Location{Line: 5, Column: 3}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["x"], "param x should be visible")
+	assert.True(t, seen["a"], "outer var a should be visible")
+	assert.True(t, seen["b"], "if-block var b should be visible")
+}
+
+func TestScopeCompletionInsideMatchCase(t *testing.T) {
+	// Match with destructuring pattern: {name} binds "name" from the object
+	source := "fn foo(obj: {name: string}) -> string {\n  match obj {\n    {name} => name,\n  }\n}"
+	script, scope := parseAndInfer(t, source)
+
+	// Line 3: "    {name} => name,"
+	//          123456789012345
+	// "name" after => starts at col 15
+	loc := ast.Location{Line: 3, Column: 15}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["obj"], "param obj should be visible")
+	assert.True(t, seen["name"], "match case binding name should be visible")
+}
+
+func TestScopeCompletionInsideForIn(t *testing.T) {
+	source := "val items: number[] = [1, 2, 3]\nfor item in items {\n  item\n}"
+	script, scope := parseAndInfer(t, source)
+
+	// Cursor at "item" on line 3, col 3
+	loc := ast.Location{Line: 3, Column: 3}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["item"], "loop variable should be visible")
+	assert.True(t, seen["items"], "outer var items should be visible")
+}
+
+func TestScopeCompletionInsideFuncExpr(t *testing.T) {
+	source := `val greet = fn (name: string) -> string {
+	name
+}`
+	script, scope := parseAndInfer(t, source)
+
+	// Cursor at "name" on line 2, inside the function expression body
+	loc := ast.Location{Line: 2, Column: 2}
+	items := completionsFromScope(script, scope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+	assert.True(t, seen["name"], "param name should be visible")
+	assert.True(t, seen["greet"], "outer var greet should be visible")
 }
 
 func TestStripNullUndefined(t *testing.T) {
