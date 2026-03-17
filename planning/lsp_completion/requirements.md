@@ -136,9 +136,12 @@ has. Specifically:
   must contain only a `Span` field and implement the `TypeAnn` interface.
 - R1.7.2: Create a wrapper function (e.g. `typeAnnRequired()`) analogous to
   `expr()` that calls `typeAnn()` and substitutes `ErrorTypeAnn` when the
-  result is `nil`. Callers that require a non-nil type annotation (e.g.
-  `typeAnn()` after consuming `|` or `&`, `primaryTypeAnn()` after consuming
-  `keyof`) should use this wrapper.
+  result is `nil`. Callers that require a non-nil type annotation after
+  consuming a delimiter (e.g. after `|`, `&`, `:`, `->`) should use this
+  wrapper. Prefix operators like `keyof` and `typeof` that call
+  `primaryTypeAnn()` directly (to preserve precedence) should perform their
+  own nil recovery instead — checking the result and substituting
+  `ErrorTypeAnn` when nil.
 - R1.7.3: The stack invariant check at the end of `typeAnn()` must return an
   `ErrorTypeAnn` instead of `nil`, matching the expression parser's behavior.
 - R1.7.4: `ErrorTypeAnn` must be inferred as `ErrorType` by the type checker,

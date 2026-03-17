@@ -158,6 +158,18 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"KeyOfObjectType": {
 			input: "keyof {x: string, y: number}",
 		},
+		"IntersectionTypeWithKeyOf": {
+			input: "keyof T & U",
+		},
+		"TypeOfIdent": {
+			input: "typeof x",
+		},
+		"UnionTypeWithTypeOf": {
+			input: "typeof x | U",
+		},
+		"IntersectionTypeWithTypeOf": {
+			input: "typeof x & U",
+		},
 	}
 
 	for name, test := range tests {

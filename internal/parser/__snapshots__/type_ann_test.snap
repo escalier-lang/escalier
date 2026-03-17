@@ -3302,3 +3302,173 @@ nil
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/UnionTypeWithTypeOf - 1]
+&ast.UnionTypeAnn{
+    Types: {
+        &ast.TypeOfTypeAnn{
+            Value: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "U",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:8},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/IntersectionTypeWithTypeOf - 1]
+&ast.IntersectionTypeAnn{
+    Types: {
+        &ast.TypeOfTypeAnn{
+            Value: &ast.Ident{
+                Name: "x",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:9},
+                    SourceID: 0,
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:9},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "U",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:12},
+                    End:      ast.Location{Line:1, Column:13},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:12},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:8},
+        End:      ast.Location{Line:1, Column:13},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/IntersectionTypeWithKeyOf - 1]
+&ast.IntersectionTypeAnn{
+    Types: {
+        &ast.KeyOfTypeAnn{
+            Type: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:7},
+                        End:      ast.Location{Line:1, Column:8},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:7},
+                    End:      ast.Location{Line:1, Column:8},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "U",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:11},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TypeOfIdent - 1]
+&ast.TypeOfTypeAnn{
+    Value: &ast.Ident{
+        Name: "x",
+        span: ast.Span{
+            Start:    ast.Location{Line:1, Column:8},
+            End:      ast.Location{Line:1, Column:9},
+            SourceID: 0,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:8},
+        End:      ast.Location{Line:1, Column:9},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---

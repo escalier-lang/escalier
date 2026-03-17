@@ -599,7 +599,7 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 
 		p.expect(Colon, AlwaysConsume)
 
-		value := p.typeAnn()
+		value := p.typeAnnRequired()
 
 		p.expect(For, AlwaysConsume)
 		token = p.lexer.peek()
@@ -613,7 +613,7 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			return nil
 		}
 		p.expect(In, AlwaysConsume)
-		constraint := p.typeAnn()
+		constraint := p.typeAnnRequired()
 
 		// Parse optional if clause for filtering
 		var check ast.TypeAnn
@@ -621,9 +621,9 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 		token = p.lexer.peek()
 		if token.Type == If {
 			p.lexer.consume() // consume 'if'
-			check = p.typeAnn()
+			check = p.typeAnnRequired()
 			p.expect(Colon, AlwaysConsume)
-			extends = p.typeAnn()
+			extends = p.typeAnnRequired()
 		}
 
 		// Check if the name is just a simple identifier matching the type parameter
