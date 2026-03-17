@@ -199,6 +199,12 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 		"PropertyMissingType": {
 			input: "{x: }",
 		},
+		"ConditionalTypeMissingElse": {
+			input: "if A : B { C } else {",
+		},
+		"ConditionalTypeMissingThen": {
+			input: "if A : B { } else { D }",
+		},
 	}
 
 	for name, test := range tests {

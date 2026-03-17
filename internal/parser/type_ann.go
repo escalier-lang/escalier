@@ -33,7 +33,7 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 	typeAnn := p.typeAnn()
 	if typeAnn == nil {
 		token := p.lexer.peek()
-		p.reportError(token.Span, "Expected a type annotation")
+		p.reportError(token.Span, "expected a type annotation")
 		return ast.NewErrorTypeAnn(token.Span)
 	}
 	return typeAnn
@@ -132,7 +132,7 @@ loop:
 		typeAnn := p.primaryTypeAnn()
 		if typeAnn == nil {
 			token := p.lexer.peek()
-			p.reportError(token.Span, "Expected a type annotation")
+			p.reportError(token.Span, "expected a type annotation")
 			typeAnns.Push(ast.NewErrorTypeAnn(token.Span))
 			break loop
 		}
@@ -157,8 +157,8 @@ loop:
 		default:
 			// This should never happen, but just in case
 			token := p.lexer.peek()
-			p.reportError(token.Span, fmt.Sprintf("Unknown type annotation operator: %s", op.Kind))
-			return nil
+			p.reportError(token.Span, fmt.Sprintf("unknown type annotation operator: %s", op.Kind))
+			return ast.NewErrorTypeAnn(token.Span)
 		}
 	}
 
@@ -325,6 +325,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				// Parse 'else if' - recursively parse another conditional type
 				elseType = p.primaryTypeAnn() // This will parse the nested conditional
 				if elseType == nil {
+					p.reportError(nextToken.Span, "expected conditional type after 'else'")
 					elseType = ast.NewErrorTypeAnn(nextToken.Span)
 				}
 			} else {
@@ -410,8 +411,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case BackTick: // template literal type
 			typeAnn = p.templateLitTypeAnn(token)
 		default:
-			p.reportError(token.Span, "expected type annotation")
-			p.lexer.consume()
+			// Return nil without consuming — signals "no type annotation found."
+			// Callers provide their own contextual error messages.
 			return nil
 		}
 	}
