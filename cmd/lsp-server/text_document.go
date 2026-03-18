@@ -252,9 +252,10 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		})
 	}
 
+	diagVersion := protocol.UInteger(version)
 	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
 		URI:         uri,
 		Diagnostics: diagnotics,
-		Version:     nil,
+		Version:     &diagVersion,
 	})
 }

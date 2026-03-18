@@ -281,15 +281,20 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 				continue
 			}
 			seen[key] = true
-			// Check if this property exists in all variants.
-			presentInAll := true
+			// Check if this property is absent or optional in any variant.
+			needsUndefined := false
 			for _, other := range allSets {
-				if _, ok := other[key]; !ok {
-					presentInAll = false
+				otherItem, ok := other[key]
+				if !ok {
+					needsUndefined = true
+					break
+				}
+				if isOptionalCompletion(otherItem) {
+					needsUndefined = true
 					break
 				}
 			}
-			if !presentInAll && item.Detail != nil {
+			if needsUndefined && item.Detail != nil {
 				detail := *item.Detail + " | undefined"
 				item.Detail = &detail
 			}
@@ -430,7 +435,11 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 	// Scripts (bin/) don't hoist — only modules (lib/) do.
 	collectBlockBindings(script.Stmts, cursor, false, seen, &items)
 
-	// Walk the scope chain for global/prelude bindings.
+	// Collect type and namespace symbols from the current scope.
+	// Values are already collected by collectBlockBindings above.
+	collectScopeTypeBindings(scope, seen, &items)
+
+	// Walk the parent scope chain for global/prelude bindings.
 	if scope.Parent != nil {
 		collectScopeBindings(scope.Parent, seen, &items)
 	}
@@ -566,6 +575,38 @@ func collectPatternBindings(pat ast.Pat, seen map[string]bool, items *[]protocol
 	}
 }
 
+// collectScopeTypeBindings collects only type and namespace symbols from a
+// single scope level, without recursing into parents. This is used for the
+// current scope where values are already collected via AST walking.
+func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
+	if scope == nil {
+		return
+	}
+	ns := scope.Namespace
+	for name, alias := range ns.Types {
+		if !seen[name] {
+			seen[name] = true
+			kind := completionKindForTypeAlias(alias)
+			detail := safeTypeString(alias.Type)
+			*items = append(*items, protocol.CompletionItem{
+				Label:  name,
+				Kind:   &kind,
+				Detail: &detail,
+			})
+		}
+	}
+	for name := range ns.Namespaces {
+		if !seen[name] {
+			seen[name] = true
+			kind := protocol.CompletionItemKindModule
+			*items = append(*items, protocol.CompletionItem{
+				Label: name,
+				Kind:  &kind,
+			})
+		}
+	}
+}
+
 func collectScopeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
 	if scope == nil {
 		return
@@ -574,7 +615,7 @@ func collectScopeBindings(scope *checker.Scope, seen map[string]bool, items *[]p
 	for name, binding := range ns.Values {
 		if !seen[name] {
 			seen[name] = true
-			kind := protocol.CompletionItemKindVariable
+			kind := completionKindForValueType(binding.Type)
 			detail := safeTypeString(binding.Type)
 			*items = append(*items, protocol.CompletionItem{
 				Label:  name,
@@ -655,6 +696,12 @@ func primWrapperName(prim type_system.Prim) string {
 	default:
 		return ""
 	}
+}
+
+// isOptionalCompletion returns true if the completion item represents an
+// optional property (label ends with "?" while FilterText is the raw name).
+func isOptionalCompletion(item protocol.CompletionItem) bool {
+	return item.FilterText != nil && strings.HasSuffix(item.Label, "?")
 }
 
 func stripNullUndefined(t type_system.Type) type_system.Type {
