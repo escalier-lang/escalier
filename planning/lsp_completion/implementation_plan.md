@@ -1,13 +1,15 @@
 # textDocument/completion - Implementation Plan
 
-This plan implements the requirements in `requirements.md`. Steps are grouped by
-area into three phases — parser recovery, error-tolerant type inference, and the
-completion handler — but the phases are **not** executed in numeric order. The
-risk-aware [Implementation Order](#implementation-order) section defines the
-actual sequencing: error-tolerant type inference first (to establish correctness),
+This plan implements the requirements in `requirements.md`. The first three
+phases — parser recovery, error-tolerant type inference, and the completion
+handler — were **not** executed in numeric order. The risk-aware
+[Implementation Order](#implementation-order) section defines the actual
+sequencing: error-tolerant type inference first (to establish correctness),
 then parser recovery (so incomplete code produces usable ASTs), then the
-completion handler (to deliver end-to-end functionality). This ensures the
-completion handler can be tested against properly recovered ASTs from the start.
+completion handler (to deliver end-to-end functionality). Two additional
+milestones extend the completion handler to work with multi-file modules
+(Milestone 4) and to surface completions in the playground's Monaco editor
+(Milestone 5).
 
 ---
 
@@ -656,6 +658,200 @@ Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa
 - Optional chaining (strips null/undefined)
 - Result limiting, prefix filtering (case-insensitive)
 
+### Milestone 4: Module-Scoped Completions
+
+The LSP server currently processes each file independently as a `Script`. For
+multi-file modules, `ast.Module` groups declarations from multiple files into
+shared `ast.Namespace` objects based on directory structure (e.g. all `.esc`
+files in `lib/foo/` become namespace `"foo"`). However, imports are file-scoped
+(stored on `ast.File`, not `ast.Namespace`). This milestone upgrades the
+completion handler to work with module-level scopes, requiring file identity
+and cursor location to resolve the correct file-scoped imports and
+position-dependent bindings.
+
+**Key challenges:**
+- `ast.Namespace.Decls` merges declarations from multiple files — we need to
+  filter by file when determining which declarations are visible at a given
+  cursor position within a specific file.
+- File-scoped imports (on `ast.File`) must only be visible in completions for
+  that file, not for other files in the same namespace.
+- The checker already tracks file scopes via `FileScopes: map[int]*Scope`
+  (keyed by `SourceID`), but the LSP server doesn't use this yet.
+
+**Note:** Steps are numbered 5.x and 6.x (continuing the phase numbering from
+earlier) rather than 4.x and 5.x to avoid confusion with the existing Phase 4
+(Testing).
+
+```
+Step 5.1: Module-level parsing in LSP server       (R6.1.1–R6.1.3)
+Step 5.2: File-aware scope resolution               (R6.2.1–R6.2.4)
+Step 5.3: Module-scoped completion handler           (R6.3.1–R6.3.3)
+Step 5.4: Module completion tests                    (R6.4.1–R6.4.5)
+```
+
+#### Step 5.1: Module-Level Parsing in LSP Server (R6.1.1–R6.1.3)
+
+**Files:**
+- `cmd/lsp-server/main.go` — replace per-file `astCache`/`scopeCache` with
+  module-level caches
+- `cmd/lsp-server/text_document.go` — update `validate()` to parse/check as
+  a module
+
+**Approach:**
+1. On `didOpen`/`didChange`, determine which module the file belongs to based
+   on its path (directory structure maps to module namespace).
+2. Parse the entire module using `ParseLibFiles()` (or a subset) to produce an
+   `ast.Module` with properly grouped namespaces and file-scoped imports.
+3. Type-check the module to produce module-level scopes, including
+   `FileScopes` keyed by `SourceID`.
+4. Cache the module AST, module scope, and file scopes. Multiple open files in
+   the same module share the same cached module.
+5. When a file changes, only re-parse the changed file and merge its
+   declarations back into the module's namespace. Re-check the entire module
+   after re-parsing.
+
+#### Step 5.2: File-Aware Scope Resolution (R6.2.1–R6.2.4)
+
+**Files:**
+- `cmd/lsp-server/completion.go` — new `completionsFromModuleScope` function
+
+**Approach:**
+1. Add a function that, given a module, a file path (or `SourceID`), and a
+   cursor position, returns the correct scope for completions:
+   - Start with the file's scope (`FileScopes[sourceID]`) which includes
+     file-scoped imports.
+   - Include module-level namespace bindings (types, values, sub-namespaces)
+     from the file's namespace.
+   - Filter namespace declarations by file: for position-dependent completions,
+     only include declarations from the *current* file that appear before the
+     cursor. Declarations from *other* files in the same namespace are always
+     visible (they're hoisted from the perspective of any single file).
+   - Walk up the scope chain for prelude/global bindings as before.
+2. Use `decl.Span().SourceID` to determine which file a declaration belongs
+   to, and `Module.GetSourcePath(sourceID)` to map back to file paths.
+
+#### Step 5.3: Module-Scoped Completion Handler (R6.3.1–R6.3.3)
+
+**Files:**
+- `cmd/lsp-server/completion.go` — update `textDocumentCompletion` to use
+  module-aware scope resolution
+
+**Approach:**
+1. In the completion handler, look up the module and file scope for the
+   requested document URI.
+2. For member completions (`.` trigger): no change needed — the object's
+   inferred type already determines available members regardless of file
+   context.
+3. For scope-based completions (bare identifiers): use the file-aware scope
+   from Step 5.2 instead of the current single-file scope. This ensures:
+   - File-scoped imports are visible only in their originating file.
+   - Declarations from other files in the same namespace are available.
+   - Position-dependent filtering works correctly within the current file.
+4. For namespace completions: the module's namespace hierarchy is already
+   available via the type system's `Namespace` type — no change needed.
+
+#### Step 5.4: Module Completion Tests (R6.4.1–R6.4.5)
+
+**Files:**
+- `cmd/lsp-server/completion_test.go` — new test cases
+
+**Tests:**
+- Two files in the same namespace: completions in file A include declarations
+  from file B.
+- File-scoped imports: import in file A is visible in file A completions but
+  not in file B completions.
+- Position-dependent: declarations after the cursor in the current file are
+  excluded, but declarations anywhere in other files are included.
+- Cross-namespace: completions include sub-namespace names for qualified
+  access.
+- Member completions on types defined in other files within the module.
+
+### Milestone 5: Playground Completions
+
+The LSP server fully supports `textDocument/completion`, but the playground
+does not surface completions in the Monaco editor. Two pieces are missing:
+
+1. The LSP client (`lsp-client/client.ts`) has no `textDocumentCompletion`
+   method.
+2. The language setup (`language.ts`) does not register a Monaco
+   `CompletionItemProvider`.
+
+The existing providers (hover, definition, declaration) follow a consistent
+pattern: the client sends a JSON-RPC request via `sendRequest()`, and the
+language setup registers a Monaco provider that calls the client method and
+converts LSP types to Monaco types. Completions follow the same pattern.
+
+```
+Step 6.1: Add textDocumentCompletion to the LSP client  (R7.1.1)
+Step 6.2: Register Monaco CompletionItemProvider        (R7.2.1–R7.2.6)
+Step 6.3: Manual playground testing
+```
+
+#### Step 6.1: Add `textDocumentCompletion` to the LSP Client (R7.1.1)
+
+**Files:**
+- `playground/src/lsp-client/client.ts`
+
+**Approach:**
+1. Add a `textDocumentCompletion` method following the same pattern as
+   `textDocumentDefinition` and `textDocumentHover`:
+   ```typescript
+   textDocumentCompletion(
+       params: lsp.CompletionParams,
+   ): Promise<lsp.CompletionList | lsp.CompletionItem[] | null> {
+       return this.sendRequest('textDocument/completion', params);
+   }
+   ```
+2. The LSP server returns a `CompletionList` (with `items` and
+   `isIncomplete`), so the return type should handle both formats for
+   robustness.
+
+#### Step 6.2: Register Monaco `CompletionItemProvider` (R7.2.1–R7.2.6)
+
+**Files:**
+- `playground/src/language.ts`
+
+**Approach:**
+1. Register a completion provider in `setupLanguage()` using
+   `monaco.languages.registerCompletionItemProvider()`, following the same
+   pattern as the existing hover and definition providers.
+
+2. Set `triggerCharacters: ['.']` to match the LSP server's
+   `CompletionOptions.TriggerCharacters`.
+
+3. In `provideCompletionItems`, convert Monaco's position to LSP format
+   using `manocoPosToLspPos()` (already exists), send the request via
+   `client.textDocumentCompletion()`, and convert the response:
+
+   - Map `lsp.CompletionItemKind` to `monaco.languages.CompletionItemKind`
+     (the numeric values differ between LSP and Monaco).
+   - Convert each `lsp.CompletionItem` to a `monaco.languages.CompletionItem`:
+     - `label` → `label`
+     - `kind` → `kind` (mapped)
+     - `detail` → `detail`
+     - `filterText` → `filterText`
+     - `insertText` → `insertText` (fall back to `label` if absent)
+   - Compute an appropriate `range` for the insert text. For member
+     completions after `.`, the range should cover from after the `.` to
+     the cursor. For scope-based completions, it should cover the current
+     word.
+   - Set `incomplete` from `CompletionList.isIncomplete`.
+
+4. Handle the case where the server returns `null` (no completions
+   available) — return `{ suggestions: [] }`.
+
+#### Step 6.3: Manual Playground Testing
+
+**Tests (manual):**
+- Type `"hello".` and verify String method completions appear (e.g.
+  `length`, `charAt`, `includes`).
+- Type a variable name followed by `.` and verify object member completions.
+- Type a partial identifier and verify scope-based completions appear.
+- Completions appear after using optional chaining (`?.`).
+- Completions should not be offered for `ErrorType` values.
+- When `IsIncomplete: true` is returned, the client can re-query as the user
+  types to refine suggestions.
+
 ---
 
 ## Future Work
@@ -672,6 +868,7 @@ Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa
   positions, function arguments). Currently, scope-based completions return
   both types and values regardless of context.
 
-- **Multi-file module testing**: Verify that completions work correctly in
-  multi-file modules where imports are file-scoped but declarations are shared
-  across files in the module scope.
+- **Partial module re-checking**: When a file changes, only re-check the
+  nodes in the dependency graph that are affected by modified declarations,
+  rather than re-checking the entire module. This could significantly improve
+  responsiveness for large modules.
