@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sync"
 
@@ -37,15 +38,23 @@ type Server struct {
 	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
 	astCache   map[protocol.DocumentUri]*ast.Script
 	scopeCache map[protocol.DocumentUri]*checker.Scope
-	mu         sync.RWMutex
+
+	// Module cache (for lib/ files — shared across files in same module)
+	moduleCache     *ast.Module
+	moduleScopeCache *checker.Scope
+	fileScopeCache  map[int]*checker.Scope // SourceID → file scope
+
+	mu      sync.RWMutex
+	rootURI string // workspace root URI (from InitializeParams)
 }
 
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents:  map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:   map[protocol.DocumentUri]*ast.Script{},
-		scopeCache: map[protocol.DocumentUri]*checker.Scope{},
+		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		astCache:       map[protocol.DocumentUri]*ast.Script{},
+		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
+		fileScopeCache: map[int]*checker.Scope{},
 	}
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
@@ -75,10 +84,23 @@ func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validPa
 	return s.handler.Handle(context)
 }
 
+// uriToPath converts a file:// URI to a filesystem path.
+func uriToPath(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	return u.Path
+}
+
 func (s *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	// TODO: store the client capabilities so that we can use them to customize
 	// repsonses.
 	// x := params.Capabilities.TextDocument.CodeAction.IsPreferredSupport
+
+	if params.RootURI != nil {
+		s.rootURI = string(*params.RootURI)
+	}
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull

@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/stretchr/testify/assert"
@@ -631,4 +632,453 @@ obj?.`
 	items := completionsFromType(stripped, scope)
 	labels := getCompletionLabels(items)
 	assert.Equal(t, []string{"a"}, labels)
+}
+
+// --- Module completion tests ---
+
+// parseModuleAndInfer parses multiple sources as a module and returns the
+// module, module scope, and file scopes.
+func parseModuleAndInfer(t *testing.T, sources []*ast.Source) (*ast.Module, *checker.Scope, map[int]*checker.Scope) {
+	t.Helper()
+	return parseModuleAndInferWithPackages(t, sources, nil)
+}
+
+// parseModuleAndInferWithPackages parses multiple sources as a module, registers
+// mock packages, and returns the module, module scope, and file scopes.
+func parseModuleAndInferWithPackages(
+	t *testing.T,
+	sources []*ast.Source,
+	packages map[string]*type_system.Namespace,
+) (*ast.Module, *checker.Scope, map[int]*checker.Scope) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+	for _, err := range parseErrors {
+		t.Logf("parse error: %s", err.Message)
+	}
+
+	c := checker.NewChecker()
+	for name, ns := range packages {
+		err := c.PackageRegistry.Register(name, ns)
+		require.NoError(t, err, "registering mock package %q", name)
+	}
+	inferCtx := checker.Context{
+		Scope:      checker.Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	typeErrors := c.InferModule(inferCtx, module)
+	for _, err := range typeErrors {
+		t.Logf("type error: %s", err.Message())
+	}
+
+	return module, inferCtx.Scope, c.FileScopes
+}
+
+func TestModuleCrossFileDeclarationsVisible(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/types.esc", Contents: `type UserId = number`},
+		{ID: 1, Path: "lib/utils.esc", Contents: `
+fn getUser(id: UserId) -> UserId { id }
+val defaultId: UserId = 0
+`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor at start of a new line in utils.esc (after the declarations)
+	// Line 3, col 1 (inside the file, after defaultId declaration)
+	loc := ast.Location{Line: 4, Column: 1}
+	fileScope := fileScopes[1]
+
+	items := completionsFromModuleScope(module, 1, fileScope, moduleScope, loc)
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	// Declarations from other files should be visible
+	assert.True(t, seen["getUser"], "getUser from same file should be visible")
+	assert.True(t, seen["defaultId"], "defaultId from same file should be visible")
+	// Type from other file should be visible (collected from scope)
+	assert.True(t, seen["UserId"], "UserId type from types.esc should be visible")
+}
+
+func TestModuleFileScopedImportsIsolation(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `
+fn helper() -> number { 42 }
+`},
+		{ID: 1, Path: "lib/file2.esc", Contents: `
+fn other() -> number { 1 }
+`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Completions from file1's perspective
+	loc := ast.Location{Line: 3, Column: 1}
+	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen1 := map[string]bool{}
+	for _, item := range items1 {
+		seen1[item.Label] = true
+	}
+
+	// Both files' declarations should be visible from file1
+	assert.True(t, seen1["helper"], "helper from file1 should be visible")
+	assert.True(t, seen1["other"], "other from file2 should be visible (cross-file)")
+
+	// Completions from file2's perspective
+	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	seen2 := map[string]bool{}
+	for _, item := range items2 {
+		seen2[item.Label] = true
+	}
+
+	assert.True(t, seen2["helper"], "helper from file1 should be visible in file2")
+	assert.True(t, seen2["other"], "other from file2 should be visible")
+}
+
+func TestModulePositionDependentSameFile(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `val a: number = 1
+val b: number = 2
+val c: number = 3`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor at line 2, col 1 — between a and b declarations
+	// a (line 1) should be visible, b (line 2) should be visible (same line),
+	// c (line 3) should NOT be visible
+	loc := ast.Location{Line: 2, Column: 1}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	assert.True(t, seen["a"], "a should be visible (before cursor)")
+	assert.True(t, seen["b"], "b should be visible (same line as cursor)")
+	assert.False(t, seen["c"], "c should NOT be visible (after cursor)")
+}
+
+func TestModuleOtherFileDeclsAlwaysVisible(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `val x: number = 1`},
+		{ID: 1, Path: "lib/file2.esc", Contents: `val a: number = 10
+val b: number = 20`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor at line 1 col 1 in file1 — all declarations from file2 should be visible
+	// even though the cursor is "before" them (they're in a different file)
+	loc := ast.Location{Line: 1, Column: 1}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	assert.True(t, seen["x"], "x from same file should be visible")
+	assert.True(t, seen["a"], "a from file2 should be visible (cross-file)")
+	assert.True(t, seen["b"], "b from file2 should be visible (cross-file)")
+}
+
+func TestModuleFuncDeclsHoisted(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `val x: number = 1
+fn laterFunc() -> number { 42 }`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor at line 1 col 1 — before laterFunc declaration
+	// Function declarations are hoisted, so laterFunc should still be visible
+	loc := ast.Location{Line: 1, Column: 1}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	assert.True(t, seen["x"], "x should be visible")
+	assert.True(t, seen["laterFunc"], "laterFunc should be visible (hoisted)")
+}
+
+func TestModuleMemberCompletionOnCrossFileType(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/types.esc", Contents: `type Point = {x: number, y: number}`},
+		{ID: 1, Path: "lib/main.esc", Contents: `fn usePoint(p: Point) -> number {
+	p.
+}`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor after "p." inside the function body — line 2, col 3
+	loc := ast.Location{Line: 2, Column: 4}
+	node, _ := findNodeAndParentInFile(module, 1, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	// Use the prelude scope for type lookups (wrapper type aliases)
+	lookupScope := moduleScope
+	if lookupScope.Parent != nil {
+		lookupScope = lookupScope.Parent
+	}
+	_ = fileScopes // not needed for member completions
+
+	items := completionsFromType(objType, lookupScope)
+	labels := getCompletionLabels(items)
+	assert.Equal(t, []string{"x", "y"}, labels)
+}
+
+func TestModuleCompletionInsideFuncBody(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `val outer: number = 10
+fn foo(a: number) -> number {
+	val inner = a + 1
+	inner
+}`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor at "inner" on line 4, inside foo's body
+	loc := ast.Location{Line: 4, Column: 2}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	assert.True(t, seen["a"], "param a should be visible")
+	assert.True(t, seen["inner"], "local var inner should be visible")
+	assert.True(t, seen["outer"], "module-level outer should be visible")
+	assert.True(t, seen["foo"], "function foo should be visible (hoisted)")
+}
+
+func TestModuleImportVisibleInImportingFile(t *testing.T) {
+	// file1 imports "test-utils" as utils; file2 does not.
+	// The "utils" namespace should appear in file1's completions but not file2's.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as utils from "test-utils"
+declare val x: number`},
+		{ID: 1, Path: "lib/file2.esc", Contents: `declare val y: number`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["helper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+
+	packages := map[string]*type_system.Namespace{
+		"test-utils": mockPkg,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
+
+	// Completions from file1 (which has the import)
+	loc := ast.Location{Line: 2, Column: 1}
+	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen1 := map[string]bool{}
+	for _, item := range items1 {
+		seen1[item.Label] = true
+	}
+
+	assert.True(t, seen1["utils"], "utils namespace should be visible in importing file")
+	assert.True(t, seen1["x"], "x from same file should be visible")
+	assert.True(t, seen1["y"], "y from other file should be visible (cross-file)")
+
+	// Completions from file2 (which does NOT have the import)
+	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	seen2 := map[string]bool{}
+	for _, item := range items2 {
+		seen2[item.Label] = true
+	}
+
+	assert.False(t, seen2["utils"], "utils namespace should NOT be visible in non-importing file")
+	assert.True(t, seen2["y"], "y from same file should be visible")
+	assert.True(t, seen2["x"], "x from other file should be visible (cross-file)")
+}
+
+func TestModuleImportValuesVisibleOnlyInImportingFile(t *testing.T) {
+	// file1 imports named values from "test-pkg"; file2 does not.
+	// The imported value bindings should appear only in file1's completions.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+fn usePkg() -> number { 1 }`},
+		{ID: 1, Path: "lib/file2.esc", Contents: `fn other() -> number { 2 }`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["add"] = &type_system.Binding{
+		Type: type_system.NewFuncType(nil, nil,
+			[]*type_system.FuncParam{
+				type_system.NewFuncParam(type_system.NewIdentPat("a"), type_system.NewNumPrimType(nil)),
+				type_system.NewFuncParam(type_system.NewIdentPat("b"), type_system.NewNumPrimType(nil)),
+			},
+			type_system.NewNumPrimType(nil),
+			type_system.NewNeverType(nil),
+		),
+		Mutable:  false,
+		Exported: true,
+	}
+	mockPkg.Types["MyType"] = &type_system.TypeAlias{
+		Type:       type_system.NewStrPrimType(nil),
+		TypeParams: nil,
+		Exported:   true,
+	}
+
+	packages := map[string]*type_system.Namespace{
+		"test-pkg": mockPkg,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
+
+	loc := ast.Location{Line: 2, Column: 1}
+
+	// file1 completions: pkg namespace should be present
+	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen1 := map[string]bool{}
+	for _, item := range items1 {
+		seen1[item.Label] = true
+	}
+	assert.True(t, seen1["pkg"], "pkg namespace should be visible in file1 (imports it)")
+	assert.True(t, seen1["usePkg"], "usePkg from same file should be visible")
+	assert.True(t, seen1["other"], "other from file2 should be visible (cross-file)")
+
+	// file2 completions: pkg namespace should NOT be present
+	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	seen2 := map[string]bool{}
+	for _, item := range items2 {
+		seen2[item.Label] = true
+	}
+	assert.False(t, seen2["pkg"], "pkg namespace should NOT be visible in file2 (no import)")
+	assert.True(t, seen2["other"], "other from same file should be visible")
+	assert.True(t, seen2["usePkg"], "usePkg from file1 should be visible (cross-file)")
+}
+
+func TestModuleNamespaceVisibleFromRootFile(t *testing.T) {
+	// Files in lib/math/ create a "math" namespace.
+	// A file in lib/ (root namespace) should see "math" as a namespace completion.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `val x: number = 1`},
+		{ID: 1, Path: "lib/math/add.esc", Contents: `fn add(a: number, b: number) -> number { a + b }`},
+		{ID: 2, Path: "lib/math/sub.esc", Contents: `fn sub(a: number, b: number) -> number { a - b }`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Completions from main.esc (root namespace)
+	loc := ast.Location{Line: 1, Column: 1}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+
+	seen := map[string]bool{}
+	kindByLabel := map[string]protocol.CompletionItemKind{}
+	for _, item := range items {
+		seen[item.Label] = true
+		if item.Kind != nil {
+			kindByLabel[item.Label] = *item.Kind
+		}
+	}
+
+	assert.True(t, seen["x"], "x from same file should be visible")
+	assert.True(t, seen["math"], "math namespace should be visible from root file")
+	assert.Equal(t, protocol.CompletionItemKindModule, kindByLabel["math"], "math should have Module completion kind")
+}
+
+func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
+	// Files in lib/math/ share the "math" namespace.
+	// Declarations from add.esc should be visible in sub.esc and vice versa.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/math/add.esc", Contents: `fn add(a: number, b: number) -> number { a + b }`},
+		{ID: 1, Path: "lib/math/sub.esc", Contents: `fn sub(a: number, b: number) -> number { a - b }`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	loc := ast.Location{Line: 1, Column: 1}
+
+	// Completions from add.esc
+	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	seen1 := map[string]bool{}
+	for _, item := range items1 {
+		seen1[item.Label] = true
+	}
+
+	assert.True(t, seen1["add"], "add from same file should be visible")
+	assert.True(t, seen1["sub"], "sub from other file in same namespace should be visible")
+
+	// Completions from sub.esc
+	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	seen2 := map[string]bool{}
+	for _, item := range items2 {
+		seen2[item.Label] = true
+	}
+
+	assert.True(t, seen2["sub"], "sub from same file should be visible")
+	assert.True(t, seen2["add"], "add from other file in same namespace should be visible")
+}
+
+func TestModuleMultipleNamespacesVisible(t *testing.T) {
+	// Multiple subdirectories create multiple namespaces.
+	// A root file should see all namespace names as completions.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `val x: number = 1`},
+		{ID: 1, Path: "lib/math/add.esc", Contents: `fn add(a: number, b: number) -> number { a + b }`},
+		{ID: 2, Path: "lib/strings/concat.esc", Contents: `fn concat(a: string, b: string) -> string { a ++ b }`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	loc := ast.Location{Line: 1, Column: 1}
+	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		seen[item.Label] = true
+	}
+
+	assert.True(t, seen["math"], "math namespace should be visible")
+	assert.True(t, seen["strings"], "strings namespace should be visible")
+	assert.True(t, seen["x"], "x from same file should be visible")
+	// Declarations inside namespaces should NOT appear directly in root scope
+	assert.False(t, seen["add"], "add should not be directly visible from root (it's inside math namespace)")
+	assert.False(t, seen["concat"], "concat should not be directly visible from root (it's inside strings namespace)")
+}
+
+func TestModuleNamespaceMemberCompletion(t *testing.T) {
+	// Accessing math.add should provide member completions from the math namespace.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: `fn useAdd() -> number {
+	math.
+}`},
+		{ID: 1, Path: "lib/math/add.esc", Contents: `fn add(a: number, b: number) -> number { a + b }`},
+		{ID: 2, Path: "lib/math/sub.esc", Contents: `fn sub(a: number, b: number) -> number { a - b }`},
+	}
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	// Cursor after "math." — line 2, col 7
+	loc := ast.Location{Line: 2, Column: 7}
+	node, _ := findNodeAndParentInFile(module, 0, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	lookupScope := moduleScope
+	if lookupScope.Parent != nil {
+		lookupScope = lookupScope.Parent
+	}
+	_ = fileScopes
+
+	items := completionsFromType(objType, lookupScope)
+	labels := getCompletionLabels(items)
+	assert.Contains(t, labels, "add")
+	assert.Contains(t, labels, "sub")
 }

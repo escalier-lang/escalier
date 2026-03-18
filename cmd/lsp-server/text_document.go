@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -189,7 +192,178 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 	return codeActions, nil
 }
 
+// isModuleFile checks if a URI corresponds to a file under the lib/ directory.
+func (s *Server) isModuleFile(uri protocol.DocumentUri) bool {
+	if s.rootURI == "" {
+		return false
+	}
+	rootPath := uriToPath(s.rootURI)
+	filePath := uriToPath(string(uri))
+	rel, err := filepath.Rel(rootPath, filePath)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(rel, "lib/") || strings.HasPrefix(rel, "lib\\")
+}
+
+// relPath returns the path of a URI relative to the workspace root.
+func (s *Server) relPath(uri protocol.DocumentUri) string {
+	rootPath := uriToPath(s.rootURI)
+	filePath := uriToPath(string(uri))
+	rel, err := filepath.Rel(rootPath, filePath)
+	if err != nil {
+		return filePath
+	}
+	return rel
+}
+
+// findLibFiles discovers all .esc files in the lib/ directory under the workspace root.
+func (s *Server) findLibFiles() ([]string, error) {
+	rootPath := uriToPath(s.rootURI)
+	libDir := filepath.Join(rootPath, "lib")
+
+	var files []string
+	err := filepath.WalkDir(libDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// getSourceIDForURI finds the SourceID for a given URI in the cached module.
+func (s *Server) getSourceIDForURI(uri protocol.DocumentUri) (int, bool) {
+	if s.moduleCache == nil {
+		return 0, false
+	}
+	rel := s.relPath(uri)
+	for _, file := range s.moduleCache.Files {
+		if file.Path == rel {
+			return file.SourceID, true
+		}
+	}
+	return 0, false
+}
+
+func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.DocumentUri, version protocol.Integer) {
+	rootPath := uriToPath(server.rootURI)
+
+	// Find all .esc files in lib/
+	libFiles, err := server.findLibFiles()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validateModule: error finding lib files: %s\n", err)
+		return
+	}
+
+	// Build sources: use in-memory content for open files, read from disk for others.
+	var sources []*ast.Source
+	server.mu.RLock()
+	for i, absPath := range libFiles {
+		rel, _ := filepath.Rel(rootPath, absPath)
+		fileURI := protocol.DocumentUri("file://" + absPath)
+		var contents string
+		if doc, ok := server.documents[fileURI]; ok {
+			contents = doc.Text
+		} else {
+			data, err := os.ReadFile(absPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "validateModule: error reading %s: %s\n", absPath, err)
+				continue
+			}
+			contents = string(data)
+		}
+		sources = append(sources, &ast.Source{
+			ID:       i,
+			Path:     rel,
+			Contents: contents,
+		})
+	}
+	server.mu.RUnlock()
+
+	if len(sources) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	module, parseErrors := parser.ParseLibFiles(ctx, sources)
+
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		Scope:      checker.Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	typeErrors := c.InferModule(inferCtx, module)
+
+	// Store module cache and file scopes.
+	server.mu.Lock()
+	currentDoc := server.documents[uri]
+	if currentDoc.Version != version {
+		server.mu.Unlock()
+		return
+	}
+	server.moduleCache = module
+	server.moduleScopeCache = inferCtx.Scope
+	server.fileScopeCache = c.FileScopes
+	server.mu.Unlock()
+
+	// Publish diagnostics for all open files in the module.
+	for _, file := range module.Files {
+		fileURI := protocol.DocumentUri("file://" + filepath.Join(rootPath, file.Path))
+
+		var fileDiags []protocol.Diagnostic
+		for _, err := range parseErrors {
+			if err.Span.SourceID == file.SourceID {
+				severity := protocol.DiagnosticSeverityError
+				source := "escalier"
+				fileDiags = append(fileDiags, protocol.Diagnostic{
+					Range:    spanToRange(err.Span),
+					Severity: &severity,
+					Source:   &source,
+					Message:  err.Message,
+				})
+			}
+		}
+		for _, err := range typeErrors {
+			span := err.Span()
+			if span.SourceID == file.SourceID {
+				severity := protocol.DiagnosticSeverityError
+				source := "escalier"
+				fileDiags = append(fileDiags, protocol.Diagnostic{
+					Range:    spanToRange(span),
+					Severity: &severity,
+					Code:     &protocol.IntegerOrString{Value: "ERR_CODE"},
+					Source:   &source,
+					Message:  err.Message(),
+				})
+			}
+		}
+
+		diagVersion := protocol.UInteger(version)
+		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+			URI:         fileURI,
+			Diagnostics: fileDiags,
+			Version:     &diagVersion,
+		})
+	}
+}
+
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
+	// Route module files to module-level validation.
+	if server.isModuleFile(uri) {
+		server.validateModule(lspContext, uri, version)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, &ast.Source{
