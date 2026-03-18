@@ -42,7 +42,9 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
 	loc := posToLoc(params.Position)
+	s.mu.RLock()
 	script := s.astCache[params.TextDocument.URI]
+	s.mu.RUnlock()
 	if script == nil {
 		return nil, fmt.Errorf("textDocument/definition: script not found")
 	}
@@ -82,19 +84,23 @@ func (s *Server) textDocumentTypeDefinition(context *glsp.Context, params *proto
 }
 
 func (s *Server) textDocumentDidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
+	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = params.TextDocument
+	s.mu.Unlock()
 	if params.TextDocument.LanguageID == "escalier" {
-		s.validate(context, params.TextDocument.URI, params.TextDocument.Text)
+		s.validate(context, params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
 	}
 	return nil
 }
 
 func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
+	s.mu.Lock()
 	doc := s.documents[params.TextDocument.URI]
 
 	for _, change := range params.ContentChanges {
 		switch change := change.(type) {
 		case protocol.TextDocumentContentChangeEvent:
+			s.mu.Unlock()
 			return fmt.Errorf("incremental changes not supported")
 		case protocol.TextDocumentContentChangeEventWhole:
 			s.documents[params.TextDocument.URI] = protocol.TextDocumentItem{
@@ -105,11 +111,12 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 			}
 		}
 	}
+	s.mu.Unlock()
 
 	if doc.LanguageID == "escalier" {
 		for _, _change := range params.ContentChanges {
 			change := _change.(protocol.TextDocumentContentChangeEventWhole)
-			s.validate(context, params.TextDocument.URI, change.Text)
+			s.validate(context, params.TextDocument.URI, change.Text, params.TextDocument.Version)
 		}
 	}
 	return nil
@@ -125,7 +132,9 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		loc.Column,
 	)
 
+	server.mu.RLock()
 	script := server.astCache[params.TextDocument.URI]
+	server.mu.RUnlock()
 	if script != nil {
 		node := findNodeInScript(script, loc)
 
@@ -180,7 +189,7 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 	return codeActions, nil
 }
 
-func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string) {
+func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, &ast.Source{
@@ -188,7 +197,6 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		Contents: contents,
 	})
 	script, parseErrors := p.ParseScript()
-	server.astCache[uri] = script
 
 	c := checker.NewChecker()
 	inferCtx := checker.Context{
@@ -196,7 +204,19 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	_, typeErrors := c.InferScript(inferCtx, script)
+	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+	// INVARIANT: validate() must never be called while holding mu.
+	// Check that the document hasn't been updated since we started.
+	server.mu.Lock()
+	currentDoc := server.documents[uri]
+	if currentDoc.Version != version {
+		server.mu.Unlock()
+		return
+	}
+	server.astCache[uri] = script
+	server.scopeCache[uri] = scriptScope
+	server.mu.Unlock()
 
 	diagnotics := []protocol.Diagnostic{}
 	for _, err := range parseErrors {
@@ -232,9 +252,10 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		})
 	}
 
+	diagVersion := protocol.UInteger(version)
 	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
 		URI:         uri,
 		Diagnostics: diagnotics,
-		Version:     nil,
+		Version:     &diagVersion,
 	})
 }

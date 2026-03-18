@@ -358,301 +358,162 @@ return types from:
 
 ### Step 3.1: Register the Handler (R3.1.1–R3.1.3)
 
-**Files:**
-- `cmd/lsp-server/main.go` — add to handler map and capabilities
-- `cmd/lsp-server/completion.go` (new) — handler implementation
+**Status: DONE**
 
-**Approach:**
-1. In `initialize`, add to `ServerCapabilities`:
-   ```go
-   CompletionProvider: &protocol.CompletionOptions{
-       TriggerCharacters: []string{"."},
-   },
-   ```
-   Note: `.` alone covers `?.` completions — when the user types `?.`, the
-   client fires on the `.` character, and the re-parsed AST produces a
-   `MemberExpr` with `OptChain: true` (R3.9.1).
-2. Add `TextDocumentCompletion: s.textDocumentCompletion` to the handler map.
-3. Stub the handler to return an empty `[]protocol.CompletionItem`.
+**Files changed:**
+- `cmd/lsp-server/main.go` — added `CompletionProvider` to capabilities with
+  `TriggerCharacters: []string{"."}`, registered `textDocumentCompletion` handler
+- `cmd/lsp-server/completion.go` (new) — full handler implementation
 
 ### Step 3.2: Store Scope Mapping and Ensure Validation on Open (R4.1.1–R4.1.3)
 
-**Risk: MEDIUM** — Adding a `sync.RWMutex` introduces concurrency concerns. If
-the lock discipline is wrong (e.g., `validate()` takes a write lock while a
-completion request holds a read lock on the same goroutine), the server deadlocks.
+**Status: DONE**
 
-**Files:**
-- `cmd/lsp-server/main.go` — add fields to `Server` struct
-- `cmd/lsp-server/text_document.go` — update `validate()` to store results
+**Files changed:**
+- `cmd/lsp-server/main.go` — added `scopeCache`, `mu sync.RWMutex` to `Server`
+- `cmd/lsp-server/text_document.go` — updated `validate()` to store scope under
+  mutex, added `mu.RLock/RUnlock` in `textDocumentDefinition` and hover
 
-**Mitigations:**
-- **Keep the critical section minimal**: Take the write lock only to swap the
-  stored data (AST cache), not during parsing/checking. Parse and check outside
-  the lock, then swap atomically under the lock.
-- **Never call `validate()` from within a locked section**: Document this
-  invariant with a comment.
+**What was done:**
 
-**Approach:**
-1. Add a mutex to the `Server` struct to synchronize access to `astCache`
-   (which already stores parsed scripts with inferred types):
-   ```go
-   mu sync.RWMutex
-   ```
-   No additional scope map is needed — scope-based completions (Step 3.5)
-   traverse the AST directly and read types from `InferredType` on declaration
-   nodes.
-2. **Lock discipline** (R4.1.3): `didChange` and `didOpen` handlers must call
-   `validate()` **outside any lock** — parsing and type-checking are expensive
-   and must not block completion requests. After `validate()` returns, acquire
-   a short write lock only to swap the new AST into `astCache`, then release
-   it immediately. The `completion` handler acquires a read lock to read from
-   `astCache`.
-   ```
-   // INVARIANT: validate() must never be called while holding mu.
-   // didChange/didOpen flow:
-   //   1. Call validate() (no lock held) → returns new AST
-   //   2. mu.Lock()
-   //   3. Swap astCache entry
-   //   4. mu.Unlock()
-   ```
-3. Ensure `validate()` is called from `textDocumentDidOpen` (not just
-   `textDocumentDidChange`) so that completions are available immediately after
-   opening a file without requiring an edit (R4.1.2).
+A `scopeCache` map was added alongside `astCache`, both protected by a
+`sync.RWMutex`. The `validate()` function stores both the AST and the scope
+under a short write lock after parsing and type-checking complete. The
+completion handler reads both caches under a read lock. The INVARIANT comment
+was added as planned.
 
 ### Step 3.3: Find Relevant Node (R3.3.1–R3.3.4)
 
-**Risk: MEDIUM** — The current `find_node.go` has no parent tracking. Adding
-parent tracking requires modifying the visitor pattern. If a single parent field
-is used instead of a stack, the parent could be wrong for nodes that appear in
-nested contexts.
+**Status: DONE**
 
-**Files:**
-- `cmd/lsp-server/completion.go`
-- `cmd/lsp-server/find_node.go` — extend to track parent node
+**Files changed:**
+- `cmd/lsp-server/find_node.go` — added `ParentVisitor` with parent stack,
+  `findNodeAndParent`, `findNodeWithAncestors`
 
-**Mitigations:**
-- **Use a stack, not a single parent field**: Push on `Enter*`, pop on `Exit*`.
-  Return the top of the stack as the parent. This handles nested nodes correctly.
-- **Test the three completion cases explicitly**: Case A (`foo.`), Case B
-  (`foo.ba|`), Case C (bare `con|`). Verify the parent is correct for each.
-- **Test in modules (multi-file packages)**: Modules merge multiple files from
-  `lib/` into a single module. Verify that `findNodeInScript` correctly locates
-  nodes when the completion request targets a specific file within a multi-file
-  module. The handler must identify which file the cursor is in, find the node
-  within that file's AST, and resolve the correct file scope (not just the
-  shared module scope).
+**What was done:**
 
-**Approach:**
-1. Extend `findNodeInScript` to return both the found node and its parent node
-   (R3.3.1). Add a `Parents` stack to the `Visitor` struct that tracks the
-   ancestor chain as the visitor descends.
-2. Convert the LSP position (line/character) to an `ast.Location`.
-3. Use the extended `findNodeInScript` to find the node and parent at the cursor.
-4. All three `CompletionTriggerKind` values (`Invoked`, `TriggerCharacter`,
-   `TriggerForIncompleteCompletions`) use the same logic — the trigger kind
-   does not change behavior. The completion context is determined entirely by
-   the node found at the cursor position:
-   - **Case A: `MemberExpr` with empty property** — the cursor is right after `.`
-     → member completions on the object's inferred type.
-   - **Case B: `IdentExpr` whose parent is a `MemberExpr`** — the cursor is on a
-     partial property name like `foo.ba|` → member completions on the parent
-     `MemberExpr`'s object type, filtered by the typed text.
-   - **Case C: Standalone `IdentExpr` or expression-expected position** → scope-
-     based completions filtered by the typed text.
+1. Added `ParentVisitor` struct with a `parents []ast.Node` stack (working
+   state) and `Ancestors []ast.Node` (snapshot of the chain for the deepest
+   node found). Push on `enter()`, pop on `exit()`.
 
-   In Cases A and B, the handler resolves members from the object/namespace
-   type (Step 3.4). In Case C, the handler collects in-scope symbols
-   (Step 3.5). In all cases, results are filtered by any identifier text the
-   user has typed so far.
+2. **Critical bug fix**: `Accept` methods call `Exit*` unconditionally even
+   when `Enter*` returned false (no push happened). This caused phantom pops
+   corrupting the stack. Fixed by making `exit(n)` check that the top of the
+   stack matches `n` before popping.
+
+3. Three functions exposed:
+   - `findNodeInScript` — original, returns deepest node only
+   - `findNodeAndParent` — returns node + immediate parent (used by completion
+     handler for Cases A/B)
+   - `findNodeWithAncestors` — returns node + full ancestor chain (used by
+     `completionsFromScope` for nested scope resolution)
+
+4. All three `CompletionTriggerKind` values use the same logic as planned.
+   Cases A (MemberExpr with empty prop), B (IdentExpr with MemberExpr parent),
+   and C (standalone IdentExpr) are handled in the completion handler's switch.
 
 ### Step 3.4: Member Completions from Types (R3.4.1–R3.4.10)
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Status: DONE**
 
-**Approach:**
-1. Write a function `completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.CompletionItem`
-   that first calls `Prune` on the type to resolve any `TypeVarType`. If the
-   result is still a `TypeVarType` (unresolved), return an empty list.
+**Files changed:**
+- `cmd/lsp-server/completion.go` — `completionsFromType`, `completionsFromObjectType`,
+  `completionsFromNamespace`, `completionsFromUnionType`,
+  `completionsFromIntersectionType`
 
-2. Switch on the pruned type:
+**What was done:**
 
-   - **`ObjectType`**: iterate `Elems`, including only `PropertyElem`,
-     `MethodElem`, `GetterElem`, and `SetterElem`. Skip `CallableElem`,
-     `ConstructorElem`, `MappedElem`, and `RestSpreadElem` (these have no
-     named members). For each included element, create a `CompletionItem` with
-     appropriate `Kind` (`Field`, `Method`, `Property`) and `Detail` (type
-     string).
-   - **`NamespaceType`**: iterate `Values`, `Types`, `Namespaces`.
-   - **`PrimType` / `LitType`**: look up the wrapper type alias in scope
-     (e.g. `String` for `string`), expand to `ObjectType`, recurse.
-   - **`TupleType`**: look up `Array` in scope, expand, return its members.
-   - **`FuncType`**: look up `Function` in scope, expand, return its members.
-   - **`UnionType`**: compute common members across non-null/non-undefined
-     variants (reuse or mirror `getUnionAccess` logic from the checker).
-   - **`IntersectionType`**: merge members from all parts (reuse or mirror
-     `getIntersectionAccess` logic).
-   - **`TypeRefType`**: expand the reference and recurse.
-   - **`AnyType`, `ErrorType`, `NeverType`**: return empty list.
+Implemented as planned. All type cases are handled:
+- `ObjectType`: PropertyElem, MethodElem, GetterElem, SetterElem (others skipped)
+- `NamespaceType`: Values, Types, Namespaces
+- `PrimType`/`LitType`: wrapper type alias lookup (String, Number, Boolean, etc.)
+- `TupleType`/`FuncType`: Array/Function alias lookup
+- `UnionType`: common members across non-null/undefined variants
+- `IntersectionType`: merged members from all parts
+- `TypeRefType`: expanded via TypeAlias
+- `ErrorType`/`NeverType`/`AnyType`/unresolved `TypeVarType`: empty list
 
-3. Each `CompletionItem` includes:
-   - `Label`: member name (append `?` for optional properties per R3.7.2)
-   - `Kind`: `Field`, `Method`, `Property`, or `Module` as appropriate
-   - `Detail`: type string (e.g. `"(a: number) => string"`)
-   - `FilterText`: the member name (for client-side filtering)
+Helper `safeTypeString` was added to avoid infinite recursion on `NamespaceType`.
 
 ### Step 3.5: Scope-Based Completions (R3.5.1–R3.5.6)
 
-**Risk: MEDIUM** — Collecting in-scope bindings requires traversing the AST to
-find declarations before the cursor, then walking the scope chain for outer
-scopes. The declaration-before-cursor logic must correctly handle different scope
-levels (local vs module vs global) and multi-file modules.
+**Status: DONE**
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Files changed:**
+- `cmd/lsp-server/completion.go` — `completionsFromScope`, `collectBlockBindings`,
+  `collectPatternBindings`, `collectScopeBindings`
 
-**Mitigations:**
-- **Test with nested scopes**: Write tests for: function body, nested blocks,
-  for-loop body, if/else branches, and closures. Verify the correct bindings are
-  returned at cursor positions in each.
-- **Test multi-file modules**: Verify that file-scoped imports are included but
-  imports from other files in the same module are not.
+**What was done:**
 
-**Approach:**
+The implementation uses an ancestor-chain approach: `findNodeWithAncestors`
+returns the full ancestor chain from root to cursor, then `completionsFromScope`
+walks it innermost-first so inner bindings shadow outer ones.
 
-The approach differs by scope level. For scopes where declaration order matters
-(scripts, function bodies, blocks), we traverse the AST to find declarations
-before the cursor and look up their types via `InferredType` on the declaration's
-pattern nodes. For scopes where all bindings are visible regardless of position
-(module scope, global scope), we read directly from the `Scope.Namespace`.
+1. **Ancestor chain processing**: For each ancestor node, the function checks
+   whether the cursor is inside a scope-introducing construct and collects its
+   bindings. Handles: `FuncDecl`, `FuncExpr` (params + body), `MatchExpr`
+   (pattern bindings per case), `TryCatchExpr` (try block or catch case),
+   `IfLetExpr` (pattern + consequent/alternate), `IfElseExpr` (branch blocks),
+   `DoExpr` (body block), `ForInStmt` (loop variable + body).
 
-1. **Local completions from AST traversal** (R3.5.1): Write a function that
-   traverses the AST from the file/script root, collecting variable bindings
-   declared before the cursor position. For each binding found:
-   - Walk the statements in order. Stop when a statement's span is past the
-     cursor.
-   - For `VarDecl`: extract the binding name(s) from the `Pattern` field. Use
-     `pattern.InferredType()` on the `IdentPat` (or nested patterns) to get
-     the variable's type. Only include if the declaration span is before the
-     cursor.
-   - For `FuncDecl`: in scripts, function declarations are hoisted — the
-     function name is visible throughout the entire script scope regardless of
-     where the declaration appears. Include all `FuncDecl` bindings from the
-     script scope unconditionally (don't filter by cursor position). Use
-     `funcDecl.InferredType` for the type. In function/block scopes,
-     `FuncDecl` is not hoisted and should be filtered by cursor position like
-     `VarDecl`.
-   - For function parameters: when the cursor is inside a function body,
-     include all parameters. Each parameter's type is available via
-     `param.Pattern.InferredType()`.
-   - For `for..in` loop variables: when the cursor is inside the loop body,
-     include the loop variable.
-   - For block-scoped bindings (if/else, match arms): only include if the
-     cursor is inside that block.
-   - For import statements: include the imported bindings (namespaces and
-     named imports). These are always visible within the file regardless of
-     position. In scripts, this means the AST traversal handles all
-     script-scope bindings (variables, functions, and imports), so the script
-     scope can be skipped entirely in step 2.
+2. **`collectBlockBindings`**: Two-pass approach for any block:
+   - Pass 1: imports and hoisted function declarations (always visible)
+   - Pass 2: variable declarations before the cursor position
 
-2. **Scope chain for outer scopes**: Once local bindings are collected, walk the
-   scope chain from the enclosing scope outward for bindings that aren't
-   position-dependent. The scope hierarchy differs between modules and scripts
-   (see `packages_vs_globals/requirements.md` section 6.1):
+3. **`collectPatternBindings`**: Recursively extracts names from `IdentPat`,
+   `ObjectPat` (key-value, shorthand, rest), and `TuplePat`.
 
-   **Modules** (three levels):
-   ```
-   globalScope (globals: Array, Promise, console, Math, etc.)
-       ↑ Parent
-   moduleScope (module-level declarations shared across files)
-       ↑ Parent
-   fileScope (file-local import bindings as sub-namespaces)
-       ↑ Parent
-   [inner scopes: function, block, etc.]
-   ```
+4. **Scope chain**: After processing the ancestor chain and top-level script
+   statements, walks `scope.Parent` recursively via `collectScopeBindings` to
+   pick up global/prelude bindings. The script scope is skipped (its bindings
+   are already collected from the AST).
 
-   **Scripts** (two levels):
-   ```
-   globalScope (globals)
-       ↑ Parent
-   scriptScope (all script-level bindings)
-       ↑ Parent
-   [inner scopes: function, block, etc.]
-   ```
-
-   For scripts, **skip the script scope entirely** — all script-scope bindings
-   (variables, hoisted functions, and imports) are already collected by the AST
-   traversal in step 1. Only the global scope needs to be walked.
-
-   At each scope level (excluding skipped scopes), collect from
-   `scope.Namespace`:
-   - `Values` — each binding becomes a completion item. For the module scope,
-     include all bindings (declarations are processed by dependency graph, not
-     source order). For the global scope, include all bindings.
-   - `Types` — each type alias becomes a completion item with `Kind` based on
-     the underlying `ObjectType`: `Class` if `Nominal` is true, `Interface` if
-     `Interface` is true, `Struct` otherwise (R3.5.3).
-   - `Namespaces` — each child namespace becomes a completion item with
-     `Kind: Module`. In modules, import bindings appear as sub-namespaces in
-     the file scope (e.g., `lodash`, `ramda`). These are file-scoped: an
-     import in one file is NOT visible to other files in the same module. In
-     scripts, import bindings appear as sub-namespaces in the script scope.
-
-3. Track seen names to handle shadowing: if a name was already collected from an
-   inner scope or from the AST traversal, skip it in outer scopes (R3.5.6).
-4. Filter by prefix (case-insensitive) if the user has typed characters (R3.5.5).
-5. The global scope (prelude) is reached naturally by walking the parent chain
-   to the root — no special handling needed (R3.5.2).
+5. **Shadowing**: A `seen` map tracks collected names; inner bindings shadow
+   outer ones since the ancestor chain is processed innermost-first.
 
 ### Step 3.6: Optional Chaining (R3.9.1)
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Status: DONE**
 
-**Approach:**
-1. When the found `MemberExpr` has `OptChain: true`, strip `null` and
-   `undefined` from the object's type before resolving members. The `.` trigger
-   character covers this case — no separate trigger character is needed.
-2. If the type is a union, filter out `null`/`undefined` variants, then compute
-   completions on the remaining type.
+**Files changed:**
+- `cmd/lsp-server/completion.go` — `stripNullUndefined`, `isNullOrUndefined`
+
+Implemented as planned. When `OptChain: true`, `stripNullUndefined` removes
+`null`/`undefined` variants from union types before resolving members. Applied
+in both the MemberExpr and IdentExpr-with-MemberExpr-parent cases.
 
 ### Step 3.7: Filtering (R3.8.1–R3.8.3)
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Status: DONE**
 
-**Approach:**
-1. Extract the partial identifier the user has typed after the `.` (from the
-   `MemberExpr` property name or from the document text between `.` and cursor).
-2. Filter completion items whose `Label` starts with the prefix
-   (case-insensitive).
-3. Set `FilterText` on each item so the client can do its own filtering.
+**Files changed:**
+- `cmd/lsp-server/completion.go` — `filterByPrefix`
+
+Case-insensitive prefix matching. Strips trailing `?` from labels before
+comparing. `FilterText` is set on member completion items for client-side
+filtering.
 
 ### Step 3.8: Result Limiting (R3.6.1–R3.6.4)
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Status: DONE**
 
-**Approach:**
-1. Define a constant `maxCompletionItems = 100`.
-2. After collecting and filtering items, if the count exceeds the limit:
-   - Sort items: exact case prefix matches first, then case-insensitive matches,
-     then by label alphabetically (R3.6.3).
-   - Truncate to `maxCompletionItems`.
-   - Return `&protocol.CompletionList{IsIncomplete: true, Items: items}`.
-3. If within limit, return `&protocol.CompletionList{IsIncomplete: false, Items: items}`.
+**Files changed:**
+- `cmd/lsp-server/completion.go` — `sortAndLimit`
+
+`maxCompletionItems = 100`. Currently sorts alphabetically and truncates.
+Returns `CompletionList` with `IsIncomplete: true` when truncated.
+
+**Note:** Sorting by relevance (prefix-match score) instead of alphabetically
+is tracked as a TODO in the code for future improvement.
 
 ### Step 3.9: Completion Item Details (R3.7.1–R3.7.3)
 
-**Files:**
-- `cmd/lsp-server/completion.go`
+**Status: DONE**
 
-**Approach:**
-1. For each item, use the type's `String()` method for the `Detail` field.
-2. For optional properties, append `?` to the label.
-3. If deprecation info is tracked, set `Tags: [CompletionItemTagDeprecated]`.
-   (This is likely a no-op for now since the type system doesn't track
-   deprecation.)
+Implemented inline in `completionsFromObjectType` and other completion
+collection functions. Type `String()` is used for `Detail`. Optional properties
+have `?` appended to the label. Deprecation tags are not implemented (the type
+system doesn't track deprecation).
 
 ---
 
@@ -756,39 +617,53 @@ for all categories of incomplete/erroneous code.
 
 ### Milestone 3: End-to-End Completions
 
-Builds the completion handler on top of the ErrorType and parser recovery
-foundations. Member completions (`.` trigger) work first, then scope-based
-completions.
+**Status: COMPLETE.** Builds the completion handler on top of the ErrorType and
+parser recovery foundations. Member completions (`.` trigger) work first, then
+scope-based completions.
 
 ```
-Step 3.1: Register handler + capabilities                           [LOW risk]
-Step 3.2: Synchronize AST cache + validation on didOpen (with mutex)[MEDIUM risk]
-Step 3.3: Find relevant node (with parent tracking)                 [MEDIUM risk]
-Step 3.4: Member completions from types (with Prune)                [LOW risk]
-Step 3.5: Scope-based completions (AST traversal + scope chain)     [MEDIUM risk]
-Step 3.6: Optional chaining                                         [LOW risk]
-Step 3.7: Filtering                                                 [LOW risk]
-Step 3.8: Result limiting                                           [LOW risk]
-Step 3.9: Completion item details                                   [LOW risk]
+Step 3.1: Register handler + capabilities                           [DONE] 3caa525
+Step 3.2: Synchronize AST cache + validation on didOpen (with mutex)[DONE] 3caa525
+Step 3.3: Find relevant node (with parent tracking)                 [DONE] 3caa525
+Step 3.4: Member completions from types (with Prune)                [DONE] 3caa525
+Step 3.5: Scope-based completions (AST traversal + scope chain)     [DONE] 3caa525
+Step 3.6: Optional chaining                                         [DONE] 3caa525
+Step 3.7: Filtering                                                 [DONE] 3caa525
+Step 3.8: Result limiting                                           [DONE] 3caa525
+Step 3.9: Completion item details                                   [DONE] 3caa525
 ```
 
-After this milestone: completions work end-to-end for `.` triggers and bare
-identifiers across all syntax error recovery scenarios.
+Completions work end-to-end for `.` triggers and bare identifiers across all
+syntax error recovery scenarios.
 
 ### Testing
 
-Tests should be written alongside each milestone (not deferred to the end).
-Phase 4 calls out the full test matrix for completeness.
+Tests were written alongside each milestone as planned.
 
 ```
-Step 4.1: Parser recovery tests (alongside Milestone 2)
-Step 4.2: Type inference tests (alongside Milestone 1)
-Step 4.3: Completion handler tests (alongside Milestone 3)
+Step 4.1: Parser recovery tests (alongside Milestone 2)             [DONE]
+Step 4.2: Type inference tests (alongside Milestone 1)               [DONE]
+Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa525
 ```
+
+**Completion handler tests** (17 tests in `completion_test.go`):
+- Member completions on object types, filtered by prefix, on ErrorType
+- Scope-based completions: basic, functions, position-dependent, excludes
+  future declarations
+- Nested scope completions: inside function bodies, seeing outer scope,
+  nested blocks (if/else), match case bindings, for-in loop variables,
+  function expressions
+- Optional chaining (strips null/undefined)
+- Result limiting, prefix filtering (case-insensitive)
 
 ---
 
 ## Future Work
+
+- **Relevance-based sorting**: `sortAndLimit` currently sorts alphabetically,
+  so truncation keeps the first alphabetical items rather than the most relevant.
+  Sort by prefix-match score (exact case match > case-insensitive match >
+  alphabetical) before truncating. See TODO in `completion.go`.
 
 - **Context-aware scope completions**: Investigate limiting bare identifier
   completions to only types or only values based on whether the cursor is in a
@@ -796,3 +671,7 @@ Step 4.3: Completion handler tests (alongside Milestone 3)
   parameters, `extends` clauses) or only for values (e.g., expression
   positions, function arguments). Currently, scope-based completions return
   both types and values regardless of context.
+
+- **Multi-file module testing**: Verify that completions work correctly in
+  multi-file modules where imports are file-scoped but declarations are shared
+  across files in the module scope.

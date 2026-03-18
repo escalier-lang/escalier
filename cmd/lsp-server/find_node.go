@@ -71,3 +71,91 @@ func findNodeInScript(script *ast.Script, loc ast.Location) ast.Node {
 	}
 	return visitor.Node
 }
+
+// ParentVisitor extends the base visitor with parent tracking.
+type ParentVisitor struct {
+	ast.DefaultVisitor
+	Cursor    ast.Location
+	Node      ast.Node
+	Parent    ast.Node
+	Ancestors []ast.Node // snapshot of the ancestor chain for the deepest node found
+	parents   []ast.Node // stack of ancestors (working state)
+}
+
+func (v *ParentVisitor) push(n ast.Node) {
+	v.parents = append(v.parents, n)
+}
+
+func (v *ParentVisitor) pop() {
+	if len(v.parents) > 0 {
+		v.parents = v.parents[:len(v.parents)-1]
+	}
+}
+
+func (v *ParentVisitor) currentParent() ast.Node {
+	if len(v.parents) == 0 {
+		return nil
+	}
+	return v.parents[len(v.parents)-1]
+}
+
+func (v *ParentVisitor) enter(n ast.Node) bool {
+	if n.Span().Contains(v.Cursor) {
+		v.Parent = v.currentParent()
+		v.Node = n
+		// Snapshot the current ancestor chain (excluding n itself)
+		v.Ancestors = make([]ast.Node, len(v.parents))
+		copy(v.Ancestors, v.parents)
+		v.push(n)
+		return true
+	}
+	return false
+}
+
+// exit only pops if n was actually pushed (i.e. Enter returned true).
+// Accept methods call Exit unconditionally, so we must guard against
+// popping nodes that were never pushed.
+func (v *ParentVisitor) exit(n ast.Node) {
+	if len(v.parents) > 0 && v.parents[len(v.parents)-1] == n {
+		v.pop()
+	}
+}
+
+func (v *ParentVisitor) EnterExpr(e ast.Expr) bool              { return v.enter(e) }
+func (v *ParentVisitor) ExitExpr(e ast.Expr)                     { v.exit(e) }
+func (v *ParentVisitor) EnterLit(l ast.Lit) bool                 { return v.enter(l) }
+func (v *ParentVisitor) ExitLit(l ast.Lit)                       { v.exit(l) }
+func (v *ParentVisitor) EnterPat(p ast.Pat) bool                 { return v.enter(p) }
+func (v *ParentVisitor) ExitPat(p ast.Pat)                       { v.exit(p) }
+func (v *ParentVisitor) EnterObjExprElem(e ast.ObjExprElem) bool { return v.enter(e) }
+func (v *ParentVisitor) ExitObjExprElem(e ast.ObjExprElem)       { v.exit(e) }
+func (v *ParentVisitor) EnterStmt(s ast.Stmt) bool               { return v.enter(s) }
+func (v *ParentVisitor) ExitStmt(s ast.Stmt)                     { v.exit(s) }
+func (v *ParentVisitor) EnterDecl(d ast.Decl) bool               { return v.enter(d) }
+func (v *ParentVisitor) ExitDecl(d ast.Decl)                     { v.exit(d) }
+func (v *ParentVisitor) EnterTypeAnn(t ast.TypeAnn) bool         { return v.enter(t) }
+func (v *ParentVisitor) ExitTypeAnn(t ast.TypeAnn)               { v.exit(t) }
+
+func findNodeAndParent(script *ast.Script, loc ast.Location) (ast.Node, ast.Node) {
+	visitor := &ParentVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Cursor:         loc,
+	}
+	for _, stmt := range script.Stmts {
+		stmt.Accept(visitor)
+	}
+	return visitor.Node, visitor.Parent
+}
+
+// findNodeWithAncestors returns the deepest node at loc and its full ancestor chain
+// (outermost first, excluding the node itself).
+func findNodeWithAncestors(script *ast.Script, loc ast.Location) (ast.Node, []ast.Node) {
+	visitor := &ParentVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Cursor:         loc,
+	}
+	for _, stmt := range script.Stmts {
+		stmt.Accept(visitor)
+	}
+	return visitor.Node, visitor.Ancestors
+}

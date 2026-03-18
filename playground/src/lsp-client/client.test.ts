@@ -36,6 +36,11 @@ test('initialize', async () => {
               "compile",
             ],
           },
+          "completionProvider": {
+            "triggerCharacters": [
+              ".",
+            ],
+          },
           "declarationProvider": true,
           "definitionProvider": true,
           "executeCommandProvider": {
