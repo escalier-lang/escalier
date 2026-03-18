@@ -210,10 +210,12 @@ func completionsFromObjectType(obj *type_system.ObjectType) []protocol.Completio
 	return items
 }
 
+// TODO: show only value-level completions or only type-level completions when
+// it makes sense to do so.
 func completionsFromNamespace(ns *type_system.Namespace) []protocol.CompletionItem {
 	var items []protocol.CompletionItem
 	for name, binding := range ns.Values {
-		kind := protocol.CompletionItemKindVariable
+		kind := completionKindForValueType(binding.Type)
 		detail := safeTypeString(binding.Type)
 		items = append(items, protocol.CompletionItem{
 			Label:  name,
@@ -240,9 +242,9 @@ func completionsFromNamespace(ns *type_system.Namespace) []protocol.CompletionIt
 	return items
 }
 
-// completionDedupKey returns the canonical name for deduplication, using
+// completionDedupeKey returns the canonical name for deduplication, using
 // FilterText (the raw property name) when available, otherwise Label.
-func completionDedupKey(item protocol.CompletionItem) string {
+func completionDedupeKey(item protocol.CompletionItem) string {
 	if item.FilterText != nil {
 		return *item.FilterText
 	}
@@ -250,7 +252,9 @@ func completionDedupKey(item protocol.CompletionItem) string {
 }
 
 func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []protocol.CompletionItem {
-	// Collect members from each variant, return only common ones
+	// Collect members from each variant. Properties that exist on at least one
+	// variant are included. If a property is missing from some variants, its
+	// detail type is shown with "| undefined".
 	var allSets []map[string]protocol.CompletionItem
 	for _, variant := range u.Types {
 		variant = type_system.Prune(variant)
@@ -261,24 +265,34 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 		memberItems := completionsFromType(variant, scope)
 		set := make(map[string]protocol.CompletionItem, len(memberItems))
 		for _, item := range memberItems {
-			set[completionDedupKey(item)] = item
+			set[completionDedupeKey(item)] = item
 		}
 		allSets = append(allSets, set)
 	}
 	if len(allSets) == 0 {
 		return nil
 	}
-	// Keep only items present in all sets
+	// Gather all unique keys across all sets.
+	seen := map[string]bool{}
 	var items []protocol.CompletionItem
-	for key, item := range allSets[0] {
-		common := true
-		for _, set := range allSets[1:] {
-			if _, ok := set[key]; !ok {
-				common = false
-				break
+	for _, set := range allSets {
+		for key, item := range set {
+			if seen[key] {
+				continue
 			}
-		}
-		if common {
+			seen[key] = true
+			// Check if this property exists in all variants.
+			presentInAll := true
+			for _, other := range allSets {
+				if _, ok := other[key]; !ok {
+					presentInAll = false
+					break
+				}
+			}
+			if !presentInAll && item.Detail != nil {
+				detail := *item.Detail + " | undefined"
+				item.Detail = &detail
+			}
 			items = append(items, item)
 		}
 	}
@@ -286,18 +300,51 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 }
 
 func completionsFromIntersectionType(inter *type_system.IntersectionType, scope *checker.Scope) []protocol.CompletionItem {
-	// Merge members from all parts
-	seen := map[string]bool{}
-	var items []protocol.CompletionItem
+	// Only keys present in ALL parts are accessible. If a key has different
+	// value types across parts, its detail shows the intersection of those types.
+	var allSets []map[string]protocol.CompletionItem
 	for _, part := range inter.Types {
-		partItems := completionsFromType(part, scope)
-		for _, item := range partItems {
-			key := completionDedupKey(item)
-			if !seen[key] {
-				seen[key] = true
-				items = append(items, item)
+		memberItems := completionsFromType(part, scope)
+		set := make(map[string]protocol.CompletionItem, len(memberItems))
+		for _, item := range memberItems {
+			set[completionDedupeKey(item)] = item
+		}
+		allSets = append(allSets, set)
+	}
+	if len(allSets) == 0 {
+		return nil
+	}
+	// Keep only items present in all sets.
+	var items []protocol.CompletionItem
+	for key, item := range allSets[0] {
+		presentInAll := true
+		for _, set := range allSets[1:] {
+			if _, ok := set[key]; !ok {
+				presentInAll = false
+				break
 			}
 		}
+		if !presentInAll {
+			continue
+		}
+		// Collect distinct detail strings across all parts for this key.
+		if item.Detail != nil {
+			seen := map[string]bool{*item.Detail: true}
+			var details []string
+			details = append(details, *item.Detail)
+			for _, set := range allSets[1:] {
+				other := set[key]
+				if other.Detail != nil && !seen[*other.Detail] {
+					seen[*other.Detail] = true
+					details = append(details, *other.Detail)
+				}
+			}
+			if len(details) > 1 {
+				detail := strings.Join(details, " & ")
+				item.Detail = &detail
+			}
+		}
+		items = append(items, item)
 	}
 	return items
 }
@@ -321,34 +368,34 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 				for _, param := range a.Params {
 					collectPatternBindings(param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.FuncExpr:
 			if a.Body != nil && a.Body.Span.Contains(cursor) {
 				for _, param := range a.Params {
 					collectPatternBindings(param.Pattern, seen, &items)
 				}
-				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.MatchExpr:
 			for _, matchCase := range a.Cases {
 				if matchCase.Span().Contains(cursor) {
 					collectPatternBindings(matchCase.Pattern, seen, &items)
 					if matchCase.Body.Block != nil {
-						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, seen, &items)
+						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, false, seen, &items)
 					}
 					break
 				}
 			}
 		case *ast.TryCatchExpr:
 			if a.Try.Span.Contains(cursor) {
-				collectBlockBindings(a.Try.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Try.Stmts, cursor, false, seen, &items)
 			} else {
 				for _, catchCase := range a.Catch {
 					if catchCase.Span().Contains(cursor) {
 						collectPatternBindings(catchCase.Pattern, seen, &items)
 						if catchCase.Body.Block != nil {
-							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, seen, &items)
+							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, false, seen, &items)
 						}
 						break
 					}
@@ -357,30 +404,31 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 		case *ast.IfLetExpr:
 			if a.Cons.Span.Contains(cursor) {
 				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Cons.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.IfElseExpr:
 			if a.Cons.Span.Contains(cursor) {
-				collectBlockBindings(a.Cons.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
 			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
-				collectBlockBindings(a.Alt.Block.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.DoExpr:
 			if a.Body.Span.Contains(cursor) {
-				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
 			}
 		case *ast.ForInStmt:
 			if a.Body.Span.Contains(cursor) {
 				collectPatternBindings(a.Pattern, seen, &items)
-				collectBlockBindings(a.Body.Stmts, cursor, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
 			}
 		}
 	}
 
 	// Collect from top-level script statements.
-	collectBlockBindings(script.Stmts, cursor, seen, &items)
+	// Scripts (bin/) don't hoist — only modules (lib/) do.
+	collectBlockBindings(script.Stmts, cursor, false, seen, &items)
 
 	// Walk the scope chain for global/prelude bindings.
 	if scope.Parent != nil {
@@ -390,43 +438,47 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 	return items
 }
 
-// collectBlockBindings collects imports, hoisted function declarations, and
-// variable declarations (before the cursor) from a block's statements.
-func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, seen map[string]bool, items *[]protocol.CompletionItem) {
-	// Pass 1: imports and hoisted function declarations (always visible in their block)
-	for _, stmt := range stmts {
-		if importStmt, ok := stmt.(*ast.ImportStmt); ok {
-			for _, spec := range importStmt.Specifiers {
-				name := spec.Name
-				if spec.Alias != "" {
-					name = spec.Alias
-				}
-				if !seen[name] {
-					seen[name] = true
-					kind := protocol.CompletionItemKindModule
-					*items = append(*items, protocol.CompletionItem{
-						Label: name,
-						Kind:  &kind,
-					})
+// collectBlockBindings collects imports, declarations, and variable bindings
+// from a block's statements. When hoistFuncs is true, function declarations
+// and imports are visible regardless of cursor position (for top-level module
+// statements). Otherwise, all declarations are position-dependent.
+func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool, seen map[string]bool, items *[]protocol.CompletionItem) {
+	if hoistFuncs {
+		// Pass 1: imports and hoisted function declarations (always visible)
+		for _, stmt := range stmts {
+			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
+				for _, spec := range importStmt.Specifiers {
+					name := spec.Name
+					if spec.Alias != "" {
+						name = spec.Alias
+					}
+					if !seen[name] {
+						seen[name] = true
+						kind := protocol.CompletionItemKindModule
+						*items = append(*items, protocol.CompletionItem{
+							Label: name,
+							Kind:  &kind,
+						})
+					}
 				}
 			}
-		}
-		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
-			if funcDecl, ok := declStmt.Decl.(*ast.FuncDecl); ok {
-				name := funcDecl.Name.Name
-				if name != "" && !seen[name] {
-					seen[name] = true
-					kind := protocol.CompletionItemKindFunction
-					*items = append(*items, protocol.CompletionItem{
-						Label: name,
-						Kind:  &kind,
-					})
+			if declStmt, ok := stmt.(*ast.DeclStmt); ok {
+				if funcDecl, ok := declStmt.Decl.(*ast.FuncDecl); ok {
+					name := funcDecl.Name.Name
+					if name != "" && !seen[name] {
+						seen[name] = true
+						kind := protocol.CompletionItemKindFunction
+						*items = append(*items, protocol.CompletionItem{
+							Label: name,
+							Kind:  &kind,
+						})
+					}
 				}
 			}
 		}
 	}
 
-	// Pass 2: variable declarations before the cursor
+	// Declarations before the cursor (variable and, when not hoisted, function/import)
 	for _, stmt := range stmts {
 		if stmt.Span().Start.Line > cursor.Line ||
 			(stmt.Span().Start.Line == cursor.Line && stmt.Span().Start.Column > cursor.Column) {
@@ -435,6 +487,37 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, seen map[string
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
 			if varDecl, ok := declStmt.Decl.(*ast.VarDecl); ok {
 				collectPatternBindings(varDecl.Pattern, seen, items)
+			}
+			if !hoistFuncs {
+				if funcDecl, ok := declStmt.Decl.(*ast.FuncDecl); ok {
+					name := funcDecl.Name.Name
+					if name != "" && !seen[name] {
+						seen[name] = true
+						kind := protocol.CompletionItemKindFunction
+						*items = append(*items, protocol.CompletionItem{
+							Label: name,
+							Kind:  &kind,
+						})
+					}
+				}
+			}
+		}
+		if !hoistFuncs {
+			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
+				for _, spec := range importStmt.Specifiers {
+					name := spec.Name
+					if spec.Alias != "" {
+						name = spec.Alias
+					}
+					if !seen[name] {
+						seen[name] = true
+						kind := protocol.CompletionItemKindModule
+						*items = append(*items, protocol.CompletionItem{
+							Label: name,
+							Kind:  &kind,
+						})
+					}
+				}
 			}
 		}
 	}
@@ -535,6 +618,14 @@ func safeTypeString(t type_system.Type) string {
 		return "namespace"
 	}
 	return t.String()
+}
+
+func completionKindForValueType(t type_system.Type) protocol.CompletionItemKind {
+	t = type_system.Prune(t)
+	if _, ok := t.(*type_system.FuncType); ok {
+		return protocol.CompletionItemKindFunction
+	}
+	return protocol.CompletionItemKindVariable
 }
 
 func completionKindForTypeAlias(alias *type_system.TypeAlias) protocol.CompletionItemKind {
