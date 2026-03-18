@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -238,14 +239,19 @@ func (s *Server) findLibFiles() ([]string, error) {
 	return files, nil
 }
 
-// getSourceIDForURI finds the SourceID for a given URI in the cached module.
-func (s *Server) getSourceIDForURI(uri protocol.DocumentUri) (int, bool) {
-	if s.moduleCache == nil {
-		return 0, false
-	}
-	rel := s.relPath(uri)
-	for _, file := range s.moduleCache.Files {
-		if file.Path == rel {
+// stableSourceID returns a deterministic integer ID for a relative file path.
+// This ensures IDs remain stable across re-parses regardless of file discovery
+// order or files being added/removed.
+func stableSourceID(relPath string) int {
+	h := fnv.New32a()
+	h.Write([]byte(relPath))
+	return int(h.Sum32())
+}
+
+// getSourceIDForModule finds the SourceID for a relative path in a module.
+func getSourceIDForModule(module *ast.Module, relPath string) (int, bool) {
+	for _, file := range module.Files {
+		if file.Path == relPath {
 			return file.SourceID, true
 		}
 	}
@@ -263,11 +269,13 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	}
 
 	// Build sources: use in-memory content for open files, read from disk for others.
+	// Source IDs are derived from the relative path hash so they remain stable
+	// regardless of file discovery order or files being added/removed.
 	var sources []*ast.Source
 	server.mu.RLock()
-	for i, absPath := range libFiles {
+	for _, absPath := range libFiles {
 		rel, _ := filepath.Rel(rootPath, absPath)
-		fileURI := protocol.DocumentUri("file://" + absPath)
+		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		var contents string
 		if doc, ok := server.documents[fileURI]; ok {
 			contents = doc.Text
@@ -280,7 +288,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 			contents = string(data)
 		}
 		sources = append(sources, &ast.Source{
-			ID:       i,
+			ID:       stableSourceID(rel),
 			Path:     rel,
 			Contents: contents,
 		})
@@ -318,7 +326,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 
 	// Publish diagnostics for all open files in the module.
 	for _, file := range module.Files {
-		fileURI := protocol.DocumentUri("file://" + filepath.Join(rootPath, file.Path))
+		fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
 
 		var fileDiags []protocol.Diagnostic
 		for _, err := range parseErrors {
@@ -341,7 +349,6 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 				fileDiags = append(fileDiags, protocol.Diagnostic{
 					Range:    spanToRange(span),
 					Severity: &severity,
-					Code:     &protocol.IntegerOrString{Value: "ERR_CODE"},
 					Source:   &source,
 					Message:  err.Message(),
 				})

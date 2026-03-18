@@ -1082,3 +1082,4 @@ func TestModuleNamespaceMemberCompletion(t *testing.T) {
 	assert.Contains(t, labels, "add")
 	assert.Contains(t, labels, "sub")
 }
+

@@ -84,13 +84,25 @@ func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validPa
 	return s.handler.Handle(context)
 }
 
-// uriToPath converts a file:// URI to a filesystem path.
+// uriToPath converts a file:// URI to a filesystem path, decoding any
+// percent-encoded characters (e.g. %20 for spaces).
 func uriToPath(uri string) string {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return uri
 	}
-	return u.Path
+	path, err := url.PathUnescape(u.Path)
+	if err != nil {
+		return u.Path
+	}
+	return path
+}
+
+// pathToURI converts a filesystem path to a file:// URI, properly encoding
+// any characters that are not valid in a URI path (e.g. spaces as %20).
+func pathToURI(path string) string {
+	u := &url.URL{Scheme: "file", Path: path}
+	return u.String()
 }
 
 func (s *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {

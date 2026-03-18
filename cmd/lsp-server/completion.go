@@ -28,7 +28,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	// Try module-aware completions first.
 	if module != nil && moduleScope != nil && s.isModuleFile(uri) {
-		sourceID, ok := s.getSourceIDForURI(uri)
+		sourceID, ok := getSourceIDForModule(module, s.relPath(uri))
 		if ok {
 			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc)
 		}
