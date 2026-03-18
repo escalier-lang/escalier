@@ -2,9 +2,10 @@
 
 ## Overview
 
-Add support for `textDocument/completion` in the Escalier LSP server. This
-involves three areas of work: parser recovery, error-tolerant type inference,
-and the completion handler itself.
+Add support for `textDocument/completion` in the Escalier LSP server. The
+core work spans three areas: parser recovery, error-tolerant type inference,
+and the completion handler. Two additional areas extend completions to
+multi-file modules (section 6) and the playground's Monaco editor (section 7).
 
 ---
 
@@ -467,7 +468,136 @@ them can be slow and overwhelming in the UI.
 
 ---
 
-## 6. Non-Requirements (Out of Scope)
+## 6. Module-Scoped Completions
+
+### 6.1 Module-Level Parsing
+
+**Problem:** The LSP server currently processes each file independently as a
+`Script`. In a multi-file module, `ast.Module` groups declarations from
+multiple files in the same directory into shared `ast.Namespace` objects.
+Imports, however, are file-scoped (stored on `ast.File`). The completion
+handler must work with module-level scopes to provide completions that reflect
+the full module context.
+
+**Requirements:**
+
+- R6.1.1: The LSP server must parse and type-check files as part of their
+  containing module (using `ParseLibFiles()` or equivalent) rather than as
+  standalone scripts. The resulting `ast.Module`, module scope, and per-file
+  scopes (`FileScopes`) must be cached and shared across files in the same
+  module.
+- R6.1.2: When a file changes (`didChange`) or is opened (`didOpen`), the
+  server must re-parse the changed file and re-check the entire module that
+  contains it. This supersedes R4.1.1 (which describes per-document
+  re-parse/re-check for the script-mode path). Partial re-checking (e.g.
+  only updating nodes in the dependency graph affected by modified
+  declarations) is a future optimization.
+- R6.1.3: Multiple open files in the same module must share the same cached
+  module state. A change in one file must invalidate and rebuild the module
+  for all files in that module.
+
+### 6.2 File-Aware Scope Resolution
+
+**Problem:** `ast.Namespace.Decls` merges declarations from all files in the
+same directory. When providing scope-based completions for a cursor position
+in a specific file, the handler must distinguish between declarations from the
+current file (which are position-dependent) and declarations from other files
+in the same namespace (which are always visible).
+
+**Requirements:**
+
+- R6.2.1: For scope-based completions in a module, declarations from the
+  *current* file must be filtered by cursor position — only declarations
+  before the cursor are visible. Declarations from *other* files in the same
+  namespace must always be visible (they are hoisted from the perspective of
+  any single file).
+- R6.2.2: File-scoped imports (stored on `ast.File`) must only be visible in
+  completions for the file that contains them. An import in file A must not
+  appear in completions for file B, even if both files are in the same
+  namespace. (This operationalizes the principle stated in R3.5.1.)
+- R6.2.3: Use `decl.Span().SourceID` to determine which file a declaration
+  belongs to. Use the checker's `FileScopes` (keyed by `SourceID`) to resolve
+  the correct file-level scope, including file-scoped imports.
+- R6.2.4: The scope chain must still include prelude/global bindings beyond
+  the module scope, consistent with the existing script-level behavior.
+
+### 6.3 Module-Scoped Completion Behavior
+
+**Requirements:**
+
+- R6.3.1: Member completions (`.` trigger) do not need changes — the object's
+  inferred type already determines available members regardless of file
+  context.
+- R6.3.2: Scope-based completions (bare identifiers) must use file-aware scope
+  resolution (R6.2.1–R6.2.4) to provide the correct set of in-scope bindings.
+- R6.3.3: Namespace completions must include sub-namespace names from the
+  module's namespace hierarchy for qualified access.
+
+### 6.4 Module Completion Testing
+
+**Requirements:**
+
+- R6.4.1: Test that completions in file A include declarations from file B
+  when both are in the same namespace.
+- R6.4.2: Test that file-scoped imports in file A are visible in file A
+  completions but not in file B completions.
+- R6.4.3: Test position-dependent filtering: declarations after the cursor in
+  the current file are excluded, but declarations from other files are
+  included regardless of position.
+- R6.4.4: Test that sub-namespace names are available for qualified access.
+- R6.4.5: Test member completions on types defined in other files within the
+  module.
+
+---
+
+## 7. Playground Completions
+
+### 7.1 LSP Client Support
+
+**Problem:** The playground's WASM-based LSP client (`lsp-client/client.ts`)
+has methods for `textDocument/definition`, `textDocument/hover`, and other
+requests, but does not have a method for `textDocument/completion`. Without
+this, the Monaco editor cannot request completions from the LSP server.
+
+**Requirements:**
+
+- R7.1.1: Add a `textDocumentCompletion` method to the LSP client that sends
+  a `textDocument/completion` JSON-RPC request via `sendRequest()` and returns
+  the response as `CompletionList | CompletionItem[] | null`.
+
+### 7.2 Monaco Completion Provider
+
+**Problem:** The language setup (`language.ts`) registers Monaco providers for
+hover, definition, and declaration, but does not register a
+`CompletionItemProvider`. Without this registration, Monaco does not know to
+request completions for the Escalier language.
+
+**Requirements:**
+
+- R7.2.1: Register a `CompletionItemProvider` via
+  `monaco.languages.registerCompletionItemProvider()` in `setupLanguage()`.
+- R7.2.2: Set `triggerCharacters: ['.']` to match the LSP server's
+  `CompletionOptions.TriggerCharacters`.
+- R7.2.3: Convert LSP `CompletionItem` objects to Monaco
+  `CompletionItem` objects, mapping:
+  - `label` to `label`
+  - `kind` to `kind` (with LSP-to-Monaco kind mapping, as the numeric values
+    differ)
+  - `detail` to `detail`
+  - `filterText` to `filterText`
+  - `insertText` to `insertText` (falling back to `label` if absent)
+- R7.2.4: Compute an appropriate `range` for each completion item. For member
+  completions after `.`, the range should cover from after the `.` to the
+  cursor. For scope-based completions, the range should cover the current
+  word being typed.
+- R7.2.5: Set `incomplete` from `CompletionList.isIncomplete` so that Monaco
+  re-queries the server as the user continues typing.
+- R7.2.6: Handle `null` responses from the server by returning
+  `{ suggestions: [] }`.
+
+---
+
+## 8. Non-Requirements (Out of Scope)
 
 - **Incremental parsing**: Full re-parse on every edit is acceptable.
 - **Signature help** (`textDocument/signatureHelp`): Not part of this work.
