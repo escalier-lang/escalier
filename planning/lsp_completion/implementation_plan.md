@@ -678,6 +678,10 @@ position-dependent bindings.
 - The checker already tracks file scopes via `FileScopes: map[int]*Scope`
   (keyed by `SourceID`), but the LSP server doesn't use this yet.
 
+**Note:** Steps are numbered 5.x and 6.x (continuing the phase numbering from
+earlier) rather than 4.x and 5.x to avoid confusion with the existing Phase 4
+(Testing).
+
 ```
 Step 5.1: Module-level parsing in LSP server       (R6.1.1–R6.1.3)
 Step 5.2: File-aware scope resolution               (R6.2.1–R6.2.4)
@@ -843,10 +847,10 @@ Step 6.3: Manual playground testing
   `length`, `charAt`, `includes`).
 - Type a variable name followed by `.` and verify object member completions.
 - Type a partial identifier and verify scope-based completions appear.
-- Verify that completions after `?.` work (optional chaining).
-- Verify that completions don't appear on `ErrorType` values.
-- Verify that `IsIncomplete: true` responses allow re-querying as the user
-  continues typing.
+- Completions appear after using optional chaining (`?.`).
+- Completions should not be offered for `ErrorType` values.
+- When `IsIncomplete: true` is returned, the client can re-query as the user
+  types to refine suggestions.
 
 ---
 

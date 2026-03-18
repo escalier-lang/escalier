@@ -541,12 +541,13 @@ in the same namespace (which are always visible).
   when both are in the same namespace.
 - R6.4.2: Test that file-scoped imports in file A are visible in file A
   completions but not in file B completions.
-- R6.4.3: Test position-dependent filtering: declarations after the cursor in
-  the current file are excluded, but declarations from other files are
-  included regardless of position.
-- R6.4.4: Test that sub-namespace names are available for qualified access.
-- R6.4.5: Test member completions on types defined in other files within the
-  module.
+- R6.4.3: Position-dependent filtering: declarations after the cursor in the
+  current file are excluded, but declarations from other files are included
+  regardless of position.
+- R6.4.4: Sub-namespace availability: sub-namespace names must be accessible
+  for qualified access.
+- R6.4.5: Member completion: ensure member completions work on types defined
+  in other files within the module.
 
 ---
 
