@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import type { Client } from './lsp-client/client';
+import { provideCompletionItems } from './completions';
 import { monarchLanguage } from './monarch-language';
 
 export const languageID = 'escalier';
@@ -52,65 +53,6 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
         range.end.line + 1,
         range.end.character + 1,
     );
-}
-
-function lspKindToMonacoKind(
-    kind?: lsp.CompletionItemKind,
-): monaco.languages.CompletionItemKind {
-    switch (kind) {
-        case lsp.CompletionItemKind.Text:
-            return monaco.languages.CompletionItemKind.Text;
-        case lsp.CompletionItemKind.Method:
-            return monaco.languages.CompletionItemKind.Method;
-        case lsp.CompletionItemKind.Function:
-            return monaco.languages.CompletionItemKind.Function;
-        case lsp.CompletionItemKind.Constructor:
-            return monaco.languages.CompletionItemKind.Constructor;
-        case lsp.CompletionItemKind.Field:
-            return monaco.languages.CompletionItemKind.Field;
-        case lsp.CompletionItemKind.Variable:
-            return monaco.languages.CompletionItemKind.Variable;
-        case lsp.CompletionItemKind.Class:
-            return monaco.languages.CompletionItemKind.Class;
-        case lsp.CompletionItemKind.Interface:
-            return monaco.languages.CompletionItemKind.Interface;
-        case lsp.CompletionItemKind.Module:
-            return monaco.languages.CompletionItemKind.Module;
-        case lsp.CompletionItemKind.Property:
-            return monaco.languages.CompletionItemKind.Property;
-        case lsp.CompletionItemKind.Unit:
-            return monaco.languages.CompletionItemKind.Unit;
-        case lsp.CompletionItemKind.Value:
-            return monaco.languages.CompletionItemKind.Value;
-        case lsp.CompletionItemKind.Enum:
-            return monaco.languages.CompletionItemKind.Enum;
-        case lsp.CompletionItemKind.Keyword:
-            return monaco.languages.CompletionItemKind.Keyword;
-        case lsp.CompletionItemKind.Snippet:
-            return monaco.languages.CompletionItemKind.Snippet;
-        case lsp.CompletionItemKind.Color:
-            return monaco.languages.CompletionItemKind.Color;
-        case lsp.CompletionItemKind.File:
-            return monaco.languages.CompletionItemKind.File;
-        case lsp.CompletionItemKind.Reference:
-            return monaco.languages.CompletionItemKind.Reference;
-        case lsp.CompletionItemKind.Folder:
-            return monaco.languages.CompletionItemKind.Folder;
-        case lsp.CompletionItemKind.EnumMember:
-            return monaco.languages.CompletionItemKind.EnumMember;
-        case lsp.CompletionItemKind.Constant:
-            return monaco.languages.CompletionItemKind.Constant;
-        case lsp.CompletionItemKind.Struct:
-            return monaco.languages.CompletionItemKind.Struct;
-        case lsp.CompletionItemKind.Event:
-            return monaco.languages.CompletionItemKind.Event;
-        case lsp.CompletionItemKind.Operator:
-            return monaco.languages.CompletionItemKind.Operator;
-        case lsp.CompletionItemKind.TypeParameter:
-            return monaco.languages.CompletionItemKind.TypeParameter;
-        default:
-            return monaco.languages.CompletionItemKind.Text;
-    }
 }
 
 export function setupLanguage(client: Client) {
@@ -298,22 +240,6 @@ export function setupLanguage(client: Client) {
         triggerCharacters: ['.'],
         async provideCompletionItems(model, position, _context, _token) {
             try {
-                const result = await client.textDocumentCompletion({
-                    textDocument: { uri: model.uri.toString() },
-                    position: monacoPosToLspPos(position),
-                });
-
-                if (!result) {
-                    return { suggestions: [] };
-                }
-
-                const items: lsp.CompletionItem[] = Array.isArray(result)
-                    ? result
-                    : result.items;
-                const isIncomplete = Array.isArray(result)
-                    ? false
-                    : result.isIncomplete;
-
                 const word = model.getWordUntilPosition(position);
                 const defaultRange = new monaco.Range(
                     position.lineNumber,
@@ -322,20 +248,15 @@ export function setupLanguage(client: Client) {
                     word.endColumn,
                 );
 
-                const suggestions: monaco.languages.CompletionItem[] =
-                    items.map((item) => ({
-                        label: item.label,
-                        kind: lspKindToMonacoKind(item.kind),
-                        detail: item.detail,
-                        filterText: item.filterText,
-                        insertText:
-                            typeof item.insertText === 'string'
-                                ? item.insertText
-                                : item.label,
-                        range: defaultRange,
-                    }));
-
-                return { suggestions, incomplete: isIncomplete };
+                return await provideCompletionItems(
+                    {
+                        getCompletion: (params) =>
+                            client.textDocumentCompletion(params),
+                    },
+                    model.uri.toString(),
+                    monacoPosToLspPos(position),
+                    defaultRange,
+                );
             } catch (e) {
                 console.error('Completion error:', e);
                 return { suggestions: [] };
