@@ -40,9 +40,13 @@ type Server struct {
 	scopeCache map[protocol.DocumentUri]*checker.Scope
 
 	// Module cache (for lib/ files — shared across files in same module)
-	moduleCache     *ast.Module
+	moduleCache      *ast.Module
 	moduleScopeCache *checker.Scope
-	fileScopeCache  map[int]*checker.Scope // SourceID → file scope
+	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
+
+	// Cached absolute paths to .esc files under lib/, refreshed at startup
+	// and on workspace file create/rename/delete notifications.
+	libFilesCache map[string]struct{}
 
 	mu      sync.RWMutex
 	rootURI string // workspace root URI (from InitializeParams)
@@ -55,6 +59,7 @@ func NewServer() *Server {
 		astCache:       map[protocol.DocumentUri]*ast.Script{},
 		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
 		fileScopeCache: map[int]*checker.Scope{},
+		libFilesCache:  map[string]struct{}{},
 	}
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
@@ -75,6 +80,9 @@ func NewServer() *Server {
 
 		// Workspace
 		WorkspaceExecuteCommand: s.workspaceExecuteCommand,
+		WorkspaceDidCreateFiles: s.workspaceDidCreateFiles,
+		WorkspaceDidRenameFiles: s.workspaceDidRenameFiles,
+		WorkspaceDidDeleteFiles: s.workspaceDidDeleteFiles,
 	}
 
 	return &s
@@ -137,6 +145,21 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 		Commands: []string{
 			"compile",
 		},
+	}
+	libEscFilters := []protocol.FileOperationFilter{
+		{Pattern: protocol.FileOperationPattern{Glob: "lib/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "lib/**/*.esc"}},
+	}
+	capabilities.Workspace = &protocol.ServerCapabilitiesWorkspace{
+		FileOperations: &protocol.ServerCapabilitiesWorkspaceFileOperations{
+			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidRename: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+		},
+	}
+
+	if err := s.refreshLibFilesCache(); err != nil {
+		fmt.Fprintf(os.Stderr, "initialize: failed to cache lib files: %s\n", err)
 	}
 
 	return protocol.InitializeResult{

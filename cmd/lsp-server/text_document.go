@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -234,9 +235,44 @@ func (s *Server) findLibFiles() ([]string, error) {
 		return nil
 	})
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
 		return nil, err
 	}
 	return files, nil
+}
+
+// refreshLibFilesCache scans lib/ and stores absolute .esc file paths in memory.
+func (s *Server) refreshLibFilesCache() error {
+	files, err := s.findLibFiles()
+	if err != nil {
+		return err
+	}
+
+	cache := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		cache[file] = struct{}{}
+	}
+
+	s.mu.Lock()
+	s.libFilesCache = cache
+	s.mu.Unlock()
+
+	return nil
+}
+
+// cachedLibFilesSnapshot returns a stable snapshot of cached lib file paths.
+func (s *Server) cachedLibFilesSnapshot() []string {
+	s.mu.RLock()
+	files := make([]string, 0, len(s.libFilesCache))
+	for file := range s.libFilesCache {
+		files = append(files, file)
+	}
+	s.mu.RUnlock()
+
+	sort.Strings(files)
+	return files
 }
 
 // stableSourceID returns a deterministic integer ID for a relative file path.
@@ -261,12 +297,8 @@ func getSourceIDForModule(module *ast.Module, relPath string) (int, bool) {
 func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.DocumentUri, version protocol.Integer) {
 	rootPath := uriToPath(server.rootURI)
 
-	// Find all .esc files in lib/
-	libFiles, err := server.findLibFiles()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "validateModule: error finding lib files: %s\n", err)
-		return
-	}
+	// Use cached lib file paths maintained at startup and by workspace events.
+	libFiles := server.cachedLibFilesSnapshot()
 
 	// Build sources: use in-memory content for open files, read from disk for others.
 	// Source IDs are derived from the relative path hash so they remain stable
@@ -296,6 +328,14 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	server.mu.RUnlock()
 
 	if len(sources) == 0 {
+		server.mu.Lock()
+		currentDoc := server.documents[uri]
+		if currentDoc.Version == version {
+			server.moduleCache = nil
+			server.moduleScopeCache = nil
+			server.fileScopeCache = map[int]*checker.Scope{}
+		}
+		server.mu.Unlock()
 		return
 	}
 
