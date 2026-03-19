@@ -64,7 +64,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 	case *ast.ClassDecl:
 		panic("TODO: infer class declaration")
 	case *ast.EnumDecl:
-		panic("TODO: infer enum declaration")
+		return c.inferEnumDecl(ctx, decl)
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}
@@ -429,6 +429,150 @@ func (c *Checker) inferForInStmt(ctx Context, stmt *ast.ForInStmt) []Error {
 		errs := c.inferStmt(loopCtx, bodyStmt)
 		errors = slices.Concat(errors, errs)
 	}
+
+	return errors
+}
+
+func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
+	errors := []Error{}
+
+	// Create a new namespace for the enum
+	ns := type_system.NewNamespace()
+	ctx.Scope.setNamespace(decl.Name.Name, ns)
+
+	// Infer type parameters
+	result := c.buildTypeParams(ctx, decl.TypeParams, nil)
+	errors = slices.Concat(errors, result.Errors)
+	typeParams := result.TypeParams
+	declCtx := result.Ctx
+
+	typeArgs := make([]type_system.Type, len(typeParams))
+	for i := range typeParams {
+		typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
+	}
+
+	variantTypes := make([]type_system.Type, len(decl.Elems))
+
+	for i, elem := range decl.Elems {
+		switch elem := elem.(type) {
+		case *ast.EnumVariant:
+			instanceType := type_system.NewNominalObjectType(
+				&ast.NodeProvenance{Node: elem}, []type_system.ObjTypeElem{})
+			instanceTypeAlias := &type_system.TypeAlias{
+				Type:       instanceType,
+				TypeParams: typeParams,
+				Exported:   decl.Export(),
+			}
+			ns.Types[elem.Name.Name] = instanceTypeAlias
+
+			params, _, paramErrors := c.inferFuncParams(declCtx, elem.Params)
+			errors = slices.Concat(errors, paramErrors)
+
+			// Build the constructor function type
+			funcType := type_system.NewFuncType(
+				&ast.NodeProvenance{Node: elem},
+				typeParams,
+				params,
+				type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...),
+				type_system.NewNeverType(nil),
+			)
+			constructorElem := &type_system.ConstructorElem{Fn: funcType}
+
+			classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+
+			// Build [Symbol.customMatcher](subject: C) -> [T] method
+			symbol := ctx.Scope.GetValue("Symbol")
+			symKey := PropertyKey{
+				Name:     "customMatcher",
+				OptChain: false,
+				span:     DEFAULT_SPAN,
+			}
+			customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey)
+
+			symbolKeyMap := make(map[int]any)
+
+			switch customMatcher := type_system.Prune(customMatcher).(type) {
+			case *type_system.UniqueSymbolType:
+				self := false
+				subjectPat := &type_system.IdentPat{Name: "subject"}
+				subjectType := type_system.NewTypeRefType(
+					nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
+				paramTypes := make([]type_system.Type, len(elem.Params))
+				for j, param := range elem.Params {
+					t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
+					paramTypes[j] = t
+				}
+				returnType := type_system.NewTupleType(nil, paramTypes...)
+
+				methodElem := &type_system.MethodElem{
+					Name: type_system.ObjTypeKey{
+						Kind: type_system.SymObjTypeKeyKind,
+						Sym:  customMatcher.Value,
+					},
+					Fn: type_system.NewFuncType(
+						nil,
+						typeParams,
+						[]*type_system.FuncParam{{
+							Pattern: subjectPat,
+							Type:    subjectType,
+						}},
+						returnType,
+						type_system.NewNeverType(nil),
+					),
+					MutSelf: &self,
+				}
+				classObjTypeElems = append(classObjTypeElems, methodElem)
+
+				symbolMemberExpr := ast.NewMember(
+					ast.NewIdent("Symbol", DEFAULT_SPAN),
+					ast.NewIdentifier("customMatcher", DEFAULT_SPAN),
+					false,
+					DEFAULT_SPAN,
+				)
+				symbolKeyMap[customMatcher.Value] = symbolMemberExpr
+			default:
+				panic("Symbol.customMatcher is not a unique symbol")
+			}
+
+			provenance := &ast.NodeProvenance{Node: elem}
+			classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
+			classObjType.SymbolKeyMap = symbolKeyMap
+
+			ctor := &type_system.Binding{
+				Source:   provenance,
+				Type:     classObjType,
+				Mutable:  false,
+				Exported: decl.Export(),
+			}
+
+			ns.Values[elem.Name.Name] = ctor
+
+			variantName := &type_system.Member{
+				Left:  type_system.NewIdent(decl.Name.Name),
+				Right: type_system.NewIdent(elem.Name.Name),
+			}
+
+			variantTypes[i] = &type_system.TypeRefType{
+				Name:      variantName,
+				TypeArgs:  typeArgs,
+				TypeAlias: instanceTypeAlias,
+			}
+		case *ast.EnumSpread:
+			panic("TODO: infer enum spreads")
+		}
+	}
+
+	// Build the union type for the enum
+	enumUnionType := type_system.NewUnionType(
+		&ast.NodeProvenance{Node: decl}, variantTypes...)
+
+	typeAlias := &type_system.TypeAlias{
+		Type:       enumUnionType,
+		TypeParams: typeParams,
+		Exported:   decl.Export(),
+	}
+
+	ctx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
 
 	return errors
 }
