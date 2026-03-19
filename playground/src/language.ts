@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import type { Client } from './lsp-client/client';
+import { provideCompletionItems } from './completions';
 import { monarchLanguage } from './monarch-language';
 
 export const languageID = 'escalier';
@@ -38,7 +39,7 @@ type ErrorMesage = {
     span: Span;
 };
 
-function manocoPosToLspPos(position: monaco.Position): lsp.Position {
+function monacoPosToLspPos(position: monaco.Position): lsp.Position {
     return {
         line: position.lineNumber - 1, // LSP uses 0-based line numbers
         character: position.column - 1, // LSP uses 0-based character indices
@@ -181,7 +182,7 @@ export function setupLanguage(client: Client) {
                     textDocument: {
                         uri: model.uri.toString(),
                     },
-                    position: manocoPosToLspPos(position),
+                    position: monacoPosToLspPos(position),
                 });
 
                 if (lsp.Location.is(decl)) {
@@ -207,7 +208,7 @@ export function setupLanguage(client: Client) {
                     textDocument: {
                         uri: model.uri.toString(),
                     },
-                    position: manocoPosToLspPos(position),
+                    position: monacoPosToLspPos(position),
                 });
 
                 if (lsp.Location.is(def)) {
@@ -235,11 +236,39 @@ export function setupLanguage(client: Client) {
             ['"', '"'],
         ],
     });
+    monaco.languages.registerCompletionItemProvider(languageID, {
+        triggerCharacters: ['.'],
+        async provideCompletionItems(model, position, _context, _token) {
+            try {
+                const word = model.getWordUntilPosition(position);
+                const defaultRange = new monaco.Range(
+                    position.lineNumber,
+                    word.startColumn,
+                    position.lineNumber,
+                    word.endColumn,
+                );
+
+                return await provideCompletionItems(
+                    {
+                        getCompletion: (params) =>
+                            client.textDocumentCompletion(params),
+                    },
+                    model.uri.toString(),
+                    monacoPosToLspPos(position),
+                    defaultRange,
+                );
+            } catch (e) {
+                console.error('Completion error:', e);
+                return { suggestions: [] };
+            }
+        },
+    });
+
     monaco.languages.registerHoverProvider(languageID, {
         async provideHover(model, position, _token, _context) {
             const hover = await client.textDocumentHover({
                 textDocument: { uri: model.uri.toString() },
-                position: manocoPosToLspPos(position),
+                position: monacoPosToLspPos(position),
             });
             if (!hover) {
                 return {
