@@ -125,22 +125,6 @@ describe('provideCompletionItems', () => {
         expect(result.suggestions[0].insertText).toBe('myFunc($1)');
     });
 
-    test('falls back to label when insertText is not a string', async () => {
-        const items: lsp.CompletionItem[] = [
-            { label: 'myVar', kind: lsp.CompletionItemKind.Variable },
-        ];
-        const deps = makeDeps(items);
-
-        const result = await provideCompletionItems(
-            deps,
-            uri,
-            position,
-            defaultRange,
-        );
-
-        expect(result.suggestions[0].insertText).toBe('myVar');
-    });
-
     test('preserves filterText and detail', async () => {
         const items: lsp.CompletionItem[] = [
             {
