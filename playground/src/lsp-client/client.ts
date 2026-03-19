@@ -449,6 +449,12 @@ export class Client {
         return this.sendRequest('textDocument/hover', params);
     }
 
+    textDocumentCompletion(
+        params: lsp.CompletionParams,
+    ): Promise<lsp.CompletionList | lsp.CompletionItem[] | null> {
+        return this.sendRequest('textDocument/completion', params);
+    }
+
     // Go to type definition
 
     // Go to implementation
