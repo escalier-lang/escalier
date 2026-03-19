@@ -284,7 +284,9 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 			case *SetterTypeAnn:
 				e.Fn.Accept(v)
 			case *PropertyTypeAnn:
-				e.Value.Accept(v)
+				if e.Value != nil {
+					e.Value.Accept(v)
+				}
 			case *MappedTypeAnn:
 				e.TypeParam.Constraint.Accept(v)
 				if e.Name != nil {

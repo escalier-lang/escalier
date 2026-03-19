@@ -717,7 +717,9 @@ func (p *Printer) PrintDecl(decl Decl) {
 		if !d.Interface {
 			p.print(" = ")
 		}
-		p.PrintTypeAnn(d.TypeAnn)
+		if d.TypeAnn != nil {
+			p.PrintTypeAnn(d.TypeAnn)
+		}
 		if !d.Interface {
 			p.print(";")
 		}

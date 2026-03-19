@@ -267,6 +267,9 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			}
 		}
 
+		if decl.TypeAnn == nil {
+			return nil
+		}
 		typeAnnType := decl.TypeAnn.InferredType()
 		if typeAnnType == nil {
 			return nil
