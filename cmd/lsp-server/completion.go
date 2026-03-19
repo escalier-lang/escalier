@@ -525,7 +525,7 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 
 // completionsFromModuleScope collects in-scope bindings for a cursor position
 // within a module file. It handles file-scoped imports, cross-file declarations,
-// and position-dependent filtering for same-file declarations.
+// and position-dependent filtering for declarations inside a block scope.
 func completionsFromModuleScope(
 	module *ast.Module,
 	sourceID int,
@@ -604,16 +604,16 @@ func completionsFromModuleScope(
 	}
 
 	// 2. Collect module-level value declarations with position filtering.
-	// Function declarations are always visible (hoisted). Val declarations
-	// from the current file are position-dependent; from other files always visible.
-	collectModuleDeclBindings(module, sourceID, moduleScope, cursor, seen, &items)
+	// All top-level declarations in a module are always visible from other files
+	// inside the same module.
+	collectModuleDeclBindings(module, sourceID, moduleScope, seen, &items)
 
 	// 3. Collect types and namespaces from the module scope.
 	collectScopeTypeBindings(moduleScope, seen, &items)
 
 	// 4. Collect file-scoped import bindings (values, types, namespaces).
 	if fileScope != nil {
-		collectSingleScopeBindings(fileScope, seen, &items)
+		collectFileImportBindings(module, sourceID, fileScope, seen, &items)
 	}
 
 	// 5. Walk parent scope chain for prelude/global bindings.
@@ -624,15 +624,14 @@ func completionsFromModuleScope(
 	return items
 }
 
-// collectModuleDeclBindings collects value bindings from module declarations
-// with position-dependent filtering: function declarations are always visible
-// (hoisted), val declarations from the current file are only visible if before
-// the cursor, and all declarations from other files are always visible.
+// collectModuleDeclBindings collects value bindings from module declarations.
+// All declarations are visible regardless of position since the DepGraph reorders
+// them before type checking. All declarations from the current file and other
+// files are visible.
 func collectModuleDeclBindings(
 	module *ast.Module,
 	sourceID int,
 	moduleScope *checker.Scope,
-	cursor ast.Location,
 	seen map[string]bool,
 	items *[]protocol.CompletionItem,
 ) {
@@ -664,10 +663,6 @@ func collectModuleDeclBindings(
 	}
 
 	for _, decl := range astNs.Decls {
-		isCurrentFile := decl.Span().SourceID == sourceID
-		beforeCursor := decl.Span().Start.Line < cursor.Line ||
-			(decl.Span().Start.Line == cursor.Line && decl.Span().Start.Column <= cursor.Column)
-
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			// Function declarations are always visible (hoisted)
@@ -688,54 +683,80 @@ func collectModuleDeclBindings(
 				Detail: detail,
 			})
 		case *ast.VarDecl:
-			// Val declarations: position-dependent for same file, always visible from other files
-			if isCurrentFile && !beforeCursor {
-				continue
-			}
+			// Val declarations: all top-level declarations are visible anywhere in the file
+			// because the DepGraph reorders them before type checking
 			collectPatternBindings(d.Pattern, seen, items)
 		}
 	}
 }
 
-// collectSingleScopeBindings collects all bindings (values, types, namespaces)
-// from a single scope level without recursing into parents.
-func collectSingleScopeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
-	if scope == nil {
+// collectFileImportBindings collects only bindings introduced by import
+// statements in the current file (values, types, namespaces).
+func collectFileImportBindings(
+	module *ast.Module,
+	sourceID int,
+	scope *checker.Scope,
+	seen map[string]bool,
+	items *[]protocol.CompletionItem,
+) {
+	if module == nil || scope == nil {
 		return
 	}
+
+	var file *ast.File
+	for _, f := range module.Files {
+		if f.SourceID == sourceID {
+			file = f
+			break
+		}
+	}
+	if file == nil {
+		return
+	}
+
 	ns := scope.Namespace
-	for name, binding := range ns.Values {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForValueType(binding.Type)
-			detail := safeTypeString(binding.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
-		}
-	}
-	for name, alias := range ns.Types {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForTypeAlias(alias)
-			detail := safeTypeString(alias.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
-		}
-	}
-	for name := range ns.Namespaces {
-		if !seen[name] {
-			seen[name] = true
-			kind := protocol.CompletionItemKindModule
-			*items = append(*items, protocol.CompletionItem{
-				Label: name,
-				Kind:  &kind,
-			})
+	for _, importStmt := range file.Imports {
+		for _, spec := range importStmt.Specifiers {
+			localName := spec.Name
+			if spec.Alias != "" {
+				localName = spec.Alias
+			}
+			if localName == "" || localName == "*" || seen[localName] {
+				continue
+			}
+
+			if binding, ok := ns.Values[localName]; ok {
+				seen[localName] = true
+				kind := completionKindForValueType(binding.Type)
+				detail := safeTypeString(binding.Type)
+				*items = append(*items, protocol.CompletionItem{
+					Label:  localName,
+					Kind:   &kind,
+					Detail: &detail,
+				})
+				continue
+			}
+
+			if alias, ok := ns.Types[localName]; ok {
+				seen[localName] = true
+				kind := completionKindForTypeAlias(alias)
+				detail := safeTypeString(alias.Type)
+				*items = append(*items, protocol.CompletionItem{
+					Label:  localName,
+					Kind:   &kind,
+					Detail: &detail,
+				})
+				continue
+			}
+
+			if _, ok := ns.GetNamespace(localName); ok {
+				seen[localName] = true
+				kind := protocol.CompletionItemKindModule
+				*items = append(*items, protocol.CompletionItem{
+					Label: localName,
+					Kind:  &kind,
+				})
+			}
 		}
 	}
 }
