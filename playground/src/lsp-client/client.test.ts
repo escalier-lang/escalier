@@ -49,8 +49,55 @@ test('initialize', async () => {
             ],
           },
           "hoverProvider": true,
+          "renameProvider": true,
           "textDocumentSync": 1,
           "typeDefinitionProvider": true,
+          "workspace": {
+            "fileOperations": {
+              "didCreate": {
+                "filters": [
+                  {
+                    "pattern": {
+                      "glob": "lib/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "lib/**/*.esc",
+                    },
+                  },
+                ],
+              },
+              "didDelete": {
+                "filters": [
+                  {
+                    "pattern": {
+                      "glob": "lib/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "lib/**/*.esc",
+                    },
+                  },
+                ],
+              },
+              "didRename": {
+                "filters": [
+                  {
+                    "pattern": {
+                      "glob": "lib/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "lib/**/*.esc",
+                    },
+                  },
+                ],
+              },
+            },
+          },
         },
         "serverInfo": {
           "name": "escalier",
