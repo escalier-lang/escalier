@@ -13,12 +13,16 @@ export type MonacoRange = {
     endColumn: number;
 };
 
+// Monaco's CompletionItemInsertTextRule.InsertAsSnippet = 4
+const INSERT_AS_SNIPPET = 4;
+
 export type CompletionSuggestion = {
     label: string;
     kind: number;
     detail?: string;
     filterText?: string;
     insertText: string;
+    insertTextRules?: number;
     range: MonacoRange;
 };
 
@@ -31,6 +35,15 @@ export function lspKindToMonacoKind(kind?: lsp.CompletionItemKind): number {
     // LSP and Monaco use the same integer values for CompletionItemKind.
     // Default to Text (1) for undefined.
     return kind ?? lsp.CompletionItemKind.Text;
+}
+
+export function lspRangeToMonacoRange(range: lsp.Range): MonacoRange {
+    return {
+        startLineNumber: range.start.line + 1,
+        startColumn: range.start.character + 1,
+        endLineNumber: range.end.line + 1,
+        endColumn: range.end.character + 1,
+    };
 }
 
 export async function provideCompletionItems(
@@ -54,17 +67,35 @@ export async function provideCompletionItems(
     const isIncomplete = Array.isArray(result) ? false : result.isIncomplete;
 
     const suggestions: CompletionSuggestion[] = items.map((item) => {
-        const label =
-            typeof item.label === 'string' ? item.label : item.label.label;
-        return {
-            label,
+        let insertText: string;
+        let range: MonacoRange;
+
+        if (item.textEdit) {
+            insertText = item.textEdit.newText;
+            if (lsp.InsertReplaceEdit.is(item.textEdit)) {
+                range = lspRangeToMonacoRange(item.textEdit.insert);
+            } else {
+                range = lspRangeToMonacoRange(item.textEdit.range);
+            }
+        } else {
+            insertText = item.insertText ?? item.label;
+            range = defaultRange;
+        }
+
+        const suggestion: CompletionSuggestion = {
+            label: item.label,
             kind: lspKindToMonacoKind(item.kind),
             detail: item.detail,
             filterText: item.filterText,
-            insertText:
-                typeof item.insertText === 'string' ? item.insertText : label,
-            range: defaultRange,
+            insertText,
+            range,
         };
+
+        if (item.insertTextFormat === lsp.InsertTextFormat.Snippet) {
+            suggestion.insertTextRules = INSERT_AS_SNIPPET;
+        }
+
+        return suggestion;
     });
 
     return { suggestions, incomplete: isIncomplete };

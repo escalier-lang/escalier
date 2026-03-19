@@ -5,6 +5,7 @@ import {
     type CompletionDeps,
     type MonacoRange,
     lspKindToMonacoKind,
+    lspRangeToMonacoRange,
     provideCompletionItems,
 } from './completions';
 
@@ -173,11 +174,18 @@ describe('provideCompletionItems', () => {
         });
     });
 
-    test('handles CompletionItemLabelDetails for label', async () => {
+    test('uses textEdit.newText and range when TextEdit is provided', async () => {
         const items: lsp.CompletionItem[] = [
             {
-                label: 'myMethod',
-                kind: lsp.CompletionItemKind.Method,
+                label: 'myFunc',
+                kind: lsp.CompletionItemKind.Function,
+                textEdit: {
+                    newText: 'myFunc()',
+                    range: {
+                        start: { line: 0, character: 0 },
+                        end: { line: 0, character: 4 },
+                    },
+                },
             },
         ];
         const deps = makeDeps(items);
@@ -189,8 +197,119 @@ describe('provideCompletionItems', () => {
             defaultRange,
         );
 
-        expect(result.suggestions[0].label).toBe('myMethod');
-        expect(result.suggestions[0].insertText).toBe('myMethod');
+        expect(result.suggestions[0].insertText).toBe('myFunc()');
+        expect(result.suggestions[0].range).toEqual(
+            lspRangeToMonacoRange({
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 4 },
+            }),
+        );
+    });
+
+    test('uses insert range from InsertReplaceEdit', async () => {
+        const items: lsp.CompletionItem[] = [
+            {
+                label: 'myVar',
+                kind: lsp.CompletionItemKind.Variable,
+                textEdit: {
+                    newText: 'myVar',
+                    insert: {
+                        start: { line: 0, character: 0 },
+                        end: { line: 0, character: 2 },
+                    },
+                    replace: {
+                        start: { line: 0, character: 0 },
+                        end: { line: 0, character: 5 },
+                    },
+                },
+            },
+        ];
+        const deps = makeDeps(items);
+
+        const result = await provideCompletionItems(
+            deps,
+            uri,
+            position,
+            defaultRange,
+        );
+
+        expect(result.suggestions[0].insertText).toBe('myVar');
+        expect(result.suggestions[0].range).toEqual(
+            lspRangeToMonacoRange({
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 2 },
+            }),
+        );
+    });
+
+    test('textEdit takes precedence over insertText', async () => {
+        const items: lsp.CompletionItem[] = [
+            {
+                label: 'foo',
+                kind: lsp.CompletionItemKind.Function,
+                insertText: 'ignored',
+                textEdit: {
+                    newText: 'foo()',
+                    range: {
+                        start: { line: 0, character: 0 },
+                        end: { line: 0, character: 3 },
+                    },
+                },
+            },
+        ];
+        const deps = makeDeps(items);
+
+        const result = await provideCompletionItems(
+            deps,
+            uri,
+            position,
+            defaultRange,
+        );
+
+        expect(result.suggestions[0].insertText).toBe('foo()');
+    });
+
+    test('sets insertTextRules for snippet format', async () => {
+        const items: lsp.CompletionItem[] = [
+            {
+                label: 'myFunc',
+                kind: lsp.CompletionItemKind.Function,
+                insertText: 'myFunc($1)',
+                insertTextFormat: lsp.InsertTextFormat.Snippet,
+            },
+        ];
+        const deps = makeDeps(items);
+
+        const result = await provideCompletionItems(
+            deps,
+            uri,
+            position,
+            defaultRange,
+        );
+
+        expect(result.suggestions[0].insertText).toBe('myFunc($1)');
+        expect(result.suggestions[0].insertTextRules).toBe(4); // InsertAsSnippet
+    });
+
+    test('does not set insertTextRules for plain text format', async () => {
+        const items: lsp.CompletionItem[] = [
+            {
+                label: 'myVar',
+                kind: lsp.CompletionItemKind.Variable,
+                insertText: 'myVar',
+                insertTextFormat: lsp.InsertTextFormat.PlainText,
+            },
+        ];
+        const deps = makeDeps(items);
+
+        const result = await provideCompletionItems(
+            deps,
+            uri,
+            position,
+            defaultRange,
+        );
+
+        expect(result.suggestions[0].insertTextRules).toBeUndefined();
     });
 });
 
@@ -211,5 +330,20 @@ describe('lspKindToMonacoKind', () => {
         expect(lspKindToMonacoKind(undefined)).toBe(
             lsp.CompletionItemKind.Text,
         );
+    });
+});
+
+describe('lspRangeToMonacoRange', () => {
+    test('converts 0-based LSP range to 1-based Monaco range', () => {
+        const lspRange: lsp.Range = {
+            start: { line: 2, character: 5 },
+            end: { line: 2, character: 10 },
+        };
+        expect(lspRangeToMonacoRange(lspRange)).toEqual({
+            startLineNumber: 3,
+            startColumn: 6,
+            endLineNumber: 3,
+            endColumn: 11,
+        });
     });
 });
