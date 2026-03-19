@@ -506,11 +506,12 @@ in the same namespace (which are always visible).
 
 **Requirements:**
 
-- R6.2.1: For scope-based completions in a module, declarations from the
-  *current* file must be filtered by cursor position — only declarations
-  before the cursor are visible. Declarations from *other* files in the same
-  namespace must always be visible (they are hoisted from the perspective of
-  any single file).
+- R6.2.1: For scope-based completions in a module, all top-level
+  declarations are always visible regardless of cursor position or which
+  file they originate from. The DepGraph reorders declarations before type
+  checking, so source order does not affect visibility at the module level.
+  Position-dependent filtering still applies to declarations inside block
+  scopes (e.g. local variables inside function bodies).
 - R6.2.2: File-scoped imports (stored on `ast.File`) must only be visible in
   completions for the file that contains them. An import in file A must not
   appear in completions for file B, even if both files are in the same
@@ -541,9 +542,9 @@ in the same namespace (which are always visible).
   when both are in the same namespace.
 - R6.4.2: Test that file-scoped imports in file A are visible in file A
   completions but not in file B completions.
-- R6.4.3: Position-dependent filtering: declarations after the cursor in the
-  current file are excluded, but declarations from other files are included
-  regardless of position.
+- R6.4.3: All top-level module declarations are visible regardless of
+  cursor position or file origin. Position-dependent filtering only applies
+  inside block scopes (e.g. local variables in function bodies).
 - R6.4.4: Sub-namespace availability: sub-namespace names must be accessible
   for qualified access.
 - R6.4.5: Member completion: ensure member completions work on types defined

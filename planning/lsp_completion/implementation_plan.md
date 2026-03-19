@@ -648,7 +648,7 @@ Step 4.2: Type inference tests (alongside Milestone 1)               [DONE]
 Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa525
 ```
 
-**Completion handler tests** (17 tests in `completion_test.go`):
+**Completion handler tests** (41 tests in `completion_test.go`):
 - Member completions on object types, filtered by prefix, on ErrorType
 - Scope-based completions: basic, functions, position-dependent, excludes
   future declarations
@@ -657,21 +657,26 @@ Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa
   function expressions
 - Optional chaining (strips null/undefined)
 - Result limiting, prefix filtering (case-insensitive)
+- Module-scoped completions: cross-file declarations, file-scoped imports,
+  subdirectory files, prefix-filtered scope and namespace member completions,
+  position-dependent local variables inside block scopes
 
 ### Milestone 4: Module-Scoped Completions
 
 **Status: COMPLETE.** The LSP server now detects module files (under `lib/`),
 parses all files in the module together with `ParseLibFiles()`, type-checks
-with `InferModule()`, and provides module-aware completions. File-scoped
-imports are only visible in their originating file, cross-file declarations
-are always visible, and same-file declarations are position-dependent.
+with `InferModule()`, and provides module-aware completions. All top-level
+module declarations are always visible regardless of cursor position or
+source file, since the DepGraph reorders them before type checking.
+File-scoped imports are only visible in their originating file.
 
 **Key challenges (resolved):**
-- `ast.Namespace.Decls` merges declarations from multiple files — filtered
-  by `SourceID` when determining which declarations are visible at a given
-  cursor position within a specific file.
+- `ast.Namespace.Decls` merges declarations from multiple files — all
+  top-level declarations are visible everywhere in the module since the
+  DepGraph handles ordering.
 - File-scoped imports (on `ast.File`) are only visible in completions for
-  that file via the `FileScopes` map from the checker.
+  that file. `collectFileImportBindings` iterates over the file's import
+  specifiers and looks up only those bindings in the file scope.
 - The checker's `FileScopes: map[int]*Scope` is now cached and used by the
   LSP server's completion handler.
 
@@ -717,7 +722,7 @@ Step 5.4: Module completion tests                    (R6.4.1–R6.4.5) [DONE]
 - `cmd/lsp-server/find_node.go` — added `findNodeAndParentInFile()` and
   `findNodeWithAncestorsInFile()` for module-aware node finding
 - `cmd/lsp-server/completion.go` — added `completionsFromModuleScope()`,
-  `collectModuleDeclBindings()`, `collectSingleScopeBindings()`
+  `collectModuleDeclBindings()`, `collectFileImportBindings()`
 
 **What was done:**
 
@@ -725,11 +730,12 @@ Step 5.4: Module completion tests                    (R6.4.1–R6.4.5) [DONE]
    file (filtered by `SourceID`), plus that file's import statements.
 2. `completionsFromModuleScope()` collects bindings from five levels:
    - Inner scopes (ancestor chain: function params, match patterns, etc.)
-   - Module-level value declarations with position filtering (function decls
-     hoisted, val decls position-dependent for same-file, always visible
-     from other files)
+   - Module-level value declarations (all top-level declarations are always
+     visible since the DepGraph reorders them before type checking)
    - Types and namespaces from the module scope
-   - File-scoped import bindings from the file scope
+   - File-scoped import bindings via `collectFileImportBindings`, which
+     iterates over the current file's import specifiers and looks up only
+     those bindings in the file scope
    - Prelude/global bindings from the parent scope chain
 
 #### Step 5.3: Module-Scoped Completion Handler (R6.3.1–R6.3.3)
@@ -757,16 +763,24 @@ Step 5.4: Module completion tests                    (R6.4.1–R6.4.5) [DONE]
 - `cmd/lsp-server/completion_test.go` — added `parseModuleAndInfer()` helper
   and 7 new test cases
 
-**Tests (7 tests):**
+**Tests (11 tests):**
 - Cross-file declarations visible: completions in one file include
   declarations from other files in the same namespace.
-- File-scoped imports isolation: both files see each other's declarations.
-- Position-dependent same-file: val declarations after cursor excluded.
+- All top-level declarations visible: val declarations are visible
+  regardless of cursor position (DepGraph reorders them).
 - Other file declarations always visible regardless of cursor position.
-- Function declarations hoisted (visible even before their source position).
+- Function declarations always visible in modules.
 - Member completions on types defined in other files within the module.
 - Completions inside function bodies see params, locals, and module-level
-  declarations.
+  declarations. Position-dependent filtering applies to local variables
+  inside block scopes (e.g. `later` not visible before its declaration).
+- File-scoped imports visible only in the importing file: namespace imports
+  (`import * as utils`) and value imports appear in the importing file's
+  completions but not in other files.
+- Subdirectory files see parent namespace declarations.
+- Scope-based completions filtered by prefix (identifiers and namespace
+  members).
+- Namespace member completions filtered by prefix.
 
 ### Milestone 5: Playground Completions
 
