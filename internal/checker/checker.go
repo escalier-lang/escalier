@@ -15,6 +15,7 @@ type Checker struct {
 	OverloadDecls         map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
+	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
 }
 
 func NewChecker() *Checker {

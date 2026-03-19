@@ -62,3 +62,44 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 
 	return response, nil
 }
+
+// isLibEscFileURI returns true if uri refers to a .esc file inside the lib/ directory.
+func (s *Server) isLibEscFileURI(uri string) bool {
+	return strings.HasSuffix(uri, ".esc") && s.isModuleFile(protocol.DocumentUri(uri))
+}
+
+func (s *Server) workspaceDidCreateFiles(context *glsp.Context, params *protocol.CreateFilesParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, file := range params.Files {
+		if s.isLibEscFileURI(file.URI) {
+			s.libFilesCache[uriToPath(file.URI)] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (s *Server) workspaceDidRenameFiles(context *glsp.Context, params *protocol.RenameFilesParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, file := range params.Files {
+		if s.isLibEscFileURI(file.OldURI) {
+			delete(s.libFilesCache, uriToPath(file.OldURI))
+		}
+		if s.isLibEscFileURI(file.NewURI) {
+			s.libFilesCache[uriToPath(file.NewURI)] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (s *Server) workspaceDidDeleteFiles(context *glsp.Context, params *protocol.DeleteFilesParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, file := range params.Files {
+		if s.isLibEscFileURI(file.URI) {
+			delete(s.libFilesCache, uriToPath(file.URI))
+		}
+	}
+	return nil
+}

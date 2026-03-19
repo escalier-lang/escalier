@@ -660,111 +660,113 @@ Step 4.3: Completion handler tests (alongside Milestone 3)           [DONE] 3caa
 
 ### Milestone 4: Module-Scoped Completions
 
-The LSP server currently processes each file independently as a `Script`. For
-multi-file modules, `ast.Module` groups declarations from multiple files into
-shared `ast.Namespace` objects based on directory structure (e.g. all `.esc`
-files in `lib/foo/` become namespace `"foo"`). However, imports are file-scoped
-(stored on `ast.File`, not `ast.Namespace`). This milestone upgrades the
-completion handler to work with module-level scopes, requiring file identity
-and cursor location to resolve the correct file-scoped imports and
-position-dependent bindings.
+**Status: COMPLETE.** The LSP server now detects module files (under `lib/`),
+parses all files in the module together with `ParseLibFiles()`, type-checks
+with `InferModule()`, and provides module-aware completions. File-scoped
+imports are only visible in their originating file, cross-file declarations
+are always visible, and same-file declarations are position-dependent.
 
-**Key challenges:**
-- `ast.Namespace.Decls` merges declarations from multiple files — we need to
-  filter by file when determining which declarations are visible at a given
+**Key challenges (resolved):**
+- `ast.Namespace.Decls` merges declarations from multiple files — filtered
+  by `SourceID` when determining which declarations are visible at a given
   cursor position within a specific file.
-- File-scoped imports (on `ast.File`) must only be visible in completions for
-  that file, not for other files in the same namespace.
-- The checker already tracks file scopes via `FileScopes: map[int]*Scope`
-  (keyed by `SourceID`), but the LSP server doesn't use this yet.
+- File-scoped imports (on `ast.File`) are only visible in completions for
+  that file via the `FileScopes` map from the checker.
+- The checker's `FileScopes: map[int]*Scope` is now cached and used by the
+  LSP server's completion handler.
 
 **Note:** Steps are numbered 5.x and 6.x (continuing the phase numbering from
 earlier) rather than 4.x and 5.x to avoid confusion with the existing Phase 4
 (Testing).
 
 ```
-Step 5.1: Module-level parsing in LSP server       (R6.1.1–R6.1.3)
-Step 5.2: File-aware scope resolution               (R6.2.1–R6.2.4)
-Step 5.3: Module-scoped completion handler           (R6.3.1–R6.3.3)
-Step 5.4: Module completion tests                    (R6.4.1–R6.4.5)
+Step 5.1: Module-level parsing in LSP server       (R6.1.1–R6.1.3) [DONE]
+Step 5.2: File-aware scope resolution               (R6.2.1–R6.2.4) [DONE]
+Step 5.3: Module-scoped completion handler           (R6.3.1–R6.3.3) [DONE]
+Step 5.4: Module completion tests                    (R6.4.1–R6.4.5) [DONE]
 ```
 
 #### Step 5.1: Module-Level Parsing in LSP Server (R6.1.1–R6.1.3)
 
-**Files:**
-- `cmd/lsp-server/main.go` — replace per-file `astCache`/`scopeCache` with
-  module-level caches
-- `cmd/lsp-server/text_document.go` — update `validate()` to parse/check as
-  a module
+**Status: DONE**
 
-**Approach:**
-1. On `didOpen`/`didChange`, determine which module the file belongs to based
-   on its path (directory structure maps to module namespace).
-2. Parse the entire module using `ParseLibFiles()` (or a subset) to produce an
-   `ast.Module` with properly grouped namespaces and file-scoped imports.
-3. Type-check the module to produce module-level scopes, including
-   `FileScopes` keyed by `SourceID`.
-4. Cache the module AST, module scope, and file scopes. Multiple open files in
-   the same module share the same cached module.
-5. When a file changes, only re-parse the changed file and merge its
-   declarations back into the module's namespace. Re-check the entire module
-   after re-parsing.
+**Files changed:**
+- `cmd/lsp-server/main.go` — added `moduleCache`, `moduleScopeCache`,
+  `fileScopeCache` fields to Server; added `rootURI` from InitializeParams;
+  added `uriToPath()` helper
+- `cmd/lsp-server/text_document.go` — added `isModuleFile()`, `relPath()`,
+  `findLibFiles()`, `getSourceIDForURI()`, `validateModule()`; updated
+  `validate()` to route module files to `validateModule()`
+
+**What was done:**
+
+1. Server detects module files by checking if the URI is under `lib/` relative
+   to the workspace root (`rootURI` from InitializeParams).
+2. `validateModule()` discovers all `.esc` files in `lib/`, reads their
+   contents (using in-memory content for open files, disk for others), parses
+   them with `ParseLibFiles()`, and type-checks with `InferModule()`.
+3. Module AST, module scope, and file scopes are cached. All open files in the
+   module share the same cached module.
+4. Diagnostics are published per-file, filtered by `SourceID`.
 
 #### Step 5.2: File-Aware Scope Resolution (R6.2.1–R6.2.4)
 
-**Files:**
-- `cmd/lsp-server/completion.go` — new `completionsFromModuleScope` function
+**Status: DONE**
 
-**Approach:**
-1. Add a function that, given a module, a file path (or `SourceID`), and a
-   cursor position, returns the correct scope for completions:
-   - Start with the file's scope (`FileScopes[sourceID]`) which includes
-     file-scoped imports.
-   - Include module-level namespace bindings (types, values, sub-namespaces)
-     from the file's namespace.
-   - Filter namespace declarations by file: for position-dependent completions,
-     only include declarations from the *current* file that appear before the
-     cursor. Declarations from *other* files in the same namespace are always
-     visible (they're hoisted from the perspective of any single file).
-   - Walk up the scope chain for prelude/global bindings as before.
-2. Use `decl.Span().SourceID` to determine which file a declaration belongs
-   to, and `Module.GetSourcePath(sourceID)` to map back to file paths.
+**Files changed:**
+- `cmd/lsp-server/find_node.go` — added `findNodeAndParentInFile()` and
+  `findNodeWithAncestorsInFile()` for module-aware node finding
+- `cmd/lsp-server/completion.go` — added `completionsFromModuleScope()`,
+  `collectModuleDeclBindings()`, `collectSingleScopeBindings()`
+
+**What was done:**
+
+1. Module-aware node finding walks only declarations belonging to a specific
+   file (filtered by `SourceID`), plus that file's import statements.
+2. `completionsFromModuleScope()` collects bindings from five levels:
+   - Inner scopes (ancestor chain: function params, match patterns, etc.)
+   - Module-level value declarations with position filtering (function decls
+     hoisted, val decls position-dependent for same-file, always visible
+     from other files)
+   - Types and namespaces from the module scope
+   - File-scoped import bindings from the file scope
+   - Prelude/global bindings from the parent scope chain
 
 #### Step 5.3: Module-Scoped Completion Handler (R6.3.1–R6.3.3)
 
-**Files:**
-- `cmd/lsp-server/completion.go` — update `textDocumentCompletion` to use
-  module-aware scope resolution
+**Status: DONE**
 
-**Approach:**
-1. In the completion handler, look up the module and file scope for the
-   requested document URI.
-2. For member completions (`.` trigger): no change needed — the object's
-   inferred type already determines available members regardless of file
-   context.
-3. For scope-based completions (bare identifiers): use the file-aware scope
-   from Step 5.2 instead of the current single-file scope. This ensures:
-   - File-scoped imports are visible only in their originating file.
-   - Declarations from other files in the same namespace are available.
-   - Position-dependent filtering works correctly within the current file.
-4. For namespace completions: the module's namespace hierarchy is already
-   available via the type system's `Namespace` type — no change needed.
+**Files changed:**
+- `cmd/lsp-server/completion.go` — added `moduleCompletion()` method;
+  updated `textDocumentCompletion()` to detect module files
+
+**What was done:**
+
+1. `textDocumentCompletion()` checks if the URI is a module file with a cached
+   module. If so, it delegates to `moduleCompletion()`.
+2. `moduleCompletion()` handles member completions (`.` trigger) using the
+   prelude scope for wrapper type lookups, and scope-based completions using
+   `completionsFromModuleScope()`.
+3. Script-based completions remain unchanged as the fallback path.
 
 #### Step 5.4: Module Completion Tests (R6.4.1–R6.4.5)
 
-**Files:**
-- `cmd/lsp-server/completion_test.go` — new test cases
+**Status: DONE**
 
-**Tests:**
-- Two files in the same namespace: completions in file A include declarations
-  from file B.
-- File-scoped imports: import in file A is visible in file A completions but
-  not in file B completions.
-- Position-dependent: declarations after the cursor in the current file are
-  excluded, but declarations anywhere in other files are included.
-- Cross-namespace: completions include sub-namespace names for qualified
-  access.
+**Files changed:**
+- `cmd/lsp-server/completion_test.go` — added `parseModuleAndInfer()` helper
+  and 7 new test cases
+
+**Tests (7 tests):**
+- Cross-file declarations visible: completions in one file include
+  declarations from other files in the same namespace.
+- File-scoped imports isolation: both files see each other's declarations.
+- Position-dependent same-file: val declarations after cursor excluded.
+- Other file declarations always visible regardless of cursor position.
+- Function declarations hoisted (visible even before their source position).
 - Member completions on types defined in other files within the module.
+- Completions inside function bodies see params, locals, and module-level
+  declarations.
 
 ### Milestone 5: Playground Completions
 

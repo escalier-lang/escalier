@@ -1351,6 +1351,9 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
 	ctx.FileScopes = fileScopes
 	ctx.Module = m
 
+	// Store file scopes on the checker so callers can access them
+	c.FileScopes = fileScopes
+
 	// Phase 1.5: Auto-load React types if JSX is detected
 	// This allows JSX code to type-check without an explicit import of React types.
 	if HasJSXSyntax(m) {

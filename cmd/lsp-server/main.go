@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sync"
 
@@ -37,15 +38,28 @@ type Server struct {
 	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
 	astCache   map[protocol.DocumentUri]*ast.Script
 	scopeCache map[protocol.DocumentUri]*checker.Scope
-	mu         sync.RWMutex
+
+	// Module cache (for lib/ files — shared across files in same module)
+	moduleCache      *ast.Module
+	moduleScopeCache *checker.Scope
+	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
+
+	// Cached absolute paths to .esc files under lib/, refreshed at startup
+	// and on workspace file create/rename/delete notifications.
+	libFilesCache map[string]struct{}
+
+	mu      sync.RWMutex
+	rootURI string // workspace root URI (from InitializeParams)
 }
 
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents:  map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:   map[protocol.DocumentUri]*ast.Script{},
-		scopeCache: map[protocol.DocumentUri]*checker.Scope{},
+		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		astCache:       map[protocol.DocumentUri]*ast.Script{},
+		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
+		fileScopeCache: map[int]*checker.Scope{},
+		libFilesCache:  map[string]struct{}{},
 	}
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
@@ -66,6 +80,9 @@ func NewServer() *Server {
 
 		// Workspace
 		WorkspaceExecuteCommand: s.workspaceExecuteCommand,
+		WorkspaceDidCreateFiles: s.workspaceDidCreateFiles,
+		WorkspaceDidRenameFiles: s.workspaceDidRenameFiles,
+		WorkspaceDidDeleteFiles: s.workspaceDidDeleteFiles,
 	}
 
 	return &s
@@ -75,10 +92,35 @@ func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validPa
 	return s.handler.Handle(context)
 }
 
+// uriToPath converts a file:// URI to a filesystem path, decoding any
+// percent-encoded characters (e.g. %20 for spaces).
+func uriToPath(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	path, err := url.PathUnescape(u.Path)
+	if err != nil {
+		return u.Path
+	}
+	return path
+}
+
+// pathToURI converts a filesystem path to a file:// URI, properly encoding
+// any characters that are not valid in a URI path (e.g. spaces as %20).
+func pathToURI(path string) string {
+	u := &url.URL{Scheme: "file", Path: path}
+	return u.String()
+}
+
 func (s *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	// TODO: store the client capabilities so that we can use them to customize
 	// repsonses.
 	// x := params.Capabilities.TextDocument.CodeAction.IsPreferredSupport
+
+	if params.RootURI != nil {
+		s.rootURI = string(*params.RootURI)
+	}
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
@@ -103,6 +145,21 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 		Commands: []string{
 			"compile",
 		},
+	}
+	libEscFilters := []protocol.FileOperationFilter{
+		{Pattern: protocol.FileOperationPattern{Glob: "lib/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "lib/**/*.esc"}},
+	}
+	capabilities.Workspace = &protocol.ServerCapabilitiesWorkspace{
+		FileOperations: &protocol.ServerCapabilitiesWorkspaceFileOperations{
+			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidRename: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+		},
+	}
+
+	if err := s.refreshLibFilesCache(); err != nil {
+		fmt.Fprintf(os.Stderr, "initialize: failed to cache lib files: %s\n", err)
 	}
 
 	return protocol.InitializeResult{

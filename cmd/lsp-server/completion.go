@@ -16,17 +16,29 @@ const maxCompletionItems = 100
 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
+	loc := posToLoc(params.Position)
 
 	s.mu.RLock()
+	module := s.moduleCache
+	moduleScope := s.moduleScopeCache
+	fileScopes := s.fileScopeCache
 	script := s.astCache[uri]
 	scope := s.scopeCache[uri]
 	s.mu.RUnlock()
 
+	// Try module-aware completions first.
+	if module != nil && moduleScope != nil && s.isModuleFile(uri) {
+		sourceID, ok := getSourceIDForModule(module, s.relPath(uri))
+		if ok {
+			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc)
+		}
+	}
+
+	// Fall back to script-based completions.
 	if script == nil || scope == nil {
 		return nil, nil
 	}
 
-	loc := posToLoc(params.Position)
 	node, parent := findNodeAndParent(script, loc)
 
 	var items []protocol.CompletionItem
@@ -69,6 +81,70 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		default:
 			// Other node types — provide scope-based completions
 			items = completionsFromScope(script, scope, loc)
+		}
+	}
+
+	totalBeforeLimit := len(items)
+	items = sortAndLimit(items)
+	isIncomplete := totalBeforeLimit > maxCompletionItems
+
+	return &protocol.CompletionList{
+		IsIncomplete: isIncomplete,
+		Items:        items,
+	}, nil
+}
+
+// moduleCompletion handles completions for files within a module.
+func (s *Server) moduleCompletion(
+	module *ast.Module,
+	sourceID int,
+	moduleScope *checker.Scope,
+	fileScopes map[int]*checker.Scope,
+	loc ast.Location,
+) (any, error) {
+	fileScope := fileScopes[sourceID]
+	// Use the module scope for type lookups (member completions need it for
+	// wrapper type aliases like String, Number, etc.)
+	lookupScope := moduleScope
+	if lookupScope.Parent != nil {
+		lookupScope = lookupScope.Parent // prelude scope has the wrapper types
+	}
+
+	node, parent := findNodeAndParentInFile(module, sourceID, loc)
+
+	var items []protocol.CompletionItem
+
+	if node == nil {
+		items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+	} else {
+		switch n := node.(type) {
+		case *ast.MemberExpr:
+			objType := n.Object.InferredType()
+			if objType != nil {
+				if n.OptChain {
+					objType = stripNullUndefined(objType)
+				}
+				items = completionsFromType(objType, lookupScope)
+				if n.Prop.Name != "" {
+					items = filterByPrefix(items, n.Prop.Name)
+				}
+			}
+		case *ast.IdentExpr:
+			if memberExpr, ok := parent.(*ast.MemberExpr); ok {
+				objType := memberExpr.Object.InferredType()
+				if objType != nil {
+					if memberExpr.OptChain {
+						objType = stripNullUndefined(objType)
+					}
+					items = completionsFromType(objType, lookupScope)
+					items = filterByPrefix(items, n.Name)
+				}
+			} else {
+				items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+				items = filterByPrefix(items, n.Name)
+			}
+		default:
+			items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 		}
 	}
 
@@ -445,6 +521,244 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 	}
 
 	return items
+}
+
+// completionsFromModuleScope collects in-scope bindings for a cursor position
+// within a module file. It handles file-scoped imports, cross-file declarations,
+// and position-dependent filtering for declarations inside a block scope.
+func completionsFromModuleScope(
+	module *ast.Module,
+	sourceID int,
+	fileScope *checker.Scope,
+	moduleScope *checker.Scope,
+	cursor ast.Location,
+) []protocol.CompletionItem {
+	seen := map[string]bool{}
+	var items []protocol.CompletionItem
+
+	// 1. Walk ancestor chain for inner scope bindings (function params, etc.)
+	_, ancestors := findNodeWithAncestorsInFile(module, sourceID, cursor)
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		switch a := ancestors[i].(type) {
+		case *ast.FuncDecl:
+			if a.Body != nil && a.Body.Span.Contains(cursor) {
+				for _, param := range a.Params {
+					collectPatternBindings(param.Pattern, seen, &items)
+				}
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+			}
+		case *ast.FuncExpr:
+			if a.Body != nil && a.Body.Span.Contains(cursor) {
+				for _, param := range a.Params {
+					collectPatternBindings(param.Pattern, seen, &items)
+				}
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+			}
+		case *ast.MatchExpr:
+			for _, matchCase := range a.Cases {
+				if matchCase.Span().Contains(cursor) {
+					collectPatternBindings(matchCase.Pattern, seen, &items)
+					if matchCase.Body.Block != nil {
+						collectBlockBindings(matchCase.Body.Block.Stmts, cursor, false, seen, &items)
+					}
+					break
+				}
+			}
+		case *ast.TryCatchExpr:
+			if a.Try.Span.Contains(cursor) {
+				collectBlockBindings(a.Try.Stmts, cursor, false, seen, &items)
+			} else {
+				for _, catchCase := range a.Catch {
+					if catchCase.Span().Contains(cursor) {
+						collectPatternBindings(catchCase.Pattern, seen, &items)
+						if catchCase.Body.Block != nil {
+							collectBlockBindings(catchCase.Body.Block.Stmts, cursor, false, seen, &items)
+						}
+						break
+					}
+				}
+			}
+		case *ast.IfLetExpr:
+			if a.Cons.Span.Contains(cursor) {
+				collectPatternBindings(a.Pattern, seen, &items)
+				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+			}
+		case *ast.IfElseExpr:
+			if a.Cons.Span.Contains(cursor) {
+				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
+			} else if a.Alt != nil && a.Alt.Block != nil && a.Alt.Block.Span.Contains(cursor) {
+				collectBlockBindings(a.Alt.Block.Stmts, cursor, false, seen, &items)
+			}
+		case *ast.DoExpr:
+			if a.Body.Span.Contains(cursor) {
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+			}
+		case *ast.ForInStmt:
+			if a.Body.Span.Contains(cursor) {
+				collectPatternBindings(a.Pattern, seen, &items)
+				collectBlockBindings(a.Body.Stmts, cursor, false, seen, &items)
+			}
+		}
+	}
+
+	// 2. Collect module-level value declarations with position filtering.
+	// All top-level declarations in a module are always visible from other files
+	// inside the same module.
+	collectModuleDeclBindings(module, sourceID, moduleScope, seen, &items)
+
+	// 3. Collect types and namespaces from the module scope.
+	collectScopeTypeBindings(moduleScope, seen, &items)
+
+	// 4. Collect file-scoped import bindings (values, types, namespaces).
+	if fileScope != nil {
+		collectFileImportBindings(module, sourceID, fileScope, seen, &items)
+	}
+
+	// 5. Walk parent scope chain for prelude/global bindings.
+	if moduleScope.Parent != nil {
+		collectScopeBindings(moduleScope.Parent, seen, &items)
+	}
+
+	return items
+}
+
+// collectModuleDeclBindings collects value bindings from module declarations.
+// All declarations are visible regardless of position since the DepGraph reorders
+// them before type checking. All declarations from the current file and other
+// files are visible.
+func collectModuleDeclBindings(
+	module *ast.Module,
+	sourceID int,
+	moduleScope *checker.Scope,
+	seen map[string]bool,
+	items *[]protocol.CompletionItem,
+) {
+	// Find the file's namespace name
+	var fileNsName string
+	for _, file := range module.Files {
+		if file.SourceID == sourceID {
+			fileNsName = file.Namespace
+			break
+		}
+	}
+
+	// Get the type_system.Namespace for this file's namespace
+	tsNs := moduleScope.Namespace
+	if fileNsName != "" {
+		for _, part := range strings.Split(fileNsName, ".") {
+			child, ok := tsNs.GetNamespace(part)
+			if !ok {
+				return
+			}
+			tsNs = child
+		}
+	}
+
+	// Walk declarations in the file's AST namespace
+	astNs, exists := module.Namespaces.Get(fileNsName)
+	if !exists {
+		return
+	}
+
+	for _, decl := range astNs.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			// Function declarations are always visible (hoisted)
+			name := d.Name.Name
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			kind := protocol.CompletionItemKindFunction
+			var detail *string
+			if binding, ok := tsNs.Values[name]; ok {
+				d := safeTypeString(binding.Type)
+				detail = &d
+			}
+			*items = append(*items, protocol.CompletionItem{
+				Label:  name,
+				Kind:   &kind,
+				Detail: detail,
+			})
+		case *ast.VarDecl:
+			// Val declarations: all top-level declarations are visible anywhere in the file
+			// because the DepGraph reorders them before type checking
+			collectPatternBindings(d.Pattern, seen, items)
+		}
+	}
+}
+
+// collectFileImportBindings collects only bindings introduced by import
+// statements in the current file (values, types, namespaces).
+func collectFileImportBindings(
+	module *ast.Module,
+	sourceID int,
+	scope *checker.Scope,
+	seen map[string]bool,
+	items *[]protocol.CompletionItem,
+) {
+	if module == nil || scope == nil {
+		return
+	}
+
+	var file *ast.File
+	for _, f := range module.Files {
+		if f.SourceID == sourceID {
+			file = f
+			break
+		}
+	}
+	if file == nil {
+		return
+	}
+
+	ns := scope.Namespace
+	for _, importStmt := range file.Imports {
+		for _, spec := range importStmt.Specifiers {
+			localName := spec.Name
+			if spec.Alias != "" {
+				localName = spec.Alias
+			}
+			if localName == "" || localName == "*" || seen[localName] {
+				continue
+			}
+
+			if binding, ok := ns.Values[localName]; ok {
+				seen[localName] = true
+				kind := completionKindForValueType(binding.Type)
+				detail := safeTypeString(binding.Type)
+				*items = append(*items, protocol.CompletionItem{
+					Label:  localName,
+					Kind:   &kind,
+					Detail: &detail,
+				})
+				continue
+			}
+
+			if alias, ok := ns.Types[localName]; ok {
+				seen[localName] = true
+				kind := completionKindForTypeAlias(alias)
+				detail := safeTypeString(alias.Type)
+				*items = append(*items, protocol.CompletionItem{
+					Label:  localName,
+					Kind:   &kind,
+					Detail: &detail,
+				})
+				continue
+			}
+
+			if _, ok := ns.GetNamespace(localName); ok {
+				seen[localName] = true
+				kind := protocol.CompletionItemKindModule
+				*items = append(*items, protocol.CompletionItem{
+					Label: localName,
+					Kind:  &kind,
+				})
+			}
+		}
+	}
 }
 
 // collectBlockBindings collects imports, declarations, and variable bindings

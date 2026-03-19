@@ -159,3 +159,49 @@ func findNodeWithAncestors(script *ast.Script, loc ast.Location) (ast.Node, []as
 	}
 	return visitor.Node, visitor.Ancestors
 }
+
+// walkModuleFile walks the visitor over all nodes belonging to a specific file
+// in a module: file-scoped imports and declarations across all namespaces.
+func walkModuleFile(visitor ast.Visitor, module *ast.Module, sourceID int) {
+	// Walk file-scoped imports
+	for _, file := range module.Files {
+		if file.SourceID == sourceID {
+			for _, imp := range file.Imports {
+				imp.Accept(visitor)
+			}
+			break
+		}
+	}
+	// Walk declarations from this file across all namespaces
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			if decl.Span().SourceID == sourceID {
+				decl.Accept(visitor)
+			}
+		}
+		return true
+	})
+}
+
+// findNodeAndParentInFile finds the deepest node at loc within a specific file
+// of a module. It walks only declarations belonging to the given sourceID,
+// plus that file's import statements.
+func findNodeAndParentInFile(module *ast.Module, sourceID int, loc ast.Location) (ast.Node, ast.Node) {
+	visitor := &ParentVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Cursor:         loc,
+	}
+	walkModuleFile(visitor, module, sourceID)
+	return visitor.Node, visitor.Parent
+}
+
+// findNodeWithAncestorsInFile returns the deepest node at loc and its full
+// ancestor chain for a specific file within a module.
+func findNodeWithAncestorsInFile(module *ast.Module, sourceID int, loc ast.Location) (ast.Node, []ast.Node) {
+	visitor := &ParentVisitor{
+		DefaultVisitor: ast.DefaultVisitor{},
+		Cursor:         loc,
+	}
+	walkModuleFile(visitor, module, sourceID)
+	return visitor.Node, visitor.Ancestors
+}
