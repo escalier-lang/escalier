@@ -1,8 +1,8 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
-import type { Client } from './lsp-client/client';
 import { provideCompletionItems } from './completions';
+import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
 export const languageID = 'escalier';
