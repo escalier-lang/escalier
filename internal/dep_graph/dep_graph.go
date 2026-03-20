@@ -714,7 +714,9 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 			}
 		case *ast.TypeDecl:
 			visitor.processTypeParams(d.TypeParams)
-			d.TypeAnn.Accept(visitor)
+			if d.TypeAnn != nil {
+				d.TypeAnn.Accept(visitor)
+			}
 		case *ast.InterfaceDecl:
 			visitor.processTypeParams(d.TypeParams)
 

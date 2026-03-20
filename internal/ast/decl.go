@@ -186,7 +186,9 @@ func (d *TypeDecl) Span() Span    { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
 	if v.EnterDecl(d) {
-		d.TypeAnn.Accept(v)
+		if d.TypeAnn != nil {
+			d.TypeAnn.Accept(v)
+		}
 	}
 	v.ExitDecl(d)
 }

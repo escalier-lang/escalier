@@ -22,6 +22,34 @@ func getSpanFromType(t type_system.Type) ast.Span {
 	return DEFAULT_SPAN
 }
 
+// isExprProvenance returns true if the type's provenance originates from an
+// expression node (e.g. an object literal) rather than a type annotation.
+func isExprProvenance(t type_system.Type) bool {
+	if t == nil {
+		return false
+	}
+	if prov := t.Provenance(); prov != nil {
+		if nodeProv, ok := prov.(*ast.NodeProvenance); ok && nodeProv.Node != nil {
+			_, isExpr := nodeProv.Node.(ast.Expr)
+			return isExpr
+		}
+	}
+	return false
+}
+
+// getKeyNotFoundSpan returns the appropriate span for a KeyNotFoundError.
+// When obj comes from an expression (e.g. an object literal like {x: 5}),
+// the error points at the literal itself since that's what the user needs
+// to fix. Otherwise, obj comes from a type declaration and the error
+// should point at propType (e.g. the `z` in a destructuring pattern
+// `val {x, y, z} = p` that references a non-existent key).
+func getKeyNotFoundSpan(obj *type_system.ObjectType, propType type_system.Type) ast.Span {
+	if isExprProvenance(obj) {
+		return getSpanFromType(obj)
+	}
+	return getSpanFromType(propType)
+}
+
 // isArrayType checks if a TypeRefType refers to the global Array type.
 // This handles both simple names ("Array") and qualified names ("globalThis.Array")
 // by checking the underlying TypeAlias pointer when available.
@@ -940,13 +968,14 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj2,
 							Key:    key1,
-							span:   getSpanFromType(value1),
+							span:   getKeyNotFoundSpan(obj2, value1),
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
-						// properly resolved and doesn't remain as a type variable
+						// properly resolved and doesn't remain as a type variable.
+						// We intentionally discard the errors since we already
+						// reported the KeyNotFoundError above.
 						undefinedType := type_system.NewUndefinedType(nil)
-						unifyErrors := c.Unify(ctx, value1, undefinedType)
-						errors = slices.Concat(errors, unifyErrors)
+						c.Unify(ctx, value1, undefinedType)
 					}
 				}
 
@@ -978,13 +1007,14 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj1,
 							Key:    key2,
-							span:   getSpanFromType(value2),
+							span:   getKeyNotFoundSpan(obj1, value2),
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
-						// properly resolved and doesn't remain as a type variable
+						// properly resolved and doesn't remain as a type variable.
+						// We intentionally discard the errors since we already
+						// reported the KeyNotFoundError above.
 						undefinedType := type_system.NewUndefinedType(nil)
-						unifyErrors := c.Unify(ctx, value2, undefinedType)
-						errors = slices.Concat(errors, unifyErrors)
+						c.Unify(ctx, value2, undefinedType)
 					}
 				}
 
@@ -1014,13 +1044,14 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj1,
 							Key:    key2,
-							span:   getSpanFromType(value2),
+							span:   getKeyNotFoundSpan(obj1, value2),
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
-						// properly resolved and doesn't remain as a type variable
+						// properly resolved and doesn't remain as a type variable.
+						// We intentionally discard the errors since we already
+						// reported the KeyNotFoundError above.
 						undefinedType := type_system.NewUndefinedType(nil)
-						unifyErrors := c.Unify(ctx, value2, undefinedType)
-						errors = slices.Concat(errors, unifyErrors)
+						c.Unify(ctx, value2, undefinedType)
 					}
 				}
 			}

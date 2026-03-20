@@ -714,10 +714,12 @@ func (p *Printer) PrintDecl(decl Decl) {
 			}
 			p.print(">")
 		}
-		if !d.Interface {
-			p.print(" = ")
+		if d.TypeAnn != nil {
+			if !d.Interface {
+				p.print(" = ")
+			}
+			p.PrintTypeAnn(d.TypeAnn)
 		}
-		p.PrintTypeAnn(d.TypeAnn)
 		if !d.Interface {
 			p.print(";")
 		}
