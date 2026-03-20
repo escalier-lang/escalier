@@ -17,4 +17,4 @@ if (temp2 instanceof Color.RGB) {
 }
 const result = temp1;
 console.log("hello, world");
-//# sourceMappingURL=./index.js.map
+//# sourceMappingURL=./foo.js.map

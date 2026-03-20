@@ -263,12 +263,11 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	printer := codegen.NewPrinter()
 	jsOutput := printer.PrintModule(jsMod)
 
-	// TODO: Use the name of the source file here instead of always "index.js".
-
-	jsFile := "./index.js"
+	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
+	jsFile := "./" + baseName
 	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
 
-	outmap := "./index.js.map"
+	outmap := "./" + baseName + ".map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 	// printer = codegen.NewPrinter()

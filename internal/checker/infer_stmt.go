@@ -487,6 +487,8 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 				OptChain: false,
 				span:     DEFAULT_SPAN,
 			}
+			// Symbol.customMatcher is a well-known global that is always present
+			// in the prelude, so the error can safely be ignored here.
 			customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey)
 
 			symbolKeyMap := make(map[int]any)
@@ -499,6 +501,8 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 					nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
 				paramTypes := make([]type_system.Type, len(elem.Params))
 				for j, param := range elem.Params {
+					// Enum variant param types are validated during the earlier
+					// type annotation inference pass, so errors can be ignored.
 					t, _ := c.inferTypeAnn(declCtx, param.TypeAnn)
 					paramTypes[j] = t
 				}
@@ -531,6 +535,9 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 				)
 				symbolKeyMap[customMatcher.Value] = symbolMemberExpr
 			default:
+				// This is an internal invariant: Symbol.customMatcher must always
+				// resolve to a UniqueSymbolType from the prelude. If it doesn't,
+				// something is fundamentally wrong and panicking is appropriate.
 				panic("Symbol.customMatcher is not a unique symbol")
 			}
 

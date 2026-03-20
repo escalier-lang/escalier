@@ -1,3 +1,3 @@
 const roA = roObj.a;
 roObj.a = roA;
-//# sourceMappingURL=./index.js.map
+//# sourceMappingURL=./foo.js.map

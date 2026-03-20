@@ -39,4 +39,4 @@ if (temp6 instanceof Color.RGB) {
   temp5 = code;
 }
 const result = temp5;
-//# sourceMappingURL=./index.js.map
+//# sourceMappingURL=./foo.js.map
