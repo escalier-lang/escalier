@@ -968,7 +968,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
 							Object: obj2,
 							Key:    key1,
-							span:   getSpanFromType(value1),
+							span:   getKeyNotFoundSpan(obj2, value1),
 						}})
 						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable.
