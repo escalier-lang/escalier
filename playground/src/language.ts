@@ -58,6 +58,9 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
 export function setupLanguage(client: Client) {
     monaco.languages.register({ id: languageID });
 
+    // Map of URI → flush function for pending debounced didChange notifications.
+    const pendingFlush = new Map<string, () => void>();
+
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             const models = monaco.editor.getModels();
@@ -149,23 +152,33 @@ export function setupLanguage(client: Client) {
         });
 
         let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+        const sendDidChange = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = undefined;
+            const version = model.getVersionId();
+            console.log(`version: ${version}`);
+            client.textDocumentDidChange({
+                textDocument: {
+                    uri: model.uri.toString(),
+                    version: version,
+                },
+                contentChanges: [
+                    {
+                        text: model.getValue(),
+                    },
+                ],
+            });
+        };
+        // Flush any pending debounced didChange so the server has the
+        // latest content before handling a completion or hover request.
+        pendingFlush.set(model.uri.toString(), () => {
+            if (debounceTimer !== undefined) {
+                sendDidChange();
+            }
+        });
         model.onDidChangeContent(() => {
             clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                const version = model.getVersionId();
-                console.log(`version: ${version}`);
-                client.textDocumentDidChange({
-                    textDocument: {
-                        uri: model.uri.toString(),
-                        version: version,
-                    },
-                    contentChanges: [
-                        {
-                            text: model.getValue(),
-                        },
-                    ],
-                });
-            }, 500);
+            debounceTimer = setTimeout(sendDidChange, 500);
         });
     });
 
@@ -176,6 +189,7 @@ export function setupLanguage(client: Client) {
             return;
         }
 
+        pendingFlush.delete(model.uri.toString());
         client.textDocumentDidClose({
             textDocument: {
                 uri: model.uri.toString(),
@@ -252,6 +266,9 @@ export function setupLanguage(client: Client) {
         triggerCharacters: ['.'],
         async provideCompletionItems(model, position, _context, _token) {
             try {
+                // Flush any pending didChange so the server has the latest content.
+                pendingFlush.get(model.uri.toString())?.();
+
                 const word = model.getWordUntilPosition(position);
                 const defaultRange = new monaco.Range(
                     position.lineNumber,

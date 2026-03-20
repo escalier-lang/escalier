@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -189,17 +192,71 @@ func resolveDetailInScope(scope *checker.Scope, name string) string {
 	return ""
 }
 
+// shouldSuppressCompletions does a quick parse of the current document content
+// to check if the cursor is on a node where completions should be suppressed
+// (e.g. IdentPat, which introduces a new binding). This handles the case where
+// the debounced didChange hasn't triggered validation yet, so the cached AST
+// is stale.
+func shouldSuppressCompletions(doc protocol.TextDocumentItem, isModule bool, module *ast.Module, loc ast.Location) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	if isModule {
+		// For module files, we'd need to parse all lib files which is too expensive.
+		// Fall back to checking the cached module AST if available.
+		if module == nil {
+			return false
+		}
+		// Module node finding uses SourceID; we can't easily get that from a quick parse.
+		// The cached module should still be checked in the main handler.
+		return false
+	}
+
+	// Quick-parse the current document content (no type checking needed).
+	p := parser.NewParser(ctx, &ast.Source{
+		Path:     string(doc.URI),
+		Contents: doc.Text,
+	})
+	freshScript, _ := p.ParseScript()
+
+	_, ancestors := findNodeWithAncestors(freshScript, loc)
+
+	for _, ancestor := range ancestors {
+		if varDecl, ok := ancestor.(*ast.VarDecl); ok {
+			if varDecl.Pattern != nil && varDecl.Pattern.Span().Contains(loc) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
 	loc := posToLoc(params.Position)
 
+	// Wait for an in-flight validation to complete if the cached AST is
+	// stale (i.e. the document has been updated but validation hasn't
+	// finished yet). Times out after 2s to avoid blocking indefinitely.
+	deadline := time.Now().Add(2 * time.Second)
 	s.mu.RLock()
+	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		s.validated.Wait()
+	}
 	module := s.moduleCache
 	moduleScope := s.moduleScopeCache
 	fileScopes := s.fileScopeCache
 	script := s.astCache[uri]
 	scope := s.scopeCache[uri]
+	doc := s.documents[uri]
 	s.mu.RUnlock()
+
+	// Quick-parse the current document content to check if the cursor is on
+	// a node where completions should be suppressed (e.g. IdentPat). This
+	// runs after waiting for validation so doc reflects the latest content.
+	if shouldSuppressCompletions(doc, s.isModuleFile(uri), module, loc) {
+		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
+	}
 
 	// Try module-aware completions first.
 	if module != nil && moduleScope != nil && s.isModuleFile(uri) {

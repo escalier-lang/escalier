@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/stretchr/testify/assert"
@@ -119,6 +120,73 @@ x.`
 
 	items := completionsFromType(objType, scope)
 	assert.Empty(t, items)
+}
+
+// scriptCompletions exercises the full textDocumentCompletion handler for a
+// script file, returning the completion items.
+func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol.CompletionItem {
+	t.Helper()
+	uri := protocol.DocumentUri("file:///test.esc")
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	s := testServer()
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       source,
+	}
+	s.astCache[uri] = script
+	s.scopeCache[uri] = scope
+	s.validatedVersion[uri] = version
+
+	// LSP positions are 0-based; loc is already 1-based from the test.
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(loc.Line - 1),
+				Character: protocol.UInteger(loc.Column - 1),
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	if result == nil {
+		return nil
+	}
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+	return list.Items
+}
+
+func TestNoCompletionsOnIdentPat(t *testing.T) {
+	// Cursor at "p" — line 1, col 5
+	items := scriptCompletions(t, `val p`, ast.Location{Line: 1, Column: 5})
+	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat")
+}
+
+func TestNoCompletionsOnIdentPatInCompleteDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p = 10"
+	// Cursor right after "p" in a complete declaration — still in the pattern.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in complete val decl")
+}
+
+func TestNoCompletionsOnIdentPatInIncompleteDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p"
+	// Cursor right after "p" in an incomplete declaration — still in the pattern.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in incomplete val decl")
+}
+
+func TestCompletionsOnIdentExpr(t *testing.T) {
+	source := "type Point = {x: number, y: number}\np"
+	// Cursor at "p" on line 2 — this is an IdentExpr, not IdentPat.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 1})
+	labels := getCompletionLabels(items)
+	assert.Contains(t, labels, "Point", "should provide completions when cursor is on IdentExpr")
 }
 
 func TestScopeCompletionBasic(t *testing.T) {

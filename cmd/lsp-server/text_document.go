@@ -194,6 +194,20 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 	return codeActions, nil
 }
 
+// isCacheStale returns true if the document has been updated since the last
+// successful validation. Must be called while holding mu.RLock().
+func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
+	doc, ok := s.documents[uri]
+	if !ok {
+		return false
+	}
+	validated, ok := s.validatedVersion[uri]
+	if !ok {
+		return true
+	}
+	return doc.Version != validated
+}
+
 // isModuleFile checks if a URI corresponds to a file under the lib/ directory.
 func (s *Server) isModuleFile(uri protocol.DocumentUri) bool {
 	if s.rootURI == "" {
@@ -383,7 +397,9 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	server.moduleCache = module
 	server.moduleScopeCache = inferCtx.Scope
 	server.fileScopeCache = c.FileScopes
+	server.validatedVersion[uri] = version
 	server.mu.Unlock()
+	server.validated.Broadcast()
 
 	// Pre-index errors by SourceID so we can look them up per-file in O(1)
 	// instead of scanning all errors for each file.
@@ -464,7 +480,9 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	}
 	server.astCache[uri] = script
 	server.scopeCache[uri] = scriptScope
+	server.validatedVersion[uri] = version
 	server.mu.Unlock()
+	server.validated.Broadcast()
 
 	diagnotics := []protocol.Diagnostic{}
 	for _, err := range parseErrors {

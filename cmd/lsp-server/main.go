@@ -44,6 +44,10 @@ type Server struct {
 	moduleScopeCache *checker.Scope
 	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
 
+	// Tracks the last validated document version per URI so the completion
+	// handler can detect when the cache is stale.
+	validatedVersion map[protocol.DocumentUri]protocol.Integer
+
 	// Cached absolute paths to .esc files under lib/, refreshed at startup
 	// and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}
@@ -53,7 +57,11 @@ type Server struct {
 	preludeCompletions []protocol.CompletionItem
 
 	mu      sync.RWMutex
-	rootURI string // workspace root URI (from InitializeParams)
+	// validated is broadcast after validate()/validateModule() updates the
+	// AST and scope caches. The completion handler waits on this when the
+	// cached version is behind the document version.
+	validated *sync.Cond
+	rootURI   string // workspace root URI (from InitializeParams)
 }
 
 func NewServer() *Server {
@@ -62,9 +70,11 @@ func NewServer() *Server {
 		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		astCache:       map[protocol.DocumentUri]*ast.Script{},
 		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache: map[int]*checker.Scope{},
-		libFilesCache:  map[string]struct{}{},
+		fileScopeCache:   map[int]*checker.Scope{},
+		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		libFilesCache:    map[string]struct{}{},
 	}
+	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
 		Initialize:  s.initialize,
