@@ -119,10 +119,10 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 	s.mu.Unlock()
 
 	if doc.LanguageID == "escalier" {
-		for _, _change := range params.ContentChanges {
-			change := _change.(protocol.TextDocumentContentChangeEventWhole)
-			s.validate(context, params.TextDocument.URI, change.Text, params.TextDocument.Version)
-		}
+		// Use only the last content change since we're in full-sync mode
+		// and only the final state matters.
+		lastChange := params.ContentChanges[len(params.ContentChanges)-1].(protocol.TextDocumentContentChangeEventWhole)
+		go s.validate(context, params.TextDocument.URI, lastChange.Text, params.TextDocument.Version)
 	}
 	return nil
 }
@@ -295,6 +295,16 @@ func getSourceIDForModule(module *ast.Module, relPath string) (int, bool) {
 }
 
 func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.DocumentUri, version protocol.Integer) {
+	fmt.Fprintf(os.Stderr, "validateModule")
+
+	// Check staleness before doing expensive work.
+	server.mu.RLock()
+	currentDoc := server.documents[uri]
+	server.mu.RUnlock()
+	if currentDoc.Version != version {
+		return
+	}
+
 	rootPath := uriToPath(server.rootURI)
 
 	// Use cached lib file paths maintained at startup and by workspace events.
@@ -303,14 +313,26 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	// Build sources: use in-memory content for open files, read from disk for others.
 	// Source IDs are derived from the relative path hash so they remain stable
 	// regardless of file discovery order or files being added/removed.
-	var sources []*ast.Source
+	//
+	// First, snapshot in-memory documents under the lock, then do disk I/O
+	// outside the lock to avoid blocking other operations.
+	openDocs := make(map[protocol.DocumentUri]string)
 	server.mu.RLock()
+	for _, absPath := range libFiles {
+		fileURI := protocol.DocumentUri(pathToURI(absPath))
+		if doc, ok := server.documents[fileURI]; ok {
+			openDocs[fileURI] = doc.Text
+		}
+	}
+	server.mu.RUnlock()
+
+	var sources []*ast.Source
 	for _, absPath := range libFiles {
 		rel, _ := filepath.Rel(rootPath, absPath)
 		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		var contents string
-		if doc, ok := server.documents[fileURI]; ok {
-			contents = doc.Text
+		if text, ok := openDocs[fileURI]; ok {
+			contents = text
 		} else {
 			data, err := os.ReadFile(absPath)
 			if err != nil {
@@ -325,7 +347,6 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 			Contents: contents,
 		})
 	}
-	server.mu.RUnlock()
 
 	if len(sources) == 0 {
 		server.mu.Lock()
@@ -354,7 +375,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 
 	// Store module cache and file scopes.
 	server.mu.Lock()
-	currentDoc := server.documents[uri]
+	currentDoc = server.documents[uri]
 	if currentDoc.Version != version {
 		server.mu.Unlock()
 		return
@@ -364,36 +385,33 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	server.fileScopeCache = c.FileScopes
 	server.mu.Unlock()
 
-	// Publish diagnostics for all open files in the module.
+	// Pre-index errors by SourceID so we can look them up per-file in O(1)
+	// instead of scanning all errors for each file.
+	severity := protocol.DiagnosticSeverityError
+	source := "escalier"
+	diagsBySourceID := make(map[int][]protocol.Diagnostic)
+	for _, err := range parseErrors {
+		diagsBySourceID[err.Span.SourceID] = append(diagsBySourceID[err.Span.SourceID], protocol.Diagnostic{
+			Range:    spanToRange(err.Span),
+			Severity: &severity,
+			Source:   &source,
+			Message:  err.Message,
+		})
+	}
+	for _, err := range typeErrors {
+		span := err.Span()
+		diagsBySourceID[span.SourceID] = append(diagsBySourceID[span.SourceID], protocol.Diagnostic{
+			Range:    spanToRange(span),
+			Severity: &severity,
+			Source:   &source,
+			Message:  err.Message(),
+		})
+	}
+
+	// Publish diagnostics for all files in the module.
 	for _, file := range module.Files {
 		fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
-
-		var fileDiags []protocol.Diagnostic
-		for _, err := range parseErrors {
-			if err.Span.SourceID == file.SourceID {
-				severity := protocol.DiagnosticSeverityError
-				source := "escalier"
-				fileDiags = append(fileDiags, protocol.Diagnostic{
-					Range:    spanToRange(err.Span),
-					Severity: &severity,
-					Source:   &source,
-					Message:  err.Message,
-				})
-			}
-		}
-		for _, err := range typeErrors {
-			span := err.Span()
-			if span.SourceID == file.SourceID {
-				severity := protocol.DiagnosticSeverityError
-				source := "escalier"
-				fileDiags = append(fileDiags, protocol.Diagnostic{
-					Range:    spanToRange(span),
-					Severity: &severity,
-					Source:   &source,
-					Message:  err.Message(),
-				})
-			}
-		}
+		fileDiags := diagsBySourceID[file.SourceID]
 
 		diagVersion := protocol.UInteger(version)
 		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
@@ -408,6 +426,16 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	// Route module files to module-level validation.
 	if server.isModuleFile(uri) {
 		server.validateModule(lspContext, uri, version)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "validate (script)")
+
+	// Check staleness before doing expensive work.
+	server.mu.RLock()
+	currentDoc := server.documents[uri]
+	server.mu.RUnlock()
+	if currentDoc.Version != version {
 		return
 	}
 
@@ -427,10 +455,9 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	}
 	scriptScope, typeErrors := c.InferScript(inferCtx, script)
 
-	// INVARIANT: validate() must never be called while holding mu.
-	// Check that the document hasn't been updated since we started.
+	// Check again after expensive work in case a new version arrived.
 	server.mu.Lock()
-	currentDoc := server.documents[uri]
+	currentDoc = server.documents[uri]
 	if currentDoc.Version != version {
 		server.mu.Unlock()
 		return

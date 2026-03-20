@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -13,6 +14,180 @@ import (
 )
 
 const maxCompletionItems = 100
+
+// completionResolveData is stored in CompletionItem.Data for deferred detail resolution.
+type completionResolveData struct {
+	// Scope identifies where to look up the binding: "prelude", "module", "file", or "script".
+	Scope string `json:"scope"`
+	// Name is the binding name to look up.
+	Name string `json:"name"`
+	// URI is the document URI (used for script-scoped lookups).
+	URI string `json:"uri,omitempty"`
+}
+
+// buildPreludeCompletions computes completion items for all prelude/global scope
+// bindings. Detail is deferred to completionItem/resolve.
+func buildPreludeCompletions(scope *checker.Scope) []protocol.CompletionItem {
+	if scope == nil {
+		return nil
+	}
+	var items []protocol.CompletionItem
+	buildScopeCompletionsNoDetail(scope, &items, "prelude")
+	return items
+}
+
+// buildScopeCompletionsNoDetail recursively collects completion items from a scope
+// chain without computing Detail strings. Sets Data for deferred resolution.
+func buildScopeCompletionsNoDetail(scope *checker.Scope, items *[]protocol.CompletionItem, scopeID string) {
+	if scope == nil {
+		return
+	}
+	ns := scope.Namespace
+	for name, binding := range ns.Values {
+		kind := completionKindForValueType(binding.Type)
+		*items = append(*items, protocol.CompletionItem{
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
+		})
+	}
+	for name, alias := range ns.Types {
+		kind := completionKindForTypeAlias(alias)
+		*items = append(*items, protocol.CompletionItem{
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
+		})
+	}
+	for name := range ns.Namespaces {
+		kind := protocol.CompletionItemKindModule
+		detail := "namespace"
+		*items = append(*items, protocol.CompletionItem{
+			Label:  name,
+			Kind:   &kind,
+			Detail: &detail,
+		})
+	}
+	buildScopeCompletionsNoDetail(scope.Parent, items, scopeID)
+}
+
+// getPreludeCompletions returns cached prelude completion items, building them
+// on first access. The prelude scope is obtained from the script or module scope's
+// parent chain.
+func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.CompletionItem {
+	s.mu.RLock()
+	cached := s.preludeCompletions
+	s.mu.RUnlock()
+	if cached != nil {
+		return cached
+	}
+
+	items := buildPreludeCompletions(preludeScope)
+
+	s.mu.Lock()
+	// Double-check in case another goroutine built it concurrently.
+	if s.preludeCompletions == nil {
+		s.preludeCompletions = items
+	}
+	cached = s.preludeCompletions
+	s.mu.Unlock()
+	return cached
+}
+
+// completionItemResolve handles completionItem/resolve requests by computing
+// the Detail string on demand.
+func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.CompletionItem) (*protocol.CompletionItem, error) {
+	if params.Detail != nil {
+		// Already resolved.
+		return params, nil
+	}
+	if params.Data == nil {
+		return params, nil
+	}
+
+	// params.Data arrives as a json.RawMessage or map; re-marshal to decode.
+	raw, err := json.Marshal(params.Data)
+	if err != nil {
+		return params, nil
+	}
+	var data completionResolveData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return params, nil
+	}
+	if data.Scope == "" || data.Name == "" {
+		return params, nil
+	}
+
+	var detail string
+	switch data.Scope {
+	case "prelude":
+		detail = s.resolvePreludeDetail(data.Name)
+	case "script":
+		detail = s.resolveScriptDetail(data.URI, data.Name)
+	case "module":
+		detail = s.resolveModuleDetail(data.Name)
+	default:
+		return params, nil
+	}
+
+	if detail != "" {
+		params.Detail = &detail
+	}
+	// Clear Data so it's not sent back to the client.
+	params.Data = nil
+	return params, nil
+}
+
+func (s *Server) resolvePreludeDetail(name string) string {
+	s.mu.RLock()
+	// Try script scopes first for a prelude scope reference.
+	for _, scope := range s.scopeCache {
+		if scope != nil && scope.Parent != nil {
+			s.mu.RUnlock()
+			return resolveDetailInScope(scope.Parent, name)
+		}
+	}
+	// Try module scope.
+	moduleScope := s.moduleScopeCache
+	s.mu.RUnlock()
+	if moduleScope != nil && moduleScope.Parent != nil {
+		return resolveDetailInScope(moduleScope.Parent, name)
+	}
+	return ""
+}
+
+func (s *Server) resolveScriptDetail(uri string, name string) string {
+	s.mu.RLock()
+	scope := s.scopeCache[protocol.DocumentUri(uri)]
+	s.mu.RUnlock()
+	if scope == nil {
+		return ""
+	}
+	return resolveDetailInScope(scope, name)
+}
+
+func (s *Server) resolveModuleDetail(name string) string {
+	s.mu.RLock()
+	scope := s.moduleScopeCache
+	s.mu.RUnlock()
+	if scope == nil {
+		return ""
+	}
+	return resolveDetailInScope(scope, name)
+}
+
+func resolveDetailInScope(scope *checker.Scope, name string) string {
+	for s := scope; s != nil; s = s.Parent {
+		ns := s.Namespace
+		if binding, ok := ns.Values[name]; ok {
+			return safeTypeString(binding.Type)
+		}
+		if alias, ok := ns.Types[name]; ok {
+			return safeTypeString(alias.Type)
+		}
+	}
+	return ""
+}
 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
@@ -45,7 +220,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
-		items = completionsFromScope(script, scope, loc)
+		items = s.completionsFromScope(script, scope, loc)
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -75,12 +250,12 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				}
 			} else {
 				// Case C: standalone identifier — scope-based completions
-				items = completionsFromScope(script, scope, loc)
+				items = s.completionsFromScope(script, scope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
 		default:
 			// Other node types — provide scope-based completions
-			items = completionsFromScope(script, scope, loc)
+			items = s.completionsFromScope(script, scope, loc)
 		}
 	}
 
@@ -115,7 +290,7 @@ func (s *Server) moduleCompletion(
 	var items []protocol.CompletionItem
 
 	if node == nil {
-		items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+		items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -140,11 +315,11 @@ func (s *Server) moduleCompletion(
 					items = filterByPrefix(items, n.Name)
 				}
 			} else {
-				items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+				items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
 		default:
-			items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+			items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 		}
 	}
 
@@ -434,7 +609,7 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
 // variables, if-let patterns, and block-local variable declarations.
-func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
+func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 
@@ -515,9 +690,12 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 	// Values are already collected by collectBlockBindings above.
 	collectScopeTypeBindings(scope, seen, &items)
 
-	// Walk the parent scope chain for global/prelude bindings.
-	if scope.Parent != nil {
-		collectScopeBindings(scope.Parent, seen, &items)
+	// Append cached prelude/global bindings, skipping any that are shadowed.
+	for _, item := range s.getPreludeCompletions(scope.Parent) {
+		if !seen[item.Label] {
+			seen[item.Label] = true
+			items = append(items, item)
+		}
 	}
 
 	return items
@@ -526,7 +704,7 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 // completionsFromModuleScope collects in-scope bindings for a cursor position
 // within a module file. It handles file-scoped imports, cross-file declarations,
 // and position-dependent filtering for declarations inside a block scope.
-func completionsFromModuleScope(
+func (s *Server) completionsFromModuleScope(
 	module *ast.Module,
 	sourceID int,
 	fileScope *checker.Scope,
@@ -616,9 +794,12 @@ func completionsFromModuleScope(
 		collectFileImportBindings(module, sourceID, fileScope, seen, &items)
 	}
 
-	// 5. Walk parent scope chain for prelude/global bindings.
-	if moduleScope.Parent != nil {
-		collectScopeBindings(moduleScope.Parent, seen, &items)
+	// 5. Append cached prelude/global bindings, skipping any that are shadowed.
+	for _, item := range s.getPreludeCompletions(moduleScope.Parent) {
+		if !seen[item.Label] {
+			seen[item.Label] = true
+			items = append(items, item)
+		}
 	}
 
 	return items
@@ -919,48 +1100,6 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 			})
 		}
 	}
-}
-
-func collectScopeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
-	if scope == nil {
-		return
-	}
-	ns := scope.Namespace
-	for name, binding := range ns.Values {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForValueType(binding.Type)
-			detail := safeTypeString(binding.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
-		}
-	}
-	for name, alias := range ns.Types {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForTypeAlias(alias)
-			detail := safeTypeString(alias.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
-		}
-	}
-	for name := range ns.Namespaces {
-		if !seen[name] {
-			seen[name] = true
-			kind := protocol.CompletionItemKindModule
-			*items = append(*items, protocol.CompletionItem{
-				Label: name,
-				Kind:  &kind,
-			})
-		}
-	}
-	collectScopeBindings(scope.Parent, seen, items)
 }
 
 // Helper functions

@@ -93,11 +93,9 @@ export function setupLanguage(client: Client) {
                         const model = models.find(
                             (model) => model.uri.toString() === outputUri,
                         );
-
                         if (!model) {
                             return;
                         }
-
                         model.setValue(result.text);
                     });
             }
@@ -137,6 +135,10 @@ export function setupLanguage(client: Client) {
     monaco.editor.onDidCreateModel((model) => {
         console.log('onDidCreateModel', model.uri.toString());
 
+        if (!model.uri.path.endsWith('.esc')) {
+            return;
+        }
+
         client.textDocumentDidOpen({
             textDocument: {
                 uri: model.uri.toString(),
@@ -146,23 +148,33 @@ export function setupLanguage(client: Client) {
             },
         });
 
+        let debounceTimer: ReturnType<typeof setTimeout> | undefined;
         model.onDidChangeContent(() => {
-            client.textDocumentDidChange({
-                textDocument: {
-                    uri: model.uri.toString(),
-                    version: model.getVersionId(),
-                },
-                contentChanges: [
-                    {
-                        text: model.getValue(),
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const version = model.getVersionId();
+                console.log(`version: ${version}`);
+                client.textDocumentDidChange({
+                    textDocument: {
+                        uri: model.uri.toString(),
+                        version: version,
                     },
-                ],
-            });
+                    contentChanges: [
+                        {
+                            text: model.getValue(),
+                        },
+                    ],
+                });
+            }, 500);
         });
     });
 
     monaco.editor.onWillDisposeModel((model) => {
         console.log('onWillDisposeModel', model.uri.toString());
+
+        if (!model.uri.path.endsWith('.esc')) {
+            return;
+        }
 
         client.textDocumentDidClose({
             textDocument: {

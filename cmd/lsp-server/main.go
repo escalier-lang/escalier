@@ -48,6 +48,10 @@ type Server struct {
 	// and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}
 
+	// Cached completion items for prelude/global scope bindings.
+	// Computed lazily on first completion request; never changes after that.
+	preludeCompletions []protocol.CompletionItem
+
 	mu      sync.RWMutex
 	rootURI string // workspace root URI (from InitializeParams)
 }
@@ -76,6 +80,7 @@ func NewServer() *Server {
 		TextDocumentDidChange:      s.textDocumentDidChange,
 		TextDocumentHover:          s.textDocumentHover,
 		TextDocumentCompletion:     s.textDocumentCompletion,
+		CompletionItemResolve:      s.completionItemResolve,
 		TextDocumentCodeAction:     s.textDocumentCodeAction,
 
 		// Workspace
@@ -124,8 +129,10 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
+	resolveProvider := true
 	capabilities.CompletionProvider = &protocol.CompletionOptions{
 		TriggerCharacters: []string{"."},
+		ResolveProvider:   &resolveProvider,
 	}
 	capabilities.DeclarationProvider = true
 	capabilities.DefinitionProvider = true
