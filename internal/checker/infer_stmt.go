@@ -492,6 +492,9 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 			// e.g. for Some(value: T):
 			//   [Symbol.customMatcher](subject: Option.Some<T>) -> [T]
 			symbol := ctx.Scope.GetValue("Symbol")
+			if symbol == nil {
+				panic("Symbol binding not found in scope")
+			}
 			symKey := PropertyKey{
 				Name:     "customMatcher",
 				OptChain: false,
