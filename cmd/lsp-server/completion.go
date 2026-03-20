@@ -262,7 +262,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	if module != nil && moduleScope != nil && s.isModuleFile(uri) {
 		sourceID, ok := getSourceIDForModule(module, s.relPath(uri))
 		if ok {
-			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc)
+			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
 		}
 	}
 
@@ -310,9 +310,20 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				items = s.completionsFromScope(script, scope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.TypeRefTypeAnn:
+			// Cursor is in a type annotation — return only type completions.
+			items = typeCompletionsFromScope(scope)
+			if n.Name != nil {
+				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
+					items = filterByPrefix(items, ident.Name)
+				}
+			}
 		default:
 			// Other node types — provide scope-based completions
 			items = s.completionsFromScope(script, scope, loc)
+			if prefix := wordAtCursor(doc.Text, loc); prefix != "" {
+				items = filterByPrefix(items, prefix)
+			}
 		}
 	}
 
@@ -333,6 +344,7 @@ func (s *Server) moduleCompletion(
 	moduleScope *checker.Scope,
 	fileScopes map[int]*checker.Scope,
 	loc ast.Location,
+	docText string,
 ) (any, error) {
 	fileScope := fileScopes[sourceID]
 	// Use the module scope for type lookups (member completions need it for
@@ -375,8 +387,19 @@ func (s *Server) moduleCompletion(
 				items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.TypeRefTypeAnn:
+			// Cursor is in a type annotation — return only type completions.
+			items = typeCompletionsFromScope(moduleScope)
+			if n.Name != nil {
+				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
+					items = filterByPrefix(items, ident.Name)
+				}
+			}
 		default:
 			items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+			if prefix := wordAtCursor(docText, loc); prefix != "" {
+				items = filterByPrefix(items, prefix)
+			}
 		}
 	}
 
@@ -1157,6 +1180,69 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 			})
 		}
 	}
+}
+
+// typeCompletionsFromScope collects only type aliases and namespaces from the
+// entire scope chain (current scope + parents). Used when the cursor is in a
+// type annotation position.
+func typeCompletionsFromScope(scope *checker.Scope) []protocol.CompletionItem {
+	seen := map[string]bool{}
+	var items []protocol.CompletionItem
+	for s := scope; s != nil; s = s.Parent {
+		ns := s.Namespace
+		for name, alias := range ns.Types {
+			if !seen[name] {
+				seen[name] = true
+				kind := completionKindForTypeAlias(alias)
+				detail := safeTypeString(alias.Type)
+				items = append(items, protocol.CompletionItem{
+					Label:  name,
+					Kind:   &kind,
+					Detail: &detail,
+				})
+			}
+		}
+		for name := range ns.Namespaces {
+			if !seen[name] {
+				seen[name] = true
+				kind := protocol.CompletionItemKindModule
+				items = append(items, protocol.CompletionItem{
+					Label: name,
+					Kind:  &kind,
+				})
+			}
+		}
+	}
+	return items
+}
+
+// wordAtCursor extracts the partial identifier at the cursor position from
+// the document text. Returns "" if the cursor is not on an identifier.
+func wordAtCursor(text string, loc ast.Location) string {
+	lines := strings.Split(text, "\n")
+	lineIdx := loc.Line - 1 // convert to 0-based
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return ""
+	}
+	line := lines[lineIdx]
+	colIdx := loc.Column - 1 // convert to 0-based
+	if colIdx < 0 || colIdx > len(line) {
+		return ""
+	}
+
+	// Walk backwards from cursor to find the start of the word.
+	start := colIdx
+	for start > 0 && isIdentChar(line[start-1]) {
+		start--
+	}
+	if start == colIdx {
+		return ""
+	}
+	return line[start:colIdx]
+}
+
+func isIdentChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
 // Helper functions

@@ -181,6 +181,19 @@ func TestNoCompletionsOnIdentPatInIncompleteDecl(t *testing.T) {
 	assert.Empty(t, items, "should not provide completions on IdentPat in incomplete val decl")
 }
 
+func TestCompletionsOnTypeAnnotationInVarDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p: P"
+
+	// Cursor on "P" in the type annotation (col 8) and right after "P" (col 9).
+	// In `val p: P`, P starts at column 8.
+	for _, col := range []int{8, 9} {
+		items := scriptCompletions(t, source, ast.Location{Line: 2, Column: col})
+		labels := getCompletionLabels(items)
+		assert.Contains(t, labels, "Point",
+			"col %d: should provide type completions in type annotation position", col)
+	}
+}
+
 func TestCompletionsOnIdentExpr(t *testing.T) {
 	source := "type Point = {x: number, y: number}\np"
 	// Cursor at "p" on line 2 — this is an IdentExpr, not IdentPat.

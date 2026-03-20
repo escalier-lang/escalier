@@ -72,6 +72,9 @@ func (d *VarDecl) Span() Span    { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		d.Pattern.Accept(v)
+		if d.TypeAnn != nil {
+			d.TypeAnn.Accept(v)
+		}
 		if d.Init != nil {
 			d.Init.Accept(v)
 		}
