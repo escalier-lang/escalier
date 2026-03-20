@@ -1,2 +1,2 @@
 console.log("Hello, world!");
-//# sourceMappingURL=./index.js.map
+//# sourceMappingURL=./foo.js.map

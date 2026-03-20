@@ -5,4 +5,4 @@ const a = 5;
 const b = true;
 const c = "hello";
 const output = foo`${a} ${b} ${c}`;
-//# sourceMappingURL=./index.js.map
+//# sourceMappingURL=./template_literals.js.map
