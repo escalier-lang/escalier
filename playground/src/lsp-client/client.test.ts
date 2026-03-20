@@ -37,6 +37,7 @@ test('initialize', async () => {
             ],
           },
           "completionProvider": {
+            "resolveProvider": true,
             "triggerCharacters": [
               ".",
             ],
