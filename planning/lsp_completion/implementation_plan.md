@@ -1024,6 +1024,14 @@ instead of scanning all errors for each file.
   positions, function arguments). Currently, scope-based completions return
   both types and values regardless of context.
 
+- **Suppress completions on IdentPat in module files**: The
+  `shouldSuppressCompletions` function currently always returns `false` for
+  module files because quick-parsing a single file is insufficient — module
+  validation requires parsing all lib/ files. Investigate approaches such as
+  quick-parsing only the current file's AST (ignoring cross-file resolution)
+  or caching per-file ASTs separately so the pattern check can run without a
+  full module parse.
+
 - **Partial module re-checking**: When a file changes, only re-parse that
   file and re-check the affected nodes in the dependency graph, rather than
   re-parsing and re-checking the entire module. Approach: cache per-file

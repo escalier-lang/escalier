@@ -64,11 +64,10 @@ func buildScopeCompletionsNoDetail(scope *checker.Scope, items *[]protocol.Compl
 	}
 	for name := range ns.Namespaces {
 		kind := protocol.CompletionItemKindModule
-		detail := "namespace"
 		*items = append(*items, protocol.CompletionItem{
-			Label:  name,
-			Kind:   &kind,
-			Detail: &detail,
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
 		})
 	}
 	buildScopeCompletionsNoDetail(scope.Parent, items, scopeID)
@@ -146,8 +145,15 @@ func (s *Server) resolvePreludeDetail(name string) string {
 	// Try script scopes first for a prelude scope reference.
 	for _, scope := range s.scopeCache {
 		if scope != nil && scope.Parent != nil {
+			// We grab a reference to scope.Parent while holding the read lock,
+			// then release it before calling resolveDetailInScope. This is safe
+			// because scopes are replaced wholesale (never mutated in place), so
+			// the referenced object remains valid even if the cache is updated
+			// concurrently. However, the pattern is fragile — if scope mutation
+			// is ever introduced, this would become a data race.
+			prelude := scope.Parent
 			s.mu.RUnlock()
-			return resolveDetailInScope(scope.Parent, name)
+			return resolveDetailInScope(prelude, name)
 		}
 	}
 	// Try module scope.
@@ -187,6 +193,9 @@ func resolveDetailInScope(scope *checker.Scope, name string) string {
 		}
 		if alias, ok := ns.Types[name]; ok {
 			return safeTypeString(alias.Type)
+		}
+		if _, ok := ns.Namespaces[name]; ok {
+			return "namespace"
 		}
 	}
 	return ""
@@ -1224,25 +1233,25 @@ func wordAtCursor(text string, loc ast.Location) string {
 	if lineIdx < 0 || lineIdx >= len(lines) {
 		return ""
 	}
-	line := lines[lineIdx]
+	runes := []rune(lines[lineIdx])
 	colIdx := loc.Column - 1 // convert to 0-based
-	if colIdx < 0 || colIdx > len(line) {
+	if colIdx < 0 || colIdx > len(runes) {
 		return ""
 	}
 
 	// Walk backwards from cursor to find the start of the word.
 	start := colIdx
-	for start > 0 && isIdentChar(line[start-1]) {
+	for start > 0 && isIdentRune(runes[start-1]) {
 		start--
 	}
 	if start == colIdx {
 		return ""
 	}
-	return line[start:colIdx]
+	return string(runes[start:colIdx])
 }
 
-func isIdentChar(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+func isIdentRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
 }
 
 // Helper functions

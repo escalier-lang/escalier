@@ -98,7 +98,5 @@ export async function provideCompletionItems(
         return suggestion;
     });
 
-    console.log(suggestions);
-
     return { suggestions, incomplete: isIncomplete };
 }
