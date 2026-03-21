@@ -876,7 +876,7 @@ populated by the validation pipeline (`textDocument/didChange` → `validate()`
 addresses performance bottlenecks in both the validation pipeline and the
 completion handler itself.
 
-```
+```text
 Step 7.1: Debounce didChange on the client side                      [DONE]
 Step 7.2: Early staleness check in validate/validateModule           [DONE]
 Step 7.3: Async validation in textDocumentDidChange                  [DONE]

@@ -329,13 +329,18 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	// regardless of file discovery order or files being added/removed.
 	//
 	// First, snapshot in-memory documents under the lock, then do disk I/O
-	// outside the lock to avoid blocking other operations.
-	openDocs := make(map[protocol.DocumentUri]string)
+	// outside the lock to avoid blocking other operations. We also capture each
+	// open file's version so we can verify nothing changed after validation.
+	type docSnapshot struct {
+		Text    string
+		Version protocol.Integer
+	}
+	openDocs := make(map[protocol.DocumentUri]docSnapshot)
 	server.mu.RLock()
 	for _, absPath := range libFiles {
 		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		if doc, ok := server.documents[fileURI]; ok {
-			openDocs[fileURI] = doc.Text
+			openDocs[fileURI] = docSnapshot{Text: doc.Text, Version: doc.Version}
 		}
 	}
 	server.mu.RUnlock()
@@ -345,8 +350,8 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 		rel, _ := filepath.Rel(rootPath, absPath)
 		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		var contents string
-		if text, ok := openDocs[fileURI]; ok {
-			contents = text
+		if snap, ok := openDocs[fileURI]; ok {
+			contents = snap.Text
 		} else {
 			data, err := os.ReadFile(absPath)
 			if err != nil {
@@ -387,17 +392,27 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	}
 	typeErrors := c.InferModule(inferCtx, module)
 
-	// Store module cache and file scopes.
+	// Store module cache and file scopes. Verify that every open file we
+	// snapshotted still has the same version — if any changed during
+	// validation, the results are stale and must be discarded.
 	server.mu.Lock()
-	currentDoc = server.documents[uri]
-	if currentDoc.Version != version {
+	stale := false
+	for snapURI, snap := range openDocs {
+		if doc, ok := server.documents[snapURI]; ok && doc.Version != snap.Version {
+			stale = true
+			break
+		}
+	}
+	if stale {
 		server.mu.Unlock()
 		return
 	}
 	server.moduleCache = module
 	server.moduleScopeCache = inferCtx.Scope
 	server.fileScopeCache = c.FileScopes
-	server.validatedVersion[uri] = version
+	for snapURI, snap := range openDocs {
+		server.validatedVersion[snapURI] = snap.Version
+	}
 	server.mu.Unlock()
 	server.validated.Broadcast()
 
@@ -425,17 +440,24 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	}
 
 	// Publish diagnostics for all files in the module.
+	// Use each file's own document version (not the triggering file's version)
+	// so that sibling files get correct Version fields.
+	server.mu.RLock()
 	for _, file := range module.Files {
 		fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
 		fileDiags := diagsBySourceID[file.SourceID]
 
-		diagVersion := protocol.UInteger(version)
-		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+		params := &protocol.PublishDiagnosticsParams{
 			URI:         fileURI,
 			Diagnostics: fileDiags,
-			Version:     &diagVersion,
-		})
+		}
+		if doc, ok := server.documents[fileURI]; ok {
+			v := protocol.UInteger(doc.Version)
+			params.Version = &v
+		}
+		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
 	}
+	server.mu.RUnlock()
 }
 
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {

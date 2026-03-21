@@ -60,6 +60,8 @@ export function setupLanguage(client: Client) {
 
     // Map of URI → flush function for pending debounced didChange notifications.
     const pendingFlush = new Map<string, () => void>();
+    // Map of URI → cancel function to clear the debounce timer without sending.
+    const pendingCancel = new Map<string, () => void>();
 
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
@@ -176,6 +178,11 @@ export function setupLanguage(client: Client) {
                 sendDidChange();
             }
         });
+        // Cancel any pending debounced didChange without sending.
+        pendingCancel.set(model.uri.toString(), () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = undefined;
+        });
         model.onDidChangeContent(() => {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(sendDidChange, 500);
@@ -189,6 +196,9 @@ export function setupLanguage(client: Client) {
             return;
         }
 
+        // Cancel any pending debounced didChange so it doesn't fire after close.
+        pendingCancel.get(model.uri.toString())?.();
+        pendingCancel.delete(model.uri.toString());
         pendingFlush.delete(model.uri.toString());
         client.textDocumentDidClose({
             textDocument: {

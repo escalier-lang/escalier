@@ -1237,3 +1237,296 @@ func TestModuleNamespaceMemberCompletionFilteredByPrefix(t *testing.T) {
 
 	assert.Equal(t, []string{"sub"}, labels)
 }
+
+// --- wordAtCursor tests ---
+
+func TestWordAtCursorBasic(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor right after "bar" (line 1, col 14).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 14})
+	assert.Equal(t, "bar", result)
+}
+
+func TestWordAtCursorMiddleOfWord(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor after "ba" in "bar" (col 13, 1-based → colIdx 12 → runes[10:12] = "ba").
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 13})
+	assert.Equal(t, "ba", result)
+}
+
+func TestWordAtCursorAtStart(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor at beginning of line — no word behind.
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 1})
+	assert.Equal(t, "", result)
+}
+
+func TestWordAtCursorOnSpace(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor on space before "bar" (col 11).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 11})
+	assert.Equal(t, "", result)
+}
+
+func TestWordAtCursorMultiLine(t *testing.T) {
+	text := "val x = 1\nval y = 2"
+	// Cursor after "y" on line 2 (col 6).
+	result := wordAtCursor(text, ast.Location{Line: 2, Column: 6})
+	assert.Equal(t, "y", result)
+}
+
+func TestWordAtCursorUnderscoreAndDigits(t *testing.T) {
+	text := "val my_var2 = 1"
+	// Cursor after "my_var2" (col 12).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 12})
+	assert.Equal(t, "my_var2", result)
+}
+
+func TestWordAtCursorMultibyteRunes(t *testing.T) {
+	// The line is: "val café = 1"
+	// Rune indices (0-based): v=0 a=1 l=2 ' '=3 c=4 a=5 f=6 é=7 ' '=8 ...
+	// 'é' is a multi-byte rune but not an ident char. Cursor at col 8
+	// (1-based) → colIdx=7 → walks back: f(6) a(5) c(4) ' '(3) → "caf".
+	text := "val café = 1"
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 8})
+	assert.Equal(t, "caf", result, "should correctly index by rune, not byte; é is not an ident char so it stops")
+}
+
+func TestWordAtCursorOutOfBounds(t *testing.T) {
+	text := "hello"
+	// Line out of bounds.
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 5, Column: 1}))
+	// Column out of bounds.
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 1, Column: 100}))
+}
+
+// --- filterTypeItems tests ---
+
+func TestFilterTypeItemsKeepsTypes(t *testing.T) {
+	classKind := protocol.CompletionItemKindClass
+	interfaceKind := protocol.CompletionItemKindInterface
+	enumKind := protocol.CompletionItemKindEnum
+	moduleKind := protocol.CompletionItemKindModule
+	funcKind := protocol.CompletionItemKindFunction
+	varKind := protocol.CompletionItemKindVariable
+
+	items := []protocol.CompletionItem{
+		{Label: "MyClass", Kind: &classKind},
+		{Label: "MyInterface", Kind: &interfaceKind},
+		{Label: "MyEnum", Kind: &enumKind},
+		{Label: "MyModule", Kind: &moduleKind},
+		{Label: "myFunc", Kind: &funcKind},
+		{Label: "myVar", Kind: &varKind},
+		{Label: "noKind"},
+	}
+
+	filtered := filterTypeItems(items)
+	labels := getCompletionLabels(filtered)
+
+	assert.Contains(t, labels, "MyClass")
+	assert.Contains(t, labels, "MyInterface")
+	assert.Contains(t, labels, "MyEnum")
+	assert.Contains(t, labels, "MyModule")
+	assert.NotContains(t, labels, "myFunc", "functions should be filtered out")
+	assert.NotContains(t, labels, "myVar", "variables should be filtered out")
+	assert.NotContains(t, labels, "noKind", "items with no Kind should be filtered out")
+}
+
+func TestFilterTypeItemsEmpty(t *testing.T) {
+	filtered := filterTypeItems(nil)
+	assert.Empty(t, filtered)
+}
+
+// --- Module suppression tests ---
+
+// moduleCompletions exercises the full textDocumentCompletion handler for a
+// module file, returning the completion items.
+func moduleCompletions(
+	t *testing.T,
+	sources []*ast.Source,
+	targetSourceID int,
+	loc ast.Location,
+) []protocol.CompletionItem {
+	t.Helper()
+
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+
+	// Register each source as an open document.
+	for _, src := range sources {
+		fileURI := protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", src.Path))
+		version := protocol.Integer(1)
+		s.documents[fileURI] = protocol.TextDocumentItem{
+			URI:        fileURI,
+			LanguageID: "escalier",
+			Version:    version,
+			Text:       src.Contents,
+		}
+		s.validatedVersion[fileURI] = version
+	}
+
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	// Find the target file's URI.
+	var targetURI protocol.DocumentUri
+	for _, src := range sources {
+		if src.ID == targetSourceID {
+			targetURI = protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", src.Path))
+			break
+		}
+	}
+	require.NotEmpty(t, targetURI, "target source ID %d not found", targetSourceID)
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: targetURI},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(loc.Line - 1),
+				Character: protocol.UInteger(loc.Column - 1),
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	if result == nil {
+		return nil
+	}
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+	return list.Items
+}
+
+func TestModuleNoCompletionsOnIdentPat(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: "val p"},
+	}
+	// Cursor at "p" — line 1, col 5.
+	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 5})
+	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat in a module file")
+}
+
+func TestModuleNoCompletionsOnIdentPatComplete(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: "val p = 10"},
+	}
+	// Cursor right after "p" (col 6) — still in the pattern.
+	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in complete module val decl")
+}
+
+// --- Module TypeRefTypeAnn with file-scoped imports ---
+
+func TestModuleTypeAnnotationIncludesImportedNamespace(t *testing.T) {
+	// file1 imports a namespace from an external package. In a type annotation
+	// position, the namespace should be visible (for qualified type references
+	// like `xpkg.SomeType`). We use "xpkg" to avoid colliding with the large
+	// number of prelude types that start with common prefixes.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as xpkg from "test-pkg"
+val x: xp`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["helper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
+		"test-pkg": mockPkg,
+	})
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+	uri := protocol.DocumentUri("file:///workspace/lib/file1.esc")
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       sources[0].Contents,
+	}
+	s.validatedVersion[uri] = version
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      1, // 0-based: line 2
+				Character: 9, // 0-based: after "xp" in "val x: xp"
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+
+	labels := getCompletionLabels(list.Items)
+	assert.Contains(t, labels, "xpkg", "imported namespace should appear in type annotation completions")
+}
+
+func TestModuleTypeAnnotationExcludesValues(t *testing.T) {
+	// file1 imports a namespace that contains a value binding. The namespace
+	// itself should be visible (Module kind) but value-only bindings from it
+	// should not appear as bare completions in a type annotation position.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+fn usePkg() -> number { pkg.helper }
+val x: h`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["helper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
+		"test-pkg": mockPkg,
+	})
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+	uri := protocol.DocumentUri("file:///workspace/lib/file1.esc")
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       sources[0].Contents,
+	}
+	s.validatedVersion[uri] = version
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      2, // 0-based: line 3
+				Character: 8, // 0-based: after "h"
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+
+	labels := getCompletionLabels(list.Items)
+	// "helper" is a value (function kind), not a type — should be excluded.
+	assert.NotContains(t, labels, "helper", "imported value should not appear in type annotation completions")
+	// "usePkg" is also a value (function) — should be excluded.
+	assert.NotContains(t, labels, "usePkg", "function declarations should not appear in type annotation completions")
+}

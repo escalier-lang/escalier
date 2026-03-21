@@ -206,18 +206,28 @@ func resolveDetailInScope(scope *checker.Scope, name string) string {
 // (e.g. IdentPat, which introduces a new binding). This handles the case where
 // the debounced didChange hasn't triggered validation yet, so the cached AST
 // is stale.
-func shouldSuppressCompletions(doc protocol.TextDocumentItem, isModule bool, module *ast.Module, loc ast.Location) bool {
+func shouldSuppressCompletions(doc protocol.TextDocumentItem, isModule bool, module *ast.Module, sourceID int, loc ast.Location) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	if isModule {
-		// For module files, we'd need to parse all lib files which is too expensive.
-		// Fall back to checking the cached module AST if available.
+		// For module files, quick-parsing a single file is insufficient since
+		// module validation requires all lib/ files. Use the cached module AST
+		// if available to perform the suppression check.
 		if module == nil {
 			return false
 		}
-		// Module node finding uses SourceID; we can't easily get that from a quick parse.
-		// The cached module should still be checked in the main handler.
+		if sourceID < 0 {
+			return false
+		}
+		_, ancestors := findNodeWithAncestorsInFile(module, sourceID, loc)
+		for _, ancestor := range ancestors {
+			if varDecl, ok := ancestor.(*ast.VarDecl); ok {
+				if varDecl.Pattern != nil && varDecl.Pattern.Span().Contains(loc) {
+					return true
+				}
+			}
+		}
 		return false
 	}
 
@@ -260,17 +270,25 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	doc := s.documents[uri]
 	s.mu.RUnlock()
 
+	// Resolve sourceID for module files (used by both suppression and completion).
+	isModule := s.isModuleFile(uri)
+	sourceID := -1
+	if isModule && module != nil {
+		if id, ok := getSourceIDForModule(module, s.relPath(uri)); ok {
+			sourceID = id
+		}
+	}
+
 	// Quick-parse the current document content to check if the cursor is on
 	// a node where completions should be suppressed (e.g. IdentPat). This
 	// runs after waiting for validation so doc reflects the latest content.
-	if shouldSuppressCompletions(doc, s.isModuleFile(uri), module, loc) {
+	if shouldSuppressCompletions(doc, isModule, module, sourceID, loc) {
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
 	}
 
 	// Try module-aware completions first.
-	if module != nil && moduleScope != nil && s.isModuleFile(uri) {
-		sourceID, ok := getSourceIDForModule(module, s.relPath(uri))
-		if ok {
+	if module != nil && moduleScope != nil && isModule {
+		if sourceID >= 0 {
 			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
 		}
 	}
@@ -321,7 +339,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 		case *ast.TypeRefTypeAnn:
 			// Cursor is in a type annotation — return only type completions.
-			items = typeCompletionsFromScope(scope)
+			items = typeCompletionsFromScope(scope, "script")
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -398,7 +416,15 @@ func (s *Server) moduleCompletion(
 			}
 		case *ast.TypeRefTypeAnn:
 			// Cursor is in a type annotation — return only type completions.
-			items = typeCompletionsFromScope(moduleScope)
+			// Include file-scoped imports so imported types are visible.
+			seen := map[string]bool{}
+			items = typeCompletionsFromScope(moduleScope, "module")
+			for _, item := range items {
+				seen[item.Label] = true
+			}
+			collectFileImportBindings(module, sourceID, fileScope, seen, &items)
+			// Filter out value-only imports (keep types and namespaces).
+			items = filterTypeItems(items)
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -1193,8 +1219,8 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 
 // typeCompletionsFromScope collects only type aliases and namespaces from the
 // entire scope chain (current scope + parents). Used when the cursor is in a
-// type annotation position.
-func typeCompletionsFromScope(scope *checker.Scope) []protocol.CompletionItem {
+// type annotation position. Detail is deferred to completionItem/resolve.
+func typeCompletionsFromScope(scope *checker.Scope, scopeID string) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 	for s := scope; s != nil; s = s.Parent {
@@ -1203,11 +1229,10 @@ func typeCompletionsFromScope(scope *checker.Scope) []protocol.CompletionItem {
 			if !seen[name] {
 				seen[name] = true
 				kind := completionKindForTypeAlias(alias)
-				detail := safeTypeString(alias.Type)
 				items = append(items, protocol.CompletionItem{
-					Label:  name,
-					Kind:   &kind,
-					Detail: &detail,
+					Label: name,
+					Kind:  &kind,
+					Data:  completionResolveData{Scope: scopeID, Name: name},
 				})
 			}
 		}
@@ -1218,11 +1243,34 @@ func typeCompletionsFromScope(scope *checker.Scope) []protocol.CompletionItem {
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
+					Data:  completionResolveData{Scope: scopeID, Name: name},
 				})
 			}
 		}
 	}
 	return items
+}
+
+// filterTypeItems returns only completion items whose Kind is a type-like or
+// namespace kind (Class, Interface, Enum, Struct, TypeParameter, Module).
+// Used to strip value-only items from a mixed list.
+func filterTypeItems(items []protocol.CompletionItem) []protocol.CompletionItem {
+	var out []protocol.CompletionItem
+	for _, item := range items {
+		if item.Kind == nil {
+			continue
+		}
+		switch *item.Kind {
+		case protocol.CompletionItemKindClass,
+			protocol.CompletionItemKindInterface,
+			protocol.CompletionItemKindEnum,
+			protocol.CompletionItemKindStruct,
+			protocol.CompletionItemKindTypeParameter,
+			protocol.CompletionItemKindModule:
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // wordAtCursor extracts the partial identifier at the cursor position from

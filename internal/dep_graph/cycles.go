@@ -228,10 +228,8 @@ func (v *AllBindingsUsageVisitor) ExitExpr(expr ast.Expr) {
 func (v *AllBindingsUsageVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
-		// VarDecl.Accept doesn't visit TypeAnn, so we need to manually visit it
-		if d.TypeAnn != nil {
-			d.TypeAnn.Accept(v)
-		}
+		// VarDecl.Accept visits Pattern, TypeAnn, and Init — return true to
+		// let the default traversal handle all children.
 		return true
 	case *ast.FuncDecl:
 		if d.Body != nil {
