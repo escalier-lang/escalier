@@ -1,7 +1,11 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
-import { provideCompletionItems } from './completions';
+import {
+    provideCompletionItems,
+    resolveCompletionItem,
+    type CompletionDeps,
+} from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
@@ -272,6 +276,12 @@ export function setupLanguage(client: Client) {
             ['"', '"'],
         ],
     });
+    const completionDeps: CompletionDeps = {
+        getCompletion: (params) => client.textDocumentCompletion(params),
+        resolveCompletionItem: (item) =>
+            client.completionItemResolve(item),
+    };
+
     monaco.languages.registerCompletionItemProvider(languageID, {
         triggerCharacters: ['.'],
         async provideCompletionItems(model, position, _context, _token) {
@@ -288,10 +298,7 @@ export function setupLanguage(client: Client) {
                 );
 
                 return await provideCompletionItems(
-                    {
-                        getCompletion: (params) =>
-                            client.textDocumentCompletion(params),
-                    },
+                    completionDeps,
                     model.uri.toString(),
                     monacoPosToLspPos(position),
                     defaultRange,
@@ -299,6 +306,14 @@ export function setupLanguage(client: Client) {
             } catch (e) {
                 console.error('Completion error:', e);
                 return { suggestions: [] };
+            }
+        },
+        async resolveCompletionItem(item, _token) {
+            try {
+                return await resolveCompletionItem(completionDeps, item);
+            } catch (e) {
+                console.error('Completion resolve error:', e);
+                return item;
             }
         },
     });

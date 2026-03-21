@@ -455,6 +455,12 @@ export class Client {
         return this.sendRequest('textDocument/completion', params);
     }
 
+    completionItemResolve(
+        params: lsp.CompletionItem,
+    ): Promise<lsp.CompletionItem> {
+        return this.sendRequest('completionItem/resolve', params);
+    }
+
     // Go to type definition
 
     // Go to implementation

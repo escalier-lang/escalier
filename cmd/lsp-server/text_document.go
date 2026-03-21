@@ -309,8 +309,6 @@ func getSourceIDForModule(module *ast.Module, relPath string) (int, bool) {
 }
 
 func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.DocumentUri, version protocol.Integer) {
-	fmt.Fprintf(os.Stderr, "validateModule")
-
 	// Check staleness before doing expensive work.
 	server.mu.RLock()
 	currentDoc := server.documents[uri]
@@ -466,8 +464,6 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		server.validateModule(lspContext, uri, version)
 		return
 	}
-
-	fmt.Fprintf(os.Stderr, "validate (script)")
 
 	// Check staleness before doing expensive work.
 	server.mu.RLock()

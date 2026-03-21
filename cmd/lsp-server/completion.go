@@ -1275,6 +1275,12 @@ func filterTypeItems(items []protocol.CompletionItem) []protocol.CompletionItem 
 
 // wordAtCursor extracts the partial identifier at the cursor position from
 // the document text. Returns "" if the cursor is not on an identifier.
+//
+// NOTE: loc.Column is a 1-based byte offset (from the lexer), but this
+// function indexes into a []rune slice. This mismatch means the column can
+// point to the wrong rune when multi-byte characters precede the cursor on
+// the same line. Fixing this properly requires deciding on a single column
+// encoding (bytes vs runes vs UTF-16) across the LSP layer and the parser.
 func wordAtCursor(text string, loc ast.Location) string {
 	lines := strings.Split(text, "\n")
 	lineIdx := loc.Line - 1 // convert to 0-based
