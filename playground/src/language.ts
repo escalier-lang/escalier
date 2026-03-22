@@ -2,10 +2,10 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import {
-    provideCompletionItems,
-    resolveCompletionItem,
     type CompletionDeps,
     type CompletionSuggestion,
+    provideCompletionItems,
+    resolveCompletionItem,
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
@@ -281,8 +281,7 @@ export function setupLanguage(client: Client) {
     });
     const completionDeps: CompletionDeps = {
         getCompletion: (params) => client.textDocumentCompletion(params),
-        resolveCompletionItem: (item) =>
-            client.completionItemResolve(item),
+        resolveCompletionItem: (item) => client.completionItemResolve(item),
     };
 
     monaco.languages.registerCompletionItemProvider(languageID, {
