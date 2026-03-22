@@ -91,6 +91,9 @@ func (s *Server) textDocumentTypeDefinition(context *glsp.Context, params *proto
 func (s *Server) textDocumentDidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
 	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = params.TextDocument
+	if s.isModuleFile(params.TextDocument.URI) {
+		s.moduleGen++
+	}
 	s.mu.Unlock()
 	if params.TextDocument.LanguageID == "escalier" {
 		s.validate(context, params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
@@ -115,6 +118,9 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 				Text:       change.Text,
 			}
 		}
+	}
+	if s.isModuleFile(params.TextDocument.URI) {
+		s.moduleGen++
 	}
 	s.mu.Unlock()
 
@@ -195,7 +201,9 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 }
 
 // isCacheStale returns true if the document has been updated since the last
-// successful validation. Must be called while holding mu.RLock().
+// successful validation. For module files, it also checks whether the shared
+// module cache is stale due to changes in sibling lib/ files.
+// Must be called while holding mu.RLock().
 func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	doc, ok := s.documents[uri]
 	if !ok {
@@ -205,7 +213,15 @@ func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	if !ok {
 		return true
 	}
-	return doc.Version != validated
+	if doc.Version != validated {
+		return true
+	}
+	// For module files, the shared moduleCache may be stale if a sibling
+	// file changed after the last module validation.
+	if s.isModuleFile(uri) && s.moduleGen != s.moduleValidatedGen {
+		return true
+	}
+	return false
 }
 
 // isModuleFile checks if a URI corresponds to a file under the lib/ directory.
@@ -408,6 +424,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	server.moduleCache = module
 	server.moduleScopeCache = inferCtx.Scope
 	server.fileScopeCache = c.FileScopes
+	server.moduleValidatedGen = server.moduleGen
 	for snapURI, snap := range openDocs {
 		server.validatedVersion[snapURI] = snap.Version
 	}

@@ -48,6 +48,13 @@ type Server struct {
 	// handler can detect when the cache is stale.
 	validatedVersion map[protocol.DocumentUri]protocol.Integer
 
+	// moduleGen is incremented whenever any module/lib file changes.
+	// moduleValidatedGen records the moduleGen at which moduleCache was built.
+	// The completion handler uses these to detect when the shared module cache
+	// is stale due to changes in sibling files.
+	moduleGen          int64
+	moduleValidatedGen int64
+
 	// Cached absolute paths to .esc files under lib/, refreshed at startup
 	// and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}

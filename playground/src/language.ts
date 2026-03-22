@@ -5,6 +5,7 @@ import {
     provideCompletionItems,
     resolveCompletionItem,
     type CompletionDeps,
+    type CompletionSuggestion,
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
@@ -218,6 +219,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDeclarationProvider(languageID, {
         async provideDeclaration(model, position, _token) {
             try {
+                pendingFlush.get(model.uri.toString())?.();
                 const decl = await client.textDocumentDeclaration({
                     textDocument: {
                         uri: model.uri.toString(),
@@ -242,6 +244,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDefinitionProvider(languageID, {
         async provideDefinition(model, position, _token) {
             try {
+                pendingFlush.get(model.uri.toString())?.();
                 console.log('provideDefinition called');
                 console.log(position);
                 const def = await client.textDocumentDefinition({
@@ -310,7 +313,13 @@ export function setupLanguage(client: Client) {
         },
         async resolveCompletionItem(item, _token) {
             try {
-                return await resolveCompletionItem(completionDeps, item);
+                // Monaco passes back the same object returned by
+                // provideCompletionItems, which includes our _lspItem field.
+                // Cast to CompletionSuggestion to access it.
+                return await resolveCompletionItem(
+                    completionDeps,
+                    item as CompletionSuggestion,
+                );
             } catch (e) {
                 console.error('Completion resolve error:', e);
                 return item;
@@ -320,6 +329,7 @@ export function setupLanguage(client: Client) {
 
     monaco.languages.registerHoverProvider(languageID, {
         async provideHover(model, position, _token, _context) {
+            pendingFlush.get(model.uri.toString())?.();
             const hover = await client.textDocumentHover({
                 textDocument: { uri: model.uri.toString() },
                 position: monacoPosToLspPos(position),
