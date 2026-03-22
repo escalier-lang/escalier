@@ -339,7 +339,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 		case *ast.TypeRefTypeAnn:
 			// Cursor is in a type annotation — return only type completions.
-			items = typeCompletionsFromScope(scope, "script")
+			items = typeCompletionsFromScope(scope, "script", string(uri))
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -418,7 +418,9 @@ func (s *Server) moduleCompletion(
 			// Cursor is in a type annotation — return only type completions.
 			// Include file-scoped imports so imported types are visible.
 			seen := map[string]bool{}
-			items = typeCompletionsFromScope(moduleScope, "module")
+			// URI is empty because resolveModuleDetail looks up s.moduleScopeCache
+			// directly and doesn't need a per-file URI.
+			items = typeCompletionsFromScope(moduleScope, "module", "")
 			for _, item := range items {
 				seen[item.Label] = true
 			}
@@ -1220,7 +1222,7 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 // typeCompletionsFromScope collects only type aliases and namespaces from the
 // entire scope chain (current scope + parents). Used when the cursor is in a
 // type annotation position. Detail is deferred to completionItem/resolve.
-func typeCompletionsFromScope(scope *checker.Scope, scopeID string) []protocol.CompletionItem {
+func typeCompletionsFromScope(scope *checker.Scope, scopeID string, uri string) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 	for s := scope; s != nil; s = s.Parent {
@@ -1232,7 +1234,7 @@ func typeCompletionsFromScope(scope *checker.Scope, scopeID string) []protocol.C
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
-					Data:  completionResolveData{Scope: scopeID, Name: name},
+					Data:  completionResolveData{Scope: scopeID, Name: name, URI: uri},
 				})
 			}
 		}
@@ -1243,7 +1245,7 @@ func typeCompletionsFromScope(scope *checker.Scope, scopeID string) []protocol.C
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
-					Data:  completionResolveData{Scope: scopeID, Name: name},
+					Data:  completionResolveData{Scope: scopeID, Name: name, URI: uri},
 				})
 			}
 		}

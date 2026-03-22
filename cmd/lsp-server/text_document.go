@@ -330,6 +330,9 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	currentDoc := server.documents[uri]
 	server.mu.RUnlock()
 	if currentDoc.Version != version {
+		// Wake any goroutines waiting on s.validated so they can re-evaluate
+		// staleness rather than blocking until the 2s timeout.
+		server.validated.Broadcast()
 		return
 	}
 
@@ -390,6 +393,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 			server.fileScopeCache = map[int]*checker.Scope{}
 		}
 		server.mu.Unlock()
+		server.validated.Broadcast()
 		return
 	}
 
@@ -419,6 +423,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	}
 	if stale {
 		server.mu.Unlock()
+		server.validated.Broadcast()
 		return
 	}
 	server.moduleCache = module
@@ -487,6 +492,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	currentDoc := server.documents[uri]
 	server.mu.RUnlock()
 	if currentDoc.Version != version {
+		server.validated.Broadcast()
 		return
 	}
 
@@ -511,6 +517,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	currentDoc = server.documents[uri]
 	if currentDoc.Version != version {
 		server.mu.Unlock()
+		server.validated.Broadcast()
 		return
 	}
 	server.astCache[uri] = script
