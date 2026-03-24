@@ -105,15 +105,13 @@ export async function provideCompletionItems(
 }
 
 export async function resolveCompletionItem(
-    resolveCompletionItem: (
-        item: lsp.CompletionItem,
-    ) => Promise<lsp.CompletionItem>,
+    resolve: (item: lsp.CompletionItem) => Promise<lsp.CompletionItem>,
     suggestion: CompletionSuggestion,
 ): Promise<CompletionSuggestion> {
     if (!suggestion._lspItem) {
         return suggestion;
     }
-    const resolved = await resolveCompletionItem(suggestion._lspItem);
+    const resolved = await resolve(suggestion._lspItem);
     return {
         ...suggestion,
         detail: resolved.detail ?? suggestion.detail,

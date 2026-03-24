@@ -142,7 +142,12 @@ describe('provideCompletionItems', () => {
     test('passes correct params to getCompletion', async () => {
         const getCompletion = vi.fn().mockResolvedValue(null);
 
-        await provideCompletionItems(getCompletion, uri, position, defaultRange);
+        await provideCompletionItems(
+            getCompletion,
+            uri,
+            position,
+            defaultRange,
+        );
 
         expect(getCompletion).toHaveBeenCalledWith({
             textDocument: { uri },
