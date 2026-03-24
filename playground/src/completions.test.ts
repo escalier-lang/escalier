@@ -382,7 +382,6 @@ describe('resolveCompletionItem', () => {
         expect(result.detail).toBe('existing');
     });
 
-
     test('stashes _lspItem only when item has data', async () => {
         const itemWithData: lsp.CompletionItem = {
             label: 'withData',
