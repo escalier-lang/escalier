@@ -8,10 +8,10 @@ const encoder = new TextEncoder();
 
 function createTestVolume(): Volume {
     return {
-        '/hello.txt': encoder.encode('Hello, World!'),
-        '/foo/bar.txt': encoder.encode('bar content'),
-        '/foo/baz.txt': encoder.encode('baz content'),
-        '/empty.txt': encoder.encode(''),
+        '/hello.txt': { content: encoder.encode('Hello, World!') },
+        '/foo/bar.txt': { content: encoder.encode('bar content') },
+        '/foo/baz.txt': { content: encoder.encode('baz content') },
+        '/empty.txt': { content: encoder.encode('') },
     };
 }
 

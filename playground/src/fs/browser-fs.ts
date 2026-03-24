@@ -2,7 +2,7 @@ import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 
 import { ErrnoException } from './errno-exception';
 import type { FSAPI } from './fs-api';
-import type { FSDir, FSNode } from './fs-node';
+import type { FSDir, FSFile, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
 
@@ -26,10 +26,34 @@ export class BrowserFS implements FSAPI {
     openFiles: Map<number, FSNode> = new Map();
     readPositions: Map<number, number> = new Map();
     rootDir: FSDir;
+    volume: Volume;
 
     constructor(volume: Volume) {
         this.fileID = 3;
+        this.volume = volume;
         this.rootDir = volumeToDir(volume);
+    }
+
+    private ensureContent(pathStr: string, node: FSFile): void {
+        const entry = this.volume[pathStr];
+        if (entry && entry.content === null && entry.url) {
+            // Synchronous XHR doesn't support responseType = 'arraybuffer',
+            // so we use charset=x-user-defined to get raw binary data as a
+            // string where each character maps 1:1 to a byte value.  This
+            // preserves the original UTF-8 bytes from the server, which is
+            // what the Go WASM LSP expects when reading file content.
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', entry.url, false);
+            xhr.overrideMimeType('text/plain; charset=x-user-defined');
+            xhr.send();
+            const text = xhr.responseText;
+            const content = new Uint8Array(text.length);
+            for (let i = 0; i < text.length; i++) {
+                content[i] = text.charCodeAt(i) & 0xff;
+            }
+            entry.content = content;
+            node.content = content;
+        }
     }
 
     /**
@@ -79,6 +103,7 @@ export class BrowserFS implements FSAPI {
                 break;
             }
             case 'file': {
+                // Note: fstat is called after open, which already ensures content
                 const stats = new SimpleStats(
                     fileData.content.length,
                     true,
@@ -113,6 +138,7 @@ export class BrowserFS implements FSAPI {
 
         let stats: Stats;
         if (node.type === 'file') {
+            this.ensureContent(pathStr, node);
             stats = new SimpleStats(
                 node.content.length,
                 true,
@@ -146,6 +172,7 @@ export class BrowserFS implements FSAPI {
 
         switch (node.type) {
             case 'file': {
+                this.ensureContent(pathStr, node);
                 const stats = new SimpleStats(
                     node.content.length,
                     true,
@@ -254,6 +281,7 @@ export class BrowserFS implements FSAPI {
                 );
                 break;
             case 'file': {
+                this.ensureContent(pathStr, node);
                 // Allocate a new file descriptor
                 const fd = this.fileID++;
                 this.openFiles.set(fd, node);
