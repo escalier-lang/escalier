@@ -1,4 +1,3 @@
 {
-    "js/ts.tsdk.path": "node_modules/typescript/lib",
-    "js/ts.tsserver.experimental.enableProjectDiagnostics": true
+    "js/ts.tsdk.path": "node_modules/typescript/lib"
 }
