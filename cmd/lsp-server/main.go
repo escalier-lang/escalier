@@ -59,11 +59,12 @@ type Server struct {
 	// and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}
 
-	// Cached completion items for prelude/global scope bindings.
+	// Cached prelude/global scope and its completion items.
 	// Computed lazily on first completion request; never changes after that.
+	preludeScope       *checker.Scope
 	preludeCompletions []protocol.CompletionItem
 
-	mu      sync.RWMutex
+	mu sync.RWMutex
 	// validated is broadcast after validate()/validateModule() updates the
 	// AST and scope caches. The completion handler waits on this when the
 	// cached version is behind the document version.
@@ -74,9 +75,9 @@ type Server struct {
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:       map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
+		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		astCache:         map[protocol.DocumentUri]*ast.Script{},
+		scopeCache:       map[protocol.DocumentUri]*checker.Scope{},
 		fileScopeCache:   map[int]*checker.Scope{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
 		libFilesCache:    map[string]struct{}{},

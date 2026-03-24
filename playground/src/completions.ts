@@ -4,7 +4,7 @@ export type CompletionDeps = {
     getCompletion: (
         params: lsp.CompletionParams,
     ) => Promise<lsp.CompletionList | lsp.CompletionItem[] | null>;
-    resolveCompletionItem?: (
+    resolveCompletionItem: (
         item: lsp.CompletionItem,
     ) => Promise<lsp.CompletionItem>;
 };
@@ -115,12 +115,12 @@ export async function resolveCompletionItem(
     deps: CompletionDeps,
     suggestion: CompletionSuggestion,
 ): Promise<CompletionSuggestion> {
-    if (!deps.resolveCompletionItem || !suggestion._lspItem) {
+    if (!suggestion._lspItem) {
         return suggestion;
     }
     const resolved = await deps.resolveCompletionItem(suggestion._lspItem);
-    if (resolved.detail) {
-        suggestion.detail = resolved.detail;
-    }
-    return suggestion;
+    return {
+        ...suggestion,
+        detail: resolved.detail ?? suggestion.detail,
+    };
 }

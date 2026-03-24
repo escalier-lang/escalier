@@ -25,6 +25,7 @@ function makeDeps(
 ): CompletionDeps {
     return {
         getCompletion: vi.fn().mockResolvedValue(result),
+        resolveCompletionItem: vi.fn().mockImplementation(async (item) => item),
     };
 }
 
@@ -381,28 +382,6 @@ describe('resolveCompletionItem', () => {
         expect(result.detail).toBe('existing');
     });
 
-    test('returns suggestion unchanged when no resolveCompletionItem dep', async () => {
-        const lspItem: lsp.CompletionItem = {
-            label: 'baz',
-            kind: lsp.CompletionItemKind.Variable,
-            data: { scope: 'script', name: 'baz' },
-        };
-        const deps: CompletionDeps = {
-            getCompletion: vi.fn(),
-            // no resolveCompletionItem
-        };
-        const suggestion = {
-            label: 'baz',
-            kind: lsp.CompletionItemKind.Variable,
-            insertText: 'baz',
-            range: defaultRange,
-            _lspItem: lspItem,
-        };
-
-        const result = await resolveCompletionItem(deps, suggestion);
-
-        expect(result.detail).toBeUndefined();
-    });
 
     test('stashes _lspItem only when item has data', async () => {
         const itemWithData: lsp.CompletionItem = {

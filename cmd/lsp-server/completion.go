@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
-	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -89,6 +87,7 @@ func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.C
 	s.mu.Lock()
 	// Double-check in case another goroutine built it concurrently.
 	if s.preludeCompletions == nil {
+		s.preludeScope = preludeScope
 		s.preludeCompletions = items
 	}
 	cached = s.preludeCompletions
@@ -98,6 +97,11 @@ func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.C
 
 // completionItemResolve handles completionItem/resolve requests by computing
 // the Detail string on demand.
+//
+// Errors during Data decoding are intentionally swallowed: we return the item
+// unchanged rather than propagating an error. Returning an error from resolve
+// would cause LSP clients to show error popups for what is purely a cosmetic
+// failure (missing type detail). The item remains usable without its detail.
 func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.CompletionItem) (*protocol.CompletionItem, error) {
 	if params.Detail != nil {
 		// Already resolved.
@@ -120,125 +124,73 @@ func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.C
 		return params, nil
 	}
 
-	var detail string
-	switch data.Scope {
-	case "prelude":
-		detail = s.resolvePreludeDetail(data.Name)
-	case "script":
-		detail = s.resolveScriptDetail(data.URI, data.Name)
-	case "module":
-		detail = s.resolveModuleDetail(data.Name)
-	default:
+	detail := s.resolveDetail(data)
+	if detail == "" {
 		return params, nil
 	}
 
+	result := &protocol.CompletionItem{
+		Label: params.Label,
+		Kind:  params.Kind,
+	}
 	if detail != "" {
-		params.Detail = &detail
+		result.Detail = &detail
 	}
-	// Clear Data so it's not sent back to the client.
-	params.Data = nil
-	return params, nil
+	return result, nil
 }
 
-func (s *Server) resolvePreludeDetail(name string) string {
+// resolveDetail looks up the type detail string for a deferred completion item.
+// It selects the appropriate scope (prelude, script, or module) based on
+// data.Scope and searches for the binding by name.
+func (s *Server) resolveDetail(data completionResolveData) string {
 	s.mu.RLock()
-	// Try script scopes first for a prelude scope reference.
-	for _, scope := range s.scopeCache {
-		if scope != nil && scope.Parent != nil {
-			// We grab a reference to scope.Parent while holding the read lock,
-			// then release it before calling resolveDetailInScope. This is safe
-			// because scopes are replaced wholesale (never mutated in place), so
-			// the referenced object remains valid even if the cache is updated
-			// concurrently. However, the pattern is fragile — if scope mutation
-			// is ever introduced, this would become a data race.
-			prelude := scope.Parent
-			s.mu.RUnlock()
-			return resolveDetailInScope(prelude, name)
-		}
+	var scope *checker.Scope
+	switch data.Scope {
+	case "prelude":
+		scope = s.preludeScope
+	case "script":
+		scope = s.scopeCache[protocol.DocumentUri(data.URI)]
+	case "module":
+		scope = s.moduleScopeCache
 	}
-	// Try module scope.
-	moduleScope := s.moduleScopeCache
-	s.mu.RUnlock()
-	if moduleScope != nil && moduleScope.Parent != nil {
-		return resolveDetailInScope(moduleScope.Parent, name)
-	}
-	return ""
-}
-
-func (s *Server) resolveScriptDetail(uri string, name string) string {
-	s.mu.RLock()
-	scope := s.scopeCache[protocol.DocumentUri(uri)]
 	s.mu.RUnlock()
 	if scope == nil {
 		return ""
 	}
-	return resolveDetailInScope(scope, name)
-}
 
-func (s *Server) resolveModuleDetail(name string) string {
-	s.mu.RLock()
-	scope := s.moduleScopeCache
-	s.mu.RUnlock()
-	if scope == nil {
-		return ""
-	}
-	return resolveDetailInScope(scope, name)
-}
-
-func resolveDetailInScope(scope *checker.Scope, name string) string {
 	for s := scope; s != nil; s = s.Parent {
 		ns := s.Namespace
-		if binding, ok := ns.Values[name]; ok {
+		if binding, ok := ns.Values[data.Name]; ok {
 			return safeTypeString(binding.Type)
 		}
-		if alias, ok := ns.Types[name]; ok {
+		if alias, ok := ns.Types[data.Name]; ok {
 			return safeTypeString(alias.Type)
 		}
-		if _, ok := ns.Namespaces[name]; ok {
+		if _, ok := ns.Namespaces[data.Name]; ok {
 			return "namespace"
 		}
 	}
+
 	return ""
 }
 
-// shouldSuppressCompletions does a quick parse of the current document content
-// to check if the cursor is on a node where completions should be suppressed
-// (e.g. IdentPat, which introduces a new binding). This handles the case where
-// the debounced didChange hasn't triggered validation yet, so the cached AST
-// is stale.
-func shouldSuppressCompletions(doc protocol.TextDocumentItem, isModule bool, module *ast.Module, sourceID int, loc ast.Location) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
+// shouldSuppressCompletions checks if the cursor is on a node where completions
+// should be suppressed (e.g. IdentPat, which introduces a new binding).
+// The caller (textDocumentCompletion) waits for in-flight validation before
+// calling this, so the cached ASTs are up to date.
+func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID int, isModule bool, loc ast.Location) bool {
+	var ancestors []ast.Node
 	if isModule {
-		// For module files, quick-parsing a single file is insufficient since
-		// module validation requires all lib/ files. Use the cached module AST
-		// if available to perform the suppression check.
-		if module == nil {
+		if module == nil || sourceID < 0 {
 			return false
 		}
-		if sourceID < 0 {
+		_, ancestors = findNodeWithAncestorsInFile(module, sourceID, loc)
+	} else {
+		if script == nil {
 			return false
 		}
-		_, ancestors := findNodeWithAncestorsInFile(module, sourceID, loc)
-		for _, ancestor := range ancestors {
-			if varDecl, ok := ancestor.(*ast.VarDecl); ok {
-				if varDecl.Pattern != nil && varDecl.Pattern.Span().Contains(loc) {
-					return true
-				}
-			}
-		}
-		return false
+		_, ancestors = findNodeWithAncestors(script, loc)
 	}
-
-	// Quick-parse the current document content (no type checking needed).
-	p := parser.NewParser(ctx, &ast.Source{
-		Path:     string(doc.URI),
-		Contents: doc.Text,
-	})
-	freshScript, _ := p.ParseScript()
-
-	_, ancestors := findNodeWithAncestors(freshScript, loc)
 
 	for _, ancestor := range ancestors {
 		if varDecl, ok := ancestor.(*ast.VarDecl); ok {
@@ -260,6 +212,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	deadline := time.Now().Add(2 * time.Second)
 	s.mu.RLock()
 	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		// Puts the gorountine to sleep until `Broadcast()` is called.
 		s.validated.Wait()
 	}
 	module := s.moduleCache
@@ -279,10 +232,10 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		}
 	}
 
-	// Quick-parse the current document content to check if the cursor is on
-	// a node where completions should be suppressed (e.g. IdentPat). This
-	// runs after waiting for validation so doc reflects the latest content.
-	if shouldSuppressCompletions(doc, isModule, module, sourceID, loc) {
+	// Check if the cursor is on a node where completions should be suppressed
+	// (e.g. IdentPat). This runs after waiting for validation so the cached
+	// ASTs are up to date.
+	if shouldSuppressCompletions(script, module, sourceID, isModule, loc) {
 		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
 	}
 

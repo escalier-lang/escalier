@@ -480,13 +480,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 	server.mu.RUnlock()
 }
 
-func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
-	// Route module files to module-level validation.
-	if server.isModuleFile(uri) {
-		server.validateModule(lspContext, uri, version)
-		return
-	}
-
+func (server *Server) validateScript(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
 	// Check staleness before doing expensive work.
 	server.mu.RLock()
 	currentDoc := server.documents[uri]
@@ -566,4 +560,15 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		Diagnostics: diagnotics,
 		Version:     &diagVersion,
 	})
+}
+
+func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
+	// Route module files to module-level validation.
+	if server.isModuleFile(uri) {
+		server.validateModule(lspContext, uri, version)
+		return
+	}
+
+	// Otherwise, validate contents as a script.
+	server.validateScript(lspContext, uri, contents, version)
 }

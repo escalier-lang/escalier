@@ -63,10 +63,38 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
 export function setupLanguage(client: Client) {
     monaco.languages.register({ id: languageID });
 
-    // Map of URI → flush function for pending debounced didChange notifications.
-    const pendingFlush = new Map<string, () => void>();
-    // Map of URI → cancel function to clear the debounce timer without sending.
-    const pendingCancel = new Map<string, () => void>();
+    type ModelState = {
+        debounceTimer: ReturnType<typeof setTimeout> | undefined;
+        model: monaco.editor.ITextModel;
+    };
+
+    // Per-model debounce state for didChange notifications.
+    const modelStates = new Map<string, ModelState>();
+
+    function sendDidChange(state: ModelState) {
+        clearTimeout(state.debounceTimer);
+        state.debounceTimer = undefined;
+        client.textDocumentDidChange({
+            textDocument: {
+                uri: state.model.uri.toString(),
+                version: state.model.getVersionId(),
+            },
+            contentChanges: [
+                {
+                    text: state.model.getValue(),
+                },
+            ],
+        });
+    }
+
+    // Flush any pending debounced didChange so the server has the latest
+    // content before handling a request.
+    function flushPendingChanges(uri: string) {
+        const state = modelStates.get(uri);
+        if (state?.debounceTimer !== undefined) {
+            sendDidChange(state);
+        }
+    }
 
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
@@ -145,6 +173,8 @@ export function setupLanguage(client: Client) {
     monaco.editor.onDidCreateModel((model) => {
         console.log('onDidCreateModel', model.uri.toString());
 
+        // We only create models for .esc files because these are the only files
+        // we're editing.
         if (!model.uri.path.endsWith('.esc')) {
             return;
         }
@@ -158,53 +188,31 @@ export function setupLanguage(client: Client) {
             },
         });
 
-        let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-        const sendDidChange = () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = undefined;
-            const version = model.getVersionId();
-            console.log(`version: ${version}`);
-            client.textDocumentDidChange({
-                textDocument: {
-                    uri: model.uri.toString(),
-                    version: version,
-                },
-                contentChanges: [
-                    {
-                        text: model.getValue(),
-                    },
-                ],
-            });
-        };
-        // Flush any pending debounced didChange so the server has the
-        // latest content before handling a completion or hover request.
-        pendingFlush.set(model.uri.toString(), () => {
-            if (debounceTimer !== undefined) {
-                sendDidChange();
-            }
-        });
-        // Cancel any pending debounced didChange without sending.
-        pendingCancel.set(model.uri.toString(), () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = undefined;
-        });
+        const state: ModelState = { debounceTimer: undefined, model };
+        modelStates.set(model.uri.toString(), state);
+
         model.onDidChangeContent(() => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(sendDidChange, 500);
+            clearTimeout(state.debounceTimer);
+            state.debounceTimer = setTimeout(() => sendDidChange(state), 500);
         });
     });
 
     monaco.editor.onWillDisposeModel((model) => {
         console.log('onWillDisposeModel', model.uri.toString());
 
+        // We only create models for .esc files because these are the only files
+        // we're editing.
         if (!model.uri.path.endsWith('.esc')) {
             return;
         }
 
         // Cancel any pending debounced didChange so it doesn't fire after close.
-        pendingCancel.get(model.uri.toString())?.();
-        pendingCancel.delete(model.uri.toString());
-        pendingFlush.delete(model.uri.toString());
+        const state = modelStates.get(model.uri.toString());
+        if (state) {
+            clearTimeout(state.debounceTimer);
+            state.debounceTimer = undefined;
+        }
+        modelStates.delete(model.uri.toString());
         client.textDocumentDidClose({
             textDocument: {
                 uri: model.uri.toString(),
@@ -219,7 +227,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDeclarationProvider(languageID, {
         async provideDeclaration(model, position, _token) {
             try {
-                pendingFlush.get(model.uri.toString())?.();
+                flushPendingChanges(model.uri.toString());
                 const decl = await client.textDocumentDeclaration({
                     textDocument: {
                         uri: model.uri.toString(),
@@ -244,7 +252,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDefinitionProvider(languageID, {
         async provideDefinition(model, position, _token) {
             try {
-                pendingFlush.get(model.uri.toString())?.();
+                flushPendingChanges(model.uri.toString());
                 console.log('provideDefinition called');
                 console.log(position);
                 const def = await client.textDocumentDefinition({
@@ -289,7 +297,7 @@ export function setupLanguage(client: Client) {
         async provideCompletionItems(model, position, _context, _token) {
             try {
                 // Flush any pending didChange so the server has the latest content.
-                pendingFlush.get(model.uri.toString())?.();
+                flushPendingChanges(model.uri.toString());
 
                 const word = model.getWordUntilPosition(position);
                 const defaultRange = new monaco.Range(
@@ -328,7 +336,7 @@ export function setupLanguage(client: Client) {
 
     monaco.languages.registerHoverProvider(languageID, {
         async provideHover(model, position, _token, _context) {
-            pendingFlush.get(model.uri.toString())?.();
+            flushPendingChanges(model.uri.toString());
             const hover = await client.textDocumentHover({
                 textDocument: { uri: model.uri.toString() },
                 position: monacoPosToLspPos(position),
