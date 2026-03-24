@@ -2,7 +2,6 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import {
-    type CompletionDeps,
     type CompletionSuggestion,
     provideCompletionItems,
     resolveCompletionItem,
@@ -287,10 +286,6 @@ export function setupLanguage(client: Client) {
             ['"', '"'],
         ],
     });
-    const completionDeps: CompletionDeps = {
-        getCompletion: (params) => client.textDocumentCompletion(params),
-        resolveCompletionItem: (item) => client.completionItemResolve(item),
-    };
 
     monaco.languages.registerCompletionItemProvider(languageID, {
         triggerCharacters: ['.'],
@@ -308,7 +303,7 @@ export function setupLanguage(client: Client) {
                 );
 
                 return await provideCompletionItems(
-                    completionDeps,
+                    (params) => client.textDocumentCompletion(params),
                     model.uri.toString(),
                     monacoPosToLspPos(position),
                     defaultRange,
@@ -324,7 +319,7 @@ export function setupLanguage(client: Client) {
                 // provideCompletionItems, which includes our _lspItem field.
                 // Cast to CompletionSuggestion to access it.
                 return await resolveCompletionItem(
-                    completionDeps,
+                    (item) => client.completionItemResolve(item),
                     item as CompletionSuggestion,
                 );
             } catch (e) {

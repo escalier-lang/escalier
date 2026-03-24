@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from 'vitest';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import {
-    type CompletionDeps,
     type MonacoRange,
     lspKindToMonacoKind,
     lspRangeToMonacoRange,
@@ -20,20 +19,11 @@ const defaultRange: MonacoRange = {
 const position: lsp.Position = { line: 0, character: 4 };
 const uri = 'file:///test.esc';
 
-function makeDeps(
-    result: lsp.CompletionList | lsp.CompletionItem[] | null,
-): CompletionDeps {
-    return {
-        getCompletion: vi.fn().mockResolvedValue(result),
-        resolveCompletionItem: vi.fn().mockImplementation(async (item) => item),
-    };
-}
-
 describe('provideCompletionItems', () => {
     test('returns empty suggestions when result is null', async () => {
-        const deps = makeDeps(null);
+        const getCompletion = vi.fn().mockResolvedValue(null);
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -46,10 +36,10 @@ describe('provideCompletionItems', () => {
             { label: 'foo', kind: lsp.CompletionItemKind.Variable },
             { label: 'bar', kind: lsp.CompletionItemKind.Function },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -86,10 +76,10 @@ describe('provideCompletionItems', () => {
                 },
             ],
         };
-        const deps = makeDeps(list);
+        const getCompletion = vi.fn().mockResolvedValue(list);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -115,10 +105,10 @@ describe('provideCompletionItems', () => {
                 insertText: 'myFunc($1)',
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -136,10 +126,10 @@ describe('provideCompletionItems', () => {
                 filterText: '.item',
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -150,11 +140,16 @@ describe('provideCompletionItems', () => {
     });
 
     test('passes correct params to getCompletion', async () => {
-        const deps = makeDeps(null);
+        const getCompletion = vi.fn().mockResolvedValue(null);
 
-        await provideCompletionItems(deps, uri, position, defaultRange);
+        await provideCompletionItems(
+            getCompletion,
+            uri,
+            position,
+            defaultRange,
+        );
 
-        expect(deps.getCompletion).toHaveBeenCalledWith({
+        expect(getCompletion).toHaveBeenCalledWith({
             textDocument: { uri },
             position,
         });
@@ -174,10 +169,10 @@ describe('provideCompletionItems', () => {
                 },
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -210,10 +205,10 @@ describe('provideCompletionItems', () => {
                 },
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -243,10 +238,10 @@ describe('provideCompletionItems', () => {
                 },
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -264,10 +259,10 @@ describe('provideCompletionItems', () => {
                 insertTextFormat: lsp.InsertTextFormat.Snippet,
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -286,10 +281,10 @@ describe('provideCompletionItems', () => {
                 insertTextFormat: lsp.InsertTextFormat.PlainText,
             },
         ];
-        const deps = makeDeps(items);
+        const getCompletion = vi.fn().mockResolvedValue(items);
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,
@@ -341,14 +336,11 @@ describe('resolveCompletionItem', () => {
             kind: lsp.CompletionItemKind.Variable,
             data: { scope: 'prelude', name: 'foo' },
         };
-        const deps: CompletionDeps = {
-            getCompletion: vi.fn(),
-            resolveCompletionItem: vi.fn().mockResolvedValue({
-                ...lspItem,
-                detail: 'number',
-                data: undefined,
-            }),
-        };
+        const mockResolve = vi.fn().mockResolvedValue({
+            ...lspItem,
+            detail: 'number',
+            data: undefined,
+        });
         const suggestion = {
             label: 'foo',
             kind: lsp.CompletionItemKind.Variable,
@@ -357,17 +349,14 @@ describe('resolveCompletionItem', () => {
             _lspItem: lspItem,
         };
 
-        const result = await resolveCompletionItem(deps, suggestion);
+        const result = await resolveCompletionItem(mockResolve, suggestion);
 
-        expect(deps.resolveCompletionItem).toHaveBeenCalledWith(lspItem);
+        expect(mockResolve).toHaveBeenCalledWith(lspItem);
         expect(result.detail).toBe('number');
     });
 
     test('returns suggestion unchanged when no _lspItem', async () => {
-        const deps: CompletionDeps = {
-            getCompletion: vi.fn(),
-            resolveCompletionItem: vi.fn(),
-        };
+        const mockResolve = vi.fn();
         const suggestion = {
             label: 'bar',
             kind: lsp.CompletionItemKind.Function,
@@ -376,9 +365,9 @@ describe('resolveCompletionItem', () => {
             range: defaultRange,
         };
 
-        const result = await resolveCompletionItem(deps, suggestion);
+        const result = await resolveCompletionItem(mockResolve, suggestion);
 
-        expect(deps.resolveCompletionItem).not.toHaveBeenCalled();
+        expect(mockResolve).not.toHaveBeenCalled();
         expect(result.detail).toBe('existing');
     });
 
@@ -393,13 +382,13 @@ describe('resolveCompletionItem', () => {
             kind: lsp.CompletionItemKind.Function,
             detail: 'already resolved',
         };
-        const deps = makeDeps({
+        const getCompletion = vi.fn().mockResolvedValue({
             isIncomplete: false,
             items: [itemWithData, itemWithoutData],
         });
 
         const result = await provideCompletionItems(
-            deps,
+            getCompletion,
             uri,
             position,
             defaultRange,

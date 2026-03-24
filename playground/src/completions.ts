@@ -1,14 +1,5 @@
 import * as lsp from 'vscode-languageserver-protocol';
 
-export type CompletionDeps = {
-    getCompletion: (
-        params: lsp.CompletionParams,
-    ) => Promise<lsp.CompletionList | lsp.CompletionItem[] | null>;
-    resolveCompletionItem: (
-        item: lsp.CompletionItem,
-    ) => Promise<lsp.CompletionItem>;
-};
-
 export type MonacoRange = {
     startLineNumber: number;
     startColumn: number;
@@ -52,12 +43,14 @@ export function lspRangeToMonacoRange(range: lsp.Range): MonacoRange {
 }
 
 export async function provideCompletionItems(
-    deps: CompletionDeps,
+    getCompletion: (
+        params: lsp.CompletionParams,
+    ) => Promise<lsp.CompletionList | lsp.CompletionItem[] | null>,
     uri: string,
     position: lsp.Position,
     defaultRange: MonacoRange,
 ): Promise<CompletionResult> {
-    const result = await deps.getCompletion({
+    const result = await getCompletion({
         textDocument: { uri },
         position,
     });
@@ -112,13 +105,13 @@ export async function provideCompletionItems(
 }
 
 export async function resolveCompletionItem(
-    deps: CompletionDeps,
+    resolve: (item: lsp.CompletionItem) => Promise<lsp.CompletionItem>,
     suggestion: CompletionSuggestion,
 ): Promise<CompletionSuggestion> {
     if (!suggestion._lspItem) {
         return suggestion;
     }
-    const resolved = await deps.resolveCompletionItem(suggestion._lspItem);
+    const resolved = await resolve(suggestion._lspItem);
     return {
         ...suggestion,
         detail: resolved.detail ?? suggestion.detail,
