@@ -44,23 +44,45 @@ type Server struct {
 	moduleScopeCache *checker.Scope
 	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
 
+	// Tracks the last validated document version per URI so the completion
+	// handler can detect when the cache is stale.
+	validatedVersion map[protocol.DocumentUri]protocol.Integer
+
+	// moduleGen is incremented whenever any module/lib file changes.
+	// moduleValidatedGen records the moduleGen at which moduleCache was built.
+	// The completion handler uses these to detect when the shared module cache
+	// is stale due to changes in sibling files.
+	moduleGen          int64
+	moduleValidatedGen int64
+
 	// Cached absolute paths to .esc files under lib/, refreshed at startup
 	// and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}
 
-	mu      sync.RWMutex
-	rootURI string // workspace root URI (from InitializeParams)
+	// Cached prelude/global scope and its completion items.
+	// Computed lazily on first completion request; never changes after that.
+	preludeScope       *checker.Scope
+	preludeCompletions []protocol.CompletionItem
+
+	mu sync.RWMutex
+	// validated is broadcast after validate()/validateModule() updates the
+	// AST and scope caches. The completion handler waits on this when the
+	// cached version is behind the document version.
+	validated *sync.Cond
+	rootURI   string // workspace root URI (from InitializeParams)
 }
 
 func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
-		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:       map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache: map[int]*checker.Scope{},
-		libFilesCache:  map[string]struct{}{},
+		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		astCache:         map[protocol.DocumentUri]*ast.Script{},
+		scopeCache:       map[protocol.DocumentUri]*checker.Scope{},
+		fileScopeCache:   map[int]*checker.Scope{},
+		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		libFilesCache:    map[string]struct{}{},
 	}
+	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
 		Initialize:  s.initialize,
@@ -76,6 +98,7 @@ func NewServer() *Server {
 		TextDocumentDidChange:      s.textDocumentDidChange,
 		TextDocumentHover:          s.textDocumentHover,
 		TextDocumentCompletion:     s.textDocumentCompletion,
+		CompletionItemResolve:      s.completionItemResolve,
 		TextDocumentCodeAction:     s.textDocumentCodeAction,
 
 		// Workspace
@@ -124,8 +147,10 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
+	resolveProvider := true
 	capabilities.CompletionProvider = &protocol.CompletionOptions{
 		TriggerCharacters: []string{"."},
+		ResolveProvider:   &resolveProvider,
 	}
 	capabilities.DeclarationProvider = true
 	capabilities.DefinitionProvider = true

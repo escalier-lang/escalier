@@ -868,6 +868,146 @@ Step 6.3: Manual playground testing
 - When `IsIncomplete: true` is returned, the client can re-query as the user
   types to refine suggestions.
 
+### Milestone 6: Performance
+
+The completion handler depends on up-to-date AST and scope caches, which are
+populated by the validation pipeline (`textDocument/didChange` → `validate()`
+/ `validateModule()`). Slow validation means stale completions. This milestone
+addresses performance bottlenecks in both the validation pipeline and the
+completion handler itself.
+
+```text
+Step 7.1: Debounce didChange on the client side                      [DONE]
+Step 7.2: Early staleness check in validate/validateModule           [DONE]
+Step 7.3: Async validation in textDocumentDidChange                  [DONE]
+Step 7.4: Single validation per didChange (last content change only) [DONE]
+Step 7.5: Move file I/O outside read lock in validateModule          [DONE]
+Step 7.6: Cache prelude completions                                 [DONE]
+Step 7.7: Lazy type stringification in completion items              [DONE]
+Step 7.8: Pre-index errors by SourceID for diagnostic publishing     [DONE]
+```
+
+#### Step 7.1: Debounce `didChange` on the Client Side
+
+**Status: DONE**
+
+**Files changed:**
+- `playground/src/language.ts` — wrapped `textDocumentDidChange` call in a
+  `setTimeout`/`clearTimeout` debounce (500ms)
+
+The client no longer sends a `didChange` notification on every keystroke.
+Instead, it waits for a 500ms pause in typing before sending. This
+dramatically reduces the number of validation cycles triggered during rapid
+editing.
+
+#### Step 7.2: Early Staleness Check in `validate` / `validateModule`
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/text_document.go` — added version check before expensive
+  parsing/type-checking in both `validate()` and `validateModule()`
+
+Previously, the document version was only checked *after* parsing and
+type-checking completed. Now the version is checked *before* expensive work
+begins, allowing the server to bail out immediately if a newer version has
+already arrived. The post-work check is retained as a safety net.
+
+#### Step 7.3: Async Validation in `textDocumentDidChange`
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/text_document.go` — changed `s.validate(...)` to
+  `go s.validate(...)`
+
+The `textDocumentDidChange` handler no longer blocks on validation. The
+handler returns immediately, and validation runs in a background goroutine.
+This prevents the LSP server from becoming unresponsive during parsing and
+type-checking.
+
+#### Step 7.4: Single Validation per `didChange`
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/text_document.go` — replaced loop over `ContentChanges`
+  with single validation using the last content change
+
+In full-sync mode, only the final document state matters. Previously, if
+`ContentChanges` had multiple entries, `validate()` was called once per
+entry. Now only the last change is used.
+
+#### Step 7.5: Move File I/O Outside Read Lock in `validateModule`
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/text_document.go` — split the source-building loop into
+  two phases: snapshot open document texts under `RLock`, then read from disk
+  after releasing the lock
+
+Previously, `os.ReadFile()` was called while holding `server.mu.RLock()`,
+blocking other operations waiting on the lock. Now disk I/O happens outside
+the critical section.
+
+#### Step 7.6: Cache Prelude Completions
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/main.go` — added `preludeCompletions` field to `Server`
+- `cmd/lsp-server/completion.go` — added `buildPreludeCompletions()`,
+  `getPreludeCompletions()`, `buildScopeCompletionsNoDetail()`; converted
+  `completionsFromScope` and `completionsFromModuleScope` to methods on
+  `Server`; replaced `collectScopeBindings(scope.Parent, ...)` with cached
+  prelude item append; removed `collectScopeBindings`
+
+**What was done:**
+
+Prelude completion items are computed lazily on first completion request via
+`getPreludeCompletions()` and cached on the `Server` struct. Both
+`completionsFromScope` and `completionsFromModuleScope` now append the cached
+items (respecting the `seen` map for shadowing) instead of recursively walking
+the parent scope chain. The cached items defer `Detail` computation (see
+Step 7.7).
+
+#### Step 7.7: Lazy Type Stringification in Completion Items
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/main.go` — registered `CompletionItemResolve` handler,
+  added `ResolveProvider: true` to `CompletionOptions`
+- `cmd/lsp-server/completion.go` — added `completionResolveData` struct,
+  `completionItemResolve()` handler, `resolvePreludeDetail()`,
+  `resolveScriptDetail()`, `resolveModuleDetail()`, `resolveDetailInScope()`
+
+**What was done:**
+
+Cached prelude completion items are created without `Detail` strings. Instead,
+a `completionResolveData` payload is stored in `CompletionItem.Data` with the
+scope identifier and binding name. When the client highlights an item, it
+sends a `completionItem/resolve` request. The handler looks up the binding in
+the appropriate scope and computes the `Detail` string on demand. This
+eliminates O(N) `Type.String()` calls per completion request for prelude
+bindings.
+
+#### Step 7.8: Pre-Index Errors by SourceID for Diagnostic Publishing
+
+**Status: DONE**
+
+**Files changed:**
+- `cmd/lsp-server/text_document.go` — replaced per-file error scanning with
+  pre-indexed `map[int][]protocol.Diagnostic`
+
+**What was done:**
+
+After parsing and type-checking a module, errors are now grouped into a
+`map[int][]protocol.Diagnostic` keyed by `SourceID` in a single O(total_errors)
+pass. Per-file diagnostic publishing then looks up the pre-indexed slice
+instead of scanning all errors for each file.
+
 ---
 
 ## Future Work
@@ -884,7 +1024,12 @@ Step 6.3: Manual playground testing
   positions, function arguments). Currently, scope-based completions return
   both types and values regardless of context.
 
-- **Partial module re-checking**: When a file changes, only re-check the
-  nodes in the dependency graph that are affected by modified declarations,
-  rather than re-checking the entire module. This could significantly improve
-  responsiveness for large modules.
+- **Partial module re-checking**: When a file changes, only re-parse that
+  file and re-check the affected nodes in the dependency graph, rather than
+  re-parsing and re-checking the entire module. Approach: cache per-file
+  parse results keyed by content hash; on change, diff exported declarations
+  against the previous version; if exports are unchanged, only re-check the
+  changed file's internals; if exports changed, re-check dependents.
+  **Risk: HIGH** — requires careful invalidation logic and deep integration
+  with the dependency graph. Should be preceded by profiling to confirm that
+  full re-checking is actually the bottleneck.

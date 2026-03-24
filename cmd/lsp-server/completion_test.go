@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/stretchr/testify/assert"
@@ -37,6 +38,11 @@ func parseAndInferAllowErrors(t *testing.T, source string) (*ast.Script, *checke
 	}
 	scope, _ := c.InferScript(inferCtx, script)
 	return script, scope
+}
+
+// testServer returns a minimal *Server for use in completion tests.
+func testServer() *Server {
+	return NewServer()
 }
 
 // getCompletionLabels extracts sorted labels from completion items.
@@ -116,6 +122,86 @@ x.`
 	assert.Empty(t, items)
 }
 
+// scriptCompletions exercises the full textDocumentCompletion handler for a
+// script file, returning the completion items.
+func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol.CompletionItem {
+	t.Helper()
+	uri := protocol.DocumentUri("file:///test.esc")
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	s := testServer()
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       source,
+	}
+	s.astCache[uri] = script
+	s.scopeCache[uri] = scope
+	s.validatedVersion[uri] = version
+
+	// LSP positions are 0-based; loc is already 1-based from the test.
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(loc.Line - 1),
+				Character: protocol.UInteger(loc.Column - 1),
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	if result == nil {
+		return nil
+	}
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+	return list.Items
+}
+
+func TestNoCompletionsOnIdentPat(t *testing.T) {
+	// Cursor at "p" — line 1, col 5
+	items := scriptCompletions(t, `val p`, ast.Location{Line: 1, Column: 5})
+	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat")
+}
+
+func TestNoCompletionsOnIdentPatInCompleteDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p = 10"
+	// Cursor right after "p" in a complete declaration — still in the pattern.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in complete val decl")
+}
+
+func TestNoCompletionsOnIdentPatInIncompleteDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p"
+	// Cursor right after "p" in an incomplete declaration — still in the pattern.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in incomplete val decl")
+}
+
+func TestCompletionsOnTypeAnnotationInVarDecl(t *testing.T) {
+	source := "type Point = {x: number, y: number}\nval p: P"
+
+	// Cursor on "P" in the type annotation (col 8) and right after "P" (col 9).
+	// In `val p: P`, P starts at column 8.
+	for _, col := range []int{8, 9} {
+		items := scriptCompletions(t, source, ast.Location{Line: 2, Column: col})
+		labels := getCompletionLabels(items)
+		assert.Contains(t, labels, "Point",
+			"col %d: should provide type completions in type annotation position", col)
+	}
+}
+
+func TestCompletionsOnIdentExpr(t *testing.T) {
+	source := "type Point = {x: number, y: number}\np"
+	// Cursor at "p" on line 2 — this is an IdentExpr, not IdentPat.
+	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 1})
+	labels := getCompletionLabels(items)
+	assert.Contains(t, labels, "Point", "should provide completions when cursor is on IdentExpr")
+}
+
 func TestScopeCompletionBasic(t *testing.T) {
 	source := `val x: number = 42
 val y: string = "hello"
@@ -124,7 +210,7 @@ x`
 
 	// Cursor at "x" on line 3
 	loc := ast.Location{Line: 3, Column: 1}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 	items = filterByPrefix(items, "x")
 	labels := getCompletionLabels(items)
 	assert.Contains(t, labels, "x")
@@ -138,7 +224,7 @@ gre`
 
 	// Cursor at "gre" — line 2, col 3
 	loc := ast.Location{Line: 2, Column: 3}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 	items = filterByPrefix(items, "gre")
 	labels := getCompletionLabels(items)
 	assert.Equal(t, []string{"greet"}, labels)
@@ -152,7 +238,7 @@ a`
 
 	// Cursor at "a" on line 3 — both a and b should be visible
 	loc := ast.Location{Line: 3, Column: 1}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -170,7 +256,7 @@ val b: number = 2`
 
 	// Cursor at "a" on line 2 — only a should be visible, not b
 	loc := ast.Location{Line: 2, Column: 1}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -229,7 +315,7 @@ func TestScopeCompletionInsideFuncBody(t *testing.T) {
 
 	// Cursor at "sum" on line 3, inside the function body
 	loc := ast.Location{Line: 3, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -250,7 +336,7 @@ fn foo() -> number {
 
 	// Cursor at "outer" on line 3, inside foo's body
 	loc := ast.Location{Line: 3, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -275,7 +361,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "b" on line 5, inside the if-block
 	loc := ast.Location{Line: 5, Column: 3}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -288,7 +374,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "a" on line 8, inside the else-block
 	loc2 := ast.Location{Line: 8, Column: 3}
-	items2 := completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2)
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -313,7 +399,7 @@ func TestScopeCompletionInsideMatchCase(t *testing.T) {
 	//          123456789012345678901
 	// "myField" after => starts at col 19
 	loc := ast.Location{Line: 3, Column: 19}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -335,7 +421,7 @@ func TestScopeCompletionMatchBindingNotVisibleOutside(t *testing.T) {
 
 	// Cursor at "x" on line 5, outside the match expression
 	loc := ast.Location{Line: 5, Column: 3}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -356,7 +442,7 @@ for item in items {
 
 	// Cursor at "item" on line 3, col 3
 	loc := ast.Location{Line: 3, Column: 3}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -376,7 +462,7 @@ items`
 
 	// Cursor at "items" on line 5, after the for-in loop
 	loc := ast.Location{Line: 5, Column: 1}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -394,7 +480,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 
 	// Cursor at "name" on line 2, inside the function expression body
 	loc := ast.Location{Line: 2, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -414,7 +500,7 @@ add`
 
 	// Cursor at "add" on line 5, outside the function
 	loc := ast.Location{Line: 5, Column: 1}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -441,7 +527,7 @@ try {
 
 	// Cursor inside try block at "a" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -454,7 +540,7 @@ try {
 
 	// Cursor inside catch block at "b" on line 8
 	loc2 := ast.Location{Line: 8, Column: 3}
-	items2 := completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2)
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -478,7 +564,7 @@ if let [a, b] = target {
 
 	// Cursor inside consequent at "a" on line 3
 	loc := ast.Location{Line: 3, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -491,7 +577,7 @@ if let [a, b] = target {
 
 	// Cursor inside else at "c" on line 6
 	loc2 := ast.Location{Line: 6, Column: 2}
-	items2 := completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2)
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -513,7 +599,7 @@ val result = do {
 
 	// Cursor at "inner" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -536,7 +622,7 @@ if (true) {
 
 	// Cursor inside consequent at "a" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -548,7 +634,7 @@ if (true) {
 
 	// Cursor inside else at "b" on line 7
 	loc2 := ast.Location{Line: 7, Column: 2}
-	items2 := completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2)
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -692,7 +778,7 @@ val defaultId: UserId = 0
 	loc := ast.Location{Line: 4, Column: 1}
 	fileScope := fileScopes[1]
 
-	items := completionsFromModuleScope(module, 1, fileScope, moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, fileScope, moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -717,7 +803,7 @@ val c: number = 3`},
 	// All top-level declarations are visible anywhere in the file because
 	// the DepGraph reorders them before type checking and code generation.
 	loc := ast.Location{Line: 2, Column: 1}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -739,7 +825,7 @@ val b: number = 20`},
 	// Cursor at line 1 col 1 in file1 — all declarations from file2 should be visible
 	// even though the cursor is "before" them (they're in a different file)
 	loc := ast.Location{Line: 1, Column: 1}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -761,7 +847,7 @@ fn laterFunc() -> number { 42 }`},
 	// Function declarations are always visible in modules just like all other
 	// declarations
 	loc := ast.Location{Line: 1, Column: 1}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -816,7 +902,7 @@ fn foo(a: number) -> number {
 
 	// Cursor at "inner" on line 5, inside foo's body (after inner and later declarations)
 	loc := ast.Location{Line: 5, Column: 2}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -831,7 +917,7 @@ fn foo(a: number) -> number {
 	// Cursor at line 3, col 15 (after "val inner" declaration but before "later" declaration)
 	// Variables declared after this point should not be visible
 	locEarly := ast.Location{Line: 3, Column: 15}
-	itemsEarly := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, locEarly)
+	itemsEarly := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, locEarly)
 	seenEarly := map[string]bool{}
 	for _, item := range itemsEarly {
 		seenEarly[item.Label] = true
@@ -868,7 +954,7 @@ declare val x: number`},
 
 	// Completions from file1 (which has the import)
 	loc := ast.Location{Line: 2, Column: 1}
-	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -879,7 +965,7 @@ declare val x: number`},
 	assert.True(t, seen1["y"], "y from other file should be visible (cross-file)")
 
 	// Completions from file2 (which does NOT have the import)
-	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -927,7 +1013,7 @@ fn usePkg() -> number { 1 }`},
 	loc := ast.Location{Line: 2, Column: 1}
 
 	// file1 completions: pkg namespace should be present
-	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -937,7 +1023,7 @@ fn usePkg() -> number { 1 }`},
 	assert.True(t, seen1["other"], "other from file2 should be visible (cross-file)")
 
 	// file2 completions: pkg namespace should NOT be present
-	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -959,7 +1045,7 @@ func TestModuleNamespaceVisibleFromRootFile(t *testing.T) {
 
 	// Completions from main.esc (root namespace)
 	loc := ast.Location{Line: 1, Column: 1}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 
 	seen := map[string]bool{}
 	kindByLabel := map[string]protocol.CompletionItemKind{}
@@ -987,7 +1073,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	loc := ast.Location{Line: 1, Column: 1}
 
 	// Completions from add.esc
-	items1 := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -997,7 +1083,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	assert.True(t, seen1["sub"], "sub from other file in same namespace should be visible")
 
 	// Completions from sub.esc
-	items2 := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1018,7 +1104,7 @@ func TestModuleMultipleNamespacesVisible(t *testing.T) {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	loc := ast.Location{Line: 1, Column: 1}
-	items := completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -1081,7 +1167,7 @@ fn rootFunc() -> string { "hello" }`},
 
 	// Cursor at "rootDecl" on line 2 inside helperFunc in the lib/helper.esc file
 	loc := ast.Location{Line: 2, Column: 2}
-	items := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item.Label] = true
@@ -1112,7 +1198,7 @@ val other: number = 2`},
 	require.True(t, ok, "expected IdentExpr, got %T", node)
 	require.Equal(t, "roo", identExpr.Name)
 
-	items := completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	filtered := filterByPrefix(items, identExpr.Name)
 	labels := getCompletionLabels(filtered)
 
@@ -1150,4 +1236,303 @@ func TestModuleNamespaceMemberCompletionFilteredByPrefix(t *testing.T) {
 	labels := getCompletionLabels(filtered)
 
 	assert.Equal(t, []string{"sub"}, labels)
+}
+
+// --- wordAtCursor tests ---
+
+func TestWordAtCursorBasic(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor right after "bar" (line 1, col 14).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 14})
+	assert.Equal(t, "bar", result)
+}
+
+func TestWordAtCursorMiddleOfWord(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor after "ba" in "bar" (col 13, 1-based → colIdx 12 → runes[10:12] = "ba").
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 13})
+	assert.Equal(t, "ba", result)
+}
+
+func TestWordAtCursorAtStart(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor at beginning of line — no word behind.
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 1})
+	assert.Equal(t, "", result)
+}
+
+func TestWordAtCursorOnSpace(t *testing.T) {
+	text := "val foo = bar"
+	// Cursor on space before "bar" (col 11).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 11})
+	assert.Equal(t, "", result)
+}
+
+func TestWordAtCursorMultiLine(t *testing.T) {
+	text := "val x = 1\nval y = 2"
+	// Cursor after "y" on line 2 (col 6).
+	result := wordAtCursor(text, ast.Location{Line: 2, Column: 6})
+	assert.Equal(t, "y", result)
+}
+
+func TestWordAtCursorUnderscoreAndDigits(t *testing.T) {
+	text := "val my_var2 = 1"
+	// Cursor after "my_var2" (col 12).
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 12})
+	assert.Equal(t, "my_var2", result)
+}
+
+func TestWordAtCursorMultibyteRunes(t *testing.T) {
+	// Known limitation: loc.Column is a byte offset from the lexer, but
+	// wordAtCursor indexes into a []rune slice. When multi-byte characters
+	// precede the cursor, the column points to the wrong rune. This test
+	// documents the current (incorrect) behavior. See the NOTE in
+	// wordAtCursor's docstring.
+	text := "val café = 1"
+	// 'é' is 2 bytes in UTF-8, so byte column 8 (1-based) is the first
+	// byte of 'é', but rune index 7 is also 'é'. By coincidence the rune
+	// and byte indices agree here since only one multi-byte char is involved
+	// and it's at the boundary. Column 9 (byte offset of 'é's second byte)
+	// would index rune 8 (' '), producing "" — a wrong result.
+	result := wordAtCursor(text, ast.Location{Line: 1, Column: 9})
+	assert.Equal(t, "", result, "documents current behavior: byte/rune mismatch causes incorrect result for multi-byte input")
+}
+
+func TestWordAtCursorOutOfBounds(t *testing.T) {
+	text := "hello"
+	// Line out of bounds.
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 5, Column: 1}))
+	// Column out of bounds.
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 1, Column: 100}))
+}
+
+// --- filterTypeItems tests ---
+
+func TestFilterTypeItemsKeepsTypes(t *testing.T) {
+	classKind := protocol.CompletionItemKindClass
+	interfaceKind := protocol.CompletionItemKindInterface
+	enumKind := protocol.CompletionItemKindEnum
+	moduleKind := protocol.CompletionItemKindModule
+	funcKind := protocol.CompletionItemKindFunction
+	varKind := protocol.CompletionItemKindVariable
+
+	items := []protocol.CompletionItem{
+		{Label: "MyClass", Kind: &classKind},
+		{Label: "MyInterface", Kind: &interfaceKind},
+		{Label: "MyEnum", Kind: &enumKind},
+		{Label: "MyModule", Kind: &moduleKind},
+		{Label: "myFunc", Kind: &funcKind},
+		{Label: "myVar", Kind: &varKind},
+		{Label: "noKind"},
+	}
+
+	filtered := filterTypeItems(items)
+	labels := getCompletionLabels(filtered)
+
+	assert.Contains(t, labels, "MyClass")
+	assert.Contains(t, labels, "MyInterface")
+	assert.Contains(t, labels, "MyEnum")
+	assert.Contains(t, labels, "MyModule")
+	assert.NotContains(t, labels, "myFunc", "functions should be filtered out")
+	assert.NotContains(t, labels, "myVar", "variables should be filtered out")
+	assert.NotContains(t, labels, "noKind", "items with no Kind should be filtered out")
+}
+
+func TestFilterTypeItemsEmpty(t *testing.T) {
+	filtered := filterTypeItems(nil)
+	assert.Empty(t, filtered)
+}
+
+// --- Module suppression tests ---
+
+// moduleCompletions exercises the full textDocumentCompletion handler for a
+// module file, returning the completion items.
+func moduleCompletions(
+	t *testing.T,
+	sources []*ast.Source,
+	targetSourceID int,
+	loc ast.Location,
+) []protocol.CompletionItem {
+	t.Helper()
+
+	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+
+	// Register each source as an open document.
+	for _, src := range sources {
+		fileURI := protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", src.Path))
+		version := protocol.Integer(1)
+		s.documents[fileURI] = protocol.TextDocumentItem{
+			URI:        fileURI,
+			LanguageID: "escalier",
+			Version:    version,
+			Text:       src.Contents,
+		}
+		s.validatedVersion[fileURI] = version
+	}
+
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	// Find the target file's URI.
+	var targetURI protocol.DocumentUri
+	for _, src := range sources {
+		if src.ID == targetSourceID {
+			targetURI = protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", src.Path))
+			break
+		}
+	}
+	require.NotEmpty(t, targetURI, "target source ID %d not found", targetSourceID)
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: targetURI},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(loc.Line - 1),
+				Character: protocol.UInteger(loc.Column - 1),
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	if result == nil {
+		return nil
+	}
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+	return list.Items
+}
+
+func TestModuleNoCompletionsOnIdentPat(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: "val p"},
+	}
+	// Cursor at "p" — line 1, col 5.
+	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 5})
+	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat in a module file")
+}
+
+func TestModuleNoCompletionsOnIdentPatComplete(t *testing.T) {
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/main.esc", Contents: "val p = 10"},
+	}
+	// Cursor right after "p" (col 6) — still in the pattern.
+	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 6})
+	assert.Empty(t, items, "should not provide completions on IdentPat in complete module val decl")
+}
+
+// --- Module TypeRefTypeAnn with file-scoped imports ---
+
+func TestModuleTypeAnnotationIncludesImportedNamespace(t *testing.T) {
+	// file1 imports a namespace from an external package. In a type annotation
+	// position, the namespace should be visible (for qualified type references
+	// like `xpkg.SomeType`). We use "xpkg" to avoid colliding with the large
+	// number of prelude types that start with common prefixes.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as xpkg from "test-pkg"
+val x: xp`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["helper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
+		"test-pkg": mockPkg,
+	})
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+	uri := protocol.DocumentUri("file:///workspace/lib/file1.esc")
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       sources[0].Contents,
+	}
+	s.validatedVersion[uri] = version
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      1, // 0-based: line 2
+				Character: 9, // 0-based: after "xp" in "val x: xp"
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+
+	labels := getCompletionLabels(list.Items)
+	assert.Contains(t, labels, "xpkg", "imported namespace should appear in type annotation completions")
+}
+
+func TestModuleTypeAnnotationExcludesValues(t *testing.T) {
+	// file1 imports a namespace that contains a value binding. The namespace
+	// itself should be visible (Module kind) but value-only bindings from it
+	// should not appear as bare completions in a type annotation position.
+	sources := []*ast.Source{
+		{ID: 0, Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+fn usePkg() -> number { pkg.helper }
+val x: h`},
+	}
+
+	mockPkg := type_system.NewNamespace()
+	mockPkg.Values["helper"] = &type_system.Binding{
+		Type:     type_system.NewNumPrimType(nil),
+		Mutable:  false,
+		Exported: true,
+	}
+
+	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
+		"test-pkg": mockPkg,
+	})
+
+	s := testServer()
+	s.rootURI = "file:///workspace"
+	uri := protocol.DocumentUri("file:///workspace/lib/file1.esc")
+	version := protocol.Integer(1)
+	s.documents[uri] = protocol.TextDocumentItem{
+		URI:        uri,
+		LanguageID: "escalier",
+		Version:    version,
+		Text:       sources[0].Contents,
+	}
+	s.validatedVersion[uri] = version
+	s.moduleCache = module
+	s.moduleScopeCache = moduleScope
+	s.fileScopeCache = fileScopes
+
+	params := &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      2, // 0-based: line 3
+				Character: 8, // 0-based: after "h"
+			},
+		},
+	}
+	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok, "expected *CompletionList, got %T", result)
+
+	labels := getCompletionLabels(list.Items)
+	// "helper" is a value (function kind), not a type — should be excluded.
+	assert.NotContains(t, labels, "helper", "imported value should not appear in type annotation completions")
+	// "usePkg" is also a value (function) — should be excluded.
+	assert.NotContains(t, labels, "usePkg", "function declarations should not appear in type annotation completions")
 }

@@ -227,12 +227,6 @@ func (v *AllBindingsUsageVisitor) ExitExpr(expr ast.Expr) {
 // EnterDecl handles function declarations which introduce function body scope
 func (v *AllBindingsUsageVisitor) EnterDecl(decl ast.Decl) bool {
 	switch d := decl.(type) {
-	case *ast.VarDecl:
-		// VarDecl.Accept doesn't visit TypeAnn, so we need to manually visit it
-		if d.TypeAnn != nil {
-			d.TypeAnn.Accept(v)
-		}
-		return true
 	case *ast.FuncDecl:
 		if d.Body != nil {
 			// Function declaration body increases function depth

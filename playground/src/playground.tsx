@@ -30,6 +30,7 @@ export const Playground = () => {
                 fontSize: 14,
                 automaticLayout: true,
                 'semanticHighlighting.enabled': true,
+                wordBasedSuggestions: 'off',
             });
 
             const outputModel = monaco.editor.createModel(

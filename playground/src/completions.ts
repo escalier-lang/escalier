@@ -4,6 +4,9 @@ export type CompletionDeps = {
     getCompletion: (
         params: lsp.CompletionParams,
     ) => Promise<lsp.CompletionList | lsp.CompletionItem[] | null>;
+    resolveCompletionItem: (
+        item: lsp.CompletionItem,
+    ) => Promise<lsp.CompletionItem>;
 };
 
 export type MonacoRange = {
@@ -24,6 +27,8 @@ export type CompletionSuggestion = {
     insertText: string;
     insertTextRules?: number;
     range: MonacoRange;
+    // Original LSP item, used by resolveCompletionItem to fetch deferred details.
+    _lspItem?: lsp.CompletionItem;
 };
 
 export type CompletionResult = {
@@ -95,8 +100,27 @@ export async function provideCompletionItems(
             suggestion.insertTextRules = INSERT_AS_SNIPPET;
         }
 
+        // Stash the original LSP item for deferred resolution.
+        if (item.data !== undefined) {
+            suggestion._lspItem = item;
+        }
+
         return suggestion;
     });
 
     return { suggestions, incomplete: isIncomplete };
+}
+
+export async function resolveCompletionItem(
+    deps: CompletionDeps,
+    suggestion: CompletionSuggestion,
+): Promise<CompletionSuggestion> {
+    if (!suggestion._lspItem) {
+        return suggestion;
+    }
+    const resolved = await deps.resolveCompletionItem(suggestion._lspItem);
+    return {
+        ...suggestion,
+        detail: resolved.detail ?? suggestion.detail,
+    };
 }

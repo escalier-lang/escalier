@@ -1,7 +1,12 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
-import { provideCompletionItems } from './completions';
+import {
+    type CompletionDeps,
+    type CompletionSuggestion,
+    provideCompletionItems,
+    resolveCompletionItem,
+} from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
@@ -58,6 +63,39 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
 export function setupLanguage(client: Client) {
     monaco.languages.register({ id: languageID });
 
+    type ModelState = {
+        debounceTimer: ReturnType<typeof setTimeout> | undefined;
+        model: monaco.editor.ITextModel;
+    };
+
+    // Per-model debounce state for didChange notifications.
+    const modelStates = new Map<string, ModelState>();
+
+    function sendDidChange(state: ModelState) {
+        clearTimeout(state.debounceTimer);
+        state.debounceTimer = undefined;
+        client.textDocumentDidChange({
+            textDocument: {
+                uri: state.model.uri.toString(),
+                version: state.model.getVersionId(),
+            },
+            contentChanges: [
+                {
+                    text: state.model.getValue(),
+                },
+            ],
+        });
+    }
+
+    // Flush any pending debounced didChange so the server has the latest
+    // content before handling a request.
+    function flushPendingChanges(uri: string) {
+        const state = modelStates.get(uri);
+        if (state?.debounceTimer !== undefined) {
+            sendDidChange(state);
+        }
+    }
+
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             const models = monaco.editor.getModels();
@@ -93,11 +131,9 @@ export function setupLanguage(client: Client) {
                         const model = models.find(
                             (model) => model.uri.toString() === outputUri,
                         );
-
                         if (!model) {
                             return;
                         }
-
                         model.setValue(result.text);
                     });
             }
@@ -137,6 +173,12 @@ export function setupLanguage(client: Client) {
     monaco.editor.onDidCreateModel((model) => {
         console.log('onDidCreateModel', model.uri.toString());
 
+        // We only create models for .esc files because these are the only files
+        // we're editing.
+        if (!model.uri.path.endsWith('.esc')) {
+            return;
+        }
+
         client.textDocumentDidOpen({
             textDocument: {
                 uri: model.uri.toString(),
@@ -146,24 +188,31 @@ export function setupLanguage(client: Client) {
             },
         });
 
+        const state: ModelState = { debounceTimer: undefined, model };
+        modelStates.set(model.uri.toString(), state);
+
         model.onDidChangeContent(() => {
-            client.textDocumentDidChange({
-                textDocument: {
-                    uri: model.uri.toString(),
-                    version: model.getVersionId(),
-                },
-                contentChanges: [
-                    {
-                        text: model.getValue(),
-                    },
-                ],
-            });
+            clearTimeout(state.debounceTimer);
+            state.debounceTimer = setTimeout(() => sendDidChange(state), 500);
         });
     });
 
     monaco.editor.onWillDisposeModel((model) => {
         console.log('onWillDisposeModel', model.uri.toString());
 
+        // We only create models for .esc files because these are the only files
+        // we're editing.
+        if (!model.uri.path.endsWith('.esc')) {
+            return;
+        }
+
+        // Cancel any pending debounced didChange so it doesn't fire after close.
+        const state = modelStates.get(model.uri.toString());
+        if (state) {
+            clearTimeout(state.debounceTimer);
+            state.debounceTimer = undefined;
+        }
+        modelStates.delete(model.uri.toString());
         client.textDocumentDidClose({
             textDocument: {
                 uri: model.uri.toString(),
@@ -178,6 +227,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDeclarationProvider(languageID, {
         async provideDeclaration(model, position, _token) {
             try {
+                flushPendingChanges(model.uri.toString());
                 const decl = await client.textDocumentDeclaration({
                     textDocument: {
                         uri: model.uri.toString(),
@@ -202,6 +252,7 @@ export function setupLanguage(client: Client) {
     monaco.languages.registerDefinitionProvider(languageID, {
         async provideDefinition(model, position, _token) {
             try {
+                flushPendingChanges(model.uri.toString());
                 console.log('provideDefinition called');
                 console.log(position);
                 const def = await client.textDocumentDefinition({
@@ -236,10 +287,18 @@ export function setupLanguage(client: Client) {
             ['"', '"'],
         ],
     });
+    const completionDeps: CompletionDeps = {
+        getCompletion: (params) => client.textDocumentCompletion(params),
+        resolveCompletionItem: (item) => client.completionItemResolve(item),
+    };
+
     monaco.languages.registerCompletionItemProvider(languageID, {
         triggerCharacters: ['.'],
         async provideCompletionItems(model, position, _context, _token) {
             try {
+                // Flush any pending didChange so the server has the latest content.
+                flushPendingChanges(model.uri.toString());
+
                 const word = model.getWordUntilPosition(position);
                 const defaultRange = new monaco.Range(
                     position.lineNumber,
@@ -249,10 +308,7 @@ export function setupLanguage(client: Client) {
                 );
 
                 return await provideCompletionItems(
-                    {
-                        getCompletion: (params) =>
-                            client.textDocumentCompletion(params),
-                    },
+                    completionDeps,
                     model.uri.toString(),
                     monacoPosToLspPos(position),
                     defaultRange,
@@ -262,10 +318,25 @@ export function setupLanguage(client: Client) {
                 return { suggestions: [] };
             }
         },
+        async resolveCompletionItem(item, _token) {
+            try {
+                // Monaco passes back the same object returned by
+                // provideCompletionItems, which includes our _lspItem field.
+                // Cast to CompletionSuggestion to access it.
+                return await resolveCompletionItem(
+                    completionDeps,
+                    item as CompletionSuggestion,
+                );
+            } catch (e) {
+                console.error('Completion resolve error:', e);
+                return item;
+            }
+        },
     });
 
     monaco.languages.registerHoverProvider(languageID, {
         async provideHover(model, position, _token, _context) {
+            flushPendingChanges(model.uri.toString());
             const hover = await client.textDocumentHover({
                 textDocument: { uri: model.uri.toString() },
                 position: monacoPosToLspPos(position),

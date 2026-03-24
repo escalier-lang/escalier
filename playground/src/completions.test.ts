@@ -7,6 +7,7 @@ import {
     lspKindToMonacoKind,
     lspRangeToMonacoRange,
     provideCompletionItems,
+    resolveCompletionItem,
 } from './completions';
 
 const defaultRange: MonacoRange = {
@@ -24,6 +25,7 @@ function makeDeps(
 ): CompletionDeps {
     return {
         getCompletion: vi.fn().mockResolvedValue(result),
+        resolveCompletionItem: vi.fn().mockImplementation(async (item) => item),
     };
 }
 
@@ -329,5 +331,81 @@ describe('lspRangeToMonacoRange', () => {
             endLineNumber: 3,
             endColumn: 11,
         });
+    });
+});
+
+describe('resolveCompletionItem', () => {
+    test('resolves detail from server when _lspItem is present', async () => {
+        const lspItem: lsp.CompletionItem = {
+            label: 'foo',
+            kind: lsp.CompletionItemKind.Variable,
+            data: { scope: 'prelude', name: 'foo' },
+        };
+        const deps: CompletionDeps = {
+            getCompletion: vi.fn(),
+            resolveCompletionItem: vi.fn().mockResolvedValue({
+                ...lspItem,
+                detail: 'number',
+                data: undefined,
+            }),
+        };
+        const suggestion = {
+            label: 'foo',
+            kind: lsp.CompletionItemKind.Variable,
+            insertText: 'foo',
+            range: defaultRange,
+            _lspItem: lspItem,
+        };
+
+        const result = await resolveCompletionItem(deps, suggestion);
+
+        expect(deps.resolveCompletionItem).toHaveBeenCalledWith(lspItem);
+        expect(result.detail).toBe('number');
+    });
+
+    test('returns suggestion unchanged when no _lspItem', async () => {
+        const deps: CompletionDeps = {
+            getCompletion: vi.fn(),
+            resolveCompletionItem: vi.fn(),
+        };
+        const suggestion = {
+            label: 'bar',
+            kind: lsp.CompletionItemKind.Function,
+            detail: 'existing',
+            insertText: 'bar',
+            range: defaultRange,
+        };
+
+        const result = await resolveCompletionItem(deps, suggestion);
+
+        expect(deps.resolveCompletionItem).not.toHaveBeenCalled();
+        expect(result.detail).toBe('existing');
+    });
+
+    test('stashes _lspItem only when item has data', async () => {
+        const itemWithData: lsp.CompletionItem = {
+            label: 'withData',
+            kind: lsp.CompletionItemKind.Variable,
+            data: { scope: 'prelude', name: 'withData' },
+        };
+        const itemWithoutData: lsp.CompletionItem = {
+            label: 'noData',
+            kind: lsp.CompletionItemKind.Function,
+            detail: 'already resolved',
+        };
+        const deps = makeDeps({
+            isIncomplete: false,
+            items: [itemWithData, itemWithoutData],
+        });
+
+        const result = await provideCompletionItems(
+            deps,
+            uri,
+            position,
+            defaultRange,
+        );
+
+        expect(result.suggestions[0]._lspItem).toEqual(itemWithData);
+        expect(result.suggestions[1]._lspItem).toBeUndefined();
     });
 });

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -14,23 +16,233 @@ import (
 
 const maxCompletionItems = 100
 
+// completionResolveData is stored in CompletionItem.Data for deferred detail resolution.
+type completionResolveData struct {
+	// Scope identifies where to look up the binding: "prelude", "module", "file", or "script".
+	Scope string `json:"scope"`
+	// Name is the binding name to look up.
+	Name string `json:"name"`
+	// URI is the document URI (used for script-scoped lookups).
+	URI string `json:"uri,omitempty"`
+}
+
+// buildPreludeCompletions computes completion items for all prelude/global scope
+// bindings. Detail is deferred to completionItem/resolve.
+func buildPreludeCompletions(scope *checker.Scope) []protocol.CompletionItem {
+	if scope == nil {
+		return nil
+	}
+	var items []protocol.CompletionItem
+	buildScopeCompletionsNoDetail(scope, &items, "prelude")
+	return items
+}
+
+// buildScopeCompletionsNoDetail recursively collects completion items from a scope
+// chain without computing Detail strings. Sets Data for deferred resolution.
+func buildScopeCompletionsNoDetail(scope *checker.Scope, items *[]protocol.CompletionItem, scopeID string) {
+	if scope == nil {
+		return
+	}
+	ns := scope.Namespace
+	for name, binding := range ns.Values {
+		kind := completionKindForValueType(binding.Type)
+		*items = append(*items, protocol.CompletionItem{
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
+		})
+	}
+	for name, alias := range ns.Types {
+		kind := completionKindForTypeAlias(alias)
+		*items = append(*items, protocol.CompletionItem{
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
+		})
+	}
+	for name := range ns.Namespaces {
+		kind := protocol.CompletionItemKindModule
+		*items = append(*items, protocol.CompletionItem{
+			Label: name,
+			Kind:  &kind,
+			Data:  completionResolveData{Scope: scopeID, Name: name},
+		})
+	}
+	buildScopeCompletionsNoDetail(scope.Parent, items, scopeID)
+}
+
+// getPreludeCompletions returns cached prelude completion items, building them
+// on first access. The prelude scope is obtained from the script or module scope's
+// parent chain.
+func (s *Server) getPreludeCompletions(preludeScope *checker.Scope) []protocol.CompletionItem {
+	s.mu.RLock()
+	cached := s.preludeCompletions
+	s.mu.RUnlock()
+	if cached != nil {
+		return cached
+	}
+
+	items := buildPreludeCompletions(preludeScope)
+
+	s.mu.Lock()
+	// Double-check in case another goroutine built it concurrently.
+	if s.preludeCompletions == nil {
+		s.preludeScope = preludeScope
+		s.preludeCompletions = items
+	}
+	cached = s.preludeCompletions
+	s.mu.Unlock()
+	return cached
+}
+
+// completionItemResolve handles completionItem/resolve requests by computing
+// the Detail string on demand.
+//
+// Errors during Data decoding are intentionally swallowed: we return the item
+// unchanged rather than propagating an error. Returning an error from resolve
+// would cause LSP clients to show error popups for what is purely a cosmetic
+// failure (missing type detail). The item remains usable without its detail.
+func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.CompletionItem) (*protocol.CompletionItem, error) {
+	if params.Detail != nil {
+		// Already resolved.
+		return params, nil
+	}
+	if params.Data == nil {
+		return params, nil
+	}
+
+	// params.Data arrives as a json.RawMessage or map; re-marshal to decode.
+	raw, err := json.Marshal(params.Data)
+	if err != nil {
+		return params, nil
+	}
+	var data completionResolveData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return params, nil
+	}
+	if data.Scope == "" || data.Name == "" {
+		return params, nil
+	}
+
+	detail := s.resolveDetail(data)
+	if detail == "" {
+		return params, nil
+	}
+
+	result := &protocol.CompletionItem{
+		Label: params.Label,
+		Kind:  params.Kind,
+	}
+	if detail != "" {
+		result.Detail = &detail
+	}
+	return result, nil
+}
+
+// resolveDetail looks up the type detail string for a deferred completion item.
+// It selects the appropriate scope (prelude, script, or module) based on
+// data.Scope and searches for the binding by name.
+func (s *Server) resolveDetail(data completionResolveData) string {
+	s.mu.RLock()
+	var scope *checker.Scope
+	switch data.Scope {
+	case "prelude":
+		scope = s.preludeScope
+	case "script":
+		scope = s.scopeCache[protocol.DocumentUri(data.URI)]
+	case "module":
+		scope = s.moduleScopeCache
+	}
+	s.mu.RUnlock()
+	if scope == nil {
+		return ""
+	}
+
+	for s := scope; s != nil; s = s.Parent {
+		ns := s.Namespace
+		if binding, ok := ns.Values[data.Name]; ok {
+			return safeTypeString(binding.Type)
+		}
+		if alias, ok := ns.Types[data.Name]; ok {
+			return safeTypeString(alias.Type)
+		}
+		if _, ok := ns.Namespaces[data.Name]; ok {
+			return "namespace"
+		}
+	}
+
+	return ""
+}
+
+// shouldSuppressCompletions checks if the cursor is on a node where completions
+// should be suppressed (e.g. IdentPat, which introduces a new binding).
+// The caller (textDocumentCompletion) waits for in-flight validation before
+// calling this, so the cached ASTs are up to date.
+func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID int, isModule bool, loc ast.Location) bool {
+	var ancestors []ast.Node
+	if isModule {
+		if module == nil || sourceID < 0 {
+			return false
+		}
+		_, ancestors = findNodeWithAncestorsInFile(module, sourceID, loc)
+	} else {
+		if script == nil {
+			return false
+		}
+		_, ancestors = findNodeWithAncestors(script, loc)
+	}
+
+	for _, ancestor := range ancestors {
+		if varDecl, ok := ancestor.(*ast.VarDecl); ok {
+			if varDecl.Pattern != nil && varDecl.Pattern.Span().Contains(loc) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
 	loc := posToLoc(params.Position)
 
+	// Wait for an in-flight validation to complete if the cached AST is
+	// stale (i.e. the document has been updated but validation hasn't
+	// finished yet). Times out after 2s to avoid blocking indefinitely.
+	deadline := time.Now().Add(2 * time.Second)
 	s.mu.RLock()
+	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		// Puts the gorountine to sleep until `Broadcast()` is called.
+		s.validated.Wait()
+	}
 	module := s.moduleCache
 	moduleScope := s.moduleScopeCache
 	fileScopes := s.fileScopeCache
 	script := s.astCache[uri]
 	scope := s.scopeCache[uri]
+	doc := s.documents[uri]
 	s.mu.RUnlock()
 
+	// Resolve sourceID for module files (used by both suppression and completion).
+	isModule := s.isModuleFile(uri)
+	sourceID := -1
+	if isModule && module != nil {
+		if id, ok := getSourceIDForModule(module, s.relPath(uri)); ok {
+			sourceID = id
+		}
+	}
+
+	// Check if the cursor is on a node where completions should be suppressed
+	// (e.g. IdentPat). This runs after waiting for validation so the cached
+	// ASTs are up to date.
+	if shouldSuppressCompletions(script, module, sourceID, isModule, loc) {
+		return &protocol.CompletionList{Items: []protocol.CompletionItem{}}, nil
+	}
+
 	// Try module-aware completions first.
-	if module != nil && moduleScope != nil && s.isModuleFile(uri) {
-		sourceID, ok := getSourceIDForModule(module, s.relPath(uri))
-		if ok {
-			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc)
+	if module != nil && moduleScope != nil && isModule {
+		if sourceID >= 0 {
+			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
 		}
 	}
 
@@ -45,7 +257,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
-		items = completionsFromScope(script, scope, loc)
+		items = s.completionsFromScope(script, scope, loc)
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -75,12 +287,23 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				}
 			} else {
 				// Case C: standalone identifier — scope-based completions
-				items = completionsFromScope(script, scope, loc)
+				items = s.completionsFromScope(script, scope, loc)
 				items = filterByPrefix(items, n.Name)
+			}
+		case *ast.TypeRefTypeAnn:
+			// Cursor is in a type annotation — return only type completions.
+			items = typeCompletionsFromScope(scope, "script", string(uri))
+			if n.Name != nil {
+				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
+					items = filterByPrefix(items, ident.Name)
+				}
 			}
 		default:
 			// Other node types — provide scope-based completions
-			items = completionsFromScope(script, scope, loc)
+			items = s.completionsFromScope(script, scope, loc)
+			if prefix := wordAtCursor(doc.Text, loc); prefix != "" {
+				items = filterByPrefix(items, prefix)
+			}
 		}
 	}
 
@@ -101,6 +324,7 @@ func (s *Server) moduleCompletion(
 	moduleScope *checker.Scope,
 	fileScopes map[int]*checker.Scope,
 	loc ast.Location,
+	docText string,
 ) (any, error) {
 	fileScope := fileScopes[sourceID]
 	// Use the module scope for type lookups (member completions need it for
@@ -115,7 +339,7 @@ func (s *Server) moduleCompletion(
 	var items []protocol.CompletionItem
 
 	if node == nil {
-		items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+		items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -140,11 +364,32 @@ func (s *Server) moduleCompletion(
 					items = filterByPrefix(items, n.Name)
 				}
 			} else {
-				items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+				items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.TypeRefTypeAnn:
+			// Cursor is in a type annotation — return only type completions.
+			// Include file-scoped imports so imported types are visible.
+			seen := map[string]bool{}
+			// URI is empty because resolveModuleDetail looks up s.moduleScopeCache
+			// directly and doesn't need a per-file URI.
+			items = typeCompletionsFromScope(moduleScope, "module", "")
+			for _, item := range items {
+				seen[item.Label] = true
+			}
+			collectFileImportBindings(module, sourceID, fileScope, seen, &items)
+			// Filter out value-only imports (keep types and namespaces).
+			items = filterTypeItems(items)
+			if n.Name != nil {
+				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
+					items = filterByPrefix(items, ident.Name)
+				}
+			}
 		default:
-			items = completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+			items = s.completionsFromModuleScope(module, sourceID, fileScope, moduleScope, loc)
+			if prefix := wordAtCursor(docText, loc); prefix != "" {
+				items = filterByPrefix(items, prefix)
+			}
 		}
 	}
 
@@ -434,7 +679,7 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
 // variables, if-let patterns, and block-local variable declarations.
-func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
+func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 
@@ -515,9 +760,12 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 	// Values are already collected by collectBlockBindings above.
 	collectScopeTypeBindings(scope, seen, &items)
 
-	// Walk the parent scope chain for global/prelude bindings.
-	if scope.Parent != nil {
-		collectScopeBindings(scope.Parent, seen, &items)
+	// Append cached prelude/global bindings, skipping any that are shadowed.
+	for _, item := range s.getPreludeCompletions(scope.Parent) {
+		if !seen[item.Label] {
+			seen[item.Label] = true
+			items = append(items, item)
+		}
 	}
 
 	return items
@@ -526,7 +774,7 @@ func completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.L
 // completionsFromModuleScope collects in-scope bindings for a cursor position
 // within a module file. It handles file-scoped imports, cross-file declarations,
 // and position-dependent filtering for declarations inside a block scope.
-func completionsFromModuleScope(
+func (s *Server) completionsFromModuleScope(
 	module *ast.Module,
 	sourceID int,
 	fileScope *checker.Scope,
@@ -616,9 +864,12 @@ func completionsFromModuleScope(
 		collectFileImportBindings(module, sourceID, fileScope, seen, &items)
 	}
 
-	// 5. Walk parent scope chain for prelude/global bindings.
-	if moduleScope.Parent != nil {
-		collectScopeBindings(moduleScope.Parent, seen, &items)
+	// 5. Append cached prelude/global bindings, skipping any that are shadowed.
+	for _, item := range s.getPreludeCompletions(moduleScope.Parent) {
+		if !seen[item.Label] {
+			seen[item.Label] = true
+			items = append(items, item)
+		}
 	}
 
 	return items
@@ -921,46 +1172,95 @@ func collectScopeTypeBindings(scope *checker.Scope, seen map[string]bool, items 
 	}
 }
 
-func collectScopeBindings(scope *checker.Scope, seen map[string]bool, items *[]protocol.CompletionItem) {
-	if scope == nil {
-		return
-	}
-	ns := scope.Namespace
-	for name, binding := range ns.Values {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForValueType(binding.Type)
-			detail := safeTypeString(binding.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
+// typeCompletionsFromScope collects only type aliases and namespaces from the
+// entire scope chain (current scope + parents). Used when the cursor is in a
+// type annotation position. Detail is deferred to completionItem/resolve.
+func typeCompletionsFromScope(scope *checker.Scope, scopeID string, uri string) []protocol.CompletionItem {
+	seen := map[string]bool{}
+	var items []protocol.CompletionItem
+	for s := scope; s != nil; s = s.Parent {
+		ns := s.Namespace
+		for name, alias := range ns.Types {
+			if !seen[name] {
+				seen[name] = true
+				kind := completionKindForTypeAlias(alias)
+				items = append(items, protocol.CompletionItem{
+					Label: name,
+					Kind:  &kind,
+					Data:  completionResolveData{Scope: scopeID, Name: name, URI: uri},
+				})
+			}
+		}
+		for name := range ns.Namespaces {
+			if !seen[name] {
+				seen[name] = true
+				kind := protocol.CompletionItemKindModule
+				items = append(items, protocol.CompletionItem{
+					Label: name,
+					Kind:  &kind,
+					Data:  completionResolveData{Scope: scopeID, Name: name, URI: uri},
+				})
+			}
 		}
 	}
-	for name, alias := range ns.Types {
-		if !seen[name] {
-			seen[name] = true
-			kind := completionKindForTypeAlias(alias)
-			detail := safeTypeString(alias.Type)
-			*items = append(*items, protocol.CompletionItem{
-				Label:  name,
-				Kind:   &kind,
-				Detail: &detail,
-			})
+	return items
+}
+
+// filterTypeItems returns only completion items whose Kind is a type-like or
+// namespace kind (Class, Interface, Enum, Struct, TypeParameter, Module).
+// Used to strip value-only items from a mixed list.
+func filterTypeItems(items []protocol.CompletionItem) []protocol.CompletionItem {
+	var out []protocol.CompletionItem
+	for _, item := range items {
+		if item.Kind == nil {
+			continue
+		}
+		switch *item.Kind {
+		case protocol.CompletionItemKindClass,
+			protocol.CompletionItemKindInterface,
+			protocol.CompletionItemKindEnum,
+			protocol.CompletionItemKindStruct,
+			protocol.CompletionItemKindTypeParameter,
+			protocol.CompletionItemKindModule:
+			out = append(out, item)
 		}
 	}
-	for name := range ns.Namespaces {
-		if !seen[name] {
-			seen[name] = true
-			kind := protocol.CompletionItemKindModule
-			*items = append(*items, protocol.CompletionItem{
-				Label: name,
-				Kind:  &kind,
-			})
-		}
+	return out
+}
+
+// wordAtCursor extracts the partial identifier at the cursor position from
+// the document text. Returns "" if the cursor is not on an identifier.
+//
+// NOTE: loc.Column is a 1-based byte offset (from the lexer), but this
+// function indexes into a []rune slice. This mismatch means the column can
+// point to the wrong rune when multi-byte characters precede the cursor on
+// the same line. Fixing this properly requires deciding on a single column
+// encoding (bytes vs runes vs UTF-16) across the LSP layer and the parser.
+func wordAtCursor(text string, loc ast.Location) string {
+	lines := strings.Split(text, "\n")
+	lineIdx := loc.Line - 1 // convert to 0-based
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return ""
 	}
-	collectScopeBindings(scope.Parent, seen, items)
+	runes := []rune(lines[lineIdx])
+	colIdx := loc.Column - 1 // convert to 0-based
+	if colIdx < 0 || colIdx > len(runes) {
+		return ""
+	}
+
+	// Walk backwards from cursor to find the start of the word.
+	start := colIdx
+	for start > 0 && isIdentRune(runes[start-1]) {
+		start--
+	}
+	if start == colIdx {
+		return ""
+	}
+	return string(runes[start:colIdx])
+}
+
+func isIdentRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
 }
 
 // Helper functions
