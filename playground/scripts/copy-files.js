@@ -19,3 +19,9 @@ const es2015Files = fs
 for (const file of es2015Files) {
     fs.copyFileSync(`${libDir}/${file}`, `public/types/${file}`);
 }
+
+const manifest = ['lib.es5.d.ts', 'lib.dom.d.ts', ...es2015Files];
+fs.writeFileSync(
+    'public/types/manifest.json',
+    JSON.stringify(manifest, null, 2),
+);
