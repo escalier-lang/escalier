@@ -105,10 +105,12 @@ export const Playground = () => {
 
     return (
         <div className={styles.playground}>
-            <div className={styles.header}>
+            <div className={styles.header} role="tablist">
                 <div
                     role="tab"
                     tabIndex={0}
+                    aria-selected={activeSide === 'input'}
+                    aria-controls="input-panel"
                     className={tabClass(activeSide === 'input', true)}
                     onClick={() => setActiveSide('input')}
                     onKeyDown={(e) => {
@@ -119,10 +121,14 @@ export const Playground = () => {
                     foo.esc
                 </div>
             </div>
-            <div className={styles.header}>
+            <div className={styles.header} role="tablist">
                 <div
                     role="tab"
                     tabIndex={0}
+                    aria-selected={
+                        activeSide === 'output' && activeOutputTab === 'js'
+                    }
+                    aria-controls="output-panel"
                     className={tabClass(
                         activeSide === 'output' && activeOutputTab === 'js',
                         activeOutputTab === 'js',
@@ -138,6 +144,10 @@ export const Playground = () => {
                 <div
                     role="tab"
                     tabIndex={0}
+                    aria-selected={
+                        activeSide === 'output' && activeOutputTab === 'map'
+                    }
+                    aria-controls="output-panel"
                     className={tabClass(
                         activeSide === 'output' && activeOutputTab === 'map',
                         activeOutputTab === 'map',
@@ -151,8 +161,8 @@ export const Playground = () => {
                     foo.js.map
                 </div>
             </div>
-            <div className={styles.editor} ref={inputDivRef} />
-            <div className={styles.editor} ref={outputDivRef} />
+            <div id="input-panel" role="tabpanel" className={styles.editor} ref={inputDivRef} />
+            <div id="output-panel" role="tabpanel" className={styles.editor} ref={outputDivRef} />
         </div>
     );
 };
