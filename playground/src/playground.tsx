@@ -161,8 +161,18 @@ export const Playground = () => {
                     foo.js.map
                 </div>
             </div>
-            <div id="input-panel" role="tabpanel" className={styles.editor} ref={inputDivRef} />
-            <div id="output-panel" role="tabpanel" className={styles.editor} ref={outputDivRef} />
+            <div
+                id="input-panel"
+                role="tabpanel"
+                className={styles.editor}
+                ref={inputDivRef}
+            />
+            <div
+                id="output-panel"
+                role="tabpanel"
+                className={styles.editor}
+                ref={outputDivRef}
+            />
         </div>
     );
 };
