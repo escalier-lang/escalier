@@ -267,7 +267,7 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	jsFile := "./" + baseName
 	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
 
-	outmap := "./" + baseName + ".map"
+	outmap := jsFile + ".map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 	// printer = codegen.NewPrinter()

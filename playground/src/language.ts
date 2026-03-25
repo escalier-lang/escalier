@@ -126,14 +126,14 @@ export function setupLanguage(client: Client) {
                         if (!result) {
                             return;
                         }
-                        const outputUri = params.uri.replace('.esc', '.js');
-                        const model = models.find(
-                            (model) => model.uri.toString() === outputUri,
-                        );
-                        if (!model) {
-                            return;
+                        for (const item of result) {
+                            const model = models.find(
+                                (model) => model.uri.toString() === item.uri,
+                            );
+                            if (model) {
+                                model.setValue(item.text);
+                            }
                         }
-                        model.setValue(result.text);
                     });
             }
 
