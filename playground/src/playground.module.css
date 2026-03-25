@@ -7,14 +7,33 @@
 }
 
 .header {
-    background-color: #2e2e2e;
-    color: white;
-    font-size: 20px;
+    background-color: #181818;
+    display: flex;
+    align-items: stretch;
+}
+
+.tab {
+    background-color: #181818;
+    color: #969696;
+    font-size: 13px;
     font-family: sans-serif;
+    padding: 0 12px;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    padding-left: 10px;
+    border-right: 1px solid #2b2b2b;
+    border-left: 1px solid #2b2b2b;
+    cursor: pointer;
+}
+
+.visibleTab {
+    background-color: #1e1e1e;
+    color: #cccccc;
+}
+
+.activeTab {
+    background-color: #1e1e1e;
+    color: #cccccc;
+    border-top: 2px solid #007acc;
 }
 
 .editor {

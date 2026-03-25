@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,11 +54,27 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 	}
 
 	// TODO: include errors in the response
-	response := protocol.TextDocumentItem{
-		URI:        strings.TrimSuffix(uri, ".esc") + ".js",
-		LanguageID: "javascript",
-		Version:    0,
-		Text:       output.Modules["index"].JS,
+	module := output.Modules["index"]
+
+	var prettySourceMap bytes.Buffer
+	if err := json.Indent(&prettySourceMap, []byte(module.SourceMap), "", "  "); err != nil {
+		// Fall back to the raw source map if pretty printing fails
+		prettySourceMap.WriteString(module.SourceMap)
+	}
+
+	response := []protocol.TextDocumentItem{
+		{
+			URI:        strings.TrimSuffix(uri, ".esc") + ".js",
+			LanguageID: "javascript",
+			Version:    0,
+			Text:       module.JS,
+		},
+		{
+			URI:        strings.TrimSuffix(uri, ".esc") + ".js.map",
+			LanguageID: "json",
+			Version:    0,
+			Text:       prettySourceMap.String(),
+		},
 	}
 
 	return response, nil
