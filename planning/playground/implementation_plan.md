@@ -9,7 +9,7 @@ builds on the previous one and results in a working (if incomplete) playground.
 **Goal**: Extend `BrowserFS` to support write operations and notify the LSP
 server of changes. This is the foundation that all other phases depend on.
 
-**Requirements**: R8.1, R8.2
+**Requirements**: R8.1–R8.7, R9.1, R9.2, R10.6
 
 ### 1.1 Extend FSAPI and BrowserFS with write operations
 
@@ -33,7 +33,20 @@ server of changes. This is the foundation that all other phases depend on.
 - `playground/src/fs/browser-fs.ts` — Emit events from `writeFile`, `mkdir`,
   `unlink`, `rmdir`, `rename`.
 
-### 1.3 LSP notifications on filesystem changes
+### 1.3 Expose write operations to the WASM/LSP side
+
+The `FSAPI` interface is how the Go/WASM LSP server interacts with the virtual
+filesystem. Currently it only supports read operations. Write operations must
+be added so the LSP server can write compiled output files directly (R10.6).
+
+**Files to modify**:
+- `playground/src/fs/fs-api.ts` — Add `writeFile` and `mkdir` to the `FSAPI`
+  interface (these are also added for the browser side in 1.1, but here we
+  ensure they're part of the interface the WASM bridge uses).
+- The Go/WASM bridge layer — expose the new write methods so Go code can call
+  `fs.WriteFile()` and `fs.MkdirAll()` through the WASM boundary.
+
+### 1.4 LSP notifications on filesystem changes
 
 **Files to modify**:
 - `playground/src/lsp-client/client.ts` — Add methods for
@@ -42,14 +55,33 @@ server of changes. This is the foundation that all other phases depend on.
 - `playground/src/main.tsx` — Subscribe to `BrowserFS` events and forward them
   to the LSP client as appropriate notifications.
 
-### 1.4 Refactor volume initialization
+### 1.5 Replace `go.mod` with `escalier.toml`
 
-**Files to modify**:
+**Requirements**: R8.1–R8.7
+
+The LSP server currently uses `go.mod` to find the project root. This must be
+replaced with `escalier.toml`.
+
+**Files to modify (Go)**:
+- The LSP server's `findRepoRoot` function — change it to look for
+  `escalier.toml` instead of `go.mod`.
+
+**Files to modify (TypeScript)**:
 - `playground/src/fs/volume.ts` — Refactor `createVolume` to only handle
   TypeScript `.d.ts` file setup (the `node_modules/` entries). Remove the
-  hardcoded `package.json` and `go.mod` — project files will be populated by
-  the project loader (Phase 6). Address the existing `go.mod` TODO by finding
-  an alternative approach for repo root detection.
+  hardcoded `package.json` and `go.mod` entries — project files (including
+  `escalier.toml`) will be populated by the project loader (Phase 6).
+
+### 1.6 Define `escalier.toml` format
+
+Establish the minimal `escalier.toml` schema:
+```toml
+[project]
+name = "my-project"
+```
+
+Ensure the Go-side TOML parser can read this. Templates and examples (Phase 6)
+will each include an `escalier.toml`.
 
 ---
 
@@ -158,9 +190,10 @@ multi-tab editor that can open, close, and switch between files.
   - If it's a `.esc` file under `bin/`, show `.js`, `.js.map` only.
   - If it's not a `.esc` file or no tabs are open, hide the right editor
     entirely.
-- `playground/src/language.ts` — Update the compile result handler to write
-  output for the correct file (not just hardcoded `foo.esc`). Store compiled
-  output in a map keyed by source path.
+- `playground/src/language.ts` — Update the compile trigger to send the
+  active file path (not hardcoded `foo.esc`) to the LSP `workspace/
+  executeCommand`. In Phase 5, this will be further updated so the LSP server
+  writes output directly to the filesystem.
 
 ### 3.5 Tab lifecycle on file operations
 
@@ -231,7 +264,7 @@ rendering.
 **Goal**: Full single-package compilation producing `build/` output in the
 virtual filesystem.
 
-**Requirements**: R3.1–R3.4, R9.1, R9.3, R9.5.1, R9.5.2
+**Requirements**: R3.1–R3.4, R10.1, R10.3, R10.5–R10.6
 
 ### 5.1 LSP server: ast.Module vs ast.Script distinction
 
@@ -241,36 +274,62 @@ determines:
 - Whether symbols can be exported/imported between files (modules only).
 - Whether `.d.ts` output is generated (modules only).
 
+Key difference: all `.esc` files under `lib/` are compiled together as a single
+`ast.Module` (they share exports/imports). In contrast, each `.esc` file under
+`bin/` is compiled as its own independent `ast.Script` — if `bin/` contains
+`main.esc`, `migrate.esc`, and `seed.esc`, those are three separate scripts,
+each compiled in isolation.
+
+Scripts automatically have access to **all** symbols in the package's `lib/`
+module, including non-exported symbols. This is different from cross-package
+imports, where only exported symbols are available. This means the export
+visibility boundary applies between packages, not between a package's own
+scripts and its module.
+
 **Files to modify (Go)**:
 - The LSP server's compile command handler — use the file path to determine
   whether a file is under `lib/` (module) or `bin/` (script). Pass this
   context to the compiler so it produces the correct AST type and output set.
+  For `bin/` files, compile each `.esc` file as a separate `ast.Script`.
 
-### 5.2 Update compile command to handle multiple files
+### 5.2 LSP server writes compilation output to the filesystem
+
+The `compile` workspace command is updated so the LSP server writes output
+files directly to the virtual filesystem via `FSAPI` write operations (set up
+in Phase 1.3). This mirrors how a real `escalier` CLI would work and enables
+future code sharing between the LSP server and the CLI.
+
+**Files to modify (Go)**:
+- The LSP server's `compile` command handler — after compiling, use
+  `fs.MkdirAll()` to create the `build/` directory structure, then
+  `fs.WriteFile()` to write each output file:
+  - For `lib/` sources: write `.js`, `.js.map`, and `.d.ts`.
+  - For `bin/` sources: write `.js` and `.js.map` only.
+  - Return a success/failure status with diagnostics rather than returning
+    file contents.
+
+These writes go through `BrowserFS`, which emits filesystem change events.
+Those events automatically update the file explorer and trigger the output
+tabs to refresh — no TypeScript-side orchestrator (`compiler.ts`) is needed.
+
+### 5.3 Update compile trigger on the TypeScript side
 
 **Files to modify**:
-- `playground/src/language.ts` — Update the compile trigger to send all `.esc`
-  source file paths (not just the active file) to the LSP `workspace/
-  executeCommand`. Handle the response which now returns output for multiple
-  files.
-
-### 5.3 Write compilation output to BrowserFS
-
-**Files to create/modify**:
-- `playground/src/compiler.ts` — Create a compilation orchestrator that:
-  - After receiving compile results, writes each output file to the virtual
-    filesystem under `build/`, mirroring the source structure.
-  - For `lib/` sources: writes `.js`, `.js.map`, and `.d.ts` files.
-  - For `bin/` sources: writes `.js` and `.js.map` files only.
-  - This triggers filesystem events which update the file explorer.
+- `playground/src/language.ts` — Update the compile trigger to:
+  - Send a `compile` workspace command to the LSP server (the server handles
+    all file writing).
+  - Handle the response as a success/failure status rather than receiving file
+    contents.
+  - On failure, surface diagnostics via the toast component.
 
 ### 5.4 Wire output tabs to build files
 
 **Files to modify**:
-- `playground/src/playground.tsx` — Output tabs now read content from
-  `BrowserFS` at the corresponding `build/` path rather than from inline
-  compile results. When the active `.esc` file changes, resolve the output
-  paths and load their content into the output editor models.
+- `playground/src/playground.tsx` — Output tabs read content from `BrowserFS`
+  at the corresponding `build/` path. Subscribe to filesystem change events
+  on `build/` paths so the output editor refreshes when the LSP server writes
+  new compilation output. When the active `.esc` file changes, resolve the
+  output paths and load their content into the output editor models.
 
 ---
 
@@ -281,48 +340,79 @@ This phase depends on Phases 1 (FS CRUD) and 3 (state management / multi-tab)
 but does not require compilation (Phase 5) — templates just populate the
 filesystem with source files.
 
-**Requirements**: R5.1.1–R5.1.3, R5.2.1–R5.2.4, R5.3.1–R5.3.4
+**Requirements**: R5.1.1–R5.1.3, R5.2.1–R5.2.4, R5.3.1–R5.3.4, R5.4.1–R5.4.5
 
-### 6.1 Define template and example data
+### 6.1 Create template and example files on disk
 
-**Files to create**:
-- `playground/src/templates/single-package.ts` — Export a `Volume` object with
-  the single-package template files (`package.json`, `lib/index.esc`,
-  `bin/main.esc`).
-- `playground/src/templates/multi-package.ts` — Export a `Volume` object with
-  the multi-package template files.
-- `playground/src/examples/index.ts` — Export a registry mapping example slugs
-  to `Volume` objects:
-  ```ts
-  export const examples: Record<string, { name: string; volume: Volume }> = {
-    'hello-world': { name: 'Hello World', volume: ... },
-    'calculator': { name: 'Calculator', volume: ... },
-    ...
-  };
-  ```
+Templates and examples are real Escalier project files stored in the repo,
+not inline TypeScript objects. This makes them easy to author, test, and
+version-control.
+
+**Directories to create**:
+- `playground/templates/single-package/` — Contains `escalier.toml`,
+  `package.json`, `lib/index.esc`, `bin/main.esc` with skeleton starter code.
+- `playground/templates/multi-package/` — Contains `escalier.toml`,
+  `pnpm-workspace.yaml`, `packages/core/package.json`,
+  `packages/core/lib/index.esc`, `packages/app/package.json`,
+  `packages/app/lib/index.esc`, `packages/app/bin/main.esc`.
+- `playground/examples/hello-world/` — Minimal single-package example.
+- `playground/examples/calculator/` — Single-package example demonstrating
+  types and multiple lib files.
+- Additional example directories as needed (e.g. `shared-utils-app/`,
+  `plugin-system/`).
 
 **Files to delete**:
 - `playground/src/examples.ts` — Remove the old hardcoded `initialCode`.
   References in `playground/src/playground.tsx` should be removed in Phase 3
   when the single-file setup is replaced.
 
-### 6.2 Load project function
+### 6.2 Update copy-files.js to include templates and examples
+
+**Files to modify**:
+- `playground/scripts/copy-files.js` — Extend the build script to:
+  1. Recursively copy `playground/templates/*` to `public/templates/`.
+  2. Recursively copy `playground/examples/*` to `public/examples/`.
+  3. Walk each template/example directory to build file lists.
+  4. Extend the manifest from a flat array to a structured object:
+     ```json
+     {
+       "types": ["lib.es5.d.ts", "lib.dom.d.ts", ...],
+       "templates": {
+         "single-package": ["escalier.toml", "package.json", "lib/index.esc", "bin/main.esc"],
+         "multi-package": ["escalier.toml", "packages/core/package.json", ...]
+       },
+       "examples": {
+         "hello-world": ["escalier.toml", "package.json", "lib/index.esc"],
+         "calculator": ["escalier.toml", "package.json", "lib/index.esc", "lib/math.esc"]
+       }
+     }
+     ```
+
+**Files to modify**:
+- `playground/src/fs/volume.ts` — Update `createVolume` to handle the new
+  manifest format (the `types` key) since the manifest is no longer a flat
+  array.
+
+### 6.3 Load project function
 
 **Files to create**:
-- `playground/src/project-loader.ts` — Export a `loadProject(volume, fs,
+- `playground/src/project-loader.ts` — Export a `loadProject(slug, kind, fs,
   dispatch)` function that:
-  1. Calls `fs.clear()` to remove all entries except `node_modules/`.
-  2. Populates the filesystem from the provided `Volume`.
-  3. Dispatches `resetTabs` to close all tabs and open `lib/index.esc`.
-  4. Notifies the LSP server of the new files.
+  1. Fetches the manifest to get the file list for the given template/example.
+  2. Fetches each file from `public/templates/<slug>/` or
+     `public/examples/<slug>/`.
+  3. Calls `fs.clear()` to remove all entries except `node_modules/`.
+  4. Populates the filesystem from the fetched files.
+  5. Dispatches `resetTabs` to close all tabs and open `lib/index.esc`.
+  6. Notifies the LSP server of the new files.
 
-### 6.3 Toolbar and selector UI
+### 6.4 Toolbar and selector UI
 
 **Files to create**:
 - `playground/src/toolbar.tsx` — A toolbar component rendered in the `toolbar`
   grid area (set up in Phase 3.3 with `height: 0`). Contains:
-  - A "New Project" dropdown listing templates.
-  - An "Examples" dropdown listing example projects.
+  - A "New Project" dropdown listing templates (read from manifest).
+  - An "Examples" dropdown listing example projects (read from manifest).
   - Uses `<ConfirmDialog>` (from Phase 3.2) before replacing the current
     project.
 
@@ -331,7 +421,7 @@ filesystem with source files.
   `height: 0` to its natural height. Render `<Toolbar />`.
 - `playground/src/playground.module.css` — Update the toolbar row height.
 
-### 6.4 Deep linking via URL
+### 6.5 Deep linking via URL
 
 **Files to modify**:
 - `playground/src/main.tsx` — On startup:
@@ -376,7 +466,7 @@ state. Depends on Phase 1 (FS) and Phase 6 (project loader for decoding).
 ### 7.3 Load from permalink on startup
 
 **Files to modify**:
-- `playground/src/main.tsx` — Update the startup sequence (from Phase 6.4) to
+- `playground/src/main.tsx` — Update the startup sequence (from Phase 6.5) to
   check for `#project=` first. If present, decode and load the project via
   `loadProject()`. If malformed, fall back to "Hello World" and show an error
   toast (Phase 3.2).
@@ -388,76 +478,118 @@ state. Depends on Phase 1 (FS) and Phase 6 (project loader for decoding).
 **Goal**: Support monorepo projects with inter-package dependencies. Depends on
 Phase 5 (single-package compilation) as the foundation.
 
-**Requirements**: R4.1–R4.4, R9.2, R9.4.1–R9.4.3
+**Requirements**: R4.1–R4.5, R10.2, R10.4.1–R10.4.3
 
 ### 8.1 Dependency DAG resolution
 
+The LSP server reads `pnpm-workspace.yaml` to discover package locations, then
+reads each package's `package.json` to build the dependency graph.
+
 **Files to create**:
 - `playground/src/dependency-graph.ts` — Export a function that:
-  - Reads all `package.json` files from the virtual filesystem.
-  - Builds a dependency graph from their `dependencies` fields.
+  - Reads `pnpm-workspace.yaml` to determine which directories contain
+    packages.
+  - Reads each discovered package's `package.json` for its `dependencies`.
+  - Builds a dependency graph from the `dependencies` fields.
   - Returns a topological sort of package names.
   - Throws a descriptive error if a cycle is detected.
+  - Throws a descriptive error if a dependency listed in a package's
+    `package.json` cannot be found among the workspace packages.
 - `playground/src/dependency-graph.test.ts` — Tests for topological sort,
   cycle detection, missing dependencies.
 
 ### 8.2 Multi-package compilation
 
-**Files to modify**:
-- `playground/src/compiler.ts` — When validation detects multi-package mode:
-  - Resolve the dependency DAG.
+**Files to modify (Go)**:
+- The LSP server's `compile` command handler — when the project is in
+  multi-package mode:
+  - Resolve the dependency DAG (using logic from 8.1, implemented in Go).
   - Compile packages in topological order, writing each package's output to
-    `packages/<name>/build/` (not the project root `build/`).
+    `packages/<name>/build/` (not the project root `build/`) via `FSAPI`
+    write operations.
   - For each package, `lib/` sources produce `.js`, `.js.map`, `.d.ts`;
     `bin/` sources produce `.js`, `.js.map` only.
-  - Surface cycle detection errors via the toast component.
+  - Return cycle detection errors as part of the compile response so the
+    TypeScript side can surface them via the toast component.
+
+**Note**: The dependency DAG resolution (8.1) should also be implemented on
+the Go side so the LSP server can use it directly. The TypeScript-side
+`dependency-graph.ts` from 8.1 is useful for the validation UI (Phase 2) to
+detect and display cycle errors before compilation, but the authoritative
+build-order logic lives in Go.
 
 ### 8.3 Cross-package import resolution
 
-This requires LSP server changes (Go side) to resolve bare specifiers
-against the `packages/` directory structure using `package.json` `main`/`types`
-fields.
+This requires setting up pnpm-style symlink structure in the virtual filesystem
+so the LSP server's standard Node module resolution finds cross-package imports.
 
-**Files to modify (Go)**:
-- The LSP server's module resolution logic — when encountering a bare import
-  like `"core"`, look up the corresponding package's `package.json` to find
-  its `main` and `types` paths.
+pnpm uses an isolated `node_modules` layout:
+- Each package gets a `node_modules/` with symlinks to its declared
+  dependencies only.
+- Packages are stored in a top-level `.pnpm/` virtual store, and each
+  package's `node_modules/<dep>` symlinks into that store.
+
+For the playground's virtual filesystem, we simplify this to the parts that
+matter for module resolution. For example, if `app` depends on `core`:
+```
+packages/app/node_modules/
+  core -> ../../../.pnpm/core/node_modules/core
+.pnpm/core/node_modules/
+  core -> ../../../packages/core
+```
+
+This means a bare import like `"core"` in `app` resolves through
+`packages/app/node_modules/core/` which ultimately points to
+`packages/core/`, where the `package.json` `main` and `types` fields direct
+to the compiled output in `build/`.
 
 **Files to modify (TypeScript)**:
-- `playground/src/fs/volume.ts` — The `createVolume` function needs to be
-  updated to set up the appropriate `node_modules` symlink-like structure or
-  path mappings so the LSP can resolve cross-package imports.
+- `playground/src/project-loader.ts` (or a new `playground/src/linker.ts`) —
+  After loading a multi-package project (or after validation detects
+  multi-package mode), read each package's `dependencies` and create the
+  pnpm-style symlink structure in `BrowserFS`. Since `BrowserFS` doesn't
+  support real symlinks, implement this as directory entries whose files
+  mirror/alias the target paths. Re-run this whenever the dependency graph
+  changes (e.g. a `package.json` is edited).
+
+**Files to modify (Go)**:
+- The LSP server's module resolution logic should work with standard Node
+  resolution (walking up `node_modules/` directories) — the pnpm-style
+  symlink structure set up above ensures bare specifiers resolve correctly
+  without special-casing in the resolver.
 
 ---
 
 ## Phase Summary
 
-| Phase | Description                          | Requirements Covered                  |
-|-------|--------------------------------------|---------------------------------------|
-| 1     | Virtual FS CRUD + LSP notifications  | R8.1, R8.2                            |
-| 2     | Project validation                   | R7.1–R7.5                             |
-| 3     | Multi-tab editor + state management  | R2.1.x, R2.2.x, R2.3.x              |
-| 4     | File explorer                        | R1.1–R1.10                            |
-| 5     | Single-package compilation           | R3.1–R3.4, R9.1, R9.3, R9.5.x       |
-| 6     | Templates and examples               | R5.1.x, R5.2.x, R5.3.x              |
-| 7     | Permalinks                           | R6.1–R6.7                             |
-| 8     | Multi-package mode                   | R4.1–R4.4, R9.2, R9.4.x             |
+| Phase | Description                          | Requirements Covered                   |
+|-------|--------------------------------------|----------------------------------------|
+| 1     | Virtual FS CRUD + LSP + escalier.toml| R8.1–R8.7, R9.1, R9.2, R10.6          |
+| 2     | Project validation                   | R7.1–R7.5                              |
+| 3     | Multi-tab editor + state management  | R2.1.x, R2.2.x, R2.3.x               |
+| 4     | File explorer                        | R1.1–R1.10                             |
+| 5     | Single-package compilation           | R3.1–R3.4, R10.1, R10.3, R10.5–R10.6  |
+| 6     | Templates and examples               | R5.1.x, R5.2.x, R5.3.x, R5.4.x       |
+| 7     | Permalinks                           | R6.1–R6.7                              |
+| 8     | Multi-package mode                   | R4.1–R4.5, R10.2, R10.4.x             |
 
 ## Dependencies Between Phases
 
 ```
 Phase 1 (FS CRUD)
-  ├── Phase 2 (Validation) ─────────────────────────┐
-  ├── Phase 3 (Multi-tab editor + state + UI components)
-  │     ├── Phase 4 (File explorer)                  │
-  │     └── Phase 6 (Templates & examples) ──────────┤
-  │           └── Phase 7 (Permalinks)               │
-  └── Phase 5 (Single-package compilation) ──────────┘
-        └── Phase 8 (Multi-package mode)
+  ├── Phase 2 (Validation)
+  └── Phase 3 (Multi-tab editor + state + UI components)
+        ├── Phase 4 (File explorer)
+        ├── Phase 5 (Single-package compilation)
+        │     └── Phase 8 (Multi-package mode)
+        └── Phase 6 (Templates & examples)
+              └── Phase 7 (Permalinks)
 ```
 
 Key observations:
 - **Phase 2** (validation) has no UI dependencies — it only needs Phase 1 (FS).
+- **Phase 5** depends on Phase 3 because it uses the toast component (3.2) for
+  surfacing compile errors and the output tab infrastructure (3.4).
 - **Phase 6** (templates) only needs Phases 1 + 3 — it populates the
   filesystem with source files and doesn't require compilation to work.
 - **Phase 7** (permalinks) only needs Phases 1 + 6 — it encodes/decodes the

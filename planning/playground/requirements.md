@@ -84,6 +84,7 @@ Simulates a single npm package project. The virtual filesystem layout:
 
 ```
 /
+├── escalier.toml
 ├── package.json
 ├── lib/
 │   ├── index.esc        # part of the module
@@ -97,8 +98,10 @@ Simulates a single npm package project. The virtual filesystem layout:
 - **R3.2** All `.esc` files under `lib/` (recursively) constitute a single
   `ast.Module`. Symbols exported from one file in `lib/` are importable by
   other files in `lib/`.
-- **R3.3** Each `.esc` file under `bin/` is its own `ast.Script`. Scripts can
-  import from the package's own `lib/` module.
+- **R3.3** Each `.esc` file under `bin/` is its own `ast.Script`. Scripts
+  automatically have access to **all** symbols in the package's `lib/` module,
+  including non-exported symbols. This is different from cross-package imports,
+  where only exported symbols are available.
 - **R3.4** Compilation output goes to a `build/` directory mirroring the source
   structure:
   ```
@@ -123,6 +126,8 @@ virtual filesystem layout (source files only — `build/` is generated output):
 
 ```
 /
+├── escalier.toml
+├── pnpm-workspace.yaml
 ├── packages/
 │   ├── core/
 │   │   ├── package.json
@@ -157,6 +162,14 @@ virtual filesystem layout (source files only — `build/` is generated output):
   `build/lib/index.d.ts` as specified in that package's `package.json`.
 - **R4.4** Cross-package imports use bare specifiers matching the dependency's
   package name (e.g. `import { foo } from "core"`).
+- **R4.5** A `pnpm-workspace.yaml` file at the monorepo root defines which
+  directories contain packages:
+  ```yaml
+  packages:
+    - "packages/*"
+  ```
+  This mirrors real pnpm monorepo conventions and is used to discover package
+  locations during validation and compilation.
 
 ### 5. Templates and Examples
 
@@ -199,6 +212,39 @@ example projects. These are accessible from a toolbar or welcome screen.
   so the current example is reflected in the URL (and can be
   bookmarked/shared).
 
+#### 5.4. File Storage and Build Integration
+- **R5.4.1** Template files live in `playground/templates/` on disk, with one
+  subdirectory per template (e.g. `playground/templates/single-package/`,
+  `playground/templates/multi-package/`). Each subdirectory contains the actual
+  project files (`escalier.toml`, `package.json`, `lib/index.esc`, etc.).
+- **R5.4.2** Example files live in `playground/examples/` on disk, with one
+  subdirectory per example (e.g. `playground/examples/hello-world/`,
+  `playground/examples/calculator/`). Each subdirectory contains the actual
+  project files.
+- **R5.4.3** The `playground/scripts/copy-files.js` build script copies
+  templates and examples into `public/` (or `dist/`) alongside the existing
+  TypeScript `.d.ts` files.
+- **R5.4.4** The manifest (`manifest.json`) produced by `copy-files.js` is
+  extended to include templates and examples with their full file trees. For
+  example:
+  ```json
+  {
+    "types": ["lib.es5.d.ts", "lib.dom.d.ts", ...],
+    "templates": {
+      "single-package": ["escalier.toml", "package.json", "lib/index.esc", "bin/main.esc"],
+      "multi-package": ["escalier.toml", "packages/core/package.json", ...]
+    },
+    "examples": {
+      "hello-world": ["escalier.toml", "package.json", "lib/index.esc"],
+      "calculator": ["escalier.toml", "package.json", "lib/index.esc", "lib/math.esc"],
+      ...
+    }
+  }
+  ```
+- **R5.4.5** At runtime, the playground fetches the manifest to discover
+  available templates and examples, then fetches individual files on demand
+  when loading a template or example.
+
 ### 6. Permalinks
 
 Users can generate a shareable permalink that captures the full state of their
@@ -207,7 +253,9 @@ playground project.
 - **R6.1** A "Share" button generates a permalink URL for the current project.
 - **R6.2** The permalink encodes the entire virtual filesystem (all source
   files and their contents) into the URL. The `build/` directory is excluded
-  since it is regenerated on load.
+  since it is regenerated on load. The `node_modules/` directory is excluded
+  since it contains TypeScript `.d.ts` files that are already provided by the
+  playground's build-time manifest.
 - **R6.3** The project data should be compressed (e.g. using deflate/gzip) and
   base64url-encoded into a URL hash fragment (e.g.
   `#project=<encoded-data>`). Using a hash fragment avoids server-side storage
@@ -231,9 +279,9 @@ runs whenever the filesystem changes (file create/delete/rename).
 
 - **R7.1** **Single-package**: A root `package.json` exists with `lib/` and/or
   `bin/` directories containing at least one `.esc` file.
-- **R7.2** **Multi-package**: A `packages/` directory exists containing
-  subdirectories that each have their own `package.json` with `lib/` and/or
-  `bin/` directories.
+- **R7.2** **Multi-package**: A `pnpm-workspace.yaml` file exists at the root
+  and the directories it references contain subdirectories that each have their
+  own `package.json` with `lib/` and/or `bin/` directories.
 - **R7.3** **Precedence**: If a `packages/` directory exists, the project is
   treated as multi-package. A root `package.json` alongside `packages/` is
   allowed (as in real monorepos) but does not trigger single-package mode.
@@ -244,30 +292,83 @@ runs whenever the filesystem changes (file create/delete/rename).
   project can naturally transition between modes (e.g. adding a `packages/`
   directory switches to multi-package mode).
 
-### 8. Virtual Filesystem Updates
+### 8. Project Root Identification (`escalier.toml`)
 
-- **R8.1** The `BrowserFS` / volume system must support creating, deleting, and
+The project currently uses a `go.mod` file as a marker for the LSP server's
+`findRepoRoot` function. This is a workaround — real Escalier projects won't
+have a `go.mod`. This should be replaced with a dedicated project manifest.
+
+- **R8.1** A new `escalier.toml` file at the project root identifies an
+  Escalier project and serves as the project root marker. The LSP server's
+  `findRepoRoot` should look for `escalier.toml` instead of `go.mod`.
+- **R8.2** In single-package mode, `escalier.toml` lives at the project root:
+  ```
+  /
+  ├── escalier.toml
+  ├── package.json
+  ├── lib/
+  └── bin/
+  ```
+- **R8.3** In multi-package mode, `escalier.toml` lives at the monorepo root
+  alongside `pnpm-workspace.yaml`:
+  ```
+  /
+  ├── escalier.toml
+  ├── pnpm-workspace.yaml
+  └── packages/
+      ├── core/
+      │   └── package.json
+      └── app/
+          └── package.json
+  ```
+- **R8.4** `escalier.toml` contains project-level settings. At minimum:
+  ```toml
+  [project]
+  name = "my-project"
+  ```
+  Future settings (e.g. compiler options, target version) can be added here.
+- **R8.5** Templates and examples should include an `escalier.toml` in their
+  file sets.
+- **R8.6** The LSP server (Go side) must be updated: replace `go.mod` lookup
+  in `findRepoRoot` with `escalier.toml` lookup.
+- **R8.7** The `createVolume` function must be updated: replace the `go.mod`
+  entry with an `escalier.toml` entry.
+
+### 9. Virtual Filesystem Updates
+
+- **R9.1** The `BrowserFS` / volume system must support creating, deleting, and
   renaming files and directories.
-- **R8.2** The LSP server must be notified of filesystem changes so diagnostics
+- **R9.2** The LSP server must be notified of filesystem changes so diagnostics
   and completions stay current.
 
-### 9. Compilation
+### 10. Compilation
 
-- **R9.1** Compilation should be triggered on file save or after a debounce on
+- **R10.1** Compilation should be triggered on file save or after a debounce on
   edit (as it works today).
-- **R9.2** The LSP server should be aware of all files in the project, even in
+- **R10.2** The LSP server should be aware of all files in the project, even in
   multi-package mode.
-- **R9.3** In single-package mode, compiling produces output for all source
+- **R10.3** In single-package mode, compiling produces output for all source
   files.
-- **R9.4** In multi-package mode:
-  - **R9.4.1** Inter-package dependencies must be resolved into a DAG (directed
-    acyclic graph) based on the `dependencies` declared in each package's
-    `package.json`.
-  - **R9.4.2** Packages are type-checked and compiled in topological order so
+- **R10.4** In multi-package mode:
+  - **R10.4.1** Inter-package dependencies must be resolved into a DAG
+    (directed acyclic graph) based on the `dependencies` declared in each
+    package's `package.json`.
+  - **R10.4.2** Packages are type-checked and compiled in topological order so
     that a package's dependencies are built before it is.
-  - **R9.4.3** If cyclic dependencies are detected between packages, this is a
+  - **R10.4.3** If cyclic dependencies are detected between packages, this is a
     **fatal error** and should be surfaced to the user immediately.
-- **R9.5** Output files are written to the virtual filesystem under `build/`
-  and viewable in the right editor:
-  - **R9.5.1** `lib/` sources produce `.js`, `.js.map`, and `.d.ts` files.
-  - **R9.5.2** `bin/` sources produce `.js` and `.js.map` files only.
+  - **R10.4.4** If a dependency declared in a package's `package.json` cannot
+    be found among the workspace packages, this is a **fatal error** and should
+    be surfaced to the user immediately.
+- **R10.5** The LSP server is responsible for writing compiled output files
+  directly to the virtual filesystem (via `FSAPI` write operations). This
+  mirrors how a real `escalier` CLI would compile sources and write outputs to
+  disk, enabling code sharing between the LSP server and the CLI in the future.
+  The `compile` workspace command should write output files and return a
+  success/failure status (with diagnostics) rather than returning file contents.
+  - **R10.5.1** `lib/` sources produce `.js`, `.js.map`, and `.d.ts` files.
+  - **R10.5.2** `bin/` sources produce `.js` and `.js.map` files only.
+- **R10.6** The `FSAPI` interface exposed to the LSP server (Go/WASM side) must
+  include write operations (`writeFile`, `mkdir`) so the compiler can write
+  output files. Filesystem change events from these writes automatically update
+  the file explorer and output tabs on the TypeScript side.
