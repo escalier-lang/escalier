@@ -3,7 +3,7 @@ import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import { ErrnoException } from './errno-exception';
 import type { FSAPI } from './fs-api';
 import { FSEventEmitter } from './fs-events';
-import type { FSDir, FSFile, FSNode, FSSymlink } from './fs-node';
+import type { FSDir, FSFile, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
 
@@ -250,12 +250,7 @@ export class BrowserFS implements FSAPI {
                 false,
             ) as unknown as Stats;
         } else if (node.type === 'symlink') {
-            stats = new SimpleStats(
-                0,
-                false,
-                false,
-                true,
-            ) as unknown as Stats;
+            stats = new SimpleStats(0, false, false, true) as unknown as Stats;
         } else {
             // Directory
             stats = new SimpleStats(0, false, true) as unknown as Stats;
@@ -908,7 +903,7 @@ export class BrowserFS implements FSAPI {
      * Used when loading a new project to reset the filesystem.
      */
     clear() {
-        for (const [name, _node] of this.rootDir.children) {
+        for (const [name] of this.rootDir.children) {
             if (name !== 'node_modules') {
                 this.rootDir.children.delete(name);
             }

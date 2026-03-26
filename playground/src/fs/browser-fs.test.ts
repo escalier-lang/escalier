@@ -152,11 +152,7 @@ function rename(
 }
 
 // Helper to promisify symlink
-function symlink(
-    fs: BrowserFS,
-    target: string,
-    path: string,
-): Promise<void> {
+function symlink(fs: BrowserFS, target: string, path: string): Promise<void> {
     return new Promise((resolve, reject) => {
         fs.symlink(target, path, (err) => {
             if (err) reject(err);
@@ -478,11 +474,7 @@ describe('BrowserFS', () => {
         });
 
         test('creates a file in a subdirectory', async () => {
-            await writeFile(
-                fs,
-                '/foo/new.txt',
-                encoder.encode('in subdir'),
-            );
+            await writeFile(fs, '/foo/new.txt', encoder.encode('in subdir'));
             const files = await readdir(fs, '/foo');
             expect(files).toContain('new.txt');
         });
