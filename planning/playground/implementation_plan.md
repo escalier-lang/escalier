@@ -596,6 +596,8 @@ to the compiled output in `build/`.
     (does not follow).
   - Verify that after re-running the linker with updated dependencies, the
     symlink structure reflects the new dependency graph.
+  - Verify that if a target package is deleted (dangling symlink), `stat`
+    through the symlink returns `ENOENT` while `lstat` still shows a symlink.
 
 ---
 
