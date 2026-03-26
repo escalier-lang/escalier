@@ -19,7 +19,7 @@ server of changes. This is the foundation that all other phases depend on.
   export interface FSSymlink {
       type: 'symlink';
       name: string;
-      target: string; // absolute path to the symlink target
+      target: string; // path as provided to symlink(), relative or absolute
   }
   export type FSNode = FSFile | FSDir | FSSymlink;
   ```
@@ -29,10 +29,12 @@ server of changes. This is the foundation that all other phases depend on.
   the in-memory `rootDir` tree and the `volume` map. Also add a `clear()`
   method that removes all entries except those under `node_modules/` (needed
   later for project loading). Specific symlink considerations:
-  - `findNodeInRootDir` must follow symlinks by resolving the `target` path
-    when it encounters an `FSSymlink` node. Include a depth limit (e.g. 40,
-    matching Linux's `ELOOP` limit) to prevent infinite loops from circular
-    symlinks.
+  - `findNodeInRootDir` must follow symlinks when it encounters an `FSSymlink`
+    node. If `target` is relative, resolve it relative to the symlink's parent
+    directory; if absolute, use it as-is. For example, a symlink at
+    `/packages/app/node_modules/core` with target `../../core` resolves to
+    `/packages/core`. Include a depth limit (e.g. 40, matching Linux's `ELOOP`
+    limit) to prevent infinite loops from circular symlinks.
   - `stat` follows symlinks (resolves to the target's stats).
   - `lstat` does not follow symlinks (returns stats for the symlink itself).
   - `readdir` returns symlink names as regular entries (matching real FS
@@ -85,14 +87,22 @@ The LSP server currently uses `go.mod` to find the project root. This must be
 replaced with `escalier.toml`.
 
 **Files to modify (Go)**:
-- The LSP server's `findRepoRoot` function — change it to look for
-  `escalier.toml` instead of `go.mod`.
+- `internal/checker/prelude.go` — Change `findRepoRoot()` to look for
+  `escalier.toml` instead of `go.mod`. This is the production implementation
+  used by the LSP server and checker.
+
+**Note**: There are 3 additional copy-pasted `findRepoRoot` functions in test
+files (`cmd/escalier/fixture_test.go`, `internal/dts_parser/integration_test.go`,
+`internal/interop/module_test.go`). These intentionally keep looking for
+`go.mod` — they're locating the Go/Git repo root to find test fixtures, not
+an Escalier project root. They do not need to change.
 
 **Files to modify (TypeScript)**:
-- `playground/src/fs/volume.ts` — Refactor `createVolume` to only handle
-  TypeScript `.d.ts` file setup (the `node_modules/` entries). Remove the
-  hardcoded `package.json` and `go.mod` entries — project files (including
-  `escalier.toml`) will be populated by the project loader (Phase 6).
+- `playground/src/fs/volume.ts` — Replace the hardcoded `go.mod` with a minimal
+  `escalier.toml` and keep a basic `package.json` so the playground boots with
+  a valid project root. These defaults are needed until the Phase 6 project
+  loader takes over — at that point, `createVolume` can be simplified to only
+  handle TypeScript `.d.ts` file setup (the `node_modules/` entries).
 
 ### 1.6 Define `escalier.toml` format
 
@@ -302,11 +312,16 @@ Key difference: all `.esc` files under `lib/` are compiled together as a single
 `main.esc`, `migrate.esc`, and `seed.esc`, those are three separate scripts,
 each compiled in isolation.
 
-Scripts automatically have access to **all** symbols in the package's `lib/`
-module, including non-exported symbols. This is different from cross-package
-imports, where only exported symbols are available. This means the export
-visibility boundary applies between packages, not between a package's own
-scripts and its module.
+Scripts have access to **all** symbols in the package's `lib/` module, including
+non-exported symbols — the compiler injects the `lib/` namespace into the
+script's scope (see `compiler.go:226-228`). However, the generated JS only
+imports the symbols the script actually references: `collectUsedLibSymbols`
+walks the script's AST, finds identifiers that match `libNS` entries, and
+`codegen.NewImportDecl` emits an explicit `import { ... } from "../lib/index.js"`
+for just those symbols. Currently the symbol collector does not filter by export
+status, so non-exported lib symbols can be imported — this is intentional, as
+the export visibility boundary applies between packages, not between a package's
+own scripts and its module.
 
 **Files to modify (Go)**:
 - The LSP server's compile command handler — use the file path to determine
@@ -575,11 +590,14 @@ to the compiled output in `build/`.
   - Filter events for paths matching `**/package.json` or
     `pnpm-workspace.yaml`.
   - Debounce re-linking (e.g. 300ms) since the user may be mid-edit.
+  - After the debounce fires, attempt to parse the changed `package.json`
+    as JSON. If parsing fails (user mid-edit), silently skip re-linking —
+    do not show a toast for transient syntax errors.
   - Before re-linking, remove the existing `.pnpm/` directory and all
     `node_modules/` directories within `packages/`, then recreate them from
     the updated dependency graph.
-  - If the new dependency graph has errors (cycles, missing deps), skip
-    re-linking and surface the error via the toast component.
+  - If the new dependency graph has semantic errors (cycles, missing deps),
+    skip re-linking and surface the error via the toast component.
 
 **Files to modify (Go)**:
 - The LSP server's module resolution logic should work with standard Node
