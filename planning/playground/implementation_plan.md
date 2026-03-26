@@ -14,13 +14,32 @@ server of changes. This is the foundation that all other phases depend on.
 ### 1.1 Extend FSAPI and BrowserFS with write operations
 
 **Files to modify**:
+- `playground/src/fs/fs-node.ts` — Add an `FSSymlink` type:
+  ```ts
+  export interface FSSymlink {
+      type: 'symlink';
+      name: string;
+      target: string; // absolute path to the symlink target
+  }
+  export type FSNode = FSFile | FSDir | FSSymlink;
+  ```
 - `playground/src/fs/fs-api.ts` — Add `writeFile`, `mkdir`, `unlink`, `rmdir`,
-  `rename` to the `FSAPI` interface.
+  `rename`, and `symlink` to the `FSAPI` interface.
 - `playground/src/fs/browser-fs.ts` — Implement the new methods, mutating both
   the in-memory `rootDir` tree and the `volume` map. Also add a `clear()`
   method that removes all entries except those under `node_modules/` (needed
-  later for project loading).
-- `playground/src/fs/browser-fs.test.ts` — Add tests for each new operation.
+  later for project loading). Specific symlink considerations:
+  - `findNodeInRootDir` must follow symlinks by resolving the `target` path
+    when it encounters an `FSSymlink` node. Include a depth limit (e.g. 40,
+    matching Linux's `ELOOP` limit) to prevent infinite loops from circular
+    symlinks.
+  - `stat` follows symlinks (resolves to the target's stats).
+  - `lstat` does not follow symlinks (returns stats for the symlink itself).
+  - `readdir` returns symlink names as regular entries (matching real FS
+    behavior).
+- `playground/src/fs/browser-fs.test.ts` — Add tests for each new operation,
+  including symlink resolution, circular symlink detection, and `stat` vs
+  `lstat` behavior on symlinks.
 
 ### 1.2 Add filesystem change events
 
@@ -35,16 +54,19 @@ server of changes. This is the foundation that all other phases depend on.
 
 ### 1.3 Expose write operations to the WASM/LSP side
 
-The `FSAPI` interface is how the Go/WASM LSP server interacts with the virtual
-filesystem. Currently it only supports read operations. Write operations must
-be added so the LSP server can write compiled output files directly (R10.6).
+Go code compiled to WASM uses standard `os` and `filepath` packages (e.g.
+`os.WriteFile()`, `os.MkdirAll()`). Go's WASM runtime routes these through
+`globalThis.fs`, which is set up in the `Client` constructor in `client.ts`.
+Currently, `globalThis.fs` only delegates read operations (`open`, `read`,
+`stat`, `lstat`, `fstat`, `readdir`) to `BrowserFS` — write-related methods
+like `mkdir`, `write` (to file descriptors > 2), `symlink`, and `unlink` are
+commented-out stubs that return `ENOSYS`. No Go-side bridge changes are needed.
 
 **Files to modify**:
-- `playground/src/fs/fs-api.ts` — Add `writeFile` and `mkdir` to the `FSAPI`
-  interface (these are also added for the browser side in 1.1, but here we
-  ensure they're part of the interface the WASM bridge uses).
-- The Go/WASM bridge layer — expose the new write methods so Go code can call
-  `fs.WriteFile()` and `fs.MkdirAll()` through the WASM boundary.
+- `playground/src/lsp-client/client.ts` — In the `globalThis.fs` object
+  (lines 140–326), uncomment and implement the stubs for `mkdir`, `write`
+  (for fd > 2), `symlink`, `unlink`, `rename`, and `close` (for fd > 2),
+  delegating to the corresponding `BrowserFS` methods added in Phase 1.1.
 
 ### 1.4 LSP notifications on filesystem changes
 
@@ -522,6 +544,7 @@ build-order logic lives in Go.
 
 This requires setting up pnpm-style symlink structure in the virtual filesystem
 so the LSP server's standard Node module resolution finds cross-package imports.
+`BrowserFS` symlink support (added in Phase 1.1) makes this straightforward.
 
 pnpm uses an isolated `node_modules` layout:
 - Each package gets a `node_modules/` with symlinks to its declared
@@ -529,8 +552,8 @@ pnpm uses an isolated `node_modules` layout:
 - Packages are stored in a top-level `.pnpm/` virtual store, and each
   package's `node_modules/<dep>` symlinks into that store.
 
-For the playground's virtual filesystem, we simplify this to the parts that
-matter for module resolution. For example, if `app` depends on `core`:
+For the playground's virtual filesystem, we replicate this using real symlinks
+in `BrowserFS`. For example, if `app` depends on `core`:
 ```
 packages/app/node_modules/
   core -> ../../../.pnpm/core/node_modules/core
@@ -547,16 +570,24 @@ to the compiled output in `build/`.
 - `playground/src/project-loader.ts` (or a new `playground/src/linker.ts`) —
   After loading a multi-package project (or after validation detects
   multi-package mode), read each package's `dependencies` and create the
-  pnpm-style symlink structure in `BrowserFS`. Since `BrowserFS` doesn't
-  support real symlinks, implement this as directory entries whose files
-  mirror/alias the target paths. Re-run this whenever the dependency graph
-  changes (e.g. a `package.json` is edited).
+  pnpm-style symlink structure using `BrowserFS.symlink()`. Re-run this
+  whenever the dependency graph changes (e.g. a `package.json` is edited).
 
 **Files to modify (Go)**:
 - The LSP server's module resolution logic should work with standard Node
-  resolution (walking up `node_modules/` directories) — the pnpm-style
-  symlink structure set up above ensures bare specifiers resolve correctly
-  without special-casing in the resolver.
+  resolution (walking up `node_modules/` directories). Since `BrowserFS.stat()`
+  follows symlinks transparently, the resolver needs no special-casing — it
+  sees regular files and directories through the symlink chain.
+
+**Tests to add**:
+- `playground/src/linker.test.ts` (or in `browser-fs.test.ts`) — Tests that
+  exercise Node module resolution across the pnpm-style symlink layout:
+  - Verify that `stat('packages/app/node_modules/core/package.json')` resolves
+    through the symlink chain to `packages/core/package.json`.
+  - Verify that `lstat('packages/app/node_modules/core')` returns a symlink
+    (does not follow).
+  - Verify that after re-running the linker with updated dependencies, the
+    symlink structure reflects the new dependency graph.
 
 ---
 
