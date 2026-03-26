@@ -2,6 +2,7 @@ import type { Stats } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
 
 import { BrowserFS } from './browser-fs';
+import type { FSEvent } from './fs-events';
 import type { Volume } from './volume';
 
 const encoder = new TextEncoder();
@@ -86,6 +87,78 @@ function readdir(fs: BrowserFS, path: string): Promise<string[]> {
 function close(fs: BrowserFS, fd: number): Promise<void> {
     return new Promise((resolve, reject) => {
         fs.close(fd, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify writeFile
+function writeFile(
+    fs: BrowserFS,
+    path: string,
+    data: Uint8Array,
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.writeFile(path, data, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify mkdir
+function mkdir(fs: BrowserFS, path: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.mkdir(path, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify unlink
+function unlink(fs: BrowserFS, path: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.unlink(path, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify rmdir
+function rmdir(fs: BrowserFS, path: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.rmdir(path, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify rename
+function rename(
+    fs: BrowserFS,
+    oldPath: string,
+    newPath: string,
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.rename(oldPath, newPath, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+// Helper to promisify symlink
+function symlink(
+    fs: BrowserFS,
+    target: string,
+    path: string,
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        fs.symlink(target, path, (err) => {
             if (err) reject(err);
             else resolve();
         });
@@ -375,6 +448,321 @@ describe('BrowserFS', () => {
         test('closes file without error', async () => {
             const fd = await open(fs, '/hello.txt');
             await expect(close(fs, fd)).resolves.toBeUndefined();
+        });
+    });
+
+    describe('writeFile', () => {
+        test('creates a new file', async () => {
+            await writeFile(fs, '/new.txt', encoder.encode('new content'));
+            const stats = await stat(fs, '/new.txt');
+            expect(stats.isFile()).toBe(true);
+            expect(stats.size).toBe(11);
+        });
+
+        test('overwrites an existing file', async () => {
+            await writeFile(fs, '/hello.txt', encoder.encode('replaced'));
+            const fd = await open(fs, '/hello.txt');
+            const buffer = new Uint8Array(20);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                0,
+                20,
+                null,
+            );
+            const content = new TextDecoder().decode(
+                buf.subarray(0, bytesRead),
+            );
+            expect(content).toBe('replaced');
+        });
+
+        test('creates a file in a subdirectory', async () => {
+            await writeFile(
+                fs,
+                '/foo/new.txt',
+                encoder.encode('in subdir'),
+            );
+            const files = await readdir(fs, '/foo');
+            expect(files).toContain('new.txt');
+        });
+
+        test('returns ENOENT when parent directory does not exist', async () => {
+            await expect(
+                writeFile(fs, '/no/such/dir/file.txt', encoder.encode('x')),
+            ).rejects.toMatchObject({ code: 'ENOENT' });
+        });
+
+        test('returns EISDIR when path is a directory', async () => {
+            await expect(
+                writeFile(fs, '/foo', encoder.encode('x')),
+            ).rejects.toMatchObject({ code: 'EISDIR' });
+        });
+
+        test('emits create event for new file', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await writeFile(fs, '/new.txt', encoder.encode('data'));
+            expect(events).toEqual([
+                { type: 'create', path: '/new.txt', kind: 'file' },
+            ]);
+        });
+
+        test('does not emit event when overwriting existing file', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await writeFile(fs, '/hello.txt', encoder.encode('updated'));
+            expect(events).toEqual([]);
+        });
+    });
+
+    describe('mkdir', () => {
+        test('creates a new directory', async () => {
+            await mkdir(fs, '/newdir');
+            const stats = await stat(fs, '/newdir');
+            expect(stats.isDirectory()).toBe(true);
+        });
+
+        test('returns EEXIST when directory already exists', async () => {
+            await expect(mkdir(fs, '/foo')).rejects.toMatchObject({
+                code: 'EEXIST',
+            });
+        });
+
+        test('returns ENOENT when parent does not exist', async () => {
+            await expect(mkdir(fs, '/no/such/parent')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('emits create event', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await mkdir(fs, '/newdir');
+            expect(events).toEqual([
+                { type: 'create', path: '/newdir', kind: 'dir' },
+            ]);
+        });
+    });
+
+    describe('unlink', () => {
+        test('removes an existing file', async () => {
+            await unlink(fs, '/hello.txt');
+            await expect(stat(fs, '/hello.txt')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('returns ENOENT for non-existing file', async () => {
+            await expect(unlink(fs, '/nope.txt')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('returns EISDIR when path is a directory', async () => {
+            await expect(unlink(fs, '/foo')).rejects.toMatchObject({
+                code: 'EISDIR',
+            });
+        });
+
+        test('emits delete event', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await unlink(fs, '/hello.txt');
+            expect(events).toEqual([
+                { type: 'delete', path: '/hello.txt', kind: 'file' },
+            ]);
+        });
+    });
+
+    describe('rmdir', () => {
+        test('removes an empty directory', async () => {
+            await mkdir(fs, '/emptydir');
+            await rmdir(fs, '/emptydir');
+            await expect(stat(fs, '/emptydir')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('returns ENOTEMPTY for non-empty directory', async () => {
+            await expect(rmdir(fs, '/foo')).rejects.toMatchObject({
+                code: 'ENOTEMPTY',
+            });
+        });
+
+        test('returns ENOTDIR when path is a file', async () => {
+            await expect(rmdir(fs, '/hello.txt')).rejects.toMatchObject({
+                code: 'ENOTDIR',
+            });
+        });
+
+        test('returns ENOENT for non-existing directory', async () => {
+            await expect(rmdir(fs, '/nope')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('emits delete event', async () => {
+            await mkdir(fs, '/emptydir');
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await rmdir(fs, '/emptydir');
+            expect(events).toEqual([
+                { type: 'delete', path: '/emptydir', kind: 'dir' },
+            ]);
+        });
+    });
+
+    describe('rename', () => {
+        test('renames a file', async () => {
+            await rename(fs, '/hello.txt', '/hi.txt');
+            await expect(stat(fs, '/hello.txt')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+            const stats = await stat(fs, '/hi.txt');
+            expect(stats.isFile()).toBe(true);
+        });
+
+        test('renames a directory', async () => {
+            await rename(fs, '/foo', '/bar');
+            await expect(stat(fs, '/foo')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+            const stats = await stat(fs, '/bar');
+            expect(stats.isDirectory()).toBe(true);
+            // Children should still be accessible
+            const files = await readdir(fs, '/bar');
+            expect(files).toContain('bar.txt');
+        });
+
+        test('returns ENOENT when source does not exist', async () => {
+            await expect(
+                rename(fs, '/nope.txt', '/dest.txt'),
+            ).rejects.toMatchObject({ code: 'ENOENT' });
+        });
+
+        test('emits rename event', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await rename(fs, '/hello.txt', '/hi.txt');
+            expect(events).toEqual([
+                {
+                    type: 'rename',
+                    path: '/hi.txt',
+                    kind: 'file',
+                    oldPath: '/hello.txt',
+                },
+            ]);
+        });
+    });
+
+    describe('symlink', () => {
+        test('creates a symlink to a file', async () => {
+            await symlink(fs, '/hello.txt', '/link.txt');
+            // stat follows the symlink
+            const stats = await stat(fs, '/link.txt');
+            expect(stats.isFile()).toBe(true);
+            expect(stats.size).toBe(13);
+        });
+
+        test('lstat returns symlink stats', async () => {
+            await symlink(fs, '/hello.txt', '/link.txt');
+            const stats = await lstat(fs, '/link.txt');
+            expect(stats.isSymbolicLink()).toBe(true);
+            expect(stats.isFile()).toBe(false);
+        });
+
+        test('creates a symlink to a directory', async () => {
+            await symlink(fs, '/foo', '/foolink');
+            const stats = await stat(fs, '/foolink');
+            expect(stats.isDirectory()).toBe(true);
+            const files = await readdir(fs, '/foolink');
+            expect(files).toContain('bar.txt');
+        });
+
+        test('follows relative symlinks', async () => {
+            // Create /foo/link -> bar.txt (relative to /foo/)
+            await symlink(fs, 'bar.txt', '/foo/link');
+            const stats = await stat(fs, '/foo/link');
+            expect(stats.isFile()).toBe(true);
+        });
+
+        test('follows chained symlinks', async () => {
+            await symlink(fs, '/hello.txt', '/link1');
+            await symlink(fs, '/link1', '/link2');
+            const stats = await stat(fs, '/link2');
+            expect(stats.isFile()).toBe(true);
+            expect(stats.size).toBe(13);
+        });
+
+        test('returns EEXIST when symlink path already exists', async () => {
+            await expect(
+                symlink(fs, '/hello.txt', '/foo'),
+            ).rejects.toMatchObject({ code: 'EEXIST' });
+        });
+
+        test('readdir returns symlink names as regular entries', async () => {
+            await symlink(fs, '/hello.txt', '/foo/link');
+            const files = await readdir(fs, '/foo');
+            expect(files).toContain('link');
+        });
+
+        test('traverses symlink directories in path', async () => {
+            // /foo contains bar.txt. Create /foolink -> /foo
+            await symlink(fs, '/foo', '/foolink');
+            // Access /foolink/bar.txt — should resolve through symlink
+            const stats = await stat(fs, '/foolink/bar.txt');
+            expect(stats.isFile()).toBe(true);
+        });
+
+        test('handles relative symlink with ..', async () => {
+            // /foo/link -> ../hello.txt resolves to /hello.txt
+            await symlink(fs, '../hello.txt', '/foo/link');
+            const stats = await stat(fs, '/foo/link');
+            expect(stats.isFile()).toBe(true);
+            expect(stats.size).toBe(13);
+        });
+
+        test('returns ENOENT for dangling symlink via stat', async () => {
+            await symlink(fs, '/nonexistent', '/dangling');
+            await expect(stat(fs, '/dangling')).rejects.toMatchObject({
+                code: 'ENOENT',
+            });
+        });
+
+        test('lstat succeeds for dangling symlink', async () => {
+            await symlink(fs, '/nonexistent', '/dangling');
+            const stats = await lstat(fs, '/dangling');
+            expect(stats.isSymbolicLink()).toBe(true);
+        });
+    });
+
+    describe('clear', () => {
+        test('removes all entries except node_modules', async () => {
+            // Add a node_modules entry
+            await mkdir(fs, '/node_modules');
+            await mkdir(fs, '/node_modules/pkg');
+            await writeFile(
+                fs,
+                '/node_modules/pkg/index.js',
+                encoder.encode('module'),
+            );
+
+            fs.clear();
+
+            // Root should only have node_modules
+            const files = await readdir(fs, '/');
+            expect(files).toEqual(['node_modules']);
+
+            // node_modules content should be preserved
+            const pkgFiles = await readdir(fs, '/node_modules/pkg');
+            expect(pkgFiles).toContain('index.js');
+        });
+
+        test('removes files and directories', async () => {
+            fs.clear();
+            const files = await readdir(fs, '/');
+            expect(files).toEqual([]);
         });
     });
 });

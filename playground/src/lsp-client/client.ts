@@ -2,7 +2,7 @@ import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import type { FSAPI } from '../fs/fs-api';
+import type { BrowserFS } from '../fs/browser-fs';
 
 import { Deferred } from './deferred';
 
@@ -55,7 +55,7 @@ export class Client {
     private contentLength: number;
     private messageBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: FSAPI) {
+    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: BrowserFS) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -204,15 +204,30 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else {
-                    console.error(
-                        'Attempted to write to unknown file descriptor:',
-                        fd,
-                    );
+                    // Write to a file in the virtual filesystem
+                    const data = buffer.subarray(0, length);
+                    // Go's syscall/js calls write() with the fd returned by open().
+                    // We need to find the path for this fd and write via BrowserFS.
+                    // For now, we update the open file's content directly.
+                    const file = fs.openFiles.get(fd);
+                    if (file && file.type === 'file') {
+                        file.content = new Uint8Array(data);
+                        setTimeout(() => {
+                            callback(null, length, buffer);
+                        }, 0);
+                    } else {
+                        setTimeout(() => {
+                            callback(enosys(), 0, buffer);
+                        }, 0);
+                    }
                 }
             },
             // chmod(path, mode, callback) {callback(enosys())},
             // chown(path, uid, gid, callback) {callback(enosys())},
-            close(_fd: number, callback: (error: Error | null) => void) {
+            close(fd: number, callback: (error: Error | null) => void) {
+                if (fd > 2) {
+                    return fs.close(fd, callback);
+                }
                 setTimeout(() => {
                     callback(null);
                 }, 0);
@@ -241,8 +256,13 @@ export class Client {
             ) {
                 return fs.lstat(path, callback);
             },
-            // mkdir(path, perm, callback) {callback(enosys())},
-            // open(path, flags, mode, callback) {callback(enosys()},
+            mkdir(
+                path: PathLike,
+                _perm: number,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.mkdir(path, callback);
+            },
             open(
                 path: PathLike,
                 flags: OpenMode | undefined,
@@ -308,8 +328,19 @@ export class Client {
                 return fs.readdir(path, callback);
             },
             // readlink(path, callback) {callback(enosys())},
-            // rename(from, to, callback) {callback(enosys())},
-            // rmdir(path, callback) {callback(enosys())},
+            rename(
+                from: PathLike,
+                to: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.rename(from, to, callback);
+            },
+            rmdir(
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.rmdir(path, callback);
+            },
             stat(
                 path: PathLike,
                 callback: (
@@ -319,9 +350,20 @@ export class Client {
             ) {
                 return fs.stat(path, callback);
             },
-            // symlink(path, link, callback) {callback(enosys())},
+            symlink(
+                target: PathLike,
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.symlink(target, path, callback);
+            },
             // truncate(path, length, callback) {callback(enosys())},
-            // unlink(path, callback) {callback(enosys())},
+            unlink(
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.unlink(path, callback);
+            },
             // utimes(path, atime, mtime, callback) {callback(enosys())},
         };
 
@@ -421,6 +463,15 @@ export class Client {
 
     textDocumentDidClose(params: lsp.DidCloseTextDocumentParams) {
         return this.fireAndForget('textDocument/didClose', params);
+    }
+
+    workspaceDidChangeWatchedFiles(
+        params: lsp.DidChangeWatchedFilesParams,
+    ) {
+        return this.fireAndForget(
+            'workspace/didChangeWatchedFiles',
+            params,
+        );
     }
 
     //

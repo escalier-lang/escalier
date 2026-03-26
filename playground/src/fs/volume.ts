@@ -53,14 +53,10 @@ export function createVolume(manifest: string[], baseUrl: string): Volume {
                 }),
             ),
         },
-        // findRepoRoot looks for go.mod
-        // TODO: come up with a better plan since most projects won't have a
-        // go.mod file
-        '/go.mod': {
+        '/escalier.toml': {
             content: new TextEncoder().encode(
-                `module my-project
-
-go 1.26
+                `[project]
+name = "my-project"
 `,
             ),
         },

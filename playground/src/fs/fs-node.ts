@@ -10,4 +10,10 @@ export interface FSDir {
     children: Map<string, FSNode>;
 }
 
-export type FSNode = FSFile | FSDir;
+export interface FSSymlink {
+    type: 'symlink';
+    name: string;
+    target: string; // path as provided to symlink(), relative or absolute
+}
+
+export type FSNode = FSFile | FSDir | FSSymlink;

@@ -1,14 +1,27 @@
+import { FileChangeType } from 'vscode-languageserver-protocol';
 import ReactDOM from 'react-dom/client';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import { BrowserFS } from './fs/browser-fs';
+import type { FSEvent } from './fs/fs-events';
 import { createVolume } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 
 import './user-worker'; // sets up the monaco editor worker
+
+function fsEventToFileChangeType(event: FSEvent): FileChangeType {
+    switch (event.type) {
+        case 'create':
+            return FileChangeType.Created;
+        case 'delete':
+            return FileChangeType.Deleted;
+        case 'rename':
+            return FileChangeType.Deleted; // rename emits delete for old + create for new
+    }
+}
 
 async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
@@ -30,6 +43,28 @@ async function main() {
         capabilities: {},
     });
     console.log('initialize response', initResponse);
+
+    // Forward filesystem change events to the LSP server
+    fs.events.on((event) => {
+        const changes = [
+            {
+                uri: `file://${event.path}`,
+                type: fsEventToFileChangeType(event),
+            },
+        ];
+        // For renames, also emit a Created event for the new path
+        if (event.type === 'rename' && event.oldPath) {
+            changes[0] = {
+                uri: `file://${event.oldPath}`,
+                type: FileChangeType.Deleted,
+            };
+            changes.push({
+                uri: `file://${event.path}`,
+                type: FileChangeType.Created,
+            });
+        }
+        client.workspaceDidChangeWatchedFiles({ changes });
+    });
 
     setupLanguage(client);
 
