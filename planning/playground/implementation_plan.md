@@ -566,12 +566,20 @@ This means a bare import like `"core"` in `app` resolves through
 `packages/core/`, where the `package.json` `main` and `types` fields direct
 to the compiled output in `build/`.
 
-**Files to modify (TypeScript)**:
-- `playground/src/project-loader.ts` (or a new `playground/src/linker.ts`) —
-  After loading a multi-package project (or after validation detects
-  multi-package mode), read each package's `dependencies` and create the
-  pnpm-style symlink structure using `BrowserFS.symlink()`. Re-run this
-  whenever the dependency graph changes (e.g. a `package.json` is edited).
+**Files to create (TypeScript)**:
+- `playground/src/linker.ts` — Exports a `link(fs: BrowserFS)` function that
+  reads each package's `dependencies` and creates the pnpm-style symlink
+  structure using `BrowserFS.symlink()`. Also exports a `setupLinkListener(fs)`
+  function that subscribes to `BrowserFS` filesystem change events (Phase 1.2)
+  and re-runs the linker when dependency-defining files change:
+  - Filter events for paths matching `**/package.json` or
+    `pnpm-workspace.yaml`.
+  - Debounce re-linking (e.g. 300ms) since the user may be mid-edit.
+  - Before re-linking, remove the existing `.pnpm/` directory and all
+    `node_modules/` directories within `packages/`, then recreate them from
+    the updated dependency graph.
+  - If the new dependency graph has errors (cycles, missing deps), skip
+    re-linking and surface the error via the toast component.
 
 **Files to modify (Go)**:
 - The LSP server's module resolution logic should work with standard Node
