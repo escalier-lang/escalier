@@ -748,6 +748,53 @@ describe('BrowserFS', () => {
             const stats = await lstat(fs, '/dangling');
             expect(stats.isSymbolicLink()).toBe(true);
         });
+
+        test('emits create event', async () => {
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await symlink(fs, '/hello.txt', '/link.txt');
+            expect(events).toEqual([
+                { type: 'create', path: '/link.txt', kind: 'file' },
+            ]);
+        });
+    });
+
+    describe('writeFile through symlink', () => {
+        test('writes through symlink to the target file', async () => {
+            await symlink(fs, '/hello.txt', '/link.txt');
+            await writeFile(fs, '/link.txt', encoder.encode('via link'));
+            // The original file should have the new content
+            const fd = await open(fs, '/hello.txt');
+            const buffer = new Uint8Array(20);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                0,
+                20,
+                null,
+            );
+            expect(new TextDecoder().decode(buf.subarray(0, bytesRead))).toBe(
+                'via link',
+            );
+        });
+
+        test('emits change event when writing through symlink', async () => {
+            await symlink(fs, '/hello.txt', '/link.txt');
+            const events: FSEvent[] = [];
+            fs.events.on((e) => events.push(e));
+            await writeFile(fs, '/link.txt', encoder.encode('updated'));
+            expect(events).toEqual([
+                { type: 'change', path: '/link.txt', kind: 'file' },
+            ]);
+        });
+
+        test('returns ENOENT when writing through dangling symlink', async () => {
+            await symlink(fs, '/nonexistent', '/dangling');
+            await expect(
+                writeFile(fs, '/dangling', encoder.encode('data')),
+            ).rejects.toMatchObject({ code: 'ENOENT' });
+        });
     });
 
     describe('clear', () => {

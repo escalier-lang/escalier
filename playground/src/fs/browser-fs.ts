@@ -169,6 +169,39 @@ export class BrowserFS implements FSAPI {
         return { parent, name: parts[parts.length - 1] };
     }
 
+    /**
+     * Resolve a path through symlinks and return the final absolute path.
+     * Returns undefined if the path cannot be resolved (e.g. dangling symlink).
+     */
+    private resolveSymlinkPath(pathStr: string): string | undefined {
+        const parts = pathStr.split('/').filter((p) => p.length > 0);
+        let currentPath = '';
+
+        for (const part of parts) {
+            currentPath += `/${part}`;
+            const node = this.findNodeInRootDir(currentPath, false);
+            if (!node) return undefined;
+
+            if (node.type === 'symlink') {
+                let targetPath: string;
+                if (node.target.startsWith('/')) {
+                    targetPath = node.target;
+                } else {
+                    const parentPath = currentPath
+                        .split('/')
+                        .slice(0, -1)
+                        .join('/');
+                    targetPath = this.resolvePath(
+                        `${parentPath}/${node.target}`,
+                    );
+                }
+                currentPath = targetPath;
+            }
+        }
+
+        return currentPath;
+    }
+
     fstat(
         fd: number,
         callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
@@ -683,25 +716,30 @@ export class BrowserFS implements FSAPI {
             this.volume[pathStr] = { content };
             this.events.emit({ type: 'change', path: pathStr, kind: 'file' });
         } else if (existing && existing.type === 'symlink') {
-            // Write through the symlink to the target
-            const target = this.findNodeInRootDir(pathStr, true);
-            if (target && target.type === 'file') {
-                target.content = content;
-                this.events.emit({
-                    type: 'change',
-                    path: pathStr,
-                    kind: 'file',
-                });
-            } else {
-                // Target doesn't exist or isn't a file — create at this path
-                parent.children.set(name, { type: 'file', name, content });
-                this.volume[pathStr] = { content };
-                this.events.emit({
-                    type: 'create',
-                    path: pathStr,
-                    kind: 'file',
-                });
+            // Write through the symlink to the resolved target
+            const resolved = this.findNodeInRootDir(pathStr, true);
+            if (!resolved || resolved.type !== 'file') {
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'writeFile',
+                        path: pathStr,
+                    }),
+                );
+                return;
             }
+            resolved.content = content;
+            // Update the volume at the symlink's resolved target path
+            const resolvedPath = this.resolveSymlinkPath(pathStr);
+            if (resolvedPath) {
+                this.volume[resolvedPath] = { content };
+            }
+            this.events.emit({
+                type: 'change',
+                path: pathStr,
+                kind: 'file',
+            });
         } else {
             // New file
             parent.children.set(name, { type: 'file', name, content });
@@ -1010,6 +1048,7 @@ export class BrowserFS implements FSAPI {
             name,
             target: targetStr,
         });
+        this.events.emit({ type: 'create', path: pathStr, kind: 'file' });
         callback(null);
     }
 
