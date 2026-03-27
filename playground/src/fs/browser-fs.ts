@@ -2,6 +2,7 @@ import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 
 import { ErrnoException } from './errno-exception';
 import type { FSAPI } from './fs-api';
+import { FSEventEmitter } from './fs-events';
 import type { FSDir, FSFile, FSNode } from './fs-node';
 import { SimpleStats } from './simple-stats';
 import { type Volume, volumeToDir } from './volume';
@@ -27,6 +28,7 @@ export class BrowserFS implements FSAPI {
     readPositions: Map<number, number> = new Map();
     rootDir: FSDir;
     volume: Volume;
+    readonly events = new FSEventEmitter();
 
     constructor(volume: Volume) {
         this.fileID = 3;
@@ -56,23 +58,150 @@ export class BrowserFS implements FSAPI {
         }
     }
 
+    private static readonly SYMLINK_DEPTH_LIMIT = 40;
+
     /**
-     * Locate any node (file or directory) within the in‑memory directory tree.
-     *
-     * @param pathStr Path string (e.g. "/foo/bar").
-     * @returns The FSNode if found, otherwise undefined.
+     * Resolve a path to its absolute form, handling `.` and `..` segments.
      */
-    private findNodeInRootDir(pathStr: string): FSNode | undefined {
+    private resolvePath(pathStr: string): string {
         const parts = pathStr.split('/').filter((p) => p.length > 0);
-        let node: FSNode | undefined = this.rootDir;
+        const resolved: string[] = [];
         for (const part of parts) {
-            if (node && node.type === 'dir') {
-                node = node.children.get(part);
+            if (part === '.') continue;
+            if (part === '..') {
+                resolved.pop();
             } else {
-                return undefined;
+                resolved.push(part);
             }
         }
+        return `/${resolved.join('/')}`;
+    }
+
+    /**
+     * Locate any node (file or directory) within the in‑memory directory tree.
+     * Follows symlinks transparently (up to SYMLINK_DEPTH_LIMIT hops).
+     *
+     * @param pathStr Path string (e.g. "/foo/bar").
+     * @param followLastSymlink Whether to follow a symlink if the final path
+     *   component is one. `stat` passes true, `lstat` passes false.
+     * @returns The FSNode if found, otherwise undefined.
+     */
+    private findNodeInRootDir(
+        pathStr: string,
+        followLastSymlink = true,
+    ): FSNode | undefined {
+        return this._findNode(pathStr, followLastSymlink, 0);
+    }
+
+    private _findNode(
+        pathStr: string,
+        followLastSymlink: boolean,
+        depth: number,
+    ): FSNode | undefined {
+        if (depth > BrowserFS.SYMLINK_DEPTH_LIMIT) {
+            return undefined; // ELOOP — circular symlink
+        }
+
+        const parts = pathStr.split('/').filter((p) => p.length > 0);
+        let node: FSNode | undefined = this.rootDir;
+        // Track the current absolute path for resolving relative symlink targets
+        const currentParts: string[] = [];
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (!node || node.type !== 'dir') {
+                return undefined;
+            }
+            node = node.children.get(part);
+            if (!node) return undefined;
+
+            currentParts.push(part);
+
+            if (node.type === 'symlink') {
+                // Don't follow the symlink if it's the last component and
+                // followLastSymlink is false (lstat behavior).
+                const isLast = i === parts.length - 1;
+                if (isLast && !followLastSymlink) {
+                    return node;
+                }
+
+                // Resolve symlink target
+                let targetPath: string;
+                if (node.target.startsWith('/')) {
+                    targetPath = node.target;
+                } else {
+                    // Resolve relative to symlink's parent directory
+                    const parentPath = `/${currentParts.slice(0, -1).join('/')}`;
+                    targetPath = this.resolvePath(
+                        `${parentPath}/${node.target}`,
+                    );
+                }
+
+                // If there are remaining path segments, append them
+                const remaining = parts.slice(i + 1);
+                if (remaining.length > 0) {
+                    targetPath = `${targetPath}/${remaining.join('/')}`;
+                }
+
+                return this._findNode(targetPath, followLastSymlink, depth + 1);
+            }
+        }
+
         return node;
+    }
+
+    /**
+     * Split a path into its parent directory and base name. Symlinks
+     * in the parent portion are followed (so the returned `parent` is
+     * always a real FSDir), but the final component is returned as a
+     * plain string — the caller decides whether to look it up and
+     * whether to follow it.
+     */
+    private findParent(
+        pathStr: string,
+    ): { parent: FSDir; name: string } | undefined {
+        const resolved = this.resolvePath(pathStr);
+        const parts = resolved.split('/').filter((p) => p.length > 0);
+        if (parts.length === 0) return undefined; // can't get parent of root
+
+        const parentPath = `/${parts.slice(0, -1).join('/')}`;
+        const parent = this.findNodeInRootDir(parentPath, true);
+        if (!parent || parent.type !== 'dir') return undefined;
+
+        return { parent, name: parts[parts.length - 1] };
+    }
+
+    /**
+     * Resolve a path through symlinks and return the final absolute path.
+     * Returns undefined if the path cannot be resolved (e.g. dangling symlink).
+     */
+    private resolveSymlinkPath(pathStr: string): string | undefined {
+        const parts = pathStr.split('/').filter((p) => p.length > 0);
+        let currentPath = '';
+
+        for (const part of parts) {
+            currentPath += `/${part}`;
+            const node = this.findNodeInRootDir(currentPath, false);
+            if (!node) return undefined;
+
+            if (node.type === 'symlink') {
+                let targetPath: string;
+                if (node.target.startsWith('/')) {
+                    targetPath = node.target;
+                } else {
+                    const parentPath = currentPath
+                        .split('/')
+                        .slice(0, -1)
+                        .join('/');
+                    targetPath = this.resolvePath(
+                        `${parentPath}/${node.target}`,
+                    );
+                }
+                currentPath = targetPath;
+            }
+        }
+
+        return currentPath;
     }
 
     fstat(
@@ -112,6 +241,17 @@ export class BrowserFS implements FSAPI {
                 callback(null, stats);
                 break;
             }
+            case 'symlink': {
+                // Symlinks should be resolved by open(), but handle defensively
+                const stats = new SimpleStats(
+                    0,
+                    false,
+                    false,
+                    true,
+                ) as unknown as Stats;
+                callback(null, stats);
+                break;
+            }
             default:
                 assertNever(fileData);
         }
@@ -122,7 +262,7 @@ export class BrowserFS implements FSAPI {
         callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
     ) {
         const pathStr = String(path);
-        const node = this.findNodeInRootDir(pathStr);
+        const node = this.findNodeInRootDir(pathStr, false);
         if (!node) {
             callback(
                 new ErrnoException('No such file or directory', {
@@ -144,6 +284,8 @@ export class BrowserFS implements FSAPI {
                 true,
                 false,
             ) as unknown as Stats;
+        } else if (node.type === 'symlink') {
+            stats = new SimpleStats(0, false, false, true) as unknown as Stats;
         } else {
             // Directory
             stats = new SimpleStats(0, false, true) as unknown as Stats;
@@ -188,6 +330,20 @@ export class BrowserFS implements FSAPI {
                     true,
                 ) as unknown as Stats;
                 callback(null, stats);
+                break;
+            }
+            case 'symlink': {
+                // stat follows symlinks, so we should not normally reach here
+                // (dangling symlink case)
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'stat',
+                        path: pathStr,
+                    }),
+                    null as any,
+                );
                 break;
             }
             default:
@@ -288,6 +444,18 @@ export class BrowserFS implements FSAPI {
                 callback(null, fd);
                 break;
             }
+            case 'symlink':
+                // findNodeInRootDir follows symlinks, so this means dangling
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'open',
+                        path: pathStr,
+                    }),
+                    -1,
+                );
+                break;
             default:
                 assertNever(node);
         }
@@ -407,9 +575,70 @@ export class BrowserFS implements FSAPI {
                 callback(null, bytesToRead, buffer);
                 break;
             }
+            case 'symlink':
+                // Symlinks should be resolved by open(), handle defensively
+                callback(
+                    new ErrnoException('Bad file descriptor', {
+                        code: 'EBADF',
+                        errno: -9,
+                        syscall: 'read',
+                    }),
+                    0,
+                    buffer,
+                );
+                break;
             default:
                 assertNever(file);
         }
+    }
+
+    write(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number | null,
+        callback: (
+            err: NodeJS.ErrnoException | null,
+            bytesWritten: number,
+            buffer: Uint8Array,
+        ) => void,
+    ) {
+        const file = this.openFiles.get(fd);
+        if (!file || file.type !== 'file') {
+            callback(
+                new ErrnoException('Bad file descriptor', {
+                    code: 'EBADF',
+                    errno: -9,
+                    syscall: 'write',
+                }),
+                0,
+                buffer,
+            );
+            return;
+        }
+
+        const writePos =
+            position != null
+                ? position
+                : (this.readPositions.get(fd) ?? file.content.length);
+        const data = buffer.subarray(offset, offset + length);
+        const endPos = writePos + data.length;
+
+        // Grow the content buffer if needed
+        if (endPos > file.content.length) {
+            const grown = new Uint8Array(endPos);
+            grown.set(file.content);
+            file.content = grown;
+        }
+
+        file.content.set(data, writePos);
+
+        if (position == null) {
+            this.readPositions.set(fd, endPos);
+        }
+
+        callback(null, length, buffer);
     }
 
     readdir(
@@ -446,5 +675,411 @@ export class BrowserFS implements FSAPI {
 
         const files = Array.from(node.children.keys());
         callback(null, files);
+    }
+
+    // Uses findParent (rather than findNodeInRootDir) because we need the
+    // parent directory in both cases: if the file already exists we mutate
+    // its content in place to preserve open file descriptors; if it doesn't
+    // exist yet we create a new node via parent.children.set().
+    writeFile(
+        path: PathLike,
+        data: Uint8Array,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const pathStr = String(path);
+        const result = this.findParent(pathStr);
+        if (!result) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'writeFile',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const { parent, name } = result;
+        const existing = parent.children.get(name);
+        if (existing && existing.type === 'dir') {
+            callback(
+                new ErrnoException('Is a directory', {
+                    code: 'EISDIR',
+                    errno: -21,
+                    syscall: 'writeFile',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const content = new Uint8Array(data);
+
+        if (existing && existing.type === 'file') {
+            // Mutate the existing node so open file descriptors stay valid
+            existing.content = content;
+            this.volume[pathStr] = { content };
+            this.events.emit({ type: 'change', path: pathStr, kind: 'file' });
+        } else if (existing && existing.type === 'symlink') {
+            // Write through the symlink to the resolved target
+            const resolved = this.findNodeInRootDir(pathStr, true);
+            if (!resolved || resolved.type !== 'file') {
+                callback(
+                    new ErrnoException('No such file or directory', {
+                        code: 'ENOENT',
+                        errno: -2,
+                        syscall: 'writeFile',
+                        path: pathStr,
+                    }),
+                );
+                return;
+            }
+            resolved.content = content;
+            // Update the volume at the symlink's resolved target path
+            const resolvedPath = this.resolveSymlinkPath(pathStr);
+            if (resolvedPath) {
+                this.volume[resolvedPath] = { content };
+            }
+            this.events.emit({
+                type: 'change',
+                path: pathStr,
+                kind: 'file',
+            });
+        } else {
+            // New file
+            parent.children.set(name, { type: 'file', name, content });
+            this.volume[pathStr] = { content };
+            this.events.emit({ type: 'create', path: pathStr, kind: 'file' });
+        }
+        callback(null);
+    }
+
+    mkdir(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const pathStr = String(path);
+        const result = this.findParent(pathStr);
+        if (!result) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'mkdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const { parent, name } = result;
+        if (parent.children.has(name)) {
+            callback(
+                new ErrnoException('File exists', {
+                    code: 'EEXIST',
+                    errno: -17,
+                    syscall: 'mkdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        parent.children.set(name, {
+            type: 'dir',
+            name,
+            children: new Map(),
+        });
+        this.events.emit({ type: 'create', path: pathStr, kind: 'dir' });
+        callback(null);
+    }
+
+    unlink(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const pathStr = String(path);
+        const result = this.findParent(pathStr);
+        if (!result) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'unlink',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const { parent, name } = result;
+        const node = parent.children.get(name);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'unlink',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+        if (node.type === 'dir') {
+            callback(
+                new ErrnoException('Is a directory', {
+                    code: 'EISDIR',
+                    errno: -21,
+                    syscall: 'unlink',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        parent.children.delete(name);
+        delete this.volume[pathStr];
+        this.events.emit({ type: 'delete', path: pathStr, kind: 'file' });
+        callback(null);
+    }
+
+    rmdir(
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const pathStr = String(path);
+        const result = this.findParent(pathStr);
+        if (!result) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'rmdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const { parent, name } = result;
+        const node = parent.children.get(name);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'rmdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+        if (node.type !== 'dir') {
+            callback(
+                new ErrnoException('Not a directory', {
+                    code: 'ENOTDIR',
+                    errno: -20,
+                    syscall: 'rmdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+        if (node.children.size > 0) {
+            callback(
+                new ErrnoException('Directory not empty', {
+                    code: 'ENOTEMPTY',
+                    errno: -39,
+                    syscall: 'rmdir',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        parent.children.delete(name);
+        this.events.emit({ type: 'delete', path: pathStr, kind: 'dir' });
+        callback(null);
+    }
+
+    rename(
+        oldPath: PathLike,
+        newPath: PathLike,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const oldPathStr = String(oldPath);
+        const newPathStr = String(newPath);
+
+        const oldResult = this.findParent(oldPathStr);
+        if (!oldResult) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'rename',
+                    path: oldPathStr,
+                }),
+            );
+            return;
+        }
+
+        const node = oldResult.parent.children.get(oldResult.name);
+        if (!node) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'rename',
+                    path: oldPathStr,
+                }),
+            );
+            return;
+        }
+
+        const newResult = this.findParent(newPathStr);
+        if (!newResult) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'rename',
+                    path: newPathStr,
+                }),
+            );
+            return;
+        }
+
+        // Validate destination before any mutation
+        const destNode = newResult.parent.children.get(newResult.name);
+        if (destNode) {
+            if (node.type === 'dir' && destNode.type !== 'dir') {
+                callback(
+                    new ErrnoException('Not a directory', {
+                        code: 'ENOTDIR',
+                        errno: -20,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+            if (node.type !== 'dir' && destNode.type === 'dir') {
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+            if (destNode.type === 'dir' && destNode.children.size > 0) {
+                callback(
+                    new ErrnoException('Directory not empty', {
+                        code: 'ENOTEMPTY',
+                        errno: -39,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+        }
+
+        const kind = node.type === 'dir' ? 'dir' : 'file';
+
+        // Remove from old location
+        oldResult.parent.children.delete(oldResult.name);
+
+        // The volume map is keyed by absolute path and is used by
+        // ensureContent() to lazy-load file data. When renaming a directory,
+        // the in-memory tree moves automatically (it's the same object), but
+        // the volume keys still reference the old paths. Without rekeying,
+        // ensureContent() wouldn't find the entries for files under the new
+        // path, and operations like unlink/clear that delete by volume key
+        // would leave stale entries behind.
+        for (const key of Object.keys(this.volume)) {
+            if (key === oldPathStr || key.startsWith(`${oldPathStr}/`)) {
+                const suffix = key.slice(oldPathStr.length);
+                this.volume[`${newPathStr}${suffix}`] = this.volume[key];
+                delete this.volume[key];
+            }
+        }
+
+        // Insert at new location with updated name
+        node.name = newResult.name;
+        newResult.parent.children.set(newResult.name, node);
+
+        this.events.emit({
+            type: 'rename',
+            path: newPathStr,
+            kind,
+            oldPath: oldPathStr,
+        });
+        callback(null);
+    }
+
+    symlink(
+        target: PathLike,
+        path: PathLike,
+        callback: (err: NodeJS.ErrnoException | null) => void,
+    ) {
+        const pathStr = String(path);
+        const targetStr = String(target);
+
+        const result = this.findParent(pathStr);
+        if (!result) {
+            callback(
+                new ErrnoException('No such file or directory', {
+                    code: 'ENOENT',
+                    errno: -2,
+                    syscall: 'symlink',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        const { parent, name } = result;
+        if (parent.children.has(name)) {
+            callback(
+                new ErrnoException('File exists', {
+                    code: 'EEXIST',
+                    errno: -17,
+                    syscall: 'symlink',
+                    path: pathStr,
+                }),
+            );
+            return;
+        }
+
+        parent.children.set(name, {
+            type: 'symlink',
+            name,
+            target: targetStr,
+        });
+        this.events.emit({ type: 'create', path: pathStr, kind: 'file' });
+        callback(null);
+    }
+
+    /**
+     * Remove all entries except those under `node_modules/`.
+     * Used when loading a new project to reset the filesystem.
+     */
+    clear() {
+        for (const [name] of this.rootDir.children) {
+            if (name !== 'node_modules') {
+                this.rootDir.children.delete(name);
+            }
+        }
+
+        // Clean up volume entries
+        for (const path in this.volume) {
+            if (!path.startsWith('/node_modules/')) {
+                delete this.volume[path];
+            }
+        }
     }
 }

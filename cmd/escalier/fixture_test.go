@@ -95,15 +95,15 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 		require.NoError(t, err, "failed to create node_modules symlink")
 	}
 
-	// Create a symlink for go.mod in the temporary directory that points
-	// to the repository's go.mod file.
-	// This is necessary because the prelude looks for the go.mod file to
-	// determine the root of the repository.
-	goModTarget := filepath.Join(repoRoot, "go.mod")
-	goModLink := filepath.Join(tmpDir, "go.mod")
-	err = os.Symlink(goModTarget, goModLink)
+	// Create a symlink for escalier.toml in the temporary directory that
+	// points to the repository's escalier.toml file. This is necessary
+	// because the prelude looks for escalier.toml to determine the root
+	// of the repository.
+	tomlTarget := filepath.Join(repoRoot, "escalier.toml")
+	tomlLink := filepath.Join(tmpDir, "escalier.toml")
+	err = os.Symlink(tomlTarget, tomlLink)
 	if err != nil && !os.IsExist(err) {
-		require.NoError(t, err, "failed to create go.mod symlink")
+		require.NoError(t, err, "failed to create escalier.toml symlink")
 	}
 
 	err = os.Chdir(tmpDir)

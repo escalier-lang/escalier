@@ -1,4 +1,5 @@
 import ReactDOM from 'react-dom/client';
+import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
@@ -30,6 +31,53 @@ async function main() {
         capabilities: {},
     });
     console.log('initialize response', initResponse);
+
+    // Forward filesystem change events to the LSP server.
+    fs.events.on((event) => {
+        let changes: FileEvent[];
+        switch (event.type) {
+            case 'rename':
+                // LSP's didChangeWatchedFiles has no "rename" type — only Created,
+                // Changed, and Deleted — so we translate a rename into a Deleted
+                // event for the old path plus a Created event for the new path.
+                changes = [
+                    {
+                        uri: `file://${event.oldPath}`,
+                        type: FileChangeType.Deleted,
+                    },
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Created,
+                    },
+                ];
+                break;
+            case 'create':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Created,
+                    },
+                ];
+                break;
+            case 'change':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Changed,
+                    },
+                ];
+                break;
+            case 'delete':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Deleted,
+                    },
+                ];
+                break;
+        }
+        client.workspaceDidChangeWatchedFiles({ changes });
+    });
 
     setupLanguage(client);
 

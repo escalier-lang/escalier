@@ -204,15 +204,26 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else {
-                    console.error(
-                        'Attempted to write to unknown file descriptor:',
+                    fs.write(
                         fd,
+                        buffer,
+                        0,
+                        length,
+                        null,
+                        (err, bytesWritten, buf) => {
+                            setTimeout(() => {
+                                callback(err, bytesWritten, buf);
+                            }, 0);
+                        },
                     );
                 }
             },
             // chmod(path, mode, callback) {callback(enosys())},
             // chown(path, uid, gid, callback) {callback(enosys())},
-            close(_fd: number, callback: (error: Error | null) => void) {
+            close(fd: number, callback: (error: Error | null) => void) {
+                if (fd > 2) {
+                    return fs.close(fd, callback);
+                }
                 setTimeout(() => {
                     callback(null);
                 }, 0);
@@ -241,8 +252,13 @@ export class Client {
             ) {
                 return fs.lstat(path, callback);
             },
-            // mkdir(path, perm, callback) {callback(enosys())},
-            // open(path, flags, mode, callback) {callback(enosys()},
+            mkdir(
+                path: PathLike,
+                _perm: number,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.mkdir(path, callback);
+            },
             open(
                 path: PathLike,
                 flags: OpenMode | undefined,
@@ -308,8 +324,19 @@ export class Client {
                 return fs.readdir(path, callback);
             },
             // readlink(path, callback) {callback(enosys())},
-            // rename(from, to, callback) {callback(enosys())},
-            // rmdir(path, callback) {callback(enosys())},
+            rename(
+                from: PathLike,
+                to: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.rename(from, to, callback);
+            },
+            rmdir(
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.rmdir(path, callback);
+            },
             stat(
                 path: PathLike,
                 callback: (
@@ -319,9 +346,20 @@ export class Client {
             ) {
                 return fs.stat(path, callback);
             },
-            // symlink(path, link, callback) {callback(enosys())},
+            symlink(
+                target: PathLike,
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.symlink(target, path, callback);
+            },
             // truncate(path, length, callback) {callback(enosys())},
-            // unlink(path, callback) {callback(enosys())},
+            unlink(
+                path: PathLike,
+                callback: (err: NodeJS.ErrnoException | null) => void,
+            ) {
+                return fs.unlink(path, callback);
+            },
             // utimes(path, atime, mtime, callback) {callback(enosys())},
         };
 
@@ -421,6 +459,10 @@ export class Client {
 
     textDocumentDidClose(params: lsp.DidCloseTextDocumentParams) {
         return this.fireAndForget('textDocument/didClose', params);
+    }
+
+    workspaceDidChangeWatchedFiles(params: lsp.DidChangeWatchedFilesParams) {
+        return this.fireAndForget('workspace/didChangeWatchedFiles', params);
     }
 
     //

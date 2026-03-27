@@ -4,116 +4,137 @@ This plan describes how to implement the requirements in
 [requirements.md](requirements.md), broken into incremental phases. Each phase
 builds on the previous one and results in a working (if incomplete) playground.
 
-## Phase 1: Virtual Filesystem CRUD and LSP Notifications
+## Phase 1: Virtual Filesystem CRUD and LSP Notifications ✅
 
 **Goal**: Extend `BrowserFS` to support write operations and notify the LSP
 server of changes. This is the foundation that all other phases depend on.
 
 **Requirements**: R8.1–R8.7, R9.1, R9.2, R10.6
 
-### 1.1 Extend FSAPI and BrowserFS with write operations
+### 1.1 Extend FSAPI and BrowserFS with write operations ✅
 
-**Files to modify**:
-- `playground/src/fs/fs-node.ts` — Add an `FSSymlink` type:
-  ```ts
-  export interface FSSymlink {
-      type: 'symlink';
-      name: string;
-      target: string; // path as provided to symlink(), relative or absolute
-  }
-  export type FSNode = FSFile | FSDir | FSSymlink;
-  ```
-- `playground/src/fs/fs-api.ts` — Add `writeFile`, `mkdir`, `unlink`, `rmdir`,
-  `rename`, and `symlink` to the `FSAPI` interface.
-- `playground/src/fs/browser-fs.ts` — Implement the new methods, mutating both
-  the in-memory `rootDir` tree and the `volume` map. Also add a `clear()`
-  method that removes all entries except those under `node_modules/` (needed
-  later for project loading). Specific symlink considerations:
-  - `findNodeInRootDir` must follow symlinks when it encounters an `FSSymlink`
-    node. If `target` is relative, resolve it relative to the symlink's parent
-    directory; if absolute, use it as-is. For example, a symlink at
-    `/packages/app/node_modules/core` with target `../../core` resolves to
-    `/packages/core`. Include a depth limit (e.g. 40, matching Linux's `ELOOP`
-    limit) to prevent infinite loops from circular symlinks.
-  - `stat` follows symlinks (resolves to the target's stats).
-  - `lstat` does not follow symlinks (returns stats for the symlink itself).
-  - `readdir` returns symlink names as regular entries (matching real FS
-    behavior).
-- `playground/src/fs/browser-fs.test.ts` — Add tests for each new operation,
-  including symlink resolution, circular symlink detection, and `stat` vs
-  `lstat` behavior on symlinks.
+**Files modified**:
+- `playground/src/fs/fs-node.ts` — Added `FSSymlink` type with `type`,
+  `name`, and `target` fields. `FSNode` is now `FSFile | FSDir | FSSymlink`.
+- `playground/src/fs/fs-api.ts` — Added `write`, `writeFile`, `mkdir`,
+  `unlink`, `rmdir`, `rename`, and `symlink` to the `FSAPI` interface. The
+  `write` method operates on open file descriptors (matching the `node:fs`
+  signature) so that `FSAPI` serves as a common interface for both `BrowserFS`
+  and `node:fs` (used in tests).
+- `playground/src/fs/simple-stats.ts` — Added `_isSymbolicLink` field so
+  `isSymbolicLink()` returns the correct value for symlink nodes.
+- `playground/src/fs/browser-fs.ts` — Implemented all new methods plus
+  `clear()`. Key implementation details:
+  - `findNodeInRootDir` accepts a `followLastSymlink` parameter (default
+    `true`). `stat` passes `true`, `lstat` passes `false`.
+  - Symlink resolution is recursive via `_findNode` with a 40-hop depth limit
+    (matching Linux's `ELOOP` limit). Relative targets are resolved against
+    the symlink's parent directory using `resolvePath` (handles `.` and `..`).
+  - Added `findParent` helper used by all write methods to locate the parent
+    directory and base name for a given path (needed because `writeFile` must
+    both check for existing nodes and create new ones in the parent).
+  - Added `resolveSymlinkPath` helper to resolve a path through symlinks to
+    its canonical absolute path (used to update the volume when writing
+    through symlinks).
+  - All `switch` statements on `FSNode` now handle the `symlink` case.
+  - `writeFile` mutates existing `FSFile` nodes in place (preserving open
+    file descriptor references), emits `'create'` for new files and
+    `'change'` for overwrites. Writing through symlinks resolves to the
+    target; dangling symlinks return `ENOENT`.
+  - `write` (fd-based) respects `offset` and `position`, grows the content
+    buffer as needed, and tracks the write position for sequential writes.
+  - `rename` validates the destination before mutating: rejects type
+    mismatches (file→dir, dir→file) and non-empty directory targets. Rekeys
+    all volume entries under the old path prefix so lazy-loaded children move
+    with a renamed directory.
+  - `symlink` emits a `'create'` event.
+  - `clear()` removes all entries except those under `node_modules/`, cleaning
+    both the in-memory tree and the `volume` map.
+- `playground/src/fs/browser-fs.test.ts` — Added 44 new tests covering all
+  write operations, symlink resolution (absolute, relative, chained, with
+  `..`), dangling symlink behavior, writing through symlinks, `stat` vs
+  `lstat` on symlinks, `readdir` with symlinks, filesystem events, node
+  identity preservation on overwrite, and `clear()`.
 
-### 1.2 Add filesystem change events
+### 1.2 Add filesystem change events ✅
 
-**Files to create**:
-- `playground/src/fs/fs-events.ts` — Define a `FSEvent` type
-  (`create | delete | rename`) with path and kind (file/dir), and an
-  `FSEventEmitter` that `BrowserFS` emits on every mutation.
+**Files created**:
+- `playground/src/fs/fs-events.ts` — Defines `FSEvent` type
+  (`create | change | delete | rename`) with `path`, `kind` (file/dir), and
+  optional `oldPath` (for renames). `FSEventEmitter` class with `on`, `off`,
+  `emit`.
 
-**Files to modify**:
-- `playground/src/fs/browser-fs.ts` — Emit events from `writeFile`, `mkdir`,
-  `unlink`, `rmdir`, `rename`.
+**Files modified**:
+- `playground/src/fs/browser-fs.ts` — `BrowserFS` exposes a public `events`
+  field (instance of `FSEventEmitter`). Events are emitted from `writeFile`
+  (`create` for new files, `change` for overwrites), `mkdir` (create),
+  `unlink` (delete), `rmdir` (delete), `rename` (rename with `oldPath`), and
+  `symlink` (create).
 
-### 1.3 Expose write operations to the WASM/LSP side
+### 1.3 Expose write operations to the WASM/LSP side ✅
 
-Go code compiled to WASM uses standard `os` and `filepath` packages (e.g.
-`os.WriteFile()`, `os.MkdirAll()`). Go's WASM runtime routes these through
-`globalThis.fs`, which is set up in the `Client` constructor in `client.ts`.
-Currently, `globalThis.fs` only delegates read operations (`open`, `read`,
-`stat`, `lstat`, `fstat`, `readdir`) to `BrowserFS` — write-related methods
-like `mkdir`, `write` (to file descriptors > 2), `symlink`, and `unlink` are
-commented-out stubs that return `ENOSYS`. No Go-side bridge changes are needed.
+**Files modified**:
+- `playground/src/lsp-client/client.ts` — The `Client` constructor takes
+  `FSAPI` (unchanged from before — both `BrowserFS` and `node:fs` conform to
+  this interface, so the test can pass `node:fs` directly). In the
+  `globalThis.fs` object:
+  - `write` (fd > 2): delegates to `FSAPI.write()`, which handles offset,
+    position, and buffer growth properly for multi-chunk writes.
+  - `close` (fd > 2): delegates to `FSAPI.close()`.
+  - `mkdir`: delegates to `FSAPI.mkdir()` (Go passes a `perm` argument which
+    is ignored).
+  - `rename`, `rmdir`, `symlink`, `unlink`: delegate to corresponding
+    `FSAPI` methods.
 
-**Files to modify**:
-- `playground/src/lsp-client/client.ts` — In the `globalThis.fs` object
-  (lines 140–326), uncomment and implement the stubs for `mkdir`, `write`
-  (for fd > 2), `symlink`, `unlink`, `rename`, and `close` (for fd > 2),
-  delegating to the corresponding `BrowserFS` methods added in Phase 1.1.
+### 1.4 LSP notifications on filesystem changes ✅
 
-### 1.4 LSP notifications on filesystem changes
+**Files modified**:
+- `playground/src/lsp-client/client.ts` — Added
+  `workspaceDidChangeWatchedFiles()` method that sends
+  `workspace/didChangeWatchedFiles` notifications via `fireAndForget`.
+- `playground/src/main.tsx` — Subscribes to `BrowserFS.events` and forwards
+  them to the LSP client via an exhaustive switch on event type. LSP's
+  `didChangeWatchedFiles` has no "rename" type — only Created, Changed, and
+  Deleted — so rename events are translated into a `Deleted` event for the
+  old path plus a `Created` event for the new path. The `change` event type
+  maps to `FileChangeType.Changed`.
 
-**Files to modify**:
-- `playground/src/lsp-client/client.ts` — Add methods for
-  `workspace/didChangeWatchedFiles` and `textDocument/didOpen` /
-  `textDocument/didClose` notifications.
-- `playground/src/main.tsx` — Subscribe to `BrowserFS` events and forward them
-  to the LSP client as appropriate notifications.
+### 1.5 Replace `go.mod` with `escalier.toml` ✅
 
-### 1.5 Replace `go.mod` with `escalier.toml`
+**Files created**:
+- `escalier.toml` — Added at the repo root so `findRepoRoot()` works
+  consistently in both the playground and during Go development/testing.
 
-**Requirements**: R8.1–R8.7
+**Files modified (Go)**:
+- `internal/checker/prelude.go` — `findRepoRoot()` now looks for
+  `escalier.toml` instead of `go.mod`.
+- `cmd/escalier/fixture_test.go` — Updated to symlink `escalier.toml`
+  (instead of `go.mod`) into the temp directory so the production
+  `findRepoRoot()` resolves back to the repo root where
+  `node_modules/typescript/lib/` lives.
 
-The LSP server currently uses `go.mod` to find the project root. This must be
-replaced with `escalier.toml`.
+**Note**: The 3 copy-pasted `findRepoRoot` functions in test files
+(`cmd/escalier/fixture_test.go`, `internal/dts_parser/integration_test.go`,
+`internal/interop/module_test.go`) still look for `go.mod` — they're locating
+the Go/Git repo root to find test fixtures, not an Escalier project root.
 
-**Files to modify (Go)**:
-- `internal/checker/prelude.go` — Change `findRepoRoot()` to look for
-  `escalier.toml` instead of `go.mod`. This is the production implementation
-  used by the LSP server and checker.
+**Files modified (TypeScript)**:
+- `playground/src/fs/volume.ts` — Replaced the hardcoded `go.mod` with a
+  minimal `escalier.toml` (`[project]\nname = "my-project"`). The basic
+  `package.json` is kept so the playground boots with a valid project root.
 
-**Note**: There are 3 additional copy-pasted `findRepoRoot` functions in test
-files (`cmd/escalier/fixture_test.go`, `internal/dts_parser/integration_test.go`,
-`internal/interop/module_test.go`). These intentionally keep looking for
-`go.mod` — they're locating the Go/Git repo root to find test fixtures, not
-an Escalier project root. They do not need to change.
+### 1.6 Define `escalier.toml` format ✅
 
-**Files to modify (TypeScript)**:
-- `playground/src/fs/volume.ts` — Replace the hardcoded `go.mod` with a minimal
-  `escalier.toml` and keep a basic `package.json` so the playground boots with
-  a valid project root. These defaults are needed until the Phase 6 project
-  loader takes over — at that point, `createVolume` can be simplified to only
-  handle TypeScript `.d.ts` file setup (the `node_modules/` entries).
-
-### 1.6 Define `escalier.toml` format
-
-Establish the minimal `escalier.toml` schema:
+The minimal schema is:
 ```toml
 [project]
 name = "my-project"
 ```
 
-Ensure the Go-side TOML parser can read this. Templates and examples (Phase 6)
-will each include an `escalier.toml`.
+`findRepoRoot()` only checks for the file's existence via `os.Lstat` — it
+does not parse the TOML contents. No TOML parser changes were needed for
+Phase 1. Templates and examples (Phase 6) will each include an
+`escalier.toml`.
 
 ---
 

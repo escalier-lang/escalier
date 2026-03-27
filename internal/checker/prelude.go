@@ -25,7 +25,8 @@ var referenceDirectivePattern = regexp.MustCompile(`/// <reference lib="([^"]+)"
 // These reference other .d.ts files relative to the current file.
 var pathReferenceDirectivePattern = regexp.MustCompile(`/// <reference path="([^"]+)" />`)
 
-// findRepoRoot walks up the directory tree to find the repository root
+// findRepoRoot walks up the directory tree to find the Escalier project root
+// by looking for an escalier.toml file.
 func findRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -33,17 +34,14 @@ func findRepoRoot() (string, error) {
 	}
 
 	for {
-		// Check if go.mod exists in current directory
-		goModPath := filepath.Join(dir, "go.mod")
-		_, err := os.Lstat(goModPath)
-		if err == nil {
+		tomlPath := filepath.Join(dir, "escalier.toml")
+		if _, err := os.Lstat(tomlPath); err == nil {
 			return dir, nil
 		}
 
 		// Move up one directory
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached the root without finding go.mod
 			return "", os.ErrNotExist
 		}
 		dir = parent

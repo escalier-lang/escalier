@@ -5,6 +5,7 @@ export class SimpleStats implements Stats {
     size: number;
     private _isFile: boolean;
     private _isDirectory: boolean;
+    private _isSymbolicLink: boolean;
 
     // Additional Stats fields required by Node's Stats interface
     dev = 0;
@@ -25,10 +26,16 @@ export class SimpleStats implements Stats {
     ctime: Date = new Date(this.ctimeMs);
     birthtime: Date = new Date(this.birthtimeMs);
 
-    constructor(size: number, isFile: boolean, isDirectory: boolean) {
+    constructor(
+        size: number,
+        isFile: boolean,
+        isDirectory: boolean,
+        isSymbolicLink = false,
+    ) {
         this.size = size;
         this._isFile = isFile;
         this._isDirectory = isDirectory;
+        this._isSymbolicLink = isSymbolicLink;
     }
 
     isFile(): boolean {
@@ -47,7 +54,7 @@ export class SimpleStats implements Stats {
         return false;
     }
     isSymbolicLink(): boolean {
-        return false;
+        return this._isSymbolicLink;
     }
     isFIFO(): boolean {
         return false;
