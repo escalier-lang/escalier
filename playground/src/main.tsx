@@ -47,13 +47,15 @@ async function main() {
                 },
             ];
         } else {
+            const typeMap = {
+                create: FileChangeType.Created,
+                change: FileChangeType.Changed,
+                delete: FileChangeType.Deleted,
+            } as const;
             changes = [
                 {
                     uri: `file://${event.path}`,
-                    type:
-                        event.type === 'create'
-                            ? FileChangeType.Created
-                            : FileChangeType.Deleted,
+                    type: typeMap[event.type as keyof typeof typeMap],
                 },
             ];
         }

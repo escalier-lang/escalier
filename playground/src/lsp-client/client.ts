@@ -2,7 +2,7 @@ import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import type { BrowserFS } from '../fs/browser-fs';
+import type { FSAPI } from '../fs/fs-api';
 
 import { Deferred } from './deferred';
 
@@ -55,7 +55,7 @@ export class Client {
     private contentLength: number;
     private messageBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: BrowserFS) {
+    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: FSAPI) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -204,26 +204,18 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else {
-                    // Write to a file in the virtual filesystem.
-                    // Go's syscall/js calls write() with the fd from open().
-                    // We update the FSFile node content directly. The volume
-                    // map is not updated here since we don't track fd→path,
-                    // but this is safe: ensureContent only triggers for entries
-                    // with content===null && url (lazy-loaded .d.ts files).
-                    // Files created by Go won't have a url in the volume.
-                    const file = fs.openFiles.get(fd);
-                    if (file && file.type === 'file') {
-                        file.content = new Uint8Array(
-                            buffer.subarray(0, length),
-                        );
-                        setTimeout(() => {
-                            callback(null, length, buffer);
-                        }, 0);
-                    } else {
-                        setTimeout(() => {
-                            callback(enosys(), 0, buffer);
-                        }, 0);
-                    }
+                    fs.write(
+                        fd,
+                        buffer,
+                        0,
+                        length,
+                        null,
+                        (err, bytesWritten, buf) => {
+                            setTimeout(() => {
+                                callback(err, bytesWritten, buf);
+                            }, 0);
+                        },
+                    );
                 }
             },
             // chmod(path, mode, callback) {callback(enosys())},

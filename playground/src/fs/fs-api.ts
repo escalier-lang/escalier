@@ -32,6 +32,18 @@ export interface FSAPI {
             buffer: Uint8Array,
         ) => void,
     ): void;
+    write(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number | null,
+        callback: (
+            err: NodeJS.ErrnoException | null,
+            bytesWritten: number,
+            buffer: Uint8Array,
+        ) => void,
+    ): void;
     readdir(
         path: PathLike,
         callback: (err: NodeJS.ErrnoException | null, files: string[]) => void,

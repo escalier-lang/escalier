@@ -1,5 +1,5 @@
 export type FSEventKind = 'file' | 'dir';
-export type FSEventType = 'create' | 'delete' | 'rename';
+export type FSEventType = 'create' | 'change' | 'delete' | 'rename';
 
 export interface FSEvent {
     type: FSEventType;

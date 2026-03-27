@@ -500,11 +500,32 @@ describe('BrowserFS', () => {
             ]);
         });
 
-        test('does not emit event when overwriting existing file', async () => {
+        test('emits change event when overwriting existing file', async () => {
             const events: FSEvent[] = [];
             fs.events.on((e) => events.push(e));
             await writeFile(fs, '/hello.txt', encoder.encode('updated'));
-            expect(events).toEqual([]);
+            expect(events).toEqual([
+                { type: 'change', path: '/hello.txt', kind: 'file' },
+            ]);
+        });
+
+        test('preserves node identity when overwriting (open fds stay valid)', async () => {
+            const fd = await open(fs, '/hello.txt');
+            await writeFile(fs, '/hello.txt', encoder.encode('new data'));
+            // Reading from the already-open fd should see the new content
+            const buffer = new Uint8Array(20);
+            const { bytesRead, buffer: buf } = await read(
+                fs,
+                fd,
+                buffer,
+                0,
+                20,
+                0,
+            );
+            const content = new TextDecoder().decode(
+                buf.subarray(0, bytesRead),
+            );
+            expect(content).toBe('new data');
         });
     });
 

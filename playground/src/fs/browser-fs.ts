@@ -557,6 +557,55 @@ export class BrowserFS implements FSAPI {
         }
     }
 
+    write(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number | null,
+        callback: (
+            err: NodeJS.ErrnoException | null,
+            bytesWritten: number,
+            buffer: Uint8Array,
+        ) => void,
+    ) {
+        const file = this.openFiles.get(fd);
+        if (!file || file.type !== 'file') {
+            callback(
+                new ErrnoException('Bad file descriptor', {
+                    code: 'EBADF',
+                    errno: -9,
+                    syscall: 'write',
+                }),
+                0,
+                buffer,
+            );
+            return;
+        }
+
+        const writePos =
+            position != null
+                ? position
+                : (this.readPositions.get(fd) ?? file.content.length);
+        const data = buffer.subarray(offset, offset + length);
+        const endPos = writePos + data.length;
+
+        // Grow the content buffer if needed
+        if (endPos > file.content.length) {
+            const grown = new Uint8Array(endPos);
+            grown.set(file.content);
+            file.content = grown;
+        }
+
+        file.content.set(data, writePos);
+
+        if (position == null) {
+            this.readPositions.set(fd, endPos);
+        }
+
+        callback(null, length, buffer);
+    }
+
     readdir(
         path: PathLike,
         callback: (err: NodeJS.ErrnoException | null, files: string[]) => void,
@@ -626,14 +675,37 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        const isNew = !existing;
         const content = new Uint8Array(data);
-        parent.children.set(name, { type: 'file', name, content });
 
-        // Update the volume so ensureContent doesn't clobber the write
-        this.volume[pathStr] = { content };
-
-        if (isNew) {
+        if (existing && existing.type === 'file') {
+            // Mutate the existing node so open file descriptors stay valid
+            existing.content = content;
+            this.volume[pathStr] = { content };
+            this.events.emit({ type: 'change', path: pathStr, kind: 'file' });
+        } else if (existing && existing.type === 'symlink') {
+            // Write through the symlink to the target
+            const target = this.findNodeInRootDir(pathStr, true);
+            if (target && target.type === 'file') {
+                target.content = content;
+                this.events.emit({
+                    type: 'change',
+                    path: pathStr,
+                    kind: 'file',
+                });
+            } else {
+                // Target doesn't exist or isn't a file — create at this path
+                parent.children.set(name, { type: 'file', name, content });
+                this.volume[pathStr] = { content };
+                this.events.emit({
+                    type: 'create',
+                    path: pathStr,
+                    kind: 'file',
+                });
+            }
+        } else {
+            // New file
+            parent.children.set(name, { type: 'file', name, content });
+            this.volume[pathStr] = { content };
             this.events.emit({ type: 'create', path: pathStr, kind: 'file' });
         }
         callback(null);
@@ -834,13 +906,56 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
+        // Validate destination before any mutation
+        const destNode = newResult.parent.children.get(newResult.name);
+        if (destNode) {
+            if (node.type === 'dir' && destNode.type !== 'dir') {
+                callback(
+                    new ErrnoException('Not a directory', {
+                        code: 'ENOTDIR',
+                        errno: -20,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+            if (node.type !== 'dir' && destNode.type === 'dir') {
+                callback(
+                    new ErrnoException('Is a directory', {
+                        code: 'EISDIR',
+                        errno: -21,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+            if (destNode.type === 'dir' && destNode.children.size > 0) {
+                callback(
+                    new ErrnoException('Directory not empty', {
+                        code: 'ENOTEMPTY',
+                        errno: -39,
+                        syscall: 'rename',
+                        path: newPathStr,
+                    }),
+                );
+                return;
+            }
+        }
+
         const kind = node.type === 'dir' ? 'dir' : 'file';
 
         // Remove from old location
         oldResult.parent.children.delete(oldResult.name);
-        if (this.volume[oldPathStr]) {
-            this.volume[newPathStr] = this.volume[oldPathStr];
-            delete this.volume[oldPathStr];
+
+        // Rekey all volume entries under the old path
+        for (const key of Object.keys(this.volume)) {
+            if (key === oldPathStr || key.startsWith(`${oldPathStr}/`)) {
+                const suffix = key.slice(oldPathStr.length);
+                this.volume[`${newPathStr}${suffix}`] = this.volume[key];
+                delete this.volume[key];
+            }
         }
 
         // Insert at new location with updated name
