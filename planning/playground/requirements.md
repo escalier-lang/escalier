@@ -294,13 +294,14 @@ runs whenever the filesystem changes (file create/delete/rename).
 
 ### 8. Project Root Identification (`escalier.toml`)
 
-The project currently uses a `go.mod` file as a marker for the LSP server's
-`findRepoRoot` function. This is a workaround — real Escalier projects won't
-have a `go.mod`. This should be replaced with a dedicated project manifest.
+The project previously used a `go.mod` file as a marker for the LSP server's
+`findRepoRoot` function. This has been replaced with `escalier.toml`.
 
-- **R8.1** A new `escalier.toml` file at the project root identifies an
+- **R8.1** ✅ A new `escalier.toml` file at the project root identifies an
   Escalier project and serves as the project root marker. The LSP server's
-  `findRepoRoot` should look for `escalier.toml` instead of `go.mod`.
+  `findRepoRoot` looks for `escalier.toml` instead of `go.mod`. An
+  `escalier.toml` has also been added at the repo root for Go
+  development/testing.
 - **R8.2** In single-package mode, `escalier.toml` lives at the project root:
   ```
   /
@@ -321,25 +322,37 @@ have a `go.mod`. This should be replaced with a dedicated project manifest.
       └── app/
           └── package.json
   ```
-- **R8.4** `escalier.toml` contains project-level settings. At minimum:
+- **R8.4** ✅ `escalier.toml` contains project-level settings. At minimum:
   ```toml
   [project]
   name = "my-project"
   ```
   Future settings (e.g. compiler options, target version) can be added here.
+  Currently `findRepoRoot()` only checks for the file's existence — the TOML
+  contents are not yet parsed.
 - **R8.5** Templates and examples should include an `escalier.toml` in their
   file sets.
-- **R8.6** The LSP server (Go side) must be updated: replace `go.mod` lookup
-  in `findRepoRoot` with `escalier.toml` lookup.
-- **R8.7** The `createVolume` function must be updated: replace the `go.mod`
-  entry with an `escalier.toml` entry.
+- **R8.6** ✅ The LSP server (Go side) has been updated: `findRepoRoot` in
+  `internal/checker/prelude.go` now looks for `escalier.toml`.
+  `cmd/escalier/fixture_test.go` symlinks `escalier.toml` into temp
+  directories for test isolation.
+- **R8.7** ✅ The `createVolume` function has been updated: the `go.mod`
+  entry has been replaced with an `escalier.toml` entry.
 
 ### 9. Virtual Filesystem Updates
 
-- **R9.1** The `BrowserFS` / volume system must support creating, deleting, and
-  renaming files and directories.
-- **R9.2** The LSP server must be notified of filesystem changes so diagnostics
-  and completions stay current.
+- **R9.1** ✅ The `BrowserFS` / volume system supports creating, deleting, and
+  renaming files and directories. Write operations include `writeFile`, `write`
+  (fd-based), `mkdir`, `unlink`, `rmdir`, `rename`, `symlink`, and `clear()`.
+  Symlinks are followed transparently by `stat` and `open`, with a 40-hop
+  depth limit. `writeFile` preserves node identity on overwrite (open fds
+  remain valid) and writes through symlinks to the resolved target. `rename`
+  validates destination types and rekeys all volume entries under the old path.
+- **R9.2** ✅ The LSP server is notified of filesystem changes. `BrowserFS`
+  emits `FSEvent`s (`create`, `change`, `delete`, `rename`) on all mutations.
+  `main.tsx` subscribes and forwards them as LSP
+  `workspace/didChangeWatchedFiles` notifications (rename is translated to
+  Deleted + Created since LSP has no rename type).
 
 ### 10. Compilation
 
@@ -368,7 +381,11 @@ have a `go.mod`. This should be replaced with a dedicated project manifest.
   success/failure status (with diagnostics) rather than returning file contents.
   - **R10.5.1** `lib/` sources produce `.js`, `.js.map`, and `.d.ts` files.
   - **R10.5.2** `bin/` sources produce `.js` and `.js.map` files only.
-- **R10.6** The `FSAPI` interface exposed to the LSP server (Go/WASM side) must
-  include write operations (`writeFile`, `mkdir`) so the compiler can write
-  output files. Filesystem change events from these writes automatically update
-  the file explorer and output tabs on the TypeScript side.
+- **R10.6** ✅ The `FSAPI` interface exposed to the LSP server (Go/WASM side)
+  includes write operations (`write`, `writeFile`, `mkdir`, `unlink`, `rmdir`,
+  `rename`, `symlink`) so the compiler can write output files. The `Client`
+  constructor accepts `FSAPI` as a common interface that both `BrowserFS` and
+  `node:fs` conform to. `globalThis.fs` in the WASM bridge delegates write
+  calls to `FSAPI` methods. Filesystem change events from these writes
+  automatically update the file explorer and output tabs on the TypeScript
+  side.

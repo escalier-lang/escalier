@@ -151,9 +151,11 @@ export class BrowserFS implements FSAPI {
     }
 
     /**
-     * Find the parent directory for a given path and return both the
-     * parent FSDir and the base name of the final path component.
-     * Does NOT follow symlinks on the final component itself.
+     * Split a path into its parent directory and base name. Symlinks
+     * in the parent portion are followed (so the returned `parent` is
+     * always a real FSDir), but the final component is returned as a
+     * plain string — the caller decides whether to look it up and
+     * whether to follow it.
      */
     private findParent(
         pathStr: string,
@@ -675,6 +677,10 @@ export class BrowserFS implements FSAPI {
         callback(null, files);
     }
 
+    // Uses findParent (rather than findNodeInRootDir) because we need the
+    // parent directory in both cases: if the file already exists we mutate
+    // its content in place to preserve open file descriptors; if it doesn't
+    // exist yet we create a new node via parent.children.set().
     writeFile(
         path: PathLike,
         data: Uint8Array,
@@ -987,7 +993,13 @@ export class BrowserFS implements FSAPI {
         // Remove from old location
         oldResult.parent.children.delete(oldResult.name);
 
-        // Rekey all volume entries under the old path
+        // The volume map is keyed by absolute path and is used by
+        // ensureContent() to lazy-load file data. When renaming a directory,
+        // the in-memory tree moves automatically (it's the same object), but
+        // the volume keys still reference the old paths. Without rekeying,
+        // ensureContent() wouldn't find the entries for files under the new
+        // path, and operations like unlink/clear that delete by volume key
+        // would leave stale entries behind.
         for (const key of Object.keys(this.volume)) {
             if (key === oldPathStr || key.startsWith(`${oldPathStr}/`)) {
                 const suffix = key.slice(oldPathStr.length);

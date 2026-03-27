@@ -16,11 +16,14 @@ server of changes. This is the foundation that all other phases depend on.
 **Files modified**:
 - `playground/src/fs/fs-node.ts` — Added `FSSymlink` type with `type`,
   `name`, and `target` fields. `FSNode` is now `FSFile | FSDir | FSSymlink`.
-- `playground/src/fs/fs-api.ts` — Added `writeFile`, `mkdir`, `unlink`,
-  `rmdir`, `rename`, and `symlink` to the `FSAPI` interface.
+- `playground/src/fs/fs-api.ts` — Added `write`, `writeFile`, `mkdir`,
+  `unlink`, `rmdir`, `rename`, and `symlink` to the `FSAPI` interface. The
+  `write` method operates on open file descriptors (matching the `node:fs`
+  signature) so that `FSAPI` serves as a common interface for both `BrowserFS`
+  and `node:fs` (used in tests).
 - `playground/src/fs/simple-stats.ts` — Added `_isSymbolicLink` field so
   `isSymbolicLink()` returns the correct value for symlink nodes.
-- `playground/src/fs/browser-fs.ts` — Implemented all new write methods plus
+- `playground/src/fs/browser-fs.ts` — Implemented all new methods plus
   `clear()`. Key implementation details:
   - `findNodeInRootDir` accepts a `followLastSymlink` parameter (default
     `true`). `stat` passes `true`, `lstat` passes `false`.
@@ -28,42 +31,60 @@ server of changes. This is the foundation that all other phases depend on.
     (matching Linux's `ELOOP` limit). Relative targets are resolved against
     the symlink's parent directory using `resolvePath` (handles `.` and `..`).
   - Added `findParent` helper used by all write methods to locate the parent
-    directory and base name for a given path.
+    directory and base name for a given path (needed because `writeFile` must
+    both check for existing nodes and create new ones in the parent).
+  - Added `resolveSymlinkPath` helper to resolve a path through symlinks to
+    its canonical absolute path (used to update the volume when writing
+    through symlinks).
   - All `switch` statements on `FSNode` now handle the `symlink` case.
-  - `writeFile` emits a `create` event only for new files (not overwrites).
+  - `writeFile` mutates existing `FSFile` nodes in place (preserving open
+    file descriptor references), emits `'create'` for new files and
+    `'change'` for overwrites. Writing through symlinks resolves to the
+    target; dangling symlinks return `ENOENT`.
+  - `write` (fd-based) respects `offset` and `position`, grows the content
+    buffer as needed, and tracks the write position for sequential writes.
+  - `rename` validates the destination before mutating: rejects type
+    mismatches (file→dir, dir→file) and non-empty directory targets. Rekeys
+    all volume entries under the old path prefix so lazy-loaded children move
+    with a renamed directory.
+  - `symlink` emits a `'create'` event.
   - `clear()` removes all entries except those under `node_modules/`, cleaning
     both the in-memory tree and the `volume` map.
-- `playground/src/fs/browser-fs.test.ts` — Added 39 new tests covering all
+- `playground/src/fs/browser-fs.test.ts` — Added 44 new tests covering all
   write operations, symlink resolution (absolute, relative, chained, with
-  `..`), dangling symlink behavior, `stat` vs `lstat` on symlinks, `readdir`
-  with symlinks, filesystem events, and `clear()`.
+  `..`), dangling symlink behavior, writing through symlinks, `stat` vs
+  `lstat` on symlinks, `readdir` with symlinks, filesystem events, node
+  identity preservation on overwrite, and `clear()`.
 
 ### 1.2 Add filesystem change events ✅
 
 **Files created**:
 - `playground/src/fs/fs-events.ts` — Defines `FSEvent` type
-  (`create | delete | rename`) with `path`, `kind` (file/dir), and optional
-  `oldPath` (for renames). `FSEventEmitter` class with `on`, `off`, `emit`.
+  (`create | change | delete | rename`) with `path`, `kind` (file/dir), and
+  optional `oldPath` (for renames). `FSEventEmitter` class with `on`, `off`,
+  `emit`.
 
 **Files modified**:
 - `playground/src/fs/browser-fs.ts` — `BrowserFS` exposes a public `events`
   field (instance of `FSEventEmitter`). Events are emitted from `writeFile`
-  (create, new files only), `mkdir` (create), `unlink` (delete), `rmdir`
-  (delete), and `rename` (rename with `oldPath`).
+  (`create` for new files, `change` for overwrites), `mkdir` (create),
+  `unlink` (delete), `rmdir` (delete), `rename` (rename with `oldPath`), and
+  `symlink` (create).
 
 ### 1.3 Expose write operations to the WASM/LSP side ✅
 
 **Files modified**:
-- `playground/src/lsp-client/client.ts` — The `Client` constructor now takes
-  `BrowserFS` instead of `FSAPI` so it can access `openFiles` for fd-based
-  writes. In the `globalThis.fs` object:
-  - `write` (fd > 2): updates the open file's content directly on the
-    `FSFile` node.
-  - `close` (fd > 2): delegates to `BrowserFS.close()`.
-  - `mkdir`: delegates to `BrowserFS.mkdir()` (Go passes a `perm` argument
-    which is ignored).
+- `playground/src/lsp-client/client.ts` — The `Client` constructor takes
+  `FSAPI` (unchanged from before — both `BrowserFS` and `node:fs` conform to
+  this interface, so the test can pass `node:fs` directly). In the
+  `globalThis.fs` object:
+  - `write` (fd > 2): delegates to `FSAPI.write()`, which handles offset,
+    position, and buffer growth properly for multi-chunk writes.
+  - `close` (fd > 2): delegates to `FSAPI.close()`.
+  - `mkdir`: delegates to `FSAPI.mkdir()` (Go passes a `perm` argument which
+    is ignored).
   - `rename`, `rmdir`, `symlink`, `unlink`: delegate to corresponding
-    `BrowserFS` methods.
+    `FSAPI` methods.
 
 ### 1.4 LSP notifications on filesystem changes ✅
 
@@ -72,8 +93,11 @@ server of changes. This is the foundation that all other phases depend on.
   `workspaceDidChangeWatchedFiles()` method that sends
   `workspace/didChangeWatchedFiles` notifications via `fireAndForget`.
 - `playground/src/main.tsx` — Subscribes to `BrowserFS.events` and forwards
-  them to the LSP client. Rename events are translated into a `Deleted` event
-  for the old path and a `Created` event for the new path.
+  them to the LSP client via an exhaustive switch on event type. LSP's
+  `didChangeWatchedFiles` has no "rename" type — only Created, Changed, and
+  Deleted — so rename events are translated into a `Deleted` event for the
+  old path plus a `Created` event for the new path. The `change` event type
+  maps to `FileChangeType.Changed`.
 
 ### 1.5 Replace `go.mod` with `escalier.toml` ✅
 

@@ -32,32 +32,49 @@ async function main() {
     });
     console.log('initialize response', initResponse);
 
-    // Forward filesystem change events to the LSP server
+    // Forward filesystem change events to the LSP server.
     fs.events.on((event) => {
         let changes: FileEvent[];
-        if (event.type === 'rename' && event.oldPath) {
-            changes = [
-                {
-                    uri: `file://${event.oldPath}`,
-                    type: FileChangeType.Deleted,
-                },
-                {
-                    uri: `file://${event.path}`,
-                    type: FileChangeType.Created,
-                },
-            ];
-        } else {
-            const typeMap = {
-                create: FileChangeType.Created,
-                change: FileChangeType.Changed,
-                delete: FileChangeType.Deleted,
-            } as const;
-            changes = [
-                {
-                    uri: `file://${event.path}`,
-                    type: typeMap[event.type as keyof typeof typeMap],
-                },
-            ];
+        switch (event.type) {
+            case 'rename':
+                // LSP's didChangeWatchedFiles has no "rename" type — only Created,
+                // Changed, and Deleted — so we translate a rename into a Deleted
+                // event for the old path plus a Created event for the new path.
+                changes = [
+                    {
+                        uri: `file://${event.oldPath}`,
+                        type: FileChangeType.Deleted,
+                    },
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Created,
+                    },
+                ];
+                break;
+            case 'create':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Created,
+                    },
+                ];
+                break;
+            case 'change':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Changed,
+                    },
+                ];
+                break;
+            case 'delete':
+                changes = [
+                    {
+                        uri: `file://${event.path}`,
+                        type: FileChangeType.Deleted,
+                    },
+                ];
+                break;
         }
         client.workspaceDidChangeWatchedFiles({ changes });
     });
