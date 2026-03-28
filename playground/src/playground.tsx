@@ -21,7 +21,8 @@ import styles from './playground.module.css';
  */
 function getOutputTabs(path: string): OutputTab[] {
     if (!path.endsWith('.esc')) return [];
-    if (path.startsWith('/lib/') || path === '/lib') return ['js', 'map', 'dts'];
+    if (path.startsWith('/lib/') || path === '/lib')
+        return ['js', 'map', 'dts'];
     if (path.startsWith('/bin/') || path === '/bin') return ['js', 'map'];
     // Check for packages/*/lib/ or packages/*/bin/ patterns
     const match = path.match(/^\/packages\/[^/]+\/(lib|bin)\//);
@@ -59,10 +60,7 @@ function sourceToOutputPath(sourcePath: string, tab: OutputTab): string {
     }
 
     // Handle root lib/ and bin/
-    if (
-        withoutEsc.startsWith('/lib/') ||
-        withoutEsc.startsWith('/bin/')
-    ) {
+    if (withoutEsc.startsWith('/lib/') || withoutEsc.startsWith('/bin/')) {
         return `/build${withoutEsc}`;
     }
 
@@ -109,8 +107,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
 
     const { openTabs, activeTabIndex, activeOutputTab, validationResult } =
         state;
-    const activeTab =
-        activeTabIndex !== null ? openTabs[activeTabIndex] : null;
+    const activeTab = activeTabIndex !== null ? openTabs[activeTabIndex] : null;
     const activePath = activeTab?.path ?? null;
 
     // Determine available output tabs for the active file
@@ -120,7 +117,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
     // Ensure the active output tab is valid for the current file
     const effectiveOutputTab = availableOutputTabs.includes(activeOutputTab)
         ? activeOutputTab
-        : availableOutputTabs[0] ?? 'js';
+        : (availableOutputTabs[0] ?? 'js');
 
     // Get or create a Monaco model for a file path
     const getOrCreateModel = useCallback(
@@ -129,8 +126,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             let model = monaco.editor.getModel(uri);
             if (!model) {
                 const lang = languageForPath(path);
-                const text =
-                    content ?? loadFileContent(fs, path) ?? '';
+                const text = content ?? loadFileContent(fs, path) ?? '';
                 model = monaco.editor.createModel(text, lang, uri);
             }
             return model;
@@ -194,7 +190,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         const model = getOrCreateModel(activePath);
         const isBuildFile =
             activePath.startsWith('/build/') ||
-            activePath.match(/^\/packages\/[^/]+\/build\//);
+            /^\/packages\/[^/]+\/build\//.test(activePath);
         editor.updateOptions({ readOnly: !!isBuildFile });
         editor.setModel(model);
 
@@ -229,10 +225,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
     useEffect(() => {
         if (!activePath || !showOutput) return;
 
-        const listener = (event: { type: string; path: string }) => {
+        const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (
                 event.path.startsWith('/build/') ||
-                event.path.match(/^\/packages\/[^/]+\/build\//)
+                /^\/packages\/[^/]+\/build\//.test(event.path)
             ) {
                 const outputPath = sourceToOutputPath(
                     activePath,
@@ -253,18 +249,8 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         return () => fs.events.off(listener);
     }, [activePath, effectiveOutputTab, showOutput, fs]);
 
-    const handleCloseTab = (
-        e: React.MouseEvent,
-        index: number,
-    ) => {
+    const handleCloseTab = (e: React.MouseEvent, index: number) => {
         e.stopPropagation();
-        // Save scroll position before closing
-        if (
-            inputEditorRef.current &&
-            activeTabIndex === index
-        ) {
-            // No need to save, tab is being closed
-        }
         dispatch({ type: 'closeTab', index });
     };
 
@@ -304,7 +290,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         tabIndex={0}
                         aria-selected={i === activeTabIndex}
                         aria-controls="input-panel"
-                        className={tabClass(i === activeTabIndex, focusedSide === 'input')}
+                        className={tabClass(
+                            i === activeTabIndex,
+                            focusedSide === 'input',
+                        )}
                         onClick={() => handleTabClick(i)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ')
@@ -340,7 +329,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         tabIndex={0}
                         aria-selected={tab === effectiveOutputTab}
                         aria-controls="output-panel"
-                        className={tabClass(tab === effectiveOutputTab, focusedSide === 'output')}
+                        className={tabClass(
+                            tab === effectiveOutputTab,
+                            focusedSide === 'output',
+                        )}
                         onClick={() => handleOutputTabClick(tab)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ')
@@ -355,8 +347,8 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             {/* Validation error banner */}
             {validationResult.mode === 'invalid' && (
                 <div className={styles.errorBanner}>
-                    {validationResult.errors.map((err) => (
-                        <div key={err}>{err}</div>
+                    {validationResult.errors.map((err, i) => (
+                        <div key={`${i}-${err}`}>{err}</div>
                     ))}
                 </div>
             )}
@@ -368,8 +360,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                 className={styles.editor}
                 ref={inputDivRef}
                 style={{
-                    display:
-                        openTabs.length === 0 ? 'none' : undefined,
+                    display: openTabs.length === 0 ? 'none' : undefined,
                 }}
             />
 
@@ -404,7 +395,9 @@ export const Playground = ({ fs }: PlaygroundProps) => {
 function loadFileContent(fs: BrowserFS, path: string): string | null {
     let result: string | null = null;
 
+    let called = false;
     fs.open(path, 'r', undefined, (openErr, fd) => {
+        called = true;
         if (openErr || fd === undefined) return;
 
         fs.fstat(fd, (statErr, stats) => {
@@ -421,6 +414,12 @@ function loadFileContent(fs: BrowserFS, path: string): string | null {
             });
         });
     });
+
+    if (!called) {
+        throw new Error(
+            'BrowserFS callback was not synchronous — loadFileContent requires synchronous callbacks',
+        );
+    }
 
     return result;
 }

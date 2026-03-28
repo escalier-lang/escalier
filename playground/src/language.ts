@@ -83,8 +83,10 @@ function mkdirp(fs: BrowserFS, dirPath: string): void {
     let current = '';
     for (const part of parts) {
         current += `/${part}`;
-        fs.mkdir(current, () => {
-            // ignore EEXIST errors
+        fs.mkdir(current, (err) => {
+            if (err && (err as NodeJS.ErrnoException).code !== 'EEXIST') {
+                console.error(`mkdirp: failed to create ${current}`, err);
+            }
         });
     }
 }

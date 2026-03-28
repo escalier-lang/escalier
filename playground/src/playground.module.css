@@ -6,9 +6,9 @@
     grid-template-columns: 220px 1fr 1fr;
     grid-template-rows: 0px 40px 1fr;
     grid-template-areas:
-        'toolbar    toolbar     toolbar'
-        'explorer   input-tabs  output-tabs'
-        'explorer   input       output';
+        "toolbar    toolbar     toolbar"
+        "explorer   input-tabs  output-tabs"
+        "explorer   input       output";
 }
 
 .toolbar {

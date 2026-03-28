@@ -29,6 +29,13 @@
 }
 
 .entry {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     padding: 2px 8px;
     cursor: pointer;
     white-space: nowrap;

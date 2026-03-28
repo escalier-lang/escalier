@@ -21,7 +21,10 @@ export const Toast = () => {
     if (!notification) return null;
 
     return (
-        <div className={`${styles.toast} ${styles[notification.type]}`} role="alert">
+        <div
+            className={`${styles.toast} ${styles[notification.type]}`}
+            role="alert"
+        >
             <span>{notification.message}</span>
             <button
                 type="button"

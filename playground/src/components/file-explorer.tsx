@@ -94,26 +94,22 @@ const TreeNode = ({ name, node, path, onFileClick }: TreeNodeProps) => {
     const isDimmed =
         path.startsWith('/build') ||
         path.startsWith('/node_modules') ||
-        path.match(/^\/packages\/[^/]+\/build/);
+        /^\/packages\/[^/]+\/build/.test(path);
 
     if (node.type === 'dir') {
         return (
             <li>
-                <div
+                <button
+                    type="button"
                     className={`${styles.entry} ${styles.dirEntry} ${isDimmed ? styles.dimmed : ''}`}
                     onClick={() => setExpanded((e) => !e)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ')
-                            setExpanded((ex) => !ex);
-                    }}
-                    role="treeitem"
                     aria-expanded={expanded}
                 >
                     <span className={styles.chevron}>
                         {expanded ? '\u25BE' : '\u25B8'}
                     </span>
                     {name}
-                </div>
+                </button>
                 {expanded && (
                     <DirChildren
                         dir={node}
@@ -128,17 +124,13 @@ const TreeNode = ({ name, node, path, onFileClick }: TreeNodeProps) => {
     if (node.type === 'file') {
         return (
             <li>
-                <div
+                <button
+                    type="button"
                     className={`${styles.entry} ${styles.fileEntry} ${isDimmed ? styles.dimmed : ''}`}
                     onClick={() => onFileClick(path)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ')
-                            onFileClick(path);
-                    }}
-                    role="treeitem"
                 >
                     {name}
-                </div>
+                </button>
             </li>
         );
     }

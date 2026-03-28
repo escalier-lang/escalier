@@ -1,4 +1,4 @@
-import { createContext, useContext, type Dispatch } from 'react';
+import { type Dispatch, createContext, useContext } from 'react';
 
 // ValidationResult type - will be fully implemented in Phase 2
 export type ValidationResult =
@@ -71,9 +71,7 @@ export function playgroundReducer(
         }
 
         case 'closeTab': {
-            const newTabs = state.openTabs.filter(
-                (_, i) => i !== action.index,
-            );
+            const newTabs = state.openTabs.filter((_, i) => i !== action.index);
             let newActiveIndex = state.activeTabIndex;
 
             if (newTabs.length === 0) {
@@ -157,10 +155,11 @@ export function playgroundReducer(
     }
 }
 
-export const PlaygroundStateContext = createContext<PlaygroundState>(initialState);
-export const PlaygroundDispatchContext = createContext<Dispatch<PlaygroundAction>>(
-    () => {},
-);
+export const PlaygroundStateContext =
+    createContext<PlaygroundState>(initialState);
+export const PlaygroundDispatchContext = createContext<
+    Dispatch<PlaygroundAction>
+>(() => {});
 
 export function usePlaygroundState(): PlaygroundState {
     return useContext(PlaygroundStateContext);
