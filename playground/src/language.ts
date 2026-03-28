@@ -6,6 +6,7 @@ import {
     provideCompletionItems,
     resolveCompletionItem,
 } from './completions';
+import type { BrowserFS } from './fs/browser-fs';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 
@@ -59,7 +60,36 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
     );
 }
 
-export function setupLanguage(client: Client) {
+/** URI prefix used by the LSP for project files. */
+const URI_PREFIX = 'file:///home/user/project';
+
+/**
+ * Convert a compile-result URI (source-sibling) to a /build/ VFS path.
+ * e.g. "file:///home/user/project/bin/main.js" → "/build/bin/main.js"
+ */
+function compileUriToBuildPath(uri: string): string {
+    const path = uri.startsWith(URI_PREFIX)
+        ? uri.slice(URI_PREFIX.length)
+        : uri;
+    return `/build${path}`;
+}
+
+/**
+ * Recursively create directories along a path in BrowserFS.
+ * BrowserFS callbacks fire synchronously so this is safe to call in a loop.
+ */
+function mkdirp(fs: BrowserFS, dirPath: string): void {
+    const parts = dirPath.split('/').filter((p) => p.length > 0);
+    let current = '';
+    for (const part of parts) {
+        current += `/${part}`;
+        fs.mkdir(current, () => {
+            // ignore EEXIST errors
+        });
+    }
+}
+
+export function setupLanguage(client: Client, fs: BrowserFS) {
     monaco.languages.register({ id: languageID });
 
     type ModelState = {
@@ -127,11 +157,35 @@ export function setupLanguage(client: Client) {
                             return;
                         }
                         for (const item of result) {
-                            const model = models.find(
-                                (model) => model.uri.toString() === item.uri,
+                            // Write compile output to /build/ in the VFS.
+                            const buildPath = compileUriToBuildPath(item.uri);
+                            const parentDir = buildPath.substring(
+                                0,
+                                buildPath.lastIndexOf('/'),
                             );
+                            mkdirp(fs, parentDir);
+                            const content = new TextEncoder().encode(item.text);
+                            fs.writeFile(buildPath, content, () => {});
+
+                            // Create or update the Monaco model at the build URI
+                            // so the output tabs can display it.
+                            const buildUri = monaco.Uri.parse(
+                                `${URI_PREFIX}${buildPath}`,
+                            );
+                            const model = monaco.editor.getModel(buildUri);
                             if (model) {
                                 model.setValue(item.text);
+                            } else {
+                                const lang = item.uri.endsWith('.map')
+                                    ? 'json'
+                                    : item.uri.endsWith('.d.ts')
+                                      ? 'typescript'
+                                      : 'javascript';
+                                monaco.editor.createModel(
+                                    item.text,
+                                    lang,
+                                    buildUri,
+                                );
                             }
                         }
                     });

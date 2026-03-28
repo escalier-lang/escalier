@@ -1,3 +1,4 @@
+import { useReducer } from 'react';
 import ReactDOM from 'react-dom/client';
 import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
@@ -8,8 +9,26 @@ import { createVolume } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
+import {
+    PlaygroundDispatchContext,
+    PlaygroundStateContext,
+    initialState,
+    playgroundReducer,
+} from './state';
 
 import './user-worker'; // sets up the monaco editor worker
+
+const PlaygroundApp = ({ fs }: { fs: BrowserFS }) => {
+    const [state, dispatch] = useReducer(playgroundReducer, initialState);
+
+    return (
+        <PlaygroundStateContext.Provider value={state}>
+            <PlaygroundDispatchContext.Provider value={dispatch}>
+                <Playground fs={fs} />
+            </PlaygroundDispatchContext.Provider>
+        </PlaygroundStateContext.Provider>
+    );
+};
 
 async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
@@ -79,7 +98,7 @@ async function main() {
         client.workspaceDidChangeWatchedFiles({ changes });
     });
 
-    setupLanguage(client);
+    setupLanguage(client, fs);
 
     const root = document.getElementById('root');
 
@@ -87,7 +106,7 @@ async function main() {
         throw new Error('Root element not found');
     }
 
-    ReactDOM.createRoot(root).render(<Playground />);
+    ReactDOM.createRoot(root).render(<PlaygroundApp fs={fs} />);
 }
 
 main().then(() => {

@@ -42,6 +42,16 @@ export function volumeToDir(volume: Volume): FSDir {
     return root;
 }
 
+const initialCode = `// Escalier sample code
+fn add(a, b) {
+    return a + b
+}
+val x = 5
+val y = 10
+val sum = add(x, y)
+console.log("sum =", sum)
+`;
+
 export function createVolume(manifest: string[], baseUrl: string): Volume {
     const vol: Volume = {
         '/package.json': {
@@ -49,7 +59,7 @@ export function createVolume(manifest: string[], baseUrl: string): Volume {
                 JSON.stringify({
                     name: 'my-project',
                     version: '1.0.0',
-                    main: 'index.js',
+                    main: 'build/bin/main.js',
                 }),
             ),
         },
@@ -59,6 +69,9 @@ export function createVolume(manifest: string[], baseUrl: string): Volume {
 name = "my-project"
 `,
             ),
+        },
+        '/bin/main.esc': {
+            content: new TextEncoder().encode(initialCode),
         },
     };
 

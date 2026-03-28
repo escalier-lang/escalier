@@ -1,0 +1,65 @@
+.explorer {
+    grid-area: explorer;
+    background-color: #181818;
+    border-right: 1px solid #2b2b2b;
+    overflow-y: auto;
+    overflow-x: hidden;
+    font-family: sans-serif;
+    font-size: 13px;
+    color: #cccccc;
+    user-select: none;
+}
+
+.header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #969696;
+}
+
+.tree {
+    padding: 0 0 8px 0;
+}
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 12px;
+}
+
+.entry {
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    outline: none;
+    border-radius: 3px;
+}
+
+.entry:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.entry:focus-visible {
+    outline: 1px solid #007acc;
+}
+
+.dirEntry {
+    font-weight: 500;
+}
+
+.fileEntry {
+    padding-left: 22px;
+}
+
+.chevron {
+    display: inline-block;
+    width: 14px;
+    font-size: 10px;
+}
+
+.dimmed {
+    opacity: 0.5;
+}

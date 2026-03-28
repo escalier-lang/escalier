@@ -1,12 +1,32 @@
 .playground {
     width: 100vw;
     height: 100vh;
+    background-color: #181818;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 40px 1fr;
+    grid-template-columns: 220px 1fr 1fr;
+    grid-template-rows: 0px 40px 1fr;
+    grid-template-areas:
+        'toolbar    toolbar     toolbar'
+        'explorer   input-tabs  output-tabs'
+        'explorer   input       output';
 }
 
-.header {
+.toolbar {
+    grid-area: toolbar;
+    overflow: hidden;
+}
+
+.inputTabs {
+    grid-area: input-tabs;
+    background-color: #181818;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.outputTabs {
+    grid-area: output-tabs;
     background-color: #181818;
     display: flex;
     align-items: stretch;
@@ -20,10 +40,13 @@
     padding: 0 12px;
     display: flex;
     align-items: center;
+    gap: 6px;
     border-right: 1px solid #2b2b2b;
     border-left: 1px solid #2b2b2b;
     cursor: pointer;
     outline: none;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .tab:focus-visible {
@@ -42,8 +65,53 @@
     border-top: 2px solid #007acc;
 }
 
+.tabLabel {
+    pointer-events: none;
+}
+
+.closeButton {
+    background: none;
+    border: none;
+    color: #969696;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+    border-radius: 3px;
+    opacity: 0;
+}
+
+.tab:hover .closeButton {
+    opacity: 1;
+}
+
+.closeButton:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #cccccc;
+}
+
 .editor {
     min-width: 0;
+}
+
+.emptyState {
+    grid-area: input;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-family: sans-serif;
+    font-size: 14px;
+}
+
+.errorBanner {
+    grid-column: 1 / -1;
+    background-color: #5a1d1d;
+    color: #f48771;
+    padding: 8px 16px;
+    font-family: sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 body {
