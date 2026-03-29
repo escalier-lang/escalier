@@ -23,6 +23,8 @@ export const ConfirmDialog = ({
 }: ConfirmDialogProps) => {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
+    const onCancelRef = useRef(onCancel);
+    onCancelRef.current = onCancel;
 
     useEffect(() => {
         const dialog = dialogRef.current;
@@ -33,7 +35,7 @@ export const ConfirmDialog = ({
 
         const handleCancel = (e: Event) => {
             e.preventDefault();
-            onCancel();
+            onCancelRef.current();
         };
         dialog.addEventListener('cancel', handleCancel);
 
@@ -41,13 +43,14 @@ export const ConfirmDialog = ({
             dialog.removeEventListener('cancel', handleCancel);
             dialog.close();
         };
-    }, [onCancel]);
+    }, []);
 
     return (
         <dialog
             ref={dialogRef}
             className={styles.dialog}
             aria-labelledby="confirm-dialog-title"
+            aria-describedby="confirm-dialog-message"
             aria-modal="true"
             onClick={(e) => {
                 // Close when clicking the backdrop (the dialog element itself)
@@ -62,7 +65,7 @@ export const ConfirmDialog = ({
             <h2 id="confirm-dialog-title" className={styles.title}>
                 {title}
             </h2>
-            <p className={styles.message}>{message}</p>
+            <p id="confirm-dialog-message" className={styles.message}>{message}</p>
             <div className={styles.buttons}>
                 <button
                     type="button"

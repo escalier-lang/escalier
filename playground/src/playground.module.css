@@ -84,6 +84,7 @@
 }
 
 .tab:hover .closeButton,
+.tab:focus-within .closeButton,
 .closeButton:focus-visible {
     opacity: 1;
     pointer-events: auto;
