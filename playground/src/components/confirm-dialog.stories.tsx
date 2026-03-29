@@ -38,7 +38,9 @@ export const Default: Story = {
         ).toBeVisible();
 
         // Cancel button is focused by default
-        await expect(canvas.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+        await expect(
+            canvas.getByRole('button', { name: 'Cancel' }),
+        ).toHaveFocus();
 
         // Clicking confirm calls onConfirm
         await userEvent.click(canvas.getByRole('button', { name: 'Confirm' }));

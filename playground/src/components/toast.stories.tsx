@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Dispatch } from 'react';
-import { expect, fn, userEvent, within, waitFor } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import type { Notification, PlaygroundAction, PlaygroundState } from '../state';
 import {
@@ -53,15 +53,11 @@ export const InfoToast: Story = {
 
         // Message is displayed
         await waitFor(() =>
-            expect(
-                canvas.getByText('File saved successfully.'),
-            ).toBeVisible(),
+            expect(canvas.getByText('File saved successfully.')).toBeVisible(),
         );
 
         // Has role="alert" for screen readers
-        await waitFor(() =>
-            expect(canvas.getByRole('alert')).toBeVisible(),
-        );
+        await waitFor(() => expect(canvas.getByRole('alert')).toBeVisible());
 
         // Dismiss button is present
         await waitFor(() =>
