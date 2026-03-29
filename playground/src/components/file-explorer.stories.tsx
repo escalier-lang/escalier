@@ -1,0 +1,309 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import type { Dispatch } from 'react';
+import { expect, fn, userEvent, within } from 'storybook/test';
+
+import type { BrowserFS } from '../fs/browser-fs';
+import { FSEventEmitter } from '../fs/fs-events';
+import type { FSDir } from '../fs/fs-node';
+import type { PlaygroundAction } from '../state';
+import {
+    PlaygroundDispatchContext,
+    PlaygroundStateContext,
+    initialState,
+} from '../state';
+
+import { FileExplorer } from './file-explorer';
+
+const dispatchSpy = fn();
+
+function makeFakeFS(rootDir: FSDir): BrowserFS {
+    return { rootDir, events: new FSEventEmitter() } as unknown as BrowserFS;
+}
+
+function FileExplorerWithProvider({ fs }: { fs: BrowserFS }) {
+    const dispatch: Dispatch<PlaygroundAction> = (action) => {
+        dispatchSpy(action);
+    };
+
+    return (
+        <PlaygroundStateContext.Provider value={initialState}>
+            <PlaygroundDispatchContext.Provider value={dispatch}>
+                <FileExplorer fs={fs} />
+            </PlaygroundDispatchContext.Provider>
+        </PlaygroundStateContext.Provider>
+    );
+}
+
+const simpleRoot: FSDir = {
+    type: 'dir',
+    name: '/',
+    children: new Map([
+        [
+            'bin',
+            {
+                type: 'dir',
+                name: 'bin',
+                children: new Map([
+                    [
+                        'main.esc',
+                        {
+                            type: 'file',
+                            name: 'main.esc',
+                            content: new Uint8Array(),
+                        },
+                    ],
+                ]),
+            },
+        ],
+        [
+            'lib',
+            {
+                type: 'dir',
+                name: 'lib',
+                children: new Map([
+                    [
+                        'utils.esc',
+                        {
+                            type: 'file',
+                            name: 'utils.esc',
+                            content: new Uint8Array(),
+                        },
+                    ],
+                    [
+                        'math.esc',
+                        {
+                            type: 'file',
+                            name: 'math.esc',
+                            content: new Uint8Array(),
+                        },
+                    ],
+                ]),
+            },
+        ],
+        [
+            'package.json',
+            {
+                type: 'file',
+                name: 'package.json',
+                content: new Uint8Array(),
+            },
+        ],
+        [
+            'escalier.toml',
+            {
+                type: 'file',
+                name: 'escalier.toml',
+                content: new Uint8Array(),
+            },
+        ],
+    ]),
+};
+
+const deepRoot: FSDir = {
+    type: 'dir',
+    name: '/',
+    children: new Map([
+        [
+            'bin',
+            {
+                type: 'dir',
+                name: 'bin',
+                children: new Map([
+                    [
+                        'main.esc',
+                        {
+                            type: 'file',
+                            name: 'main.esc',
+                            content: new Uint8Array(),
+                        },
+                    ],
+                ]),
+            },
+        ],
+        [
+            'build',
+            {
+                type: 'dir',
+                name: 'build',
+                children: new Map([
+                    [
+                        'bin',
+                        {
+                            type: 'dir',
+                            name: 'bin',
+                            children: new Map([
+                                [
+                                    'main.js',
+                                    {
+                                        type: 'file',
+                                        name: 'main.js',
+                                        content: new Uint8Array(),
+                                    },
+                                ],
+                            ]),
+                        },
+                    ],
+                ]),
+            },
+        ],
+        [
+            'node_modules',
+            {
+                type: 'dir',
+                name: 'node_modules',
+                children: new Map([
+                    [
+                        'typescript',
+                        {
+                            type: 'dir',
+                            name: 'typescript',
+                            children: new Map([
+                                [
+                                    'package.json',
+                                    {
+                                        type: 'file',
+                                        name: 'package.json',
+                                        content: new Uint8Array(),
+                                    },
+                                ],
+                            ]),
+                        },
+                    ],
+                ]),
+            },
+        ],
+        [
+            'package.json',
+            {
+                type: 'file',
+                name: 'package.json',
+                content: new Uint8Array(),
+            },
+        ],
+    ]),
+};
+
+const emptyRoot: FSDir = {
+    type: 'dir',
+    name: '/',
+    children: new Map(),
+};
+
+const meta = {
+    title: 'Components/FileExplorer',
+    component: FileExplorerWithProvider,
+    decorators: [
+        (Story) => (
+            <div style={{ width: 220, height: 400 }}>
+                <Story />
+            </div>
+        ),
+    ],
+    beforeEach: () => {
+        dispatchSpy.mockClear();
+    },
+} satisfies Meta<typeof FileExplorerWithProvider>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const SimpleProject: Story = {
+    args: {
+        fs: makeFakeFS(simpleRoot),
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement);
+
+        // Header is present
+        await expect(canvas.getByText('EXPLORER')).toBeVisible();
+
+        // Directories are shown (sorted first, alphabetically)
+        await expect(canvas.getByText('bin')).toBeVisible();
+        await expect(canvas.getByText('lib')).toBeVisible();
+
+        // Files are shown (sorted after directories)
+        await expect(canvas.getByText('escalier.toml')).toBeVisible();
+        await expect(canvas.getByText('package.json')).toBeVisible();
+
+        // Directories are expanded by default, showing children
+        await expect(canvas.getByText('main.esc')).toBeVisible();
+        await expect(canvas.getByText('math.esc')).toBeVisible();
+        await expect(canvas.getByText('utils.esc')).toBeVisible();
+    },
+};
+
+export const ClickFile: Story = {
+    args: {
+        fs: makeFakeFS(simpleRoot),
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement);
+
+        // Click a file to open it
+        await userEvent.click(canvas.getByText('main.esc'));
+        await expect(dispatchSpy).toHaveBeenCalledWith({
+            type: 'openFile',
+            path: '/bin/main.esc',
+        });
+    },
+};
+
+export const CollapseDirectory: Story = {
+    args: {
+        fs: makeFakeFS(simpleRoot),
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement);
+
+        // lib directory children are visible
+        await expect(canvas.getByText('utils.esc')).toBeVisible();
+
+        // Click the lib directory to collapse it
+        await userEvent.click(canvas.getByText('lib'));
+
+        // Children should no longer be visible
+        expect(canvas.queryByText('utils.esc')).toBeNull();
+        expect(canvas.queryByText('math.esc')).toBeNull();
+
+        // Click again to expand
+        await userEvent.click(canvas.getByText('lib'));
+        await expect(canvas.getByText('utils.esc')).toBeVisible();
+    },
+};
+
+export const WithBuildAndNodeModules: Story = {
+    args: {
+        fs: makeFakeFS(deepRoot),
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement);
+
+        // build and node_modules directories start collapsed
+        await expect(canvas.getByText('build')).toBeVisible();
+        await expect(canvas.getByText('node_modules')).toBeVisible();
+
+        // Their children are not visible
+        expect(canvas.queryByText('main.js')).toBeNull();
+        expect(canvas.queryByText('typescript')).toBeNull();
+
+        // Expand build directory
+        await userEvent.click(canvas.getByText('build'));
+        // build/bin is now visible alongside the top-level bin
+        await expect(canvas.getAllByText('bin')).toHaveLength(2);
+    },
+};
+
+export const EmptyProject: Story = {
+    args: {
+        fs: makeFakeFS(emptyRoot),
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement);
+
+        // Header is still present
+        await expect(canvas.getByText('EXPLORER')).toBeVisible();
+
+        // No files or directories rendered (just the header)
+        expect(canvas.queryAllByRole('button')).toHaveLength(0);
+    },
+};

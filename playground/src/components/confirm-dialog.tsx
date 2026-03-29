@@ -65,7 +65,9 @@ export const ConfirmDialog = ({
             <h2 id="confirm-dialog-title" className={styles.title}>
                 {title}
             </h2>
-            <p id="confirm-dialog-message" className={styles.message}>{message}</p>
+            <p id="confirm-dialog-message" className={styles.message}>
+                {message}
+            </p>
             <div className={styles.buttons}>
                 <button
                     type="button"
