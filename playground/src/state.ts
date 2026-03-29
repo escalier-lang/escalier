@@ -71,6 +71,13 @@ export function playgroundReducer(
         }
 
         case 'closeTab': {
+            if (
+                !Number.isInteger(action.index) ||
+                action.index < 0 ||
+                action.index >= state.openTabs.length
+            ) {
+                return state;
+            }
             const newTabs = state.openTabs.filter((_, i) => i !== action.index);
             let newActiveIndex = state.activeTabIndex;
 

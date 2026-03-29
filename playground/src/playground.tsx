@@ -249,7 +249,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         return () => fs.events.off(listener);
     }, [activePath, effectiveOutputTab, showOutput, fs]);
 
-    const handleCloseTab = (e: React.MouseEvent, index: number) => {
+    const handleCloseTab = (
+        e: React.MouseEvent | React.KeyboardEvent,
+        index: number,
+    ) => {
         e.stopPropagation();
         dispatch({ type: 'closeTab', index });
     };
@@ -307,8 +310,14 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                             type="button"
                             className={styles.closeButton}
                             onClick={(e) => handleCloseTab(e, i)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.stopPropagation();
+                                    handleCloseTab(e, i);
+                                }
+                            }}
                             aria-label={`Close ${displayName(tab.path)}`}
-                            tabIndex={-1}
+                            tabIndex={0}
                         >
                             &times;
                         </button>

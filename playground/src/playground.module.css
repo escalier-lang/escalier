@@ -79,10 +79,15 @@
     line-height: 1;
     border-radius: 3px;
     opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
 }
 
-.tab:hover .closeButton {
+.tab:hover .closeButton,
+.closeButton:focus-visible {
     opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
 }
 
 .closeButton:hover {

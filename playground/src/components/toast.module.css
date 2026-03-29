@@ -12,7 +12,7 @@
     align-items: center;
     gap: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    animation: slideIn 0.2s ease-out;
+    animation: toast-slide-in 0.2s ease-out;
 }
 
 .info {
@@ -20,7 +20,7 @@
 }
 
 .warning {
-    background-color: #d4a017;
+    background-color: #8a6d14;
 }
 
 .error {
@@ -41,7 +41,7 @@
     opacity: 1;
 }
 
-@keyframes slideIn {
+@keyframes toast-slide-in {
     from {
         transform: translateY(20px);
         opacity: 0;

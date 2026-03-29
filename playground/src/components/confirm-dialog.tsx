@@ -21,58 +21,65 @@ export const ConfirmDialog = ({
     onConfirm,
     onCancel,
 }: ConfirmDialogProps) => {
+    const dialogRef = useRef<HTMLDialogElement>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+
+        dialog.showModal();
         cancelRef.current?.focus();
 
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                onCancel();
-            }
+        const handleCancel = (e: Event) => {
+            e.preventDefault();
+            onCancel();
         };
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
+        dialog.addEventListener('cancel', handleCancel);
+
+        return () => {
+            dialog.removeEventListener('cancel', handleCancel);
+            dialog.close();
+        };
     }, [onCancel]);
 
     return (
-        <div
-            className={styles.overlay}
-            onClick={onCancel}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onCancel();
+        <dialog
+            ref={dialogRef}
+            className={styles.dialog}
+            aria-labelledby="confirm-dialog-title"
+            aria-modal="true"
+            onClick={(e) => {
+                // Close when clicking the backdrop (the dialog element itself)
+                if (e.target === dialogRef.current) {
+                    onCancel();
+                }
             }}
-            role="presentation"
+            onKeyDown={() => {
+                // Keyboard dismissal handled by the native dialog cancel event
+            }}
         >
-            <dialog
-                className={styles.dialog}
-                open
-                aria-labelledby="confirm-dialog-title"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-            >
-                <h2 id="confirm-dialog-title" className={styles.title}>
-                    {title}
-                </h2>
-                <p className={styles.message}>{message}</p>
-                <div className={styles.buttons}>
-                    <button
-                        type="button"
-                        ref={cancelRef}
-                        className={`${styles.button} ${styles.cancelButton}`}
-                        onClick={onCancel}
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button
-                        type="button"
-                        className={`${styles.button} ${destructive ? styles.destructiveButton : styles.confirmButton}`}
-                        onClick={onConfirm}
-                    >
-                        {confirmLabel}
-                    </button>
-                </div>
-            </dialog>
-        </div>
+            <h2 id="confirm-dialog-title" className={styles.title}>
+                {title}
+            </h2>
+            <p className={styles.message}>{message}</p>
+            <div className={styles.buttons}>
+                <button
+                    type="button"
+                    ref={cancelRef}
+                    className={`${styles.button} ${styles.cancelButton}`}
+                    onClick={onCancel}
+                >
+                    {cancelLabel}
+                </button>
+                <button
+                    type="button"
+                    className={`${styles.button} ${destructive ? styles.destructiveButton : styles.confirmButton}`}
+                    onClick={onConfirm}
+                >
+                    {confirmLabel}
+                </button>
+            </div>
+        </dialog>
     );
 };

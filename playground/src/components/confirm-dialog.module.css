@@ -1,13 +1,3 @@
-.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2000;
-}
-
 .dialog {
     background: #252526;
     border: 1px solid #3c3c3c;
@@ -18,6 +8,10 @@
     font-family: sans-serif;
     color: #cccccc;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
 }
 
 .title {
