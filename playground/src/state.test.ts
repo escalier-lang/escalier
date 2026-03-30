@@ -133,13 +133,74 @@ describe('playgroundReducer', () => {
         });
     });
 
-    describe('setActiveOutputTab', () => {
-        test('sets the active output tab', () => {
+    describe('openRightFile', () => {
+        test('opens a new right tab and activates it', () => {
             const next = playgroundReducer(initialState, {
-                type: 'setActiveOutputTab',
-                tab: 'map',
+                type: 'openRightFile',
+                path: '/build/bin/main.js',
             });
-            expect(next.activeOutputTab).toBe('map');
+            expect(next.rightTabs).toHaveLength(1);
+            expect(next.rightTabs[0].path).toBe('/build/bin/main.js');
+            expect(next.activeRightTabIndex).toBe(0);
+        });
+
+        test('activates existing right tab instead of duplicating', () => {
+            let state = playgroundReducer(initialState, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js',
+            });
+            state = playgroundReducer(state, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js.map',
+            });
+            const next = playgroundReducer(state, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js',
+            });
+            expect(next.rightTabs).toHaveLength(2);
+            expect(next.activeRightTabIndex).toBe(0);
+        });
+    });
+
+    describe('closeRightTab', () => {
+        test('closes the only right tab', () => {
+            const state = playgroundReducer(initialState, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js',
+            });
+            const next = playgroundReducer(state, {
+                type: 'closeRightTab',
+                index: 0,
+            });
+            expect(next.rightTabs).toHaveLength(0);
+            expect(next.activeRightTabIndex).toBeNull();
+        });
+    });
+
+    describe('setActiveRightTab', () => {
+        test('sets the active right tab index', () => {
+            let state = playgroundReducer(initialState, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js',
+            });
+            state = playgroundReducer(state, {
+                type: 'openRightFile',
+                path: '/build/bin/main.js.map',
+            });
+            const next = playgroundReducer(state, {
+                type: 'setActiveRightTab',
+                index: 0,
+            });
+            expect(next.activeRightTabIndex).toBe(0);
+        });
+    });
+
+    describe('setInitialCompileDone', () => {
+        test('sets initialCompileDone to true', () => {
+            const next = playgroundReducer(initialState, {
+                type: 'setInitialCompileDone',
+            });
+            expect(next.initialCompileDone).toBe(true);
         });
     });
 
@@ -193,7 +254,9 @@ describe('playgroundReducer', () => {
             const next = playgroundReducer(state, { type: 'resetTabs' });
             expect(next.openTabs).toEqual([{ path: '/lib/index.esc' }]);
             expect(next.activeTabIndex).toBe(0);
-            expect(next.activeOutputTab).toBe('js');
+            expect(next.rightTabs).toEqual([]);
+            expect(next.activeRightTabIndex).toBeNull();
+            expect(next.initialCompileDone).toBe(false);
         });
 
         test('resets to a custom primary file', () => {

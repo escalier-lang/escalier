@@ -96,6 +96,34 @@
     color: #cccccc;
 }
 
+.contextMenu {
+    position: fixed;
+    background-color: #2b2b2b;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 4px 0;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.contextMenuItem {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #cccccc;
+    font-size: 13px;
+    font-family: sans-serif;
+    padding: 6px 16px;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.contextMenuItem:hover {
+    background-color: #094771;
+}
+
 .editor {
     min-width: 0;
 }
@@ -108,6 +136,33 @@
     color: #666;
     font-family: sans-serif;
     font-size: 14px;
+}
+
+.compileSpinner {
+    grid-area: output;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #969696;
+    font-family: sans-serif;
+    font-size: 14px;
+}
+
+.spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #333;
+    border-top-color: #007acc;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .errorBanner {
