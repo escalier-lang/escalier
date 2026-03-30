@@ -5,67 +5,9 @@ import { FileExplorer } from './components/file-explorer';
 import { Toast } from './components/toast';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
-import {
-    type OutputTab,
-    usePlaygroundDispatch,
-    usePlaygroundState,
-} from './state';
+import { usePlaygroundDispatch, usePlaygroundState } from './state';
 
 import styles from './playground.module.css';
-
-/**
- * Determine which output tabs to show for a given input file path.
- * - `.esc` under `lib/` => js, map, dts
- * - `.esc` under `bin/` => js, map
- * - anything else => none
- */
-function getOutputTabs(path: string): OutputTab[] {
-    if (!path.endsWith('.esc')) return [];
-    if (path.startsWith('/lib/') || path === '/lib')
-        return ['js', 'map', 'dts'];
-    if (path.startsWith('/bin/') || path === '/bin') return ['js', 'map'];
-    // Check for packages/*/lib/ or packages/*/bin/ patterns
-    const match = path.match(/^\/packages\/[^/]+\/(lib|bin)\//);
-    if (match) {
-        return match[1] === 'lib' ? ['js', 'map', 'dts'] : ['js', 'map'];
-    }
-    return [];
-}
-
-/** Get the output file extension for an output tab type. */
-function outputTabExtension(tab: OutputTab): string {
-    switch (tab) {
-        case 'js':
-            return '.js';
-        case 'map':
-            return '.js.map';
-        case 'dts':
-            return '.d.ts';
-    }
-}
-
-/** Convert a source .esc path to its corresponding output path. */
-function sourceToOutputPath(sourcePath: string, tab: OutputTab): string {
-    // Replace the source root (lib/ or bin/) with build/lib/ or build/bin/
-    // and swap the extension.
-    const ext = outputTabExtension(tab);
-    const withoutEsc = sourcePath.replace(/\.esc$/, ext);
-
-    // Handle packages/*/lib/ and packages/*/bin/
-    const pkgMatch = withoutEsc.match(
-        /^(\/packages\/[^/]+\/)(lib\/|bin\/)(.*)/,
-    );
-    if (pkgMatch) {
-        return `${pkgMatch[1]}build/${pkgMatch[2]}${pkgMatch[3]}`;
-    }
-
-    // Handle root lib/ and bin/
-    if (withoutEsc.startsWith('/lib/') || withoutEsc.startsWith('/bin/')) {
-        return `/build${withoutEsc}`;
-    }
-
-    return withoutEsc;
-}
 
 /** Get the display name (filename) from a path. */
 function displayName(path: string): string {
@@ -87,6 +29,102 @@ function pathToUri(path: string): string {
     return `file:///home/user/project${path}`;
 }
 
+type ContextMenuState = {
+    tabPath: string;
+    side: 'left' | 'right';
+    x: number;
+    y: number;
+};
+
+type TabItemProps = {
+    path: string;
+    isActive: boolean;
+    isFocused: boolean;
+    panelId: string;
+    side: 'left' | 'right';
+    contextMenu: ContextMenuState | null;
+    onActivate: () => void;
+    onClose: () => void;
+    onMove: () => void;
+    onContextMenu: (x: number, y: number) => void;
+};
+
+const TabItem = ({
+    path,
+    isActive,
+    isFocused,
+    panelId,
+    side,
+    contextMenu,
+    onActivate,
+    onClose,
+    onMove,
+    onContextMenu,
+}: TabItemProps) => {
+    const name = displayName(path);
+    const className = `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
+    const isMenuOpen =
+        contextMenu !== null &&
+        contextMenu.tabPath === path &&
+        contextMenu.side === side;
+
+    return (
+        <div
+            role="tab"
+            tabIndex={0}
+            aria-selected={isActive}
+            aria-controls={panelId}
+            className={className}
+            onClick={onActivate}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onActivate();
+            }}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                onContextMenu(e.clientX, e.clientY);
+            }}
+        >
+            <span className={styles.tabLabel}>{name}</span>
+            <button
+                type="button"
+                className={styles.closeButton}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onClose();
+                }}
+                aria-label={`Close ${name}`}
+                tabIndex={0}
+            >
+                &times;
+            </button>
+            {isMenuOpen && (
+                <div
+                    className={styles.contextMenu}
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                >
+                    <button
+                        type="button"
+                        className={styles.contextMenuItem}
+                        onClick={() => onMove()}
+                    >
+                        {side === 'left' ? 'Move to Right' : 'Move to Left'}
+                    </button>
+                    <button
+                        type="button"
+                        className={styles.contextMenuItem}
+                        onClick={() => onClose()}
+                    >
+                        Close
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 type PlaygroundProps = {
     fs: BrowserFS;
 };
@@ -103,21 +141,41 @@ export const Playground = ({ fs }: PlaygroundProps) => {
     const outputEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(
         null,
     );
-    const [focusedSide, setFocusedSide] = useState<'input' | 'output'>('input');
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
+        null,
+    );
+    const {
+        leftTabs: openTabs,
+        activeLeftTabIndex: activeTabIndex,
+        rightTabs,
+        activeRightTabIndex,
+        focusedSide,
+        initialCompileDone,
+        validationResult,
+    } = state;
 
-    const { openTabs, activeTabIndex, activeOutputTab, validationResult } =
-        state;
+    // Dismiss context menu on click or pointer-down elsewhere.
+    // pointerdown covers both left- and right-clicks and fires before
+    // contextmenu, so it dismisses the menu before a new one opens.
+    // We intentionally omit 'contextmenu' because it would bubble from
+    // the tab and immediately clear the menu that was just opened.
+    useEffect(() => {
+        if (!contextMenu) return;
+        const dismiss = () => setContextMenu(null);
+        window.addEventListener('click', dismiss);
+        window.addEventListener('pointerdown', dismiss);
+        return () => {
+            window.removeEventListener('click', dismiss);
+            window.removeEventListener('pointerdown', dismiss);
+        };
+    }, [contextMenu]);
+
     const activeTab = activeTabIndex !== null ? openTabs[activeTabIndex] : null;
     const activePath = activeTab?.path ?? null;
 
-    // Determine available output tabs for the active file
-    const availableOutputTabs = activePath ? getOutputTabs(activePath) : [];
-    const showOutput = availableOutputTabs.length > 0;
-
-    // Ensure the active output tab is valid for the current file
-    const effectiveOutputTab = availableOutputTabs.includes(activeOutputTab)
-        ? activeOutputTab
-        : (availableOutputTabs[0] ?? 'js');
+    const activeRightTab =
+        activeRightTabIndex !== null ? rightTabs[activeRightTabIndex] : null;
+    const activeRightPath = activeRightTab?.path ?? null;
 
     // Get or create a Monaco model for a file path
     const getOrCreateModel = useCallback(
@@ -161,10 +219,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         outputEditorRef.current = outputEditor;
 
         const inputFocusDisposable = inputEditor.onDidFocusEditorWidget(() =>
-            setFocusedSide('input'),
+            dispatch({ type: 'setFocusedSide', side: 'left' }),
         );
         const outputFocusDisposable = outputEditor.onDidFocusEditorWidget(() =>
-            setFocusedSide('output'),
+            dispatch({ type: 'setFocusedSide', side: 'right' }),
         );
 
         return () => {
@@ -175,7 +233,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             inputEditorRef.current = null;
             outputEditorRef.current = null;
         };
-    }, []);
+    }, [dispatch]);
 
     // Switch input editor model when active tab changes
     useEffect(() => {
@@ -200,81 +258,101 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         }
     }, [activePath, getOrCreateModel, activeTab?.scrollPos]);
 
-    // Switch output editor model when active output tab or input file changes
+    // Switch output editor model when active right tab changes
     useEffect(() => {
         const editor = outputEditorRef.current;
-        if (!editor || !activePath || !showOutput) {
+        if (!editor || !activeRightPath) {
             outputEditorRef.current?.setModel(null);
             return;
         }
 
-        const outputPath = sourceToOutputPath(activePath, effectiveOutputTab);
-        const uri = monaco.Uri.parse(pathToUri(outputPath));
-        let model = monaco.editor.getModel(uri);
-        if (!model) {
-            // No model yet (compile hasn't run or produced this output).
-            // Try loading from BrowserFS as fallback.
-            const content = loadFileContent(fs, outputPath) ?? '';
-            const lang = languageForPath(outputPath);
-            model = monaco.editor.createModel(content, lang, uri);
-        }
+        const model = getOrCreateModel(activeRightPath);
+        const isBuildFile =
+            activeRightPath.startsWith('/build/') ||
+            /^\/packages\/[^/]+\/build\//.test(activeRightPath);
+        editor.updateOptions({ readOnly: !!isBuildFile });
         editor.setModel(model);
-    }, [activePath, effectiveOutputTab, showOutput, fs]);
 
-    // Listen for FS events on build/ paths to refresh output
+        // Restore scroll position
+        if (activeRightTab?.scrollPos) {
+            editor.setScrollTop(activeRightTab.scrollPos);
+        }
+    }, [activeRightPath, getOrCreateModel, activeRightTab?.scrollPos]);
+
+    // Listen for FS events on build/ paths to update Monaco models for open right tabs
     useEffect(() => {
-        if (!activePath || !showOutput) return;
+        if (rightTabs.length === 0) return;
+
+        const openRightPaths = new Set(rightTabs.map((t) => t.path));
 
         const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (
-                event.path.startsWith('/build/') ||
-                /^\/packages\/[^/]+\/build\//.test(event.path)
+                (event.type === 'change' || event.type === 'create') &&
+                openRightPaths.has(event.path)
             ) {
-                const outputPath = sourceToOutputPath(
-                    activePath,
-                    effectiveOutputTab,
-                );
-                if (event.path === outputPath) {
-                    const content = loadFileContent(fs, outputPath) ?? '';
-                    const uri = monaco.Uri.parse(pathToUri(outputPath));
-                    const model = monaco.editor.getModel(uri);
-                    if (model && model.getValue() !== content) {
-                        model.setValue(content);
-                    }
+                const content = loadFileContent(fs, event.path) ?? '';
+                const uri = monaco.Uri.parse(pathToUri(event.path));
+                const model = monaco.editor.getModel(uri);
+                if (model && model.getValue() !== content) {
+                    model.setValue(content);
                 }
             }
         };
 
         fs.events.on(listener);
         return () => fs.events.off(listener);
-    }, [activePath, effectiveOutputTab, showOutput, fs]);
+    }, [rightTabs, fs]);
 
-    const handleCloseTab = (
-        e: React.MouseEvent | React.KeyboardEvent,
-        index: number,
-    ) => {
-        e.stopPropagation();
-        dispatch({ type: 'closeTab', index });
-    };
+    // After initial compilation, open the build output files as right tabs.
+    // Only auto-open build files whose source is currently open on the left.
+    useEffect(() => {
+        if (initialCompileDone) return;
 
-    const handleTabClick = (index: number) => {
-        setFocusedSide('input');
-        dispatch({ type: 'setActiveTab', index });
-    };
+        // Build a set of expected output prefixes from the open left-side
+        // .esc files. The compiler maps all outputs under /build/ at the root:
+        //   "/bin/main.esc" → "/build/bin/main."
+        //   "/packages/foo/lib/bar.esc" → "/build/packages/foo/lib/bar."
+        const buildPrefixes = new Set<string>();
+        for (const tab of openTabs) {
+            if (!tab.path.endsWith('.esc')) continue;
+            buildPrefixes.add(`/build${tab.path.replace(/\.esc$/, '.')}`);
+        }
 
-    const handleOutputTabClick = (tab: OutputTab) => {
-        setFocusedSide('output');
-        dispatch({ type: 'setActiveOutputTab', tab });
-    };
+        let markedDone = false;
+        const listener = (event: import('./fs/fs-events').FSEvent) => {
+            if (
+                (event.type !== 'create' && event.type !== 'change') ||
+                event.kind !== 'file'
+            )
+                return;
 
-    const outputTabLabel = (tab: OutputTab): string => {
-        if (!activePath) return '';
-        const name = displayName(activePath).replace(/\.esc$/, '');
-        return `${name}${outputTabExtension(tab)}`;
-    };
+            const isBuildFile =
+                event.path.startsWith('/build/') ||
+                /^\/packages\/[^/]+\/build\//.test(event.path);
+            if (!isBuildFile) return;
 
-    const tabClass = (isActive: boolean, isFocused: boolean) =>
-        `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
+            // Only auto-open if it matches a left-side source file
+            const matchesSource = [...buildPrefixes].some((prefix) =>
+                event.path.startsWith(prefix),
+            );
+            if (matchesSource) {
+                dispatch({ type: 'openFile', path: event.path, side: 'right' });
+            }
+
+            // Mark compilation done after the first batch of build files.
+            // queueMicrotask ensures all synchronous FS writes from one
+            // compilation are captured before we mark done.
+            if (!markedDone) {
+                markedDone = true;
+                queueMicrotask(() => {
+                    dispatch({ type: 'setInitialCompileDone' });
+                });
+            }
+        };
+
+        fs.events.on(listener);
+        return () => fs.events.off(listener);
+    }, [initialCompileDone, openTabs, fs, dispatch]);
 
     return (
         <div className={styles.playground}>
@@ -287,69 +365,94 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             {/* Input tabs */}
             <div className={styles.inputTabs} role="tablist">
                 {openTabs.map((tab, i) => (
-                    <div
+                    <TabItem
                         key={tab.path}
-                        role="tab"
-                        tabIndex={0}
-                        aria-selected={i === activeTabIndex}
-                        aria-controls="input-panel"
-                        className={tabClass(
-                            i === activeTabIndex,
-                            focusedSide === 'input',
-                        )}
-                        onClick={() => handleTabClick(i)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ')
-                                handleTabClick(i);
+                        path={tab.path}
+                        isActive={i === activeTabIndex}
+                        isFocused={focusedSide === 'left'}
+                        panelId="input-panel"
+                        side="left"
+                        contextMenu={contextMenu}
+                        onActivate={() => {
+                            dispatch({ type: 'setFocusedSide', side: 'left' });
+                            dispatch({
+                                type: 'setActiveTab',
+                                side: 'left',
+                                index: i,
+                            });
                         }}
-                    >
-                        <span className={styles.tabLabel}>
-                            {displayName(tab.path)}
-                        </span>
-                        <button
-                            type="button"
-                            className={styles.closeButton}
-                            onClick={(e) => handleCloseTab(e, i)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.stopPropagation();
-                                    handleCloseTab(e, i);
-                                }
-                            }}
-                            aria-label={`Close ${displayName(tab.path)}`}
-                            tabIndex={0}
-                        >
-                            &times;
-                        </button>
-                    </div>
+                        onClose={() => {
+                            setContextMenu(null);
+                            dispatch({
+                                type: 'closeTab',
+                                side: 'left',
+                                index: i,
+                            });
+                        }}
+                        onMove={() => {
+                            setContextMenu(null);
+                            dispatch({
+                                type: 'moveTab',
+                                from: 'left',
+                                index: i,
+                            });
+                        }}
+                        onContextMenu={(x, y) =>
+                            setContextMenu({
+                                tabPath: tab.path,
+                                side: 'left',
+                                x,
+                                y,
+                            })
+                        }
+                    />
                 ))}
             </div>
 
             {/* Output tabs */}
-            <div
-                className={styles.outputTabs}
-                role="tablist"
-                style={{ visibility: showOutput ? 'visible' : 'hidden' }}
-            >
-                {availableOutputTabs.map((tab) => (
-                    <div
-                        key={tab}
-                        role="tab"
-                        tabIndex={0}
-                        aria-selected={tab === effectiveOutputTab}
-                        aria-controls="output-panel"
-                        className={tabClass(
-                            tab === effectiveOutputTab,
-                            focusedSide === 'output',
-                        )}
-                        onClick={() => handleOutputTabClick(tab)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ')
-                                handleOutputTabClick(tab);
+            <div className={styles.outputTabs} role="tablist">
+                {rightTabs.map((tab, i) => (
+                    <TabItem
+                        key={tab.path}
+                        path={tab.path}
+                        isActive={i === activeRightTabIndex}
+                        isFocused={focusedSide === 'right'}
+                        panelId="output-panel"
+                        side="right"
+                        contextMenu={contextMenu}
+                        onActivate={() => {
+                            dispatch({ type: 'setFocusedSide', side: 'right' });
+                            dispatch({
+                                type: 'setActiveTab',
+                                side: 'right',
+                                index: i,
+                            });
                         }}
-                    >
-                        {outputTabLabel(tab)}
-                    </div>
+                        onClose={() => {
+                            setContextMenu(null);
+                            dispatch({
+                                type: 'closeTab',
+                                side: 'right',
+                                index: i,
+                            });
+                        }}
+                        onMove={() => {
+                            setContextMenu(null);
+                            dispatch({
+                                type: 'moveTab',
+                                from: 'right',
+                                index: i,
+                            });
+                        }}
+                        onContextMenu={(x, y) =>
+                            setContextMenu({
+                                tabPath: tab.path,
+                                side: 'right',
+                                x,
+                                y,
+                            })
+                        }
+                    />
                 ))}
             </div>
 
@@ -387,9 +490,20 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                 className={styles.editor}
                 ref={outputDivRef}
                 style={{
-                    visibility: showOutput ? 'visible' : 'hidden',
+                    display:
+                        rightTabs.length === 0 || !initialCompileDone
+                            ? 'none'
+                            : undefined,
                 }}
             />
+
+            {/* Spinner while waiting for initial compilation */}
+            {!initialCompileDone && (
+                <div className={styles.compileSpinner}>
+                    <div className={styles.spinner} />
+                    <span>Compiling...</span>
+                </div>
+            )}
 
             <Toast />
         </div>

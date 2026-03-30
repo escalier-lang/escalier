@@ -14,26 +14,31 @@ export type Notification = {
     type: 'info' | 'warning' | 'error';
 };
 
-export type OutputTab = 'js' | 'map' | 'dts';
-
 export type Tab = {
     path: string;
     scrollPos?: number;
 };
 
+export type Side = 'left' | 'right';
+
 export type PlaygroundState = {
-    openTabs: Tab[];
-    activeTabIndex: number | null;
-    activeOutputTab: OutputTab;
+    leftTabs: Tab[];
+    activeLeftTabIndex: number | null;
+    rightTabs: Tab[];
+    activeRightTabIndex: number | null;
+    focusedSide: Side;
+    initialCompileDone: boolean;
     validationResult: ValidationResult;
     notification: Notification | null;
 };
 
 export type PlaygroundAction =
-    | { type: 'openFile'; path: string }
-    | { type: 'closeTab'; index: number }
-    | { type: 'setActiveTab'; index: number }
-    | { type: 'setActiveOutputTab'; tab: OutputTab }
+    | { type: 'openFile'; path: string; side?: Side; scrollPos?: number }
+    | { type: 'closeTab'; side: Side; index: number }
+    | { type: 'setActiveTab'; side: Side; index: number }
+    | { type: 'setFocusedSide'; side: Side }
+    | { type: 'setInitialCompileDone' }
+    | { type: 'moveTab'; from: Side; index: number }
     | { type: 'renameFile'; oldPath: string; newPath: string }
     | { type: 'deleteFile'; path: string }
     | { type: 'resetTabs'; primaryFile?: string }
@@ -42,12 +47,30 @@ export type PlaygroundAction =
     | { type: 'dismissNotification' };
 
 export const initialState: PlaygroundState = {
-    openTabs: [{ path: '/bin/main.esc' }],
-    activeTabIndex: 0,
-    activeOutputTab: 'js',
+    leftTabs: [{ path: '/bin/main.esc' }],
+    activeLeftTabIndex: 0,
+    rightTabs: [],
+    activeRightTabIndex: null,
+    focusedSide: 'left',
+    initialCompileDone: false,
     validationResult: { mode: 'single-package', packageJson: {} },
     notification: null,
 };
+
+function getTabsForSide(state: PlaygroundState, side: Side): Tab[] {
+    return side === 'left' ? state.leftTabs : state.rightTabs;
+}
+
+function setTabsForSide(
+    state: PlaygroundState,
+    side: Side,
+    tabs: Tab[],
+    activeIndex: number | null,
+): PlaygroundState {
+    return side === 'left'
+        ? { ...state, leftTabs: tabs, activeLeftTabIndex: activeIndex }
+        : { ...state, rightTabs: tabs, activeRightTabIndex: activeIndex };
+}
 
 export function playgroundReducer(
     state: PlaygroundState,
@@ -55,96 +78,140 @@ export function playgroundReducer(
 ): PlaygroundState {
     switch (action.type) {
         case 'openFile': {
-            const existingIndex = state.openTabs.findIndex(
+            const side = action.side ?? state.focusedSide;
+            const tabs = getTabsForSide(state, side);
+            const existingIndex = tabs.findIndex(
                 (tab) => tab.path === action.path,
             );
             if (existingIndex !== -1) {
-                // Tab already open, just activate it
-                return { ...state, activeTabIndex: existingIndex };
+                return setTabsForSide(state, side, tabs, existingIndex);
             }
-            const newTabs = [...state.openTabs, { path: action.path }];
-            return {
-                ...state,
-                openTabs: newTabs,
-                activeTabIndex: newTabs.length - 1,
-            };
+            const newTab: Tab = { path: action.path };
+            if (action.scrollPos !== undefined) {
+                newTab.scrollPos = action.scrollPos;
+            }
+            const newTabs = [...tabs, newTab];
+            return setTabsForSide(state, side, newTabs, newTabs.length - 1);
         }
 
         case 'closeTab': {
-            if (
-                !Number.isInteger(action.index) ||
-                action.index < 0 ||
-                action.index >= state.openTabs.length
-            ) {
+            const { side, index } = action;
+            const tabs = getTabsForSide(state, side);
+            const activeIndex =
+                side === 'left'
+                    ? state.activeLeftTabIndex
+                    : state.activeRightTabIndex;
+
+            if (!Number.isInteger(index) || index < 0 || index >= tabs.length) {
                 return state;
             }
-            const newTabs = state.openTabs.filter((_, i) => i !== action.index);
-            let newActiveIndex = state.activeTabIndex;
+            const newTabs = tabs.filter((_, i) => i !== index);
+            let newActiveIndex = activeIndex;
 
             if (newTabs.length === 0) {
                 newActiveIndex = null;
-            } else if (state.activeTabIndex === action.index) {
-                // Closing the active tab: activate the next tab, or previous if last
+            } else if (activeIndex === index) {
                 newActiveIndex =
-                    action.index >= newTabs.length
-                        ? newTabs.length - 1
-                        : action.index;
-            } else if (
-                state.activeTabIndex !== null &&
-                state.activeTabIndex > action.index
-            ) {
-                // Active tab shifted left
-                newActiveIndex = state.activeTabIndex - 1;
+                    index >= newTabs.length ? newTabs.length - 1 : index;
+            } else if (activeIndex !== null && activeIndex > index) {
+                newActiveIndex = activeIndex - 1;
             }
 
-            return {
-                ...state,
-                openTabs: newTabs,
-                activeTabIndex: newActiveIndex,
-            };
+            return setTabsForSide(state, side, newTabs, newActiveIndex);
         }
 
         case 'setActiveTab': {
-            if (action.index < 0 || action.index >= state.openTabs.length) {
+            const { side, index } = action;
+            const tabs = getTabsForSide(state, side);
+            if (!Number.isInteger(index) || index < 0 || index >= tabs.length) {
                 return state;
             }
-            return { ...state, activeTabIndex: action.index };
+            return setTabsForSide(state, side, tabs, index);
         }
 
-        case 'setActiveOutputTab': {
-            return { ...state, activeOutputTab: action.tab };
+        case 'setFocusedSide': {
+            return { ...state, focusedSide: action.side };
+        }
+
+        case 'setInitialCompileDone': {
+            return { ...state, initialCompileDone: true };
+        }
+
+        case 'moveTab': {
+            const { from, index } = action;
+            const tabs = getTabsForSide(state, from);
+            if (!Number.isInteger(index) || index < 0 || index >= tabs.length) {
+                return state;
+            }
+            const tab = tabs[index];
+            const to = from === 'left' ? 'right' : 'left';
+            let result = playgroundReducer(state, {
+                type: 'closeTab',
+                side: from,
+                index,
+            });
+            // When moving to left, set focus before openFile so it doesn't
+            // route back to the right side
+            if (to === 'left') {
+                result = { ...result, focusedSide: 'left' };
+            }
+            return playgroundReducer(result, {
+                type: 'openFile',
+                path: tab.path,
+                side: to,
+                scrollPos: tab.scrollPos,
+            });
         }
 
         case 'renameFile': {
-            const newTabs = state.openTabs.map((tab) =>
+            const newTabs = state.leftTabs.map((tab) =>
                 tab.path === action.oldPath
                     ? { ...tab, path: action.newPath }
                     : tab,
             );
-            return { ...state, openTabs: newTabs };
+            const newRightTabs = state.rightTabs.map((tab) =>
+                tab.path === action.oldPath
+                    ? { ...tab, path: action.newPath }
+                    : tab,
+            );
+            return { ...state, leftTabs: newTabs, rightTabs: newRightTabs };
         }
 
         case 'deleteFile': {
-            const deleteIndex = state.openTabs.findIndex(
+            let result = state;
+            const leftIndex = result.leftTabs.findIndex(
                 (tab) => tab.path === action.path,
             );
-            if (deleteIndex === -1) {
-                return state;
+            if (leftIndex !== -1) {
+                result = playgroundReducer(result, {
+                    type: 'closeTab',
+                    side: 'left',
+                    index: leftIndex,
+                });
             }
-            // Reuse closeTab logic
-            return playgroundReducer(state, {
-                type: 'closeTab',
-                index: deleteIndex,
-            });
+            const rightIndex = result.rightTabs.findIndex(
+                (tab) => tab.path === action.path,
+            );
+            if (rightIndex !== -1) {
+                result = playgroundReducer(result, {
+                    type: 'closeTab',
+                    side: 'right',
+                    index: rightIndex,
+                });
+            }
+            return result;
         }
 
         case 'resetTabs': {
             const primaryFile = action.primaryFile ?? '/lib/index.esc';
             return {
                 ...state,
-                openTabs: [{ path: primaryFile }],
-                activeTabIndex: 0,
-                activeOutputTab: 'js',
+                leftTabs: [{ path: primaryFile }],
+                activeLeftTabIndex: 0,
+                rightTabs: [],
+                activeRightTabIndex: null,
+                focusedSide: 'left',
+                initialCompileDone: false,
             };
         }
 
