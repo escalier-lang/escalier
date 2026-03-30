@@ -87,7 +87,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
 
       - name: Run Tests
-        run: pnpm coverage --project unit
+        run: pnpm coverage
 
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
