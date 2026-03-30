@@ -210,15 +210,23 @@ export function playgroundReducer(
                 return state;
             }
             const tab = state.openTabs[action.index];
-            // Close from left, open on right
+            // Close from left, then add to right preserving full tab metadata
             const closed = playgroundReducer(state, {
                 type: 'closeTab',
                 index: action.index,
             });
-            return playgroundReducer(closed, {
-                type: 'openRightFile',
-                path: tab.path,
-            });
+            const existingRight = closed.rightTabs.findIndex(
+                (t) => t.path === tab.path,
+            );
+            if (existingRight !== -1) {
+                return { ...closed, activeRightTabIndex: existingRight };
+            }
+            const newRightTabs = [...closed.rightTabs, tab];
+            return {
+                ...closed,
+                rightTabs: newRightTabs,
+                activeRightTabIndex: newRightTabs.length - 1,
+            };
         }
 
         case 'moveTabToLeft': {
@@ -230,16 +238,28 @@ export function playgroundReducer(
                 return state;
             }
             const tab = state.rightTabs[action.index];
-            // Close from right, then force focusedSide to 'left' so
-            // openFile doesn't route back to the right side.
+            // Close from right, then add to left preserving full tab metadata
             const closed = playgroundReducer(state, {
                 type: 'closeRightTab',
                 index: action.index,
             });
-            return playgroundReducer(
-                { ...closed, focusedSide: 'left' },
-                { type: 'openFile', path: tab.path },
+            const existingLeft = closed.openTabs.findIndex(
+                (t) => t.path === tab.path,
             );
+            if (existingLeft !== -1) {
+                return {
+                    ...closed,
+                    activeTabIndex: existingLeft,
+                    focusedSide: 'left',
+                };
+            }
+            const newLeftTabs = [...closed.openTabs, tab];
+            return {
+                ...closed,
+                openTabs: newLeftTabs,
+                activeTabIndex: newLeftTabs.length - 1,
+                focusedSide: 'left',
+            };
         }
 
         case 'renameFile': {
