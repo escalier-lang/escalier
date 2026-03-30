@@ -179,10 +179,7 @@ export function playgroundReducer(
         }
 
         case 'setActiveRightTab': {
-            if (
-                action.index < 0 ||
-                action.index >= state.rightTabs.length
-            ) {
+            if (action.index < 0 || action.index >= state.rightTabs.length) {
                 return state;
             }
             return { ...state, activeRightTabIndex: action.index };
@@ -197,10 +194,7 @@ export function playgroundReducer(
         }
 
         case 'moveTabToRight': {
-            if (
-                action.index < 0 ||
-                action.index >= state.openTabs.length
-            ) {
+            if (action.index < 0 || action.index >= state.openTabs.length) {
                 return state;
             }
             const tab = state.openTabs[action.index];
@@ -216,10 +210,7 @@ export function playgroundReducer(
         }
 
         case 'moveTabToLeft': {
-            if (
-                action.index < 0 ||
-                action.index >= state.rightTabs.length
-            ) {
+            if (action.index < 0 || action.index >= state.rightTabs.length) {
                 return state;
             }
             const tab = state.rightTabs[action.index];

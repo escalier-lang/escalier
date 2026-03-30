@@ -114,9 +114,7 @@ const TabItem = ({
                             onMove();
                         }}
                     >
-                        {side === 'left'
-                            ? 'Move to Right'
-                            : 'Move to Left'}
+                        {side === 'left' ? 'Move to Right' : 'Move to Left'}
                     </button>
                     <button
                         type="button"
@@ -374,9 +372,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                             dispatch({ type: 'setFocusedSide', side: 'left' });
                             dispatch({ type: 'setActiveTab', index: i });
                         }}
-                        onClose={() =>
-                            dispatch({ type: 'closeTab', index: i })
-                        }
+                        onClose={() => dispatch({ type: 'closeTab', index: i })}
                         onMove={() =>
                             dispatch({ type: 'moveTabToRight', index: i })
                         }
