@@ -46,6 +46,39 @@ describe('playgroundReducer', () => {
             expect(next.openTabs).toHaveLength(1);
             expect(next.activeTabIndex).toBe(0);
         });
+
+        test('opens on right when side is right', () => {
+            const state = stateWith(['/a.esc']);
+            const next = playgroundReducer(state, {
+                type: 'openFile',
+                path: '/build/bin/main.js',
+                side: 'right',
+            });
+            expect(next.openTabs).toHaveLength(1);
+            expect(next.rightTabs).toHaveLength(1);
+            expect(next.rightTabs[0].path).toBe('/build/bin/main.js');
+            expect(next.activeRightTabIndex).toBe(0);
+        });
+
+        test('activates existing right tab instead of duplicating', () => {
+            let state = playgroundReducer(initialState, {
+                type: 'openFile',
+                path: '/build/bin/main.js',
+                side: 'right',
+            });
+            state = playgroundReducer(state, {
+                type: 'openFile',
+                path: '/build/bin/main.js.map',
+                side: 'right',
+            });
+            const next = playgroundReducer(state, {
+                type: 'openFile',
+                path: '/build/bin/main.js',
+                side: 'right',
+            });
+            expect(next.rightTabs).toHaveLength(2);
+            expect(next.activeRightTabIndex).toBe(0);
+        });
     });
 
     describe('closeTab', () => {
@@ -53,6 +86,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/bin/main.esc'], 0);
             const next = playgroundReducer(state, {
                 type: 'closeTab',
+                side: 'left',
                 index: 0,
             });
             expect(next.openTabs).toHaveLength(0);
@@ -63,6 +97,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/a.esc', '/b.esc', '/c.esc'], 0);
             const next = playgroundReducer(state, {
                 type: 'closeTab',
+                side: 'left',
                 index: 0,
             });
             expect(next.openTabs).toHaveLength(2);
@@ -74,6 +109,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/a.esc', '/b.esc', '/c.esc'], 2);
             const next = playgroundReducer(state, {
                 type: 'closeTab',
+                side: 'left',
                 index: 2,
             });
             expect(next.openTabs).toHaveLength(2);
@@ -84,6 +120,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/a.esc', '/b.esc', '/c.esc'], 2);
             const next = playgroundReducer(state, {
                 type: 'closeTab',
+                side: 'left',
                 index: 0,
             });
             expect(next.openTabs).toHaveLength(2);
@@ -95,6 +132,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/a.esc', '/b.esc', '/c.esc'], 0);
             const next = playgroundReducer(state, {
                 type: 'closeTab',
+                side: 'left',
                 index: 2,
             });
             expect(next.openTabs).toHaveLength(2);
@@ -104,11 +142,26 @@ describe('playgroundReducer', () => {
         test('ignores out-of-bounds index', () => {
             const state = stateWith(['/a.esc'], 0);
             expect(
-                playgroundReducer(state, { type: 'closeTab', index: 5 }),
+                playgroundReducer(state, { type: 'closeTab', side: 'left', index: 5 }),
             ).toBe(state);
             expect(
-                playgroundReducer(state, { type: 'closeTab', index: -1 }),
+                playgroundReducer(state, { type: 'closeTab', side: 'left', index: -1 }),
             ).toBe(state);
+        });
+
+        test('closes right tab', () => {
+            const state = playgroundReducer(initialState, {
+                type: 'openFile',
+                path: '/build/bin/main.js',
+                side: 'right',
+            });
+            const next = playgroundReducer(state, {
+                type: 'closeTab',
+                side: 'right',
+                index: 0,
+            });
+            expect(next.rightTabs).toHaveLength(0);
+            expect(next.activeRightTabIndex).toBeNull();
         });
     });
 
@@ -117,6 +170,7 @@ describe('playgroundReducer', () => {
             const state = stateWith(['/a.esc', '/b.esc'], 0);
             const next = playgroundReducer(state, {
                 type: 'setActiveTab',
+                side: 'left',
                 index: 1,
             });
             expect(next.activeTabIndex).toBe(1);
@@ -125,70 +179,27 @@ describe('playgroundReducer', () => {
         test('ignores out-of-bounds index', () => {
             const state = stateWith(['/a.esc'], 0);
             expect(
-                playgroundReducer(state, { type: 'setActiveTab', index: 5 }),
+                playgroundReducer(state, { type: 'setActiveTab', side: 'left', index: 5 }),
             ).toBe(state);
             expect(
-                playgroundReducer(state, { type: 'setActiveTab', index: -1 }),
+                playgroundReducer(state, { type: 'setActiveTab', side: 'left', index: -1 }),
             ).toBe(state);
         });
-    });
 
-    describe('openRightFile', () => {
-        test('opens a new right tab and activates it', () => {
-            const next = playgroundReducer(initialState, {
-                type: 'openRightFile',
-                path: '/build/bin/main.js',
-            });
-            expect(next.rightTabs).toHaveLength(1);
-            expect(next.rightTabs[0].path).toBe('/build/bin/main.js');
-            expect(next.activeRightTabIndex).toBe(0);
-        });
-
-        test('activates existing right tab instead of duplicating', () => {
-            let state = playgroundReducer(initialState, {
-                type: 'openRightFile',
-                path: '/build/bin/main.js',
-            });
-            state = playgroundReducer(state, {
-                type: 'openRightFile',
-                path: '/build/bin/main.js.map',
-            });
-            const next = playgroundReducer(state, {
-                type: 'openRightFile',
-                path: '/build/bin/main.js',
-            });
-            expect(next.rightTabs).toHaveLength(2);
-            expect(next.activeRightTabIndex).toBe(0);
-        });
-    });
-
-    describe('closeRightTab', () => {
-        test('closes the only right tab', () => {
-            const state = playgroundReducer(initialState, {
-                type: 'openRightFile',
-                path: '/build/bin/main.js',
-            });
-            const next = playgroundReducer(state, {
-                type: 'closeRightTab',
-                index: 0,
-            });
-            expect(next.rightTabs).toHaveLength(0);
-            expect(next.activeRightTabIndex).toBeNull();
-        });
-    });
-
-    describe('setActiveRightTab', () => {
         test('sets the active right tab index', () => {
             let state = playgroundReducer(initialState, {
-                type: 'openRightFile',
+                type: 'openFile',
                 path: '/build/bin/main.js',
+                side: 'right',
             });
             state = playgroundReducer(state, {
-                type: 'openRightFile',
+                type: 'openFile',
                 path: '/build/bin/main.js.map',
+                side: 'right',
             });
             const next = playgroundReducer(state, {
-                type: 'setActiveRightTab',
+                type: 'setActiveTab',
+                side: 'right',
                 index: 0,
             });
             expect(next.activeRightTabIndex).toBe(0);
@@ -253,11 +264,12 @@ describe('playgroundReducer', () => {
         });
     });
 
-    describe('moveTabToRight', () => {
+    describe('moveTab', () => {
         test('moves tab from left to right', () => {
             const state = stateWith(['/a.esc', '/b.esc'], 0);
             const next = playgroundReducer(state, {
-                type: 'moveTabToRight',
+                type: 'moveTab',
+                from: 'left',
                 index: 0,
             });
             expect(next.openTabs).toHaveLength(1);
@@ -267,15 +279,13 @@ describe('playgroundReducer', () => {
             expect(next.activeRightTabIndex).toBe(0);
         });
 
-        test('ignores out-of-bounds index', () => {
+        test('ignores out-of-bounds index when moving right', () => {
             const state = stateWith(['/a.esc'], 0);
             expect(
-                playgroundReducer(state, { type: 'moveTabToRight', index: 5 }),
+                playgroundReducer(state, { type: 'moveTab', from: 'left', index: 5 }),
             ).toBe(state);
         });
-    });
 
-    describe('moveTabToLeft', () => {
         test('moves tab from right to left', () => {
             const state: PlaygroundState = {
                 ...stateWith(['/a.esc']),
@@ -284,7 +294,8 @@ describe('playgroundReducer', () => {
                 focusedSide: 'right',
             };
             const next = playgroundReducer(state, {
-                type: 'moveTabToLeft',
+                type: 'moveTab',
+                from: 'right',
                 index: 0,
             });
             expect(next.rightTabs).toHaveLength(0);
@@ -294,7 +305,7 @@ describe('playgroundReducer', () => {
         });
 
         test('works correctly even when focusedSide is right', () => {
-            // This tests the fix: moveTabToLeft should always open on the
+            // This tests the fix: moveTab from right should always open on the
             // left side, regardless of focusedSide.
             const state: PlaygroundState = {
                 ...initialState,
@@ -306,7 +317,8 @@ describe('playgroundReducer', () => {
                 focusedSide: 'right',
             };
             const next = playgroundReducer(state, {
-                type: 'moveTabToLeft',
+                type: 'moveTab',
+                from: 'right',
                 index: 0,
             });
             // Should be on the left, not re-routed back to right
@@ -316,10 +328,10 @@ describe('playgroundReducer', () => {
             expect(next.rightTabs[0].path).toBe('/build/bin/main.js.map');
         });
 
-        test('ignores out-of-bounds index', () => {
+        test('ignores out-of-bounds index when moving left', () => {
             const state = stateWith(['/a.esc'], 0);
             expect(
-                playgroundReducer(state, { type: 'moveTabToLeft', index: 5 }),
+                playgroundReducer(state, { type: 'moveTab', from: 'right', index: 5 }),
             ).toBe(state);
         });
     });

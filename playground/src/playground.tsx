@@ -333,7 +333,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                 event.path.startsWith(prefix),
             );
             if (matchesSource) {
-                dispatch({ type: 'openRightFile', path: event.path });
+                dispatch({ type: 'openFile', path: event.path, side: 'right' });
             }
 
             // Mark compilation done after the first batch of build files.
@@ -372,15 +372,15 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'left' });
-                            dispatch({ type: 'setActiveTab', index: i });
+                            dispatch({ type: 'setActiveTab', side: 'left', index: i });
                         }}
                         onClose={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'closeTab', index: i });
+                            dispatch({ type: 'closeTab', side: 'left', index: i });
                         }}
                         onMove={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'moveTabToRight', index: i });
+                            dispatch({ type: 'moveTab', from: 'left', index: i });
                         }}
                         onContextMenu={(x, y) =>
                             setContextMenu({
@@ -407,18 +407,15 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'right' });
-                            dispatch({
-                                type: 'setActiveRightTab',
-                                index: i,
-                            });
+                            dispatch({ type: 'setActiveTab', side: 'right', index: i });
                         }}
                         onClose={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'closeRightTab', index: i });
+                            dispatch({ type: 'closeTab', side: 'right', index: i });
                         }}
                         onMove={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'moveTabToLeft', index: i });
+                            dispatch({ type: 'moveTab', from: 'right', index: i });
                         }}
                         onContextMenu={(x, y) =>
                             setContextMenu({
