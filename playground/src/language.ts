@@ -68,10 +68,7 @@ const URI_PREFIX = 'file:///home/user/project';
  * e.g. "file:///home/user/project/bin/main.js" → "/build/bin/main.js"
  */
 function compileUriToBuildPath(uri: string): string {
-    const path = uri.startsWith(URI_PREFIX)
-        ? uri.slice(URI_PREFIX.length)
-        : uri;
-    return `/build${path}`;
+    return `/build${uri.slice(URI_PREFIX.length)}`;
 }
 
 /**
