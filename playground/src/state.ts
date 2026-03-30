@@ -123,7 +123,11 @@ export function playgroundReducer(
         }
 
         case 'setActiveTab': {
-            if (action.index < 0 || action.index >= state.openTabs.length) {
+            if (
+                !Number.isInteger(action.index) ||
+                action.index < 0 ||
+                action.index >= state.openTabs.length
+            ) {
                 return state;
             }
             return { ...state, activeTabIndex: action.index };
@@ -179,7 +183,11 @@ export function playgroundReducer(
         }
 
         case 'setActiveRightTab': {
-            if (action.index < 0 || action.index >= state.rightTabs.length) {
+            if (
+                !Number.isInteger(action.index) ||
+                action.index < 0 ||
+                action.index >= state.rightTabs.length
+            ) {
                 return state;
             }
             return { ...state, activeRightTabIndex: action.index };

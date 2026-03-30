@@ -92,12 +92,6 @@ const TabItem = ({
                     e.stopPropagation();
                     onClose();
                 }}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.stopPropagation();
-                        onClose();
-                    }
-                }}
                 aria-label={`Close ${name}`}
                 tabIndex={0}
             >
@@ -159,12 +153,18 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         validationResult,
     } = state;
 
-    // Dismiss context menu on any click or right-click elsewhere
+    // Dismiss context menu on any click, right-click, or pointer-down elsewhere
     useEffect(() => {
         if (!contextMenu) return;
         const dismiss = () => setContextMenu(null);
         window.addEventListener('click', dismiss);
-        return () => window.removeEventListener('click', dismiss);
+        window.addEventListener('contextmenu', dismiss);
+        window.addEventListener('pointerdown', dismiss);
+        return () => {
+            window.removeEventListener('click', dismiss);
+            window.removeEventListener('contextmenu', dismiss);
+            window.removeEventListener('pointerdown', dismiss);
+        };
     }, [contextMenu]);
 
     const activeTab = activeTabIndex !== null ? openTabs[activeTabIndex] : null;
