@@ -9,7 +9,9 @@
         "build:prod": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build",
         "build:prod-ci": "node scripts/copy-files.js && tsc -b && APP_ENV=prod vite build --base=/escalier/",
         "lint": "eslint .",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "storybook": "storybook dev -p 6006",
+        "build-storybook": "storybook build"
     },
     "dependencies": {
         "eventemitter3": "^5.0.1",
@@ -19,10 +21,20 @@
         "react-dom": "catalog:"
     },
     "devDependencies": {
-        "@types/react": "catalog:",
+        "@chromatic-com/storybook": "^5.1.1",
+        "@storybook/addon-a11y": "^10.3.3",
+        "@storybook/addon-docs": "^10.3.3",
+        "@storybook/addon-onboarding": "^10.3.3",
+        "@storybook/addon-vitest": "^10.3.3",
+        "@storybook/react-vite": "^10.3.3",
         "@types/react-dom": "catalog:",
+        "@types/react": "catalog:",
         "@vitejs/plugin-react": "^5.1.0",
+        "@vitest/browser-playwright": "^4.1.2",
+        "eslint-plugin-storybook": "^10.3.3",
         "globals": "^15.15.0",
+        "playwright": "^1.58.2",
+        "storybook": "^10.3.3",
         "typescript": "~5.7.2",
         "vite": "^7.1.12",
         "vscode-languageserver-protocol": "3.17.5"
