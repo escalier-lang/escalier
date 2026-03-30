@@ -29,15 +29,24 @@ function pathToUri(path: string): string {
     return `file:///home/user/project${path}`;
 }
 
+type ContextMenuState = {
+    tabPath: string;
+    side: 'left' | 'right';
+    x: number;
+    y: number;
+};
+
 type TabItemProps = {
     path: string;
     isActive: boolean;
     isFocused: boolean;
     panelId: string;
     side: 'left' | 'right';
+    contextMenu: ContextMenuState | null;
     onActivate: () => void;
     onClose: () => void;
     onMove: () => void;
+    onContextMenu: (x: number, y: number) => void;
 };
 
 const TabItem = ({
@@ -46,23 +55,18 @@ const TabItem = ({
     isFocused,
     panelId,
     side,
+    contextMenu,
     onActivate,
     onClose,
     onMove,
+    onContextMenu,
 }: TabItemProps) => {
     const name = displayName(path);
     const className = `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
-    const [contextMenu, setContextMenu] = useState<{
-        x: number;
-        y: number;
-    } | null>(null);
-
-    useEffect(() => {
-        if (!contextMenu) return;
-        const dismiss = () => setContextMenu(null);
-        window.addEventListener('click', dismiss);
-        return () => window.removeEventListener('click', dismiss);
-    }, [contextMenu]);
+    const isMenuOpen =
+        contextMenu !== null &&
+        contextMenu.tabPath === path &&
+        contextMenu.side === side;
 
     return (
         <div
@@ -77,7 +81,7 @@ const TabItem = ({
             }}
             onContextMenu={(e) => {
                 e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY });
+                onContextMenu(e.clientX, e.clientY);
             }}
         >
             <span className={styles.tabLabel}>{name}</span>
@@ -99,7 +103,7 @@ const TabItem = ({
             >
                 &times;
             </button>
-            {contextMenu && (
+            {isMenuOpen && (
                 <div
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -109,20 +113,14 @@ const TabItem = ({
                     <button
                         type="button"
                         className={styles.contextMenuItem}
-                        onClick={() => {
-                            setContextMenu(null);
-                            onMove();
-                        }}
+                        onClick={() => onMove()}
                     >
                         {side === 'left' ? 'Move to Right' : 'Move to Left'}
                     </button>
                     <button
                         type="button"
                         className={styles.contextMenuItem}
-                        onClick={() => {
-                            setContextMenu(null);
-                            onClose();
-                        }}
+                        onClick={() => onClose()}
                     >
                         Close
                     </button>
@@ -148,6 +146,9 @@ export const Playground = ({ fs }: PlaygroundProps) => {
     const outputEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(
         null,
     );
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
+        null,
+    );
     const {
         openTabs,
         activeTabIndex,
@@ -157,6 +158,14 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         initialCompileDone,
         validationResult,
     } = state;
+
+    // Dismiss context menu on any click or right-click elsewhere
+    useEffect(() => {
+        if (!contextMenu) return;
+        const dismiss = () => setContextMenu(null);
+        window.addEventListener('click', dismiss);
+        return () => window.removeEventListener('click', dismiss);
+    }, [contextMenu]);
 
     const activeTab = activeTabIndex !== null ? openTabs[activeTabIndex] : null;
     const activePath = activeTab?.path ?? null;
@@ -297,30 +306,22 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         if (initialCompileDone) return;
 
         // Build a set of expected output prefixes from the open left-side
-        // .esc files.  e.g. "/bin/main.esc" → "/build/bin/main."
-        // and "/packages/foo/lib/bar.esc" → "/packages/foo/build/lib/bar."
+        // .esc files. The compiler maps all outputs under /build/ at the root:
+        //   "/bin/main.esc" → "/build/bin/main."
+        //   "/packages/foo/lib/bar.esc" → "/build/packages/foo/lib/bar."
         const buildPrefixes = new Set<string>();
         for (const tab of openTabs) {
             if (!tab.path.endsWith('.esc')) continue;
-            const withoutEsc = tab.path.replace(/\.esc$/, '.');
-            const pkgMatch = withoutEsc.match(
-                /^(\/packages\/[^/]+\/)(lib\/|bin\/)(.*)/,
-            );
-            if (pkgMatch) {
-                buildPrefixes.add(
-                    `${pkgMatch[1]}build/${pkgMatch[2]}${pkgMatch[3]}`,
-                );
-            } else if (
-                withoutEsc.startsWith('/lib/') ||
-                withoutEsc.startsWith('/bin/')
-            ) {
-                buildPrefixes.add(`/build${withoutEsc}`);
-            }
+            buildPrefixes.add(`/build${tab.path.replace(/\.esc$/, '.')}`);
         }
 
         let markedDone = false;
         const listener = (event: import('./fs/fs-events').FSEvent) => {
-            if (event.type !== 'create' || event.kind !== 'file') return;
+            if (
+                (event.type !== 'create' && event.type !== 'change') ||
+                event.kind !== 'file'
+            )
+                return;
 
             const isBuildFile =
                 event.path.startsWith('/build/') ||
@@ -368,13 +369,26 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         isFocused={focusedSide === 'left'}
                         panelId="input-panel"
                         side="left"
+                        contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'left' });
                             dispatch({ type: 'setActiveTab', index: i });
                         }}
-                        onClose={() => dispatch({ type: 'closeTab', index: i })}
-                        onMove={() =>
-                            dispatch({ type: 'moveTabToRight', index: i })
+                        onClose={() => {
+                            setContextMenu(null);
+                            dispatch({ type: 'closeTab', index: i });
+                        }}
+                        onMove={() => {
+                            setContextMenu(null);
+                            dispatch({ type: 'moveTabToRight', index: i });
+                        }}
+                        onContextMenu={(x, y) =>
+                            setContextMenu({
+                                tabPath: tab.path,
+                                side: 'left',
+                                x,
+                                y,
+                            })
                         }
                     />
                 ))}
@@ -390,6 +404,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         isFocused={focusedSide === 'right'}
                         panelId="output-panel"
                         side="right"
+                        contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'right' });
                             dispatch({
@@ -397,11 +412,21 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                                 index: i,
                             });
                         }}
-                        onClose={() =>
-                            dispatch({ type: 'closeRightTab', index: i })
-                        }
-                        onMove={() =>
-                            dispatch({ type: 'moveTabToLeft', index: i })
+                        onClose={() => {
+                            setContextMenu(null);
+                            dispatch({ type: 'closeRightTab', index: i });
+                        }}
+                        onMove={() => {
+                            setContextMenu(null);
+                            dispatch({ type: 'moveTabToLeft', index: i });
+                        }}
+                        onContextMenu={(x, y) =>
+                            setContextMenu({
+                                tabPath: tab.path,
+                                side: 'right',
+                                x,
+                                y,
+                            })
                         }
                     />
                 ))}
