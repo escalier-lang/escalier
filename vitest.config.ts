@@ -17,6 +17,20 @@ export default defineConfig({
         projects: [
             {
                 extends: true,
+                resolve: {
+                    alias: {
+                        // monaco-editor-core has no `main`/`exports` fields,
+                        // only `module`, so Node/SSR resolution fails.
+                        // Alias it to the manual mock for unit tests.
+                        'monaco-editor-core': path.join(
+                            dirname,
+                            'playground',
+                            'src',
+                            '__mocks__',
+                            'monaco-editor-core.ts',
+                        ),
+                    },
+                },
                 test: {
                     name: 'unit',
                     exclude: ['**/node_modules/**', '**/out/**'],

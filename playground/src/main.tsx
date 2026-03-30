@@ -1,9 +1,15 @@
-import { useReducer } from 'react';
+import { type Dispatch, createContext, useContext, useReducer } from 'react';
 import ReactDOM from 'react-dom/client';
 import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import {
+    type EditorAction,
+    type EditorState,
+    editorReducer,
+    initialEditorState,
+} from './editor-state';
 import { BrowserFS } from './fs/browser-fs';
 import { createVolume } from './fs/volume';
 import { setupLanguage } from './language';
@@ -12,19 +18,45 @@ import { Playground } from './playground';
 import {
     PlaygroundDispatchContext,
     PlaygroundStateContext,
-    initialState,
+    initialPlaygroundState,
     playgroundReducer,
-} from './state';
+} from './playground-state';
 
 import './user-worker'; // sets up the monaco editor worker
 
+const EditorStateContext = createContext<EditorState>(initialEditorState);
+const EditorDispatchContext = createContext<Dispatch<EditorAction>>(() => {});
+
+export function useEditorState(): EditorState {
+    return useContext(EditorStateContext);
+}
+
+export function useEditorDispatch(): Dispatch<EditorAction> {
+    return useContext(EditorDispatchContext);
+}
+
 const PlaygroundApp = ({ fs }: { fs: BrowserFS }) => {
-    const [state, dispatch] = useReducer(playgroundReducer, initialState);
+    const [editorState, editorDispatch] = useReducer(
+        editorReducer,
+        initialEditorState,
+    );
+    const [playgroundState, playgroundDispatch] = useReducer(
+        playgroundReducer,
+        initialPlaygroundState,
+    );
 
     return (
-        <PlaygroundStateContext.Provider value={state}>
-            <PlaygroundDispatchContext.Provider value={dispatch}>
-                <Playground fs={fs} />
+        <PlaygroundStateContext.Provider value={playgroundState}>
+            <PlaygroundDispatchContext.Provider value={playgroundDispatch}>
+                <EditorStateContext.Provider value={editorState}>
+                    <EditorDispatchContext.Provider value={editorDispatch}>
+                        <Playground
+                            fs={fs}
+                            editorState={editorState}
+                            editorDispatch={editorDispatch}
+                        />
+                    </EditorDispatchContext.Provider>
+                </EditorStateContext.Provider>
             </PlaygroundDispatchContext.Provider>
         </PlaygroundStateContext.Provider>
     );

@@ -1,37 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { Dispatch } from 'react';
 import { expect, fn, userEvent, within } from 'storybook/test';
 
 import type { BrowserFS } from '../fs/browser-fs';
 import { FSEventEmitter } from '../fs/fs-events';
 import type { FSDir } from '../fs/fs-node';
-import type { PlaygroundAction } from '../state';
-import {
-    PlaygroundDispatchContext,
-    PlaygroundStateContext,
-    initialState,
-} from '../state';
 
 import { FileExplorer } from './file-explorer';
 
-const dispatchSpy = fn();
+const fileOpenSpy = fn();
 
 function makeFakeFS(rootDir: FSDir): BrowserFS {
     return { rootDir, events: new FSEventEmitter() } as unknown as BrowserFS;
-}
-
-function FileExplorerWithProvider({ fs }: { fs: BrowserFS }) {
-    const dispatch: Dispatch<PlaygroundAction> = (action) => {
-        dispatchSpy(action);
-    };
-
-    return (
-        <PlaygroundStateContext.Provider value={initialState}>
-            <PlaygroundDispatchContext.Provider value={dispatch}>
-                <FileExplorer fs={fs} />
-            </PlaygroundDispatchContext.Provider>
-        </PlaygroundStateContext.Provider>
-    );
 }
 
 const simpleRoot: FSDir = {
@@ -191,7 +170,7 @@ const emptyRoot: FSDir = {
 
 const meta = {
     title: 'Components/FileExplorer',
-    component: FileExplorerWithProvider,
+    component: FileExplorer,
     decorators: [
         (Story) => (
             <div style={{ width: 220, height: 400 }}>
@@ -200,9 +179,9 @@ const meta = {
         ),
     ],
     beforeEach: () => {
-        dispatchSpy.mockClear();
+        fileOpenSpy.mockClear();
     },
-} satisfies Meta<typeof FileExplorerWithProvider>;
+} satisfies Meta<typeof FileExplorer>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -210,6 +189,7 @@ type Story = StoryObj<typeof meta>;
 export const SimpleProject: Story = {
     args: {
         fs: makeFakeFS(simpleRoot),
+        onFileOpen: fileOpenSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
@@ -238,23 +218,22 @@ export const SimpleProject: Story = {
 export const ClickFile: Story = {
     args: {
         fs: makeFakeFS(simpleRoot),
+        onFileOpen: fileOpenSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
 
         // Click a file to open it
         await userEvent.click(canvas.getByText('main.esc'));
-        await expect(dispatchSpy).toHaveBeenCalledTimes(1);
-        await expect(dispatchSpy).toHaveBeenCalledWith({
-            type: 'openFile',
-            path: '/bin/main.esc',
-        });
+        await expect(fileOpenSpy).toHaveBeenCalledTimes(1);
+        await expect(fileOpenSpy).toHaveBeenCalledWith('/bin/main.esc');
     },
 };
 
 export const CollapseDirectory: Story = {
     args: {
         fs: makeFakeFS(simpleRoot),
+        onFileOpen: fileOpenSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
@@ -278,6 +257,7 @@ export const CollapseDirectory: Story = {
 export const WithBuildAndNodeModules: Story = {
     args: {
         fs: makeFakeFS(deepRoot),
+        onFileOpen: fileOpenSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
@@ -300,6 +280,7 @@ export const WithBuildAndNodeModules: Story = {
 export const EmptyProject: Story = {
     args: {
         fs: makeFakeFS(emptyRoot),
+        onFileOpen: fileOpenSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
