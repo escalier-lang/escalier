@@ -103,12 +103,13 @@ const TabItem = ({
                 <div
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
                 >
                     <button
                         type="button"
                         className={styles.contextMenuItem}
-                        onClick={(e) => {
-                            e.stopPropagation();
+                        onClick={() => {
                             setContextMenu(null);
                             onMove();
                         }}
@@ -120,8 +121,7 @@ const TabItem = ({
                     <button
                         type="button"
                         className={styles.contextMenuItem}
-                        onClick={(e) => {
-                            e.stopPropagation();
+                        onClick={() => {
                             setContextMenu(null);
                             onClose();
                         }}
@@ -257,7 +257,10 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         }
 
         const model = getOrCreateModel(activeRightPath);
-        editor.updateOptions({ readOnly: true });
+        const isBuildFile =
+            activeRightPath.startsWith('/build/') ||
+            /^\/packages\/[^/]+\/build\//.test(activeRightPath);
+        editor.updateOptions({ readOnly: !!isBuildFile });
         editor.setModel(model);
 
         // Restore scroll position
@@ -290,35 +293,54 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         return () => fs.events.off(listener);
     }, [rightTabs, fs]);
 
-    // After initial compilation, open the build output files as right tabs
+    // After initial compilation, open the build output files as right tabs.
+    // Only auto-open build files whose source is currently open on the left.
     useEffect(() => {
         if (initialCompileDone) return;
 
-        const listener = (event: import('./fs/fs-events').FSEvent) => {
-            if (
-                event.type === 'create' &&
-                event.kind === 'file' &&
-                (event.path.startsWith('/build/') ||
-                    /^\/packages\/[^/]+\/build\//.test(event.path))
+        // Build a set of expected output prefixes from the open left-side
+        // .esc files.  e.g. "/bin/main.esc" → "/build/bin/main."
+        // and "/packages/foo/lib/bar.esc" → "/packages/foo/build/lib/bar."
+        const buildPrefixes = new Set<string>();
+        for (const tab of openTabs) {
+            if (!tab.path.endsWith('.esc')) continue;
+            const withoutEsc = tab.path.replace(/\.esc$/, '.');
+            const pkgMatch = withoutEsc.match(
+                /^(\/packages\/[^/]+\/)(lib\/|bin\/)(.*)/,
+            );
+            if (pkgMatch) {
+                buildPrefixes.add(
+                    `${pkgMatch[1]}build/${pkgMatch[2]}${pkgMatch[3]}`,
+                );
+            } else if (
+                withoutEsc.startsWith('/lib/') ||
+                withoutEsc.startsWith('/bin/')
             ) {
+                buildPrefixes.add(`/build${withoutEsc}`);
+            }
+        }
+
+        let markedDone = false;
+        const listener = (event: import('./fs/fs-events').FSEvent) => {
+            if (event.type !== 'create' || event.kind !== 'file') return;
+
+            const isBuildFile =
+                event.path.startsWith('/build/') ||
+                /^\/packages\/[^/]+\/build\//.test(event.path);
+            if (!isBuildFile) return;
+
+            // Only auto-open if it matches a left-side source file
+            const matchesSource = [...buildPrefixes].some((prefix) =>
+                event.path.startsWith(prefix),
+            );
+            if (matchesSource) {
                 dispatch({ type: 'openRightFile', path: event.path });
             }
-        };
 
-        fs.events.on(listener);
-
-        // Use a one-shot listener for marking compilation done.
-        // We queue a microtask so all synchronous FS writes from one
-        // compilation batch are captured before we mark done.
-        let markedDone = false;
-        const doneListener = (event: import('./fs/fs-events').FSEvent) => {
-            if (
-                !markedDone &&
-                event.type === 'create' &&
-                event.kind === 'file' &&
-                (event.path.startsWith('/build/') ||
-                    /^\/packages\/[^/]+\/build\//.test(event.path))
-            ) {
+            // Mark compilation done after the first batch of build files.
+            // queueMicrotask ensures all synchronous FS writes from one
+            // compilation are captured before we mark done.
+            if (!markedDone) {
                 markedDone = true;
                 queueMicrotask(() => {
                     dispatch({ type: 'setInitialCompileDone' });
@@ -326,12 +348,9 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             }
         };
 
-        fs.events.on(doneListener);
-        return () => {
-            fs.events.off(listener);
-            fs.events.off(doneListener);
-        };
-    }, [initialCompileDone, fs, dispatch]);
+        fs.events.on(listener);
+        return () => fs.events.off(listener);
+    }, [initialCompileDone, openTabs, fs, dispatch]);
 
     return (
         <div className={styles.playground}>

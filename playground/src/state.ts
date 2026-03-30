@@ -223,15 +223,16 @@ export function playgroundReducer(
                 return state;
             }
             const tab = state.rightTabs[action.index];
-            // Close from right, open on left
+            // Close from right, then force focusedSide to 'left' so
+            // openFile doesn't route back to the right side.
             const closed = playgroundReducer(state, {
                 type: 'closeRightTab',
                 index: action.index,
             });
-            return playgroundReducer(closed, {
-                type: 'openFile',
-                path: tab.path,
-            });
+            return playgroundReducer(
+                { ...closed, focusedSide: 'left' },
+                { type: 'openFile', path: tab.path },
+            );
         }
 
         case 'renameFile': {
@@ -250,7 +251,7 @@ export function playgroundReducer(
 
         case 'deleteFile': {
             let result = state;
-            const leftIndex = state.openTabs.findIndex(
+            const leftIndex = result.openTabs.findIndex(
                 (tab) => tab.path === action.path,
             );
             if (leftIndex !== -1) {
@@ -259,7 +260,7 @@ export function playgroundReducer(
                     index: leftIndex,
                 });
             }
-            const rightIndex = state.rightTabs.findIndex(
+            const rightIndex = result.rightTabs.findIndex(
                 (tab) => tab.path === action.path,
             );
             if (rightIndex !== -1) {

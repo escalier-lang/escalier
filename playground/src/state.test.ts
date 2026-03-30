@@ -204,6 +204,126 @@ describe('playgroundReducer', () => {
         });
     });
 
+    describe('setFocusedSide', () => {
+        test('sets focusedSide to right', () => {
+            const next = playgroundReducer(initialState, {
+                type: 'setFocusedSide',
+                side: 'right',
+            });
+            expect(next.focusedSide).toBe('right');
+        });
+
+        test('sets focusedSide to left', () => {
+            const state: PlaygroundState = {
+                ...initialState,
+                focusedSide: 'right',
+            };
+            const next = playgroundReducer(state, {
+                type: 'setFocusedSide',
+                side: 'left',
+            });
+            expect(next.focusedSide).toBe('left');
+        });
+    });
+
+    describe('openFile routing', () => {
+        test('opens on left when focusedSide is left', () => {
+            const state = stateWith(['/a.esc']);
+            const next = playgroundReducer(state, {
+                type: 'openFile',
+                path: '/b.esc',
+            });
+            expect(next.openTabs).toHaveLength(2);
+            expect(next.openTabs[1].path).toBe('/b.esc');
+            expect(next.rightTabs).toHaveLength(0);
+        });
+
+        test('opens on right when focusedSide is right', () => {
+            const state: PlaygroundState = {
+                ...stateWith(['/a.esc']),
+                focusedSide: 'right',
+            };
+            const next = playgroundReducer(state, {
+                type: 'openFile',
+                path: '/b.esc',
+            });
+            expect(next.openTabs).toHaveLength(1);
+            expect(next.rightTabs).toHaveLength(1);
+            expect(next.rightTabs[0].path).toBe('/b.esc');
+        });
+    });
+
+    describe('moveTabToRight', () => {
+        test('moves tab from left to right', () => {
+            const state = stateWith(['/a.esc', '/b.esc'], 0);
+            const next = playgroundReducer(state, {
+                type: 'moveTabToRight',
+                index: 0,
+            });
+            expect(next.openTabs).toHaveLength(1);
+            expect(next.openTabs[0].path).toBe('/b.esc');
+            expect(next.rightTabs).toHaveLength(1);
+            expect(next.rightTabs[0].path).toBe('/a.esc');
+            expect(next.activeRightTabIndex).toBe(0);
+        });
+
+        test('ignores out-of-bounds index', () => {
+            const state = stateWith(['/a.esc'], 0);
+            expect(
+                playgroundReducer(state, { type: 'moveTabToRight', index: 5 }),
+            ).toBe(state);
+        });
+    });
+
+    describe('moveTabToLeft', () => {
+        test('moves tab from right to left', () => {
+            const state: PlaygroundState = {
+                ...stateWith(['/a.esc']),
+                rightTabs: [{ path: '/build/bin/main.js' }],
+                activeRightTabIndex: 0,
+                focusedSide: 'right',
+            };
+            const next = playgroundReducer(state, {
+                type: 'moveTabToLeft',
+                index: 0,
+            });
+            expect(next.rightTabs).toHaveLength(0);
+            expect(next.openTabs).toHaveLength(2);
+            expect(next.openTabs[1].path).toBe('/build/bin/main.js');
+            expect(next.activeTabIndex).toBe(1);
+        });
+
+        test('works correctly even when focusedSide is right', () => {
+            // This tests the fix: moveTabToLeft should always open on the
+            // left side, regardless of focusedSide.
+            const state: PlaygroundState = {
+                ...initialState,
+                rightTabs: [
+                    { path: '/build/bin/main.js' },
+                    { path: '/build/bin/main.js.map' },
+                ],
+                activeRightTabIndex: 0,
+                focusedSide: 'right',
+            };
+            const next = playgroundReducer(state, {
+                type: 'moveTabToLeft',
+                index: 0,
+            });
+            // Should be on the left, not re-routed back to right
+            expect(next.openTabs).toHaveLength(2);
+            expect(next.openTabs[1].path).toBe('/build/bin/main.js');
+            expect(next.rightTabs).toHaveLength(1);
+            expect(next.rightTabs[0].path).toBe('/build/bin/main.js.map');
+        });
+
+        test('ignores out-of-bounds index', () => {
+            const state = stateWith(['/a.esc'], 0);
+            expect(
+                playgroundReducer(state, { type: 'moveTabToLeft', index: 5 }),
+            ).toBe(state);
+        });
+    });
+
     describe('renameFile', () => {
         test('renames a matching tab', () => {
             const state = stateWith(['/a.esc', '/b.esc'], 0);
