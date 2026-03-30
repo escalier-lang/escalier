@@ -22,8 +22,8 @@ export type Tab = {
 export type Side = 'left' | 'right';
 
 export type PlaygroundState = {
-    openTabs: Tab[];
-    activeTabIndex: number | null;
+    leftTabs: Tab[];
+    activeLeftTabIndex: number | null;
     rightTabs: Tab[];
     activeRightTabIndex: number | null;
     focusedSide: Side;
@@ -33,7 +33,7 @@ export type PlaygroundState = {
 };
 
 export type PlaygroundAction =
-    | { type: 'openFile'; path: string; side?: Side }
+    | { type: 'openFile'; path: string; side?: Side; scrollPos?: number }
     | { type: 'closeTab'; side: Side; index: number }
     | { type: 'setActiveTab'; side: Side; index: number }
     | { type: 'setFocusedSide'; side: Side }
@@ -47,8 +47,8 @@ export type PlaygroundAction =
     | { type: 'dismissNotification' };
 
 export const initialState: PlaygroundState = {
-    openTabs: [{ path: '/bin/main.esc' }],
-    activeTabIndex: 0,
+    leftTabs: [{ path: '/bin/main.esc' }],
+    activeLeftTabIndex: 0,
     rightTabs: [],
     activeRightTabIndex: null,
     focusedSide: 'left',
@@ -58,7 +58,7 @@ export const initialState: PlaygroundState = {
 };
 
 function getTabsForSide(state: PlaygroundState, side: Side): Tab[] {
-    return side === 'left' ? state.openTabs : state.rightTabs;
+    return side === 'left' ? state.leftTabs : state.rightTabs;
 }
 
 function setTabsForSide(
@@ -68,7 +68,7 @@ function setTabsForSide(
     activeIndex: number | null,
 ): PlaygroundState {
     return side === 'left'
-        ? { ...state, openTabs: tabs, activeTabIndex: activeIndex }
+        ? { ...state, leftTabs: tabs, activeLeftTabIndex: activeIndex }
         : { ...state, rightTabs: tabs, activeRightTabIndex: activeIndex };
 }
 
@@ -86,7 +86,11 @@ export function playgroundReducer(
             if (existingIndex !== -1) {
                 return setTabsForSide(state, side, tabs, existingIndex);
             }
-            const newTabs = [...tabs, { path: action.path }];
+            const newTab: Tab = { path: action.path };
+            if (action.scrollPos !== undefined) {
+                newTab.scrollPos = action.scrollPos;
+            }
+            const newTabs = [...tabs, newTab];
             return setTabsForSide(state, side, newTabs, newTabs.length - 1);
         }
 
@@ -95,7 +99,7 @@ export function playgroundReducer(
             const tabs = getTabsForSide(state, side);
             const activeIndex =
                 side === 'left'
-                    ? state.activeTabIndex
+                    ? state.activeLeftTabIndex
                     : state.activeRightTabIndex;
 
             if (!Number.isInteger(index) || index < 0 || index >= tabs.length) {
@@ -141,38 +145,26 @@ export function playgroundReducer(
             }
             const tab = tabs[index];
             const to = from === 'left' ? 'right' : 'left';
-            // Close from source side
             let result = playgroundReducer(state, {
                 type: 'closeTab',
                 side: from,
                 index,
             });
-            // Add to destination side, preserving full tab metadata
-            const destTabs = getTabsForSide(result, to);
-            const existingIndex = destTabs.findIndex(
-                (t) => t.path === tab.path,
-            );
-            if (existingIndex !== -1) {
-                result = setTabsForSide(result, to, destTabs, existingIndex);
-            } else {
-                const newDestTabs = [...destTabs, tab];
-                result = setTabsForSide(
-                    result,
-                    to,
-                    newDestTabs,
-                    newDestTabs.length - 1,
-                );
-            }
-            // When moving to left, set focus to left so subsequent openFile
-            // calls don't route back to right
+            // When moving to left, set focus before openFile so it doesn't
+            // route back to the right side
             if (to === 'left') {
                 result = { ...result, focusedSide: 'left' };
             }
-            return result;
+            return playgroundReducer(result, {
+                type: 'openFile',
+                path: tab.path,
+                side: to,
+                scrollPos: tab.scrollPos,
+            });
         }
 
         case 'renameFile': {
-            const newTabs = state.openTabs.map((tab) =>
+            const newTabs = state.leftTabs.map((tab) =>
                 tab.path === action.oldPath
                     ? { ...tab, path: action.newPath }
                     : tab,
@@ -182,12 +174,12 @@ export function playgroundReducer(
                     ? { ...tab, path: action.newPath }
                     : tab,
             );
-            return { ...state, openTabs: newTabs, rightTabs: newRightTabs };
+            return { ...state, leftTabs: newTabs, rightTabs: newRightTabs };
         }
 
         case 'deleteFile': {
             let result = state;
-            const leftIndex = result.openTabs.findIndex(
+            const leftIndex = result.leftTabs.findIndex(
                 (tab) => tab.path === action.path,
             );
             if (leftIndex !== -1) {
@@ -214,8 +206,8 @@ export function playgroundReducer(
             const primaryFile = action.primaryFile ?? '/lib/index.esc';
             return {
                 ...state,
-                openTabs: [{ path: primaryFile }],
-                activeTabIndex: 0,
+                leftTabs: [{ path: primaryFile }],
+                activeLeftTabIndex: 0,
                 rightTabs: [],
                 activeRightTabIndex: null,
                 focusedSide: 'left',

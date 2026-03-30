@@ -102,6 +102,7 @@ const TabItem = ({
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                 >
                     <button
@@ -144,8 +145,8 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         null,
     );
     const {
-        openTabs,
-        activeTabIndex,
+        leftTabs: openTabs,
+        activeLeftTabIndex: activeTabIndex,
         rightTabs,
         activeRightTabIndex,
         focusedSide,
@@ -153,16 +154,18 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         validationResult,
     } = state;
 
-    // Dismiss context menu on any click, right-click, or pointer-down elsewhere
+    // Dismiss context menu on click or pointer-down elsewhere.
+    // pointerdown covers both left- and right-clicks and fires before
+    // contextmenu, so it dismisses the menu before a new one opens.
+    // We intentionally omit 'contextmenu' because it would bubble from
+    // the tab and immediately clear the menu that was just opened.
     useEffect(() => {
         if (!contextMenu) return;
         const dismiss = () => setContextMenu(null);
         window.addEventListener('click', dismiss);
-        window.addEventListener('contextmenu', dismiss);
         window.addEventListener('pointerdown', dismiss);
         return () => {
             window.removeEventListener('click', dismiss);
-            window.removeEventListener('contextmenu', dismiss);
             window.removeEventListener('pointerdown', dismiss);
         };
     }, [contextMenu]);
@@ -372,15 +375,27 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'left' });
-                            dispatch({ type: 'setActiveTab', side: 'left', index: i });
+                            dispatch({
+                                type: 'setActiveTab',
+                                side: 'left',
+                                index: i,
+                            });
                         }}
                         onClose={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'closeTab', side: 'left', index: i });
+                            dispatch({
+                                type: 'closeTab',
+                                side: 'left',
+                                index: i,
+                            });
                         }}
                         onMove={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'moveTab', from: 'left', index: i });
+                            dispatch({
+                                type: 'moveTab',
+                                from: 'left',
+                                index: i,
+                            });
                         }}
                         onContextMenu={(x, y) =>
                             setContextMenu({
@@ -407,15 +422,27 @@ export const Playground = ({ fs }: PlaygroundProps) => {
                         contextMenu={contextMenu}
                         onActivate={() => {
                             dispatch({ type: 'setFocusedSide', side: 'right' });
-                            dispatch({ type: 'setActiveTab', side: 'right', index: i });
+                            dispatch({
+                                type: 'setActiveTab',
+                                side: 'right',
+                                index: i,
+                            });
                         }}
                         onClose={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'closeTab', side: 'right', index: i });
+                            dispatch({
+                                type: 'closeTab',
+                                side: 'right',
+                                index: i,
+                            });
                         }}
                         onMove={() => {
                             setContextMenu(null);
-                            dispatch({ type: 'moveTab', from: 'right', index: i });
+                            dispatch({
+                                type: 'moveTab',
+                                from: 'right',
+                                index: i,
+                            });
                         }}
                         onContextMenu={(x, y) =>
                             setContextMenu({
