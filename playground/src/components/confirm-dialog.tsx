@@ -58,9 +58,9 @@ export const ConfirmDialog = ({
                     onCancel();
                 }
             }}
-            onKeyDown={() => {
-                // Keyboard dismissal handled by the native dialog cancel event
-            }}
+            // Satisfies jsx-a11y/click-events-have-key-events; keyboard
+            // dismissal is handled by the native dialog cancel event.
+            onKeyDown={() => {}}
         >
             <h2 id="confirm-dialog-title" className={styles.title}>
                 {title}

@@ -139,4 +139,12 @@ export const LongMessage: Story = {
             type: 'info',
         },
     },
+    play: async ({ canvasElement, args }) => {
+        const canvas = within(canvasElement.ownerDocument.body);
+
+        // Verify the long message renders and is visible
+        await waitFor(() =>
+            expect(canvas.getByText(args.notification.message)).toBeVisible(),
+        );
+    },
 };

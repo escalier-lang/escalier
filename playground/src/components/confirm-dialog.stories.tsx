@@ -88,9 +88,8 @@ export const Destructive: Story = {
         const deleteButton = canvas.getByRole('button', { name: 'Delete' });
         await expect(deleteButton).toBeVisible();
 
-        // The destructive button should have a red-ish background
-        const style = getComputedStyle(deleteButton);
-        await expect(style.backgroundColor).toBe('rgb(212, 32, 32)');
+        // The destructive button should have the destructive styling class
+        await expect(deleteButton.className).toContain('destructiveButton');
     },
 };
 

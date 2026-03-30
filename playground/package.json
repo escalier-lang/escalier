@@ -21,23 +21,23 @@
         "react-dom": "catalog:"
     },
     "devDependencies": {
-        "@types/react": "catalog:",
-        "@types/react-dom": "catalog:",
-        "@vitejs/plugin-react": "^5.1.0",
-        "globals": "^15.15.0",
-        "typescript": "~5.7.2",
-        "vite": "^7.1.12",
-        "vscode-languageserver-protocol": "3.17.5",
-        "storybook": "^10.3.3",
-        "@storybook/react-vite": "^10.3.3",
         "@chromatic-com/storybook": "^5.1.1",
         "@storybook/addon-a11y": "^10.3.3",
         "@storybook/addon-docs": "^10.3.3",
         "@storybook/addon-onboarding": "^10.3.3",
         "@storybook/addon-vitest": "^10.3.3",
+        "@storybook/react-vite": "^10.3.3",
+        "@types/react-dom": "catalog:",
+        "@types/react": "catalog:",
+        "@vitejs/plugin-react": "^5.1.0",
         "@vitest/browser-playwright": "^4.1.2",
         "eslint-plugin-storybook": "^10.3.3",
-        "playwright": "^1.58.2"
+        "globals": "^15.15.0",
+        "playwright": "^1.58.2",
+        "storybook": "^10.3.3",
+        "typescript": "~5.7.2",
+        "vite": "^7.1.12",
+        "vscode-languageserver-protocol": "3.17.5"
     },
     "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }

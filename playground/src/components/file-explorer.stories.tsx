@@ -217,13 +217,16 @@ export const SimpleProject: Story = {
         // Header is present
         await expect(canvas.getByText('EXPLORER')).toBeVisible();
 
-        // Directories are shown (sorted first, alphabetically)
-        await expect(canvas.getByText('bin')).toBeVisible();
-        await expect(canvas.getByText('lib')).toBeVisible();
-
-        // Files are shown (sorted after directories)
-        await expect(canvas.getByText('escalier.toml')).toBeVisible();
-        await expect(canvas.getByText('package.json')).toBeVisible();
+        // Directories first (alphabetical), then files (alphabetical)
+        const topLevel = ['bin', 'lib', 'escalier.toml', 'package.json'];
+        const nodes = topLevel.map((name) => canvas.getByText(name));
+        for (let i = 0; i < nodes.length - 1; i++) {
+            // Earlier in DOM order means the node comes before the next one
+            const position = nodes[i].compareDocumentPosition(nodes[i + 1]);
+            await expect(
+                position & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+        }
 
         // Directories are expanded by default, showing children
         await expect(canvas.getByText('main.esc')).toBeVisible();
@@ -241,6 +244,7 @@ export const ClickFile: Story = {
 
         // Click a file to open it
         await userEvent.click(canvas.getByText('main.esc'));
+        await expect(dispatchSpy).toHaveBeenCalledTimes(1);
         await expect(dispatchSpy).toHaveBeenCalledWith({
             type: 'openFile',
             path: '/bin/main.esc',
