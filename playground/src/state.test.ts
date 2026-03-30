@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import {
-    type PlaygroundState,
-    initialState,
-    playgroundReducer,
-} from './state';
+import { type PlaygroundState, initialState, playgroundReducer } from './state';
 
 /** Helper to create state with specific open tabs. */
 function stateWith(
@@ -107,8 +103,12 @@ describe('playgroundReducer', () => {
 
         test('ignores out-of-bounds index', () => {
             const state = stateWith(['/a.esc'], 0);
-            expect(playgroundReducer(state, { type: 'closeTab', index: 5 })).toBe(state);
-            expect(playgroundReducer(state, { type: 'closeTab', index: -1 })).toBe(state);
+            expect(
+                playgroundReducer(state, { type: 'closeTab', index: 5 }),
+            ).toBe(state);
+            expect(
+                playgroundReducer(state, { type: 'closeTab', index: -1 }),
+            ).toBe(state);
         });
     });
 
