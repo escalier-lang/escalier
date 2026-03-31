@@ -51,6 +51,9 @@ function isProtected(path: string): boolean {
     );
 }
 
+/** Root parent path — used by header buttons to create items at the project root. */
+const ROOT_PATH = '';
+
 export const FileExplorer = ({
     fs,
     onFileOpen,
@@ -99,22 +102,26 @@ export const FileExplorer = ({
         [],
     );
 
+    const expandDir = useCallback((dirPath: string) => {
+        setExpandOverrides((prev) => new Map(prev).set(dirPath, true));
+    }, []);
+
     const handleNewFile = useCallback(
         (parentPath: string) => {
             setContextMenu(null);
-            setExpandOverrides((prev) => new Map(prev).set(parentPath, true));
+            expandDir(parentPath);
             setInlineInput({ parentPath, kind: 'file' });
         },
-        [],
+        [expandDir],
     );
 
     const handleNewFolder = useCallback(
         (parentPath: string) => {
             setContextMenu(null);
-            setExpandOverrides((prev) => new Map(prev).set(parentPath, true));
+            expandDir(parentPath);
             setInlineInput({ parentPath, kind: 'dir' });
         },
-        [],
+        [expandDir],
     );
 
     const handleRename = useCallback(
@@ -195,20 +202,23 @@ export const FileExplorer = ({
                     <button
                         type="button"
                         className={styles.headerButton}
-                        onClick={() => handleNewFile('')}
+                        onClick={() => handleNewFile(ROOT_PATH)}
                         aria-label="New File"
                         title="New File"
                     >
-                        +&#xFE0E;
+                        +
                     </button>
                     <button
                         type="button"
                         className={styles.headerButton}
-                        onClick={() => handleNewFolder('')}
+                        onClick={() => handleNewFolder(ROOT_PATH)}
                         aria-label="New Folder"
                         title="New Folder"
                     >
-                        &#x1F4C1;&#xFE0E;
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <title>New Folder</title>
+                            <path d="M14 4H8.618l-1-2H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z" />
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -239,7 +249,8 @@ export const FileExplorer = ({
                     onPointerDown={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                 >
-                    {contextMenu.nodeType === 'dir' && (
+                    {contextMenu.nodeType === 'dir' &&
+                        !isProtected(contextMenu.path) && (
                         <>
                             <button
                                 type="button"
@@ -534,6 +545,7 @@ const InlineNameInput = ({
     onCancel,
 }: InlineNameInputProps) => {
     const inputRef = useRef<HTMLInputElement>(null);
+    const committedRef = useRef(false);
 
     useEffect(() => {
         const input = inputRef.current;
@@ -552,13 +564,25 @@ const InlineNameInput = ({
         }
     }, [initialValue, kind]);
 
+    const commit = (value: string) => {
+        if (committedRef.current) return;
+        committedRef.current = true;
+        onSubmit(value);
+    };
+
+    const cancel = () => {
+        if (committedRef.current) return;
+        committedRef.current = true;
+        onCancel();
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            onSubmit(e.currentTarget.value);
+            commit(e.currentTarget.value);
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            onCancel();
+            cancel();
         }
     };
 
@@ -571,9 +595,9 @@ const InlineNameInput = ({
             onBlur={(e) => {
                 const value = e.currentTarget.value.trim();
                 if (value && value !== initialValue) {
-                    onSubmit(value);
+                    commit(value);
                 } else {
-                    onCancel();
+                    cancel();
                 }
             }}
             aria-label={initialValue ? `Rename ${initialValue}` : `New ${kind} name`}

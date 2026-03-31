@@ -368,12 +368,12 @@ export const NoContextMenuOnProtectedPaths: Story = {
         // Expand build directory
         await userEvent.click(canvas.getByText('build'));
 
-        // Right-click on build directory - should not show Rename/Delete
+        // Right-click on build directory - no context menu at all since it's protected
         const buildDir = canvas.getByText('build');
         await userEvent.pointer({ keys: '[MouseRight]', target: buildDir });
 
-        // Build dir context menu should only show New File/Folder (it's a dir)
-        // but no Rename/Delete since it's protected
+        expect(canvas.queryByText('New File')).toBeNull();
+        expect(canvas.queryByText('New Folder')).toBeNull();
         expect(canvas.queryByText('Rename')).toBeNull();
         expect(canvas.queryByText('Delete')).toBeNull();
     },
