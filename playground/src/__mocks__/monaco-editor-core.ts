@@ -1,15 +1,17 @@
 import { vi } from 'vitest';
 
-const mockEditor = {
-    setModel: vi.fn(),
-    updateOptions: vi.fn(),
-    setScrollTop: vi.fn(),
-    dispose: vi.fn(),
-    onDidFocusEditorWidget: vi.fn(() => ({ dispose: vi.fn() })),
-};
+function createMockEditor() {
+    return {
+        setModel: vi.fn(),
+        updateOptions: vi.fn(),
+        setScrollTop: vi.fn(),
+        dispose: vi.fn(),
+        onDidFocusEditorWidget: vi.fn(() => ({ dispose: vi.fn() })),
+    };
+}
 
 export const editor = {
-    create: vi.fn(() => mockEditor),
+    create: vi.fn(() => createMockEditor()),
     createModel: vi.fn(() => ({ getValue: vi.fn(() => '') })),
     getModel: vi.fn(() => null),
 };

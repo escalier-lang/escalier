@@ -32,5 +32,10 @@ export function playgroundReducer(
         case 'setValidationResult': {
             return { ...state, validationResult: action.result };
         }
+
+        default: {
+            const _exhaustive: never = action;
+            return _exhaustive;
+        }
     }
 }

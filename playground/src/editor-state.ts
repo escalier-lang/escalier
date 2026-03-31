@@ -129,11 +129,9 @@ export function editorReducer(
                 side: from,
                 index,
             });
-            // When moving to left, set focus before openFile so it doesn't
-            // route back to the right side
-            if (to === 'left') {
-                result = { ...result, focusedSide: 'left' };
-            }
+            // set focus before openFile so it doesn't route back to the opposite
+            // site
+            result = { ...result, focusedSide: to };
             return editorReducer(result, {
                 type: 'openFile',
                 path: tab.path,
@@ -199,6 +197,11 @@ export function editorReducer(
 
         case 'dismissNotification': {
             return { ...state, notification: null };
+        }
+
+        default: {
+            const _exhaustive: never = action;
+            return _exhaustive;
         }
     }
 }

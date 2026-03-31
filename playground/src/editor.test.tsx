@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -152,7 +153,7 @@ describe('Editor', () => {
                 screen.getByText(
                     'Open a file from the explorer to start editing',
                 ),
-            ).toBeTruthy();
+            ).toBeInTheDocument();
         });
 
         test('clicking an inactive right tab makes it active', () => {
@@ -183,8 +184,8 @@ describe('Editor', () => {
 
             fireEvent.contextMenu(screen.getAllByRole('tab')[0]);
 
-            expect(screen.getByText('Move to Right')).toBeTruthy();
-            expect(screen.getByText('Close')).toBeTruthy();
+            expect(screen.getByText('Move to Right')).toBeInTheDocument();
+            expect(screen.getByText('Close')).toBeInTheDocument();
         });
 
         test('Move to Right moves the tab from left to right tablist', () => {
@@ -219,7 +220,7 @@ describe('Editor', () => {
             const rightTab = getTabsInTablist(1)[0];
             fireEvent.contextMenu(rightTab);
 
-            expect(screen.getByText('Move to Left')).toBeTruthy();
+            expect(screen.getByText('Move to Left')).toBeInTheDocument();
         });
 
         test('Move to Left moves the tab from right to left tablist', () => {
@@ -271,7 +272,7 @@ describe('Editor', () => {
                 screen.getByText(
                     'Open a file from the explorer to start editing',
                 ),
-            ).toBeTruthy();
+            ).toBeInTheDocument();
         });
 
         test('hides input panel when no left tabs are open', () => {
@@ -295,8 +296,8 @@ describe('Editor', () => {
                 />,
             );
 
-            expect(screen.getByTestId('error-banner')).toBeTruthy();
-            expect(screen.getByText('Build failed')).toBeTruthy();
+            expect(screen.getByTestId('error-banner')).toBeInTheDocument();
+            expect(screen.getByText('Build failed')).toBeInTheDocument();
         });
 
         test('does not render banner wrapper when not provided', () => {
@@ -340,8 +341,8 @@ describe('Editor', () => {
                 />,
             );
 
-            expect(screen.getByTestId('spinner')).toBeTruthy();
-            expect(screen.getByText('Compiling...')).toBeTruthy();
+            expect(screen.getByTestId('spinner')).toBeInTheDocument();
+            expect(screen.getByText('Compiling...')).toBeInTheDocument();
         });
 
         test('does not render overlay when right pane is visible', () => {
@@ -359,7 +360,7 @@ describe('Editor', () => {
                 />,
             );
 
-            expect(screen.queryByTestId('spinner')).toBeNull();
+            expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
         });
     });
 
@@ -370,8 +371,8 @@ describe('Editor', () => {
             });
             render(<Editor fs={makeFakeFS()} />);
 
-            expect(screen.getByText('Saved!')).toBeTruthy();
-            expect(screen.getByRole('alert')).toBeTruthy();
+            expect(screen.getByText('Saved!')).toBeInTheDocument();
+            expect(screen.getByRole('alert')).toBeInTheDocument();
         });
 
         test('clicking dismiss removes the toast', () => {
@@ -380,13 +381,13 @@ describe('Editor', () => {
             });
             render(<Editor fs={makeFakeFS()} />);
 
-            expect(screen.getByRole('alert')).toBeTruthy();
+            expect(screen.getByRole('alert')).toBeInTheDocument();
 
             fireEvent.click(
                 screen.getByRole('button', { name: 'Dismiss notification' }),
             );
 
-            expect(screen.queryByRole('alert')).toBeNull();
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
     });
 });
