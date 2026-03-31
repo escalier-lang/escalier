@@ -1,14 +1,3 @@
-import { type Dispatch, createContext, useContext } from 'react';
-
-// ValidationResult type - will be fully implemented in Phase 2
-export type ValidationResult =
-    | { mode: 'single-package'; packageJson: object }
-    | {
-          mode: 'multi-package';
-          packages: Array<{ name: string; path: string; packageJson: object }>;
-      }
-    | { mode: 'invalid'; errors: string[] };
-
 export type Notification = {
     message: string;
     type: 'info' | 'warning' | 'error';
@@ -21,61 +10,55 @@ export type Tab = {
 
 export type Side = 'left' | 'right';
 
-export type PlaygroundState = {
+export type EditorState = {
     leftTabs: Tab[];
     activeLeftTabIndex: number | null;
     rightTabs: Tab[];
     activeRightTabIndex: number | null;
     focusedSide: Side;
-    initialCompileDone: boolean;
-    validationResult: ValidationResult;
     notification: Notification | null;
 };
 
-export type PlaygroundAction =
+export type EditorAction =
     | { type: 'openFile'; path: string; side?: Side; scrollPos?: number }
     | { type: 'closeTab'; side: Side; index: number }
     | { type: 'setActiveTab'; side: Side; index: number }
     | { type: 'setFocusedSide'; side: Side }
-    | { type: 'setInitialCompileDone' }
     | { type: 'moveTab'; from: Side; index: number }
     | { type: 'renameFile'; oldPath: string; newPath: string }
     | { type: 'deleteFile'; path: string }
     | { type: 'resetTabs'; primaryFile?: string }
-    | { type: 'setValidationResult'; result: ValidationResult }
     | { type: 'showNotification'; notification: Notification }
     | { type: 'dismissNotification' };
 
-export const initialState: PlaygroundState = {
+export const initialEditorState: EditorState = {
     leftTabs: [{ path: '/bin/main.esc' }],
     activeLeftTabIndex: 0,
     rightTabs: [],
     activeRightTabIndex: null,
     focusedSide: 'left',
-    initialCompileDone: false,
-    validationResult: { mode: 'single-package', packageJson: {} },
     notification: null,
 };
 
-function getTabsForSide(state: PlaygroundState, side: Side): Tab[] {
+function getTabsForSide(state: EditorState, side: Side): Tab[] {
     return side === 'left' ? state.leftTabs : state.rightTabs;
 }
 
 function setTabsForSide(
-    state: PlaygroundState,
+    state: EditorState,
     side: Side,
     tabs: Tab[],
     activeIndex: number | null,
-): PlaygroundState {
+): EditorState {
     return side === 'left'
         ? { ...state, leftTabs: tabs, activeLeftTabIndex: activeIndex }
         : { ...state, rightTabs: tabs, activeRightTabIndex: activeIndex };
 }
 
-export function playgroundReducer(
-    state: PlaygroundState,
-    action: PlaygroundAction,
-): PlaygroundState {
+export function editorReducer(
+    state: EditorState,
+    action: EditorAction,
+): EditorState {
     switch (action.type) {
         case 'openFile': {
             const side = action.side ?? state.focusedSide;
@@ -133,10 +116,6 @@ export function playgroundReducer(
             return { ...state, focusedSide: action.side };
         }
 
-        case 'setInitialCompileDone': {
-            return { ...state, initialCompileDone: true };
-        }
-
         case 'moveTab': {
             const { from, index } = action;
             const tabs = getTabsForSide(state, from);
@@ -145,17 +124,15 @@ export function playgroundReducer(
             }
             const tab = tabs[index];
             const to = from === 'left' ? 'right' : 'left';
-            let result = playgroundReducer(state, {
+            let result = editorReducer(state, {
                 type: 'closeTab',
                 side: from,
                 index,
             });
-            // When moving to left, set focus before openFile so it doesn't
-            // route back to the right side
-            if (to === 'left') {
-                result = { ...result, focusedSide: 'left' };
-            }
-            return playgroundReducer(result, {
+            // set focus before openFile so it doesn't route back to the opposite
+            // site
+            result = { ...result, focusedSide: to };
+            return editorReducer(result, {
                 type: 'openFile',
                 path: tab.path,
                 side: to,
@@ -183,7 +160,7 @@ export function playgroundReducer(
                 (tab) => tab.path === action.path,
             );
             if (leftIndex !== -1) {
-                result = playgroundReducer(result, {
+                result = editorReducer(result, {
                     type: 'closeTab',
                     side: 'left',
                     index: leftIndex,
@@ -193,7 +170,7 @@ export function playgroundReducer(
                 (tab) => tab.path === action.path,
             );
             if (rightIndex !== -1) {
-                result = playgroundReducer(result, {
+                result = editorReducer(result, {
                     type: 'closeTab',
                     side: 'right',
                     index: rightIndex,
@@ -211,12 +188,7 @@ export function playgroundReducer(
                 rightTabs: [],
                 activeRightTabIndex: null,
                 focusedSide: 'left',
-                initialCompileDone: false,
             };
-        }
-
-        case 'setValidationResult': {
-            return { ...state, validationResult: action.result };
         }
 
         case 'showNotification': {
@@ -226,19 +198,11 @@ export function playgroundReducer(
         case 'dismissNotification': {
             return { ...state, notification: null };
         }
+
+        default: {
+            const _exhaustive: never = action;
+            void _exhaustive;
+            return state;
+        }
     }
-}
-
-export const PlaygroundStateContext =
-    createContext<PlaygroundState>(initialState);
-export const PlaygroundDispatchContext = createContext<
-    Dispatch<PlaygroundAction>
->(() => {});
-
-export function usePlaygroundState(): PlaygroundState {
-    return useContext(PlaygroundStateContext);
-}
-
-export function usePlaygroundDispatch(): Dispatch<PlaygroundAction> {
-    return useContext(PlaygroundDispatchContext);
 }

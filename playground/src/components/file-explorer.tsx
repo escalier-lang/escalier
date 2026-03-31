@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { BrowserFS } from '../fs/browser-fs';
 import type { FSDir, FSNode } from '../fs/fs-node';
-import { usePlaygroundDispatch } from '../state';
 import styles from './file-explorer.module.css';
 
 type FileExplorerProps = {
     fs: BrowserFS;
+    onFileOpen: (path: string) => void;
 };
 
-export const FileExplorer = ({ fs }: FileExplorerProps) => {
+export const FileExplorer = ({ fs, onFileOpen }: FileExplorerProps) => {
     const [, setRev] = useState(0);
-    const dispatch = usePlaygroundDispatch();
 
     // Re-render when FS changes
     useEffect(() => {
@@ -20,13 +19,6 @@ export const FileExplorer = ({ fs }: FileExplorerProps) => {
         return () => fs.events.off(listener);
     }, [fs]);
 
-    const handleFileClick = useCallback(
-        (path: string) => {
-            dispatch({ type: 'openFile', path });
-        },
-        [dispatch],
-    );
-
     return (
         <div className={styles.explorer}>
             <div className={styles.header}>EXPLORER</div>
@@ -34,7 +26,7 @@ export const FileExplorer = ({ fs }: FileExplorerProps) => {
                 <DirChildren
                     dir={fs.rootDir}
                     parentPath=""
-                    onFileClick={handleFileClick}
+                    onFileClick={onFileOpen}
                 />
             </div>
         </div>

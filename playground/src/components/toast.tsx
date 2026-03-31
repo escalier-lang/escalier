@@ -1,22 +1,21 @@
 import { useEffect } from 'react';
 
-import { usePlaygroundDispatch, usePlaygroundState } from '../state';
+import type { Notification } from '../editor-state';
 import styles from './toast.module.css';
 
 const AUTO_DISMISS_MS = 4000;
 
-export const Toast = () => {
-    const { notification } = usePlaygroundState();
-    const dispatch = usePlaygroundDispatch();
+type ToastProps = {
+    notification: Notification | null;
+    onDismiss: () => void;
+};
 
+export const Toast = ({ notification, onDismiss }: ToastProps) => {
     useEffect(() => {
         if (!notification) return;
-        const timer = setTimeout(
-            () => dispatch({ type: 'dismissNotification' }),
-            AUTO_DISMISS_MS,
-        );
+        const timer = setTimeout(onDismiss, AUTO_DISMISS_MS);
         return () => clearTimeout(timer);
-    }, [notification, dispatch]);
+    }, [notification, onDismiss]);
 
     if (!notification) return null;
 
@@ -29,7 +28,7 @@ export const Toast = () => {
             <button
                 type="button"
                 className={styles.dismiss}
-                onClick={() => dispatch({ type: 'dismissNotification' })}
+                onClick={onDismiss}
                 aria-label="Dismiss notification"
             >
                 &times;

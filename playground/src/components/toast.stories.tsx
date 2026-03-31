@@ -1,40 +1,19 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { Dispatch } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import type { Notification, PlaygroundAction, PlaygroundState } from '../state';
-import {
-    PlaygroundDispatchContext,
-    PlaygroundStateContext,
-    initialState,
-} from '../state';
+import type { Notification } from '../editor-state';
 
 import { Toast } from './toast';
 
-const dispatchSpy = fn();
-
-function ToastWithProvider({ notification }: { notification: Notification }) {
-    const state: PlaygroundState = { ...initialState, notification };
-    const dispatch: Dispatch<PlaygroundAction> = (action) => {
-        dispatchSpy(action);
-    };
-
-    return (
-        <PlaygroundStateContext.Provider value={state}>
-            <PlaygroundDispatchContext.Provider value={dispatch}>
-                <Toast />
-            </PlaygroundDispatchContext.Provider>
-        </PlaygroundStateContext.Provider>
-    );
-}
+const dismissSpy = fn();
 
 const meta = {
     title: 'Components/Toast',
-    component: ToastWithProvider,
+    component: Toast,
     beforeEach: () => {
-        dispatchSpy.mockClear();
+        dismissSpy.mockClear();
     },
-} satisfies Meta<typeof ToastWithProvider>;
+} satisfies Meta<typeof Toast>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -45,6 +24,7 @@ export const InfoToast: Story = {
             message: 'File saved successfully.',
             type: 'info',
         },
+        onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
         // Toast uses position:fixed, so query from document body.
@@ -74,6 +54,7 @@ export const WarningToast: Story = {
             message: 'Workspace validation found issues.',
             type: 'warning',
         },
+        onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement.ownerDocument.body);
@@ -91,6 +72,7 @@ export const ErrorToast: Story = {
             message: 'Compilation failed with 3 errors.',
             type: 'error',
         },
+        onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement.ownerDocument.body);
@@ -108,6 +90,7 @@ export const DismissToast: Story = {
             message: 'Click dismiss to close.',
             type: 'info',
         },
+        onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement.ownerDocument.body);
@@ -124,10 +107,8 @@ export const DismissToast: Story = {
             canvas.getByRole('button', { name: 'Dismiss notification' }),
         );
 
-        // Verify dispatch was called with dismissNotification
-        await expect(dispatchSpy).toHaveBeenCalledWith({
-            type: 'dismissNotification',
-        });
+        // Verify onDismiss was called
+        await expect(dismissSpy).toHaveBeenCalled();
     },
 };
 
@@ -138,13 +119,16 @@ export const LongMessage: Story = {
                 'This is a much longer notification message to see how the toast handles text that might wrap to multiple lines in the UI.',
             type: 'info',
         },
+        onDismiss: dismissSpy,
     },
     play: async ({ canvasElement, args }) => {
         const canvas = within(canvasElement.ownerDocument.body);
 
         // Verify the long message renders and is visible
         await waitFor(() =>
-            expect(canvas.getByText(args.notification.message)).toBeVisible(),
+            expect(
+                canvas.getByText((args.notification as Notification).message),
+            ).toBeVisible(),
         );
     },
 };

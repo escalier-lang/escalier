@@ -1,149 +1,9 @@
-.playground {
-    width: 100vw;
-    height: 100vh;
-    background-color: #181818;
-    display: grid;
-    grid-template-columns: 220px 1fr 1fr;
-    grid-template-rows: 0px 40px 1fr;
-    grid-template-areas:
-        "toolbar    toolbar     toolbar"
-        "explorer   input-tabs  output-tabs"
-        "explorer   input       output";
-}
-
-.toolbar {
-    grid-area: toolbar;
-    overflow: hidden;
-}
-
-.inputTabs {
-    grid-area: input-tabs;
-    background-color: #181818;
-    display: flex;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-}
-
-.outputTabs {
-    grid-area: output-tabs;
-    background-color: #181818;
-    display: flex;
-    align-items: stretch;
-}
-
-.tab {
-    background-color: #181818;
-    color: #969696;
-    font-size: 13px;
-    font-family: sans-serif;
-    padding: 0 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    border-right: 1px solid #2b2b2b;
-    border-left: 1px solid #2b2b2b;
-    cursor: pointer;
-    outline: none;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-.tab:focus-visible {
-    outline: 2px solid #007acc;
-    outline-offset: -2px;
-}
-
-.visibleTab {
-    background-color: #1e1e1e;
-    color: #cccccc;
-}
-
-.activeTab {
-    background-color: #1e1e1e;
-    color: #cccccc;
-    border-top: 2px solid #007acc;
-}
-
-.tabLabel {
-    pointer-events: none;
-}
-
-.closeButton {
-    background: none;
-    border: none;
-    color: #969696;
-    font-size: 14px;
-    cursor: pointer;
-    padding: 0 2px;
-    line-height: 1;
-    border-radius: 3px;
-    opacity: 0;
-    pointer-events: none;
-    visibility: hidden;
-}
-
-.tab:hover .closeButton,
-.tab:focus-within .closeButton,
-.closeButton:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-    visibility: visible;
-}
-
-.closeButton:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #cccccc;
-}
-
-.contextMenu {
-    position: fixed;
-    background-color: #2b2b2b;
-    border: 1px solid #444;
-    border-radius: 4px;
-    padding: 4px 0;
-    z-index: 1000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-}
-
-.contextMenuItem {
-    display: block;
-    width: 100%;
-    background: none;
-    border: none;
-    color: #cccccc;
-    font-size: 13px;
-    font-family: sans-serif;
-    padding: 6px 16px;
-    cursor: pointer;
-    text-align: left;
-    white-space: nowrap;
-}
-
-.contextMenuItem:hover {
-    background-color: #094771;
-}
-
-.editor {
-    min-width: 0;
-}
-
-.emptyState {
-    grid-area: input;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #666;
-    font-family: sans-serif;
-    font-size: 14px;
-}
-
 .compileSpinner {
-    grid-area: output;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    height: 100%;
     gap: 12px;
     color: #969696;
     font-family: sans-serif;
@@ -166,7 +26,6 @@
 }
 
 .errorBanner {
-    grid-column: 1 / -1;
     background-color: #5a1d1d;
     color: #f48771;
     padding: 8px 16px;
