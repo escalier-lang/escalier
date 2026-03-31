@@ -43,13 +43,14 @@ function isHidden(name: string): boolean {
     return name === '.pnpm';
 }
 
-/** Whether CRUD operations should be disabled for this path */
+/** Whether CRUD operations should be disabled and entries dimmed for this path. */
 function isProtected(path: string): boolean {
     return (
-        path.startsWith('/build') ||
-        path.startsWith('/node_modules') ||
-        /^\/packages\/[^/]+\/build/.test(path) ||
-        /^\/packages\/[^/]+\/node_modules/.test(path)
+        path === '/build' ||
+        path.startsWith('/build/') ||
+        path === '/node_modules' ||
+        path.startsWith('/node_modules/') ||
+        /^\/packages\/[^/]+\/(build|node_modules)(\/|$)/.test(path)
     );
 }
 
@@ -152,28 +153,31 @@ export const FileExplorer = ({
                     oldPath.lastIndexOf('/'),
                 );
                 const newPath = `${parentPath}/${name.trim()}`;
-                if (newPath !== oldPath) {
-                    fs.rename(oldPath, newPath, (err) => {
-                        if (!err) {
-                            onFileRename?.(oldPath, newPath);
-                        }
-                    });
+                if (newPath === oldPath) {
+                    setInlineInput(null);
+                    return;
                 }
+                fs.rename(oldPath, newPath, (err) => {
+                    if (err) return;
+                    onFileRename?.(oldPath, newPath);
+                    setInlineInput(null);
+                });
             } else {
                 const fullPath = `${inlineInput.parentPath}/${name.trim()}`;
                 if (inlineInput.kind === 'dir') {
-                    fs.mkdir(fullPath, () => {});
+                    fs.mkdir(fullPath, (err) => {
+                        if (err) return;
+                        setInlineInput(null);
+                    });
                 } else {
                     const content = new TextEncoder().encode('');
                     fs.writeFile(fullPath, content, (err) => {
-                        if (!err) {
-                            onFileOpen(fullPath);
-                        }
+                        if (err) return;
+                        onFileOpen(fullPath);
+                        setInlineInput(null);
                     });
                 }
             }
-
-            setInlineInput(null);
         },
         [inlineInput, fs, onFileOpen, onFileRename],
     );
@@ -218,7 +222,6 @@ export const FileExplorer = ({
                             fill="currentColor"
                             aria-hidden="true"
                         >
-                            <title>New Folder</title>
                             <path d="M14 4H8.618l-1-2H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z" />
                         </svg>
                     </button>
@@ -426,10 +429,7 @@ const TreeNode = ({
 }: TreeNodeProps) => {
     const defaultExpanded = name !== 'node_modules' && name !== 'build';
     const isExpanded = expandOverrides.get(path) ?? defaultExpanded;
-    const isDimmed =
-        path.startsWith('/build') ||
-        path.startsWith('/node_modules') ||
-        /^\/packages\/[^/]+\/build/.test(path);
+    const isDimmed = isProtected(path);
 
     const isRenaming =
         inlineInput &&

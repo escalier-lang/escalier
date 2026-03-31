@@ -311,6 +311,24 @@ export const EmptyProject: Story = {
     },
 };
 
+/**
+ * Helper: find the context menu container in the DOM. Returns null if none is
+ * open. We locate it by looking for a div whose class name includes
+ * "contextMenu" (CSS modules mangle the class but preserve the base name).
+ */
+function findContextMenu(root: HTMLElement): HTMLElement | null {
+    return root.querySelector<HTMLElement>(
+        'div[class*="contextMenu"]:not([class*="contextMenuItem"])',
+    );
+}
+
+/** Get button labels inside a context menu container. */
+function menuItemLabels(menu: HTMLElement): string[] {
+    return Array.from(menu.querySelectorAll('button')).map(
+        (btn) => btn.textContent?.trim() ?? '',
+    );
+}
+
 export const ContextMenuOnFile: Story = {
     args: {
         fs: makeFakeFS(simpleRoot),
@@ -326,9 +344,13 @@ export const ContextMenuOnFile: Story = {
         await userEvent.pointer({ keys: '[MouseRight]', target: file });
 
         // Context menu should show Rename and Delete (no New File/Folder for files)
-        await expect(canvas.getByText('Rename')).toBeVisible();
-        await expect(canvas.getByText('Delete')).toBeVisible();
-        expect(canvas.queryByText('New File')).toBeNull();
+        const menu = findContextMenu(canvasElement);
+        if (!menu) throw new Error('Expected context menu to be open');
+        const labels = menuItemLabels(menu);
+        await expect(labels).toContain('Rename');
+        await expect(labels).toContain('Delete');
+        await expect(labels).not.toContain('New File');
+        await expect(labels).not.toContain('New Folder');
     },
 };
 
@@ -347,10 +369,13 @@ export const ContextMenuOnDirectory: Story = {
         await userEvent.pointer({ keys: '[MouseRight]', target: dir });
 
         // Context menu should show all options for directories
-        await expect(canvas.getByText('New File')).toBeVisible();
-        await expect(canvas.getByText('New Folder')).toBeVisible();
-        await expect(canvas.getByText('Rename')).toBeVisible();
-        await expect(canvas.getByText('Delete')).toBeVisible();
+        const menu = findContextMenu(canvasElement);
+        if (!menu) throw new Error('Expected context menu to be open');
+        const labels = menuItemLabels(menu);
+        await expect(labels).toContain('New File');
+        await expect(labels).toContain('New Folder');
+        await expect(labels).toContain('Rename');
+        await expect(labels).toContain('Delete');
     },
 };
 
@@ -367,14 +392,13 @@ export const NoContextMenuOnProtectedPaths: Story = {
         // Expand build directory
         await userEvent.click(canvas.getByText('build'));
 
-        // Right-click on build directory - no context menu at all since it's protected
+        // Right-click on build directory - no context menu since it's protected
         const buildDir = canvas.getByText('build');
         await userEvent.pointer({ keys: '[MouseRight]', target: buildDir });
 
-        expect(canvas.queryByText('New File')).toBeNull();
-        expect(canvas.queryByText('New Folder')).toBeNull();
-        expect(canvas.queryByText('Rename')).toBeNull();
-        expect(canvas.queryByText('Delete')).toBeNull();
+        // No context menu should appear at all
+        const menu = findContextMenu(canvasElement);
+        await expect(menu).toBeNull();
     },
 };
 
