@@ -1,16 +1,77 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BrowserFS } from '../fs/browser-fs';
 import type { FSDir, FSNode } from '../fs/fs-node';
+import { ConfirmDialog } from './confirm-dialog';
 import styles from './file-explorer.module.css';
 
 type FileExplorerProps = {
     fs: BrowserFS;
     onFileOpen: (path: string) => void;
+    onFileDelete?: (path: string) => void;
+    onFileRename?: (oldPath: string, newPath: string) => void;
 };
 
-export const FileExplorer = ({ fs, onFileOpen }: FileExplorerProps) => {
+type ContextMenuState = {
+    path: string;
+    nodeType: 'file' | 'dir';
+    x: number;
+    y: number;
+};
+
+type InlineInputState = {
+    /** Parent directory path where the new item will be created */
+    parentPath: string;
+    kind: 'file' | 'dir';
+} | {
+    /** Path of the node being renamed */
+    renamePath: string;
+    /** Current name (pre-filled in the input) */
+    currentName: string;
+};
+
+type DeleteConfirmState = {
+    path: string;
+    name: string;
+    kind: 'file' | 'dir';
+};
+
+/** Directories/files to hide from the explorer */
+function isHidden(name: string): boolean {
+    return name === '.pnpm';
+}
+
+/** Whether CRUD operations should be disabled for this path */
+function isProtected(path: string): boolean {
+    return (
+        path.startsWith('/build') ||
+        path.startsWith('/node_modules') ||
+        /^\/packages\/[^/]+\/build/.test(path) ||
+        /^\/packages\/[^/]+\/node_modules/.test(path)
+    );
+}
+
+export const FileExplorer = ({
+    fs,
+    onFileOpen,
+    onFileDelete,
+    onFileRename,
+}: FileExplorerProps) => {
     const [, setRev] = useState(0);
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
+        null,
+    );
+    const [inlineInput, setInlineInput] = useState<InlineInputState | null>(
+        null,
+    );
+    const [deleteConfirm, setDeleteConfirm] =
+        useState<DeleteConfirmState | null>(null);
+    // Tracks explicit expand/collapse overrides. `true` = expanded, `false` = collapsed.
+    // Directories not in this map use their default state (collapsed for
+    // node_modules/build, expanded for everything else).
+    const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(
+        () => new Map(),
+    );
 
     // Re-render when FS changes
     useEffect(() => {
@@ -19,32 +80,259 @@ export const FileExplorer = ({ fs, onFileOpen }: FileExplorerProps) => {
         return () => fs.events.off(listener);
     }, [fs]);
 
+    // Dismiss context menu on click/pointerdown elsewhere
+    useEffect(() => {
+        if (!contextMenu) return;
+        const dismiss = () => setContextMenu(null);
+        window.addEventListener('click', dismiss);
+        window.addEventListener('pointerdown', dismiss);
+        return () => {
+            window.removeEventListener('click', dismiss);
+            window.removeEventListener('pointerdown', dismiss);
+        };
+    }, [contextMenu]);
+
+    const handleContextMenu = useCallback(
+        (path: string, nodeType: 'file' | 'dir', x: number, y: number) => {
+            setContextMenu({ path, nodeType, x, y });
+        },
+        [],
+    );
+
+    const handleNewFile = useCallback(
+        (parentPath: string) => {
+            setContextMenu(null);
+            setExpandOverrides((prev) => new Map(prev).set(parentPath, true));
+            setInlineInput({ parentPath, kind: 'file' });
+        },
+        [],
+    );
+
+    const handleNewFolder = useCallback(
+        (parentPath: string) => {
+            setContextMenu(null);
+            setExpandOverrides((prev) => new Map(prev).set(parentPath, true));
+            setInlineInput({ parentPath, kind: 'dir' });
+        },
+        [],
+    );
+
+    const handleRename = useCallback(
+        (path: string) => {
+            setContextMenu(null);
+            const name = path.split('/').pop() ?? '';
+            setInlineInput({ renamePath: path, currentName: name });
+        },
+        [],
+    );
+
+    const handleDelete = useCallback(
+        (path: string, kind: 'file' | 'dir') => {
+            setContextMenu(null);
+            const name = path.split('/').pop() ?? path;
+            setDeleteConfirm({ path, name, kind });
+        },
+        [],
+    );
+
+    const handleInlineSubmit = useCallback(
+        (name: string) => {
+            if (!inlineInput || !name.trim()) {
+                setInlineInput(null);
+                return;
+            }
+
+            if ('renamePath' in inlineInput) {
+                const oldPath = inlineInput.renamePath;
+                const parentPath = oldPath.substring(
+                    0,
+                    oldPath.lastIndexOf('/'),
+                );
+                const newPath = `${parentPath}/${name.trim()}`;
+                if (newPath !== oldPath) {
+                    fs.rename(oldPath, newPath, (err) => {
+                        if (!err) {
+                            onFileRename?.(oldPath, newPath);
+                        }
+                    });
+                }
+            } else {
+                const fullPath = `${inlineInput.parentPath}/${name.trim()}`;
+                if (inlineInput.kind === 'dir') {
+                    fs.mkdir(fullPath, () => {});
+                } else {
+                    const content = new TextEncoder().encode('');
+                    fs.writeFile(fullPath, content, (err) => {
+                        if (!err) {
+                            onFileOpen(fullPath);
+                        }
+                    });
+                }
+            }
+
+            setInlineInput(null);
+        },
+        [inlineInput, fs, onFileOpen, onFileRename],
+    );
+
+    const handleDeleteConfirm = useCallback(() => {
+        if (!deleteConfirm) return;
+        const { path, kind } = deleteConfirm;
+        const remove = kind === 'dir' ? fs.rmdir.bind(fs) : fs.unlink.bind(fs);
+        remove(path, (err) => {
+            if (!err) {
+                onFileDelete?.(path);
+            }
+        });
+        setDeleteConfirm(null);
+    }, [deleteConfirm, fs, onFileDelete]);
+
     return (
         <div className={styles.explorer}>
-            <div className={styles.header}>EXPLORER</div>
+            <div className={styles.header}>
+                <span>EXPLORER</span>
+                <div className={styles.headerActions}>
+                    <button
+                        type="button"
+                        className={styles.headerButton}
+                        onClick={() => handleNewFile('')}
+                        aria-label="New File"
+                        title="New File"
+                    >
+                        +&#xFE0E;
+                    </button>
+                    <button
+                        type="button"
+                        className={styles.headerButton}
+                        onClick={() => handleNewFolder('')}
+                        aria-label="New Folder"
+                        title="New Folder"
+                    >
+                        &#x1F4C1;&#xFE0E;
+                    </button>
+                </div>
+            </div>
             <div className={styles.tree}>
                 <DirChildren
                     dir={fs.rootDir}
                     parentPath=""
                     onFileClick={onFileOpen}
+                    onContextMenu={handleContextMenu}
+                    inlineInput={inlineInput}
+                    onInlineSubmit={handleInlineSubmit}
+                    onInlineCancel={() => setInlineInput(null)}
+                    expandOverrides={expandOverrides}
+                    onToggleExpand={(path, expanded) => {
+                        setExpandOverrides((prev) =>
+                            new Map(prev).set(path, expanded),
+                        );
+                    }}
                 />
             </div>
+
+            {/* Context menu */}
+            {contextMenu && (
+                <div
+                    className={styles.contextMenu}
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                >
+                    {contextMenu.nodeType === 'dir' && (
+                        <>
+                            <button
+                                type="button"
+                                className={styles.contextMenuItem}
+                                onClick={() =>
+                                    handleNewFile(contextMenu.path)
+                                }
+                            >
+                                New File
+                            </button>
+                            <button
+                                type="button"
+                                className={styles.contextMenuItem}
+                                onClick={() =>
+                                    handleNewFolder(contextMenu.path)
+                                }
+                            >
+                                New Folder
+                            </button>
+                            <div className={styles.contextMenuSeparator} />
+                        </>
+                    )}
+                    {!isProtected(contextMenu.path) && (
+                        <>
+                            <button
+                                type="button"
+                                className={styles.contextMenuItem}
+                                onClick={() =>
+                                    handleRename(contextMenu.path)
+                                }
+                            >
+                                Rename
+                            </button>
+                            <button
+                                type="button"
+                                className={`${styles.contextMenuItem} ${styles.destructiveItem}`}
+                                onClick={() =>
+                                    handleDelete(
+                                        contextMenu.path,
+                                        contextMenu.nodeType,
+                                    )
+                                }
+                            >
+                                Delete
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* Delete confirmation dialog */}
+            {deleteConfirm && (
+                <ConfirmDialog
+                    title={`Delete ${deleteConfirm.kind === 'dir' ? 'folder' : 'file'}`}
+                    message={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
+                    confirmLabel="Delete"
+                    destructive
+                    onConfirm={handleDeleteConfirm}
+                    onCancel={() => setDeleteConfirm(null)}
+                />
+            )}
         </div>
     );
 };
-
-/** Directories/files to hide from the explorer */
-function isHidden(name: string): boolean {
-    return name === '.pnpm';
-}
 
 type DirChildrenProps = {
     dir: FSDir;
     parentPath: string;
     onFileClick: (path: string) => void;
+    onContextMenu: (
+        path: string,
+        nodeType: 'file' | 'dir',
+        x: number,
+        y: number,
+    ) => void;
+    inlineInput: InlineInputState | null;
+    onInlineSubmit: (name: string) => void;
+    onInlineCancel: () => void;
+    expandOverrides: Map<string, boolean>;
+    onToggleExpand: (path: string, expanded: boolean) => void;
 };
 
-const DirChildren = ({ dir, parentPath, onFileClick }: DirChildrenProps) => {
+const DirChildren = ({
+    dir,
+    parentPath,
+    onFileClick,
+    onContextMenu,
+    inlineInput,
+    onInlineSubmit,
+    onInlineCancel,
+    expandOverrides,
+    onToggleExpand,
+}: DirChildrenProps) => {
     // Sort: directories first, then files, alphabetical within each group
     const entries = Array.from(dir.children.entries())
         .filter(([name]) => !isHidden(name))
@@ -54,6 +342,12 @@ const DirChildren = ({ dir, parentPath, onFileClick }: DirChildrenProps) => {
             if (aIsDir !== bIsDir) return aIsDir - bIsDir;
             return aName.localeCompare(bName);
         });
+
+    // Show inline input for new file/folder creation in this directory
+    const showInlineCreate =
+        inlineInput &&
+        'parentPath' in inlineInput &&
+        inlineInput.parentPath === parentPath;
 
     return (
         <ul className={styles.list}>
@@ -66,9 +360,25 @@ const DirChildren = ({ dir, parentPath, onFileClick }: DirChildrenProps) => {
                         node={node}
                         path={path}
                         onFileClick={onFileClick}
+                        onContextMenu={onContextMenu}
+                        inlineInput={inlineInput}
+                        onInlineSubmit={onInlineSubmit}
+                        onInlineCancel={onInlineCancel}
+                        expandOverrides={expandOverrides}
+                        onToggleExpand={onToggleExpand}
                     />
                 );
             })}
+            {showInlineCreate && (
+                <li>
+                    <InlineNameInput
+                        initialValue=""
+                        kind={'kind' in inlineInput ? inlineInput.kind : 'file'}
+                        onSubmit={onInlineSubmit}
+                        onCancel={onInlineCancel}
+                    />
+                </li>
+            )}
         </ul>
     );
 };
@@ -78,35 +388,90 @@ type TreeNodeProps = {
     node: FSNode;
     path: string;
     onFileClick: (path: string) => void;
+    onContextMenu: (
+        path: string,
+        nodeType: 'file' | 'dir',
+        x: number,
+        y: number,
+    ) => void;
+    inlineInput: InlineInputState | null;
+    onInlineSubmit: (name: string) => void;
+    onInlineCancel: () => void;
+    expandOverrides: Map<string, boolean>;
+    onToggleExpand: (path: string, expanded: boolean) => void;
 };
 
-const TreeNode = ({ name, node, path, onFileClick }: TreeNodeProps) => {
-    const startCollapsed = name === 'node_modules' || name === 'build';
-    const [expanded, setExpanded] = useState(!startCollapsed);
+const TreeNode = ({
+    name,
+    node,
+    path,
+    onFileClick,
+    onContextMenu,
+    inlineInput,
+    onInlineSubmit,
+    onInlineCancel,
+    expandOverrides,
+    onToggleExpand,
+}: TreeNodeProps) => {
+    const defaultExpanded = name !== 'node_modules' && name !== 'build';
+    const isExpanded = expandOverrides.get(path) ?? defaultExpanded;
     const isDimmed =
         path.startsWith('/build') ||
         path.startsWith('/node_modules') ||
         /^\/packages\/[^/]+\/build/.test(path);
 
+    const isRenaming =
+        inlineInput &&
+        'renamePath' in inlineInput &&
+        inlineInput.renamePath === path;
+
+    const handleToggle = () => {
+        onToggleExpand(path, !isExpanded);
+    };
+
     if (node.type === 'dir') {
+        const showMenu = !isProtected(path);
         return (
             <li>
-                <button
-                    type="button"
-                    className={`${styles.entry} ${styles.dirEntry} ${isDimmed ? styles.dimmed : ''}`}
-                    onClick={() => setExpanded((e) => !e)}
-                    aria-expanded={expanded}
-                >
-                    <span className={styles.chevron}>
-                        {expanded ? '\u25BE' : '\u25B8'}
-                    </span>
-                    {name}
-                </button>
-                {expanded && (
+                {isRenaming ? (
+                    <InlineNameInput
+                        initialValue={'currentName' in inlineInput ? inlineInput.currentName : ''}
+                        kind="dir"
+                        onSubmit={onInlineSubmit}
+                        onCancel={onInlineCancel}
+                    />
+                ) : (
+                    <button
+                        type="button"
+                        className={`${styles.entry} ${styles.dirEntry} ${isDimmed ? styles.dimmed : ''}`}
+                        onClick={handleToggle}
+                        onContextMenu={
+                            showMenu
+                                ? (e) => {
+                                      e.preventDefault();
+                                      onContextMenu(path, 'dir', e.clientX, e.clientY);
+                                  }
+                                : undefined
+                        }
+                        aria-expanded={isExpanded}
+                    >
+                        <span className={styles.chevron}>
+                            {isExpanded ? '\u25BE' : '\u25B8'}
+                        </span>
+                        {name}
+                    </button>
+                )}
+                {isExpanded && (
                     <DirChildren
                         dir={node}
                         parentPath={path}
                         onFileClick={onFileClick}
+                        onContextMenu={onContextMenu}
+                        inlineInput={inlineInput}
+                        onInlineSubmit={onInlineSubmit}
+                        onInlineCancel={onInlineCancel}
+                        expandOverrides={expandOverrides}
+                        onToggleExpand={onToggleExpand}
                     />
                 )}
             </li>
@@ -114,15 +479,33 @@ const TreeNode = ({ name, node, path, onFileClick }: TreeNodeProps) => {
     }
 
     if (node.type === 'file') {
+        const showMenu = !isProtected(path);
         return (
             <li>
-                <button
-                    type="button"
-                    className={`${styles.entry} ${styles.fileEntry} ${isDimmed ? styles.dimmed : ''}`}
-                    onClick={() => onFileClick(path)}
-                >
-                    {name}
-                </button>
+                {isRenaming ? (
+                    <InlineNameInput
+                        initialValue={'currentName' in inlineInput ? inlineInput.currentName : ''}
+                        kind="file"
+                        onSubmit={onInlineSubmit}
+                        onCancel={onInlineCancel}
+                    />
+                ) : (
+                    <button
+                        type="button"
+                        className={`${styles.entry} ${styles.fileEntry} ${isDimmed ? styles.dimmed : ''}`}
+                        onClick={() => onFileClick(path)}
+                        onContextMenu={
+                            showMenu
+                                ? (e) => {
+                                      e.preventDefault();
+                                      onContextMenu(path, 'file', e.clientX, e.clientY);
+                                  }
+                                : undefined
+                        }
+                    >
+                        {name}
+                    </button>
+                )}
             </li>
         );
     }
@@ -134,5 +517,66 @@ const TreeNode = ({ name, node, path, onFileClick }: TreeNodeProps) => {
                 {name} &rarr;
             </div>
         </li>
+    );
+};
+
+type InlineNameInputProps = {
+    initialValue: string;
+    kind: 'file' | 'dir';
+    onSubmit: (name: string) => void;
+    onCancel: () => void;
+};
+
+const InlineNameInput = ({
+    initialValue,
+    kind,
+    onSubmit,
+    onCancel,
+}: InlineNameInputProps) => {
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        const input = inputRef.current;
+        if (!input) return;
+        input.focus();
+        // Select the name part before the extension for files
+        if (initialValue && kind === 'file') {
+            const dotIndex = initialValue.lastIndexOf('.');
+            if (dotIndex > 0) {
+                input.setSelectionRange(0, dotIndex);
+            } else {
+                input.select();
+            }
+        } else if (initialValue) {
+            input.select();
+        }
+    }, [initialValue, kind]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            onSubmit(e.currentTarget.value);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+        }
+    };
+
+    return (
+        <input
+            ref={inputRef}
+            className={`${styles.inlineInput} ${kind === 'dir' ? styles.dirEntry : styles.fileEntry}`}
+            defaultValue={initialValue}
+            onKeyDown={handleKeyDown}
+            onBlur={(e) => {
+                const value = e.currentTarget.value.trim();
+                if (value && value !== initialValue) {
+                    onSubmit(value);
+                } else {
+                    onCancel();
+                }
+            }}
+            aria-label={initialValue ? `Rename ${initialValue}` : `New ${kind} name`}
+        />
     );
 };

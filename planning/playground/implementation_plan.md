@@ -165,6 +165,11 @@ filesystem with no UI dependencies.
   - Otherwise → invalid with descriptive errors.
 - `playground/src/validation.test.ts` — Tests for each validation scenario.
 
+**Note**: The `ValidationResult` type is already defined in
+`playground/src/playground-state.ts`, and the validation error banner UI is
+already implemented in `playground/src/playground.tsx` (Phase 3). This phase
+only needs the validation logic itself and wiring it to FS events.
+
 ### 2.2 Wire validation to filesystem events
 
 **Files to modify**:
@@ -174,141 +179,174 @@ filesystem with no UI dependencies.
 
 ---
 
-## Phase 3: State Management and Multi-Tab Editor
+## Phase 3: State Management and Multi-Tab Editor ✅
 
 **Goal**: Replace the hardcoded single-file playground with a state-driven
 multi-tab editor that can open, close, and switch between files.
 
 **Requirements**: R2.1.1–R2.1.5, R2.2.1–R2.2.6, R2.3.1–R2.3.3
 
-### 3.1 Introduce playground state
+### 3.1 Introduce playground state ✅
 
-**Files to create**:
-- `playground/src/state.ts` — Define the playground state:
-  ```ts
-  type PlaygroundState = {
-    openTabs: Array<{ path: string; scrollPos?: number }>;
-    activeTabIndex: number | null;
-    activeOutputTab: 'js' | 'map' | 'dts';
-    validationResult: ValidationResult;
-    notification: { message: string; type: 'info' | 'warning' | 'error' } | null;
-  };
-  ```
-  Export a React context and reducer (or zustand store) for state management.
-  Include actions: `openFile`, `closeTab`, `setActiveTab`,
-  `setActiveOutputTab`, `renameFile`, `deleteFile`, `resetTabs`,
-  `setValidationResult`, `showNotification`, `dismissNotification`.
+State was split into two Zustand stores instead of a single monolithic state:
 
-### 3.2 Build shared UI components
+**Files created**:
+- `playground/src/playground-state.ts` — Defines `PlaygroundState` with
+  `initialCompileDone` and `validationResult` fields. Actions:
+  `setInitialCompileDone`, `setValidationResult`. The `ValidationResult` type
+  is defined here.
+- `playground/src/playground-store.ts` — Zustand store wrapping
+  `playgroundReducer` with `usePlaygroundStore()` hook.
+- `playground/src/editor-state.ts` — Defines `EditorState` with split-pane
+  tab management (`leftTabs`, `rightTabs`, `activeLeftTabIndex`,
+  `activeRightTabIndex`, `focusedSide`, `notification`). Actions: `openFile`,
+  `closeTab`, `setActiveTab`, `setFocusedSide`, `moveTab`, `renameFile`,
+  `deleteFile`, `resetTabs`, `showNotification`, `dismissNotification`.
+- `playground/src/editor-store.ts` — Zustand store wrapping `editorReducer`
+  with `useEditorStore()` hook.
 
-**Files to create**:
-- `playground/src/components/toast.tsx` — A toast/notification component for
-  transient messages (warnings, errors, confirmations). Used by:
-  - R5.3.3: unknown example fallback warning
-  - R6.6: malformed permalink error
-  - R6.7: "Link copied!" confirmation
-  - R7.4: invalid project structure errors
-- `playground/src/components/toast.module.css` — Toast styling.
-- `playground/src/components/confirm-dialog.tsx` — A confirmation dialog
-  component for destructive actions. Used by:
-  - R5.1.3: replacing project with template
-  - R5.2.3: replacing project with example
-- `playground/src/components/confirm-dialog.module.css` — Dialog styling.
+### 3.2 Build shared UI components ✅
 
-### 3.3 Refactor Playground component for multi-tab
+**Files created**:
+- `playground/src/components/toast.tsx` — Toast notification component with
+  4-second auto-dismiss. Supports `info`, `warning`, and `error` types.
+- `playground/src/components/toast.module.css` — Slide-in animation, type-based
+  colors (blue/amber/red), dismiss button.
+- `playground/src/components/confirm-dialog.tsx` — Modal confirmation dialog
+  using the native `<dialog>` element. Supports `destructive` mode (red
+  confirm button). Focuses the cancel button on open, handles backdrop clicks
+  and Escape key.
+- `playground/src/components/confirm-dialog.module.css` — Dark theme dialog
+  styling with cancel, confirm, and destructive button variants.
+- Storybook stories added for both components.
 
-**Files to modify**:
-- `playground/src/playground.tsx` — Replace the single hardcoded `inputModel`
-  with a model-per-tab approach. Use `monaco.editor.getModel()` /
-  `createModel()` keyed by file URI. Switch the editor's model when the active
-  tab changes. Create a `TabBar` sub-component with close buttons.
-- `playground/src/playground.module.css` — Add styles for close button, tab
-  overflow scrolling. Design the grid layout to be forward-compatible with the
-  toolbar (Phase 6) and file explorer (Phase 4) by using named grid areas:
+### 3.3 Refactor Playground component for multi-tab ✅
+
+**Files created/modified**:
+- `playground/src/editor.tsx` — New component extracted from the original
+  `playground.tsx`. Manages two Monaco editors (input/output) with independent
+  tab bars. Features:
+  - Model-per-tab via `monaco.editor.getModel()` / `createModel()` keyed by
+    file URI (`file:///home/user/project{path}`).
+  - `TabItem` sub-component with close buttons and right-click context menus
+    (Move to Left/Right, Close).
+  - Scroll position preservation across tab switches.
+  - Language detection from file extension (`.esc` → Escalier, `.js` →
+    JavaScript, `.d.ts` → TypeScript, `.json`/`.js.map` → JSON).
+  - `isReadOnly` callback prop for build file read-only mode.
+  - `rightPaneVisible` and `rightPaneOverlay` props for controlling the output
+    pane.
+  - `banner` prop for validation error display.
+  - Empty state message when no tabs are open.
+- `playground/src/editor.module.css` — Grid layout with named areas:
   ```css
+  grid-template-columns: 220px 1fr 1fr;
+  grid-template-rows: 0px 40px 1fr;
   grid-template-areas:
-    "toolbar  toolbar  toolbar"
-    "explorer input-tabs output-tabs"
-    "explorer input    output";
+    "toolbar    toolbar     toolbar"
+    "explorer   input-tabs  output-tabs"
+    "explorer   input       output";
   ```
-  Initially the `toolbar` row has `height: 0` and `explorer` column has
-  `width: 0` — they expand when those features are added.
+  The `toolbar` row has `height: 0` (expanded in Phase 6).
+- `playground/src/playground.tsx` — Wrapper component that:
+  - Monitors initial compilation state (compile spinner overlay).
+  - Subscribes to `fs.events` to auto-open build output files (`.js`,
+    `.js.map`, `.d.ts`) in the right pane when compilation finishes.
+  - Displays validation error banner when `validationResult.mode === 'invalid'`.
+  - Passes `isReadOnly` callback that returns `true` for `/build/` paths.
+- `playground/src/playground.module.css` — Compile spinner animation and error
+  banner styling.
 
-### 3.4 Dynamic output tabs based on active input
+### 3.4 Dynamic output tabs based on active input ✅
 
-**Files to modify**:
-- `playground/src/playground.tsx` — When the active tab changes:
-  - If it's a `.esc` file under `lib/`, show `.js`, `.js.map`, `.d.ts` output
-    tabs.
-  - If it's a `.esc` file under `bin/`, show `.js`, `.js.map` only.
-  - If it's not a `.esc` file or no tabs are open, hide the right editor
-    entirely.
-- `playground/src/language.ts` — Update the compile trigger to send the
-  active file path (not hardcoded `foo.esc`) to the LSP `workspace/
-  executeCommand`. In Phase 5, this will be further updated so the LSP server
-  writes output directly to the filesystem.
+**Files modified**:
+- `playground/src/playground.tsx` — FS event listener detects when compilation
+  writes to `build/` and auto-opens the corresponding output files (`.js`,
+  `.js.map`, `.d.ts` for `lib/`; `.js`, `.js.map` for `bin/`) in the right
+  pane.
+- `playground/src/language.ts` — Sends the active file URI to the LSP
+  `workspace/executeCommand` for compilation.
 
-### 3.5 Tab lifecycle on file operations
+### 3.5 Tab lifecycle on file operations ✅
 
-**Files to modify**:
-- `playground/src/state.ts` — The `deleteFile` action closes the tab and
-  activates the adjacent one. The `renameFile` action updates the tab's path.
-  The `resetTabs` action (for template/example loading) closes all tabs and
-  opens the primary source file.
+**Files modified**:
+- `playground/src/editor-state.ts` — The `deleteFile` action finds and closes
+  tabs on both sides, adjusting active indices. The `renameFile` action updates
+  tab paths on both sides. The `resetTabs` action closes all tabs and opens
+  the primary source file (defaults to `/lib/index.esc`).
 
-### 3.6 Show validation errors
+### 3.6 Show validation errors ✅
 
-**Files to modify**:
+**Files modified**:
 - `playground/src/playground.tsx` — If `validationResult.mode === 'invalid'`,
-  show an error banner above the editors. Wire validation result from Phase 2
-  into the state.
+  renders an error banner via the `banner` prop on `<Editor>`. The banner spans
+  the full grid width.
 
 ---
 
-## Phase 4: File Explorer
+## Phase 4: File Explorer ✅
 
 **Goal**: Add a file explorer panel that displays the virtual filesystem tree
 and supports CRUD operations.
 
 **Requirements**: R1.1–R1.10
 
-### 4.1 Evaluate and install tree component
+### 4.1 Custom tree component (no third-party library) ✅
 
-Evaluate the candidates listed in R1.10. Recommendation: start with
-**react-arborist** since it has built-in CRUD, virtualization, and custom node
-rendering.
+A custom tree component was built instead of using react-arborist. The existing
+`FSDir`/`FSNode` types map directly to the tree structure, making a third-party
+library unnecessary overhead.
 
-**Commands**:
-- `pnpm add react-arborist` (in `playground/`)
+### 4.2 Build the FileExplorer component ✅
 
-### 4.2 Build the FileExplorer component
+**Files created**:
+- `playground/src/components/file-explorer.tsx` — A React component with:
+  - Recursive `DirChildren` / `TreeNode` sub-components that render the
+    `BrowserFS.rootDir` tree directly (no data transformation needed).
+  - Subscribes to `FSEventEmitter` to re-render on filesystem changes.
+  - On file click: calls `onFileOpen` callback (wired to editor's `openFile`).
+  - Context menu on right-click: "New File", "New Folder" (directories only),
+    "Rename", "Delete" (non-protected paths only).
+  - `InlineNameInput` sub-component for inline rename/create with smart
+    selection (selects name without extension for files), Enter/Escape/blur
+    handling.
+  - Delete confirmation via `ConfirmDialog` component.
+  - `isProtected()` helper hides CRUD controls for `/build/`, `/node_modules/`,
+    `/packages/*/build/`, `/packages/*/node_modules/`.
+  - `isHidden()` helper hides `.pnpm` directory.
+  - Sorting: directories first, then files, alphabetical within each group.
+  - Dimmed styling for `build/` and `node_modules/` entries.
+  - `build` and `node_modules` directories start collapsed; others start
+    expanded.
+  - Header with "New File" (+) and "New Folder" action buttons for creating
+    items at the project root.
+  - `expandOverrides` map tracks explicit expand/collapse overrides; auto-
+    expands parent directory when creating a new item inside it.
+- `playground/src/components/file-explorer.module.css` — Styles for tree,
+  context menu (with separator and destructive item styling), inline input,
+  header action buttons (visible on hover), and dimmed entries.
+- `playground/src/components/file-explorer.stories.tsx` — Storybook stories:
+  `SimpleProject`, `ClickFile`, `CollapseDirectory`, `WithBuildAndNodeModules`,
+  `EmptyProject`, `ContextMenuOnFile`, `ContextMenuOnDirectory`,
+  `NoContextMenuOnProtectedPaths`, `HeaderNewButtons`.
 
-**Files to create**:
-- `playground/src/file-explorer.tsx` — A React component that:
-  - Reads the `BrowserFS` directory tree and converts it to the tree data
-    format expected by react-arborist.
-  - Subscribes to `FSEvent`s to re-render when files change.
-  - On file click: dispatches `openFile` to the playground state.
-  - On create/delete/rename: calls the corresponding `BrowserFS` method (which
-    triggers events and LSP notifications).
-  - Custom node renderer that dims `build/` entries and hides CRUD controls for
-    them.
-- `playground/src/file-explorer.module.css` — Styles for the tree, icons,
-  dimmed build entries.
+### 4.3 Integrate into layout ✅
 
-### 4.3 Integrate into layout
+**Files modified**:
+- `playground/src/editor.tsx` — Renders `<FileExplorer>` in the explorer grid
+  area. Passes `onFileOpen`, `onFileDelete`, and `onFileRename` callbacks that
+  dispatch to the editor store (`openFile`, `deleteFile`, `renameFile` actions).
+- `playground/src/editor.module.css` — Explorer column set to `220px` in the
+  grid layout.
 
-**Files to modify**:
-- `playground/src/playground.tsx` — Expand the explorer grid column from
-  `width: 0` to `220px`. Render `<FileExplorer />` in the explorer grid area.
-- `playground/src/playground.module.css` — Update the explorer column width.
+### 4.4 Read-only mode for build files ✅
 
-### 4.4 Read-only mode for build files
-
-**Files to modify**:
-- `playground/src/playground.tsx` — When opening a file from `build/`, set the
-  Monaco editor to `readOnly: true` for that model. When switching to a
-  non-build file, ensure `readOnly: false`.
+**Files modified**:
+- `playground/src/playground.tsx` — Passes an `isReadOnly` callback to
+  `<Editor>` that returns `true` for paths starting with `/build/`.
+- `playground/src/editor.tsx` — Applies `readOnly` option to the Monaco editor
+  via `editor.updateOptions()` when switching models, based on the `isReadOnly`
+  callback.
 
 ---
 
@@ -642,16 +680,16 @@ to the compiled output in `build/`.
 
 ## Phase Summary
 
-| Phase | Description                          | Requirements Covered                   |
-|-------|--------------------------------------|----------------------------------------|
-| 1     | Virtual FS CRUD + LSP + escalier.toml| R8.1–R8.7, R9.1, R9.2, R10.6          |
-| 2     | Project validation                   | R7.1–R7.5                              |
-| 3     | Multi-tab editor + state management  | R2.1.x, R2.2.x, R2.3.x               |
-| 4     | File explorer                        | R1.1–R1.10                             |
-| 5     | Single-package compilation           | R3.1–R3.4, R10.1, R10.3, R10.5–R10.6  |
-| 6     | Templates and examples               | R5.1.x, R5.2.x, R5.3.x, R5.4.x       |
-| 7     | Permalinks                           | R6.1–R6.7                              |
-| 8     | Multi-package mode                   | R4.1–R4.5, R10.2, R10.4.x             |
+| Phase | Description                          | Requirements Covered                   | Status |
+|-------|--------------------------------------|----------------------------------------|--------|
+| 1     | Virtual FS CRUD + LSP + escalier.toml| R8.1–R8.7, R9.1, R9.2, R10.6          | ✅     |
+| 2     | Project validation                   | R7.1–R7.5                              |        |
+| 3     | Multi-tab editor + state management  | R2.1.x, R2.2.x, R2.3.x               | ✅     |
+| 4     | File explorer                        | R1.1–R1.10                             | ✅     |
+| 5     | Single-package compilation           | R3.1–R3.4, R10.1, R10.3, R10.5–R10.6  |        |
+| 6     | Templates and examples               | R5.1.x, R5.2.x, R5.3.x, R5.4.x       |        |
+| 7     | Permalinks                           | R6.1–R6.7                              |        |
+| 8     | Multi-package mode                   | R4.1–R4.5, R10.2, R10.4.x             |        |
 
 ## Dependencies Between Phases
 
