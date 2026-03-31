@@ -305,8 +305,7 @@ export const EmptyProject: Story = {
         // No file/dir buttons rendered (only header buttons)
         const buttons = canvas.queryAllByRole('button');
         const nonHeaderButtons = buttons.filter(
-            (btn) =>
-                !btn.getAttribute('aria-label')?.startsWith('New'),
+            (btn) => !btn.getAttribute('aria-label')?.startsWith('New'),
         );
         expect(nonHeaderButtons).toHaveLength(0);
     },

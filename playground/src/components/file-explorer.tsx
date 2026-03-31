@@ -19,16 +19,18 @@ type ContextMenuState = {
     y: number;
 };
 
-type InlineInputState = {
-    /** Parent directory path where the new item will be created */
-    parentPath: string;
-    kind: 'file' | 'dir';
-} | {
-    /** Path of the node being renamed */
-    renamePath: string;
-    /** Current name (pre-filled in the input) */
-    currentName: string;
-};
+type InlineInputState =
+    | {
+          /** Parent directory path where the new item will be created */
+          parentPath: string;
+          kind: 'file' | 'dir';
+      }
+    | {
+          /** Path of the node being renamed */
+          renamePath: string;
+          /** Current name (pre-filled in the input) */
+          currentName: string;
+      };
 
 type DeleteConfirmState = {
     path: string;
@@ -72,9 +74,9 @@ export const FileExplorer = ({
     // Tracks explicit expand/collapse overrides. `true` = expanded, `false` = collapsed.
     // Directories not in this map use their default state (collapsed for
     // node_modules/build, expanded for everything else).
-    const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(
-        () => new Map(),
-    );
+    const [expandOverrides, setExpandOverrides] = useState<
+        Map<string, boolean>
+    >(() => new Map());
 
     // Re-render when FS changes
     useEffect(() => {
@@ -124,23 +126,17 @@ export const FileExplorer = ({
         [expandDir],
     );
 
-    const handleRename = useCallback(
-        (path: string) => {
-            setContextMenu(null);
-            const name = path.split('/').pop() ?? '';
-            setInlineInput({ renamePath: path, currentName: name });
-        },
-        [],
-    );
+    const handleRename = useCallback((path: string) => {
+        setContextMenu(null);
+        const name = path.split('/').pop() ?? '';
+        setInlineInput({ renamePath: path, currentName: name });
+    }, []);
 
-    const handleDelete = useCallback(
-        (path: string, kind: 'file' | 'dir') => {
-            setContextMenu(null);
-            const name = path.split('/').pop() ?? path;
-            setDeleteConfirm({ path, name, kind });
-        },
-        [],
-    );
+    const handleDelete = useCallback((path: string, kind: 'file' | 'dir') => {
+        setContextMenu(null);
+        const name = path.split('/').pop() ?? path;
+        setDeleteConfirm({ path, name, kind });
+    }, []);
 
     const handleInlineSubmit = useCallback(
         (name: string) => {
@@ -215,7 +211,13 @@ export const FileExplorer = ({
                         aria-label="New Folder"
                         title="New Folder"
                     >
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            aria-hidden="true"
+                        >
                             <title>New Folder</title>
                             <path d="M14 4H8.618l-1-2H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z" />
                         </svg>
@@ -251,36 +253,34 @@ export const FileExplorer = ({
                 >
                     {contextMenu.nodeType === 'dir' &&
                         !isProtected(contextMenu.path) && (
-                        <>
-                            <button
-                                type="button"
-                                className={styles.contextMenuItem}
-                                onClick={() =>
-                                    handleNewFile(contextMenu.path)
-                                }
-                            >
-                                New File
-                            </button>
-                            <button
-                                type="button"
-                                className={styles.contextMenuItem}
-                                onClick={() =>
-                                    handleNewFolder(contextMenu.path)
-                                }
-                            >
-                                New Folder
-                            </button>
-                            <div className={styles.contextMenuSeparator} />
-                        </>
-                    )}
+                            <>
+                                <button
+                                    type="button"
+                                    className={styles.contextMenuItem}
+                                    onClick={() =>
+                                        handleNewFile(contextMenu.path)
+                                    }
+                                >
+                                    New File
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.contextMenuItem}
+                                    onClick={() =>
+                                        handleNewFolder(contextMenu.path)
+                                    }
+                                >
+                                    New Folder
+                                </button>
+                                <div className={styles.contextMenuSeparator} />
+                            </>
+                        )}
                     {!isProtected(contextMenu.path) && (
                         <>
                             <button
                                 type="button"
                                 className={styles.contextMenuItem}
-                                onClick={() =>
-                                    handleRename(contextMenu.path)
-                                }
+                                onClick={() => handleRename(contextMenu.path)}
                             >
                                 Rename
                             </button>
@@ -446,7 +446,11 @@ const TreeNode = ({
             <li>
                 {isRenaming ? (
                     <InlineNameInput
-                        initialValue={'currentName' in inlineInput ? inlineInput.currentName : ''}
+                        initialValue={
+                            'currentName' in inlineInput
+                                ? inlineInput.currentName
+                                : ''
+                        }
                         kind="dir"
                         onSubmit={onInlineSubmit}
                         onCancel={onInlineCancel}
@@ -460,7 +464,12 @@ const TreeNode = ({
                             showMenu
                                 ? (e) => {
                                       e.preventDefault();
-                                      onContextMenu(path, 'dir', e.clientX, e.clientY);
+                                      onContextMenu(
+                                          path,
+                                          'dir',
+                                          e.clientX,
+                                          e.clientY,
+                                      );
                                   }
                                 : undefined
                         }
@@ -495,7 +504,11 @@ const TreeNode = ({
             <li>
                 {isRenaming ? (
                     <InlineNameInput
-                        initialValue={'currentName' in inlineInput ? inlineInput.currentName : ''}
+                        initialValue={
+                            'currentName' in inlineInput
+                                ? inlineInput.currentName
+                                : ''
+                        }
                         kind="file"
                         onSubmit={onInlineSubmit}
                         onCancel={onInlineCancel}
@@ -509,7 +522,12 @@ const TreeNode = ({
                             showMenu
                                 ? (e) => {
                                       e.preventDefault();
-                                      onContextMenu(path, 'file', e.clientX, e.clientY);
+                                      onContextMenu(
+                                          path,
+                                          'file',
+                                          e.clientX,
+                                          e.clientY,
+                                      );
                                   }
                                 : undefined
                         }
@@ -600,7 +618,9 @@ const InlineNameInput = ({
                     cancel();
                 }
             }}
-            aria-label={initialValue ? `Rename ${initialValue}` : `New ${kind} name`}
+            aria-label={
+                initialValue ? `Rename ${initialValue}` : `New ${kind} name`
+            }
         />
     );
 };
