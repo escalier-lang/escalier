@@ -21,11 +21,13 @@ type ContextMenuState = {
 
 type InlineInputState =
     | {
+          type: 'create';
           /** Parent directory path where the new item will be created */
           parentPath: string;
           kind: 'file' | 'dir';
       }
     | {
+          type: 'rename';
           /** Path of the node being renamed */
           renamePath: string;
           /** Current name (pre-filled in the input) */
@@ -113,7 +115,7 @@ export const FileExplorer = ({
         (parentPath: string) => {
             setContextMenu(null);
             expandDir(parentPath);
-            setInlineInput({ parentPath, kind: 'file' });
+            setInlineInput({ type: 'create', parentPath, kind: 'file' });
         },
         [expandDir],
     );
@@ -122,7 +124,7 @@ export const FileExplorer = ({
         (parentPath: string) => {
             setContextMenu(null);
             expandDir(parentPath);
-            setInlineInput({ parentPath, kind: 'dir' });
+            setInlineInput({ type: 'create', parentPath, kind: 'dir' });
         },
         [expandDir],
     );
@@ -130,7 +132,7 @@ export const FileExplorer = ({
     const handleRename = useCallback((path: string) => {
         setContextMenu(null);
         const name = path.split('/').pop() ?? '';
-        setInlineInput({ renamePath: path, currentName: name });
+        setInlineInput({ type: 'rename', renamePath: path, currentName: name });
     }, []);
 
     const handleDelete = useCallback((path: string, kind: 'file' | 'dir') => {
@@ -146,7 +148,7 @@ export const FileExplorer = ({
                 return;
             }
 
-            if ('renamePath' in inlineInput) {
+            if (inlineInput.type === 'rename') {
                 const oldPath = inlineInput.renamePath;
                 const parentPath = oldPath.substring(
                     0,
@@ -360,7 +362,7 @@ const DirChildren = ({
     // Show inline input for new file/folder creation in this directory
     const showInlineCreate =
         inlineInput &&
-        'parentPath' in inlineInput &&
+        inlineInput?.type === 'create' &&
         inlineInput.parentPath === parentPath;
 
     return (
@@ -387,7 +389,7 @@ const DirChildren = ({
                 <li>
                     <InlineNameInput
                         initialValue=""
-                        kind={'kind' in inlineInput ? inlineInput.kind : 'file'}
+                        kind={inlineInput.kind}
                         onSubmit={onInlineSubmit}
                         onCancel={onInlineCancel}
                     />
@@ -433,7 +435,7 @@ const TreeNode = ({
 
     const isRenaming =
         inlineInput &&
-        'renamePath' in inlineInput &&
+        inlineInput.type === 'rename' &&
         inlineInput.renamePath === path;
 
     const handleToggle = () => {
@@ -447,7 +449,7 @@ const TreeNode = ({
                 {isRenaming ? (
                     <InlineNameInput
                         initialValue={
-                            'currentName' in inlineInput
+                            inlineInput.type === 'rename'
                                 ? inlineInput.currentName
                                 : ''
                         }
@@ -505,7 +507,7 @@ const TreeNode = ({
                 {isRenaming ? (
                     <InlineNameInput
                         initialValue={
-                            'currentName' in inlineInput
+                            inlineInput.type === 'rename'
                                 ? inlineInput.currentName
                                 : ''
                         }
