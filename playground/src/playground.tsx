@@ -102,8 +102,6 @@ export const Playground = ({ fs }: PlaygroundProps) => {
     return (
         <Editor
             fs={fs}
-            state={editorState}
-            dispatch={editorDispatch}
             isReadOnly={isReadOnly}
             rightPaneVisible={rightPaneVisible}
             rightPaneOverlay={rightPaneOverlay}

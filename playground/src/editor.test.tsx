@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // Mock monaco-editor-core — uses the auto mock in __mocks__/monaco-editor-core.ts.
 // vi.mock calls are hoisted by vitest automatically.
@@ -12,6 +12,7 @@ vi.mock('./language', () => ({ languageID: 'escalier' }));
 import { Editor } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
+import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { FSEventEmitter } from './fs/fs-events';
 
@@ -32,64 +33,65 @@ function makeFakeFS(): BrowserFS {
     } as unknown as BrowserFS;
 }
 
-function stateWith(overrides: Partial<EditorState> = {}): EditorState {
-    return { ...initialEditorState, ...overrides };
+/** Set the store state for a test, preserving the real dispatch. */
+function setStoreState(overrides: Partial<EditorState>): void {
+    useEditorStore.setState({ ...initialEditorState, ...overrides });
+}
+
+/** Helper to get tabs within a specific tablist (0 = left, 1 = right). */
+function getTabsInTablist(index: number): NodeListOf<Element> {
+    const tablists = screen.getAllByRole('tablist');
+    return tablists[index].querySelectorAll('[role="tab"]');
 }
 
 afterEach(cleanup);
 
+beforeEach(() => {
+    // Reset store to initial state before each test.
+    // Use the store's initialState to get a fresh dispatch function.
+    useEditorStore.setState(useEditorStore.getInitialState(), true);
+});
+
 describe('Editor', () => {
     describe('tab rendering', () => {
         test('renders left tabs from state', () => {
-            const state = stateWith({
+            setStoreState({
                 leftTabs: [
                     { path: '/bin/main.esc' },
                     { path: '/lib/utils.esc' },
                 ],
                 activeLeftTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tablists = screen.getAllByRole('tablist');
-            const leftTablist = tablists[0];
-            const tabs = leftTablist.querySelectorAll('[role="tab"]');
-
+            const tabs = getTabsInTablist(0);
             expect(tabs).toHaveLength(2);
             expect(tabs[0].textContent).toContain('main.esc');
             expect(tabs[1].textContent).toContain('utils.esc');
         });
 
         test('renders right tabs from state', () => {
-            const state = stateWith({
+            setStoreState({
                 rightTabs: [
                     { path: '/build/bin/main.js' },
                     { path: '/build/bin/main.d.ts' },
                 ],
                 activeRightTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tablists = screen.getAllByRole('tablist');
-            const rightTablist = tablists[1];
-            const tabs = rightTablist.querySelectorAll('[role="tab"]');
-
+            const tabs = getTabsInTablist(1);
             expect(tabs).toHaveLength(2);
             expect(tabs[0].textContent).toContain('main.js');
             expect(tabs[1].textContent).toContain('main.d.ts');
         });
 
         test('marks the active left tab as selected', () => {
-            const state = stateWith({
+            setStoreState({
                 leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
                 activeLeftTabIndex: 1,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
             const tabs = screen.getAllByRole('tab');
             expect(tabs[0].getAttribute('aria-selected')).toBe('false');
@@ -97,144 +99,173 @@ describe('Editor', () => {
         });
     });
 
-    describe('dispatch on tab interactions', () => {
-        test('clicking a left tab dispatches setFocusedSide and setActiveTab', () => {
-            const dispatch = vi.fn();
-            const state = stateWith({
+    describe('tab interactions', () => {
+        test('clicking an inactive tab makes it active', () => {
+            setStoreState({
                 leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
                 activeLeftTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={dispatch} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
             const tabs = screen.getAllByRole('tab');
+            expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+            expect(tabs[1].getAttribute('aria-selected')).toBe('false');
+
             fireEvent.click(tabs[1]);
 
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'setFocusedSide',
-                side: 'left',
-            });
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'setActiveTab',
-                side: 'left',
-                index: 1,
-            });
+            expect(tabs[0].getAttribute('aria-selected')).toBe('false');
+            expect(tabs[1].getAttribute('aria-selected')).toBe('true');
         });
 
-        test('clicking the close button dispatches closeTab', () => {
-            const dispatch = vi.fn();
-            const state = stateWith({
-                leftTabs: [{ path: '/a.esc' }],
+        test('closing a tab removes it from the DOM', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
                 activeLeftTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={dispatch} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
+
+            expect(getTabsInTablist(0)).toHaveLength(2);
 
             const closeButton = screen.getByRole('button', {
                 name: 'Close a.esc',
             });
             fireEvent.click(closeButton);
 
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'closeTab',
-                side: 'left',
-                index: 0,
-            });
+            const remainingTabs = getTabsInTablist(0);
+            expect(remainingTabs).toHaveLength(1);
+            expect(remainingTabs[0].textContent).toContain('b.esc');
         });
 
-        test('clicking a right tab dispatches setFocusedSide and setActiveTab for right side', () => {
-            const dispatch = vi.fn();
-            const state = stateWith({
+        test('closing the last tab shows empty state', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Close a.esc' }),
+            );
+
+            expect(getTabsInTablist(0)).toHaveLength(0);
+            expect(
+                screen.getByText(
+                    'Open a file from the explorer to start editing',
+                ),
+            ).toBeTruthy();
+        });
+
+        test('clicking an inactive right tab makes it active', () => {
+            setStoreState({
                 rightTabs: [{ path: '/build/a.js' }, { path: '/build/b.js' }],
                 activeRightTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={dispatch} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tablists = screen.getAllByRole('tablist');
-            const rightTabs = tablists[1].querySelectorAll('[role="tab"]');
-            fireEvent.click(rightTabs[1]);
+            const tabs = getTabsInTablist(1);
+            expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+            expect(tabs[1].getAttribute('aria-selected')).toBe('false');
 
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'setFocusedSide',
-                side: 'right',
-            });
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'setActiveTab',
-                side: 'right',
-                index: 1,
-            });
+            fireEvent.click(tabs[1]);
+
+            expect(tabs[0].getAttribute('aria-selected')).toBe('false');
+            expect(tabs[1].getAttribute('aria-selected')).toBe('true');
         });
     });
 
     describe('context menu', () => {
         test('right-clicking a tab shows context menu with Move and Close', () => {
-            const state = stateWith({
+            setStoreState({
                 leftTabs: [{ path: '/a.esc' }],
                 activeLeftTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tab = screen.getAllByRole('tab')[0];
-            fireEvent.contextMenu(tab);
+            fireEvent.contextMenu(screen.getAllByRole('tab')[0]);
 
             expect(screen.getByText('Move to Right')).toBeTruthy();
             expect(screen.getByText('Close')).toBeTruthy();
         });
 
-        test('clicking Move to Right dispatches moveTab', () => {
-            const dispatch = vi.fn();
-            const state = stateWith({
-                leftTabs: [{ path: '/a.esc' }],
+        test('Move to Right moves the tab from left to right tablist', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
                 activeLeftTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={dispatch} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tab = screen.getAllByRole('tab')[0];
-            fireEvent.contextMenu(tab);
+            // Move first tab to right
+            fireEvent.contextMenu(getTabsInTablist(0)[0]);
             fireEvent.click(screen.getByText('Move to Right'));
 
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'moveTab',
-                from: 'left',
-                index: 0,
-            });
+            // Left should now only have b.esc
+            const leftTabs = getTabsInTablist(0);
+            expect(leftTabs).toHaveLength(1);
+            expect(leftTabs[0].textContent).toContain('b.esc');
+
+            // Right should now have a.esc
+            const rightTabs = getTabsInTablist(1);
+            expect(rightTabs).toHaveLength(1);
+            expect(rightTabs[0].textContent).toContain('a.esc');
         });
 
         test('right tab context menu shows Move to Left', () => {
-            const state = stateWith({
+            setStoreState({
                 rightTabs: [{ path: '/build/a.js' }],
                 activeRightTabIndex: 0,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
-            const tablists = screen.getAllByRole('tablist');
-            const rightTab = tablists[1].querySelector('[role="tab"]');
-            expect(rightTab).not.toBeNull();
-            fireEvent.contextMenu(rightTab as Element);
+            const rightTab = getTabsInTablist(1)[0];
+            fireEvent.contextMenu(rightTab);
 
             expect(screen.getByText('Move to Left')).toBeTruthy();
+        });
+
+        test('Move to Left moves the tab from right to left tablist', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+                rightTabs: [{ path: '/build/a.js' }],
+                activeRightTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            fireEvent.contextMenu(getTabsInTablist(1)[0]);
+            fireEvent.click(screen.getByText('Move to Left'));
+
+            // Left should now have both tabs
+            const leftTabs = getTabsInTablist(0);
+            expect(leftTabs).toHaveLength(2);
+            expect(leftTabs[1].textContent).toContain('a.js');
+
+            // Right should be empty
+            expect(getTabsInTablist(1)).toHaveLength(0);
+        });
+
+        test('Close in context menu removes the tab', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            fireEvent.contextMenu(getTabsInTablist(0)[0]);
+            fireEvent.click(screen.getByText('Close'));
+
+            const leftTabs = getTabsInTablist(0);
+            expect(leftTabs).toHaveLength(1);
+            expect(leftTabs[0].textContent).toContain('b.esc');
         });
     });
 
     describe('empty state', () => {
         test('shows empty state message when no left tabs are open', () => {
-            const state = stateWith({
+            setStoreState({
                 leftTabs: [],
                 activeLeftTabIndex: null,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
             expect(
                 screen.getByText(
@@ -244,13 +275,11 @@ describe('Editor', () => {
         });
 
         test('hides input panel when no left tabs are open', () => {
-            const state = stateWith({
+            setStoreState({
                 leftTabs: [],
                 activeLeftTabIndex: null,
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
             const inputPanel = document.getElementById('input-panel');
             expect(inputPanel?.style.display).toBe('none');
@@ -262,8 +291,6 @@ describe('Editor', () => {
             render(
                 <Editor
                     fs={makeFakeFS()}
-                    state={stateWith()}
-                    dispatch={vi.fn()}
                     banner={<div data-testid="error-banner">Build failed</div>}
                 />,
             );
@@ -273,13 +300,7 @@ describe('Editor', () => {
         });
 
         test('does not render banner wrapper when not provided', () => {
-            const { container } = render(
-                <Editor
-                    fs={makeFakeFS()}
-                    state={stateWith()}
-                    dispatch={vi.fn()}
-                />,
-            );
+            const { container } = render(<Editor fs={makeFakeFS()} />);
 
             expect(container.querySelector('[class*="banner"]')).toBeNull();
         });
@@ -287,36 +308,22 @@ describe('Editor', () => {
 
     describe('right pane visibility', () => {
         test('shows right pane when rightPaneVisible is true', () => {
-            const state = stateWith({
+            setStoreState({
                 rightTabs: [{ path: '/build/a.js' }],
                 activeRightTabIndex: 0,
             });
-            render(
-                <Editor
-                    fs={makeFakeFS()}
-                    state={state}
-                    dispatch={vi.fn()}
-                    rightPaneVisible={true}
-                />,
-            );
+            render(<Editor fs={makeFakeFS()} rightPaneVisible={true} />);
 
             const outputPanel = document.getElementById('output-panel');
             expect(outputPanel?.style.display).not.toBe('none');
         });
 
         test('hides right pane when rightPaneVisible is false', () => {
-            const state = stateWith({
+            setStoreState({
                 rightTabs: [{ path: '/build/a.js' }],
                 activeRightTabIndex: 0,
             });
-            render(
-                <Editor
-                    fs={makeFakeFS()}
-                    state={state}
-                    dispatch={vi.fn()}
-                    rightPaneVisible={false}
-                />,
-            );
+            render(<Editor fs={makeFakeFS()} rightPaneVisible={false} />);
 
             const outputPanel = document.getElementById('output-panel');
             expect(outputPanel?.style.display).toBe('none');
@@ -326,8 +333,6 @@ describe('Editor', () => {
             render(
                 <Editor
                     fs={makeFakeFS()}
-                    state={stateWith()}
-                    dispatch={vi.fn()}
                     rightPaneVisible={false}
                     rightPaneOverlay={
                         <div data-testid="spinner">Compiling...</div>
@@ -340,15 +345,13 @@ describe('Editor', () => {
         });
 
         test('does not render overlay when right pane is visible', () => {
-            const state = stateWith({
+            setStoreState({
                 rightTabs: [{ path: '/build/a.js' }],
                 activeRightTabIndex: 0,
             });
             render(
                 <Editor
                     fs={makeFakeFS()}
-                    state={state}
-                    dispatch={vi.fn()}
                     rightPaneVisible={true}
                     rightPaneOverlay={
                         <div data-testid="spinner">Compiling...</div>
@@ -361,34 +364,29 @@ describe('Editor', () => {
     });
 
     describe('notification', () => {
-        test('passes notification to Toast', () => {
-            const state = stateWith({
+        test('renders toast when notification is set', () => {
+            setStoreState({
                 notification: { message: 'Saved!', type: 'info' },
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={vi.fn()} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
 
             expect(screen.getByText('Saved!')).toBeTruthy();
             expect(screen.getByRole('alert')).toBeTruthy();
         });
 
-        test('clicking dismiss dispatches dismissNotification', () => {
-            const dispatch = vi.fn();
-            const state = stateWith({
+        test('clicking dismiss removes the toast', () => {
+            setStoreState({
                 notification: { message: 'Saved!', type: 'info' },
             });
-            render(
-                <Editor fs={makeFakeFS()} state={state} dispatch={dispatch} />,
-            );
+            render(<Editor fs={makeFakeFS()} />);
+
+            expect(screen.getByRole('alert')).toBeTruthy();
 
             fireEvent.click(
                 screen.getByRole('button', { name: 'Dismiss notification' }),
             );
 
-            expect(dispatch).toHaveBeenCalledWith({
-                type: 'dismissNotification',
-            });
+            expect(screen.queryByRole('alert')).toBeNull();
         });
     });
 });

@@ -1,6 +1,5 @@
 import * as monaco from 'monaco-editor-core';
 import {
-    type Dispatch,
     type ReactNode,
     useCallback,
     useEffect,
@@ -10,7 +9,7 @@ import {
 
 import { FileExplorer } from './components/file-explorer';
 import { Toast } from './components/toast';
-import type { EditorAction, EditorState } from './editor-state';
+import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
 
@@ -134,8 +133,6 @@ const TabItem = ({
 
 export type EditorProps = {
     fs: BrowserFS;
-    state: EditorState;
-    dispatch: Dispatch<EditorAction>;
     isReadOnly?: (path: string) => boolean;
     rightPaneVisible?: boolean;
     rightPaneOverlay?: ReactNode;
@@ -144,13 +141,12 @@ export type EditorProps = {
 
 export const Editor = ({
     fs,
-    state,
-    dispatch,
     isReadOnly,
     rightPaneVisible,
     rightPaneOverlay,
     banner,
 }: EditorProps) => {
+    const { dispatch, ...state } = useEditorStore();
     const inputDivRef = useRef<HTMLDivElement>(null);
     const outputDivRef = useRef<HTMLDivElement>(null);
     const inputEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(
