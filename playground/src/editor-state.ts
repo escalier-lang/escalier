@@ -201,7 +201,8 @@ export function editorReducer(
 
         default: {
             const _exhaustive: never = action;
-            return _exhaustive;
+            void _exhaustive;
+            return state;
         }
     }
 }
