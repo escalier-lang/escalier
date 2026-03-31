@@ -88,6 +88,8 @@ export const FileExplorer = ({
         return () => fs.events.off(listener);
     }, [fs]);
 
+    const contextMenuRef = useRef<HTMLDivElement>(null);
+
     // Dismiss context menu on click/pointerdown elsewhere
     useEffect(() => {
         if (!contextMenu) return;
@@ -98,6 +100,14 @@ export const FileExplorer = ({
             window.removeEventListener('click', dismiss);
             window.removeEventListener('pointerdown', dismiss);
         };
+    }, [contextMenu]);
+
+    // Auto-focus the first menu item when the context menu opens
+    useEffect(() => {
+        if (!contextMenu) return;
+        const firstButton =
+            contextMenuRef.current?.querySelector<HTMLElement>('button');
+        firstButton?.focus();
     }, [contextMenu]);
 
     const handleContextMenu = useCallback(
@@ -260,17 +270,44 @@ export const FileExplorer = ({
             {/* Context menu */}
             {contextMenu && (
                 <div
+                    ref={contextMenuRef}
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    role="menu"
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Escape') {
+                            setContextMenu(null);
+                        } else if (
+                            e.key === 'ArrowDown' ||
+                            e.key === 'ArrowUp'
+                        ) {
+                            e.preventDefault();
+                            const buttons =
+                                contextMenuRef.current?.querySelectorAll<HTMLElement>(
+                                    'button',
+                                );
+                            if (!buttons?.length) return;
+                            const items = Array.from(buttons);
+                            const idx = items.indexOf(
+                                document.activeElement as HTMLElement,
+                            );
+                            const next =
+                                e.key === 'ArrowDown'
+                                    ? (idx + 1) % items.length
+                                    : (idx - 1 + items.length) % items.length;
+                            items[next].focus();
+                        }
+                    }}
                 >
                     {contextMenu.nodeType === 'dir' &&
                         !isProtected(contextMenu.path) && (
                             <>
                                 <button
                                     type="button"
+                                    role="menuitem"
                                     className={styles.contextMenuItem}
                                     onClick={() =>
                                         handleNewFile(contextMenu.path)
@@ -280,6 +317,7 @@ export const FileExplorer = ({
                                 </button>
                                 <button
                                     type="button"
+                                    role="menuitem"
                                     className={styles.contextMenuItem}
                                     onClick={() =>
                                         handleNewFolder(contextMenu.path)
@@ -294,6 +332,7 @@ export const FileExplorer = ({
                         <>
                             <button
                                 type="button"
+                                role="menuitem"
                                 className={styles.contextMenuItem}
                                 onClick={() => handleRename(contextMenu.path)}
                             >
@@ -301,6 +340,7 @@ export const FileExplorer = ({
                             </button>
                             <button
                                 type="button"
+                                role="menuitem"
                                 className={`${styles.contextMenuItem} ${styles.destructiveItem}`}
                                 onClick={() =>
                                     handleDelete(
@@ -452,6 +492,17 @@ const TreeNode = ({
         onToggleExpand(path, !isExpanded);
     };
 
+    const openMenuFromKeyboard = (
+        e: React.KeyboardEvent,
+        nodeType: 'file' | 'dir',
+    ) => {
+        if (e.key === 'F10' && e.shiftKey && !isProtected(path)) {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            onContextMenu(path, nodeType, rect.left, rect.bottom);
+        }
+    };
+
     if (node.type === 'dir') {
         const showMenu = !isProtected(path);
         return (
@@ -472,6 +523,7 @@ const TreeNode = ({
                         type="button"
                         className={`${styles.entry} ${styles.dirEntry} ${isDimmed ? styles.dimmed : ''}`}
                         onClick={handleToggle}
+                        onKeyDown={(e) => openMenuFromKeyboard(e, 'dir')}
                         onContextMenu={
                             showMenu
                                 ? (e) => {
@@ -530,6 +582,7 @@ const TreeNode = ({
                         type="button"
                         className={`${styles.entry} ${styles.fileEntry} ${isDimmed ? styles.dimmed : ''}`}
                         onClick={() => onFileClick(path)}
+                        onKeyDown={(e) => openMenuFromKeyboard(e, 'file')}
                         onContextMenu={
                             showMenu
                                 ? (e) => {
@@ -598,6 +651,12 @@ const InlineNameInput = ({
         if (committedRef.current) return;
         committedRef.current = true;
         onSubmit(value);
+        // If the component is still mounted after onSubmit (e.g. the FS
+        // operation failed and the input wasn't dismissed), reset so the
+        // user can retry or cancel.
+        queueMicrotask(() => {
+            committedRef.current = false;
+        });
     };
 
     const cancel = () => {
