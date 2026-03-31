@@ -16,6 +16,35 @@
     font-weight: 600;
     letter-spacing: 0.5px;
     color: #969696;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.headerActions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+}
+
+.explorer:hover .headerActions {
+    opacity: 1;
+}
+
+.headerButton {
+    background: none;
+    border: none;
+    color: #969696;
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 14px;
+    line-height: 1;
+    border-radius: 3px;
+}
+
+.headerButton:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #cccccc;
 }
 
 .tree {
@@ -69,4 +98,62 @@
 
 .dimmed {
     opacity: 0.5;
+}
+
+/* Context menu */
+.contextMenu {
+    position: fixed;
+    background-color: #2b2b2b;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 4px 0;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.contextMenuItem {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #cccccc;
+    font-size: 13px;
+    font-family: sans-serif;
+    padding: 6px 16px;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.contextMenuItem:hover {
+    background-color: #094771;
+}
+
+.destructiveItem {
+    color: #f48771;
+}
+
+.destructiveItem:hover {
+    background-color: #5a1d1d;
+}
+
+.contextMenuSeparator {
+    height: 1px;
+    background-color: #444;
+    margin: 4px 0;
+}
+
+/* Inline input for create/rename */
+.inlineInput {
+    display: block;
+    width: calc(100% - 4px);
+    background-color: #2a2a2a;
+    border: 1px solid #007acc;
+    border-radius: 2px;
+    color: #cccccc;
+    font: inherit;
+    padding: 1px 6px;
+    margin: 1px 2px;
+    outline: none;
+    box-sizing: border-box;
 }

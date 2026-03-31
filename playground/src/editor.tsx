@@ -324,6 +324,17 @@ export const Editor = ({
         [dispatch],
     );
 
+    const handleFileDelete = useCallback(
+        (path: string) => dispatch({ type: 'deleteFile', path }),
+        [dispatch],
+    );
+
+    const handleFileRename = useCallback(
+        (oldPath: string, newPath: string) =>
+            dispatch({ type: 'renameFile', oldPath, newPath }),
+        [dispatch],
+    );
+
     const handleDismissNotification = useCallback(
         () => dispatch({ type: 'dismissNotification' }),
         [dispatch],
@@ -338,7 +349,12 @@ export const Editor = ({
             <div className={styles.toolbar} />
 
             {/* File explorer */}
-            <FileExplorer fs={fs} onFileOpen={handleFileOpen} />
+            <FileExplorer
+                fs={fs}
+                onFileOpen={handleFileOpen}
+                onFileDelete={handleFileDelete}
+                onFileRename={handleFileRename}
+            />
 
             {/* Input tabs */}
             <div className={styles.inputTabs} role="tablist">
