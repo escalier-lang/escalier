@@ -148,13 +148,24 @@ export const FileExplorer = ({
                 return;
             }
 
+            const trimmed = name.trim();
+            if (
+                trimmed === '.' ||
+                trimmed === '..' ||
+                trimmed.includes('/') ||
+                trimmed.includes('\\')
+            ) {
+                setInlineInput(null);
+                return;
+            }
+
             if (inlineInput.type === 'rename') {
                 const oldPath = inlineInput.renamePath;
                 const parentPath = oldPath.substring(
                     0,
                     oldPath.lastIndexOf('/'),
                 );
-                const newPath = `${parentPath}/${name.trim()}`;
+                const newPath = `${parentPath}/${trimmed}`;
                 if (newPath === oldPath) {
                     setInlineInput(null);
                     return;
@@ -165,7 +176,7 @@ export const FileExplorer = ({
                     setInlineInput(null);
                 });
             } else {
-                const fullPath = `${inlineInput.parentPath}/${name.trim()}`;
+                const fullPath = `${inlineInput.parentPath}/${trimmed}`;
                 if (inlineInput.kind === 'dir') {
                     fs.mkdir(fullPath, (err) => {
                         if (err) return;
@@ -189,11 +200,10 @@ export const FileExplorer = ({
         const { path, kind } = deleteConfirm;
         const remove = kind === 'dir' ? fs.rmdir.bind(fs) : fs.unlink.bind(fs);
         remove(path, (err) => {
-            if (!err) {
-                onFileDelete?.(path);
-            }
+            if (err) return;
+            onFileDelete?.(path);
+            setDeleteConfirm(null);
         });
-        setDeleteConfirm(null);
     }, [deleteConfirm, fs, onFileDelete]);
 
     return (
