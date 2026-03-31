@@ -1,66 +1,15 @@
-import { type Dispatch, createContext, useContext, useReducer } from 'react';
 import ReactDOM from 'react-dom/client';
 import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
-import {
-    type EditorAction,
-    type EditorState,
-    editorReducer,
-    initialEditorState,
-} from './editor-state';
 import { BrowserFS } from './fs/browser-fs';
 import { createVolume } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
-import {
-    PlaygroundDispatchContext,
-    PlaygroundStateContext,
-    initialPlaygroundState,
-    playgroundReducer,
-} from './playground-state';
 
 import './user-worker'; // sets up the monaco editor worker
-
-const EditorStateContext = createContext<EditorState>(initialEditorState);
-const EditorDispatchContext = createContext<Dispatch<EditorAction>>(() => {});
-
-export function useEditorState(): EditorState {
-    return useContext(EditorStateContext);
-}
-
-export function useEditorDispatch(): Dispatch<EditorAction> {
-    return useContext(EditorDispatchContext);
-}
-
-const PlaygroundApp = ({ fs }: { fs: BrowserFS }) => {
-    const [editorState, editorDispatch] = useReducer(
-        editorReducer,
-        initialEditorState,
-    );
-    const [playgroundState, playgroundDispatch] = useReducer(
-        playgroundReducer,
-        initialPlaygroundState,
-    );
-
-    return (
-        <PlaygroundStateContext.Provider value={playgroundState}>
-            <PlaygroundDispatchContext.Provider value={playgroundDispatch}>
-                <EditorStateContext.Provider value={editorState}>
-                    <EditorDispatchContext.Provider value={editorDispatch}>
-                        <Playground
-                            fs={fs}
-                            editorState={editorState}
-                            editorDispatch={editorDispatch}
-                        />
-                    </EditorDispatchContext.Provider>
-                </EditorStateContext.Provider>
-            </PlaygroundDispatchContext.Provider>
-        </PlaygroundStateContext.Provider>
-    );
-};
 
 async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
@@ -138,7 +87,7 @@ async function main() {
         throw new Error('Root element not found');
     }
 
-    ReactDOM.createRoot(root).render(<PlaygroundApp fs={fs} />);
+    ReactDOM.createRoot(root).render(<Playground fs={fs} />);
 }
 
 main().then(() => {

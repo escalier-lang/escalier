@@ -1,26 +1,21 @@
 import { useCallback, useEffect } from 'react';
 
 import { Editor } from './editor';
+import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
-import { usePlaygroundDispatch, usePlaygroundState } from './playground-state';
+import { usePlaygroundStore } from './playground-store';
 
 import styles from './playground.module.css';
 
 type PlaygroundProps = {
     fs: BrowserFS;
-    editorState: import('./editor-state').EditorState;
-    editorDispatch: import('react').Dispatch<
-        import('./editor-state').EditorAction
-    >;
 };
 
-export const Playground = ({
-    fs,
-    editorState,
-    editorDispatch,
-}: PlaygroundProps) => {
-    const { initialCompileDone, validationResult } = usePlaygroundState();
-    const playgroundDispatch = usePlaygroundDispatch();
+export const Playground = ({ fs }: PlaygroundProps) => {
+    const { dispatch: editorDispatch, ...editorState } = useEditorStore();
+    const { dispatch: playgroundDispatch, ...playgroundState } =
+        usePlaygroundStore();
+    const { initialCompileDone, validationResult } = playgroundState;
 
     const { leftTabs, rightTabs } = editorState;
 

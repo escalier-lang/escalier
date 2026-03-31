@@ -1,5 +1,3 @@
-import { type Dispatch, createContext, useContext } from 'react';
-
 export type ValidationResult =
     | { mode: 'single-package'; packageJson: object }
     | {
@@ -35,19 +33,4 @@ export function playgroundReducer(
             return { ...state, validationResult: action.result };
         }
     }
-}
-
-export const PlaygroundStateContext = createContext<PlaygroundState>(
-    initialPlaygroundState,
-);
-export const PlaygroundDispatchContext = createContext<
-    Dispatch<PlaygroundAction>
->(() => {});
-
-export function usePlaygroundState(): PlaygroundState {
-    return useContext(PlaygroundStateContext);
-}
-
-export function usePlaygroundDispatch(): Dispatch<PlaygroundAction> {
-    return useContext(PlaygroundDispatchContext);
 }
