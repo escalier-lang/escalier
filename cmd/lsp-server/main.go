@@ -52,9 +52,15 @@ type Server struct {
 	packageGen          int64
 	packageValidatedGen int64
 
-	// Cached absolute paths to .esc files under lib/, refreshed at startup
-	// and on workspace file create/rename/delete notifications.
+	// libGen is incremented only when a lib/ file changes. Used to decide
+	// whether the cached lib output can be reused for bin/-only changes.
+	libGen          int64
+	libValidatedGen int64
+
+	// Cached absolute paths to .esc files under lib/ and bin/, refreshed at
+	// startup and on workspace file create/rename/delete notifications.
 	libFilesCache map[string]struct{}
+	binFilesCache map[string]struct{}
 
 	// Cached prelude/global scope and its completion items.
 	// Computed lazily on first completion request; never changes after that.
@@ -75,6 +81,7 @@ func NewServer() *Server {
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
 		libFilesCache:    map[string]struct{}{},
+		binFilesCache:    map[string]struct{}{},
 	}
 	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct
@@ -165,20 +172,25 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 			"compile",
 		},
 	}
-	libEscFilters := []protocol.FileOperationFilter{
+	escFileFilters := []protocol.FileOperationFilter{
 		{Pattern: protocol.FileOperationPattern{Glob: "lib/*.esc"}},
 		{Pattern: protocol.FileOperationPattern{Glob: "lib/**/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "bin/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "bin/**/*.esc"}},
 	}
 	capabilities.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		FileOperations: &protocol.ServerCapabilitiesWorkspaceFileOperations{
-			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
-			DidRename: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
-			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
+			DidRename: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
+			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
 		},
 	}
 
 	if err := s.refreshLibFilesCache(); err != nil {
 		fmt.Fprintf(os.Stderr, "initialize: failed to cache lib files: %s\n", err)
+	}
+	if err := s.refreshBinFilesCache(); err != nil {
+		fmt.Fprintf(os.Stderr, "initialize: failed to cache bin files: %s\n", err)
 	}
 
 	return protocol.InitializeResult{

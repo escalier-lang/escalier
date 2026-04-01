@@ -90,36 +90,53 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 	}
 
 	// Check each bin/ script with the lib namespace injected.
-	binSources := []*ast.Source{}
 	for _, src := range sources {
-		if strings.HasPrefix(src.Path, "bin/") {
-			binSources = append(binSources, src)
+		if !strings.HasPrefix(src.Path, "bin/") {
+			continue
 		}
-	}
-
-	for _, src := range binSources {
-		p := parser.NewParser(ctx, src)
-		script, parseErrors := p.ParseScript()
-
-		c := checker.NewChecker()
-		scope := checker.Prelude(c).WithNewScope()
-		if libNS != nil {
-			scope.Namespace = libNS
-		}
-		inferCtx := checker.Context{
-			Scope:      scope,
-			IsAsync:    false,
-			IsPatMatch: false,
-		}
-		scriptScope, typeErrors := c.InferScript(inferCtx, script)
-
-		output.Scripts[src.ID] = script
-		output.ScriptScopes[src.ID] = scriptScope
-		output.ParseErrors = append(output.ParseErrors, parseErrors...)
-		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+		scriptOutput := CheckBinScript(ctx, libNS, src)
+		output.Scripts[src.ID] = scriptOutput.Script
+		output.ScriptScopes[src.ID] = scriptOutput.Scope
+		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
+		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 	}
 
 	return output
+}
+
+// BinScriptOutput contains the results of checking a single bin/ script.
+type BinScriptOutput struct {
+	Script      *ast.Script
+	Scope       *checker.Scope
+	ParseErrors []*parser.Error
+	TypeErrors  []checker.Error
+}
+
+// CheckBinScript parses and type-checks a single bin/ script with the given
+// lib namespace injected into the scope chain. If libNS is nil, the script
+// is checked with only the prelude in scope.
+func CheckBinScript(ctx context.Context, libNS *type_system.Namespace, src *ast.Source) BinScriptOutput {
+	p := parser.NewParser(ctx, src)
+	script, parseErrors := p.ParseScript()
+
+	c := checker.NewChecker()
+	scope := checker.Prelude(c)
+	if libNS != nil {
+		scope = scope.WithNewScopeAndNamespace(libNS)
+	}
+	inferCtx := checker.Context{
+		Scope:      scope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+	return BinScriptOutput{
+		Script:      script,
+		Scope:       scriptScope,
+		ParseErrors: parseErrors,
+		TypeErrors:  typeErrors,
+	}
 }
 
 func Compile(source *ast.Source) CompilerOutput {
@@ -314,9 +331,9 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	inMod, parseErrors := p.ParseScript()
 
 	c := checker.NewChecker()
-	scope := checker.Prelude(c).WithNewScope()
+	scope := checker.Prelude(c)
 	if libNS != nil {
-		scope.Namespace = libNS
+		scope = scope.WithNewScopeAndNamespace(libNS)
 	}
 	inferCtx := checker.Context{
 		Scope:      scope,

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -32,6 +33,13 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 
 	if !strings.HasSuffix(string(uri), ".esc") {
 		return nil, fmt.Errorf("unsupported file type: %s", uri)
+	}
+
+	s.mu.RLock()
+	_, isOpen := s.documents[uri]
+	s.mu.RUnlock()
+	if !isOpen {
+		return nil, fmt.Errorf("document not open: %s", uri)
 	}
 
 	rootPath := uriToPath(s.rootURI)
@@ -123,18 +131,13 @@ func (s *Server) findBinFiles() ([]string, error) {
 func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	var sources []*ast.Source
 
-	// Walk the filesystem to discover all lib/ and bin/ source files.
-	libFiles, err := s.findLibFiles()
-	if err != nil {
-		return nil, err
-	}
+	// Use cached file lists instead of walking the filesystem each time.
+	libFiles := s.cachedLibFilesSnapshot()
+	binFiles := s.cachedBinFilesSnapshot()
 
-	binFiles, err := s.findBinFiles()
-	if err != nil {
-		return nil, err
-	}
-
-	allFiles := append(libFiles, binFiles...)
+	allFiles := make([]string, 0, len(libFiles)+len(binFiles))
+	allFiles = append(allFiles, libFiles...)
+	allFiles = append(allFiles, binFiles...)
 
 	// Snapshot in-memory documents under the lock.
 	s.mu.RLock()
@@ -148,7 +151,11 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	s.mu.RUnlock()
 
 	for _, absPath := range allFiles {
-		rel, _ := filepath.Rel(rootPath, absPath)
+		rel, err := filepath.Rel(rootPath, absPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "collectSources: filepath.Rel(%s, %s): %s\n", rootPath, absPath, err)
+			continue
+		}
 		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		var contents string
 		if text, ok := openDocs[fileURI]; ok {
@@ -171,9 +178,55 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	return sources, nil
 }
 
+// refreshBinFilesCache scans bin/ and stores absolute .esc file paths in memory.
+func (s *Server) refreshBinFilesCache() error {
+	files, err := s.findBinFiles()
+	if err != nil {
+		return err
+	}
+
+	cache := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		cache[file] = struct{}{}
+	}
+
+	s.mu.Lock()
+	s.binFilesCache = cache
+	s.mu.Unlock()
+
+	return nil
+}
+
+// cachedBinFilesSnapshot returns a stable snapshot of cached bin file paths.
+func (s *Server) cachedBinFilesSnapshot() []string {
+	s.mu.RLock()
+	files := make([]string, 0, len(s.binFilesCache))
+	for file := range s.binFilesCache {
+		files = append(files, file)
+	}
+	s.mu.RUnlock()
+
+	sort.Strings(files)
+	return files
+}
+
 // isLibEscFileURI returns true if uri refers to a .esc file inside the lib/ directory.
 func (s *Server) isLibEscFileURI(uri string) bool {
 	return strings.HasSuffix(uri, ".esc") && s.isModuleFile(protocol.DocumentUri(uri))
+}
+
+// isBinEscFileURI returns true if uri refers to a .esc file inside the bin/ directory.
+func (s *Server) isBinEscFileURI(uri string) bool {
+	if !strings.HasSuffix(uri, ".esc") || s.rootURI == "" {
+		return false
+	}
+	rootPath := uriToPath(s.rootURI)
+	filePath := uriToPath(uri)
+	rel, err := filepath.Rel(rootPath, filePath)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(rel, "bin/") || strings.HasPrefix(rel, "bin\\")
 }
 
 func (s *Server) workspaceDidCreateFiles(context *glsp.Context, params *protocol.CreateFilesParams) error {
@@ -182,6 +235,9 @@ func (s *Server) workspaceDidCreateFiles(context *glsp.Context, params *protocol
 	for _, file := range params.Files {
 		if s.isLibEscFileURI(file.URI) {
 			s.libFilesCache[uriToPath(file.URI)] = struct{}{}
+		}
+		if s.isBinEscFileURI(file.URI) {
+			s.binFilesCache[uriToPath(file.URI)] = struct{}{}
 		}
 	}
 	return nil
@@ -197,6 +253,12 @@ func (s *Server) workspaceDidRenameFiles(context *glsp.Context, params *protocol
 		if s.isLibEscFileURI(file.NewURI) {
 			s.libFilesCache[uriToPath(file.NewURI)] = struct{}{}
 		}
+		if s.isBinEscFileURI(file.OldURI) {
+			delete(s.binFilesCache, uriToPath(file.OldURI))
+		}
+		if s.isBinEscFileURI(file.NewURI) {
+			s.binFilesCache[uriToPath(file.NewURI)] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -207,6 +269,9 @@ func (s *Server) workspaceDidDeleteFiles(context *glsp.Context, params *protocol
 	for _, file := range params.Files {
 		if s.isLibEscFileURI(file.URI) {
 			delete(s.libFilesCache, uriToPath(file.URI))
+		}
+		if s.isBinEscFileURI(file.URI) {
+			delete(s.binFilesCache, uriToPath(file.URI))
 		}
 	}
 	return nil

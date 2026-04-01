@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
@@ -8,9 +9,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -59,10 +64,6 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 		return nil, fmt.Errorf("textDocument/definition: node not found")
 	}
 
-	if node == nil {
-		return nil, fmt.Errorf("textDocument/definition: node not found")
-	}
-
 	switch node := node.(type) {
 	case *ast.IdentExpr:
 		if node.Source == nil {
@@ -96,6 +97,9 @@ func (s *Server) textDocumentDidOpen(context *glsp.Context, params *protocol.Did
 	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = params.TextDocument
 	s.packageGen++
+	if s.isModuleFile(params.TextDocument.URI) {
+		s.libGen++
+	}
 	s.mu.Unlock()
 	if params.TextDocument.LanguageID == "escalier" {
 		s.validate(context, params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
@@ -122,6 +126,9 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 		}
 	}
 	s.packageGen++
+	if s.isModuleFile(params.TextDocument.URI) {
+		s.libGen++
+	}
 	s.mu.Unlock()
 
 	if doc.LanguageID == "escalier" {
@@ -309,7 +316,11 @@ func stableSourceID(relPath string) int {
 func (s *Server) sourceIDForURI(uri protocol.DocumentUri) int {
 	rootPath := uriToPath(s.rootURI)
 	filePath := uriToPath(string(uri))
-	rel, _ := filepath.Rel(rootPath, filePath)
+	rel, err := filepath.Rel(rootPath, filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sourceIDForURI: filepath.Rel(%s, %s): %s\n", rootPath, filePath, err)
+		return stableSourceID(filePath)
+	}
 	return stableSourceID(rel)
 }
 
@@ -317,6 +328,12 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	// Check staleness before doing expensive work.
 	server.mu.RLock()
 	currentDoc := server.documents[uri]
+	isBinFile := !server.isModuleFile(uri)
+	canIncrCheck := isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen
+	var cachedLibNS *type_system.Namespace
+	if canIncrCheck && server.checkOutput.ModuleScope != nil {
+		cachedLibNS = server.checkOutput.ModuleScope.Namespace
+	}
 	server.mu.RUnlock()
 	if currentDoc.Version != version {
 		server.validated.Broadcast()
@@ -325,6 +342,79 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 
 	rootPath := uriToPath(server.rootURI)
 
+	if canIncrCheck {
+		// Fast path: only a bin/ file changed and lib/ is unchanged.
+		// Re-check just this one script using the cached lib namespace.
+		server.validateBinScript(lspContext, uri, contents, version, rootPath, cachedLibNS)
+		return
+	}
+
+	// Slow path: full package check.
+	server.validateFull(lspContext, uri, contents, version, rootPath)
+}
+
+// validateBinScript re-checks a single bin/ script using a cached lib namespace,
+// avoiding re-parsing and re-checking all lib/ files.
+func (server *Server) validateBinScript(
+	lspContext *glsp.Context,
+	uri protocol.DocumentUri,
+	contents string,
+	version protocol.Integer,
+	rootPath string,
+	libNS *type_system.Namespace,
+) {
+	triggerSourceID := server.sourceIDForURI(uri)
+	rel, err := filepath.Rel(rootPath, uriToPath(string(uri)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validateBinScript: filepath.Rel: %s\n", err)
+		server.validated.Broadcast()
+		return
+	}
+
+	src := &ast.Source{
+		ID:       triggerSourceID,
+		Path:     rel,
+		Contents: contents,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result := compiler.CheckBinScript(ctx, libNS, src)
+
+	// Verify staleness and update caches.
+	server.mu.Lock()
+	currentDoc := server.documents[uri]
+	if currentDoc.Version != version {
+		server.mu.Unlock()
+		server.validated.Broadcast()
+		return
+	}
+	co := server.checkOutput
+	// Update only this script's entries in the existing checkOutput.
+	co.Scripts[triggerSourceID] = result.Script
+	co.ScriptScopes[triggerSourceID] = result.Scope
+	// Rebuild errors: keep non-script errors, replace this script's errors.
+	co.ParseErrors = filterOutSourceID(co.ParseErrors, triggerSourceID)
+	co.ParseErrors = append(co.ParseErrors, result.ParseErrors...)
+	co.TypeErrors = filterOutTypeErrors(co.TypeErrors, triggerSourceID)
+	co.TypeErrors = append(co.TypeErrors, result.TypeErrors...)
+	server.packageValidatedGen = server.packageGen
+	server.validatedVersion[uri] = version
+	server.mu.Unlock()
+	server.validated.Broadcast()
+
+	// Publish diagnostics for just this file.
+	server.publishDiagnosticsForScript(lspContext, uri, triggerSourceID, result.ParseErrors, result.TypeErrors)
+}
+
+// validateFull performs a full package check (lib/ + bin/).
+func (server *Server) validateFull(
+	lspContext *glsp.Context,
+	uri protocol.DocumentUri,
+	contents string,
+	version protocol.Integer,
+	rootPath string,
+) {
 	// Collect all source files (lib/ + bin/) with in-memory content for open docs.
 	sources, err := server.collectSources(rootPath)
 	if err != nil {
@@ -349,7 +439,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 
 	// Verify that no document versions changed during validation.
 	server.mu.Lock()
-	currentDoc = server.documents[uri]
+	currentDoc := server.documents[uri]
 	if currentDoc.Version != version {
 		server.mu.Unlock()
 		server.validated.Broadcast()
@@ -357,6 +447,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	}
 	server.checkOutput = &output
 	server.packageValidatedGen = server.packageGen
+	server.libValidatedGen = server.libGen
 	server.validatedVersion[uri] = version
 	// Also update validatedVersion for all other open documents that were
 	// included in this check.
@@ -412,26 +503,97 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 		}
 	}
 	// Publish diagnostics for bin/ files.
+	sourcePathByID := make(map[int]string, len(sources))
+	for _, src := range sources {
+		sourcePathByID[src.ID] = src.Path
+	}
 	for srcID := range output.Scripts {
-		// Find the source path for this script.
-		for _, src := range sources {
-			if src.ID == srcID {
-				fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, src.Path)))
-				fileDiags := emptyIfNil(diagsBySourceID[srcID])
-				params := &protocol.PublishDiagnosticsParams{
-					URI:         fileURI,
-					Diagnostics: fileDiags,
-				}
-				if doc, ok := server.documents[fileURI]; ok {
-					v := protocol.UInteger(doc.Version)
-					params.Version = &v
-				}
-				go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
-				break
-			}
+		path, ok := sourcePathByID[srcID]
+		if !ok {
+			continue
 		}
+		fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, path)))
+		fileDiags := emptyIfNil(diagsBySourceID[srcID])
+		params := &protocol.PublishDiagnosticsParams{
+			URI:         fileURI,
+			Diagnostics: fileDiags,
+		}
+		if doc, ok := server.documents[fileURI]; ok {
+			v := protocol.UInteger(doc.Version)
+			params.Version = &v
+		}
+		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
 	}
 	server.mu.RUnlock()
+}
+
+// publishDiagnosticsForScript publishes diagnostics for a single bin/ script.
+func (server *Server) publishDiagnosticsForScript(
+	lspContext *glsp.Context,
+	uri protocol.DocumentUri,
+	sourceID int,
+	parseErrors []*parser.Error,
+	typeErrors []checker.Error,
+) {
+	if lspContext.Notify == nil {
+		return
+	}
+	severity := protocol.DiagnosticSeverityError
+	source := "escalier"
+	var diags []protocol.Diagnostic
+	for _, err := range parseErrors {
+		if err.Span.SourceID == sourceID {
+			diags = append(diags, protocol.Diagnostic{
+				Range:    spanToRange(err.Span),
+				Severity: &severity,
+				Source:   &source,
+				Message:  err.Message,
+			})
+		}
+	}
+	for _, err := range typeErrors {
+		span := err.Span()
+		if span.SourceID == sourceID {
+			diags = append(diags, protocol.Diagnostic{
+				Range:    spanToRange(span),
+				Severity: &severity,
+				Source:   &source,
+				Message:  err.Message(),
+			})
+		}
+	}
+
+	server.mu.RLock()
+	diagVersion := protocol.UInteger(server.documents[uri].Version)
+	server.mu.RUnlock()
+
+	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+		URI:         uri,
+		Diagnostics: emptyIfNil(diags),
+		Version:     &diagVersion,
+	})
+}
+
+// filterOutSourceID removes parse errors belonging to the given sourceID.
+func filterOutSourceID(errs []*parser.Error, sourceID int) []*parser.Error {
+	result := make([]*parser.Error, 0, len(errs))
+	for _, e := range errs {
+		if e.Span.SourceID != sourceID {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// filterOutTypeErrors removes type errors belonging to the given sourceID.
+func filterOutTypeErrors(errs []checker.Error, sourceID int) []checker.Error {
+	result := make([]checker.Error, 0, len(errs))
+	for _, e := range errs {
+		if e.Span().SourceID != sourceID {
+			result = append(result, e)
+		}
+	}
+	return result
 }
 
 // emptyIfNil returns an empty slice if the input is nil, ensuring JSON
