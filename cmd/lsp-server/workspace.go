@@ -30,14 +30,8 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 		return nil, fmt.Errorf("invalid argument: %v", params.Arguments[0])
 	}
 
-	doc, ok := s.documents[uri]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "document not found: %s\n", uri)
-		return nil, fmt.Errorf("document not found: %s", uri)
-	}
-
-	if doc.LanguageID != "escalier" {
-		return nil, fmt.Errorf("unsupported language: %s", doc.LanguageID)
+	if !strings.HasSuffix(string(uri), ".esc") {
+		return nil, fmt.Errorf("unsupported file type: %s", uri)
 	}
 
 	rootPath := uriToPath(s.rootURI)

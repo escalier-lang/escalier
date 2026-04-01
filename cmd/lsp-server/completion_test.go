@@ -9,6 +9,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tliron/glsp"
@@ -130,6 +131,8 @@ func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	s := testServer()
+	s.rootURI = "file:///"
+	sourceID := stableSourceID("test.esc")
 	version := protocol.Integer(1)
 	s.documents[uri] = protocol.TextDocumentItem{
 		URI:        uri,
@@ -137,8 +140,11 @@ func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol
 		Version:    version,
 		Text:       source,
 	}
-	s.astCache[uri] = script
-	s.scopeCache[uri] = scope
+	s.checkOutput = &compiler.CheckOutput{
+		Scripts:      map[int]*ast.Script{sourceID: script},
+		ScriptScopes: map[int]*checker.Scope{sourceID: scope},
+		FileScopes:   map[int]*checker.Scope{},
+	}
 	s.validatedVersion[uri] = version
 
 	// LSP positions are 0-based; loc is already 1-based from the test.
@@ -1350,7 +1356,7 @@ func TestFilterTypeItemsEmpty(t *testing.T) {
 func moduleCompletions(
 	t *testing.T,
 	sources []*ast.Source,
-	targetSourceID int,
+	targetPath string,
 	loc ast.Location,
 ) []protocol.CompletionItem {
 	t.Helper()
@@ -1373,19 +1379,15 @@ func moduleCompletions(
 		s.validatedVersion[fileURI] = version
 	}
 
-	s.moduleCache = module
-	s.moduleScopeCache = moduleScope
-	s.fileScopeCache = fileScopes
-
-	// Find the target file's URI.
-	var targetURI protocol.DocumentUri
-	for _, src := range sources {
-		if src.ID == targetSourceID {
-			targetURI = protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", src.Path))
-			break
-		}
+	s.checkOutput = &compiler.CheckOutput{
+		Module:       module,
+		ModuleScope:  moduleScope,
+		FileScopes:   fileScopes,
+		Scripts:      map[int]*ast.Script{},
+		ScriptScopes: map[int]*checker.Scope{},
 	}
-	require.NotEmpty(t, targetURI, "target source ID %d not found", targetSourceID)
+
+	targetURI := protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", targetPath))
 
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -1408,19 +1410,19 @@ func moduleCompletions(
 
 func TestModuleNoCompletionsOnIdentPat(t *testing.T) {
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/main.esc", Contents: "val p"},
+		{ID: stableSourceID("lib/main.esc"), Path: "lib/main.esc", Contents: "val p"},
 	}
 	// Cursor at "p" — line 1, col 5.
-	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 5})
+	items := moduleCompletions(t, sources, "lib/main.esc", ast.Location{Line: 1, Column: 5})
 	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat in a module file")
 }
 
 func TestModuleNoCompletionsOnIdentPatComplete(t *testing.T) {
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/main.esc", Contents: "val p = 10"},
+		{ID: stableSourceID("lib/main.esc"), Path: "lib/main.esc", Contents: "val p = 10"},
 	}
 	// Cursor right after "p" (col 6) — still in the pattern.
-	items := moduleCompletions(t, sources, 0, ast.Location{Line: 1, Column: 6})
+	items := moduleCompletions(t, sources, "lib/main.esc", ast.Location{Line: 1, Column: 6})
 	assert.Empty(t, items, "should not provide completions on IdentPat in complete module val decl")
 }
 
@@ -1432,7 +1434,7 @@ func TestModuleTypeAnnotationIncludesImportedNamespace(t *testing.T) {
 	// like `xpkg.SomeType`). We use "xpkg" to avoid colliding with the large
 	// number of prelude types that start with common prefixes.
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/file1.esc", Contents: `import * as xpkg from "test-pkg"
+		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import * as xpkg from "test-pkg"
 val x: xp`},
 	}
 
@@ -1458,9 +1460,13 @@ val x: xp`},
 		Text:       sources[0].Contents,
 	}
 	s.validatedVersion[uri] = version
-	s.moduleCache = module
-	s.moduleScopeCache = moduleScope
-	s.fileScopeCache = fileScopes
+	s.checkOutput = &compiler.CheckOutput{
+		Module:       module,
+		ModuleScope:  moduleScope,
+		FileScopes:   fileScopes,
+		Scripts:      map[int]*ast.Script{},
+		ScriptScopes: map[int]*checker.Scope{},
+	}
 
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -1485,7 +1491,7 @@ func TestModuleTypeAnnotationExcludesValues(t *testing.T) {
 	// itself should be visible (Module kind) but value-only bindings from it
 	// should not appear as bare completions in a type annotation position.
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
 fn usePkg() -> number { pkg.helper }
 val x: h`},
 	}
@@ -1512,9 +1518,13 @@ val x: h`},
 		Text:       sources[0].Contents,
 	}
 	s.validatedVersion[uri] = version
-	s.moduleCache = module
-	s.moduleScopeCache = moduleScope
-	s.fileScopeCache = fileScopes
+	s.checkOutput = &compiler.CheckOutput{
+		Module:       module,
+		ModuleScope:  moduleScope,
+		FileScopes:   fileScopes,
+		Scripts:      map[int]*ast.Script{},
+		ScriptScopes: map[int]*checker.Scope{},
+	}
 
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{

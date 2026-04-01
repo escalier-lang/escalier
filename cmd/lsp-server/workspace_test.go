@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tliron/glsp"
@@ -26,12 +24,10 @@ func newTestServer(t *testing.T, libFiles []string) (*Server, string) {
 	}
 
 	s := &Server{
-		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:       map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache: map[int]*checker.Scope{},
-		libFilesCache:  map[string]struct{}{},
-		rootURI:        pathToURI(root),
+		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		libFilesCache:    map[string]struct{}{},
+		rootURI:          pathToURI(root),
 	}
 	return s, root
 }

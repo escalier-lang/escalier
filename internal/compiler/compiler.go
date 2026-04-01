@@ -30,6 +30,98 @@ type CompilerOutput struct {
 	Modules     map[string]ModuleOutput
 }
 
+// CheckOutput contains the results of type-checking a package without codegen.
+// Used by the LSP server for completions, hover, go-to-definition, etc.
+type CheckOutput struct {
+	// Lib results
+	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
+	ModuleScope *checker.Scope         // scope after InferModule
+	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
+
+	// Script results (bin/ files)
+	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
+	ScriptScopes map[int]*checker.Scope // SourceID -> script scope
+
+	ParseErrors []*parser.Error
+	TypeErrors  []checker.Error
+}
+
+// CheckPackage performs parsing and type-checking for a package (lib/ + bin/)
+// without codegen. Returns ASTs, scopes, and errors needed by the LSP.
+func CheckPackage(sources []*ast.Source) CheckOutput {
+	libSources := []*ast.Source{}
+	for _, src := range sources {
+		if strings.HasPrefix(src.Path, "lib/") {
+			libSources = append(libSources, src)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	output := CheckOutput{
+		FileScopes:   map[int]*checker.Scope{},
+		Scripts:      map[int]*ast.Script{},
+		ScriptScopes: map[int]*checker.Scope{},
+		ParseErrors:  []*parser.Error{},
+		TypeErrors:   []checker.Error{},
+	}
+
+	var libNS *type_system.Namespace
+
+	if len(libSources) > 0 {
+		module, parseErrors := parser.ParseLibFiles(ctx, libSources)
+
+		c := checker.NewChecker()
+		inferCtx := checker.Context{
+			Scope:      checker.Prelude(c),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		typeErrors := c.InferModule(inferCtx, module)
+
+		libNS = inferCtx.Scope.Namespace
+
+		output.Module = module
+		output.ModuleScope = inferCtx.Scope
+		output.FileScopes = c.FileScopes
+		output.ParseErrors = append(output.ParseErrors, parseErrors...)
+		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+	}
+
+	// Check each bin/ script with the lib namespace injected.
+	binSources := []*ast.Source{}
+	for _, src := range sources {
+		if strings.HasPrefix(src.Path, "bin/") {
+			binSources = append(binSources, src)
+		}
+	}
+
+	for _, src := range binSources {
+		p := parser.NewParser(ctx, src)
+		script, parseErrors := p.ParseScript()
+
+		c := checker.NewChecker()
+		scope := checker.Prelude(c).WithNewScope()
+		if libNS != nil {
+			scope.Namespace = libNS
+		}
+		inferCtx := checker.Context{
+			Scope:      scope,
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+		scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+		output.Scripts[src.ID] = script
+		output.ScriptScopes[src.ID] = scriptScope
+		output.ParseErrors = append(output.ParseErrors, parseErrors...)
+		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+	}
+
+	return output
+}
+
 func Compile(source *ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()

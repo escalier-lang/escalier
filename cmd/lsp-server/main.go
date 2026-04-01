@@ -10,8 +10,8 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
-	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
 )
 
 const lsName = "escalier"
@@ -34,26 +34,23 @@ func main() {
 }
 
 type Server struct {
-	handler    protocol.Handler
-	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
-	astCache   map[protocol.DocumentUri]*ast.Script
-	scopeCache map[protocol.DocumentUri]*checker.Scope
+	handler   protocol.Handler
+	documents map[protocol.DocumentUri]protocol.TextDocumentItem
 
-	// Module cache (for lib/ files — shared across files in same module)
-	moduleCache      *ast.Module
-	moduleScopeCache *checker.Scope
-	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
+	// Unified package check output — contains ASTs, scopes, and errors
+	// for all lib/ and bin/ files. Updated by validate().
+	checkOutput *compiler.CheckOutput
 
 	// Tracks the last validated document version per URI so the completion
 	// handler can detect when the cache is stale.
 	validatedVersion map[protocol.DocumentUri]protocol.Integer
 
-	// moduleGen is incremented whenever any module/lib file changes.
-	// moduleValidatedGen records the moduleGen at which moduleCache was built.
-	// The completion handler uses these to detect when the shared module cache
-	// is stale due to changes in sibling files.
-	moduleGen          int64
-	moduleValidatedGen int64
+	// packageGen is incremented whenever any .esc file changes.
+	// packageValidatedGen records the packageGen at which checkOutput was built.
+	// The completion handler uses these to detect when the cache is stale
+	// due to changes in sibling files.
+	packageGen          int64
+	packageValidatedGen int64
 
 	// Cached absolute paths to .esc files under lib/, refreshed at startup
 	// and on workspace file create/rename/delete notifications.
@@ -65,9 +62,9 @@ type Server struct {
 	preludeCompletions []protocol.CompletionItem
 
 	mu sync.RWMutex
-	// validated is broadcast after validate()/validateModule() updates the
-	// AST and scope caches. The completion handler waits on this when the
-	// cached version is behind the document version.
+	// validated is broadcast after validate() updates the checkOutput.
+	// The completion handler waits on this when the cached version is
+	// behind the document version.
 	validated *sync.Cond
 	rootURI   string // workspace root URI (from InitializeParams)
 }
@@ -76,9 +73,6 @@ func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:         map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:       map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache:   map[int]*checker.Scope{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
 		libFilesCache:    map[string]struct{}{},
 	}

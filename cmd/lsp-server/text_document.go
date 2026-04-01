@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
@@ -9,12 +8,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
-	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -48,13 +44,20 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
 	loc := posToLoc(params.Position)
+	sourceID := s.sourceIDForURI(params.TextDocument.URI)
 	s.mu.RLock()
-	script := s.astCache[params.TextDocument.URI]
-	s.mu.RUnlock()
-	if script == nil {
-		return nil, fmt.Errorf("textDocument/definition: script not found")
+	var node ast.Node
+	if co := s.checkOutput; co != nil {
+		if script, ok := co.Scripts[sourceID]; ok {
+			node = findNodeInScript(script, loc)
+		} else if co.Module != nil {
+			node, _ = findNodeWithAncestorsInFile(co.Module, sourceID, loc)
+		}
 	}
-	node := findNodeInScript(script, loc)
+	s.mu.RUnlock()
+	if node == nil {
+		return nil, fmt.Errorf("textDocument/definition: node not found")
+	}
 
 	if node == nil {
 		return nil, fmt.Errorf("textDocument/definition: node not found")
@@ -92,9 +95,7 @@ func (s *Server) textDocumentTypeDefinition(context *glsp.Context, params *proto
 func (s *Server) textDocumentDidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
 	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = params.TextDocument
-	if s.isModuleFile(params.TextDocument.URI) {
-		s.moduleGen++
-	}
+	s.packageGen++
 	s.mu.Unlock()
 	if params.TextDocument.LanguageID == "escalier" {
 		s.validate(context, params.TextDocument.URI, params.TextDocument.Text, params.TextDocument.Version)
@@ -120,9 +121,7 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 			}
 		}
 	}
-	if s.isModuleFile(params.TextDocument.URI) {
-		s.moduleGen++
-	}
+	s.packageGen++
 	s.mu.Unlock()
 
 	if doc.LanguageID == "escalier" {
@@ -144,25 +143,29 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		loc.Column,
 	)
 
+	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
-	script := server.astCache[params.TextDocument.URI]
+	var hoverNode ast.Node
+	if co := server.checkOutput; co != nil {
+		if script, ok := co.Scripts[sourceID]; ok {
+			hoverNode = findNodeInScript(script, loc)
+		} else if co.Module != nil {
+			hoverNode, _ = findNodeWithAncestorsInFile(co.Module, sourceID, loc)
+		}
+	}
 	server.mu.RUnlock()
-	if script != nil {
-		node := findNodeInScript(script, loc)
-
-		if node != nil {
-			switch node := node.(type) {
-			case ast.Expr:
-				if node.InferredType() != nil {
-					value = "`" + node.InferredType().String() + "`"
-				}
-			case ast.Pat:
-				if node.InferredType() != nil {
-					value = "`" + node.InferredType().String() + "`"
-				}
-			default:
-				// do nothing
+	if hoverNode != nil {
+		switch node := hoverNode.(type) {
+		case ast.Expr:
+			if node.InferredType() != nil {
+				value = "`" + node.InferredType().String() + "`"
 			}
+		case ast.Pat:
+			if node.InferredType() != nil {
+				value = "`" + node.InferredType().String() + "`"
+			}
+		default:
+			// do nothing
 		}
 	}
 
@@ -202,8 +205,8 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 }
 
 // isCacheStale returns true if the document has been updated since the last
-// successful validation. For module files, it also checks whether the shared
-// module cache is stale due to changes in sibling lib/ files.
+// successful validation, or if any sibling file has changed since the last
+// package-level validation.
 // Must be called while holding mu.RLock().
 func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	doc, ok := s.documents[uri]
@@ -217,9 +220,7 @@ func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	if doc.Version != validated {
 		return true
 	}
-	// For module files, the shared moduleCache may be stale if a sibling
-	// file changed after the last module validation.
-	if s.isModuleFile(uri) && s.moduleGen != s.moduleValidatedGen {
+	if s.packageGen != s.packageValidatedGen {
 		return true
 	}
 	return false
@@ -237,17 +238,6 @@ func (s *Server) isModuleFile(uri protocol.DocumentUri) bool {
 		return false
 	}
 	return strings.HasPrefix(rel, "lib/") || strings.HasPrefix(rel, "lib\\")
-}
-
-// relPath returns the path of a URI relative to the workspace root.
-func (s *Server) relPath(uri protocol.DocumentUri) string {
-	rootPath := uriToPath(s.rootURI)
-	filePath := uriToPath(string(uri))
-	rel, err := filepath.Rel(rootPath, filePath)
-	if err != nil {
-		return filePath
-	}
-	return rel
 }
 
 // findLibFiles discovers all .esc files in the lib/ directory under the workspace root.
@@ -315,134 +305,74 @@ func stableSourceID(relPath string) int {
 	return int(h.Sum32())
 }
 
-// getSourceIDForModule finds the SourceID for a relative path in a module.
-func getSourceIDForModule(module *ast.Module, relPath string) (int, bool) {
-	for _, file := range module.Files {
-		if file.Path == relPath {
-			return file.SourceID, true
-		}
-	}
-	return 0, false
+// sourceIDForURI computes the stable source ID for a document URI.
+func (s *Server) sourceIDForURI(uri protocol.DocumentUri) int {
+	rootPath := uriToPath(s.rootURI)
+	filePath := uriToPath(string(uri))
+	rel, _ := filepath.Rel(rootPath, filePath)
+	return stableSourceID(rel)
 }
 
-func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.DocumentUri, version protocol.Integer) {
+func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
 	// Check staleness before doing expensive work.
 	server.mu.RLock()
 	currentDoc := server.documents[uri]
 	server.mu.RUnlock()
 	if currentDoc.Version != version {
-		// Wake any goroutines waiting on s.validated so they can re-evaluate
-		// staleness rather than blocking until the 2s timeout.
 		server.validated.Broadcast()
 		return
 	}
 
 	rootPath := uriToPath(server.rootURI)
 
-	// Use cached lib file paths maintained at startup and by workspace events.
-	libFiles := server.cachedLibFilesSnapshot()
-
-	// Build sources: use in-memory content for open files, read from disk for others.
-	// Source IDs are derived from the relative path hash so they remain stable
-	// regardless of file discovery order or files being added/removed.
-	//
-	// First, snapshot in-memory documents under the lock, then do disk I/O
-	// outside the lock to avoid blocking other operations. We also capture each
-	// open file's version so we can verify nothing changed after validation.
-	type docSnapshot struct {
-		Text    string
-		Version protocol.Integer
-	}
-	openDocs := make(map[protocol.DocumentUri]docSnapshot)
-	server.mu.RLock()
-	for _, absPath := range libFiles {
-		fileURI := protocol.DocumentUri(pathToURI(absPath))
-		if doc, ok := server.documents[fileURI]; ok {
-			openDocs[fileURI] = docSnapshot{Text: doc.Text, Version: doc.Version}
-		}
-	}
-	server.mu.RUnlock()
-
-	var sources []*ast.Source
-	for _, absPath := range libFiles {
-		rel, _ := filepath.Rel(rootPath, absPath)
-		fileURI := protocol.DocumentUri(pathToURI(absPath))
-		var contents string
-		if snap, ok := openDocs[fileURI]; ok {
-			contents = snap.Text
-		} else {
-			data, err := os.ReadFile(absPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "validateModule: error reading %s: %s\n", absPath, err)
-				continue
-			}
-			contents = string(data)
-		}
-		sources = append(sources, &ast.Source{
-			ID:       stableSourceID(rel),
-			Path:     rel,
-			Contents: contents,
-		})
-	}
-
-	if len(sources) == 0 {
-		server.mu.Lock()
-		currentDoc := server.documents[uri]
-		if currentDoc.Version == version {
-			server.moduleCache = nil
-			server.moduleScopeCache = nil
-			server.fileScopeCache = map[int]*checker.Scope{}
-		}
-		server.mu.Unlock()
+	// Collect all source files (lib/ + bin/) with in-memory content for open docs.
+	sources, err := server.collectSources(rootPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validate: failed to collect sources: %v\n", err)
 		server.validated.Broadcast()
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-
-	c := checker.NewChecker()
-	inferCtx := checker.Context{
-		Scope:      checker.Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-	typeErrors := c.InferModule(inferCtx, module)
-
-	// Store module cache and file scopes. Verify that every open file we
-	// snapshotted still has the same version — if any changed during
-	// validation, the results are stale and must be discarded.
-	server.mu.Lock()
-	stale := false
-	for snapURI, snap := range openDocs {
-		if doc, ok := server.documents[snapURI]; ok && doc.Version != snap.Version {
-			stale = true
+	// Override the current file's content with the latest from the editor,
+	// since collectSources reads from s.documents which may have been
+	// updated to a newer version than the one we're validating.
+	triggerSourceID := server.sourceIDForURI(uri)
+	for _, src := range sources {
+		if src.ID == triggerSourceID {
+			src.Contents = contents
 			break
 		}
 	}
-	if stale {
+
+	// Run package-level type checking (no codegen).
+	output := compiler.CheckPackage(sources)
+
+	// Verify that no document versions changed during validation.
+	server.mu.Lock()
+	currentDoc = server.documents[uri]
+	if currentDoc.Version != version {
 		server.mu.Unlock()
 		server.validated.Broadcast()
 		return
 	}
-	server.moduleCache = module
-	server.moduleScopeCache = inferCtx.Scope
-	server.fileScopeCache = c.FileScopes
-	server.moduleValidatedGen = server.moduleGen
-	for snapURI, snap := range openDocs {
-		server.validatedVersion[snapURI] = snap.Version
+	server.checkOutput = &output
+	server.packageValidatedGen = server.packageGen
+	server.validatedVersion[uri] = version
+	// Also update validatedVersion for all other open documents that were
+	// included in this check.
+	for docURI, doc := range server.documents {
+		if docURI != uri && doc.LanguageID == "escalier" {
+			server.validatedVersion[docURI] = doc.Version
+		}
 	}
 	server.mu.Unlock()
 	server.validated.Broadcast()
 
-	// Pre-index errors by SourceID so we can look them up per-file in O(1)
-	// instead of scanning all errors for each file.
+	// Publish diagnostics for all files.
 	severity := protocol.DiagnosticSeverityError
 	source := "escalier"
 	diagsBySourceID := make(map[int][]protocol.Diagnostic)
-	for _, err := range parseErrors {
+	for _, err := range output.ParseErrors {
 		diagsBySourceID[err.Span.SourceID] = append(diagsBySourceID[err.Span.SourceID], protocol.Diagnostic{
 			Range:    spanToRange(err.Span),
 			Severity: &severity,
@@ -450,7 +380,7 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 			Message:  err.Message,
 		})
 	}
-	for _, err := range typeErrors {
+	for _, err := range output.TypeErrors {
 		span := err.Span()
 		diagsBySourceID[span.SourceID] = append(diagsBySourceID[span.SourceID], protocol.Diagnostic{
 			Range:    spanToRange(span),
@@ -460,116 +390,55 @@ func (server *Server) validateModule(lspContext *glsp.Context, uri protocol.Docu
 		})
 	}
 
-	// Publish diagnostics for all files in the module.
-	// Use each file's own document version (not the triggering file's version)
-	// so that sibling files get correct Version fields.
+	// Publish diagnostics for all files. Guard against nil context
+	// (e.g., in tests without an LSP connection).
+	if lspContext.Notify == nil {
+		return
+	}
 	server.mu.RLock()
-	for _, file := range module.Files {
-		fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
-		fileDiags := diagsBySourceID[file.SourceID]
-
-		params := &protocol.PublishDiagnosticsParams{
-			URI:         fileURI,
-			Diagnostics: fileDiags,
+	if output.Module != nil {
+		for _, file := range output.Module.Files {
+			fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
+			fileDiags := emptyIfNil(diagsBySourceID[file.SourceID])
+			params := &protocol.PublishDiagnosticsParams{
+				URI:         fileURI,
+				Diagnostics: fileDiags,
+			}
+			if doc, ok := server.documents[fileURI]; ok {
+				v := protocol.UInteger(doc.Version)
+				params.Version = &v
+			}
+			go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
 		}
-		if doc, ok := server.documents[fileURI]; ok {
-			v := protocol.UInteger(doc.Version)
-			params.Version = &v
+	}
+	// Publish diagnostics for bin/ files.
+	for srcID := range output.Scripts {
+		// Find the source path for this script.
+		for _, src := range sources {
+			if src.ID == srcID {
+				fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, src.Path)))
+				fileDiags := emptyIfNil(diagsBySourceID[srcID])
+				params := &protocol.PublishDiagnosticsParams{
+					URI:         fileURI,
+					Diagnostics: fileDiags,
+				}
+				if doc, ok := server.documents[fileURI]; ok {
+					v := protocol.UInteger(doc.Version)
+					params.Version = &v
+				}
+				go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
+				break
+			}
 		}
-		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
 	}
 	server.mu.RUnlock()
 }
 
-func (server *Server) validateScript(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
-	// Check staleness before doing expensive work.
-	server.mu.RLock()
-	currentDoc := server.documents[uri]
-	server.mu.RUnlock()
-	if currentDoc.Version != version {
-		server.validated.Broadcast()
-		return
+// emptyIfNil returns an empty slice if the input is nil, ensuring JSON
+// serialization produces [] instead of null.
+func emptyIfNil(diags []protocol.Diagnostic) []protocol.Diagnostic {
+	if diags == nil {
+		return []protocol.Diagnostic{}
 	}
-
-	rootPath := uriToPath(server.rootURI)
-	filePath := uriToPath(string(uri))
-	rel, _ := filepath.Rel(rootPath, filePath)
-
-	// Use CompilePackage to validate bin/ scripts so they have access to
-	// the lib namespace. This mirrors how the CLI's build command works.
-	sources, err := server.collectSources(rootPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "validateScript: failed to collect sources: %v\n", err)
-		server.validated.Broadcast()
-		return
-	}
-
-	// Update the current file's content with the latest from the editor.
-	scriptSourceID := stableSourceID(rel)
-	for _, src := range sources {
-		if src.ID == scriptSourceID {
-			src.Contents = contents
-			break
-		}
-	}
-
-	output := compiler.CompilePackage(sources)
-
-	// Check again after expensive work in case a new version arrived.
-	server.mu.Lock()
-	currentDoc = server.documents[uri]
-	if currentDoc.Version != version {
-		server.mu.Unlock()
-		server.validated.Broadcast()
-		return
-	}
-	server.validatedVersion[uri] = version
-	server.mu.Unlock()
-	server.validated.Broadcast()
-
-	// Filter diagnostics to the current file by matching source ID.
-	severity := protocol.DiagnosticSeverityError
-	source := "escalier"
-	diagnostics := []protocol.Diagnostic{}
-	for _, err := range output.ParseErrors {
-		if err.Span.SourceID != scriptSourceID {
-			continue
-		}
-		diagnostics = append(diagnostics, protocol.Diagnostic{
-			Range:    spanToRange(err.Span),
-			Severity: &severity,
-			Source:   &source,
-			Message:  err.Message,
-		})
-	}
-	for _, err := range output.TypeErrors {
-		span := err.Span()
-		if span.SourceID != scriptSourceID {
-			continue
-		}
-		diagnostics = append(diagnostics, protocol.Diagnostic{
-			Range:    spanToRange(span),
-			Severity: &severity,
-			Source:   &source,
-			Message:  err.Message(),
-		})
-	}
-
-	diagVersion := protocol.UInteger(version)
-	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
-		URI:         uri,
-		Diagnostics: diagnostics,
-		Version:     &diagVersion,
-	})
-}
-
-func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
-	// Route module files to module-level validation.
-	if server.isModuleFile(uri) {
-		server.validateModule(lspContext, uri, version)
-		return
-	}
-
-	// Otherwise, validate contents as a script.
-	server.validateScript(lspContext, uri, contents, version)
+	return diags
 }

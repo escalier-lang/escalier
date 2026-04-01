@@ -149,9 +149,14 @@ func (s *Server) resolveDetail(data completionResolveData) string {
 	case "prelude":
 		scope = s.preludeScope
 	case "script":
-		scope = s.scopeCache[protocol.DocumentUri(data.URI)]
+		if co := s.checkOutput; co != nil {
+			sourceID := s.sourceIDForURI(protocol.DocumentUri(data.URI))
+			scope = co.ScriptScopes[sourceID]
+		}
 	case "module":
-		scope = s.moduleScopeCache
+		if co := s.checkOutput; co != nil {
+			scope = co.ModuleScope
+		}
 	}
 	s.mu.RUnlock()
 	if scope == nil {
@@ -215,22 +220,23 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		// Puts the gorountine to sleep until `Broadcast()` is called.
 		s.validated.Wait()
 	}
-	module := s.moduleCache
-	moduleScope := s.moduleScopeCache
-	fileScopes := s.fileScopeCache
-	script := s.astCache[uri]
-	scope := s.scopeCache[uri]
+	var module *ast.Module
+	var moduleScope *checker.Scope
+	var fileScopes map[int]*checker.Scope
+	var script *ast.Script
+	var scope *checker.Scope
+	sourceID := s.sourceIDForURI(uri)
+	if co := s.checkOutput; co != nil {
+		module = co.Module
+		moduleScope = co.ModuleScope
+		fileScopes = co.FileScopes
+		script = co.Scripts[sourceID]
+		scope = co.ScriptScopes[sourceID]
+	}
 	doc := s.documents[uri]
 	s.mu.RUnlock()
 
-	// Resolve sourceID for module files (used by both suppression and completion).
 	isModule := s.isModuleFile(uri)
-	sourceID := -1
-	if isModule && module != nil {
-		if id, ok := getSourceIDForModule(module, s.relPath(uri)); ok {
-			sourceID = id
-		}
-	}
 
 	// Check if the cursor is on a node where completions should be suppressed
 	// (e.g. IdentPat). This runs after waiting for validation so the cached
@@ -241,9 +247,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	// Try module-aware completions first.
 	if module != nil && moduleScope != nil && isModule {
-		if sourceID >= 0 {
-			return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
-		}
+		return s.moduleCompletion(module, sourceID, moduleScope, fileScopes, loc, doc.Text)
 	}
 
 	// Fall back to script-based completions.
@@ -760,8 +764,28 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 	// Values are already collected by collectBlockBindings above.
 	collectScopeTypeBindings(scope, seen, &items)
 
+	// Walk up the scope chain to collect bindings from intermediate scopes
+	// (e.g., the lib namespace scope between the script scope and prelude).
+	// Skip the prelude — it's handled separately below with caching.
+	preludeScope := scope.Parent
+	for s := scope.Parent; s != nil && s.Parent != nil; s = s.Parent {
+		preludeScope = s.Parent
+		ns := s.Namespace
+		for name, binding := range ns.Values {
+			if !seen[name] {
+				seen[name] = true
+				kind := completionKindForValueType(binding.Type)
+				items = append(items, protocol.CompletionItem{
+					Label: name,
+					Kind:  &kind,
+					Data:  completionResolveData{Scope: "script", Name: name},
+				})
+			}
+		}
+	}
+
 	// Append cached prelude/global bindings, skipping any that are shadowed.
-	for _, item := range s.getPreludeCompletions(scope.Parent) {
+	for _, item := range s.getPreludeCompletions(preludeScope) {
 		if !seen[item.Label] {
 			seen[item.Label] = true
 			items = append(items, item)
