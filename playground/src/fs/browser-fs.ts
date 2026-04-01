@@ -449,6 +449,7 @@ export class BrowserFS implements FSAPI {
                 this.openFiles.set(fd, newFile);
                 this.openPaths.set(fd, pathStr);
                 this.createdFDs.add(fd);
+                this.dirtyFDs.add(fd);
                 callback(null, fd);
                 return;
             }

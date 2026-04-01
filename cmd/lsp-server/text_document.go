@@ -470,8 +470,13 @@ func (server *Server) validateFull(
 	server.packageValidatedGen = server.packageGen
 	server.libValidatedGen = server.libGen
 	server.validatedVersion[uri] = version
-	// Also update validatedVersion for all other open documents that were
-	// included in this check.
+	// Also update validatedVersion for all other open Escalier documents.
+	// This iterates server.documents rather than sources because all open
+	// lib/ and bin/ .esc files are included in sources (collectSources uses
+	// the editor buffer for open files). If a non-package file somehow gets
+	// stamped, the only effect is that isCacheStale returns false for it,
+	// which is harmless — there is nothing to wait for since it won't be
+	// re-validated through the full-package path.
 	for docURI, doc := range server.documents {
 		if docURI != uri && doc.LanguageID == "escalier" {
 			server.validatedVersion[docURI] = doc.Version

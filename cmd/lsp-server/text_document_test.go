@@ -247,14 +247,12 @@ func TestIntegration_DefinitionInModule(t *testing.T) {
 			},
 		},
 	})
-	// For module files, definition may work differently.
-	// At minimum, it should not panic or error due to nil caches.
+	// Module-level go-to-definition may not be fully implemented yet.
 	if err != nil {
-		// Acceptable — module definition may not be fully implemented yet.
-		return
+		t.Skipf("module definition not supported: %v", err)
 	}
 	if result == nil {
-		return
+		t.Skip("module definition returned nil result")
 	}
 	loc, ok := result.(protocol.Location)
 	if ok {

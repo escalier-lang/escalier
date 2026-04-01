@@ -42,7 +42,13 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 		return nil, fmt.Errorf("document not open: %s", uri)
 	}
 
+	if s.rootURI == "" {
+		return nil, fmt.Errorf("workspace root URI not set")
+	}
 	rootPath := uriToPath(s.rootURI)
+	if rootPath == "" {
+		return nil, fmt.Errorf("workspace root path is empty")
+	}
 
 	// Collect all source files (lib/ + bin/) with in-memory content for open docs.
 	sources, err := s.collectSources(rootPath)
@@ -136,6 +142,11 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	var sources []*ast.Source
 
 	// Use cached file lists instead of walking the filesystem each time.
+	// These caches are populated during initialize and refreshed by
+	// workspace/didCreateFiles, workspace/didDeleteFiles, and
+	// workspace/didRenameFiles, so they stay in sync with the filesystem.
+	// A didOpen for an existing file does not need to update the cache
+	// because the file is already on disk and was found during the last scan.
 	libFiles := s.cachedLibFilesSnapshot()
 	binFiles := s.cachedBinFilesSnapshot()
 
@@ -154,6 +165,12 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	}
 	s.mu.RUnlock()
 
+	// Errors from filepath.Rel and os.ReadFile are logged and skipped rather
+	// than propagated. A file can disappear between the cache scan and the
+	// read (e.g. the user deletes it while validation is in flight). Partial
+	// diagnostics for the remaining files are more useful than aborting the
+	// entire validation, and the stale cache entry will be cleaned up by the
+	// next workspace/didDeleteFiles notification.
 	for _, absPath := range allFiles {
 		rel, err := filepath.Rel(rootPath, absPath)
 		if err != nil {
