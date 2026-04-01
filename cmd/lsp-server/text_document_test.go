@@ -52,7 +52,8 @@ func openFile(t *testing.T, s *Server, relPath string, contents string) protocol
 	return uri
 }
 
-// getCompletionLabelsAt calls textDocumentCompletion and returns sorted labels.
+// getCompletionLabelsAt calls textDocumentCompletion and returns the labels.
+// The server's sortAndLimit sorts items alphabetically, so labels arrive sorted.
 func getCompletionLabelsAt(t *testing.T, s *Server, uri protocol.DocumentUri, line, col int) []string {
 	t.Helper()
 	result, err := s.textDocumentCompletion(&glsp.Context{}, &protocol.CompletionParams{
@@ -314,8 +315,9 @@ func TestIntegration_IncrementalBinValidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Wait briefly for the async validation goroutine to complete.
-	// The validated condition is broadcast when done.
+	// Wait for the async validation goroutine to complete.
+	// RLock is correct here because s.validated was created with
+	// sync.NewCond(s.mu.RLocker()) — see NewServer in main.go.
 	s.mu.RLock()
 	for s.validatedVersion[binURI] < 2 {
 		s.validated.Wait()

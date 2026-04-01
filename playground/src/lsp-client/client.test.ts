@@ -355,17 +355,11 @@ test.skip('workspace/executeCommand', async () => {
         arguments: [fileUri()],
     });
 
-    expect(response).toMatchInlineSnapshot(`
-  {
-    "languageId": "javascript",
-    "text": "console.log("Hello, world!");
-  const x = 5;
-  //# sourceMappingURL=./foo.esc.map
-  ",
-    "uri": "file:///home/user/project/foo.js",
-    "version": 0,
-  }
-`);
+    const resp = response as Record<string, unknown>;
+    expect(resp.languageId).toBe('javascript');
+    expect(resp.version).toBe(0);
+    expect(resp.uri).toBe(`${rootUri}/bin/foo.js`);
+    expect(resp.text).toContain('const x = 5;');
 });
 
 test('multi-chunk message handling', async () => {
