@@ -261,6 +261,7 @@ func (s *Server) isModuleFile(uri protocol.DocumentUri) bool {
 	return strings.HasPrefix(rel, "lib/") || strings.HasPrefix(rel, "lib\\")
 }
 
+
 // findLibFiles discovers all .esc files in the lib/ directory under the workspace root.
 func (s *Server) findLibFiles() ([]string, error) {
 	rootPath := uriToPath(s.rootURI)
@@ -345,7 +346,7 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	isBinFile := !server.isModuleFile(uri)
 	canIncrCheck := isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen
 	var cachedLibNS *type_system.Namespace
-	if canIncrCheck && server.checkOutput.ModuleScope != nil {
+	if canIncrCheck && server.checkOutput != nil && server.checkOutput.ModuleScope != nil {
 		cachedLibNS = server.checkOutput.ModuleScope.Namespace
 	}
 	snapshotPackageGen := server.packageGen
