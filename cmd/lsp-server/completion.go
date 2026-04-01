@@ -261,7 +261,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
-		items = s.completionsFromScope(script, scope, loc)
+		items = s.completionsFromScope(script, scope, loc, string(uri))
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -291,7 +291,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				}
 			} else {
 				// Case C: standalone identifier — scope-based completions
-				items = s.completionsFromScope(script, scope, loc)
+				items = s.completionsFromScope(script, scope, loc, string(uri))
 				items = filterByPrefix(items, n.Name)
 			}
 		case *ast.TypeRefTypeAnn:
@@ -304,7 +304,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 		default:
 			// Other node types — provide scope-based completions
-			items = s.completionsFromScope(script, scope, loc)
+			items = s.completionsFromScope(script, scope, loc, string(uri))
 			if prefix := wordAtCursor(doc.Text, loc); prefix != "" {
 				items = filterByPrefix(items, prefix)
 			}
@@ -683,7 +683,7 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
 // variables, if-let patterns, and block-local variable declarations.
-func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location) []protocol.CompletionItem {
+func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location, uri string) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
 
@@ -778,7 +778,7 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 				items = append(items, protocol.CompletionItem{
 					Label: name,
 					Kind:  &kind,
-					Data:  completionResolveData{Scope: "script", Name: name},
+					Data:  completionResolveData{Scope: "script", Name: name, URI: uri},
 				})
 			}
 		}

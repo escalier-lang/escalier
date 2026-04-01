@@ -65,7 +65,11 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 	}
 
 	// Write output files to the build/ directory in the virtual filesystem.
+	// Remove any stale artifacts from a previous build first.
 	buildDir := filepath.Join(rootPath, "build")
+	if err := os.RemoveAll(buildDir); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to clean build directory: %v", err)
+	}
 	for name, module := range output.Modules {
 		// name is like "lib/index" or "bin/main"
 		jsPath := filepath.Join(buildDir, name+".js")
@@ -156,6 +160,7 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 			fmt.Fprintf(os.Stderr, "collectSources: filepath.Rel(%s, %s): %s\n", rootPath, absPath, err)
 			continue
 		}
+		norm := filepath.ToSlash(rel)
 		fileURI := protocol.DocumentUri(pathToURI(absPath))
 		var contents string
 		if text, ok := openDocs[fileURI]; ok {
@@ -169,8 +174,8 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 			contents = string(data)
 		}
 		sources = append(sources, &ast.Source{
-			ID:       stableSourceID(rel),
-			Path:     rel,
+			ID:       stableSourceID(norm),
+			Path:     norm,
 			Contents: contents,
 		})
 	}

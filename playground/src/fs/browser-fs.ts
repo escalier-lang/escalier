@@ -414,8 +414,7 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        const flags =
-            typeof _flags === 'number' ? _flags : 0;
+        const flags = typeof _flags === 'number' ? _flags : 0;
         const hasCreat = (flags & constants.O_CREAT) !== 0;
         const hasTrunc = (flags & constants.O_TRUNC) !== 0;
 
@@ -484,6 +483,9 @@ export class BrowserFS implements FSAPI {
                 }
                 // Allocate a new file descriptor
                 const fd = this.fileID++;
+                if (hasTrunc) {
+                    this.dirtyFDs.add(fd);
+                }
                 this.openFiles.set(fd, node);
                 this.openPaths.set(fd, pathStr);
                 callback(null, fd);

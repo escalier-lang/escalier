@@ -74,7 +74,8 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 
 		c := checker.NewChecker()
 		inferCtx := checker.Context{
-			Scope:      checker.Prelude(c),
+			// Create a child scope to avoid polluting the prelude with lib bindings.
+			Scope:      checker.Prelude(c).WithNewScope(),
 			IsAsync:    false,
 			IsPatMatch: false,
 		}

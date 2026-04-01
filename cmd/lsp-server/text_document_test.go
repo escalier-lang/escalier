@@ -25,8 +25,12 @@ func integrationServer(t *testing.T, files map[string]string) *Server {
 	s := NewServer()
 	s.rootURI = pathToURI(root)
 	// Populate file caches so collectSources can find lib/ and bin/ files.
-	_ = s.refreshLibFilesCache()
-	_ = s.refreshBinFilesCache()
+	if err := s.refreshLibFilesCache(); err != nil {
+		t.Fatalf("refreshLibFilesCache: %v", err)
+	}
+	if err := s.refreshBinFilesCache(); err != nil {
+		t.Fatalf("refreshBinFilesCache: %v", err)
+	}
 	return s
 }
 
@@ -280,13 +284,7 @@ func TestIntegration_BinScriptsDoNotLeakBindings(t *testing.T) {
 
 // --- Issue 5: incremental bin-only validation reuses lib output ---
 
-// TODO: Fix incremental validation so that lib exports are visible in
-// completions after the fast path runs. The cached libNS is passed to
-// CheckBinScript correctly, but the completion scope-chain walk doesn't
-// find the lib bindings. Likely related to how InferModule populates
-// the module scope namespace vs what the completion code expects.
 func TestIntegration_IncrementalBinValidation(t *testing.T) {
-	t.Skip("incremental bin validation: lib exports not yet visible in completions after fast path")
 	files := map[string]string{
 		"lib/math.esc": "export fn add(a: number, b: number) -> number { a + b }",
 		"bin/main.esc": "val x = add(1, 2)",
@@ -334,10 +332,13 @@ func TestIntegration_IncrementalBinValidation(t *testing.T) {
 	srcID := s.sourceIDForURI(binURI)
 	assert.NotNil(t, co2.Scripts[srcID], "bin script should be updated")
 
-	// Completions should still work — 'add' from lib and 'x' from script.
-	labels := getCompletionLabelsAt(t, s, binURI, 2, 10)
+	// Completions should still work — 'add' from lib and 'x'/'y' from script.
+	// Cursor on "add" (line 1, col 9) to check lib export is visible.
+	labels := getCompletionLabelsAt(t, s, binURI, 1, 9)
 	assert.Contains(t, labels, "add", "should still see lib export after incremental check")
-	assert.Contains(t, labels, "x", "should see script binding after incremental check")
+	// Cursor on "x" (line 2, col 10) to check script bindings are visible.
+	labels2 := getCompletionLabelsAt(t, s, binURI, 2, 10)
+	assert.Contains(t, labels2, "x", "should see script binding after incremental check")
 }
 
 // --- Issue 8: workspaceExecuteCommand rejects closed documents ---

@@ -216,7 +216,7 @@ x`
 
 	// Cursor at "x" on line 3
 	loc := ast.Location{Line: 3, Column: 1}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 	items = filterByPrefix(items, "x")
 	labels := getCompletionLabels(items)
 	assert.Contains(t, labels, "x")
@@ -230,7 +230,7 @@ gre`
 
 	// Cursor at "gre" — line 2, col 3
 	loc := ast.Location{Line: 2, Column: 3}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 	items = filterByPrefix(items, "gre")
 	labels := getCompletionLabels(items)
 	assert.Equal(t, []string{"greet"}, labels)
@@ -244,7 +244,7 @@ a`
 
 	// Cursor at "a" on line 3 — both a and b should be visible
 	loc := ast.Location{Line: 3, Column: 1}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -262,7 +262,7 @@ val b: number = 2`
 
 	// Cursor at "a" on line 2 — only a should be visible, not b
 	loc := ast.Location{Line: 2, Column: 1}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -321,7 +321,7 @@ func TestScopeCompletionInsideFuncBody(t *testing.T) {
 
 	// Cursor at "sum" on line 3, inside the function body
 	loc := ast.Location{Line: 3, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -342,7 +342,7 @@ fn foo() -> number {
 
 	// Cursor at "outer" on line 3, inside foo's body
 	loc := ast.Location{Line: 3, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -367,7 +367,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "b" on line 5, inside the if-block
 	loc := ast.Location{Line: 5, Column: 3}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -380,7 +380,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 
 	// Cursor at "a" on line 8, inside the else-block
 	loc2 := ast.Location{Line: 8, Column: 3}
-	items2 := testServer().completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -405,7 +405,7 @@ func TestScopeCompletionInsideMatchCase(t *testing.T) {
 	//          123456789012345678901
 	// "myField" after => starts at col 19
 	loc := ast.Location{Line: 3, Column: 19}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -427,7 +427,7 @@ func TestScopeCompletionMatchBindingNotVisibleOutside(t *testing.T) {
 
 	// Cursor at "x" on line 5, outside the match expression
 	loc := ast.Location{Line: 5, Column: 3}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -448,7 +448,7 @@ for item in items {
 
 	// Cursor at "item" on line 3, col 3
 	loc := ast.Location{Line: 3, Column: 3}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -468,7 +468,7 @@ items`
 
 	// Cursor at "items" on line 5, after the for-in loop
 	loc := ast.Location{Line: 5, Column: 1}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -486,7 +486,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 
 	// Cursor at "name" on line 2, inside the function expression body
 	loc := ast.Location{Line: 2, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -506,7 +506,7 @@ add`
 
 	// Cursor at "add" on line 5, outside the function
 	loc := ast.Location{Line: 5, Column: 1}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -533,7 +533,7 @@ try {
 
 	// Cursor inside try block at "a" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -546,7 +546,7 @@ try {
 
 	// Cursor inside catch block at "b" on line 8
 	loc2 := ast.Location{Line: 8, Column: 3}
-	items2 := testServer().completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -570,7 +570,7 @@ if let [a, b] = target {
 
 	// Cursor inside consequent at "a" on line 3
 	loc := ast.Location{Line: 3, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -583,7 +583,7 @@ if let [a, b] = target {
 
 	// Cursor inside else at "c" on line 6
 	loc2 := ast.Location{Line: 6, Column: 2}
-	items2 := testServer().completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
@@ -605,7 +605,7 @@ val result = do {
 
 	// Cursor at "inner" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -628,7 +628,7 @@ if (true) {
 
 	// Cursor inside consequent at "a" on line 4
 	loc := ast.Location{Line: 4, Column: 2}
-	items := testServer().completionsFromScope(script, scope, loc)
+	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -640,7 +640,7 @@ if (true) {
 
 	// Cursor inside else at "b" on line 7
 	loc2 := ast.Location{Line: 7, Column: 2}
-	items2 := testServer().completionsFromScope(script, scope, loc2)
+	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
 	for _, item := range items2 {

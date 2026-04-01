@@ -52,7 +52,8 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 	sourceID := s.sourceIDForURI(params.TextDocument.URI)
 	s.mu.RLock()
 	var node ast.Node
-	if co := s.checkOutput; co != nil {
+	co := s.checkOutput
+	if co != nil {
 		if script, ok := co.Scripts[sourceID]; ok {
 			node = findNodeInScript(script, loc)
 		} else if co.Module != nil {
@@ -63,6 +64,8 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 	if node == nil {
 		return nil, fmt.Errorf("textDocument/definition: node not found")
 	}
+
+	rootPath := uriToPath(s.rootURI)
 
 	switch node := node.(type) {
 	case *ast.IdentExpr:
@@ -76,8 +79,15 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 		default:
 			panic(fmt.Sprintf("textDocument/definition: unexpected provenance type %T", node.Source))
 		}
+		// Resolve the declaration's file URI from the span's SourceID.
+		defURI := params.TextDocument.URI
+		if co != nil && co.Module != nil {
+			if srcPath := co.Module.GetSourcePath(span.SourceID); srcPath != "" {
+				defURI = protocol.DocumentUri(pathToURI(filepath.Join(rootPath, srcPath)))
+			}
+		}
 		loc := protocol.Location{
-			URI:   params.TextDocument.URI,
+			URI:   defURI,
 			Range: spanToRange(span),
 		}
 
@@ -96,9 +106,11 @@ func (s *Server) textDocumentTypeDefinition(context *glsp.Context, params *proto
 func (s *Server) textDocumentDidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
 	s.mu.Lock()
 	s.documents[params.TextDocument.URI] = params.TextDocument
-	s.packageGen++
-	if s.isModuleFile(params.TextDocument.URI) {
-		s.libGen++
+	if params.TextDocument.LanguageID == "escalier" {
+		s.packageGen++
+		if s.isModuleFile(params.TextDocument.URI) {
+			s.libGen++
+		}
 	}
 	s.mu.Unlock()
 	if params.TextDocument.LanguageID == "escalier" {
@@ -125,9 +137,11 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 			}
 		}
 	}
-	s.packageGen++
-	if s.isModuleFile(params.TextDocument.URI) {
-		s.libGen++
+	if doc.LanguageID == "escalier" {
+		s.packageGen++
+		if s.isModuleFile(params.TextDocument.URI) {
+			s.libGen++
+		}
 	}
 	s.mu.Unlock()
 
@@ -321,7 +335,7 @@ func (s *Server) sourceIDForURI(uri protocol.DocumentUri) int {
 		fmt.Fprintf(os.Stderr, "sourceIDForURI: filepath.Rel(%s, %s): %s\n", rootPath, filePath, err)
 		return stableSourceID(filePath)
 	}
-	return stableSourceID(rel)
+	return stableSourceID(filepath.ToSlash(rel))
 }
 
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
@@ -334,6 +348,8 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	if canIncrCheck && server.checkOutput.ModuleScope != nil {
 		cachedLibNS = server.checkOutput.ModuleScope.Namespace
 	}
+	snapshotPackageGen := server.packageGen
+	snapshotLibGen := server.libGen
 	server.mu.RUnlock()
 	if currentDoc.Version != version {
 		server.validated.Broadcast()
@@ -345,12 +361,12 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	if canIncrCheck {
 		// Fast path: only a bin/ file changed and lib/ is unchanged.
 		// Re-check just this one script using the cached lib namespace.
-		server.validateBinScript(lspContext, uri, contents, version, rootPath, cachedLibNS)
+		server.validateBinScript(lspContext, uri, contents, version, rootPath, cachedLibNS, snapshotPackageGen, snapshotLibGen)
 		return
 	}
 
 	// Slow path: full package check.
-	server.validateFull(lspContext, uri, contents, version, rootPath)
+	server.validateFull(lspContext, uri, contents, version, rootPath, snapshotPackageGen, snapshotLibGen)
 }
 
 // validateBinScript re-checks a single bin/ script using a cached lib namespace,
@@ -362,6 +378,8 @@ func (server *Server) validateBinScript(
 	version protocol.Integer,
 	rootPath string,
 	libNS *type_system.Namespace,
+	snapshotPackageGen int64,
+	snapshotLibGen int64,
 ) {
 	triggerSourceID := server.sourceIDForURI(uri)
 	rel, err := filepath.Rel(rootPath, uriToPath(string(uri)))
@@ -373,7 +391,7 @@ func (server *Server) validateBinScript(
 
 	src := &ast.Source{
 		ID:       triggerSourceID,
-		Path:     rel,
+		Path:     filepath.ToSlash(rel),
 		Contents: contents,
 	}
 
@@ -384,7 +402,7 @@ func (server *Server) validateBinScript(
 	// Verify staleness and update caches.
 	server.mu.Lock()
 	currentDoc := server.documents[uri]
-	if currentDoc.Version != version {
+	if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
 		server.mu.Unlock()
 		server.validated.Broadcast()
 		return
@@ -414,6 +432,8 @@ func (server *Server) validateFull(
 	contents string,
 	version protocol.Integer,
 	rootPath string,
+	snapshotPackageGen int64,
+	snapshotLibGen int64,
 ) {
 	// Collect all source files (lib/ + bin/) with in-memory content for open docs.
 	sources, err := server.collectSources(rootPath)
@@ -440,7 +460,7 @@ func (server *Server) validateFull(
 	// Verify that no document versions changed during validation.
 	server.mu.Lock()
 	currentDoc := server.documents[uri]
-	if currentDoc.Version != version {
+	if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
 		server.mu.Unlock()
 		server.validated.Broadcast()
 		return
@@ -495,8 +515,8 @@ func (server *Server) validateFull(
 				URI:         fileURI,
 				Diagnostics: fileDiags,
 			}
-			if doc, ok := server.documents[fileURI]; ok {
-				v := protocol.UInteger(doc.Version)
+			if ver, ok := server.validatedVersion[fileURI]; ok {
+				v := protocol.UInteger(ver)
 				params.Version = &v
 			}
 			go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
@@ -518,8 +538,8 @@ func (server *Server) validateFull(
 			URI:         fileURI,
 			Diagnostics: fileDiags,
 		}
-		if doc, ok := server.documents[fileURI]; ok {
-			v := protocol.UInteger(doc.Version)
+		if ver, ok := server.validatedVersion[fileURI]; ok {
+			v := protocol.UInteger(ver)
 			params.Version = &v
 		}
 		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
