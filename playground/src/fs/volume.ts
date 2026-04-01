@@ -42,14 +42,19 @@ export function volumeToDir(volume: Volume): FSDir {
     return root;
 }
 
-const initialCode = `// Escalier sample code
-fn add(a, b) {
+const libCode = `export fn add(a: number, b: number) -> number {
     return a + b
 }
-val x = 5
-val y = 10
-val sum = add(x, y)
+
+export fn subtract(a: number, b: number) -> number {
+    return a - b
+}
+`;
+
+const binCode = `val sum = add(5, 10)
+val diff = subtract(10, 3)
 console.log("sum =", sum)
+console.log("diff =", diff)
 `;
 
 export function createVolume(manifest: string[], baseUrl: string): Volume {
@@ -70,8 +75,11 @@ name = "my-project"
 `,
             ),
         },
+        '/lib/math.esc': {
+            content: new TextEncoder().encode(libCode),
+        },
         '/bin/main.esc': {
-            content: new TextEncoder().encode(initialCode),
+            content: new TextEncoder().encode(binCode),
         },
     };
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -490,21 +491,29 @@ func (server *Server) validateScript(lspContext *glsp.Context, uri protocol.Docu
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	p := parser.NewParser(ctx, &ast.Source{
-		Path:     uri,
-		Contents: contents,
-	})
-	script, parseErrors := p.ParseScript()
+	rootPath := uriToPath(server.rootURI)
+	filePath := uriToPath(string(uri))
+	rel, _ := filepath.Rel(rootPath, filePath)
 
-	c := checker.NewChecker()
-	inferCtx := checker.Context{
-		Scope:      checker.Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
+	// Use CompilePackage to validate bin/ scripts so they have access to
+	// the lib namespace. This mirrors how the CLI's build command works.
+	sources, err := server.collectSources(rootPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validateScript: failed to collect sources: %v\n", err)
+		server.validated.Broadcast()
+		return
 	}
-	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+	// Update the current file's content with the latest from the editor.
+	scriptSourceID := stableSourceID(rel)
+	for _, src := range sources {
+		if src.ID == scriptSourceID {
+			src.Contents = contents
+			break
+		}
+	}
+
+	output := compiler.CompilePackage(sources)
 
 	// Check again after expensive work in case a new version arrived.
 	server.mu.Lock()
@@ -514,50 +523,42 @@ func (server *Server) validateScript(lspContext *glsp.Context, uri protocol.Docu
 		server.validated.Broadcast()
 		return
 	}
-	server.astCache[uri] = script
-	server.scopeCache[uri] = scriptScope
 	server.validatedVersion[uri] = version
 	server.mu.Unlock()
 	server.validated.Broadcast()
 
-	diagnotics := []protocol.Diagnostic{}
-	for _, err := range parseErrors {
-		severity := protocol.DiagnosticSeverityError
-		source := "escalier"
-		diagnotics = append(diagnotics, protocol.Diagnostic{
-			Range:              spanToRange(err.Span),
-			Severity:           &severity,
-			Code:               nil,
-			CodeDescription:    nil,
-			Source:             &source,
-			Message:            err.Message,
-			Tags:               nil,
-			RelatedInformation: nil,
-			Data:               nil,
+	// Filter diagnostics to the current file by matching source ID.
+	severity := protocol.DiagnosticSeverityError
+	source := "escalier"
+	diagnostics := []protocol.Diagnostic{}
+	for _, err := range output.ParseErrors {
+		if err.Span.SourceID != scriptSourceID {
+			continue
+		}
+		diagnostics = append(diagnostics, protocol.Diagnostic{
+			Range:    spanToRange(err.Span),
+			Severity: &severity,
+			Source:   &source,
+			Message:  err.Message,
 		})
 	}
-
-	for _, err := range typeErrors {
-		severity := protocol.DiagnosticSeverityError
-		source := "escalier"
+	for _, err := range output.TypeErrors {
 		span := err.Span()
-		diagnotics = append(diagnotics, protocol.Diagnostic{
-			Range:              spanToRange(span),
-			Severity:           &severity,
-			Code:               &protocol.IntegerOrString{Value: "ERR_CODE"},
-			CodeDescription:    nil,
-			Source:             &source,
-			Message:            err.Message(),
-			Tags:               nil,
-			RelatedInformation: nil,
-			Data:               nil,
+		if span.SourceID != scriptSourceID {
+			continue
+		}
+		diagnostics = append(diagnostics, protocol.Diagnostic{
+			Range:    spanToRange(span),
+			Severity: &severity,
+			Source:   &source,
+			Message:  err.Message(),
 		})
 	}
 
 	diagVersion := protocol.UInteger(version)
 	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
 		URI:         uri,
-		Diagnostics: diagnotics,
+		Diagnostics: diagnostics,
 		Version:     &diagVersion,
 	})
 }

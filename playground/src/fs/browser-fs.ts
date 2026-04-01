@@ -26,6 +26,12 @@ export class BrowserFS implements FSAPI {
     fileID: number;
     openFiles: Map<number, FSNode> = new Map();
     readPositions: Map<number, number> = new Map();
+    /** Tracks the path associated with each open fd (for emitting events on close). */
+    private openPaths = new Map<number, string>();
+    /** FDs that have been written to since open (emit event on close). */
+    private dirtyFDs = new Set<number>();
+    /** FDs for files that were newly created via O_CREAT (emit 'create' instead of 'change'). */
+    private createdFDs = new Set<number>();
     rootDir: FSDir;
     volume: Volume;
     readonly events = new FSEventEmitter();
@@ -408,9 +414,46 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
+        const flags =
+            typeof _flags === 'number' ? _flags : 0;
+        const hasCreat = (flags & constants.O_CREAT) !== 0;
+        const hasTrunc = (flags & constants.O_TRUNC) !== 0;
+
         // Resolve the file in the in‑memory directory tree
         const node = this.findNodeInRootDir(pathStr);
         if (!node) {
+            if (hasCreat) {
+                // Create the file if O_CREAT is set
+                const result = this.findParent(pathStr);
+                if (!result) {
+                    callback(
+                        new ErrnoException('No such file or directory', {
+                            code: 'ENOENT',
+                            errno: -2,
+                            syscall: 'open',
+                            path: pathStr,
+                        }),
+                        -1,
+                    );
+                    return;
+                }
+                const content = new Uint8Array(0);
+                const newFile = {
+                    type: 'file' as const,
+                    name: result.name,
+                    content,
+                };
+                result.parent.children.set(result.name, newFile);
+                this.volume[pathStr] = { content };
+
+                const fd = this.fileID++;
+                this.openFiles.set(fd, newFile);
+                this.openPaths.set(fd, pathStr);
+                this.createdFDs.add(fd);
+                callback(null, fd);
+                return;
+            }
+
             // File does not exist
             callback(
                 new ErrnoException('No such file or directory', {
@@ -425,22 +468,24 @@ export class BrowserFS implements FSAPI {
         }
 
         switch (node.type) {
-            case 'dir':
-                callback(
-                    new ErrnoException('Is a directory', {
-                        code: 'EISDIR',
-                        errno: -21,
-                        syscall: 'open',
-                        path: pathStr,
-                    }),
-                    -1,
-                );
+            case 'dir': {
+                // Allow opening directories for reading (O_RDONLY).
+                // Go's os.ReadDir opens directories this way before
+                // calling readdir on the fd.
+                const fd = this.fileID++;
+                this.openFiles.set(fd, node);
+                callback(null, fd);
                 break;
+            }
             case 'file': {
                 this.ensureContent(pathStr, node);
+                if (hasTrunc) {
+                    node.content = new Uint8Array(0);
+                }
                 // Allocate a new file descriptor
                 const fd = this.fileID++;
                 this.openFiles.set(fd, node);
+                this.openPaths.set(fd, pathStr);
                 callback(null, fd);
                 break;
             }
@@ -461,9 +506,25 @@ export class BrowserFS implements FSAPI {
         }
     }
 
-    close(_fd: number, callback: (error: Error | null) => void) {
-        this.openFiles.delete(_fd);
-        this.readPositions.delete(_fd);
+    close(fd: number, callback: (error: Error | null) => void) {
+        // If the file was written to, update the volume and emit an event.
+        if (this.dirtyFDs.has(fd)) {
+            const path = this.openPaths.get(fd);
+            const file = this.openFiles.get(fd);
+            if (path && file && file.type === 'file') {
+                this.volume[path] = { content: file.content };
+                this.events.emit({
+                    type: this.createdFDs.has(fd) ? 'create' : 'change',
+                    path,
+                    kind: 'file',
+                });
+            }
+            this.dirtyFDs.delete(fd);
+        }
+        this.createdFDs.delete(fd);
+        this.openPaths.delete(fd);
+        this.openFiles.delete(fd);
+        this.readPositions.delete(fd);
         callback(null);
     }
 
@@ -633,6 +694,7 @@ export class BrowserFS implements FSAPI {
         }
 
         file.content.set(data, writePos);
+        this.dirtyFDs.add(fd);
 
         if (position == null) {
             this.readPositions.set(fd, endPos);
