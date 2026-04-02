@@ -32,7 +32,7 @@ function languageForPath(path: string): string {
 
 /** Convert a filesystem path to a Monaco URI string. */
 function pathToUri(path: string): string {
-    return `file:///home/user/project${path}`;
+    return `file://${path}`;
 }
 
 type ContextMenuState = {

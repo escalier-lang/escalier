@@ -10,8 +10,9 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
-	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 const lsName = "escalier"
@@ -34,30 +35,33 @@ func main() {
 }
 
 type Server struct {
-	handler    protocol.Handler
-	documents  map[protocol.DocumentUri]protocol.TextDocumentItem
-	astCache   map[protocol.DocumentUri]*ast.Script
-	scopeCache map[protocol.DocumentUri]*checker.Scope
+	handler   protocol.Handler
+	documents map[protocol.DocumentUri]protocol.TextDocumentItem
 
-	// Module cache (for lib/ files — shared across files in same module)
-	moduleCache      *ast.Module
-	moduleScopeCache *checker.Scope
-	fileScopeCache   map[int]*checker.Scope // SourceID → file scope
+	// Unified package check output — contains ASTs, scopes, and errors
+	// for all lib/ and bin/ files. Updated by validate().
+	checkOutput *compiler.CheckOutput
 
 	// Tracks the last validated document version per URI so the completion
 	// handler can detect when the cache is stale.
 	validatedVersion map[protocol.DocumentUri]protocol.Integer
 
-	// moduleGen is incremented whenever any module/lib file changes.
-	// moduleValidatedGen records the moduleGen at which moduleCache was built.
-	// The completion handler uses these to detect when the shared module cache
-	// is stale due to changes in sibling files.
-	moduleGen          int64
-	moduleValidatedGen int64
+	// packageGen is incremented whenever any .esc file changes.
+	// packageValidatedGen records the packageGen at which checkOutput was built.
+	// The completion handler uses these to detect when the cache is stale
+	// due to changes in sibling files.
+	packageGen          int64
+	packageValidatedGen int64
 
-	// Cached absolute paths to .esc files under lib/, refreshed at startup
-	// and on workspace file create/rename/delete notifications.
-	libFilesCache map[string]struct{}
+	// libGen is incremented only when a lib/ file changes. Used to decide
+	// whether the cached lib output can be reused for bin/-only changes.
+	libGen          int64
+	libValidatedGen int64
+
+	// Cached absolute paths to .esc files under lib/ and bin/, refreshed at
+	// startup and on workspace file create/rename/delete notifications.
+	libFilesCache set.Set[string]
+	binFilesCache set.Set[string]
 
 	// Cached prelude/global scope and its completion items.
 	// Computed lazily on first completion request; never changes after that.
@@ -65,9 +69,9 @@ type Server struct {
 	preludeCompletions []protocol.CompletionItem
 
 	mu sync.RWMutex
-	// validated is broadcast after validate()/validateModule() updates the
-	// AST and scope caches. The completion handler waits on this when the
-	// cached version is behind the document version.
+	// validated is broadcast after validate() updates the checkOutput.
+	// The completion handler waits on this when the cached version is
+	// behind the document version.
 	validated *sync.Cond
 	rootURI   string // workspace root URI (from InitializeParams)
 }
@@ -76,11 +80,9 @@ func NewServer() *Server {
 	// nolint: exhaustruct
 	s := Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:         map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:       map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache:   map[int]*checker.Scope{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
-		libFilesCache:    map[string]struct{}{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
 	}
 	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct
@@ -171,20 +173,25 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 			"compile",
 		},
 	}
-	libEscFilters := []protocol.FileOperationFilter{
+	escFileFilters := []protocol.FileOperationFilter{
 		{Pattern: protocol.FileOperationPattern{Glob: "lib/*.esc"}},
 		{Pattern: protocol.FileOperationPattern{Glob: "lib/**/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "bin/*.esc"}},
+		{Pattern: protocol.FileOperationPattern{Glob: "bin/**/*.esc"}},
 	}
 	capabilities.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		FileOperations: &protocol.ServerCapabilitiesWorkspaceFileOperations{
-			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
-			DidRename: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
-			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: libEscFilters},
+			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
+			DidRename: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
+			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: escFileFilters},
 		},
 	}
 
 	if err := s.refreshLibFilesCache(); err != nil {
 		fmt.Fprintf(os.Stderr, "initialize: failed to cache lib files: %s\n", err)
+	}
+	if err := s.refreshBinFilesCache(); err != nil {
+		fmt.Fprintf(os.Stderr, "initialize: failed to cache bin files: %s\n", err)
 	}
 
 	return protocol.InitializeResult{

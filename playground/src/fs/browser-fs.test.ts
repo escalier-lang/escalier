@@ -227,10 +227,11 @@ describe('BrowserFS', () => {
             });
         });
 
-        test('returns EISDIR when trying to open directory without O_DIRECTORY', async () => {
-            await expect(open(fs, '/foo')).rejects.toMatchObject({
-                code: 'EISDIR',
-            });
+        test('opens directory without O_DIRECTORY flag', async () => {
+            // Directories can be opened with O_RDONLY (no O_DIRECTORY).
+            // Go's os.ReadDir opens directories this way before calling readdir.
+            const fd = await open(fs, '/foo');
+            expect(fd).toBeGreaterThanOrEqual(3);
         });
 
         test('opens directory with O_DIRECTORY flag', async () => {

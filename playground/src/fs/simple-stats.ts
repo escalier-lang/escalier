@@ -26,6 +26,11 @@ export class SimpleStats implements Stats {
     ctime: Date = new Date(this.ctimeMs);
     birthtime: Date = new Date(this.birthtimeMs);
 
+    // Unix file type mode bits used by Go's WASM syscall layer.
+    private static S_IFREG = 0o100000; // regular file
+    private static S_IFDIR = 0o40000; // directory
+    private static S_IFLNK = 0o120000; // symbolic link
+
     constructor(
         size: number,
         isFile: boolean,
@@ -36,6 +41,20 @@ export class SimpleStats implements Stats {
         this._isFile = isFile;
         this._isDirectory = isDirectory;
         this._isSymbolicLink = isSymbolicLink;
+
+        // Set the mode field so Go's WASM runtime can determine file type.
+        // Go reads stat.mode and checks type bits rather than calling isDirectory().
+        if (isDirectory) {
+            // rwxr-xr-x: owner can read/write/traverse, others can read/traverse.
+            this.mode = SimpleStats.S_IFDIR | 0o755;
+        } else if (isSymbolicLink) {
+            // rwxrwxrwx: symlink permissions are ignored — the target's
+            // permissions are what matter, so they're conventionally all-on.
+            this.mode = SimpleStats.S_IFLNK | 0o777;
+        } else if (isFile) {
+            // rw-r--r--: owner can read/write, others can only read.
+            this.mode = SimpleStats.S_IFREG | 0o644;
+        }
     }
 
     isFile(): boolean {

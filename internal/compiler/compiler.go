@@ -18,7 +18,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-type ModuleOutput struct {
+type CompUnitOutput struct {
 	JS        string
 	SourceMap string
 	DTS       string
@@ -27,7 +27,141 @@ type ModuleOutput struct {
 type CompilerOutput struct {
 	ParseErrors []*parser.Error
 	TypeErrors  []checker.Error
-	Modules     map[string]ModuleOutput
+	CompUnits   map[string]CompUnitOutput
+}
+
+// CheckOutput contains the results of type-checking a package without codegen.
+// Used by the LSP server for completions, hover, go-to-definition, etc.
+type CheckOutput struct {
+	// Lib results
+	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
+	ModuleScope *checker.Scope         // scope after InferModule
+	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
+
+	// Script results (bin/ files)
+	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
+	ScriptScopes map[int]*checker.Scope // SourceID -> script scope
+
+	ParseErrors []*parser.Error
+	TypeErrors  []checker.Error
+}
+
+// CheckLibOutput contains the results of type-checking lib/ files.
+type CheckLibOutput struct {
+	Module      *ast.Module            // parsed lib module (nil if no lib/ files)
+	ModuleScope *checker.Scope         // scope after InferModule
+	FileScopes  map[int]*checker.Scope // SourceID -> file scope (lib/ files)
+	LibNS       *type_system.Namespace // lib namespace for bin/ script checking
+	ParseErrors []*parser.Error
+	TypeErrors  []checker.Error
+}
+
+// CheckLib parses and type-checks lib/ source files without codegen.
+func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
+	if len(libSources) == 0 {
+		return CheckLibOutput{
+			FileScopes:  map[int]*checker.Scope{},
+			ParseErrors: []*parser.Error{},
+			TypeErrors:  []checker.Error{},
+		}
+	}
+
+	module, parseErrors := parser.ParseLibFiles(ctx, libSources)
+
+	c := checker.NewChecker()
+	inferCtx := checker.Context{
+		// Create a child scope to avoid polluting the prelude with lib bindings.
+		Scope:      checker.Prelude(c).WithNewScope(),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	typeErrors := c.InferModule(inferCtx, module)
+
+	return CheckLibOutput{
+		Module:      module,
+		ModuleScope: inferCtx.Scope,
+		FileScopes:  c.FileScopes,
+		LibNS:       inferCtx.Scope.Namespace,
+		ParseErrors: parseErrors,
+		TypeErrors:  typeErrors,
+	}
+}
+
+// CheckPackage performs parsing and type-checking for a package (lib/ + bin/)
+// without codegen. Returns ASTs, scopes, and errors needed by the LSP.
+func CheckPackage(sources []*ast.Source) CheckOutput {
+	libSources := []*ast.Source{}
+	for _, src := range sources {
+		if strings.HasPrefix(src.Path, "lib/") {
+			libSources = append(libSources, src)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	libOutput := CheckLib(ctx, libSources)
+
+	output := CheckOutput{
+		Module:       libOutput.Module,
+		ModuleScope:  libOutput.ModuleScope,
+		FileScopes:   libOutput.FileScopes,
+		Scripts:      map[int]*ast.Script{},
+		ScriptScopes: map[int]*checker.Scope{},
+		ParseErrors:  libOutput.ParseErrors,
+		TypeErrors:   libOutput.TypeErrors,
+	}
+
+	// Check each bin/ script with the lib namespace injected.
+	for _, src := range sources {
+		if !strings.HasPrefix(src.Path, "bin/") {
+			continue
+		}
+		scriptOutput := CheckBinScript(ctx, libOutput.LibNS, src)
+		output.Scripts[src.ID] = scriptOutput.Script
+		output.ScriptScopes[src.ID] = scriptOutput.Scope
+		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
+		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
+	}
+
+	return output
+}
+
+// BinScriptOutput contains the results of checking a single bin/ script.
+type BinScriptOutput struct {
+	Script      *ast.Script
+	Scope       *checker.Scope
+	ParseErrors []*parser.Error
+	TypeErrors  []checker.Error
+}
+
+// CheckBinScript parses and type-checks a single bin/ script with the given
+// lib namespace injected into the scope chain. If libNS is nil, the script
+// is checked with only the prelude in scope.
+func CheckBinScript(ctx context.Context, libNS *type_system.Namespace, src *ast.Source) BinScriptOutput {
+	p := parser.NewParser(ctx, src)
+	script, parseErrors := p.ParseScript()
+
+	c := checker.NewChecker()
+	scope := checker.Prelude(c)
+	if libNS != nil {
+		// Insert the lib namespace between the prelude and the script scope
+		// so bin/ scripts can access lib exports without an explicit import.
+		scope = scope.WithNewScopeAndNamespace(libNS)
+	}
+	inferCtx := checker.Context{
+		Scope:      scope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	scriptScope, typeErrors := c.InferScript(inferCtx, script)
+
+	return BinScriptOutput{
+		Script:      script,
+		Scope:       scriptScope,
+		ParseErrors: parseErrors,
+		TypeErrors:  typeErrors,
+	}
 }
 
 func Compile(source *ast.Source) CompilerOutput {
@@ -75,7 +209,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	return CompilerOutput{
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
-		Modules: map[string]ModuleOutput{
+		CompUnits: map[string]CompUnitOutput{
 			"index": {
 				JS:        jsOutput,
 				SourceMap: sourceMap,
@@ -100,7 +234,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 	output := CompilerOutput{
 		ParseErrors: []*parser.Error{},
 		TypeErrors:  []checker.Error{},
-		Modules:     map[string]ModuleOutput{},
+		CompUnits:   map[string]CompUnitOutput{},
 	}
 
 	var libNS *type_system.Namespace
@@ -140,7 +274,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
 		output.TypeErrors = append(output.TypeErrors, typeErrors...)
-		output.Modules["lib/index"] = ModuleOutput{
+		output.CompUnits["lib/index"] = CompUnitOutput{
 			JS:        jsOutput,
 			SourceMap: sourceMap,
 			DTS:       dtsOutput,
@@ -162,7 +296,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		ext := filepath.Ext(src.Path)
 		name := src.Path[:len(src.Path)-len(ext)]
-		output.Modules[name] = scriptOutput.Modules["bin/index"]
+		output.CompUnits[name] = scriptOutput.CompUnits["bin/index"]
 	}
 
 	return output
@@ -222,9 +356,11 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	inMod, parseErrors := p.ParseScript()
 
 	c := checker.NewChecker()
-	scope := checker.Prelude(c).WithNewScope()
+	scope := checker.Prelude(c)
 	if libNS != nil {
-		scope.Namespace = libNS
+		// Insert the lib namespace between the prelude and the script scope
+		// so bin/ scripts can access lib exports without an explicit import.
+		scope = scope.WithNewScopeAndNamespace(libNS)
 	}
 	inferCtx := checker.Context{
 		Scope:      scope,
@@ -277,7 +413,7 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	return CompilerOutput{
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
-		Modules: map[string]ModuleOutput{
+		CompUnits: map[string]CompUnitOutput{
 			"bin/index": {
 				JS:        jsOutput,
 				SourceMap: sourceMap,

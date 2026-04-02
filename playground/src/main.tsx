@@ -27,7 +27,7 @@ async function main() {
     client.run();
     const initResponse = await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri: 'file:///',
         capabilities: {},
     });
     console.log('initialize response', initResponse);
@@ -79,7 +79,7 @@ async function main() {
         client.workspaceDidChangeWatchedFiles({ changes });
     });
 
-    setupLanguage(client, fs);
+    setupLanguage(client);
 
     const root = document.getElementById('root');
 

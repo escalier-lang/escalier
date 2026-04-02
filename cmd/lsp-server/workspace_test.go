@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // newTestServer creates a Server wired to a temporary workspace root
@@ -26,25 +26,20 @@ func newTestServer(t *testing.T, libFiles []string) (*Server, string) {
 	}
 
 	s := &Server{
-		documents:      map[protocol.DocumentUri]protocol.TextDocumentItem{},
-		astCache:       map[protocol.DocumentUri]*ast.Script{},
-		scopeCache:     map[protocol.DocumentUri]*checker.Scope{},
-		fileScopeCache: map[int]*checker.Scope{},
-		libFilesCache:  map[string]struct{}{},
-		rootURI:        pathToURI(root),
+		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
+		rootURI:          pathToURI(root),
 	}
 	return s, root
 }
 
-// libCacheKeys returns the set of file paths currently in the server's lib cache.
-func libCacheKeys(s *Server) map[string]struct{} {
+// libCacheKeys returns a copy of the server's lib file cache.
+func libCacheKeys(s *Server) set.Set[string] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[string]struct{}, len(s.libFilesCache))
-	for k := range s.libFilesCache {
-		out[k] = struct{}{}
-	}
-	return out
+	return set.FromSlice(s.libFilesCache.ToSlice())
 }
 
 // --- refreshLibFilesCache ---
@@ -266,4 +261,127 @@ func TestWorkspaceDidDeleteFiles_IgnoresNonLibFile(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, before, libCacheKeys(s))
+}
+
+// --- bin files cache helpers ---
+
+// binCacheKeys returns a copy of the server's bin file cache.
+func binCacheKeys(s *Server) set.Set[string] {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return set.FromSlice(s.binFilesCache.ToSlice())
+}
+
+// newTestServerWithBin creates a Server with both lib/ and bin/ files.
+func newTestServerWithBin(t *testing.T, libFiles, binFiles []string) (*Server, string) {
+	t.Helper()
+	root := t.TempDir()
+	for _, rel := range libFiles {
+		abs := filepath.Join(root, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+		require.NoError(t, os.WriteFile(abs, []byte("val x: number = 1\n"), 0o644))
+	}
+	for _, rel := range binFiles {
+		abs := filepath.Join(root, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+		require.NoError(t, os.WriteFile(abs, []byte("val x: number = 1\n"), 0o644))
+	}
+	s := &Server{
+		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
+		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
+		rootURI:          pathToURI(root),
+	}
+	return s, root
+}
+
+// --- refreshBinFilesCache ---
+
+func TestRefreshBinFilesCache_PopulatesFromDisk(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{
+		"bin/main.esc",
+		"bin/sub/other.esc",
+	})
+
+	require.NoError(t, s.refreshBinFilesCache())
+
+	cache := binCacheKeys(s)
+	assert.Contains(t, cache, filepath.Join(root, "bin", "main.esc"))
+	assert.Contains(t, cache, filepath.Join(root, "bin", "sub", "other.esc"))
+	assert.Len(t, cache, 2)
+}
+
+func TestRefreshBinFilesCache_EmptyWhenBinDirAbsent(t *testing.T) {
+	s, _ := newTestServerWithBin(t, nil, nil)
+
+	require.NoError(t, s.refreshBinFilesCache())
+
+	assert.Empty(t, binCacheKeys(s))
+}
+
+// --- workspace notifications update bin cache ---
+
+func TestWorkspaceDidCreateFiles_UpdatesBinCache(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{"bin/main.esc"})
+	require.NoError(t, s.refreshBinFilesCache())
+	assert.Len(t, binCacheKeys(s), 1)
+
+	newFile := filepath.Join(root, "bin", "other.esc")
+	require.NoError(t, os.WriteFile(newFile, []byte("val y = 2\n"), 0o644))
+
+	err := s.workspaceDidCreateFiles(
+		&glsp.Context{},
+		&protocol.CreateFilesParams{
+			Files: []protocol.FileCreate{{URI: pathToURI(newFile)}},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := binCacheKeys(s)
+	assert.Len(t, cache, 2)
+	assert.Contains(t, cache, newFile)
+}
+
+func TestWorkspaceDidDeleteFiles_UpdatesBinCache(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{"bin/main.esc", "bin/other.esc"})
+	require.NoError(t, s.refreshBinFilesCache())
+	assert.Len(t, binCacheKeys(s), 2)
+
+	deletedFile := filepath.Join(root, "bin", "main.esc")
+	require.NoError(t, os.Remove(deletedFile))
+
+	err := s.workspaceDidDeleteFiles(
+		&glsp.Context{},
+		&protocol.DeleteFilesParams{
+			Files: []protocol.FileDelete{{URI: pathToURI(deletedFile)}},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := binCacheKeys(s)
+	assert.Len(t, cache, 1)
+	assert.NotContains(t, cache, deletedFile)
+}
+
+func TestWorkspaceDidRenameFiles_UpdatesBinCache(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{"bin/old.esc"})
+	require.NoError(t, s.refreshBinFilesCache())
+
+	oldFile := filepath.Join(root, "bin", "old.esc")
+	newFile := filepath.Join(root, "bin", "new.esc")
+	require.NoError(t, os.Rename(oldFile, newFile))
+
+	err := s.workspaceDidRenameFiles(
+		&glsp.Context{},
+		&protocol.RenameFilesParams{
+			Files: []protocol.FileRename{{OldURI: pathToURI(oldFile), NewURI: pathToURI(newFile)}},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := binCacheKeys(s)
+	assert.Len(t, cache, 1)
+	assert.Contains(t, cache, newFile)
+	assert.NotContains(t, cache, oldFile)
 }

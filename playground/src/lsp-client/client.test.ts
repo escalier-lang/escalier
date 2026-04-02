@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
@@ -6,12 +7,22 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import { Client } from './client';
 
 let client: Client;
+let tmpDir: string;
+let rootUri: string;
 
 const buffer = fs.readFileSync(
     path.join(__dirname, '../../../bin/lsp-server.wasm'),
 );
 
+const fileUri = () => `${rootUri}/bin/foo.esc`;
+const filePath = () => path.join(tmpDir, 'bin', 'foo.esc');
+
 beforeEach(() => {
+    // Create a temp workspace with bin/ so the LSP server can discover files.
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'escalier-test-'));
+    fs.mkdirSync(path.join(tmpDir, 'bin'), { recursive: true });
+    rootUri = `file://${tmpDir}`;
+
     const cwd = process.cwd();
     client = new Client(buffer, cwd, fs);
     client.run();
@@ -19,12 +30,13 @@ beforeEach(() => {
 
 afterEach(() => {
     client.stop();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test('initialize', async () => {
     const initResult = await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
@@ -67,6 +79,16 @@ test('initialize', async () => {
                       "glob": "lib/**/*.esc",
                     },
                   },
+                  {
+                    "pattern": {
+                      "glob": "bin/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "bin/**/*.esc",
+                    },
+                  },
                 ],
               },
               "didDelete": {
@@ -81,6 +103,16 @@ test('initialize', async () => {
                       "glob": "lib/**/*.esc",
                     },
                   },
+                  {
+                    "pattern": {
+                      "glob": "bin/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "bin/**/*.esc",
+                    },
+                  },
                 ],
               },
               "didRename": {
@@ -93,6 +125,16 @@ test('initialize', async () => {
                   {
                     "pattern": {
                       "glob": "lib/**/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "bin/*.esc",
+                    },
+                  },
+                  {
+                    "pattern": {
+                      "glob": "bin/**/*.esc",
                     },
                   },
                 ],
@@ -111,7 +153,7 @@ test('initialize', async () => {
 test('foo/bar', async () => {
     await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
@@ -134,18 +176,21 @@ test('textDocument/didOpen', async () => {
         diagnostics = params.diagnostics;
     });
 
+    const text = 'console.log("Hello, world!")\nval x =\n';
+    fs.writeFileSync(filePath(), text);
+
     await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
     client.textDocumentDidOpen({
         textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
+            uri: fileUri(),
             version: 2,
             languageId: 'escalier',
-            text: 'console.log("Hello, world!")\nval x =\n',
+            text,
         },
     });
 
@@ -187,15 +232,17 @@ test('textDocument/didChange', async () => {
         diagnostics = params.diagnostics;
     });
 
+    fs.writeFileSync(filePath(), '');
+
     await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
     client.textDocumentDidOpen({
         textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
+            uri: fileUri(),
             version: 2,
             languageId: 'escalier',
             text: 'console.log("Hello, world!")\nval x = 5\n',
@@ -204,7 +251,7 @@ test('textDocument/didChange', async () => {
 
     client.textDocumentDidChange({
         textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
+            uri: fileUri(),
             version: 2,
         },
         contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
@@ -243,13 +290,13 @@ test('textDocument/didChange', async () => {
 test('textDocument/codeAction', async () => {
     await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
     const actions = await client.textDocumentCodeAction({
         textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
+            uri: fileUri(),
         },
         range: {
             start: { line: 0, character: 0 },
@@ -276,9 +323,11 @@ test('textDocument/codeAction', async () => {
 
 // TODO: Re-enable once we can infer member expressions
 test.skip('workspace/executeCommand', async () => {
+    fs.writeFileSync(filePath(), '');
+
     await client.initialize({
         processId: process.pid,
-        rootUri: 'file:///home/user/project',
+        rootUri,
         capabilities: {},
     });
 
@@ -290,7 +339,7 @@ test.skip('workspace/executeCommand', async () => {
 
     client.textDocumentDidOpen({
         textDocument: {
-            uri: 'file:///home/user/project/foo.esc',
+            uri: fileUri(),
             version: 2,
             languageId: 'escalier',
             text: 'console.log("Hello, world!")\nval x = 5\n',
@@ -303,20 +352,14 @@ test.skip('workspace/executeCommand', async () => {
 
     const response = await client.workspaceExecuteCommand({
         command: 'compile',
-        arguments: ['file:///home/user/project/foo.esc'],
+        arguments: [fileUri()],
     });
 
-    expect(response).toMatchInlineSnapshot(`
-  {
-    "languageId": "javascript",
-    "text": "console.log("Hello, world!");
-  const x = 5;
-  //# sourceMappingURL=./foo.esc.map
-  ",
-    "uri": "file:///home/user/project/foo.js",
-    "version": 0,
-  }
-`);
+    const resp = response as Record<string, unknown>;
+    expect(resp.languageId).toBe('javascript');
+    expect(resp.version).toBe(0);
+    expect(resp.uri).toBe(`${rootUri}/bin/foo.js`);
+    expect(resp.text).toContain('const x = 5;');
 });
 
 test('multi-chunk message handling', async () => {
