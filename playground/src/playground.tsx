@@ -111,7 +111,11 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         [manifest],
     );
 
-    // Guard against overlapping loadProject calls resolving out-of-order.
+    // Each call to handleSelectTemplate/handleSelectExample increments this
+    // counter and captures the new value. When the async loadProject resolves,
+    // the .then() callback only updates UI (resetTabs, URL) if its captured id
+    // still matches the current ref — meaning no newer selection has started.
+    // This prevents a slow earlier load from overwriting a faster later one.
     const loadIdRef = useRef(0);
 
     const handleSelectTemplate = useCallback(

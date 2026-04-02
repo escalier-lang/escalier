@@ -46,6 +46,10 @@ async function main() {
                 type: 'warning',
             },
         });
+        // Remove the invalid query param so the warning doesn't repeat on refresh
+        const url = new URL(window.location.href);
+        url.searchParams.set('example', slug);
+        history.replaceState(null, '', url.toString());
     }
 
     try {
@@ -62,6 +66,13 @@ async function main() {
         });
     } catch (err) {
         console.error('Failed to load initial project:', err);
+        useEditorStore.getState().dispatch({
+            type: 'showNotification',
+            notification: {
+                message: `Failed to load initial project: ${err instanceof Error ? err.message : err}`,
+                type: 'error',
+            },
+        });
     }
 
     // Create a new client for the language server and
