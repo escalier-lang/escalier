@@ -1,4 +1,0 @@
-// Add your library code here
-export fn greet(name: string) -> string {
-    return name
-}

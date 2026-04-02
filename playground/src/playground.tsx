@@ -56,6 +56,7 @@ export const Playground = ({
             if (!tab.path.endsWith('.esc')) continue;
             buildPrefixes.add(`/build${tab.path.replace(/\.esc$/, '.')}`);
         }
+
         let markedDone = false;
         const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (

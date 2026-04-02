@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ConfirmDialog } from './confirm-dialog';
 import styles from './toolbar.module.css';
@@ -36,20 +36,41 @@ export const Toolbar = ({
     const templatesRef = useRef<HTMLDivElement>(null);
     const examplesRef = useRef<HTMLDivElement>(null);
 
-    const handleBlur = useCallback(
-        (dropdown: 'templates' | 'examples') =>
-            (e: React.FocusEvent<HTMLDivElement>) => {
-                const ref =
-                    dropdown === 'templates' ? templatesRef : examplesRef;
-                if (
-                    ref.current &&
-                    !ref.current.contains(e.relatedTarget as Node)
-                ) {
-                    setOpenDropdown(null);
-                }
-            },
+    const handleTemplatesBlur = useCallback(
+        (e: React.FocusEvent<HTMLDivElement>) => {
+            if (
+                templatesRef.current &&
+                !templatesRef.current.contains(e.relatedTarget as Node)
+            ) {
+                setOpenDropdown(null);
+            }
+        },
         [],
     );
+
+    const handleExamplesBlur = useCallback(
+        (e: React.FocusEvent<HTMLDivElement>) => {
+            if (
+                examplesRef.current &&
+                !examplesRef.current.contains(e.relatedTarget as Node)
+            ) {
+                setOpenDropdown(null);
+            }
+        },
+        [],
+    );
+
+    // Close dropdown on Escape key
+    useEffect(() => {
+        if (!openDropdown) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setOpenDropdown(null);
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [openDropdown]);
 
     const handleSelect = useCallback(
         (kind: 'template' | 'example', slug: string, label: string) => {
@@ -78,7 +99,7 @@ export const Toolbar = ({
             <div
                 className={styles.dropdownContainer}
                 ref={templatesRef}
-                onBlur={handleBlur('templates')}
+                onBlur={handleTemplatesBlur}
             >
                 <button
                     type="button"
@@ -116,7 +137,7 @@ export const Toolbar = ({
             <div
                 className={styles.dropdownContainer}
                 ref={examplesRef}
-                onBlur={handleBlur('examples')}
+                onBlur={handleExamplesBlur}
             >
                 <button
                     type="button"

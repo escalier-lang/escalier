@@ -1,8 +1,0 @@
-{
-  "name": "app",
-  "version": "1.0.0",
-  "main": "build/bin/main.js",
-  "dependencies": {
-    "core": "workspace:*"
-  }
-}
