@@ -414,7 +414,7 @@ func (server *Server) validateBinScript(
 	server.validated.Broadcast()
 
 	// Publish diagnostics for just this file.
-	server.publishDiagnosticsForScript(lspContext, uri, triggerSourceID, result.ParseErrors, result.TypeErrors)
+	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, result.ParseErrors, result.TypeErrors)
 }
 
 // validateFull performs a full package check (lib/ + bin/).
@@ -548,6 +548,7 @@ func (server *Server) validateFull(
 func (server *Server) publishDiagnosticsForScript(
 	lspContext *glsp.Context,
 	uri protocol.DocumentUri,
+	version protocol.Integer,
 	sourceID int,
 	parseErrors []*parser.Error,
 	typeErrors []checker.Error,
@@ -580,9 +581,7 @@ func (server *Server) publishDiagnosticsForScript(
 		}
 	}
 
-	server.mu.RLock()
-	diagVersion := protocol.UInteger(server.documents[uri].Version)
-	server.mu.RUnlock()
+	diagVersion := protocol.UInteger(version)
 
 	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
 		URI:         uri,

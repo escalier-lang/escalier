@@ -187,6 +187,7 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
 		for moduleName, moduleOutput := range output.CompUnits {
 			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
 				fmt.Fprintln(stderr, err.Error())
+				_ = os.Chdir(cwd)
 				return
 			}
 		}
