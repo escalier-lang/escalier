@@ -1736,6 +1736,54 @@ func TestCheckModuleWithErrors(t *testing.T) {
 	}
 }
 
+// TestIssue371 verifies that type errors from one function don't report spans
+// pointing into a different function. The bug was that operator return types
+// (shared across all uses) had their provenance mutated by SetProvenance,
+// causing errors to point at the wrong expression.
+func TestIssue371(t *testing.T) {
+	input := `
+		export fn add(a: string, b: string) -> string {
+			return a + b
+		}
+
+		export fn subtract(a: number, b: number) -> number {
+			return a - b
+		}
+	`
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	assert.Len(t, parseErrors, 0)
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	schema := loadSchema(t)
+	c.Schema = schema
+	inferErrors := c.InferModule(inferCtx, module)
+
+	assert.Len(t, inferErrors, 3, "Expected 3 errors (all in add function)")
+
+	// All errors should have spans pointing into the `add` function (lines 2-4),
+	// not into the `subtract` function (lines 6-8).
+	for _, err := range inferErrors {
+		span := err.Span()
+		assert.LessOrEqual(t, span.Start.Line, 4,
+			"Error %q should not have a span in the subtract function (line %d)",
+			err.Message(), span.Start.Line)
+	}
+}
+
 func TestCheckScriptWithErrors(t *testing.T) {
 	tests := map[string]struct {
 		input          string
