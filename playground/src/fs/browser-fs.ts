@@ -403,7 +403,12 @@ export class BrowserFS implements FSAPI {
             }
             if (node.type === 'dir') {
                 const fd = this.nextFD++;
-                this.openFDs.set(fd, { node, readPosition: 0, dirty: false, created: false });
+                this.openFDs.set(fd, {
+                    node,
+                    readPosition: 0,
+                    dirty: false,
+                    created: false,
+                });
                 callback(null, fd);
             } else {
                 callback(
@@ -451,7 +456,13 @@ export class BrowserFS implements FSAPI {
                 this.volume[pathStr] = { content };
 
                 const fd = this.nextFD++;
-                this.openFDs.set(fd, { node: newFile, path: pathStr, readPosition: 0, dirty: true, created: true });
+                this.openFDs.set(fd, {
+                    node: newFile,
+                    path: pathStr,
+                    readPosition: 0,
+                    dirty: true,
+                    created: true,
+                });
                 callback(null, fd);
                 return;
             }
@@ -475,7 +486,12 @@ export class BrowserFS implements FSAPI {
                 // Go's os.ReadDir opens directories this way before
                 // calling readdir on the fd.
                 const fd = this.nextFD++;
-                this.openFDs.set(fd, { node, readPosition: 0, dirty: false, created: false });
+                this.openFDs.set(fd, {
+                    node,
+                    readPosition: 0,
+                    dirty: false,
+                    created: false,
+                });
                 callback(null, fd);
                 break;
             }
@@ -485,7 +501,13 @@ export class BrowserFS implements FSAPI {
                     node.content = new Uint8Array(0);
                 }
                 const fd = this.nextFD++;
-                this.openFDs.set(fd, { node, path: pathStr, readPosition: 0, dirty: hasTrunc, created: false });
+                this.openFDs.set(fd, {
+                    node,
+                    path: pathStr,
+                    readPosition: 0,
+                    dirty: hasTrunc,
+                    created: false,
+                });
                 callback(null, fd);
                 break;
             }
@@ -574,9 +596,7 @@ export class BrowserFS implements FSAPI {
         }
 
         const readPosition =
-            position == null
-                ? openFD.readPosition
-                : Number(position);
+            position == null ? openFD.readPosition : Number(position);
 
         switch (openFD.node.type) {
             case 'dir':
