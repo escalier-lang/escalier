@@ -13,35 +13,44 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
 func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol.ExecuteCommandParams) (any, error) {
-	if params.Command != "compile" {
+	switch params.Command {
+	case "compile":
+		if len(params.Arguments) != 1 {
+			return nil, fmt.Errorf("invalid arguments: %v", params.Arguments)
+		}
+
+		uri, ok := params.Arguments[0].(protocol.DocumentUri)
+		if !ok {
+			return nil, fmt.Errorf("invalid argument: %v", params.Arguments[0])
+		}
+
+		if !strings.HasSuffix(string(uri), ".esc") {
+			return nil, fmt.Errorf("unsupported file type: %s", uri)
+		}
+
+		s.mu.RLock()
+		_, isOpen := s.documents[uri]
+		s.mu.RUnlock()
+		if !isOpen {
+			return nil, fmt.Errorf("document not open: %s", uri)
+		}
+
+		return s.compilePackage()
+
+	default:
 		return nil, fmt.Errorf("unknown command: %s", params.Command)
 	}
+}
 
-	if len(params.Arguments) != 1 {
-		return nil, fmt.Errorf("invalid arguments: %v", params.Arguments)
-	}
-
-	uri, ok := params.Arguments[0].(protocol.DocumentUri)
-	if !ok {
-		return nil, fmt.Errorf("invalid argument: %v", params.Arguments[0])
-	}
-
-	if !strings.HasSuffix(string(uri), ".esc") {
-		return nil, fmt.Errorf("unsupported file type: %s", uri)
-	}
-
-	s.mu.RLock()
-	_, isOpen := s.documents[uri]
-	s.mu.RUnlock()
-	if !isOpen {
-		return nil, fmt.Errorf("document not open: %s", uri)
-	}
-
+// compilePackage collects all source files, compiles the package, and writes
+// the build output (JS, source maps, .d.ts) to the build/ directory.
+func (s *Server) compilePackage() (any, error) {
 	if s.rootURI == "" {
 		return nil, fmt.Errorf("workspace root URI not set")
 	}
@@ -76,7 +85,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 	if err := os.RemoveAll(buildDir); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to clean build directory: %v", err)
 	}
-	for name, module := range output.Modules {
+	for name, module := range output.CompUnits {
 		// name is like "lib/index" or "bin/main"
 		jsPath := filepath.Join(buildDir, name+".js")
 		mapPath := filepath.Join(buildDir, name+".js.map")
@@ -207,13 +216,8 @@ func (s *Server) refreshBinFilesCache() error {
 		return err
 	}
 
-	cache := make(map[string]struct{}, len(files))
-	for _, file := range files {
-		cache[file] = struct{}{}
-	}
-
 	s.mu.Lock()
-	s.binFilesCache = cache
+	s.binFilesCache = set.FromSlice(files)
 	s.mu.Unlock()
 
 	return nil
@@ -222,10 +226,7 @@ func (s *Server) refreshBinFilesCache() error {
 // cachedBinFilesSnapshot returns a stable snapshot of cached bin file paths.
 func (s *Server) cachedBinFilesSnapshot() []string {
 	s.mu.RLock()
-	files := make([]string, 0, len(s.binFilesCache))
-	for file := range s.binFilesCache {
-		files = append(files, file)
-	}
+	files := s.binFilesCache.ToSlice()
 	s.mu.RUnlock()
 
 	sort.Strings(files)

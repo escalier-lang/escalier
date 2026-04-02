@@ -4,7 +4,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}", DTS:""},
     },
 }
@@ -15,7 +15,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}", DTS:""},
     },
 }
@@ -26,7 +26,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}", DTS:""},
     },
 }
@@ -37,7 +37,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}", DTS:""},
     },
 }
@@ -48,7 +48,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}", DTS:""},
     },
 }
@@ -59,7 +59,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,MAAM;EACN,MAAM\"}", DTS:""},
     },
 }
@@ -70,7 +70,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,OAAO\"}", DTS:""},
     },
 }
@@ -81,7 +81,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,OAAW\"}", DTS:""},
     },
 }
@@ -92,7 +92,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Array\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
     },
 }
@@ -103,7 +103,7 @@ compiler.CompilerOutput{
     ParseErrors: {
     },
     TypeErrors: nil,
-    Modules:    {
+    CompUnits:  {
         "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: Array\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
     },
 }
@@ -123,7 +123,7 @@ compiler.CompilerOutput{
             },
         },
     },
-    Modules: {
+    CompUnits: {
         "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Iterator\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
     },
 }
@@ -183,7 +183,7 @@ compiler.CompilerOutput{
             },
         },
     },
-    Modules: {
+    CompUnits: {
         "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: AsyncIterator\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
     },
 }

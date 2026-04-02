@@ -130,7 +130,7 @@ func writeOutputFile(stderr io.Writer, moduleName, extension, content string) er
 }
 
 // writeModuleOutputs writes all module outputs (JS, DTS, sourcemap) to the build directory
-func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.ModuleOutput) error {
+func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.CompUnitOutput) error {
 	// Create directory structure
 	dir := filepath.Join("build", filepath.Dir(moduleName))
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -184,7 +184,7 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
 
 		printErrors(stderr, output, idToSource)
 
-		for moduleName, moduleOutput := range output.Modules {
+		for moduleName, moduleOutput := range output.CompUnits {
 			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
 				fmt.Fprintln(stderr, err.Error())
 				return

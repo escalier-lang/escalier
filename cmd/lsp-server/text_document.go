@@ -15,6 +15,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -54,11 +55,7 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 	var node ast.Node
 	co := s.checkOutput
 	if co != nil {
-		if script, ok := co.Scripts[sourceID]; ok {
-			node = findNodeInScript(script, loc)
-		} else if co.Module != nil {
-			node, _ = findNodeWithAncestorsInFile(co.Module, sourceID, loc)
-		}
+		node = findNodeAtLocation(co, sourceID, loc)
 	}
 	s.mu.RUnlock()
 	if node == nil {
@@ -80,14 +77,14 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 			panic(fmt.Sprintf("textDocument/definition: unexpected provenance type %T", node.Source))
 		}
 		// Resolve the declaration's file URI from the span's SourceID.
-		defURI := params.TextDocument.URI
+		declURI := params.TextDocument.URI
 		if co != nil && co.Module != nil {
 			if srcPath := co.Module.GetSourcePath(span.SourceID); srcPath != "" {
-				defURI = protocol.DocumentUri(pathToURI(filepath.Join(rootPath, srcPath)))
+				declURI = protocol.DocumentUri(pathToURI(filepath.Join(rootPath, srcPath)))
 			}
 		}
 		loc := protocol.Location{
-			URI:   defURI,
+			URI:   declURI,
 			Range: spanToRange(span),
 		}
 
@@ -168,11 +165,7 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	server.mu.RLock()
 	var hoverNode ast.Node
 	if co := server.checkOutput; co != nil {
-		if script, ok := co.Scripts[sourceID]; ok {
-			hoverNode = findNodeInScript(script, loc)
-		} else if co.Module != nil {
-			hoverNode, _ = findNodeWithAncestorsInFile(co.Module, sourceID, loc)
-		}
+		hoverNode = findNodeAtLocation(co, sourceID, loc)
 	}
 	server.mu.RUnlock()
 	if hoverNode != nil {
@@ -261,7 +254,6 @@ func (s *Server) isModuleFile(uri protocol.DocumentUri) bool {
 	return strings.HasPrefix(rel, "lib/") || strings.HasPrefix(rel, "lib\\")
 }
 
-
 // findLibFiles discovers all .esc files in the lib/ directory under the workspace root.
 func (s *Server) findLibFiles() ([]string, error) {
 	rootPath := uriToPath(s.rootURI)
@@ -293,13 +285,8 @@ func (s *Server) refreshLibFilesCache() error {
 		return err
 	}
 
-	cache := make(map[string]struct{}, len(files))
-	for _, file := range files {
-		cache[file] = struct{}{}
-	}
-
 	s.mu.Lock()
-	s.libFilesCache = cache
+	s.libFilesCache = set.FromSlice(files)
 	s.mu.Unlock()
 
 	return nil
@@ -308,10 +295,7 @@ func (s *Server) refreshLibFilesCache() error {
 // cachedLibFilesSnapshot returns a stable snapshot of cached lib file paths.
 func (s *Server) cachedLibFilesSnapshot() []string {
 	s.mu.RLock()
-	files := make([]string, 0, len(s.libFilesCache))
-	for file := range s.libFilesCache {
-		files = append(files, file)
-	}
+	files := s.libFilesCache.ToSlice()
 	s.mu.RUnlock()
 
 	sort.Strings(files)
@@ -344,6 +328,13 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 	server.mu.RLock()
 	currentDoc := server.documents[uri]
 	isBinFile := !server.isModuleFile(uri)
+	// We can incrementally re-check just this one bin/ script (instead of
+	// doing a full package check) when all three conditions hold:
+	//   1. The file is a bin/ script (lib/ changes always need a full check).
+	//   2. A prior full check has run (checkOutput != nil), so we have a
+	//      cached lib namespace to type-check the script against.
+	//   3. No lib/ files have changed since that full check
+	//      (libGen == libValidatedGen), so the cached namespace is still valid.
 	canIncrCheck := isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen
 	var cachedLibNS *type_system.Namespace
 	if canIncrCheck && server.checkOutput != nil && server.checkOutput.ModuleScope != nil {

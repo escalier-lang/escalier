@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // newTestServer creates a Server wired to a temporary workspace root
@@ -26,22 +28,18 @@ func newTestServer(t *testing.T, libFiles []string) (*Server, string) {
 	s := &Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
-		libFilesCache:    map[string]struct{}{},
-		binFilesCache:    map[string]struct{}{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
 		rootURI:          pathToURI(root),
 	}
 	return s, root
 }
 
-// libCacheKeys returns the set of file paths currently in the server's lib cache.
-func libCacheKeys(s *Server) map[string]struct{} {
+// libCacheKeys returns a copy of the server's lib file cache.
+func libCacheKeys(s *Server) set.Set[string] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[string]struct{}, len(s.libFilesCache))
-	for k := range s.libFilesCache {
-		out[k] = struct{}{}
-	}
-	return out
+	return set.FromSlice(s.libFilesCache.ToSlice())
 }
 
 // --- refreshLibFilesCache ---
@@ -267,15 +265,11 @@ func TestWorkspaceDidDeleteFiles_IgnoresNonLibFile(t *testing.T) {
 
 // --- bin files cache helpers ---
 
-// binCacheKeys returns the set of file paths currently in the server's bin cache.
-func binCacheKeys(s *Server) map[string]struct{} {
+// binCacheKeys returns a copy of the server's bin file cache.
+func binCacheKeys(s *Server) set.Set[string] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[string]struct{}, len(s.binFilesCache))
-	for k := range s.binFilesCache {
-		out[k] = struct{}{}
-	}
-	return out
+	return set.FromSlice(s.binFilesCache.ToSlice())
 }
 
 // newTestServerWithBin creates a Server with both lib/ and bin/ files.
@@ -295,8 +289,8 @@ func newTestServerWithBin(t *testing.T, libFiles, binFiles []string) (*Server, s
 	s := &Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
-		libFilesCache:    map[string]struct{}{},
-		binFilesCache:    map[string]struct{}{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
 		rootURI:          pathToURI(root),
 	}
 	return s, root

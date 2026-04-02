@@ -248,17 +248,13 @@ func TestIntegration_DefinitionInModule(t *testing.T) {
 			},
 		},
 	})
-	// Module-level go-to-definition may not be fully implemented yet.
-	if err != nil {
-		t.Skipf("module definition not supported: %v", err)
-	}
-	if result == nil {
-		t.Skip("module definition returned nil result")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, result)
 	loc, ok := result.(protocol.Location)
-	if ok {
-		assert.Equal(t, uri, loc.URI)
-	}
+	require.True(t, ok, "expected protocol.Location, got %T", result)
+	assert.Equal(t, uri, loc.URI)
+	// 'add' is defined on line 1 (0-based: line 0).
+	assert.Equal(t, protocol.UInteger(0), loc.Range.Start.Line)
 }
 
 // --- Issues 1+2: bin/ scripts must not leak bindings between each other ---

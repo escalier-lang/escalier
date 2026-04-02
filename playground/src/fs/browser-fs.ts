@@ -22,22 +22,28 @@ function assertNever(x: never): never {
     throw new Error(`Unexpected value: ${x}`);
 }
 
+/** State associated with an open file descriptor. */
+type OpenFD = {
+    node: FSNode;
+    /** The path used to open this fd (undefined for directories opened with O_DIRECTORY). */
+    path?: string;
+    /** Current read/write position for sequential I/O. */
+    readPosition: number;
+    /** Whether the fd has been written to since open. */
+    dirty: boolean;
+    /** Whether the fd was newly created via O_CREAT. */
+    created: boolean;
+};
+
 export class BrowserFS implements FSAPI {
-    fileID: number;
-    openFiles: Map<number, FSNode> = new Map();
-    readPositions: Map<number, number> = new Map();
-    /** Tracks the path associated with each open fd (for emitting events on close). */
-    private openPaths = new Map<number, string>();
-    /** FDs that have been written to since open (emit event on close). */
-    private dirtyFDs = new Set<number>();
-    /** FDs for files that were newly created via O_CREAT (emit 'create' instead of 'change'). */
-    private createdFDs = new Set<number>();
-    rootDir: FSDir;
-    volume: Volume;
+    private nextFD: number;
+    private openFDs = new Map<number, OpenFD>();
+    private rootDir: FSDir;
+    private volume: Volume;
     readonly events = new FSEventEmitter();
 
     constructor(volume: Volume) {
-        this.fileID = 3;
+        this.nextFD = 3;
         this.volume = volume;
         this.rootDir = volumeToDir(volume);
     }
@@ -214,8 +220,8 @@ export class BrowserFS implements FSAPI {
         fd: number,
         callback: (err: NodeJS.ErrnoException | null, stats: Stats) => void,
     ) {
-        const fileData = this.openFiles.get(fd);
-        if (!fileData) {
+        const openFD = this.openFDs.get(fd);
+        if (!openFD) {
             callback(
                 new ErrnoException('Bad file descriptor', {
                     code: 'EBADF',
@@ -227,7 +233,7 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
-        switch (fileData.type) {
+        switch (openFD.node.type) {
             case 'dir': {
                 const stats = new SimpleStats(
                     0,
@@ -240,7 +246,7 @@ export class BrowserFS implements FSAPI {
             case 'file': {
                 // Note: fstat is called after open, which already ensures content
                 const stats = new SimpleStats(
-                    fileData.content.length,
+                    openFD.node.content.length,
                     true,
                     false,
                 ) as unknown as Stats;
@@ -259,7 +265,7 @@ export class BrowserFS implements FSAPI {
                 break;
             }
             default:
-                assertNever(fileData);
+                assertNever(openFD.node);
         }
     }
 
@@ -396,9 +402,8 @@ export class BrowserFS implements FSAPI {
                 return;
             }
             if (node.type === 'dir') {
-                // Allocate a new file descriptor
-                const fd = this.fileID++;
-                this.openFiles.set(fd, node);
+                const fd = this.nextFD++;
+                this.openFDs.set(fd, { node, readPosition: 0, dirty: false, created: false });
                 callback(null, fd);
             } else {
                 callback(
@@ -445,11 +450,8 @@ export class BrowserFS implements FSAPI {
                 result.parent.children.set(result.name, newFile);
                 this.volume[pathStr] = { content };
 
-                const fd = this.fileID++;
-                this.openFiles.set(fd, newFile);
-                this.openPaths.set(fd, pathStr);
-                this.createdFDs.add(fd);
-                this.dirtyFDs.add(fd);
+                const fd = this.nextFD++;
+                this.openFDs.set(fd, { node: newFile, path: pathStr, readPosition: 0, dirty: true, created: true });
                 callback(null, fd);
                 return;
             }
@@ -472,8 +474,8 @@ export class BrowserFS implements FSAPI {
                 // Allow opening directories for reading (O_RDONLY).
                 // Go's os.ReadDir opens directories this way before
                 // calling readdir on the fd.
-                const fd = this.fileID++;
-                this.openFiles.set(fd, node);
+                const fd = this.nextFD++;
+                this.openFDs.set(fd, { node, readPosition: 0, dirty: false, created: false });
                 callback(null, fd);
                 break;
             }
@@ -482,13 +484,8 @@ export class BrowserFS implements FSAPI {
                 if (hasTrunc) {
                     node.content = new Uint8Array(0);
                 }
-                // Allocate a new file descriptor
-                const fd = this.fileID++;
-                if (hasTrunc) {
-                    this.dirtyFDs.add(fd);
-                }
-                this.openFiles.set(fd, node);
-                this.openPaths.set(fd, pathStr);
+                const fd = this.nextFD++;
+                this.openFDs.set(fd, { node, path: pathStr, readPosition: 0, dirty: hasTrunc, created: false });
                 callback(null, fd);
                 break;
             }
@@ -510,24 +507,17 @@ export class BrowserFS implements FSAPI {
     }
 
     close(fd: number, callback: (error: Error | null) => void) {
+        const openFD = this.openFDs.get(fd);
         // If the file was written to, update the volume and emit an event.
-        if (this.dirtyFDs.has(fd)) {
-            const path = this.openPaths.get(fd);
-            const file = this.openFiles.get(fd);
-            if (path && file && file.type === 'file') {
-                this.volume[path] = { content: file.content };
-                this.events.emit({
-                    type: this.createdFDs.has(fd) ? 'create' : 'change',
-                    path,
-                    kind: 'file',
-                });
-            }
-            this.dirtyFDs.delete(fd);
+        if (openFD?.dirty && openFD.path && openFD.node.type === 'file') {
+            this.volume[openFD.path] = { content: openFD.node.content };
+            this.events.emit({
+                type: openFD.created ? 'create' : 'change',
+                path: openFD.path,
+                kind: 'file',
+            });
         }
-        this.createdFDs.delete(fd);
-        this.openPaths.delete(fd);
-        this.openFiles.delete(fd);
-        this.readPositions.delete(fd);
+        this.openFDs.delete(fd);
         callback(null);
     }
 
@@ -543,7 +533,8 @@ export class BrowserFS implements FSAPI {
             buffer: Uint8Array,
         ) => void,
     ) {
-        if (!this.openFiles.has(fd)) {
+        const openFD = this.openFDs.get(fd);
+        if (!openFD) {
             callback(
                 new ErrnoException('File not open', {
                     code: 'EBADF',
@@ -584,24 +575,10 @@ export class BrowserFS implements FSAPI {
 
         const readPosition =
             position == null
-                ? this.readPositions.get(fd) || 0
+                ? openFD.readPosition
                 : Number(position);
 
-        const file = this.openFiles.get(fd);
-        if (!file) {
-            callback(
-                new ErrnoException('File not open', {
-                    code: 'EBADF',
-                    errno: -9,
-                    syscall: 'read',
-                }),
-                0,
-                buffer,
-            );
-            return;
-        }
-
-        switch (file.type) {
+        switch (openFD.node.type) {
             case 'dir':
                 callback(
                     new ErrnoException('Is a directory', {
@@ -616,7 +593,7 @@ export class BrowserFS implements FSAPI {
             case 'file': {
                 const bytesToRead = Math.min(
                     length,
-                    file.content.length - readPosition,
+                    openFD.node.content.length - readPosition,
                 );
 
                 if (bytesToRead <= 0) {
@@ -625,7 +602,7 @@ export class BrowserFS implements FSAPI {
                 }
 
                 buffer.set(
-                    file.content.subarray(
+                    openFD.node.content.subarray(
                         readPosition,
                         readPosition + bytesToRead,
                     ),
@@ -633,7 +610,7 @@ export class BrowserFS implements FSAPI {
                 );
 
                 if (position == null) {
-                    this.readPositions.set(fd, readPosition + bytesToRead);
+                    openFD.readPosition = readPosition + bytesToRead;
                 }
 
                 callback(null, bytesToRead, buffer);
@@ -652,7 +629,7 @@ export class BrowserFS implements FSAPI {
                 );
                 break;
             default:
-                assertNever(file);
+                assertNever(openFD.node);
         }
     }
 
@@ -668,8 +645,8 @@ export class BrowserFS implements FSAPI {
             buffer: Uint8Array,
         ) => void,
     ) {
-        const file = this.openFiles.get(fd);
-        if (!file || file.type !== 'file') {
+        const openFD = this.openFDs.get(fd);
+        if (!openFD || openFD.node.type !== 'file') {
             callback(
                 new ErrnoException('Bad file descriptor', {
                     code: 'EBADF',
@@ -682,10 +659,11 @@ export class BrowserFS implements FSAPI {
             return;
         }
 
+        const file = openFD.node;
         const writePos =
             position != null
                 ? position
-                : (this.readPositions.get(fd) ?? file.content.length);
+                : (openFD.readPosition ?? file.content.length);
         const data = buffer.subarray(offset, offset + length);
         const endPos = writePos + data.length;
 
@@ -697,10 +675,10 @@ export class BrowserFS implements FSAPI {
         }
 
         file.content.set(data, writePos);
-        this.dirtyFDs.add(fd);
+        openFD.dirty = true;
 
         if (position == null) {
-            this.readPositions.set(fd, endPos);
+            openFD.readPosition = endPos;
         }
 
         callback(null, length, buffer);

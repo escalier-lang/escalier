@@ -45,10 +45,14 @@ export class SimpleStats implements Stats {
         // Set the mode field so Go's WASM runtime can determine file type.
         // Go reads stat.mode and checks type bits rather than calling isDirectory().
         if (isDirectory) {
+            // rwxr-xr-x: owner can read/write/traverse, others can read/traverse.
             this.mode = SimpleStats.S_IFDIR | 0o755;
         } else if (isSymbolicLink) {
+            // rwxrwxrwx: symlink permissions are ignored — the target's
+            // permissions are what matter, so they're conventionally all-on.
             this.mode = SimpleStats.S_IFLNK | 0o777;
         } else if (isFile) {
+            // rw-r--r--: owner can read/write, others can only read.
             this.mode = SimpleStats.S_IFREG | 0o644;
         }
     }

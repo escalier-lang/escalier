@@ -187,7 +187,7 @@ func TestWriteModuleOutputs(t *testing.T) {
 		require.NoError(t, err)
 
 		stderr := &bytes.Buffer{}
-		output := compiler.ModuleOutput{
+		output := compiler.CompUnitOutput{
 			JS:        "console.log('test');",
 			DTS:       "export declare const test: string;",
 			SourceMap: `{"version":3,"sources":["test.esc"]}`,
@@ -220,7 +220,7 @@ func TestWriteModuleOutputs(t *testing.T) {
 		require.NoError(t, err)
 
 		stderr := &bytes.Buffer{}
-		output := compiler.ModuleOutput{
+		output := compiler.CompUnitOutput{
 			JS:        "export const x = 1;",
 			DTS:       "export declare const x: number;",
 			SourceMap: "{}",
@@ -260,7 +260,7 @@ func TestPrintErrors(t *testing.T) {
 		output := compiler.CompilerOutput{
 			ParseErrors: []*parser.Error{parseErr1, parseErr2},
 			TypeErrors:  []checker.Error{},
-			Modules:     map[string]compiler.ModuleOutput{},
+			CompUnits:   map[string]compiler.CompUnitOutput{},
 		}
 		idToSource := make(map[int]*ast.Source)
 
@@ -276,7 +276,7 @@ func TestPrintErrors(t *testing.T) {
 		output := compiler.CompilerOutput{
 			ParseErrors: []*parser.Error{},
 			TypeErrors:  []checker.Error{},
-			Modules:     map[string]compiler.ModuleOutput{},
+			CompUnits:   map[string]compiler.CompUnitOutput{},
 		}
 		idToSource := make(map[int]*ast.Source)
 

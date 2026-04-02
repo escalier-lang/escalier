@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/compiler"
 )
 
 type Visitor struct {
@@ -70,6 +71,19 @@ func findNodeInScript(script *ast.Script, loc ast.Location) ast.Node {
 		stmt.Accept(visitor)
 	}
 	return visitor.Node
+}
+
+// findNodeAtLocation looks up the AST node at loc, searching scripts first
+// then falling back to module files. Returns nil if not found.
+func findNodeAtLocation(co *compiler.CheckOutput, sourceID int, loc ast.Location) ast.Node {
+	if script, ok := co.Scripts[sourceID]; ok {
+		return findNodeInScript(script, loc)
+	}
+	if co.Module != nil {
+		node, _ := findNodeWithAncestorsInFile(co.Module, sourceID, loc)
+		return node
+	}
+	return nil
 }
 
 // ParentVisitor extends the base visitor with parent tracking.

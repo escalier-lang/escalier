@@ -12,6 +12,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 const lsName = "escalier"
@@ -59,8 +60,8 @@ type Server struct {
 
 	// Cached absolute paths to .esc files under lib/ and bin/, refreshed at
 	// startup and on workspace file create/rename/delete notifications.
-	libFilesCache map[string]struct{}
-	binFilesCache map[string]struct{}
+	libFilesCache set.Set[string]
+	binFilesCache set.Set[string]
 
 	// Cached prelude/global scope and its completion items.
 	// Computed lazily on first completion request; never changes after that.
@@ -80,8 +81,8 @@ func NewServer() *Server {
 	s := Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
-		libFilesCache:    map[string]struct{}{},
-		binFilesCache:    map[string]struct{}{},
+		libFilesCache:    set.NewSet[string](),
+		binFilesCache:    set.NewSet[string](),
 	}
 	s.validated = sync.NewCond(s.mu.RLocker())
 	// nolint: exhaustruct

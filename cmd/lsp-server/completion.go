@@ -768,6 +768,7 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 	// (e.g., the lib namespace scope between the script scope and prelude).
 	// Skip the prelude — it's handled separately below with caching.
 	preludeScope := scope.Parent
+	// The condition s.Parent != nil stops before the prelude (whose Parent is nil).
 	for s := scope.Parent; s != nil && s.Parent != nil; s = s.Parent {
 		preludeScope = s.Parent
 		ns := s.Namespace
