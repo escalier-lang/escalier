@@ -9,6 +9,12 @@ export interface Volume {
     [path: string]: VolumeEntry;
 }
 
+export interface Manifest {
+    types: string[];
+    templates: Record<string, string[]>;
+    examples: Record<string, string[]>;
+}
+
 export function volumeToDir(volume: Volume): FSDir {
     const root: FSDir = { type: 'dir', name: '/', children: new Map() };
 
@@ -42,48 +48,10 @@ export function volumeToDir(volume: Volume): FSDir {
     return root;
 }
 
-const libCode = `export fn add(a: number, b: number) -> number {
-    return a + b
-}
+export function createVolume(manifest: Manifest, baseUrl: string): Volume {
+    const vol: Volume = {};
 
-export fn subtract(a: number, b: number) -> number {
-    return a - b
-}
-`;
-
-const binCode = `val sum = add(5, 10)
-val diff = subtract(10, 3)
-console.log("sum =", sum)
-console.log("diff =", diff)
-`;
-
-export function createVolume(manifest: string[], baseUrl: string): Volume {
-    const vol: Volume = {
-        '/package.json': {
-            content: new TextEncoder().encode(
-                JSON.stringify({
-                    name: 'my-project',
-                    version: '1.0.0',
-                    main: 'build/bin/main.js',
-                }),
-            ),
-        },
-        '/escalier.toml': {
-            content: new TextEncoder().encode(
-                `[project]
-name = "my-project"
-`,
-            ),
-        },
-        '/lib/math.esc': {
-            content: new TextEncoder().encode(libCode),
-        },
-        '/bin/main.esc': {
-            content: new TextEncoder().encode(binCode),
-        },
-    };
-
-    for (const filename of manifest) {
+    for (const filename of manifest.types) {
         vol[`/node_modules/typescript/lib/${filename}`] = {
             url: `${baseUrl}types/${filename}`,
             content: null,

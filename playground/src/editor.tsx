@@ -137,6 +137,7 @@ export type EditorProps = {
     rightPaneVisible?: boolean;
     rightPaneOverlay?: ReactNode;
     banner?: ReactNode;
+    toolbar?: ReactNode;
 };
 
 export const Editor = ({
@@ -145,6 +146,7 @@ export const Editor = ({
     rightPaneVisible,
     rightPaneOverlay,
     banner,
+    toolbar,
 }: EditorProps) => {
     const { dispatch, ...state } = useEditorStore();
     const inputDivRef = useRef<HTMLDivElement>(null);
@@ -164,6 +166,7 @@ export const Editor = ({
         rightTabs,
         activeRightTabIndex,
         focusedSide,
+        refreshKey,
     } = state;
 
     const showRightPane = rightPaneVisible ?? rightTabs.length > 0;
@@ -250,10 +253,20 @@ export const Editor = ({
         };
     }, [dispatch]);
 
-    // Switch input editor model when active tab changes
+    // Switch input editor model when active tab changes or project is switched.
+    // refreshKey changes on project switch (resetTabs), which disposes all
+    // stale models so they get recreated with fresh content from BrowserFS.
+    const prevRefreshKeyRef = useRef(refreshKey);
     useEffect(() => {
         const editor = inputEditorRef.current;
         if (!editor) return;
+
+        if (prevRefreshKeyRef.current !== refreshKey) {
+            prevRefreshKeyRef.current = refreshKey;
+            for (const model of monaco.editor.getModels()) {
+                model.dispose();
+            }
+        }
 
         if (!activePath) {
             editor.setModel(null);
@@ -268,7 +281,7 @@ export const Editor = ({
         if (activeTab?.scrollPos) {
             editor.setScrollTop(activeTab.scrollPos);
         }
-    }, [activePath, getOrCreateModel, activeTab?.scrollPos, isReadOnly]);
+    }, [activePath, getOrCreateModel, activeTab?.scrollPos, isReadOnly, refreshKey]);
 
     // Switch output editor model when active right tab changes
     useEffect(() => {
@@ -345,8 +358,8 @@ export const Editor = ({
             {/* Banner (e.g. validation errors) */}
             {banner && <div className={styles.banner}>{banner}</div>}
 
-            {/* Toolbar area - height: 0 for now */}
-            <div className={styles.toolbar} />
+            {/* Toolbar */}
+            <div className={styles.toolbar}>{toolbar}</div>
 
             {/* File explorer */}
             <FileExplorer

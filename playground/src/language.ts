@@ -99,10 +99,21 @@ export function setupLanguage(client: Client) {
         (params: lsp.PublishDiagnosticsParams) => {
             const models = monaco.editor.getModels();
 
+            const model = models.find(
+                (model) => model.uri.toString() === params.uri,
+            );
+
+            if (!model) {
+                return;
+            }
+
             if (params.uri.endsWith('.esc')) {
                 // The LSP server compiles the full package and writes
                 // output files directly to the VFS. We just need to
                 // trigger the command and handle errors.
+                // Only compile for files that are open in the editor —
+                // the LSP publishes diagnostics for all project files,
+                // but the compile command requires the file to be open.
                 client
                     .workspaceExecuteCommand({
                         command: 'compile',
@@ -125,14 +136,6 @@ export function setupLanguage(client: Client) {
                             }
                         }
                     });
-            }
-
-            const model = models.find(
-                (model) => model.uri.toString() === params.uri,
-            );
-
-            if (!model) {
-                return;
             }
 
             const markers: monaco.editor.IMarkerData[] = params.diagnostics.map(

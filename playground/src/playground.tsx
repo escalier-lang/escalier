@@ -1,17 +1,33 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
+import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
+import type { Manifest } from './fs/volume';
 import { usePlaygroundStore } from './playground-store';
+import { loadProject } from './project-loader';
 
 import styles from './playground.module.css';
 
+function slugToLabel(slug: string): string {
+    return slug
+        .split('-')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
 type PlaygroundProps = {
     fs: BrowserFS;
+    manifest: Manifest;
+    baseUrl: string;
 };
 
-export const Playground = ({ fs }: PlaygroundProps) => {
+export const Playground = ({
+    fs,
+    manifest,
+    baseUrl,
+}: PlaygroundProps) => {
     const { dispatch: editorDispatch, ...editorState } = useEditorStore();
     const { dispatch: playgroundDispatch, ...playgroundState } =
         usePlaygroundStore();
@@ -40,7 +56,6 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             if (!tab.path.endsWith('.esc')) continue;
             buildPrefixes.add(`/build${tab.path.replace(/\.esc$/, '.')}`);
         }
-
         let markedDone = false;
         const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (
@@ -81,6 +96,70 @@ export const Playground = ({ fs }: PlaygroundProps) => {
         return () => fs.events.off(listener);
     }, [initialCompileDone, leftTabs, fs, editorDispatch, playgroundDispatch]);
 
+    const templateItems = useMemo(
+        () =>
+            Object.keys(manifest.templates).map((slug) => ({
+                slug,
+                label: slugToLabel(slug),
+            })),
+        [manifest],
+    );
+
+    const exampleItems = useMemo(
+        () =>
+            Object.keys(manifest.examples).map((slug) => ({
+                slug,
+                label: slugToLabel(slug),
+            })),
+        [manifest],
+    );
+
+    const handleSelectTemplate = useCallback(
+        (slug: string) => {
+            loadProject(slug, 'template', manifest, baseUrl, fs).then(
+                (primaryFile) => {
+                    editorDispatch({ type: 'resetTabs', primaryFile });
+                    // Clear the query param when switching to a template
+                    history.replaceState(null, '', window.location.pathname);
+                },
+                (err) => {
+                    editorDispatch({
+                        type: 'showNotification',
+                        notification: {
+                            message: `Failed to load template: ${err.message}`,
+                            type: 'error',
+                        },
+                    });
+                },
+            );
+        },
+        [manifest, baseUrl, fs, editorDispatch],
+    );
+
+    const handleSelectExample = useCallback(
+        (slug: string) => {
+            loadProject(slug, 'example', manifest, baseUrl, fs).then(
+                (primaryFile) => {
+                    editorDispatch({ type: 'resetTabs', primaryFile });
+                    // Update URL query param for deep linking
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('example', slug);
+                    history.replaceState(null, '', url.toString());
+                },
+                (err) => {
+                    editorDispatch({
+                        type: 'showNotification',
+                        notification: {
+                            message: `Failed to load example: ${err.message}`,
+                            type: 'error',
+                        },
+                    });
+                },
+            );
+        },
+        [manifest, baseUrl, fs, editorDispatch],
+    );
+
     const rightPaneVisible = rightTabs.length > 0 && initialCompileDone;
 
     const rightPaneOverlay = !initialCompileDone ? (
@@ -99,6 +178,15 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             </div>
         ) : null;
 
+    const toolbar = (
+        <Toolbar
+            templates={templateItems}
+            examples={exampleItems}
+            onSelectTemplate={handleSelectTemplate}
+            onSelectExample={handleSelectExample}
+        />
+    );
+
     return (
         <Editor
             fs={fs}
@@ -106,6 +194,7 @@ export const Playground = ({ fs }: PlaygroundProps) => {
             rightPaneVisible={rightPaneVisible}
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}
+            toolbar={toolbar}
         />
     );
 };

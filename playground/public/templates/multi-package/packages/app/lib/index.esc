@@ -1,0 +1,4 @@
+// Add your app library code here
+export fn run() -> number {
+    return 0
+}

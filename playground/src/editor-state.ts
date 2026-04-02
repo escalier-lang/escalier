@@ -17,6 +17,8 @@ export type EditorState = {
     activeRightTabIndex: number | null;
     focusedSide: Side;
     notification: Notification | null;
+    /** Incremented by resetTabs to force model recreation in the editor. */
+    refreshKey: number;
 };
 
 export type EditorAction =
@@ -38,6 +40,7 @@ export const initialEditorState: EditorState = {
     activeRightTabIndex: null,
     focusedSide: 'left',
     notification: null,
+    refreshKey: 0,
 };
 
 function getTabsForSide(state: EditorState, side: Side): Tab[] {
@@ -188,6 +191,7 @@ export function editorReducer(
                 rightTabs: [],
                 activeRightTabIndex: null,
                 focusedSide: 'left',
+                refreshKey: state.refreshKey + 1,
             };
         }
 
