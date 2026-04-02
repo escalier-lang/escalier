@@ -38,8 +38,8 @@ type OpenFD = {
 export class BrowserFS implements FSAPI {
     private nextFD: number;
     private openFDs = new Map<number, OpenFD>();
-    private rootDir: FSDir;
     private volume: Volume;
+    readonly rootDir: FSDir;
     readonly events = new FSEventEmitter();
 
     constructor(volume: Volume) {
