@@ -36,7 +36,9 @@ async function main() {
     if (exampleParam && manifest.examples[exampleParam]) {
         slug = exampleParam;
     } else if (exampleParam) {
-        console.warn(`Unknown example "${exampleParam}", falling back to hello-world`);
+        console.warn(
+            `Unknown example "${exampleParam}", falling back to hello-world`,
+        );
         useEditorStore.getState().dispatch({
             type: 'showNotification',
             notification: {
@@ -129,11 +131,7 @@ async function main() {
     }
 
     ReactDOM.createRoot(root).render(
-        <Playground
-            fs={fs}
-            manifest={manifest}
-            baseUrl={baseUrl}
-        />,
+        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
     );
 }
 

@@ -281,7 +281,13 @@ export const Editor = ({
         if (activeTab?.scrollPos) {
             editor.setScrollTop(activeTab.scrollPos);
         }
-    }, [activePath, getOrCreateModel, activeTab?.scrollPos, isReadOnly, refreshKey]);
+    }, [
+        activePath,
+        getOrCreateModel,
+        activeTab?.scrollPos,
+        isReadOnly,
+        refreshKey,
+    ]);
 
     // Switch output editor model when active right tab changes
     useEffect(() => {

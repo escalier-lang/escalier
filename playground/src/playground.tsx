@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
@@ -23,11 +23,7 @@ type PlaygroundProps = {
     baseUrl: string;
 };
 
-export const Playground = ({
-    fs,
-    manifest,
-    baseUrl,
-}: PlaygroundProps) => {
+export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const { dispatch: editorDispatch, ...editorState } = useEditorStore();
     const { dispatch: playgroundDispatch, ...playgroundState } =
         usePlaygroundStore();
@@ -115,15 +111,21 @@ export const Playground = ({
         [manifest],
     );
 
+    // Guard against overlapping loadProject calls resolving out-of-order.
+    const loadIdRef = useRef(0);
+
     const handleSelectTemplate = useCallback(
         (slug: string) => {
+            const id = ++loadIdRef.current;
             loadProject(slug, 'template', manifest, baseUrl, fs).then(
                 (primaryFile) => {
+                    if (id !== loadIdRef.current) return;
                     editorDispatch({ type: 'resetTabs', primaryFile });
                     // Clear the query param when switching to a template
                     history.replaceState(null, '', window.location.pathname);
                 },
                 (err) => {
+                    if (id !== loadIdRef.current) return;
                     editorDispatch({
                         type: 'showNotification',
                         notification: {
@@ -139,8 +141,10 @@ export const Playground = ({
 
     const handleSelectExample = useCallback(
         (slug: string) => {
+            const id = ++loadIdRef.current;
             loadProject(slug, 'example', manifest, baseUrl, fs).then(
                 (primaryFile) => {
+                    if (id !== loadIdRef.current) return;
                     editorDispatch({ type: 'resetTabs', primaryFile });
                     // Update URL query param for deep linking
                     const url = new URL(window.location.href);
@@ -148,6 +152,7 @@ export const Playground = ({
                     history.replaceState(null, '', url.toString());
                 },
                 (err) => {
+                    if (id !== loadIdRef.current) return;
                     editorDispatch({
                         type: 'showNotification',
                         notification: {

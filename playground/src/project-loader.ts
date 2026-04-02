@@ -24,7 +24,7 @@ export async function loadProject(
             ? manifest.templates[slug]
             : manifest.examples[slug];
 
-    if (!fileList) {
+    if (!fileList || fileList.length === 0) {
         throw new Error(`Unknown ${kind}: ${slug}`);
     }
 
@@ -57,7 +57,10 @@ export async function loadProject(
             fs.mkdir(dirPath, (err) => {
                 // Ignore EEXIST errors — the directory may already exist
                 if (err && (err as NodeJS.ErrnoException).code !== 'EEXIST') {
-                    console.error(`Failed to create directory ${dirPath}:`, err);
+                    console.error(
+                        `Failed to create directory ${dirPath}:`,
+                        err,
+                    );
                 }
             });
         }

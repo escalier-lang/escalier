@@ -79,16 +79,19 @@ const manifest: Manifest = {
 const fileContents: Record<string, string> = {
     'examples/hello-world/escalier.toml': '[project]\nname = "hello-world"\n',
     'examples/hello-world/package.json': '{"name":"hello-world"}',
-    'examples/hello-world/lib/index.esc': 'export fn add(a: number, b: number) -> number {\n    return a + b\n}\n',
+    'examples/hello-world/lib/index.esc':
+        'export fn add(a: number, b: number) -> number {\n    return a + b\n}\n',
     'examples/hello-world/bin/main.esc': 'val sum = add(5, 10)\n',
     'examples/no-lib-index/escalier.toml': '[project]\nname = "no-lib-index"\n',
     'examples/no-lib-index/package.json': '{"name":"no-lib-index"}',
     'examples/no-lib-index/bin/main.esc': 'console.log("hi")\n',
     'examples/no-esc/escalier.toml': '[project]\nname = "no-esc"\n',
     'examples/no-esc/package.json': '{"name":"no-esc"}',
-    'templates/single-package/escalier.toml': '[project]\nname = "my-project"\n',
+    'templates/single-package/escalier.toml':
+        '[project]\nname = "my-project"\n',
     'templates/single-package/package.json': '{"name":"my-project"}',
-    'templates/single-package/lib/index.esc': 'export fn greet() -> string {\n    return "hi"\n}\n',
+    'templates/single-package/lib/index.esc':
+        'export fn greet() -> string {\n    return "hi"\n}\n',
     'templates/single-package/bin/main.esc': 'console.log(greet())\n',
 };
 
@@ -190,7 +193,10 @@ describe('loadProject', () => {
 
         await loadProject('hello-world', 'example', manifest, '/', fs);
 
-        const content = await readFile(fs, '/node_modules/typescript/index.d.ts');
+        const content = await readFile(
+            fs,
+            '/node_modules/typescript/index.d.ts',
+        );
         expect(content).toBe('declare module "typescript"');
     });
 
