@@ -127,7 +127,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						rightErrors = c.Unify(ctx, rightType, fnType.Params[1].Type)
 						errors = slices.Concat(errors, leftErrors, rightErrors)
 
-						exprType = fnType.Return
+						// Copy the return type to avoid mutating the shared operator
+						// type's provenance when SetProvenance is called below (#371).
+						exprType = fnType.Return.Copy()
 					}
 				} else {
 					exprType = neverType
