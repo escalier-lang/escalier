@@ -1,0 +1,10 @@
+export fn square(x: number) -> number {
+    return x * x
+}
+
+export fn abs(x: number) -> number {
+    if x < 0 {
+        return -x
+    }
+    return x
+}

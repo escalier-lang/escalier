@@ -3,11 +3,13 @@ import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
-import { createVolume } from './fs/volume';
+import { type Manifest, createVolume } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
+import { loadProject } from './project-loader';
 
 import './user-worker'; // sets up the monaco editor worker
 
@@ -15,11 +17,63 @@ async function main() {
     const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
     const baseUrl = import.meta.env.BASE_URL;
 
-    const manifest: string[] = await fetch(
+    const manifest: Manifest = await fetch(
         `${baseUrl}types/manifest.json`,
     ).then((res) => res.json());
 
     const fs = new BrowserFS(createVolume(manifest, baseUrl));
+
+    // Load the initial project into the filesystem BEFORE initializing the
+    // LSP server. The LSP scans the workspace during initialize — if no
+    // project files exist yet (escalier.toml, package.json, *.esc), it won't
+    // find a valid project and diagnostics will never be published.
+    const params = new URLSearchParams(window.location.search);
+    const exampleParam = params.get('example');
+
+    let slug = 'hello-world';
+    const kind: 'example' | 'template' = 'example';
+
+    if (exampleParam && manifest.examples[exampleParam]) {
+        slug = exampleParam;
+    } else if (exampleParam) {
+        console.warn(
+            `Unknown example "${exampleParam}", falling back to hello-world`,
+        );
+        useEditorStore.getState().dispatch({
+            type: 'showNotification',
+            notification: {
+                message: `Unknown example "${exampleParam}". Loading Hello World instead.`,
+                type: 'warning',
+            },
+        });
+        // Remove the invalid query param so the warning doesn't repeat on refresh
+        const url = new URL(window.location.href);
+        url.searchParams.set('example', slug);
+        history.replaceState(null, '', url.toString());
+    }
+
+    try {
+        const primaryFile = await loadProject(
+            slug,
+            kind,
+            manifest,
+            baseUrl,
+            fs,
+        );
+        useEditorStore.getState().dispatch({
+            type: 'resetTabs',
+            primaryFile,
+        });
+    } catch (err) {
+        console.error('Failed to load initial project:', err);
+        useEditorStore.getState().dispatch({
+            type: 'showNotification',
+            notification: {
+                message: `Failed to load initial project: ${err instanceof Error ? err.message : err}`,
+                type: 'error',
+            },
+        });
+    }
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
@@ -87,7 +141,9 @@ async function main() {
         throw new Error('Root element not found');
     }
 
-    ReactDOM.createRoot(root).render(<Playground fs={fs} />);
+    ReactDOM.createRoot(root).render(
+        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
+    );
 }
 
 main().then(() => {

@@ -17,6 +17,13 @@ export type EditorState = {
     activeRightTabIndex: number | null;
     focusedSide: Side;
     notification: Notification | null;
+    /**
+     * Incremented by resetTabs when the user switches projects. This causes
+     * the editor to dispose all existing Monaco models so they get recreated
+     * with fresh content from BrowserFS, rather than showing stale content
+     * from the previous project's files at the same paths.
+     */
+    refreshKey: number;
 };
 
 export type EditorAction =
@@ -38,6 +45,7 @@ export const initialEditorState: EditorState = {
     activeRightTabIndex: null,
     focusedSide: 'left',
     notification: null,
+    refreshKey: 0,
 };
 
 function getTabsForSide(state: EditorState, side: Side): Tab[] {
@@ -188,6 +196,7 @@ export function editorReducer(
                 rightTabs: [],
                 activeRightTabIndex: null,
                 focusedSide: 'left',
+                refreshKey: state.refreshKey + 1,
             };
         }
 
