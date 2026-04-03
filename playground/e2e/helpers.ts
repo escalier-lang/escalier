@@ -20,7 +20,9 @@ export async function waitForCompilation(
     // The second lib button (nth(1)) is the one inside build/, since the
     // source lib/ directory also exists in the explorer.
     await buildButton.click();
-    const buildLibButton = page.getByRole('button', { name: /^[▸▾] lib$/ }).nth(1);
+    const buildLibButton = page
+        .getByRole('button', { name: /^[▸▾] lib$/ })
+        .nth(1);
     await buildLibButton.click();
 
     for (const file of files) {
