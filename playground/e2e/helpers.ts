@@ -10,23 +10,21 @@ import { type Page, expect } from '@playwright/test';
  * waiting for output tabs.
  */
 export async function waitForCompilation(page: Page): Promise<void> {
-  // Wait for the `build` directory to appear in the file explorer.
-  // This is the most reliable signal that compilation has completed.
-  await expect(
-    page.getByRole('button', { name: /build/ }),
-  ).toBeVisible({ timeout: 45_000 });
+    // Wait for the `build` directory to appear in the file explorer.
+    // This is the most reliable signal that compilation has completed.
+    await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
+        timeout: 45_000,
+    });
 }
 
 /**
  * Navigate to the playground and wait for it to be ready.
  */
 export async function loadPlayground(
-  page: Page,
-  params?: Record<string, string>,
+    page: Page,
+    params?: Record<string, string>,
 ): Promise<void> {
-  const url = params
-    ? `/?${new URLSearchParams(params).toString()}`
-    : '/';
-  await page.goto(url, { waitUntil: 'networkidle' });
-  await waitForCompilation(page);
+    const url = params ? `/?${new URLSearchParams(params).toString()}` : '/';
+    await page.goto(url, { waitUntil: 'networkidle' });
+    await waitForCompilation(page);
 }
