@@ -121,6 +121,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const handleSelectTemplate = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'template', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
@@ -140,12 +141,13 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
                 },
             );
         },
-        [manifest, baseUrl, fs, editorDispatch],
+        [manifest, baseUrl, fs, editorDispatch, playgroundDispatch],
     );
 
     const handleSelectExample = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'example', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
@@ -167,7 +169,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
                 },
             );
         },
-        [manifest, baseUrl, fs, editorDispatch],
+        [manifest, baseUrl, fs, editorDispatch, playgroundDispatch],
     );
 
     const rightPaneVisible = rightTabs.length > 0 && initialCompileDone;
