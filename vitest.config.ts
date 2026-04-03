@@ -33,7 +33,11 @@ export default defineConfig({
                 },
                 test: {
                     name: 'unit',
-                    exclude: ['**/node_modules/**', '**/out/**'],
+                    exclude: [
+                        '**/node_modules/**',
+                        '**/out/**',
+                        '**/e2e/**',
+                    ],
                 },
             },
             {
