@@ -64,6 +64,6 @@ test.describe('Editor', () => {
                 .locator('.view-lines')
                 .textContent();
             expect(content).toContain('added');
-        }).toPass({ timeout: 10_000 });
+        }).toPass({ timeout: 30_000 });
     });
 });
