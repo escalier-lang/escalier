@@ -1,28 +1,37 @@
-import { type Locator, type Page, expect } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 
 /**
  * Wait for the WASM LSP to initialize and compilation to complete.
  *
- * We detect compilation completion by checking for the `/build` directory in
- * the file explorer. Due to a race condition in the app, the output tabs may
- * not always auto-open (the FS event can fire before the React effect listener
- * is registered), so checking for the build directory is more reliable than
- * waiting for output tabs.
- *
- * When called after a project switch, pass a `verify` locator that is unique
- * to the new project (e.g. a file that only exists in the new project) so the
- * check doesn't pass on stale build artifacts from the previous project.
+ * Verifies that the `/build` directory appears in the file explorer and
+ * contains compiled output files. Expands `build/lib/` and checks for the
+ * expected `.js` files. By default checks for `index.js` (from `lib/index.esc`
+ * which all projects have). Pass `files` to override with project-specific
+ * build artifacts.
  */
 export async function waitForCompilation(
     page: Page,
-    { verify }: { verify?: Locator } = {},
+    { files = ['index.js'] }: { files?: string[] } = {},
 ): Promise<void> {
-    await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
-        timeout: 10_000,
-    });
-    if (verify) {
-        await expect(verify).toBeVisible({ timeout: 5_000 });
+    const buildButton = page.getByRole('button', { name: /^[▸▾] build$/ });
+    await expect(buildButton).toBeVisible({ timeout: 10_000 });
+
+    // Expand build/ then build/lib/ to access compiled output files.
+    // The second lib button (nth(1)) is the one inside build/, since the
+    // source lib/ directory also exists in the explorer.
+    await buildButton.click();
+    const buildLibButton = page.getByRole('button', { name: /^[▸▾] lib$/ }).nth(1);
+    await buildLibButton.click();
+
+    for (const file of files) {
+        await expect(
+            page.getByRole('button', { name: file, exact: true }),
+        ).toBeVisible({ timeout: 5_000 });
     }
+
+    // Collapse to restore initial explorer state
+    await buildLibButton.click();
+    await buildButton.click();
 }
 
 /**

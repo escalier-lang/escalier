@@ -8,11 +8,17 @@ test.describe('File Explorer', () => {
     });
 
     test('click file in explorer opens tab', async ({ page }) => {
-        // main.esc is visible in the file explorer under bin/
+        const inputTablist = page.getByRole('tablist').first();
+
+        // Verify main.esc is not already open (only index.esc is open by default)
+        await expect(
+            inputTablist.getByRole('tab', { name: /main\.esc/ }),
+        ).toBeHidden();
+
+        // Click main.esc in the file explorer under bin/
         await page.getByRole('button', { name: 'main.esc' }).click();
 
         // A new tab should appear in the left tablist
-        const inputTablist = page.getByRole('tablist').first();
         await expect(
             inputTablist.getByRole('tab', { name: /main\.esc/ }),
         ).toBeVisible();

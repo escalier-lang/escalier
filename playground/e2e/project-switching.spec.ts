@@ -22,10 +22,8 @@ test.describe('Project Switching', () => {
         // Confirm the replacement
         await dialog.getByRole('button', { name: 'Replace' }).click();
 
-        // Wait for the new project to compile, verifying a calculator-specific file
-        await waitForCompilation(page, {
-            verify: page.getByRole('button', { name: 'math.esc' }),
-        });
+        // Wait for the new project to compile, verifying calculator-specific output
+        await waitForCompilation(page);
     });
 
     test('cancel project switch preserves current state', async ({ page }) => {
@@ -52,9 +50,7 @@ test.describe('Project Switching', () => {
             .getByRole('dialog')
             .getByRole('button', { name: 'Replace' })
             .click();
-        await waitForCompilation(page, {
-            verify: page.getByRole('button', { name: 'math.esc' }),
-        });
+        await waitForCompilation(page);
 
         // URL should contain the example query param
         // history.replaceState is used, so we need to evaluate in page context

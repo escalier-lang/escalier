@@ -14,9 +14,9 @@ test.describe('Editor', () => {
         await expect(inputPanel.locator('.view-lines')).toContainText('greet');
     });
 
-    test('right editor shows compiled output', async ({ page }) => {
-        // Open a build output file to populate the right pane.
-        // Expand the build directory, then navigate to the output file.
+    test('compiled output contains JavaScript', async ({ page }) => {
+        // Open a build output file via the file explorer.
+        // The explorer always opens files on the left (input) side.
         await page.getByRole('button', { name: /^[▸▾] build$/ }).click();
         await page
             .getByRole('button', { name: /^[▸▾] lib$/ })
@@ -26,10 +26,10 @@ test.describe('Editor', () => {
             .getByRole('button', { name: 'index.js', exact: true })
             .click();
 
-        // The output panel should now show compiled JavaScript.
-        // Monaco may take a moment to render after the panel becomes visible.
-        const outputPanel = page.locator('#output-panel');
-        await expect(outputPanel.locator('.view-lines')).toContainText(
+        // The input panel should now show the compiled JavaScript.
+        // Monaco may take a moment to render after switching models.
+        const inputPanel = page.locator('#input-panel');
+        await expect(inputPanel.locator('.view-lines')).toContainText(
             'function',
             { timeout: 10_000 },
         );
