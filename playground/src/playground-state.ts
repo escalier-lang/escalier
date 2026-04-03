@@ -13,6 +13,7 @@ export type PlaygroundState = {
 
 export type PlaygroundAction =
     | { type: 'setInitialCompileDone' }
+    | { type: 'resetCompile' }
     | { type: 'setValidationResult'; result: ValidationResult };
 
 export const initialPlaygroundState: PlaygroundState = {
@@ -27,6 +28,10 @@ export function playgroundReducer(
     switch (action.type) {
         case 'setInitialCompileDone': {
             return { ...state, initialCompileDone: true };
+        }
+
+        case 'resetCompile': {
+            return { ...state, initialCompileDone: false };
         }
 
         case 'setValidationResult': {

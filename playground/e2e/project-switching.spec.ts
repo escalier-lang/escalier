@@ -42,6 +42,34 @@ test.describe('Project Switching', () => {
         await expect(page.getByText('escalier.toml')).toBeVisible();
     });
 
+    test('switching examples auto-opens build output on right side', async ({
+        page,
+    }) => {
+        const outputTablist = page.getByTestId('output-tablist');
+
+        // After initial load, the right tablist should have index.js.
+        // The auto-open races with React effect setup so allow extra time.
+        await expect(
+            outputTablist.getByRole('tab', { name: /index\.js/ }),
+        ).toBeVisible({ timeout: 10_000 });
+
+        // Switch to calculator example
+        await page.getByRole('button', { name: 'Examples' }).click();
+        await page.getByRole('menuitem', { name: 'Calculator' }).click();
+        await page
+            .getByRole('dialog')
+            .getByRole('button', { name: 'Replace' })
+            .click();
+
+        // Wait for the new project to compile
+        await waitForCompilation(page);
+
+        // The right tablist should have the new build output auto-opened
+        await expect(
+            outputTablist.getByRole('tab', { name: /index\.js/ }),
+        ).toBeVisible({ timeout: 10_000 });
+    });
+
     test('URL updates when switching examples', async ({ page }) => {
         // Switch to calculator
         await page.getByRole('button', { name: 'Examples' }).click();

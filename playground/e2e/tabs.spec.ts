@@ -8,7 +8,7 @@ test.describe('Tab Management', () => {
     });
 
     test('close tab via close button', async ({ page }) => {
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
 
         // index.esc tab should be open (default primary file)
         await expect(
@@ -29,7 +29,7 @@ test.describe('Tab Management', () => {
         // Open a second file
         await page.getByRole('button', { name: 'main.esc' }).click();
 
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
         const indexTab = inputTablist.getByRole('tab', { name: /index\.esc/ });
         const mainTab = inputTablist.getByRole('tab', { name: /main\.esc/ });
 
@@ -44,8 +44,8 @@ test.describe('Tab Management', () => {
     });
 
     test('move tab to right side via context menu', async ({ page }) => {
-        const inputTablist = page.getByRole('tablist').first();
-        const outputTablist = page.getByRole('tablist').nth(1);
+        const inputTablist = page.getByTestId('input-tablist');
+        const outputTablist = page.getByTestId('output-tablist');
 
         // Right-click on the index.esc tab
         await inputTablist

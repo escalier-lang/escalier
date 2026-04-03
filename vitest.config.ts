@@ -13,6 +13,7 @@ export default defineConfig({
     test: {
         coverage: {
             include: ['playground/src/**', 'packages/*/src/**'],
+            exclude: ['**/e2e/**'],
         },
         projects: [
             {

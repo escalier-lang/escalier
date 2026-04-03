@@ -8,7 +8,7 @@ test.describe('File Explorer', () => {
     });
 
     test('click file in explorer opens tab', async ({ page }) => {
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
 
         // Verify main.esc is not already open (only index.esc is open by default)
         await expect(
@@ -40,7 +40,7 @@ test.describe('File Explorer', () => {
         ).toBeVisible();
 
         // A tab should open for the new file
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
         await expect(
             inputTablist.getByRole('tab', { name: /test\.esc/ }),
         ).toBeVisible();

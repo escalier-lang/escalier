@@ -376,7 +376,11 @@ export const Editor = ({
             />
 
             {/* Input tabs */}
-            <div className={styles.inputTabs} role="tablist">
+            <div
+                className={styles.inputTabs}
+                role="tablist"
+                data-testid="input-tablist"
+            >
                 {leftTabs.map((tab, i) => (
                     <TabItem
                         key={tab.path}
@@ -423,7 +427,11 @@ export const Editor = ({
             </div>
 
             {/* Output tabs */}
-            <div className={styles.outputTabs} role="tablist">
+            <div
+                className={styles.outputTabs}
+                role="tablist"
+                data-testid="output-tablist"
+            >
                 {rightTabs.map((tab, i) => (
                     <TabItem
                         key={tab.path}

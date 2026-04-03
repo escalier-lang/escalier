@@ -474,6 +474,19 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 
 	if token.Type != OpenParen {
 		p.reportError(token.Span, "Expected an opening paren")
+		if ident.Name == "" ||
+			p.isStatementInitiator(token.Type) ||
+			token.Span.Start.Line != ident.Span().Start.Line {
+			// The declaration is incomplete (e.g. "export fn" or
+			// "export fn foo" while the user is still typing). Return a
+			// partial node to avoid consuming tokens from subsequent
+			// statements.
+			end := ident.Span().End
+			return ast.NewFuncDecl(
+				ident, typeParams, nil, nil, nil, nil, export, declare, async,
+				ast.NewSpan(start, end, p.lexer.source.ID),
+			)
+		}
 	} else {
 		p.lexer.consume()
 	}
