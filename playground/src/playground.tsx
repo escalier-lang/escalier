@@ -53,7 +53,25 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             buildPrefixes.add(`/build${tab.path.replace(/\.esc$/, '.')}`);
         }
 
+        let cancelled = false;
         let markedDone = false;
+
+        const openBuildFile = (path: string) => {
+            editorDispatch({
+                type: 'openFile',
+                path,
+                side: 'right',
+            });
+            if (!markedDone) {
+                markedDone = true;
+                queueMicrotask(() => {
+                    if (!cancelled) {
+                        playgroundDispatch({ type: 'setInitialCompileDone' });
+                    }
+                });
+            }
+        };
+
         const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (
                 (event.type !== 'create' && event.type !== 'change') ||
@@ -71,26 +89,31 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
                 event.path.startsWith(prefix),
             );
             if (matchesSource) {
-                editorDispatch({
-                    type: 'openFile',
-                    path: event.path,
-                    side: 'right',
-                });
-            }
-
-            // Mark compilation done after the first batch of build files.
-            // queueMicrotask ensures all synchronous FS writes from one
-            // compilation are captured before we mark done.
-            if (!markedDone) {
-                markedDone = true;
-                queueMicrotask(() => {
-                    playgroundDispatch({ type: 'setInitialCompileDone' });
-                });
+                openBuildFile(event.path);
             }
         };
 
         fs.events.on(listener);
-        return () => fs.events.off(listener);
+
+        // Check for build files that were written before the listener was
+        // set up. This handles the race where the WASM LSP compiles and
+        // writes output before React runs this effect.
+        const suffixes = ['.js', '.js.map', '.d.ts'];
+        for (const prefix of buildPrefixes) {
+            for (const suffix of suffixes) {
+                const path = prefix + suffix;
+                fs.stat(path, (err) => {
+                    if (!err && !cancelled) {
+                        openBuildFile(path);
+                    }
+                });
+            }
+        }
+
+        return () => {
+            cancelled = true;
+            fs.events.off(listener);
+        };
     }, [initialCompileDone, leftTabs, fs, editorDispatch, playgroundDispatch]);
 
     const templateItems = useMemo(
@@ -131,6 +154,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
                 },
                 (err) => {
                     if (id !== loadIdRef.current) return;
+                    playgroundDispatch({ type: 'setInitialCompileDone' });
                     editorDispatch({
                         type: 'showNotification',
                         notification: {
@@ -159,6 +183,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
                 },
                 (err) => {
                     if (id !== loadIdRef.current) return;
+                    playgroundDispatch({ type: 'setInitialCompileDone' });
                     editorDispatch({
                         type: 'showNotification',
                         notification: {

@@ -61,7 +61,7 @@ export async function provideCompletionItems(
 
     const items: lsp.CompletionItem[] = Array.isArray(result)
         ? result
-        : result.items;
+        : (result.items ?? []);
     const isIncomplete = Array.isArray(result) ? false : result.isIncomplete;
 
     const suggestions: CompletionSuggestion[] = items.map((item) => {

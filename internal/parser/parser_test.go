@@ -495,6 +495,12 @@ func TestStatementRecovery(t *testing.T) {
 		"ClassExtendsMissingType": {
 			input: "class Foo extends { bar(self) { return 1 } }",
 		},
+		"IncompleteFnDecl": {
+			input: "export fn\nval x = 1",
+		},
+		"IncompleteFnDeclWithName": {
+			input: "export fn foo\nval x = 1",
+		},
 	}
 
 	for name, test := range tests {

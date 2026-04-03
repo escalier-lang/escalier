@@ -182,6 +182,12 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		return stmts
 
 	case *ast.FuncDecl:
+		// Skip incomplete function declarations from error recovery
+		// (e.g. "export fn foo" with no params or body).
+		if decl.Body == nil && !decl.Declare() {
+			return nil
+		}
+
 		// For function declarations, the binding is stored with the function name
 		binding := namespace.Values[decl.Name.Name]
 		if binding == nil {

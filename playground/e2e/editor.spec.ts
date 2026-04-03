@@ -45,20 +45,22 @@ test.describe('Editor', () => {
             '\n\nexport fn added() -> string { return "hi" }',
         );
 
-        // Open the build output to verify recompilation produced new content.
-        // Expand build/lib/ and open index.js.
-        await page.getByRole('button', { name: /^[▸▾] build$/ }).click();
-        await page
-            .getByRole('button', { name: /^[▸▾] lib$/ })
-            .nth(1)
-            .click();
+        // Verify the source edit was applied — under parallel execution,
+        // keyboard events can be dropped or delayed.
+        await expect(inputPanel.locator('.view-lines')).toContainText('added', {
+            timeout: 5_000,
+        });
 
-        // Poll for the `added` function to appear in the compiled output
+        // The right panel auto-opens index.js after compilation. Wait for
+        // the tab to appear, then poll the output panel until the recompiled
+        // content contains `added`. Only right-side models auto-refresh on
+        // filesystem changes, so we must check the output panel, not the input.
+        const outputTablist = page.getByTestId('output-tablist');
+        await expect(
+            outputTablist.getByRole('tab', { name: /index\.js/ }),
+        ).toBeVisible({ timeout: 10_000 });
+
         const outputPanel = page.locator('#output-panel');
-        await page
-            .getByRole('button', { name: 'index.js', exact: true })
-            .click();
-
         await expect(async () => {
             const content = await outputPanel
                 .locator('.view-lines')

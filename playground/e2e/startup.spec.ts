@@ -7,7 +7,7 @@ test.describe('App Loading', () => {
         await loadPlayground(page);
 
         // Left side should have index.esc tab open (lib/index.esc is the primary file)
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
         await expect(
             inputTablist.getByRole('tab', { name: /index\.esc/ }),
         ).toBeVisible();
@@ -34,7 +34,7 @@ test.describe('App Loading', () => {
         await loadPlayground(page, { example: 'calculator' });
 
         // Should have index.esc tab (primary file)
-        const inputTablist = page.getByRole('tablist').first();
+        const inputTablist = page.getByTestId('input-tablist');
         await expect(
             inputTablist.getByRole('tab', { name: /index\.esc/ }),
         ).toBeVisible();
