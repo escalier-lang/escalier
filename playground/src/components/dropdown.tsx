@@ -17,17 +17,14 @@ export const Dropdown = ({ label, items, onSelect }: DropdownProps) => {
     const [open, setOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const handleBlur = useCallback(
-        (e: React.FocusEvent<HTMLDivElement>) => {
-            if (
-                containerRef.current &&
-                !containerRef.current.contains(e.relatedTarget as Node)
-            ) {
-                setOpen(false);
-            }
-        },
-        [],
-    );
+    const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+        if (
+            containerRef.current &&
+            !containerRef.current.contains(e.relatedTarget as Node)
+        ) {
+            setOpen(false);
+        }
+    }, []);
 
     useEffect(() => {
         if (!open) return;

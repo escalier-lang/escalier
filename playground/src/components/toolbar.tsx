@@ -27,19 +27,13 @@ export const Toolbar = ({
         null,
     );
 
-    const handleSelectTemplate = useCallback(
-        (slug: string, label: string) => {
-            setPendingAction({ kind: 'template', slug, label });
-        },
-        [],
-    );
+    const handleSelectTemplate = useCallback((slug: string, label: string) => {
+        setPendingAction({ kind: 'template', slug, label });
+    }, []);
 
-    const handleSelectExample = useCallback(
-        (slug: string, label: string) => {
-            setPendingAction({ kind: 'example', slug, label });
-        },
-        [],
-    );
+    const handleSelectExample = useCallback((slug: string, label: string) => {
+        setPendingAction({ kind: 'example', slug, label });
+    }, []);
 
     const handleConfirm = useCallback(() => {
         if (!pendingAction) return;

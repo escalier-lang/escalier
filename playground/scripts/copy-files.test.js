@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test } from 'vitest';
 import { Volume, createFsFromVolume } from 'memfs';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 import { main } from './copy-files.js';
 
@@ -23,8 +23,7 @@ describe('copy-files main', () => {
             // Template
             'templates/single-package/escalier.toml':
                 '[project]\nname = "my-project"',
-            'templates/single-package/package.json':
-                '{"name":"my-project"}',
+            'templates/single-package/package.json': '{"name":"my-project"}',
             'templates/single-package/lib/index.esc':
                 'export fn greet() -> string { return "hi" }',
             'templates/single-package/bin/main.esc': 'console.log(greet())',
