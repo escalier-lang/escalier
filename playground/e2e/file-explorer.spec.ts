@@ -45,7 +45,7 @@ test.describe('File Explorer', () => {
     await input.press('Enter');
 
     // Folder should appear in the explorer as an expandable button
-    await expect(page.getByRole('button', { name: /src/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^▸ src$|^▾ src$/ })).toBeVisible();
   });
 
   test('rename file via context menu', async ({ page }) => {

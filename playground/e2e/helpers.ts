@@ -2,14 +2,19 @@ import { type Page, expect } from '@playwright/test';
 
 /**
  * Wait for the WASM LSP to initialize and the first compilation to complete.
- * The compilation is done when output tabs appear on the right side.
+ *
+ * We detect compilation completion by checking for the `/build` directory in
+ * the file explorer. Due to a race condition in the app, the output tabs may
+ * not always auto-open (the FS event can fire before the React effect listener
+ * is registered), so checking for the build directory is more reliable than
+ * waiting for output tabs.
  */
 export async function waitForCompilation(page: Page): Promise<void> {
-  // Wait for at least one output tab to appear on the right side.
-  // This is the most reliable signal that the WASM LSP has initialized,
-  // compiled the project, and the output files have been opened.
-  const outputTablist = page.getByRole('tablist').nth(1);
-  await expect(outputTablist.getByRole('tab').first()).toBeVisible({ timeout: 45_000 });
+  // Wait for the `build` directory to appear in the file explorer.
+  // This is the most reliable signal that compilation has completed.
+  await expect(
+    page.getByRole('button', { name: /build/ }),
+  ).toBeVisible({ timeout: 45_000 });
 }
 
 /**

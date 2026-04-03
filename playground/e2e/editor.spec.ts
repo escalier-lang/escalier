@@ -15,31 +15,38 @@ test.describe('Editor', () => {
   });
 
   test('right editor shows compiled output', async ({ page }) => {
-    // The output panel should contain compiled JavaScript
+    // Open a build output file to populate the right pane.
+    // Expand the build directory, then navigate to the output file.
+    await page.getByRole('button', { name: /^▸ build$/ }).click();
+    await page.getByRole('button', { name: /^▸ lib$|^▾ lib$/ }).nth(1).click();
+    await page.getByRole('button', { name: 'index.js', exact: true }).click();
+
+    // The output panel should now show compiled JavaScript
     const outputPanel = page.locator('#output-panel');
-    // Compiled output should contain JS keywords
     await expect(outputPanel.locator('.view-lines')).toContainText('function');
   });
 
   test('editing source triggers recompilation', async ({ page }) => {
-    // Get initial right-pane content
-    const outputPanel = page.locator('#output-panel');
-    const initialContent = await outputPanel.locator('.view-lines').textContent();
-
-    // Click into the left editor and add a comment
+    // Click into the left editor and add a new exported function
     const inputPanel = page.locator('#input-panel');
     await inputPanel.click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
-    await page.keyboard.type('// test comment');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('export fn added() -> string { return "hi" }');
 
-    // Wait for recompilation (debounced at 500ms + compile time)
-    await page.waitForTimeout(2000);
+    // Open the build output to verify recompilation produced new content.
+    // Expand build/lib/ and open index.js.
+    await page.getByRole('button', { name: /^▸ build$/ }).click();
+    await page.getByRole('button', { name: /^▸ lib$|^▾ lib$/ }).nth(1).click();
 
-    // The output should have changed (the comment won't appear in JS output,
-    // but the source map URL may change, or we can verify the source still compiles)
-    const outputContent = await outputPanel.locator('.view-lines').textContent();
-    // The output should still contain valid JS (compilation didn't break)
-    expect(outputContent).toContain('function');
+    // Poll for the `added` function to appear in the compiled output
+    const outputPanel = page.locator('#output-panel');
+    await page.getByRole('button', { name: 'index.js', exact: true }).click();
+
+    await expect(async () => {
+      const content = await outputPanel.locator('.view-lines').textContent();
+      expect(content).toContain('added');
+    }).toPass({ timeout: 10_000 });
   });
 });
